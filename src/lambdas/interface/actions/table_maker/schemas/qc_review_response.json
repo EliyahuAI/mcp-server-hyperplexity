@@ -84,6 +84,132 @@
         "reasoning": {
           "type": "string",
           "description": "Overall summary of QC decisions (1-2 sentences)"
+        },
+        "minimum_guarantee_applied": {
+          "type": "boolean",
+          "description": "Whether rejected rows were promoted to meet minimum row count"
+        },
+        "insufficient_rows": {
+          "type": "boolean",
+          "description": "Whether total discovered rows were below minimum threshold"
+        }
+      }
+    },
+    "insufficient_rows_statement": {
+      "type": "string",
+      "description": "Optional: Overall assessment of why so few results were discovered (only if insufficient_rows=true)"
+    },
+    "insufficient_rows_recommendations": {
+      "type": "array",
+      "description": "Optional: Recommendations for improving results (only if insufficient_rows=true)",
+      "items": {
+        "type": "object",
+        "properties": {
+          "issue": {
+            "type": "string",
+            "description": "The problem identified"
+          },
+          "recommendation": {
+            "type": "string",
+            "description": "How to address it"
+          }
+        }
+      }
+    },
+    "retrigger_discovery": {
+      "type": "object",
+      "description": "Optional: Request to retrigger discovery with new strategy",
+      "properties": {
+        "should_retrigger": {
+          "type": "boolean",
+          "description": "Whether to retrigger discovery"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why retrigger is needed"
+        },
+        "new_subdomains": {
+          "type": "array",
+          "description": "Completely new subdomain definitions (de-novo, not modifications)",
+          "items": {
+            "type": "object",
+            "required": ["name", "focus", "search_queries", "target_rows"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "New subdomain name"
+              },
+              "focus": {
+                "type": "string",
+                "description": "What to search for"
+              },
+              "search_queries": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "target_rows": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "included_domains": {
+                "type": "array",
+                "description": "Optional: Override included domains",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "excluded_domains": {
+                "type": "array",
+                "description": "Optional: Override excluded domains",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "updated_requirements": {
+          "type": "array",
+          "description": "Optional: Updated requirements (can relax/tighten)",
+          "items": {
+            "type": "object",
+            "required": ["requirement", "type", "rationale"],
+            "properties": {
+              "requirement": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["hard", "soft"]
+              },
+              "rationale": {
+                "type": "string",
+                "description": "Why this change"
+              }
+            }
+          }
+        },
+        "updated_default_domains": {
+          "type": "object",
+          "description": "Optional: Updated default domain filtering",
+          "properties": {
+            "included_domains": {
+              "type": "array",
+              "description": "Add or replace included domains",
+              "items": {
+                "type": "string"
+              }
+            },
+            "excluded_domains": {
+              "type": "array",
+              "description": "Add or replace excluded domains",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     }

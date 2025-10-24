@@ -39,11 +39,53 @@
     },
     "search_strategy": {
       "type": "object",
-      "required": ["description", "subdomains"],
+      "required": ["description", "requirements", "subdomains"],
       "properties": {
         "description": {
           "type": "string",
           "description": "Clear description of what entities to find"
+        },
+        "requirements": {
+          "type": "array",
+          "description": "Row requirements (minimum 1) - can be hard (dealbreakers) or soft (preferences). Bias toward soft requirements.",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["requirement", "type", "rationale"],
+            "properties": {
+              "requirement": {
+                "type": "string",
+                "description": "String describing the requirement"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["hard", "soft"],
+                "description": "Hard = absolute dealbreaker, Soft = preference that improves scores"
+              },
+              "rationale": {
+                "type": "string",
+                "description": "Why this requirement matters"
+              }
+            }
+          }
+        },
+        "requirements_notes": {
+          "type": "string",
+          "description": "Overall guidance about what makes a good row"
+        },
+        "default_included_domains": {
+          "type": "array",
+          "description": "Optional: Default domains to focus on for searches (authoritative sources)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "default_excluded_domains": {
+          "type": "array",
+          "description": "Optional: Default domains to exclude from searches (defaults: youtube.com, reddit.com unless specifically needed)",
+          "items": {
+            "type": "string"
+          }
         },
         "subdomains": {
           "type": "array",
@@ -78,6 +120,20 @@
                 "type": "integer",
                 "description": "Number of candidate rows to find for this subdomain (allows small allocations for niche subdomains)",
                 "minimum": 1
+              },
+              "included_domains": {
+                "type": "array",
+                "description": "Optional: Override default included domains for this specific subdomain",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "excluded_domains": {
+                "type": "array",
+                "description": "Optional: Override default excluded domains for this specific subdomain",
+                "items": {
+                  "type": "string"
+                }
               }
             }
           }

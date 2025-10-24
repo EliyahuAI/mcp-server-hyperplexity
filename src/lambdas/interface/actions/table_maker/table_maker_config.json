@@ -59,14 +59,26 @@
     "early_stop_threshold_percentage": 100
   },
 
-  "_comment_qc_review": "QC layer reviews discovered rows and decides which to keep, reject, or reprioritize. Uses Claude Sonnet 4.5 without web search.",
+  "_comment_qc_review": "QC layer reviews discovered rows and decides which to keep, reject, or reprioritize. Uses Claude Sonnet 4.5 without web search. min_row_count: minimum rows after QC (promotes rejected if needed). min_row_count_for_frontend: threshold below which frontend shows restart button. qc_strategy: which QC method to use (traditional=LLM-based, validator=validator-lambda-based, both=run both and merge). For validator QC, validator_qc_model and validator_qc_context configure the validator lambda search. allow_retrigger: enables QC to request rerun with new subdomains. max_retriggers: prevents infinite loops (typically 1).",
   "qc_review": {
     "model": "claude-sonnet-4-5",
     "max_tokens": 8000,
     "min_qc_score": 0.5,
-    "min_row_count": 3,
+    "min_row_count": 4,
+    "min_row_count_for_frontend": 4,
     "max_row_count": 50,
-    "enable_qc": true
+    "enable_qc": true,
+
+    "_comment_qc_strategy": "QC strategy: 'traditional' = LLM-based QC review, 'validator' = validator lambda with 2x1 hard/soft weighting, 'both' = run both and merge (intersection=approve, union=demote)",
+    "qc_strategy": "traditional",
+
+    "_comment_validator_qc": "Settings for validator lambda QC (used when qc_strategy='validator' or 'both'). validator_qc_model: which search model to use ('sonar' or 'sonar-pro'). validator_qc_context: search context size ('low', 'medium', or 'high')",
+    "validator_qc_model": "sonar",
+    "validator_qc_context": "low",
+
+    "_comment_retrigger": "Retrigger allows QC to request additional discovery round with completely new subdomains. allow_retrigger: enable/disable feature. max_retriggers: maximum number of retrigger cycles (typically 1 to prevent loops)",
+    "allow_retrigger": true,
+    "max_retriggers": 1
   },
 
   "table_population": {

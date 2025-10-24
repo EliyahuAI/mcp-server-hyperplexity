@@ -46,7 +46,11 @@ class QCReviewer:
         model: str = "claude-sonnet-4-5",
         max_tokens: int = 8000,
         min_qc_score: float = 0.5,
-        max_rows: int = 50
+        max_rows: int = 50,
+        min_row_count: int = 4,
+        search_strategy: Dict = None,
+        discovery_result: Dict = None,
+        retrigger_allowed: bool = True
     ) -> Dict[str, Any]:
         """
         Review and filter discovered rows using QC criteria.
@@ -68,6 +72,10 @@ class QCReviewer:
             max_tokens: Maximum tokens for AI response
             min_qc_score: Minimum QC score to keep row (default: 0.5)
             max_rows: Maximum number of rows to return (default: 50)
+            min_row_count: Minimum number of rows to guarantee (default: 4)
+            search_strategy: Search strategy with requirements and domain filters (optional)
+            discovery_result: Discovery result with aggregated recommendations (optional)
+            retrigger_allowed: Whether to allow QC to request retrigger (default: True)
 
         Returns:
             Dictionary with results:
@@ -79,7 +87,10 @@ class QCReviewer:
                 'reviewed_rows': List[Dict],  # All reviewed rows
                 'enhanced_data': Dict,  # API call metadata for cost tracking
                 'processing_time': float,  # Seconds
-                'error': Optional[str]
+                'error': Optional[str],
+                'insufficient_rows_statement': Optional[str],  # If discovered < min_row_count
+                'insufficient_rows_recommendations': Optional[List[Dict]],  # If discovered < min_row_count
+                'retrigger_discovery': Optional[Dict]  # If QC requests retrigger
             }
         """
         result = {
@@ -123,7 +134,16 @@ class QCReviewer:
                 'COLUMN_DEFINITIONS': self._format_columns(columns),  # All columns
                 'TABLEWIDE_RESEARCH': tablewide_research,  # Research context
                 'ROW_COUNT': str(len(discovered_rows)),
-                'DISCOVERED_ROWS': self._format_rows(discovered_rows)
+                'DISCOVERED_ROWS': self._format_rows(discovered_rows),
+                # New variables for requirements and retrigger context
+                'HARD_REQUIREMENTS': self._format_requirements_for_prompt(search_strategy, 'hard'),
+                'SOFT_REQUIREMENTS': self._format_requirements_for_prompt(search_strategy, 'soft'),
+                'SUBDOMAIN_RESULTS_SUMMARY': self._format_subdomain_results(discovery_result),
+                'AGGREGATED_SEARCH_IMPROVEMENTS': self._format_search_improvements(discovery_result),
+                'AGGREGATED_DOMAIN_RECOMMENDATIONS': self._format_domain_recommendations(discovery_result),
+                'CURRENT_INCLUDED_DOMAINS': self._format_domain_list(search_strategy, 'included'),
+                'CURRENT_EXCLUDED_DOMAINS': self._format_domain_list(search_strategy, 'excluded'),
+                'RETRIGGER_ALLOWED': 'true' if retrigger_allowed else 'false'
             }
 
             logger.debug(f"Loading QC review prompt with {len(variables)} variables")
@@ -182,7 +202,6 @@ class QCReviewer:
 
             # Extract results
             reviewed_rows = ai_response.get('reviewed_rows', [])
-            rejected_rows = ai_response.get('rejected_rows', [])
             qc_summary = ai_response.get('qc_summary', {})
 
             # Merge QC results with original discovery data
@@ -233,7 +252,13 @@ class QCReviewer:
 
                 if original_row:
                     # Merge: start with original, overlay QC fields
-                    merged = original_row.copy()
+                    # Defensive check: ensure original_row is a dict before calling .copy()
+                    if isinstance(original_row, dict):
+                        merged = original_row.copy()
+                    else:
+                        logger.error(f"original_row is not a dict: {type(original_row).__name__} - {original_row}")
+                        merged = {}
+
                     qc_score = qc_row.get('qc_score', 0)
                     row_score = qc_row.get('row_score', merged.get('match_score', 0))
 
@@ -265,11 +290,54 @@ class QCReviewer:
                 if row.get('keep', False) and row.get('qc_score', 0) >= min_qc_score
             ]
 
-            # Sort by qc_score descending
+            # Separate rejected rows for potential promotion
+            rejected_rows_pool = [
+                row for row in merged_rows
+                if not row.get('keep', False)
+            ]
+
+            # Check if we need to apply minimum row guarantee
+            minimum_guarantee_applied = False
+            promoted_count = 0
+
+            if len(approved_rows) < min_row_count and rejected_rows_pool:
+                # Sort rejected rows by qc_score descending
+                rejected_sorted = sorted(
+                    rejected_rows_pool,
+                    key=lambda x: x.get('qc_score', 0),
+                    reverse=True
+                )
+
+                # Calculate how many we need to promote
+                needed = min_row_count - len(approved_rows)
+                to_promote = rejected_sorted[:needed]
+
+                # Promote rejected rows to demoted status
+                for row in to_promote:
+                    row['keep'] = True
+                    row['priority_adjustment'] = 'demote'
+                    # Add a note about promotion in qc_rationale
+                    existing_rationale = row.get('qc_rationale', '')
+                    if existing_rationale:
+                        row['qc_rationale'] = f"{existing_rationale} [Promoted to meet minimum row count]"
+                    else:
+                        row['qc_rationale'] = "Promoted to meet minimum row count"
+                    approved_rows.append(row)
+                    promoted_count += 1
+
+                minimum_guarantee_applied = True
+                logger.info(f"[MIN_GUARANTEE] Promoted {promoted_count} rejected rows to meet minimum of {min_row_count}")
+
+            # Sort approved rows by priority tier, then by qc_score within each tier
+            # Priority order: promote > none > demote
+            priority_order = {'promote': 0, 'none': 1, 'demote': 2}
+
             approved_rows_sorted = sorted(
                 approved_rows,
-                key=lambda x: x.get('qc_score', 0),
-                reverse=True
+                key=lambda x: (
+                    priority_order.get(x.get('priority_adjustment', 'none'), 1),
+                    -x.get('qc_score', 0)  # Negative for descending
+                ),
             )
 
             # Apply max_rows limit
@@ -280,12 +348,50 @@ class QCReviewer:
             if filtered_by_limit > 0:
                 logger.info(f"Filtered {filtered_by_limit} rows due to max_rows limit ({max_rows})")
 
+            # Check for insufficient rows scenario (discovered < min_row_count)
+            insufficient_rows = len(discovered_rows) < min_row_count
+            insufficient_rows_statement = ai_response.get('insufficient_rows_statement', '')
+            insufficient_rows_recommendations = ai_response.get('insufficient_rows_recommendations', [])
+
+            # Update qc_summary with new fields
+            qc_summary['minimum_guarantee_applied'] = minimum_guarantee_applied
+            qc_summary['insufficient_rows'] = insufficient_rows
+
+            # Track promoted count from minimum guarantee (different from AI's 'promoted' which is priority_adjustment)
+            if promoted_count > 0:
+                qc_summary['minimum_guarantee_promoted'] = promoted_count
+
+            # Count demoted rows in final output
+            demoted_count = sum(1 for row in final_approved if row.get('priority_adjustment') == 'demote')
+            if 'demoted' not in qc_summary:
+                qc_summary['demoted'] = demoted_count
+
+            # Calculate final rejected rows (all merged rows that weren't approved)
+            final_rejected = [row for row in merged_rows if not row.get('keep', False)]
+
             # Build successful result
             result['success'] = True
             result['approved_rows'] = final_approved
-            result['rejected_rows'] = rejected_rows
+            result['rejected_rows'] = final_rejected
             result['qc_summary'] = qc_summary
             result['reviewed_rows'] = reviewed_rows
+
+            # Add insufficient rows details if applicable
+            if insufficient_rows:
+                result['insufficient_rows_statement'] = insufficient_rows_statement
+                result['insufficient_rows_recommendations'] = insufficient_rows_recommendations
+                logger.warning(
+                    f"[INSUFFICIENT_ROWS] Only {len(discovered_rows)} rows discovered (< {min_row_count}). "
+                    f"Statement: {insufficient_rows_statement[:100]}..."
+                )
+
+            # Add retrigger_discovery if present in AI response
+            retrigger_discovery = ai_response.get('retrigger_discovery', {})
+            if retrigger_discovery and retrigger_discovery.get('should_retrigger', False):
+                result['retrigger_discovery'] = retrigger_discovery
+                logger.info(
+                    f"[RETRIGGER_REQUESTED] QC requested retrigger: {retrigger_discovery.get('reason', 'No reason provided')}"
+                )
 
             # Capture enhanced_data for cost tracking
             enhanced_data = api_response.get('enhanced_data', {})
@@ -317,7 +423,7 @@ class QCReviewer:
                 f"QC review completed successfully. "
                 f"Reviewed: {len(reviewed_rows)}, "
                 f"Approved: {len(final_approved)}, "
-                f"Rejected: {len(rejected_rows)}, "
+                f"Rejected: {len(final_rejected)}, "
                 f"Time: {result['processing_time']:.1f}s"
             )
 
@@ -335,6 +441,232 @@ class QCReviewer:
             result['processing_time'] = time.time() - start_time
 
         return result
+
+    def _format_requirements_for_prompt(self, search_strategy: Dict, type_filter: str) -> str:
+        """
+        Format requirements as bullet list for prompt.
+
+        Args:
+            search_strategy: Search strategy dictionary with requirements
+            type_filter: 'hard' or 'soft' to filter requirements by type
+
+        Returns:
+            Formatted requirements string (bullet list) or "(None)" if not available
+        """
+        if not search_strategy:
+            return "(Not available)"
+
+        # Defensive check: ensure search_strategy is a dict
+        if not isinstance(search_strategy, dict):
+            logger.warning(f"search_strategy is not a dict: {type(search_strategy).__name__}")
+            return "(Not available)"
+
+        requirements = search_strategy.get('requirements', [])
+        filtered = [req for req in requirements if req.get('type') == type_filter]
+
+        if not filtered:
+            return "(None)"
+
+        lines = []
+        for req in filtered:
+            requirement_text = req.get('requirement', '')
+            rationale = req.get('rationale', '')
+            if requirement_text:
+                line = f"- {requirement_text}"
+                if rationale:
+                    line += f" (Rationale: {rationale})"
+                lines.append(line)
+
+        return '\n'.join(lines) if lines else "(None)"
+
+    def _format_subdomain_results(self, discovery_result: Dict) -> str:
+        """
+        Format subdomain names with row counts from discovery result.
+        For subdomains with 0 results, include no_matches_reason from the LAST round.
+
+        Args:
+            discovery_result: Discovery result dictionary with stream_results or subdomain_results
+
+        Returns:
+            Formatted subdomain summary or "(Not available)"
+        """
+        if not discovery_result:
+            return "(Not available)"
+
+        # Defensive check: ensure discovery_result is a dict
+        if not isinstance(discovery_result, dict):
+            logger.warning(f"discovery_result is not a dict: {type(discovery_result).__name__}")
+            return "(Not available)"
+
+        # Try stream_results first (current key), fall back to subdomain_results (legacy)
+        subdomain_results = discovery_result.get('stream_results', discovery_result.get('subdomain_results', []))
+        if not subdomain_results:
+            return "(No subdomain results)"
+
+        lines = []
+        for subdomain_result in subdomain_results:
+            subdomain_name = subdomain_result.get('subdomain', 'Unknown')
+            candidates = subdomain_result.get('candidates', [])
+            row_count = len(candidates)
+
+            # Format subdomain with row count
+            line = f"- \"{subdomain_name}\" ({row_count} results)"
+
+            # If 0 results, include no_matches_reason from LAST round
+            if row_count == 0:
+                no_matches_reason = subdomain_result.get('no_matches_reason', '')
+                if no_matches_reason:
+                    line += f" - Reason: {no_matches_reason}"
+                else:
+                    line += " - Reason: Not provided"
+
+            lines.append(line)
+
+        return '\n'.join(lines) if lines else "(No subdomain results)"
+
+    def _format_search_improvements(self, discovery_result: Dict) -> str:
+        """
+        Format aggregated search improvements from discovery result.
+
+        Args:
+            discovery_result: Discovery result dictionary with search improvements
+
+        Returns:
+            Formatted search improvements or "(Not available)"
+        """
+        if not discovery_result:
+            return "(Not available)"
+
+        # Defensive check: ensure discovery_result is a dict
+        if not isinstance(discovery_result, dict):
+            logger.warning(f"discovery_result is not a dict: {type(discovery_result).__name__}")
+            return "(Not available)"
+
+        # Try stream_results first (current key), fall back to subdomain_results (legacy)
+        subdomain_results = discovery_result.get('stream_results', discovery_result.get('subdomain_results', []))
+        if not subdomain_results:
+            return "(No search improvements)"
+
+        formatted_items = []
+        for subdomain_result in subdomain_results:
+            subdomain_name = subdomain_result.get('subdomain', 'Unknown')
+            improvements = subdomain_result.get('search_improvements', [])
+
+            for improvement in improvements:
+                # improvement is a STRING according to schema, not a dict
+                if isinstance(improvement, str) and improvement.strip():
+                    formatted_items.append({
+                        'subdomain': subdomain_name,
+                        'improvement': improvement
+                    })
+                elif isinstance(improvement, dict):
+                    # Legacy support if some are dicts (fallback)
+                    improvement_text = improvement.get('improvement', improvement.get('recommendation', str(improvement)))
+                    if improvement_text:
+                        formatted_items.append({
+                            'subdomain': subdomain_name,
+                            'improvement': improvement_text
+                        })
+                else:
+                    logger.warning(f"Skipping invalid improvement: {type(improvement).__name__} - {improvement}")
+
+        if not formatted_items:
+            return "(No search improvements)"
+
+        # Format as numbered list with subdomain context
+        lines = []
+        for idx, item in enumerate(formatted_items, 1):
+            lines.append(f"{idx}. [{item['subdomain']}] {item['improvement']}")
+
+        return '\n'.join(lines) if lines else "(No search improvements)"
+
+    def _format_domain_recommendations(self, discovery_result: Dict) -> str:
+        """
+        Format aggregated domain filtering recommendations from discovery result.
+
+        Args:
+            discovery_result: Discovery result dictionary with domain recommendations
+
+        Returns:
+            Formatted domain recommendations or "(Not available)"
+        """
+        if not discovery_result:
+            return "(Not available)"
+
+        # Defensive check: ensure discovery_result is a dict
+        if not isinstance(discovery_result, dict):
+            logger.warning(f"discovery_result is not a dict: {type(discovery_result).__name__}")
+            return "(Not available)"
+
+        # Try stream_results first (current key), fall back to subdomain_results (legacy)
+        subdomain_results = discovery_result.get('stream_results', discovery_result.get('subdomain_results', []))
+        if not subdomain_results:
+            return "(No domain recommendations)"
+
+        all_recommendations = []
+        for subdomain_result in subdomain_results:
+            subdomain_name = subdomain_result.get('subdomain', 'Unknown')
+            domain_rec = subdomain_result.get('domain_filtering_recommendations', {})
+
+            # Defensive check: ensure domain_rec is a dict before processing
+            if isinstance(domain_rec, dict) and domain_rec and any(domain_rec.values()):
+                recommendation_with_context = domain_rec.copy()
+                recommendation_with_context['from_subdomain'] = subdomain_name
+                all_recommendations.append(recommendation_with_context)
+            elif domain_rec and not isinstance(domain_rec, dict):
+                logger.warning(f"Skipping non-dict domain recommendation: {type(domain_rec).__name__} - {domain_rec}")
+
+        if not all_recommendations:
+            return "(No domain recommendations)"
+
+        lines = []
+        for idx, rec in enumerate(all_recommendations, 1):
+            from_subdomain = rec.get('from_subdomain', 'Unknown')
+            add_to_included = rec.get('add_to_included', [])
+            add_to_excluded = rec.get('add_to_excluded', [])
+            reasoning = rec.get('reasoning', '')
+
+            lines.append(f"{idx}. [From: {from_subdomain}]")
+            if add_to_included:
+                lines.append(f"   Add to included: {', '.join(add_to_included)}")
+            if add_to_excluded:
+                lines.append(f"   Add to excluded: {', '.join(add_to_excluded)}")
+            if reasoning:
+                lines.append(f"   Reasoning: {reasoning}")
+            lines.append("")  # Blank line between recommendations
+
+        return '\n'.join(lines) if lines else "(No domain recommendations)"
+
+    def _format_domain_list(self, search_strategy: Dict, domain_type: str) -> str:
+        """
+        Format domain list as comma-separated string or "(None)".
+
+        Args:
+            search_strategy: Search strategy dictionary with domain filters
+            domain_type: 'included' or 'excluded' to specify which domain list
+
+        Returns:
+            Formatted domain list or "(None)"
+        """
+        if not search_strategy:
+            return "(Not available)"
+
+        # Defensive check: ensure search_strategy is a dict
+        if not isinstance(search_strategy, dict):
+            logger.warning(f"search_strategy is not a dict: {type(search_strategy).__name__}")
+            return "(Not available)"
+
+        if domain_type == 'included':
+            domains = search_strategy.get('default_included_domains', [])
+        elif domain_type == 'excluded':
+            domains = search_strategy.get('default_excluded_domains', [])
+        else:
+            return "(Invalid domain type)"
+
+        if not domains:
+            return "(None)"
+
+        return ', '.join(domains)
 
     def _format_id_columns(self, columns: List[Dict]) -> str:
         """
@@ -428,16 +760,23 @@ class QCReviewer:
         rejected = qc_summary.get('rejected', 0)
         promoted = qc_summary.get('promoted', 0)
         demoted = qc_summary.get('demoted', 0)
+        min_guarantee_promoted = qc_summary.get('minimum_guarantee_promoted', 0)
         reasoning = qc_summary.get('reasoning', '')
 
-        logger.info(
-            f"QC Summary - Total: {total}, "
-            f"Kept: {kept}, "
-            f"Rejected: {rejected}, "
-            f"Promoted: {promoted}, "
-            f"Demoted: {demoted}, "
-            f"Final (after limits): {final_approved}"
-        )
+        log_parts = [
+            f"QC Summary - Total: {total}",
+            f"Kept: {kept}",
+            f"Rejected: {rejected}",
+            f"Promoted: {promoted}",
+            f"Demoted: {demoted}"
+        ]
+
+        if min_guarantee_promoted > 0:
+            log_parts.append(f"MinGuarantee Promoted: {min_guarantee_promoted}")
+
+        log_parts.append(f"Final (after limits): {final_approved}")
+
+        logger.info(", ".join(log_parts))
 
         if reasoning:
             logger.info(f"QC Reasoning: {reasoning}")

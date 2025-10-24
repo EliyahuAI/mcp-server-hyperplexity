@@ -12,11 +12,26 @@ These rows are characterized by their **ID fields** (identification columns). Yo
 4. **Provide reasoning** for why the entry is a good fit
 
 ### Search Tips
-1. Exclude youtube and other video results - web results only.
-2. Use sources that are likely to yield many results at once. Sites that aggregate the information you are looking for (e.g. indeed for jobs, nyt for news, etc) are great. 
-3. When you come up short, iterate until you find something. Use provided search recommendations to get what we need. 
-4. Do not fabricate anything. Only use real entities.  
- 
+1. Use sources that are likely to yield many results at once. Sites that aggregate the information you are looking for (e.g. indeed for jobs, nyt for news, etc) are great.
+2. When you come up short, iterate until you find something. Use provided search recommendations to get what we need.
+3. Do not fabricate anything. Only use real entities.
+
+---
+
+## REQUIREMENTS (Must be visible and clear)
+
+### Hard Requirements (Absolute - entity MUST meet these):
+{{HARD_REQUIREMENTS}}
+
+### Soft Requirements (Preferences - better scores if met):
+{{SOFT_REQUIREMENTS}}
+
+**Instructions:**
+- **Hard requirements are dealbreakers** - don't include entities that violate these
+- **Soft requirements improve scoring** but aren't required - include entities that meet hard requirements even if they don't meet all soft requirements
+- Score entities higher when they meet more soft requirements
+- An entity that meets all hard requirements but few soft requirements should still be included (with a moderate score)
+
 ---
 
 ## Context About This Table (not specifically your task - you are just identifying candidate rows)
@@ -38,7 +53,9 @@ These rows are characterized by their **ID fields** (identification columns). Yo
 
 **Focus Area:** {{SUBDOMAIN_FOCUS}}
 
-**Requirements:** {{SEARCH_REQUIREMENTS}}
+**IMPORTANT NOTE:** This subdomain is a suggested focus to help organize parallel search efforts and avoid overlap with other workers. However, you should include relevant entities outside this focus if you find them during your searches. The subdomain is not a strict boundary - it's a starting point.
+
+---
 
 **Target:** Find **{{TARGET_ROWS}} unique entries**
 
@@ -193,6 +210,39 @@ If you experienced difficulties finding good candidates or had to try multiple s
 }
 ```
 
+---
+
+## Domain Filtering Feedback (Optional)
+
+If you notice patterns about which domains provided poor results during your search, provide feedback in the `domain_filtering_recommendations` field. This helps refine domain filtering for subsequent searches or retriggers.
+
+**IMPORTANT: You can only recommend EXCLUSIONS, not inclusions. Included domains are set by the user at the start and should not be changed by discovery workers.**
+
+**Provide domain_filtering_recommendations if:**
+- You encountered noise or low-quality results from certain domains
+- Current domain filters seem not restrictive enough
+- Specific domains consistently provided irrelevant or low-quality information
+
+**Format:**
+```json
+{
+  "subdomain": "Healthcare AI Companies",
+  "domain_filtering_recommendations": {
+    "add_to_excluded": ["medium.com", "forbes.com"],
+    "reasoning": "Medium posts were often opinion pieces. Forbes articles were mostly sponsored content without concrete company information."
+  },
+  "candidates": [...]
+}
+```
+
+**Guidelines:**
+- Only recommend domains to EXCLUDE, not to include
+- Be specific about which domains hindered your search
+- Explain why certain domains should be excluded
+- This is optional - only provide if you have clear observations
+- These recommendations will be aggregated and considered by QC
+
+---
 
 This helps us improve search strategies for future subdomains.
 Return your findings as valid JSON.

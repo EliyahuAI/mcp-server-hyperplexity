@@ -13,6 +13,7 @@ import boto3
 import aioboto3
 import asyncio
 import random
+import re
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Union
 from decimal import Decimal
@@ -231,15 +232,26 @@ class AIAPIClient:
             logger.warning(f"Model {primary_model} not in hierarchy, using default backups")
             return ["claude-opus-4-0", "claude-3-7-sonnet-latest"][:count]
     
-    def _get_cache_key(self, prompt: str, model: str, schema: Dict = None, context: str = "", max_web_searches: int = 3) -> str:
+    def _get_cache_key(self, prompt: str, model: str, schema: Dict = None, context: str = "", max_web_searches: int = 3,
+                       soft_schema: bool = False, include_domains: Optional[List[str]] = None,
+                       exclude_domains: Optional[List[str]] = None) -> str:
         """Generate a unique cache key for the request."""
+        # Normalize prompt whitespace - convert all whitespace sequences to single spaces and trim
+        normalized_prompt = re.sub(r'\s+', ' ', prompt).strip()
+
         schema_str = json.dumps(schema, sort_keys=True) if schema else ""
-        cache_input = f"{prompt}:{model}:{schema_str}:{context}:{max_web_searches}"
+
+        # Sort domain lists for consistent hashing
+        sorted_include = sorted(include_domains) if include_domains else []
+        sorted_exclude = sorted(exclude_domains) if exclude_domains else []
+
+        # Include all parameters that affect API behavior in cache key
+        cache_input = f"{normalized_prompt}:{model}:{schema_str}:{context}:{max_web_searches}:{soft_schema}:{sorted_include}:{sorted_exclude}"
         cache_key = hashlib.md5(cache_input.encode()).hexdigest()
-        
+
         # Log cache key components for debugging
-        logger.info(f"Using cache key based on prompt hash: {hashlib.md5(prompt.encode()).hexdigest()[:8]}...")
-        
+        logger.info(f"Using cache key based on prompt hash: {hashlib.md5(normalized_prompt.encode()).hexdigest()[:8]}...")
+
         return cache_key
     
     def _get_validation_cache_key(self, row_data: Dict, targets: List, model: str, search_context_size: str = "low", config_hash: str = "") -> str:
@@ -1609,7 +1621,8 @@ class AIAPIClient:
     async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-sonnet-4-5",
                                  tool_name: str = "structured_response", use_cache: bool = True,
                                  context: str = "", max_tokens: int = None, max_web_searches: int = 3,
-                                 search_context_size: str = "low", debug_name: str = None, soft_schema: bool = False) -> Dict:
+                                 search_context_size: str = "low", debug_name: str = None, soft_schema: bool = False,
+                                 include_domains: Optional[List[str]] = None, exclude_domains: Optional[List[str]] = None) -> Dict:
         """
         Call AI API with structured output using JSON response format.
 
@@ -1625,6 +1638,8 @@ class AIAPIClient:
             debug_name: Optional name to include in debug filenames for easier identification
             soft_schema: If True, requests JSON in prompt but doesn't enforce via API schema (Perplexity only).
                         This allows more flexible/comprehensive responses while maintaining structure.
+            include_domains: Optional list of domains to prefer in search results (soft preference for Perplexity)
+            exclude_domains: Optional list of domains to exclude from search results (hard constraint for Perplexity)
 
         Returns:
             Dict containing the structured response and metadata
@@ -1661,7 +1676,8 @@ class AIAPIClient:
                 current_model_normalized = self._normalize_anthropic_model(current_model)
                 
                 # Generate cache key for this specific model
-                cache_key = self._get_cache_key(prompt, current_model_normalized, schema, context, max_web_searches) if use_cache else None
+                cache_key = self._get_cache_key(prompt, current_model_normalized, schema, context, max_web_searches,
+                                               soft_schema, include_domains, exclude_domains) if use_cache else None
                 
                 # Check cache for this specific model
                 if use_cache and cache_key:
@@ -1778,6 +1794,16 @@ class AIAPIClient:
                     # Store schema for soft schema cleaning
                     anthropic_schema = schema
 
+                    # Add domain filtering preferences to prompt if specified
+                    domain_filtered_prompt = prompt
+                    if include_domains or exclude_domains:
+                        domain_instructions = "\n\nDomain filtering preferences:"
+                        if include_domains:
+                            domain_instructions += f"\n- Focus on these domains: {', '.join(include_domains)}"
+                        if exclude_domains:
+                            domain_instructions += f"\n- Avoid these domains: {', '.join(exclude_domains)}"
+                        domain_filtered_prompt = prompt + domain_instructions
+
                     if soft_schema:
                         # Soft schema: no tools, just request JSON in the message
                         logger.info(f"[SOFT_SCHEMA] Using soft schema for Anthropic - JSON requested in prompt only")
@@ -1786,7 +1812,7 @@ class AIAPIClient:
                             "max_tokens": enforced_max_tokens,
                             "temperature": 0.1,
                             "messages": [
-                                {"role": "user", "content": f"{prompt}\n\nIMPORTANT: Return your response as valid JSON only, without any markdown code fences or additional text."}
+                                {"role": "user", "content": f"{domain_filtered_prompt}\n\nIMPORTANT: Return your response as valid JSON only, without any markdown code fences or additional text."}
                             ]
                         }
                     else:
@@ -1810,7 +1836,7 @@ class AIAPIClient:
                             "model": current_model_normalized,
                             "max_tokens": enforced_max_tokens,
                             "temperature": 0.1,
-                            "messages": [{"role": "user", "content": prompt}],
+                            "messages": [{"role": "user", "content": domain_filtered_prompt}],
                             "tools": tools,
                             "tool_choice": {"type": "tool", "name": tool_name}  # Force tool use for structured output
                         }
@@ -1822,7 +1848,7 @@ class AIAPIClient:
                 elif api_provider == 'perplexity':
                     # Perplexity API call for structured output
                     result = await self._make_single_perplexity_structured_call(prompt, schema, current_model,
-                                                                               use_cache, cache_key, call_start_time, search_context_size, debug_name, max_tokens or 8000, soft_schema)
+                                                                               use_cache, cache_key, call_start_time, search_context_size, debug_name, max_tokens or 8000, soft_schema, include_domains, exclude_domains)
                 else:
                     logger.warning(f"[SKIP] Unknown provider for model {current_model}")
                     continue
@@ -2008,7 +2034,8 @@ class AIAPIClient:
             logger.warning(f"[LEGACY_MODEL_WARNING] Using legacy Sonnet 3.5 model: {model}. Expected claude-sonnet-4-5 or newer.")
 
         normalized_model = self._normalize_anthropic_model(model)
-        cache_key = self._get_cache_key(prompt, normalized_model, None, context, max_web_searches) if use_cache else None
+        cache_key = self._get_cache_key(prompt, normalized_model, None, context, max_web_searches,
+                                       soft_schema=False, include_domains=None, exclude_domains=None) if use_cache else None
         
         # Check cache first
         if use_cache and cache_key:
@@ -2199,23 +2226,27 @@ class AIAPIClient:
         
         return result
     
-    async def validate_with_perplexity(self, prompt: str, model: str = "sonar-pro", 
-                                     search_context_size: str = "low", use_cache: bool = True, 
-                                     context: str = "") -> Dict:
+    async def validate_with_perplexity(self, prompt: str, model: str = "sonar-pro",
+                                     search_context_size: str = "low", use_cache: bool = True,
+                                     context: str = "", include_domains: Optional[List[str]] = None,
+                                     exclude_domains: Optional[List[str]] = None) -> Dict:
         """
         Validate a prompt using Perplexity API.
-        
+
         Args:
             prompt: The prompt to send to Perplexity
             model: The Perplexity model to use
             search_context_size: Search context size (low/high)
             use_cache: Whether to use caching
             context: Additional context for cache key generation
-            
+            include_domains: Optional list of domains to prefer (soft preference)
+            exclude_domains: Optional list of domains to exclude (hard constraint)
+
         Returns:
             Dict containing the validation response and metadata
         """
-        cache_key = self._get_cache_key(prompt, model, None, f"{context}:{search_context_size}", max_web_searches=0) if use_cache else None
+        cache_key = self._get_cache_key(prompt, model, None, f"{context}:{search_context_size}", max_web_searches=0,
+                                       soft_schema=False, include_domains=include_domains, exclude_domains=exclude_domains) if use_cache else None
         
         # Check cache first
         if use_cache and cache_key:
@@ -2306,7 +2337,18 @@ class AIAPIClient:
                 "search_context_size": search_context_size
             }
         }
-        
+
+        # Add domain filtering to web_search_options if specified
+        if include_domains or exclude_domains:
+            search_domain_filter = []
+            if include_domains:
+                search_domain_filter.extend(include_domains)
+            if exclude_domains:
+                # Add '-' prefix for exclusions
+                search_domain_filter.extend([f"-{domain}" for domain in exclude_domains])
+            data["web_search_options"]["search_domain_filter"] = search_domain_filter
+            logger.debug(f"Added domain filtering to Perplexity validate request: {search_domain_filter}")
+
         # Prepare debug request data
         debug_request = {
             'url': "https://api.perplexity.ai/chat/completions",
@@ -3303,13 +3345,17 @@ class AIAPIClient:
     async def _make_single_perplexity_structured_call(self, prompt: str, schema: Dict, model: str,
                                                      use_cache: bool, cache_key: str, start_time: datetime,
                                                      search_context_size: str = "low", debug_name: str = None,
-                                                     max_tokens: int = 8000, soft_schema: bool = False) -> Dict:
+                                                     max_tokens: int = 8000, soft_schema: bool = False,
+                                                     include_domains: Optional[List[str]] = None,
+                                                     exclude_domains: Optional[List[str]] = None) -> Dict:
         """
         Make a single Perplexity API call for structured output.
 
         Args:
             soft_schema: If True, requests JSON via prompt only (no API enforcement).
                         This allows more flexible responses but requires post-validation.
+            include_domains: Optional list of domains to prefer (soft preference)
+            exclude_domains: Optional list of domains to exclude (hard constraint)
         """
         # Perplexity supports structured output via response_format
         headers = {
@@ -3344,6 +3390,17 @@ class AIAPIClient:
                 "search_context_size": search_context_size
             }
         }
+
+        # Add domain filtering to web_search_options if specified
+        if include_domains or exclude_domains:
+            search_domain_filter = []
+            if include_domains:
+                search_domain_filter.extend(include_domains)
+            if exclude_domains:
+                # Add '-' prefix for exclusions
+                search_domain_filter.extend([f"-{domain}" for domain in exclude_domains])
+            data["web_search_options"]["search_domain_filter"] = search_domain_filter
+            logger.debug(f"Added domain filtering to Perplexity request: {search_domain_filter}")
 
         # Only add response_format if NOT using soft schema
         if not soft_schema:

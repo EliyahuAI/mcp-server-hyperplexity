@@ -161,12 +161,38 @@ class ColumnDefinitionHandler:
             # Verify validation strategies for research columns
             self._validate_column_strategies(ai_response.get('columns', []))
 
+            # Validate requirements (Phase 1, Item 2)
+            search_strategy = ai_response.get('search_strategy', {})
+            requirements = search_strategy.get('requirements', [])
+
+            if not requirements or len(requirements) == 0:
+                error_msg = "search_strategy.requirements must have at least 1 item (hard or soft)"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
+            logger.info(f"Requirements validation passed: {len(requirements)} requirements found")
+
             # Build successful result
             result['success'] = True
             result['columns'] = ai_response.get('columns', [])
-            result['search_strategy'] = ai_response.get('search_strategy', {})
+            result['search_strategy'] = search_strategy
             result['table_name'] = ai_response.get('table_name', '')
             result['tablewide_research'] = ai_response.get('tablewide_research', '')
+
+            # Extract and format requirements for downstream use (Phase 1, Items 2 and 4)
+            hard_reqs, soft_reqs = self._separate_requirements(requirements)
+            result['formatted_hard_requirements'] = self._format_requirements_for_prompt(hard_reqs)
+            result['formatted_soft_requirements'] = self._format_requirements_for_prompt(soft_reqs)
+
+            # Extract domain filtering for downstream use
+            result['default_included_domains'] = search_strategy.get('default_included_domains', [])
+            result['default_excluded_domains'] = search_strategy.get('default_excluded_domains', [])
+
+            logger.info(
+                f"Requirements formatted: {len(hard_reqs)} hard, {len(soft_reqs)} soft | "
+                f"Domain filtering: {len(result['default_included_domains'])} included, "
+                f"{len(result['default_excluded_domains'])} excluded"
+            )
 
             # Add full context to search_strategy for row discovery and QC
             user_request = conversation_context.get('user_request', '')
@@ -174,6 +200,10 @@ class ColumnDefinitionHandler:
                 result['search_strategy']['user_context'] = user_request
                 result['search_strategy']['table_purpose'] = result['search_strategy'].get('description', '')
                 result['search_strategy']['tablewide_research'] = result.get('tablewide_research', '')
+
+                # Add formatted requirements to search_strategy (Phase 1, Item 2)
+                result['search_strategy']['formatted_hard_requirements'] = result['formatted_hard_requirements']
+                result['search_strategy']['formatted_soft_requirements'] = result['formatted_soft_requirements']
 
             # PHASE 1: Capture enhanced_data and call metadata
             enhanced_data = api_response.get('enhanced_data', {})
@@ -484,3 +514,51 @@ class ColumnDefinitionHandler:
                 col.get('validation_strategy') for col in research_columns
             )
         }
+
+    def _separate_requirements(self, requirements: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """
+        Separate requirements into hard and soft lists.
+
+        Args:
+            requirements: List of requirement dictionaries with 'type' field
+
+        Returns:
+            Tuple of (hard_requirements, soft_requirements)
+        """
+        hard_requirements = [req for req in requirements if req.get('type') == 'hard']
+        soft_requirements = [req for req in requirements if req.get('type') == 'soft']
+
+        logger.debug(
+            f"Separated requirements: {len(hard_requirements)} hard, "
+            f"{len(soft_requirements)} soft"
+        )
+
+        return hard_requirements, soft_requirements
+
+    def _format_requirements_for_prompt(self, requirements: List[Dict[str, Any]]) -> str:
+        """
+        Format requirements as bullet list for prompts.
+
+        Args:
+            requirements: List of requirement dictionaries
+
+        Returns:
+            Formatted string with bullet points, or "(None)" if empty
+        """
+        if not requirements or len(requirements) == 0:
+            return "(None)"
+
+        bullet_points = []
+        for req in requirements:
+            requirement_text = req.get('requirement', '')
+            rationale = req.get('rationale', '')
+
+            if rationale:
+                bullet_points.append(f"- {requirement_text} ({rationale})")
+            else:
+                bullet_points.append(f"- {requirement_text}")
+
+        formatted = '\n'.join(bullet_points)
+        logger.debug(f"Formatted {len(requirements)} requirements into bullet list")
+
+        return formatted

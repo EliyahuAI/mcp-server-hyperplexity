@@ -17,12 +17,36 @@
         "type": "string"
       }
     },
+    "domain_filtering_recommendations": {
+      "type": "object",
+      "description": "Recommendations for domain filtering based on search results",
+      "properties": {
+        "add_to_included": {
+          "type": "array",
+          "description": "Domains that would be valuable to include",
+          "items": {
+            "type": "string"
+          }
+        },
+        "add_to_excluded": {
+          "type": "array",
+          "description": "Domains that should be excluded to improve results",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "Why these domain changes would help"
+        }
+      }
+    },
     "candidates": {
       "type": "array",
       "description": "List of candidate rows discovered for this subdomain",
       "items": {
         "type": "object",
-        "required": ["id_values", "match_rationale"],
+        "required": ["id_values", "score_breakdown", "match_rationale"],
         "properties": {
           "id_values": {
             "type": "object",

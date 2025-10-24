@@ -193,6 +193,12 @@ class RowDiscoveryStream:
                         f"Total improvements available: {len(combined_improvements)}"
                     )
 
+                # Collect domain filtering recommendations from this round
+                domain_recommendations = round_candidates.get('domain_filtering_recommendations', {})
+
+                # Extract no_matches_reason if 0 candidates (for QC to understand why)
+                no_matches_reason = round_candidates.get('no_matches_reason', '')
+
                 # PHASE 1: Record round results with enhanced_data and prompt
                 round_data = {
                     'round': round_idx,
@@ -201,6 +207,8 @@ class RowDiscoveryStream:
                     'candidates': candidates,
                     'count': len(candidates),
                     'search_improvements': search_improvements,
+                    'domain_filtering_recommendations': domain_recommendations,
+                    'no_matches_reason': no_matches_reason,  # Include reason if 0 candidates
                     'enhanced_data': round_candidates.get('enhanced_data', {}),
                     'prompt_used': round_candidates.get('prompt_used', ''),
                     'call_description': f"Finding Rows - {subdomain_name} - Round {round_idx} ({model}-{context})"
@@ -537,6 +545,17 @@ class RowDiscoveryStream:
         # Load schema for structured output
         schema = self.schema_validator.load_schema('row_discovery_response')
 
+        # Extract domain filtering parameters
+        # First try subdomain-specific overrides
+        include_domains = subdomain.get('included_domains')
+        exclude_domains = subdomain.get('excluded_domains')
+
+        # Fall back to search_strategy defaults if not in subdomain
+        if include_domains is None:
+            include_domains = search_strategy.get('default_included_domains')
+        if exclude_domains is None:
+            exclude_domains = search_strategy.get('default_excluded_domains')
+
         # Determine appropriate parameters based on model type
         is_claude = 'claude' in scoring_model.lower()
 
@@ -551,6 +570,13 @@ class RowDiscoveryStream:
                 f"'{subdomain['name']}' (target: {target_rows} rows, context: {search_context_size})"
             )
 
+        # Log domain filtering if configured
+        if include_domains or exclude_domains:
+            logger.info(
+                f"Domain filtering: include={include_domains or 'none'}, "
+                f"exclude={exclude_domains or 'none'}"
+            )
+
         try:
             # Single call with structured output (Perplexity or Claude with web search)
             result = await self.ai_client.call_structured_api(
@@ -562,7 +588,9 @@ class RowDiscoveryStream:
                 max_tokens=16000,  # Increased for finding multiple entities with details
                 max_web_searches=max_web_searches,  # For Claude models (Perplexity uses subdomain queries)
                 search_context_size=search_context_size,  # For Perplexity models
-                soft_schema=False  # Use hard schema for more accurate results
+                soft_schema=False,  # Use hard schema for more accurate results
+                include_domains=include_domains,  # Domain filtering
+                exclude_domains=exclude_domains   # Domain filtering
             )
 
             # call_structured_api returns dict with 'response', 'token_usage', etc.
@@ -624,6 +652,31 @@ class RowDiscoveryStream:
                 'enhanced_data': {}
             }
 
+    def _format_requirements(self, requirements: List[Dict[str, Any]]) -> str:
+        """
+        Format requirements as bullet list for prompts (backward compatibility helper).
+
+        Args:
+            requirements: List of requirement dictionaries
+
+        Returns:
+            Formatted string with bullet points, or "(None)" if empty
+        """
+        if not requirements or len(requirements) == 0:
+            return "(None)"
+
+        bullet_points = []
+        for req in requirements:
+            requirement_text = req.get('requirement', '')
+            rationale = req.get('rationale', '')
+
+            if rationale:
+                bullet_points.append(f"- {requirement_text} ({rationale})")
+            else:
+                bullet_points.append(f"- {requirement_text}")
+
+        return '\n'.join(bullet_points)
+
     def _build_integrated_scoring_prompt(
         self,
         subdomain: Dict[str, Any],
@@ -665,10 +718,29 @@ class RowDiscoveryStream:
 
         # Try to load template (if exists), otherwise use inline
         try:
+            # Extract or format requirements for prompt
+            # Try to use pre-formatted requirements from column_definition_handler (Phase 1, Item 2)
+            hard_requirements = search_strategy.get('formatted_hard_requirements')
+            soft_requirements = search_strategy.get('formatted_soft_requirements')
+
+            # Backward compatibility: If formatted versions don't exist, create them on the fly
+            if hard_requirements is None or soft_requirements is None:
+                requirements = search_strategy.get('requirements', [])
+                hard_reqs = [r for r in requirements if r.get('type') == 'hard']
+                soft_reqs = [r for r in requirements if r.get('type') == 'soft']
+
+                # Format as bullet lists
+                if hard_requirements is None:
+                    hard_requirements = self._format_requirements(hard_reqs)
+                if soft_requirements is None:
+                    soft_requirements = self._format_requirements(soft_reqs)
+
             variables = {
                 'SUBDOMAIN_NAME': subdomain['name'],
                 'SUBDOMAIN_FOCUS': subdomain['focus'],
                 'SEARCH_REQUIREMENTS': search_strategy.get('description', 'Find relevant entities'),
+                'HARD_REQUIREMENTS': hard_requirements,
+                'SOFT_REQUIREMENTS': soft_requirements,
                 'SEARCH_QUERIES': '\n'.join(f'- {q}' for q in subdomain['search_queries']),
                 'TARGET_ROWS': str(target_rows),
                 'ID_COLUMNS': '\n'.join(id_columns_text),

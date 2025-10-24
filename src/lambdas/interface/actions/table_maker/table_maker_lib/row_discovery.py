@@ -280,6 +280,22 @@ class RowDiscovery:
                             f"Collected {len(subdomain_improvements)} search improvement(s) from "
                             f"'{subdomain['name']}'. Total improvements: {len(aggregated_search_improvements)}"
                         )
+
+                    # Extract no_matches_reason from LAST round if 0 candidates
+                    candidates = result_item.get('candidates', [])
+                    if len(candidates) == 0:
+                        all_rounds = result_item.get('all_rounds', [])
+                        if all_rounds:
+                            # Get the LAST round (best model)
+                            last_round = all_rounds[-1]
+                            no_matches_reason = last_round.get('no_matches_reason', '')
+                            if no_matches_reason:
+                                # Store in stream_results for QC
+                                result_item['no_matches_reason'] = no_matches_reason
+                                logger.info(
+                                    f"Extracted no_matches_reason from last round ({last_round.get('model', 'unknown')}) "
+                                    f"for '{subdomain['name']}': {no_matches_reason[:100]}..."
+                                )
             else:
                 # PARALLEL MODE (for production)
                 logger.info(
@@ -372,6 +388,10 @@ class RowDiscovery:
 
             # PHASE 1: Include stream_results with all_rounds data for API tracking
             result['stream_results'] = successful_streams
+
+            # Aggregate domain_filtering_recommendations from all subdomain results
+            aggregated_domain_recommendations = self._aggregate_domain_recommendations(successful_streams)
+            result['domain_filtering_recommendations'] = aggregated_domain_recommendations
 
             # Mark success
             result['success'] = True
@@ -587,6 +607,72 @@ class RowDiscovery:
             )
 
         logger.debug("Input validation passed")
+
+    def _aggregate_domain_recommendations(
+        self,
+        stream_results: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Aggregate domain_filtering_recommendations from all subdomain results.
+
+        Merges recommendations from all streams by:
+        - Combining all add_to_included domains (deduplicated)
+        - Combining all add_to_excluded domains (deduplicated)
+        - Aggregating reasoning from all streams
+
+        Args:
+            stream_results: List of successful stream results
+
+        Returns:
+            Aggregated domain filtering recommendations dict with:
+            {
+                "add_to_included": List[str],
+                "add_to_excluded": List[str],
+                "reasoning": str
+            }
+        """
+        all_included = set()
+        all_excluded = set()
+        all_reasoning = []
+
+        # Collect recommendations from all streams
+        for stream in stream_results:
+            # Check if stream has all_rounds (progressive mode)
+            if 'all_rounds' in stream:
+                for round_data in stream.get('all_rounds', []):
+                    recommendations = round_data.get('domain_filtering_recommendations', {})
+                    if recommendations:
+                        # Add to included domains
+                        add_included = recommendations.get('add_to_included', [])
+                        if add_included:
+                            all_included.update(add_included)
+
+                        # Add to excluded domains
+                        add_excluded = recommendations.get('add_to_excluded', [])
+                        if add_excluded:
+                            all_excluded.update(add_excluded)
+
+                        # Collect reasoning
+                        reasoning = recommendations.get('reasoning', '')
+                        if reasoning:
+                            subdomain_name = stream.get('subdomain', 'Unknown')
+                            all_reasoning.append(f"[{subdomain_name}] {reasoning}")
+
+        # Build aggregated result
+        aggregated = {
+            'add_to_included': sorted(list(all_included)),
+            'add_to_excluded': sorted(list(all_excluded)),
+            'reasoning': ' | '.join(all_reasoning) if all_reasoning else ''
+        }
+
+        # Log if we have recommendations
+        if all_included or all_excluded:
+            logger.info(
+                f"Aggregated domain recommendations: "
+                f"+{len(all_included)} to include, +{len(all_excluded)} to exclude"
+            )
+
+        return aggregated
 
     def _log_final_statistics(self, stats: Dict[str, Any]) -> None:
         """
