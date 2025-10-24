@@ -9,6 +9,98 @@ This module orchestrates the 4-step pipeline using LOCAL components directly:
 
 The LOCAL components (from table_maker/src/) are the SOURCE OF TRUTH.
 This file just adds Lambda infrastructure wrappers (S3, WebSocket, runs DB).
+
+WEBSOCKET MESSAGES FOR FRONTEND:
+================================
+After Step 1 (Column Definition) completes, a WebSocket message is sent with:
+{
+    "type": "table_execution_update",
+    "conversation_id": str,
+    "current_step": 1,
+    "total_steps": 4,
+    "status": "Column definition complete: {table_name}",
+    "progress_percent": 20,
+    "columns": [...],
+    "table_name": str,
+    "requirements": {
+        "hard": str,  # Formatted as bullet list, e.g., "- Requirement 1\n- Requirement 2"
+        "soft": str   # Formatted as bullet list, e.g., "- Requirement 3\n- Requirement 4"
+    }
+}
+
+FRONTEND DISPLAY REQUIREMENTS:
+================================
+The requirements should be displayed in a dedicated info box BEFORE the ID columns box.
+Display format:
+  1. Show "Hard Requirements" section:
+     - Use red/bold styling to indicate these are mandatory
+     - Display the bullet list from requirements.hard
+     - If requirements.hard is "(None)", show "No hard requirements"
+
+  2. Show "Soft Requirements" section:
+     - Use yellow/normal styling to indicate these are nice-to-have
+     - Display the bullet list from requirements.soft
+     - If requirements.soft is "(None)", show "No soft requirements"
+
+The requirements come from column_definition_handler.py (lines 182-185) and are
+formatted as bullet lists with optional rationale in parentheses:
+  - Requirement text (rationale if provided)
+
+INFO BOX 3: DISCOVERED ROWS / APPROVED ROWS
+============================================
+After Step 2 (Row Discovery) completes, send WebSocket message with discovered rows:
+{
+    "type": "table_execution_update",
+    "current_step": 2,
+    "status": "Row discovery complete...",
+    "discovered_rows": [
+        {"id_values": {"Company": "ABC Corp"}, "row_score": 0.95},
+        ...  # First 15 rows only
+    ],
+    "total_discovered": 42  # Total count of all discovered rows
+}
+
+After Step 4 (QC Review) completes, UPDATE the same box with approved rows:
+{
+    "type": "table_execution_update",
+    "current_step": 4,
+    "status": "QC review complete...",
+    "approved_rows": [
+        {"id_values": {"Company": "ABC Corp"}, "row_score": 0.95},
+        ...  # First 15 approved rows only
+    ],
+    "total_approved": 38,  # Count of approved rows after QC
+    "total_discovered": 42,  # Original discovery count (for context)
+    "qc_summary": {
+        "promoted": 5,  # Rows upgraded to higher quality
+        "demoted": 2,   # Rows downgraded but kept
+        "rejected": 4   # Rows removed from final set
+    }
+}
+
+FRONTEND DISPLAY EXPECTATIONS FOR INFO BOX 3:
+----------------------------------------------
+Initial State (After Row Discovery):
+- Header: "Discovered Rows: X total"
+- Button Color: Green (to match success/completion)
+- Content: Show first 10-15 rows with ID values in readable format
+  * Display format: "{ID Column 1}: {value}, {ID Column 2}: {value}, ..."
+  * Example: "Company: ABC Corp, Ticker: ABC"
+- Footer: Show "+Y more rows" if total_discovered > 15
+
+Updated State (After QC Review):
+- Header: "Approved Rows: X of Y discovered"
+- Button Color: Green (consistent with discovery state)
+- Content: Show first 10-15 approved rows with ID values
+  * Same display format as discovery state
+- QC Summary Line (if available): "QC Review: +5 promoted, -4 rejected"
+- Footer: Show "+Z more rows" if total_approved > 15
+
+This is the THIRD info box in the UI sequence:
+1. Requirements (hard/soft)
+2. ID Columns (identification columns)
+3. Research Columns (columns to research)
+4. Discovered/Approved Rows (THIS BOX) - dynamically updated
 """
 
 import logging
@@ -621,7 +713,24 @@ async def execute_full_table_generation(
             )
             logger.info(f"[EXECUTION] Created minimal CSV for config generation: {csv_s3_key}")
 
-            # Send progress update with columns and table_name
+            # Extract requirements for frontend display
+            # These are formatted in column_definition_handler.py (lines 182-185)
+            formatted_hard_requirements = column_result.get('formatted_hard_requirements', '')
+            formatted_soft_requirements = column_result.get('formatted_soft_requirements', '')
+
+            logger.info(
+                f"[EXECUTION] Requirements extracted for frontend: "
+                f"hard={len(formatted_hard_requirements)} chars, "
+                f"soft={len(formatted_soft_requirements)} chars"
+            )
+
+            # Send progress update with columns, table_name, and requirements
+            # FRONTEND IMPLEMENTATION NOTE:
+            # The 'requirements' object should be displayed BEFORE the ID columns box.
+            # Display format:
+            #   - Show "Hard Requirements" section with formatted_hard_requirements (red/bold styling)
+            #   - Show "Soft Requirements" section with formatted_soft_requirements (yellow/normal styling)
+            #   - Requirements are formatted as bullet lists from column_definition_handler.py
             send_execution_progress(
                 session_id=session_id,
                 conversation_id=conversation_id,
@@ -630,7 +739,11 @@ async def execute_full_table_generation(
                 status=f'Column definition complete: {table_name}',
                 progress_percent=20,
                 columns=columns,
-                table_name=table_name
+                table_name=table_name,
+                requirements={
+                    'hard': formatted_hard_requirements,
+                    'soft': formatted_soft_requirements
+                }
             )
 
         except Exception as e:
@@ -762,7 +875,30 @@ async def execute_full_table_generation(
             logger.info(f"[EXECUTION] Step 2 complete: {len(final_rows)} consolidated rows")
             logger.info(f"[EXECUTION] Config generation still running in background...")
 
+            # Prepare discovered rows preview for frontend (first 15 rows with id_values only)
+            # This is Info Box 3: "Discovered Rows" (shown after discovery, before QC)
+            discovered_rows_preview = [
+                {
+                    "id_values": row.get("id_values", {}),
+                    "row_score": row.get("row_score", 0)
+                }
+                for row in final_rows[:15]  # First 15 rows only
+            ]
+            total_discovered_count = len(final_rows)
+
+            logger.info(
+                f"[EXECUTION] Sending discovered rows preview: "
+                f"{len(discovered_rows_preview)} of {total_discovered_count} total rows"
+            )
+
             # Send progress update with discovered_rows
+            # FRONTEND IMPLEMENTATION NOTE (Info Box 3):
+            # Display "Discovered Rows" after row discovery completes
+            # - Header: "Discovered Rows: X total" (use green button color to match success)
+            # - Show first 10-15 rows with ID values only
+            # - Display format: "{ID Column 1}: {value}, {ID Column 2}: {value}, ..."
+            # - Show "+Y more rows" if total_discovered > 15
+            # - This box will be UPDATED after QC to show "Approved Rows"
             send_execution_progress(
                 session_id=session_id,
                 conversation_id=conversation_id,
@@ -770,7 +906,8 @@ async def execute_full_table_generation(
                 total_steps=4,
                 status='Reviewing and prioritizing rows by relevance, reliability, and recency...',
                 progress_percent=55,
-                discovered_rows=final_rows
+                discovered_rows=discovered_rows_preview,  # First 15 rows for display
+                total_discovered=total_discovered_count   # Total count
             )
 
         except Exception as e:
@@ -1085,7 +1222,37 @@ async def execute_full_table_generation(
 
         progress_message = ' | '.join(progress_message_parts) if progress_message_parts else 'Finalizing validation configuration...'
 
-        # Send progress update with approved_rows data (top 10 for display)
+        # Prepare approved rows preview for frontend (first 15 rows with id_values only)
+        # This updates Info Box 3 from "Discovered Rows" to "Approved Rows" after QC
+        approved_rows_preview = [
+            {
+                "id_values": row.get("id_values", {}),
+                "row_score": row.get("row_score", 0)
+            }
+            for row in approved_rows[:15]  # First 15 approved rows only
+        ]
+
+        # Extract QC summary for frontend display
+        qc_summary = qc_result.get('qc_summary', {}) if qc_result else {}
+
+        logger.info(
+            f"[EXECUTION] Sending approved rows preview: "
+            f"{len(approved_rows_preview)} of {len(approved_rows)} approved rows "
+            f"(from {len(final_rows)} discovered)"
+        )
+
+        # Send progress update with approved_rows data (top 15 for display)
+        # FRONTEND IMPLEMENTATION NOTE (Info Box 3 - Updated after QC):
+        # Update the "Discovered Rows" box to "Approved Rows" after QC completes
+        # - Header: "Approved Rows: X of Y discovered" (green button color)
+        # - Show first 10-15 approved rows with ID values only
+        # - Display format: "{ID Column 1}: {value}, {ID Column 2}: {value}, ..."
+        # - Show "+Z more rows" if total_approved > 15
+        # - Include QC summary stats if available:
+        #   * Promoted rows: rows upgraded from lower quality
+        #   * Demoted rows: rows downgraded but kept
+        #   * Rejected rows: rows removed from final set
+        # - QC summary display (if available): "QC Review: +X promoted, -Y rejected"
         progress_data = {
             'session_id': session_id,
             'conversation_id': conversation_id,
@@ -1093,9 +1260,10 @@ async def execute_full_table_generation(
             'total_steps': 4,
             'status': progress_message,
             'progress_percent': 80,
-            'approved_rows': approved_rows[:10],  # Send top 10 for frontend display
-            'approved_row_count': len(approved_rows),
-            'total_discovered': len(final_rows)  # Total before QC filtering
+            'approved_rows': approved_rows_preview,  # First 15 rows for display
+            'total_approved': len(approved_rows),
+            'total_discovered': len(final_rows),  # Total before QC filtering
+            'qc_summary': qc_summary  # QC summary with promoted/demoted/rejected counts
         }
 
         # Add insufficient rows info if applicable

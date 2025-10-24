@@ -97,8 +97,13 @@ We have an outline of a series of columns for a research table. Your job is to:
     "description": "Find medical imaging and AI/healthcare job opportunities matching Jenifer Siegelman's expertise in radiology, AI/ML, and public health",
     "requirements": [
       {
-        "requirement": "Must be in healthcare, medical, or health-tech sector",
+        "requirement": "Must be a job posting (not a person, company, or article)",
         "type": "hard",
+        "rationale": "Basic entity type - universally verifiable"
+      },
+      {
+        "requirement": "Prefers positions in healthcare, medical, or health-tech sector",
+        "type": "soft",
         "rationale": "Jenifer's background is specifically in healthcare and medicine"
       },
       {
@@ -163,29 +168,44 @@ We have an outline of a series of columns for a research table. Your job is to:
 
 ## Discovery vs Validation Criteria (CRITICAL DESIGN DECISION)
 
-**Key Principle:** During row discovery, we can only filter by criteria that are EASILY DETERMINED from search results. Complex criteria should become research columns instead.
+**Key Principle:** During row discovery, hard requirements should be LIMITED to basic common knowledge attributes. Almost everything else should be soft requirements or research columns.
 
-### Discovery Requirements (Easy to Determine)
+### Discovery Requirements (Common Knowledge ONLY)
 Use these as hard requirements during row discovery:
-- **Entity type/category**: "biotech company", "AI research paper", "Series B startup"
-- **Size/scale**: "midsized (100-500 employees)", "Fortune 500", "published in major venue"
-- **Geographic location**: "US-based", "Bay Area", "European"
-- **Time period**: "founded after 2020", "published in 2024"
-- **Industry/sector**: "healthcare", "fintech", "e-commerce"
+- **Entity type/category**: "company" (vs person, paper, product), "research paper" (vs blog post, news article)
+- **Geographic location** (if absolutely critical): "US-based", "European" - only when geography is fundamental to the request
+- **Time period** (if absolutely critical): "published in 2024", "founded after 2020" - only when timing is fundamental
 
-These can be determined from:
-- Company directories (Crunchbase, LinkedIn)
-- Search result snippets
-- Domain names and about pages
-- Publication metadata
+**That's it.** Size, industry, activities, and specific characteristics should be soft requirements or research columns.
+
+These minimal attributes can be determined from:
+- Search result snippets showing entity type
+- Basic search context (location, date)
+
+### The Golden Rule for Hard Requirements
+
+**Ask:** "Is this attribute part of the entity's basic identity that EVERYONE would agree on?"
+
+Examples:
+- ✅ "Is a company" (vs person, paper, product)
+- ✅ "Is in the United States" (if geography is critical to user's request)
+- ✅ "Published in 2024" (if time period is critical to user's request)
+- ❌ "Is midsized" → Soft requirement + research column "Employee Count"
+- ❌ "Is in biotech" → Soft requirement + research column "Industry Classification"
+- ❌ "Is actively hiring" → Soft requirement + research column "Has Active Job Postings"
+- ❌ "Has X characteristic" → Soft requirement + research column to validate X
+
+**Result:** ID columns are just identifiers (Company Name, Website). Everything else is validated through research columns.
 
 ### Validation Criteria (Requires Research)
-Convert these into RESEARCH COLUMNS instead of discovery requirements:
-- **Specific programs/initiatives**: "has GenAI program", "has diversity initiative"
-- **Job postings**: "is hiring for X role", "has open position for Y"
-- **Recent activities**: "raised funding in last 6 months", "published paper in Q1"
-- **Technology stack**: "uses React", "built on AWS"
-- **Relationships**: "partnered with X", "acquired by Y"
+Convert these into RESEARCH COLUMNS and/or SOFT REQUIREMENTS:
+- **Size/scale**: "midsized", "Fortune 500" → Soft requirement + research column "Employee Count"
+- **Industry/sector**: "biotech", "fintech" → Soft requirement + research column "Industry Sector"
+- **Specific programs/initiatives**: "has GenAI program" → Research column "Has GenAI Program"
+- **Job postings**: "is hiring for X role" → Research column "Has X Job Posting"
+- **Recent activities**: "raised funding recently" → Research column "Recent Funding Round"
+- **Technology stack**: "uses React" → Research column "Technology Stack"
+- **Relationships**: "partnered with X" → Research column "Partnerships"
 
 These require:
 - Reading job posting pages
@@ -195,7 +215,7 @@ These require:
 
 ### Example Transformation
 
-❌ **WRONG (mixing discovery and validation):**
+❌ **WRONG (too many hard requirements):**
 ```
 Hard Requirements for Discovery:
 - Must be a midsized biotech company
@@ -207,81 +227,118 @@ Columns:
 - Website
 ```
 
-✅ **CORRECT (separated):**
+✅ **CORRECT (minimal hard requirements, maximal research columns):**
 ```
 Hard Requirements for Discovery:
-- Must be a midsized biotech company (100-500 employees)
-- Must be in biotechnology sector
+- Must be a company (not a person, paper, or organization)
+
+Soft Requirements:
+- Prefers companies in biotechnology sector
+- Prefers midsized companies (100-500 employees)
+- Prefers companies with active GenAI leadership job postings
+- Prefers companies without existing GenAI programs
 
 Columns:
 - Company Name (ID)
 - Website (ID)
+- Industry Sector (Research) - Primary industry classification
+- Employee Count (Research) - Approximate number of employees
 - Has GenAI Leadership Job Posting (Research) - Yes/No, URL if yes
 - Has Existing GenAI Program (Research) - Yes/No, description if yes
 ```
 
 **Why this is better:**
-- Discovery finds ALL ~500 midsized biotech companies
-- Validation checks each for job postings and programs
-- Much more efficient and comprehensive
+- Discovery finds ALL companies broadly, not just a narrow subset
+- Soft requirements guide discovery toward better matches without excluding entities
+- Research columns validate and filter each candidate
+- Much more efficient, comprehensive, and flexible
 - Clear separation of concerns
 
 ### Hard vs Soft Requirements
 
-**Hard Requirements (Discovery Phase - Must Be Easily Determinable):**
+**Hard Requirements (Discovery Phase - Common Knowledge ONLY):**
 
-**Purpose:** Filter the search space during discovery to find candidate entities.
+**PURPOSE:** Limit search space to basic entity type. That's it.
 
-**Must be EASILY determined from:**
-- Search result titles and snippets
-- Company/entity directories (Crunchbase, LinkedIn, Google Scholar)
-- Domain names and basic website content
-- Publication metadata
+**GOLDEN RULE:** Hard requirements should be limited to attributes that are:
+- Universally agreed upon (no ambiguity)
+- Instantly verifiable from basic search results
+- Part of the entity's fundamental identity
 
-**Key indicator:** "If I can determine this from a Google search results page without clicking through, it's good for discovery"
+**Typically, you should have 0-2 hard requirements:**
+- Entity type (required): "Must be a company" / "Must be a research paper" / "Must be a person"
+- Geography (optional): "Must be US-based" (only if absolutely critical to user's request)
+- Time period (optional): "Must be from 2024" (only if absolutely critical to user's request)
 
 **Examples:**
-- ✅ "Must be a biotech company" (visible in Crunchbase category)
-- ✅ "Must be midsized (100-500 employees)" (visible in LinkedIn company page)
-- ✅ "Must be US-based" (visible in company location)
-- ❌ "Must have active job postings" (requires checking careers page) → Make this a RESEARCH COLUMN
-- ❌ "Must not have GenAI program" (requires research) → Make this a RESEARCH COLUMN
+- ✅ "Must be a company" (entity type)
+- ✅ "Must be based in the United States" (if geography is critical)
+- ✅ "Must be a paper published in 2024" (if time period is critical)
+- ❌ "Must be midsized" → SOFT requirement + research column "Employee Count"
+- ❌ "Must be in biotech" → SOFT requirement + research column "Industry Sector"
+- ❌ "Must have job postings" → SOFT requirement + research column "Has Job Postings"
+- ❌ "Must not have X" → SOFT requirement + research column "Has X"
 
-**If a requirement needs research to determine, make it a research COLUMN instead.**
+**Default to 1 hard requirement (entity type). Add geography/time only if absolutely critical.**
 
-**Soft Requirements (Nice-to-Have Preferences):**
-- Preferences that improve scoring and ranking
-- Entities can still be included even if they don't meet soft requirements
-- Help prioritize the best matches
-- **Key indicators:** "preferably", "ideally", "bonus if", "better if"
-- Examples:
-  - "Prefers companies with more than 50 employees"
-  - "Prefers recent news (last 6 months)"
-  - "Prefers positions with remote work options"
-  - "Prefers companies founded after 2020"
+**Soft Requirements (Preferences - Most Requirements Go Here):**
+
+**PURPOSE:** Guide discovery toward better matches without filtering them out.
+
+**MOST REQUIREMENTS SHOULD BE SOFT**, including:
+- Size/scale: "Prefers midsized companies (100-500 employees)"
+- Industry/sector: "Prefers biotech sector"
+- Activities: "Prefers companies actively hiring"
+- Attributes: "Prefers companies without existing X"
+- Quality indicators: "Prefers recent publications", "Prefers well-funded companies"
+
+**These improve scoring during discovery and are validated through research columns.**
+
+**Key indicators:** "preferably", "ideally", "bonus if", "better if", "prefers"
+
+Examples:
+- "Prefers companies with 100-500 employees"
+- "Prefers biotechnology or pharmaceutical sector"
+- "Prefers companies with recent news (last 6 months)"
+- "Prefers positions with remote work options"
+- "Prefers companies founded after 2020"
 
 ### Distinguishing Hard from Soft: The Critical Test
 
-**Look for action verbs and core intent in the user's request:**
+**NEW PHILOSOPHY: Almost everything should be soft + research columns.**
 
-❌ **WRONG** - Misclassifying core requirements as preferences:
-```
-User request: "Find midsized biotech companies actively hiring for GenAI leadership roles"
+**Look at the user's request and ask:**
+1. "What is the basic entity type?" → Hard requirement
+2. "Is geography/time absolutely fundamental?" → Hard requirement if yes
+3. "Everything else?" → Soft requirements + research columns
 
-Hard: Must be biotech, must be midsized, must have no existing GenAI program
-Soft: Prefers companies with recent job postings
-
-Problem: "Actively hiring" is CORE to the request but was classified as soft!
-```
-
-✅ **CORRECT** - Properly identifying all core requirements:
+❌ **WRONG** - Too many hard requirements:
 ```
 User request: "Find midsized biotech companies actively hiring for GenAI leadership roles"
 
 Hard: Must be biotech, must be midsized, must have active GenAI leadership job postings
-Soft: Prefers companies founded after 2020, prefers companies with <500 employees
+Soft: Prefers companies founded after 2020
 
-Why? "Actively hiring" is fundamental to what we're looking for, not optional.
+Problem: Size, industry, and hiring status require research - they're not basic identity!
+```
+
+✅ **CORRECT** - Minimal hard, maximal soft + research:
+```
+User request: "Find midsized biotech companies actively hiring for GenAI leadership roles"
+
+Hard: Must be a company (not person, paper, organization)
+
+Soft:
+- Prefers biotechnology sector
+- Prefers midsized companies (100-500 employees)
+- Prefers companies with active GenAI leadership job postings
+
+Research Columns:
+- Industry Sector (to validate biotech)
+- Employee Count (to validate midsized)
+- Has GenAI Leadership Job Posting (to validate hiring status)
+
+Why? Only entity type is universally agreed upon. Everything else validated through research.
 ```
 
 **More Examples:**
@@ -290,46 +347,51 @@ Example 1:
 ```
 User: "Find AI companies that have raised Series B funding, preferably in healthcare"
 
-Hard: Must be AI company, must have raised Series B funding
-Soft: Prefers healthcare focus
+Hard: Must be a company
+Soft: Prefers AI/ML focus, prefers Series B funding stage, prefers healthcare sector
+Research Columns: Industry Focus, Funding Stage, Healthcare Involvement
 
-Rationale: "Have raised" is a core requirement. "Preferably" signals a soft preference.
+Rationale: Entity type is the only basic identity. Funding and industry require research.
 ```
 
 Example 2:
 ```
-User: "Find research papers on transformer models, ideally with code available"
+User: "Find research papers on transformer models from 2024, ideally with code available"
 
-Hard: Must be about transformer models
-Soft: Prefers papers with available code
+Hard: Must be a research paper, must be from 2024
+Soft: Prefers papers on transformer models, prefers papers with available code
+Research Columns: Primary Topic, Code Availability
 
-Rationale: "On transformer models" is the core topic. "Ideally" signals nice-to-have.
+Rationale: Entity type (paper) and time (2024) are basic. Topic and code require validation.
 ```
 
 Example 3:
 ```
-User: "Find companies building AI safety tools"
+User: "Find US-based companies building AI safety tools"
 
-Hard: Must be building AI safety tools
-Soft: [Define based on other context, e.g., "Prefers well-funded companies"]
+Hard: Must be a company, must be US-based
+Soft: Prefers companies focused on AI safety tools
+Research Columns: Primary Focus Area, AI Safety Product/Service
 
-Rationale: "Building" indicates core activity, not a preference.
+Rationale: Entity type and geography (explicitly mentioned) are basic. "Building X" requires research.
 ```
 
 ### Guidance on Hard vs Soft
 
-**When in doubt, ask:** If removing this criterion would fundamentally change what we're looking for, it's a hard requirement. If it would just make results slightly less ideal, it's a soft requirement.
+**New Default:** Start with 1 hard requirement (entity type). Add geography/time only if critical.
 
-**Default to soft for ambiguous cases, but don't underspecify hard requirements:**
-- ✅ Good use of hard requirement: "Must have active GenAI job postings" (user wants companies hiring)
-- ❌ Bad use of soft requirement: "Prefers companies with job postings" (when user said "actively hiring")
-- ✅ Good use of soft requirement: "Prefers companies with remote options" (enhances quality but not core)
+**Everything else is soft + research columns:**
+- Size/scale → Soft + research column
+- Industry/sector → Soft + research column
+- Activities/characteristics → Soft + research column
+- Programs/initiatives → Soft + research column
 
-**Why proper classification matters:**
-- Hard requirements filter out non-matches completely
-- Soft requirements help rank and prioritize matches
-- Misclassifying core criteria as soft leads to irrelevant results
-- Over-using hard requirements may produce zero results
+**Why this approach is better:**
+- Discovery casts a wide net, finding more candidates
+- Soft requirements guide scoring and ranking
+- Research columns provide validation and filtering
+- More efficient and comprehensive results
+- Flexibility to handle edge cases
 
 ### Requirements Notes
 
