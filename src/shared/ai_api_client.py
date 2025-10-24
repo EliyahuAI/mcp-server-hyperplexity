@@ -1876,13 +1876,13 @@ class AIAPIClient:
 
                                     # Update the response with validated content
                                     result['response']['choices'][0]['message']['content'] = json.dumps(validated_content)
-                                    logger.debug(f"[URL_VALIDATION] Completed URL validation against {len(citations_list)} citations")
+                                    logger.info(f"[URL_VALIDATION] Completed URL validation against {len(citations_list)} citations")
 
                                 except json.JSONDecodeError as e:
                                     # Content is not JSON - skip URL validation
-                                    logger.debug(f"[URL_VALIDATION] Skipped - content is not JSON: {content_str[:100]}")
+                                    logger.info(f"[URL_VALIDATION] Skipped - content is not JSON")
                         else:
-                            logger.debug(f"[URL_VALIDATION] Skipped - no citations (citations={len(citations_list)})")
+                            logger.info(f"[URL_VALIDATION] Skipped - no citations available")
 
                     except Exception as e:
                         logger.error(f"[URL_VALIDATION] Error during validation: {e}")
@@ -3003,7 +3003,11 @@ class AIAPIClient:
             # Exact match on normalized URLs
             if url_normalized == citation_normalized:
                 # No logging for exact matches - expected behavior
-                return (True, citation_url)
+                # Keep original URL if URLs are identical, otherwise show citation
+                if url == citation_url:
+                    return (True, url)  # Identical - no annotation needed
+                else:
+                    return (True, f"{url} (Citation: {citation_url})")  # Show normalized form
 
         # Try fuzzy match - check if URLs share same domain and similar path
         from difflib import SequenceMatcher
@@ -3050,7 +3054,8 @@ class AIAPIClient:
         # Accept fuzzy matches above 0.6 threshold (lowered from 0.7 to catch same-domain variations)
         if best_score >= 0.6:
             logger.info(f"[URL_VALIDATION] Fuzzy match: {url} → {best_match} (similarity: {best_score:.2f})")
-            return (True, best_match)
+            # Keep original URL, append citation match in parentheses
+            return (True, f"{url} (Citation: {best_match})")
 
         # No match found - add warning
         logger.warning(f"[URL_VALIDATION] URL not in citations: {url}")
