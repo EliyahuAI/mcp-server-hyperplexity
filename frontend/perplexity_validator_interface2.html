@@ -7747,7 +7747,7 @@
                 document.getElementById(`${cardId}-refinement`).style.display = 'block';
                 const refinementInput = document.getElementById(`${cardId}-refinement-input`);
                 if (refinementInput) {
-                    refinementInput.value = ''; // Clear previous text
+                    refinementInput.value = ''; // STANDARD PATTERN: Always clear text box when AI requests new input
                 }
                 
                 // Add auto-fix and manual fix buttons
@@ -8598,7 +8598,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 document.getElementById(`${cardId}-refinement`).style.display = 'block';
                 const refinementInput = document.getElementById(`${cardId}-refinement-input`);
                 if (refinementInput) {
-                    refinementInput.value = ''; // Clear previous text
+                    refinementInput.value = ''; // STANDARD PATTERN: Always clear text box when AI requests new input
                     refinementInput.onkeydown = (event) => {
                         if (event.key === 'Enter' && !event.shiftKey) {
                             event.preventDefault();
@@ -8955,7 +8955,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 // Show refinement input and clear previous text
                 document.getElementById(`${cardId}-refinement`).style.display = 'block';
                 const refinementInput = document.getElementById(`${cardId}-refinement-input`);
-                refinementInput.value = ''; // Clear previous text
+                refinementInput.value = ''; // STANDARD PATTERN: Always clear text box when AI requests new input
                 refinementInput.focus();
                 refinementInput.onkeydown = (event) => {
                     if (event.key === 'Enter' && !event.shiftKey) {
@@ -11570,6 +11570,13 @@ Please provide any additional context, or simply proceed to generate your initia
 
             // Make sure refinement input is visible (may have been hidden after previous submit)
             refinementDiv.style.display = 'block';
+
+            // STANDARD PATTERN: Always clear text box when AI requests new input (matches Config flows)
+            const refineInput = document.getElementById(`${cardId}-refine-input`);
+            if (refineInput) {
+                refineInput.value = '';  // Clear previous message
+                refineInput.focus();      // Auto-focus for better UX
+            }
 
             // Create buttons container if it doesn't exist
             if (!buttonsContainer) {

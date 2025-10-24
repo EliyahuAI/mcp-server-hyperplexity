@@ -20,14 +20,14 @@
     "default_target_rows_total": 30
   },
 
-  "_comment_row_discovery": "Row discovery with 3-level escalation. Starts with sonar (high context) for quality, escalates to sonar-pro (high) if insufficient, then falls back to Claude Haiku with web searches if both fail. Global counter checks total across all subdomains before escalating.",
+  "_comment_row_discovery": "Row discovery with 2-level escalation (premium models). Starts with sonar-pro (high context) for quality, escalates to Claude Sonnet 4.5 with web searches if insufficient. Global counter checks total across all subdomains before escalating.",
   "row_discovery": {
     "web_search_model": "sonar-pro",
     "scoring_model": "sonar-pro",
     "integrated_scoring": true,
     "model": "sonar-pro",
     "progressive_context": true,
-    "initial_context_size": "low",
+    "initial_context_size": "high",
     "escalation_context_size": "high",
     "max_tokens": 16000,
     "target_row_count": 20,
@@ -37,21 +37,15 @@
     "web_searches_per_stream": 3,
     "escalation_strategy": [
       {
-        "model": "sonar",
+        "model": "sonar-pro",
         "search_context_size": "high",
-        "description": "Initial thorough search with sonar",
+        "description": "Premium search with sonar-pro for high quality results",
         "min_candidates_percentage": 75
       },
       {
-        "model": "sonar-pro",
-        "search_context_size": "high",
-        "description": "Premium search if sonar insufficient",
-        "min_candidates_percentage": 90
-      },
-      {
-        "model": "claude-haiku-4-5",
+        "model": "claude-sonnet-4-5",
         "max_web_searches": 3,
-        "description": "Fallback to Claude with web search if both Perplexity models fail",
+        "description": "Fallback to Claude Sonnet with web search for comprehensive coverage",
         "min_candidates_percentage": null
       }
     ],
