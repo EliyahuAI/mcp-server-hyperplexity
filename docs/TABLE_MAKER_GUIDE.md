@@ -1,7 +1,7 @@
 # Table Maker - Independent Row Discovery System
 
-**Version:** 2.1 (Dynamic Parallelism + Global Counter + Phase-Aware Frontend)
-**Last Updated:** October 22, 2025
+**Version:** 2.2 (Search Improvements Feedback + 3-Level Escalation + ID Column Constraints)
+**Last Updated:** October 24, 2025
 **Status:** Production Ready (Lambda Integrated)
 
 ---
@@ -56,6 +56,38 @@ python test_local_e2e_sequential.py
 
 ---
 
+## What's New in Version 2.2
+
+### Search Improvements Feedback System
+- **Continuous Learning**: Each round collects search improvement suggestions
+- **Intra-Subdomain Propagation**: Round 2 receives learnings from Round 1
+- **Cross-Subdomain Propagation**: Later subdomains benefit from earlier ones
+- **Automatic Embedding**: Improvements automatically added to prompts
+- **Storage**: All improvements saved in `discovery_result.json` for future reference
+
+### 3-Level Escalation Strategy
+- **Level 1**: sonar (high context) - Fast, cost-efficient baseline (75% threshold)
+- **Level 2**: sonar-pro (high context) - Premium search for better quality (90% threshold)
+- **Level 3**: claude-haiku-4-5 (3 web searches) - Fallback when Perplexity struggles
+- **Automatic Fallback**: Claude ensures results even for niche/difficult topics
+- **Model-Appropriate Parameters**: search_context_size for Perplexity, max_web_searches for Claude
+
+### Stricter ID Column Constraints
+- **Clear Guidelines**: ID columns must be short (1-5 words), simple, repeatable
+- **Good Examples**: Company Name, Job Title, Paper Title, Date, URL
+- **Bad Examples**: Story Description, Key Responsibilities, Detailed Analysis
+- **Rule of Thumb**: If it appears in a list/directory, it's a good ID column
+- **Prevents Failures**: Avoids row discovery failures from complex ID requirements
+
+### Enhanced Storage
+- **Organized Structure**: All results saved to S3 table_maker subfolder
+- **column_definition_result.json**: Columns, search_strategy, table_name, tablewide_research
+- **discovery_result.json**: Final rows, stream_results with search_improvements, stats
+- **qc_result.json**: Approved/rejected rows with scores
+- **Easy Retrieval**: All data available for generating additional rows later
+
+---
+
 ## What's New in Version 2.1
 
 ### Dynamic Parallelism
@@ -100,9 +132,12 @@ python test_local_e2e_sequential.py
 │                                                                  │
 │  Row Discovery (60-120s):              Config Generation (20-40s)│
 │   • Process subdomains in parallel      • Build validation rules │
-│   • Progressive escalation:             • Based on columns       │
-│     - Level 1: sonar (low cost)        • Runs in background     │
-│     - Level 2: sonar-pro (if needed)                            │
+│   • 3-Level progressive escalation:     • Based on columns       │
+│     - Level 1: sonar (high context)    • Runs in background     │
+│     - Level 2: sonar-pro (high)                                 │
+│     - Level 3: claude-haiku (fallback)                          │
+│   • Collect search improvements feedback                        │
+│   • Pass learnings to next round/subdomain                      │
 │   • Tag candidates with metadata                                │
 └─────────────────────────────────────────────────────────────────┘
                             ↓
@@ -131,11 +166,13 @@ python test_local_e2e_sequential.py
 
 ### Key Principles
 
-1. **Progressive Escalation:** Start cheap (sonar), escalate if needed (sonar-pro)
-2. **Quality Over Quantity:** QC layer ensures relevance
-3. **No Row Limits:** Keep all quality rows (not arbitrarily capped at 20)
-4. **Parallel Execution:** Config generation doesn't block QC
-5. **Cost Tracking:** Every API call tracked with enhanced_data
+1. **3-Level Progressive Escalation:** Start cheap (sonar), escalate to premium (sonar-pro), fallback to Claude if needed
+2. **Continuous Learning:** Search improvements feed back into subsequent rounds and subdomains
+3. **Quality Over Quantity:** QC layer ensures relevance
+4. **No Row Limits:** Keep all quality rows (not arbitrarily capped at 20)
+5. **Parallel Execution:** Config generation doesn't block QC
+6. **Cost Tracking:** Every API call tracked with enhanced_data
+7. **Simple ID Columns:** Short, repeatable identifiers prevent discovery failures
 
 ---
 
@@ -193,28 +230,47 @@ python test_local_e2e_sequential.py
 ```
 
 ### 3. Row Discovery Stream
-**File:** `table_maker/src/row_discovery_stream.py`
+**File:** `src/lambdas/interface/actions/table_maker/table_maker_lib/row_discovery_stream.py`
 
 **Purpose:** Execute progressive escalation for a single subdomain
 
 **Key Features:**
-- Level-by-level escalation (sonar → sonar-pro)
-- Early stopping (if >= 75% of target found)
+- 3-level escalation (sonar → sonar-pro → claude-haiku)
+- Early stopping based on percentage thresholds
+- Collects search improvements from each round
+- Passes accumulated improvements to next round
 - Tags each candidate with model_used, round, context
 - Uses web searches from subdomain.search_queries
 
 **Escalation Logic:**
 ```python
-Level 1: sonar-high (cheap, fast)
+Level 1: sonar (high context) - cheap, fast
   → If found >= 75% of target: STOP
   → Else: Continue to Level 2
+  → Collects search_improvements, passes to Level 2
 
-Level 2: sonar-pro-high (better quality, more expensive)
+Level 2: sonar-pro (high context) - premium quality
+  → If found >= 90% of target: STOP
+  → Else: Continue to Level 3
+  → Receives improvements from Level 1, adds its own
+
+Level 3: claude-haiku-4-5 (3 web searches) - fallback
   → Always completes (final level)
+  → Receives all previous improvements
+  → Ensures results even for difficult topics
+```
+
+**Search Improvements Flow:**
+```python
+Round 1 discovers: "Use aggregator sites not individual articles"
+  → Round 2 receives this in prompt
+Round 2 discovers: "Date ranges improve relevance"
+  → Round 3 receives both improvements
+  → Next subdomain receives all improvements
 ```
 
 ### 4. Row Consolidator
-**File:** `table_maker/src/row_consolidator.py`
+**File:** `src/lambdas/interface/actions/table_maker/table_maker_lib/row_consolidator.py`
 
 **Purpose:** Deduplicate and score candidates
 
@@ -225,7 +281,7 @@ Level 2: sonar-pro-high (better quality, more expensive)
 - Merges source URLs from duplicates
 
 ### 5. QC Reviewer
-**File:** `table_maker/src/qc_reviewer.py`
+**File:** `src/lambdas/interface/actions/table_maker/table_maker_lib/qc_reviewer.py`
 
 **Purpose:** Final quality control and prioritization
 
@@ -246,7 +302,7 @@ Level 2: sonar-pro-high (better quality, more expensive)
 
 ## Configuration
 
-**File:** `table_maker/table_maker_config.json`
+**File:** `src/lambdas/interface/actions/table_maker/table_maker_config.json`
 
 ### Column Definition
 ```json
@@ -266,12 +322,20 @@ Level 2: sonar-pro-high (better quality, more expensive)
       {
         "model": "sonar",
         "search_context_size": "high",
-        "min_candidates_percentage": 75  // Early stop threshold
+        "description": "Initial thorough search with sonar",
+        "min_candidates_percentage": 75  // Early stop at 75% of target
       },
       {
         "model": "sonar-pro",
         "search_context_size": "high",
-        "min_candidates_percentage": null  // Final level, always runs
+        "description": "Premium search if sonar insufficient",
+        "min_candidates_percentage": 90  // Early stop at 90% of target
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "max_web_searches": 3,  // Use web searches instead of search_context_size
+        "description": "Fallback to Claude with web search if both Perplexity models fail",
+        "min_candidates_percentage": null  // Final level, always completes
       }
     ],
     "max_tokens": 16000,
@@ -293,6 +357,37 @@ Level 2: sonar-pro-high (better quality, more expensive)
   }
 }
 ```
+
+### ID Column Requirements (CRITICAL)
+
+**ID columns must be SHORT, simple, and easily discoverable:**
+- Maximum 1-5 words typically
+- Must be found in lists, directories, or indexes
+- Should NOT require synthesis or reading paragraphs
+- Will be discovered during row discovery (not validated later)
+
+**Good ID Column Examples:**
+- ✅ Company Name (e.g., "Anthropic", "OpenAI")
+- ✅ Job Title (e.g., "Senior ML Engineer")
+- ✅ Paper Title (e.g., "Attention Is All You Need")
+- ✅ Date (e.g., "2025-01-15")
+- ✅ Story Headline (e.g., "Senate Passes AI Safety Bill")
+- ✅ URL (e.g., "https://example.com/article")
+
+**Bad ID Column Examples:**
+- ❌ "Basic Story Description" - Requires synthesis, multiple sentences
+- ❌ "Key Responsibilities" - Paragraphs of text
+- ❌ "Detailed Analysis" - Requires research and reasoning
+- ❌ "Summary of Findings" - Too complex, not simple identifier
+
+**Rule of Thumb:** If it appears in a bullet-point list or index, it's a good ID column. If it requires reading and synthesizing paragraphs, make it a research column instead.
+
+**Why This Matters:**
+- Row discovery fails when ID columns are too complex
+- Models struggle to populate detailed fields from web searches
+- Simple IDs ensure reliable, repeatable discovery
+
+---
 
 ### Key Settings to Tune
 
@@ -330,68 +425,59 @@ Level 2: sonar-pro-high (better quality, more expensive)
 
 ---
 
-## Local Testing
+## Example Execution Output (Lambda)
 
-### Prerequisites
-
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-# Optional:
-export PERPLEXITY_API_KEY="pplx-..."
+**Expected CloudWatch logs showing v2.2 features:**
 ```
-
-### Run Sequential Test
-
-```bash
-cd table_maker
-python test_local_e2e_sequential.py
-```
-
-**What it does:**
-1. Defines columns for "AI companies that are hiring"
-2. Discovers rows across 3 subdomains (sequential)
-3. Consolidates and deduplicates
-4. QC review with Sonnet
-5. Saves results to `output/local_tests/`
-
-**Expected output:**
-```
-[INFO] Step 1/4: Defining columns and search strategy...
-[SUCCESS] Defined 5 columns in 12.3s ($0.015)
+[INFO] [EXECUTION] Step 1/4: Defining columns and search strategy
+[INFO] [EXECUTION] Step 1 complete: 5 columns, table: AI Companies Hiring
 [INFO] [GLOBAL COUNTER] Enabled. Target: 15, Threshold: 100%
-[INFO] Step 2/4: Discovering rows (SEQUENTIAL mode)...
-[INFO]   Subdomain: AI Research Companies
-[INFO]     Round 1 (sonar-high): 8 candidates
-[INFO]     [GLOBAL COUNTER] AI Research Companies Round 1: +8 candidates. Subdomain: 8, Global: 8/15
-[INFO]     [LOCAL STOP] Round 1: 8 candidates >= 7 threshold (75% of 10). Skipping 1 round(s)
-[INFO]   Subdomain: Healthcare AI
-[INFO]     Round 1 (sonar-high): 4 candidates
-[INFO]     [GLOBAL COUNTER] Healthcare AI Round 1: +4 candidates. Subdomain: 4, Global: 12/15
-[INFO]     Round 2 (sonar-pro-high): 7 candidates
-[INFO]     [GLOBAL COUNTER] Healthcare AI Round 2: +7 candidates. Subdomain: 11, Global: 19/15
-[INFO]   Subdomain: Enterprise AI
-[INFO]     [GLOBAL STOP] Enterprise AI Round 1: Global count 19 >= threshold 15. Skipping 2 round(s)
-[SUCCESS] Discovered 19 candidates, consolidated to 15
-[INFO] Step 4/4: Quality control review...
+[INFO] Step 2/3: Processing subdomains SEQUENTIALLY
+[INFO] Processing subdomain 1/3: AI Research Companies (target: 10 rows)
+[INFO]   Round 1/3: sonar (high context)
+[INFO]   Round 1: 8 candidates
+[INFO]   Round 1: Collected 1 search improvement(s). Total improvements available: 1
+[INFO]   [GLOBAL COUNTER] AI Research Companies Round 1: +8 candidates. Subdomain: 8, Global: 8/15
+[INFO]   [LOCAL STOP] Round 1: 8 candidates >= 7 threshold (75% of 10). Skipping 2 round(s)
+[INFO] Processing subdomain 2/3: Healthcare AI (target: 10 rows)
+[INFO]   Round 1/3: sonar (high context)
+[INFO]   Round 1: 4 candidates
+[INFO]   Round 1: Collected 1 search improvement(s). Total improvements available: 2
+[INFO]   [GLOBAL COUNTER] Healthcare AI Round 1: +4 candidates. Subdomain: 4, Global: 12/15
+[INFO]   Round 2/3: sonar-pro (high context)
+[INFO]   Round 2: 7 candidates
+[INFO]   [GLOBAL COUNTER] Healthcare AI Round 2: +7 candidates. Subdomain: 11, Global: 19/15
+[INFO] Collected 2 search improvement(s) from 'Healthcare AI'. Total improvements: 2
+[INFO] Processing subdomain 3/3: Enterprise AI (target: 10 rows)
+[INFO]   [GLOBAL STOP] Enterprise AI Round 1: Global count 19 >= threshold 15. Skipping 3 round(s)
+[INFO] [EXECUTION] Step 2 complete: 15 consolidated rows
+[INFO] [EXECUTION] Step 4: QC Review
 [SUCCESS] QC approved 14 rows
 [SUCCESS] Total cost: $0.087, Total time: 142.5s
 ```
 
-### Run Parallel Test
-
-```bash
-python test_local_e2e_parallel.py
+**Search Improvements Example:**
+```json
+// From discovery_result.json
+"stream_results": [
+  {
+    "subdomain": "AI Research Companies",
+    "search_improvements": [
+      "Exclude YouTube and video results - web sources only",
+      "Aggregator sites like TechCrunch yield better multi-result lists"
+    ],
+    "candidates": [...]
+  },
+  {
+    "subdomain": "Healthcare AI",
+    "search_improvements": [
+      "Healthcare + AI + startup queries work better than general healthcare AI",
+      "Crunchbase and AngelList more reliable than news articles"
+    ],
+    "candidates": [...]
+  }
+]
 ```
-
-**Difference:** Processes all 3 subdomains concurrently (faster)
-
-### View Prompts
-
-```bash
-python view_prompts.py
-```
-
-Shows the exact prompts sent to each model.
 
 ---
 
@@ -587,21 +673,44 @@ User can download the CSV template with:
 
 ### Common Issues
 
-**1. No rows discovered**
+**1. Row Discovery Fails - Complex ID Columns**
 
-**Symptoms:** `final_rows` is empty after row discovery
+**Symptoms:** Error messages like "no specific entity results" or "not enough detail to populate required ID fields"
+
+**Causes:**
+- ID columns require synthesis (e.g., "Basic Story Description")
+- ID columns expect paragraphs instead of short identifiers
+- Column definition used research-level complexity for IDs
+
+**Solutions:**
+- Review ID columns - should be 1-5 words max
+- Use simple identifiers: "Story Headline" not "Story Description"
+- Move complex fields to research columns
+- Check `column_definition_result.json` in S3 to see what was defined
+
+**Prevention:**
+- Interview prompt now guides toward simple ID columns
+- Column definition prompt has strict ID column constraints
+- Examples show good vs bad ID column choices
+
+**2. No rows discovered despite escalation**
+
+**Symptoms:** `final_rows` is empty after all 3 escalation levels
 
 **Causes:**
 - Search queries too specific
 - min_match_score threshold too high
 - No web search results for queries
+- ID columns still too complex (see issue #1)
 
 **Solutions:**
-- Check `search_strategy.subdomains[].search_queries`
+- Check `discovery_result.json` → `stream_results` → `search_improvements`
+- Review collected search improvement suggestions
+- Check `no_matches_reason` in each subdomain result
 - Lower `min_match_score` from 0.6 to 0.5
-- Add `context_web_research` items for unknowns
+- Verify ID columns are simple (not complex)
 
-**2. Too many duplicates**
+**3. Too many duplicates**
 
 **Symptoms:** Many similar entities after consolidation
 
@@ -614,7 +723,7 @@ User can download the CSV template with:
 - Check ID column definitions (should be unique identifiers)
 - Increase `min_match_score` to filter marginal matches
 
-**3. QC rejects too many rows**
+**4. QC rejects too many rows**
 
 **Symptoms:** Large gap between `final_rows` and `approved_rows`
 
@@ -628,7 +737,7 @@ User can download the CSV template with:
 - Improve column definitions with better descriptions
 - Add more context to `table_purpose` and `tablewide_research`
 
-**4. Progressive escalation not working**
+**5. Progressive escalation not working**
 
 **Symptoms:** Always escalates to sonar-pro, even when finding enough
 
@@ -641,37 +750,81 @@ User can download the CSV template with:
 - Review search queries (may be too narrow)
 - Check logs for "Early stop" vs "Continue" messages
 
-### Debug Logging
+**6. Search improvements not being applied**
 
-**Local:**
+**Symptoms:** Later rounds/subdomains still making same mistakes as earlier ones
+
+**Causes:**
+- Search improvements not being collected from responses
+- Improvements not being formatted into prompt
+- Schema doesn't include search_improvements field
+
+**Solutions:**
+- Check `discovery_result.json` → `stream_results[].search_improvements`
+- Verify `row_discovery_response.json` schema includes `search_improvements` field
+- Check logs for "Collected N search improvement(s)" messages
+- Verify prompt template has `{{PREVIOUS_SEARCH_IMPROVEMENTS}}` placeholder
+
+**Debug:**
 ```bash
-# View all API calls with costs
-python view_prompts.py
+# Check if improvements are being collected
+aws s3 cp s3://bucket/path/to/discovery_result.json - | jq '.stream_results[].search_improvements'
 
-# Check consolidation logic
-grep "Deduplication" output/local_tests/latest.log
-
-# See escalation decisions
-grep "Early stop\|Continue" output/local_tests/latest.log
+# Should show arrays of improvement strings from each subdomain
 ```
 
-**Lambda:**
+### S3 Storage Structure
+
+All table_maker results are stored in S3 at:
+```
+s3://bucket/tables/{email}/{session_id}/table_maker/{conversation_id}/
+```
+
+**Key Files:**
+- **`column_definition_result.json`**: Column definitions, search_strategy with subdomains, table_name
+- **`discovery_result.json`**: Final rows, stream_results (with search_improvements per subdomain), stats
+- **`qc_result.json`**: Approved/rejected rows with QC scores and reasoning
+
+**To retrieve for generating more rows:**
 ```bash
-# CloudWatch logs
+# Get column definitions
+aws s3 cp s3://bucket/tables/email/session/table_maker/conv_id/column_definition_result.json -
+
+# Get search improvements from previous run
+aws s3 cp s3://bucket/tables/email/session/table_maker/conv_id/discovery_result.json - | jq '.stream_results[].search_improvements'
+
+# Get approved rows (to avoid re-discovering)
+aws s3 cp s3://bucket/tables/email/session/table_maker/conv_id/qc_result.json - | jq '.approved_rows[].id_values'
+```
+
+### Debug Logging
+
+**Lambda CloudWatch:**
+```bash
+# Tail logs
 aws logs tail /aws/lambda/interface-lambda --follow
 
 # Search for specific conversation
 aws logs filter-pattern "{$.conversation_id = 'abc123'}"
+
+# Find search improvement collection
+aws logs filter-pattern "Collected * search improvement" --follow
+
+# Find escalation decisions
+aws logs filter-pattern "GLOBAL STOP|LOCAL STOP|Round" --follow
 ```
 
 ### Cost Optimization
 
-**Current costs (typical run):**
+**Current costs (typical run with 3-level escalation):**
 - Column Definition: $0.002-0.035 (depends on web search)
-- Row Discovery: $0.01-0.06 (progressive escalation)
+- Row Discovery: $0.01-0.08 (3-level escalation: sonar → sonar-pro → claude-haiku)
+  - Level 1 (sonar-high): $0.005-0.015
+  - Level 2 (sonar-pro-high): $0.010-0.030 (if needed)
+  - Level 3 (claude-haiku + web): $0.005-0.020 (if needed, rare)
 - QC Review: $0.015-0.035
 - Config Generation: $0.01-0.03
-- **Total: $0.05-0.20**
+- **Total: $0.05-0.25** (usually $0.05-0.15 with early stopping)
 
 **To reduce costs:**
 1. Increase `min_candidates_percentage` → More early stops
@@ -707,6 +860,31 @@ Cross-subdomain early stopping is now active:
 - Logs `[GLOBAL STOP]` when target met
 - **Result:** Saves costs by skipping unnecessary escalations
 
+**2. Search Improvements Feedback** ✅ IMPLEMENTED (v2.2)
+
+Continuous learning system now active:
+- Each round collects `search_improvements` array
+- Improvements propagate to next round within same subdomain
+- Improvements propagate to subsequent subdomains
+- All improvements saved in `discovery_result.json`
+- **Result:** Later searches benefit from earlier learnings
+
+**3. 3-Level Escalation with Claude Fallback** ✅ IMPLEMENTED (v2.2)
+
+Robust escalation strategy now deployed:
+- Level 1: sonar (high context) - 75% threshold
+- Level 2: sonar-pro (high context) - 90% threshold
+- Level 3: claude-haiku-4-5 (3 web searches) - final fallback
+- **Result:** Always gets results, even for niche/difficult topics
+
+**4. Strict ID Column Constraints** ✅ IMPLEMENTED (v2.2)
+
+ID column validation now enforced:
+- Must be short (1-5 words), simple, repeatable
+- Clear guidance in interview and column definition prompts
+- Examples show good vs bad ID columns
+- **Result:** Prevents row discovery failures from complex ID requirements
+
 **Next enhancement:** Add exclusion list to prevent rediscovery:
 ```json
 {
@@ -716,20 +894,7 @@ Cross-subdomain early stopping is now active:
 }
 ```
 
-**2. Enhanced QC Feedback**
-
-QC layer provides feedback to improve future discoveries:
-```json
-{
-  "feedback": {
-    "too_broad": ["Enterprise AI subdomain finding non-AI companies"],
-    "missing_types": ["No healthcare AI startups found"],
-    "suggestions": ["Add subdomain for medical imaging AI"]
-  }
-}
-```
-
-**3. Phase-Aware Progress** ✅ IMPLEMENTED (v2.1)
+**5. Phase-Aware Progress** ✅ IMPLEMENTED (v2.1)
 
 Two-phase progress tracking now working:
 - **Interview phase:** Dummy messages keep user engaged (10%, 25%, 40%)
@@ -772,15 +937,16 @@ Generate related tables in sequence:
 
 ### Source Code
 
-- **Local:** `table_maker/src/`
-- **Lambda:** `src/lambdas/interface/actions/table_maker/`
-- **Tests:** `table_maker/test_local_e2e_*.py`
+- **Lambda Implementation:** `src/lambdas/interface/actions/table_maker/`
+- **Core Libraries:** `src/lambdas/interface/actions/table_maker/table_maker_lib/`
+- **Archived Standalone:** `temp_unnecessary_files/table_maker/` (deprecated, use Lambda version)
 
 ### Key Files
 
-- **Config:** `table_maker/table_maker_config.json`
-- **Prompts:** `table_maker/prompts/*.md`
-- **Schemas:** `table_maker/schemas/*.json`
+- **Config:** `src/lambdas/interface/actions/table_maker/table_maker_config.json`
+- **Prompts:** `src/lambdas/interface/actions/table_maker/prompts/*.md`
+- **Schemas:** `src/lambdas/interface/actions/table_maker/schemas/*.json`
+- **Execution:** `src/lambdas/interface/actions/table_maker/execution.py`
 
 ---
 
