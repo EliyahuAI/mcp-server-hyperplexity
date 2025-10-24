@@ -166,6 +166,12 @@ More flexible than discovery rubric. Consider:
 - **0.3-0.49:** Marginal - meets hard requirements but few soft requirements (consider demoting)
 - **0.0-0.29:** Poor - likely reject unless discovery was very sparse
 
+**Bonus Consideration - Well-Populated Rows:**
+- Rows with populated research columns (shown as "Populated Research Columns" in row data) have extra value
+- These rows already have data beyond ID fields, reducing validation work later
+- When choosing between similar-quality rows, prioritize those with more populated research columns
+- This doesn't override quality assessment - a well-populated low-quality row should still be demoted/rejected
+
 **Note:** If your qc_score matches the discovery score (row_score), you can omit the qc_rationale - agreement needs no explanation. Only provide qc_rationale when your assessment differs significantly from the discovery score.
 
 ### Priority Adjustment (Maps to Three Tiers)

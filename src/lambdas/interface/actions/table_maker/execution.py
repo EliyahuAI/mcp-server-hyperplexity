@@ -1369,16 +1369,30 @@ async def execute_full_table_generation(
             writer = csv.DictWriter(csv_buffer, fieldnames=all_column_names)
             writer.writeheader()
 
-            # Write rows with only ID columns filled
+            # Write rows with ID columns and research columns (if available) filled
+            populated_research_count = 0
+            total_research_cells = 0
+
             for row in approved_rows:
                 csv_row = {}
+                research_values = row.get('research_values', {})
+
                 for col_name in all_column_names:
                     if col_name in id_columns:
-                        # Fill ID columns from approved_rows
+                        # Fill ID columns from id_values
                         csv_row[col_name] = row.get('id_values', {}).get(col_name, '')
+                    elif col_name in research_values:
+                        # Fill research columns if populated during discovery
+                        csv_row[col_name] = research_values.get(col_name, '')
+                        populated_research_count += 1
                     else:
                         # Leave other columns empty
                         csv_row[col_name] = ''
+
+                    # Track total research cells for logging
+                    if col_name not in id_columns:
+                        total_research_cells += 1
+
                 writer.writerow(csv_row)
 
             csv_content = csv_buffer.getvalue()
@@ -1402,7 +1416,15 @@ async def execute_full_table_generation(
             result['csv_s3_key'] = csv_s3_key
             result['csv_filename'] = csv_filename
 
-            logger.info(f"[EXECUTION] CSV generated with {len(approved_rows)} rows, {len(id_columns)} ID columns filled")
+            # Calculate population statistics
+            research_columns_count = len(all_column_names) - len(id_columns)
+            population_pct = (populated_research_count / total_research_cells * 100) if total_research_cells > 0 else 0
+
+            logger.info(
+                f"[EXECUTION] CSV generated with {len(approved_rows)} rows: "
+                f"{len(id_columns)} ID columns filled, "
+                f"{populated_research_count}/{total_research_cells} research cells populated ({population_pct:.1f}%)"
+            )
 
             # Update session_info.json with table_path
             try:

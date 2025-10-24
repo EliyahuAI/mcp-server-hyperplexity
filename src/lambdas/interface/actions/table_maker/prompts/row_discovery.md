@@ -94,6 +94,46 @@ For each entry you find, populate these ID fields with ACTUAL values from your s
 
 ---
 
+## Research Columns to Populate (If Available)
+
+**NEW: Opportunistic Population**
+
+If you find information about these research columns during your search, POPULATE THEM in the `research_values` field. If not found, leave them empty or omit them.
+
+{{RESEARCH_COLUMNS}}
+
+**Instructions:**
+- Try to populate as many research columns as possible from search results
+- If information is readily available (in search snippets, company pages, etc.), include it
+- If information requires deep research or isn't found, leave blank (empty string) or omit
+- Don't fabricate - only include what you actually found
+- This is optional and opportunistic - focus on finding good ID matches first
+
+**Example:**
+
+Search result: *"Ginkgo Bioworks, a Boston-based synthetic biology company with 400 employees, posted a Head of AI position..."*
+
+Populated:
+```json
+{
+  "id_values": {
+    "Company Name": "Ginkgo Bioworks",
+    "Website": "https://ginkgobioworks.com"
+  },
+  "research_values": {
+    "Industry Sector": "Synthetic biology / Biotech",
+    "Employee Count": "400",
+    "Has Job Posting": "Yes - Head of AI"
+  },
+  "populated_columns": ["Company Name", "Website", "Industry Sector", "Employee Count", "Has Job Posting"],
+  "missing_columns": ["Has GenAI Program"]
+}
+```
+
+**Note:** The `research_values`, `populated_columns`, and `missing_columns` fields are all optional. If you don't find any research column data, you can omit these fields entirely.
+
+---
+
 ## Scoring Each Entry
 
 Score each entry on three dimensions (0-1.0 scale):
@@ -134,6 +174,12 @@ Return JSON in this exact format:
         "Company Name": "Anthropic",
         "Website": "https://anthropic.com"
       },
+      "research_values": {
+        "Industry Sector": "AI Safety Research",
+        "Employee Count": "150-300"
+      },
+      "populated_columns": ["Company Name", "Website", "Industry Sector", "Employee Count"],
+      "missing_columns": ["Other Research Column"],
       "score_breakdown": {
         "relevancy": 0.95,
         "reliability": 1.0,
@@ -155,6 +201,7 @@ Return JSON in this exact format:
 - Always include all three dimension scores
 - Keep rationale to 1-2 sentences
 - Include specific source URLs
+- `research_values`, `populated_columns`, and `missing_columns` are OPTIONAL - only include if you found research data
 
 ---
 

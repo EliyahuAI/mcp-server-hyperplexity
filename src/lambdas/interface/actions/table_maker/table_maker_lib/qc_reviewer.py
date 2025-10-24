@@ -746,6 +746,22 @@ class QCReviewer:
                 lines.append(f"- Found by: {', '.join(found_by)}")
             lines.append(f"- Source: {source_subdomain}")
 
+            # Show populated research columns if available
+            research_values = row.get('research_values', {})
+            populated_columns = row.get('populated_columns', [])
+
+            if research_values:
+                lines.append(f"- **Populated Research Columns:** {len(research_values)} columns")
+                for col_name, col_value in research_values.items():
+                    # Truncate long values for readability
+                    display_value = col_value[:100] + '...' if len(col_value) > 100 else col_value
+                    lines.append(f"  - {col_name}: {display_value}")
+            elif populated_columns:
+                # If populated_columns is provided but research_values isn't (shouldn't happen, but defensive)
+                research_col_count = len([c for c in populated_columns if c not in id_values])
+                if research_col_count > 0:
+                    lines.append(f"- **Populated Research Columns:** {research_col_count} columns (data available)")
+
         return '\n'.join(lines)
 
     def _log_qc_summary(self, qc_summary: Dict, final_approved: int) -> None:

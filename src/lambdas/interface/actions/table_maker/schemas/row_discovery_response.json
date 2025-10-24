@@ -55,6 +55,27 @@
               "type": "string"
             }
           },
+          "research_values": {
+            "type": "object",
+            "description": "Optional dictionary mapping research column names to their values (populated during discovery if information found)",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "populated_columns": {
+            "type": "array",
+            "description": "Optional list of column names that have data (includes both ID and research columns)",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missing_columns": {
+            "type": "array",
+            "description": "Optional list of column names that are still empty",
+            "items": {
+              "type": "string"
+            }
+          },
           "score_breakdown": {
             "type": "object",
             "description": "Breakdown of the match score into individual dimensions",

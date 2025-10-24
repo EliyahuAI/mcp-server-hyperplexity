@@ -717,6 +717,16 @@ class RowDiscoveryStream:
             desc = col.get('description', 'No description')
             id_columns_text.append(f"- **{name}**: {desc}")
 
+        # Extract research columns (non-ID columns) with descriptions
+        research_columns = [col for col in columns if not col.get('is_identification')]
+
+        # Format research columns with descriptions
+        research_columns_text = []
+        for col in research_columns:
+            name = col['name']
+            desc = col.get('description', 'No description')
+            research_columns_text.append(f"- **{name}**: {desc}")
+
         # Format previous search improvements if provided
         improvements_text = ""
         if previous_search_improvements and len(previous_search_improvements) > 0:
@@ -754,6 +764,7 @@ class RowDiscoveryStream:
                 'SEARCH_QUERIES': '\n'.join(f'- {q}' for q in subdomain['search_queries']),
                 'TARGET_ROWS': str(target_rows),
                 'ID_COLUMNS': '\n'.join(id_columns_text),
+                'RESEARCH_COLUMNS': '\n'.join(research_columns_text) if research_columns_text else '(No research columns defined)',
                 'USER_CONTEXT': search_strategy.get('user_context', 'General research table'),
                 'TABLE_PURPOSE': search_strategy.get('table_purpose', search_strategy.get('description', '')),
                 'TABLEWIDE_RESEARCH': search_strategy.get('tablewide_research', ''),
