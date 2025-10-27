@@ -5672,25 +5672,32 @@
 
                         // Check if this is configuration generation completion
                         if (data.progress === 100 && message && (message.includes('Configuration generated') || message.includes('Table generation complete'))) {
-                            // Update global state
-                            if (data.session_id) globalState.sessionId = data.session_id;
-                            if (data.table_filename) globalState.excelFileName = data.table_filename;
-                            globalState.excelFileUploaded = true;
+                            // CRITICAL FIX: Don't complete if this is a table maker card
+                            // Table maker handles completion via handleTableExecutionComplete
+                            const card = document.getElementById(latestCardId);
+                            const isTableMakerCard = card && card.querySelector('.card-title')?.textContent.includes('Table Maker');
 
-                            // Complete the thinking indicator
-                            completeThinkingInCard(latestCardId, 'Configuration generation complete!');
+                            if (!isTableMakerCard) {
+                                // Update global state
+                                if (data.session_id) globalState.sessionId = data.session_id;
+                                if (data.table_filename) globalState.excelFileName = data.table_filename;
+                                globalState.excelFileUploaded = true;
 
-                            // For Table Maker flow, validation is handled by the card-specific handler
-                            // For legacy flow, create preview card
-                            if (!message.includes('Configuration generated')) {
-                                // Show success message
-                                showMessage(`${latestCardId}-messages`, 'Validation configuration completed! Validating first few rows...', 'success');
+                                // Complete the thinking indicator
+                                completeThinkingInCard(latestCardId, 'Configuration generation complete!');
 
-                                // Create new preview card (legacy flow only)
-                                setTimeout(() => {
-                                    globalState.activePreviewCard = null;
-                                    createPreviewCard();
-                                }, 800);
+                                // For Table Maker flow, validation is handled by the card-specific handler
+                                // For legacy flow, create preview card
+                                if (!message.includes('Configuration generated')) {
+                                    // Show success message
+                                    showMessage(`${latestCardId}-messages`, 'Validation configuration completed! Validating first few rows...', 'success');
+
+                                    // Create new preview card (legacy flow only)
+                                    setTimeout(() => {
+                                        globalState.activePreviewCard = null;
+                                        createPreviewCard();
+                                    }, 800);
+                                }
                             }
                         }
                     }
@@ -6275,9 +6282,16 @@
             }
 
             async function handleConfigWebSocketMessage(data, cardId) {
-                
+
                 if (data.type === 'config_generation_complete') {
-                    completeThinkingInCard(cardId, 'Configuration generated!');
+                    // CRITICAL FIX: Don't complete the progress indicator if this is a table maker card
+                    // Table maker handles its own progress completion via handleTableExecutionComplete
+                    const card = document.getElementById(cardId);
+                    const isTableMakerCard = card && card.querySelector('.card-title')?.textContent.includes('Table Maker');
+
+                    if (!isTableMakerCard) {
+                        completeThinkingInCard(cardId, 'Configuration generated!');
+                    }
                     // Progress routed to card level;
 
                     // Debug: Log the entire data structure to find where questions are
