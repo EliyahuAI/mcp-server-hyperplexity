@@ -1,3 +1,9 @@
+# CRITICAL: Force packaged boto3/botocore to take precedence over Lambda runtime versions
+# This prevents import errors when Lambda runtime has incompatible botocore version
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import json
 import boto3
 import hashlib
