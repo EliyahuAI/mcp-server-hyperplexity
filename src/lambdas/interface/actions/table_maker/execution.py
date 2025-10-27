@@ -192,6 +192,48 @@ def send_execution_progress(
         logger.warning(f"[EXECUTION] Failed to send WebSocket update: {e}")
 
 
+def send_warning(
+    session_id: str,
+    conversation_id: str,
+    warning_type: str,
+    title: str,
+    message: str,
+    **kwargs
+) -> None:
+    """
+    Send a general warning message to frontend via WebSocket.
+    Frontend should display this as an info/warning box at any point in the flow.
+
+    Args:
+        session_id: Session identifier
+        conversation_id: Conversation identifier (optional, can be None for general warnings)
+        warning_type: Type of warning (e.g., 'qc_refused', 'insufficient_rows', 'api_error')
+        title: Warning title/heading
+        message: Warning message body
+        **kwargs: Additional fields (e.g., rows_included, reason, severity)
+    """
+    if not websocket_client or not session_id:
+        return
+
+    try:
+        warning_message = {
+            'type': 'warning',  # General warning type
+            'warning_type': warning_type,  # Specific warning category
+            'title': title,
+            'message': message,
+            **kwargs
+        }
+
+        # Add conversation_id if provided
+        if conversation_id:
+            warning_message['conversation_id'] = conversation_id
+
+        websocket_client.send_to_session(session_id, warning_message)
+        logger.info(f"[WARNING] Sent {warning_type} warning to frontend: {title}")
+    except Exception as e:
+        logger.warning(f"[WARNING] Failed to send warning: {e}")
+
+
 def _add_api_call_to_runs(
     session_id: str,
     run_key: Optional[str],
@@ -1242,6 +1284,28 @@ async def execute_full_table_generation(
         # Store final approved rows
         result['approved_rows'] = approved_rows
         result['row_count'] = len(approved_rows)
+
+        # Pass QC warning to frontend if present (check qc_result exists first)
+        if 'qc_result' in locals() and qc_result.get('warning'):
+            result['qc_warning'] = qc_result['warning']
+            warning = qc_result['warning']
+            logger.warning(f"[EXECUTION] QC warning present: {warning['type']}")
+
+            # Send warning via WebSocket for immediate display
+            send_warning(
+                session_id=session_id,
+                conversation_id=conversation_id,
+                warning_type=warning['type'],
+                title=warning['title'],
+                message=warning['message'],
+                rows_included=warning.get('rows_included'),
+                reason=warning.get('reason')
+            )
+
+        # Pass qc_bypassed flag to frontend if present
+        if 'qc_result' in locals() and qc_result.get('qc_bypassed'):
+            result['qc_bypassed'] = True
+            logger.info("[EXECUTION] QC was bypassed - rows sorted by discovery score only")
 
         logger.info(f"[EXECUTION] Step 4 complete: {len(approved_rows)} approved rows (after {retry_count} retrigger(s))")
 

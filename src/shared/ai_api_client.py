@@ -1924,6 +1924,16 @@ class AIAPIClient:
                 logger.warning(f"[FAILED] Model {current_model} failed: {error_msg}")
                 last_error = e
 
+                # If this was a refusal, skip to less restrictive models
+                if "[REFUSAL]" in error_msg:
+                    logger.warning(f"[REFUSAL_FALLBACK] Detected refusal from {current_model}, will try less restrictive models")
+                    # Add haiku and sonar to the end of the models_to_try list if not already present
+                    fallback_models = ["claude-haiku-4-5", "sonar"]
+                    for fallback_model in fallback_models:
+                        if fallback_model not in models_to_try:
+                            models_to_try.append(fallback_model)
+                            logger.info(f"[REFUSAL_FALLBACK] Added {fallback_model} to fallback models")
+
                 # If soft_schema failed, retry with hard schema before trying next model
                 if soft_schema and model_index == 0:
                     logger.warning(f"[SOFT_SCHEMA_FALLBACK] Soft schema failed for {current_model}, retrying with hard schema")
@@ -2011,7 +2021,19 @@ class AIAPIClient:
         
         # If we get here, all models failed
         if last_error:
-            raise last_error
+            error_msg = str(last_error)
+            # Check if all failures were refusals
+            if "[REFUSAL]" in error_msg:
+                logger.error(f"[ALL_MODELS_REFUSED] All attempted models refused to complete the request. "
+                           f"This task may violate content policies.")
+                raise Exception(
+                    f"[ALL_MODELS_REFUSED] All AI models ({', '.join(models_to_try)}) refused to complete this request. "
+                    f"This may be due to content policy restrictions. "
+                    f"Possible reasons: reviewing personal information with scoring/ranking, sensitive topics, or safety filters. "
+                    f"Consider rephrasing the request or removing potentially sensitive content."
+                )
+            else:
+                raise last_error
         else:
             raise Exception("All models failed - no specific error captured")
     
@@ -2717,6 +2739,24 @@ class AIAPIClient:
                     
                     if response.status == 200:
                         response_json = json.loads(response_text)
+
+                        # Check for refusal BEFORE any processing
+                        stop_reason = response_json.get('stop_reason')
+                        if stop_reason == 'refusal':
+                            error_msg = f"Model {normalized_model} refused to complete the request"
+                            logger.warning(f"[REFUSAL] {error_msg}. This may be due to safety filters or content policy.")
+
+                            # Log partial output if available
+                            if 'content' in response_json:
+                                content_preview = str(response_json['content'])[:200]
+                                logger.warning(f"[REFUSAL] Partial output before refusal: {content_preview}")
+
+                            # Save debug data for refusal
+                            await self._save_debug_data('anthropic', normalized_model, debug_request,
+                                                      response_json, context="refusal")
+
+                            # Raise an exception that will trigger model fallback
+                            raise Exception(f"[REFUSAL] {error_msg} (stop_reason=refusal)")
 
                         # If soft schema, clean the text response and convert to unified format
                         if soft_schema:

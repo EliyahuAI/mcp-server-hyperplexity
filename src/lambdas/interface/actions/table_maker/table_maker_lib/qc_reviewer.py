@@ -134,7 +134,7 @@ class QCReviewer:
                 'COLUMN_DEFINITIONS': self._format_columns(columns),  # All columns
                 'TABLEWIDE_RESEARCH': tablewide_research,  # Research context
                 'ROW_COUNT': str(len(discovered_rows)),
-                'DISCOVERED_ROWS': self._format_rows(discovered_rows),
+                'DISCOVERED_ROWS': self._format_rows(discovered_rows, columns),
                 # New variables for requirements and retrigger context
                 'HARD_REQUIREMENTS': self._format_requirements_for_prompt(search_strategy, 'hard'),
                 'SOFT_REQUIREMENTS': self._format_requirements_for_prompt(search_strategy, 'soft'),
@@ -188,6 +188,36 @@ class QCReviewer:
                 raise Exception("Failed to extract structured QC review response")
 
             logger.debug(f"Extracted AI response keys: {list(ai_response.keys())}")
+
+            # Defensive parsing: Handle double-encoded JSON fields
+            # Sometimes AI models return fields as JSON strings instead of parsed objects
+            if isinstance(ai_response.get('reviewed_rows'), str):
+                logger.warning("reviewed_rows is a JSON string, parsing it...")
+                try:
+                    ai_response['reviewed_rows'] = json.loads(ai_response['reviewed_rows'])
+                    logger.info(f"Successfully parsed reviewed_rows string into array of {len(ai_response['reviewed_rows'])} items")
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse reviewed_rows JSON string: {e}")
+                    raise Exception(f"reviewed_rows is a malformed JSON string: {e}")
+
+            # Same defensive parsing for other array/object fields that might be strings
+            if isinstance(ai_response.get('rejected_rows'), str):
+                logger.warning("rejected_rows is a JSON string, parsing it...")
+                try:
+                    ai_response['rejected_rows'] = json.loads(ai_response['rejected_rows'])
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse rejected_rows JSON string: {e}")
+                    # Non-critical, can continue without it
+                    ai_response['rejected_rows'] = []
+
+            if isinstance(ai_response.get('qc_summary'), str):
+                logger.warning("qc_summary is a JSON string, parsing it...")
+                try:
+                    ai_response['qc_summary'] = json.loads(ai_response['qc_summary'])
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse qc_summary JSON string: {e}")
+                    # Non-critical, set default
+                    ai_response['qc_summary'] = {}
 
             # Validate response against schema
             validation_result = self.schema_validator.validate_ai_response(
@@ -438,8 +468,64 @@ class QCReviewer:
         except Exception as e:
             error_msg = f"Error during QC review: {str(e)}"
             logger.error(error_msg)
-            result['error'] = error_msg
-            result['processing_time'] = time.time() - start_time
+
+            # Check if this was a refusal error - skip QC and return all rows with warning
+            if "[ALL_MODELS_REFUSED]" in str(e) or "[REFUSAL]" in str(e):
+                logger.warning("[QC_REFUSAL] AI provider refused QC review - bypassing QC and returning all rows sorted by quality")
+
+                # Sort discovered rows by match_score descending
+                sorted_rows = sorted(
+                    discovered_rows,
+                    key=lambda x: x.get('match_score', 0),
+                    reverse=True
+                )
+
+                # Mark all rows as kept (bypass QC)
+                for idx, row in enumerate(sorted_rows, 1):
+                    row['keep'] = True
+                    row['qc_score'] = row.get('match_score', 0)  # Use discovery score as QC score
+                    row['qc_rationale'] = 'QC bypassed - using discovery score'
+                    row['priority_adjustment'] = 'none'
+                    # Ensure row_id is set
+                    if 'row_id' not in row:
+                        id_vals = row.get('id_values', {})
+                        first_id_value = list(id_vals.values())[0] if id_vals else 'Unknown'
+                        row['row_id'] = f"{idx}-{first_id_value}"
+
+                # Apply max_rows limit
+                final_rows = sorted_rows[:max_rows] if max_rows else sorted_rows
+
+                # Build successful result with warning
+                result['success'] = True
+                result['approved_rows'] = final_rows
+                result['rejected_rows'] = []
+                result['reviewed_rows'] = final_rows  # All rows passed through
+                result['qc_bypassed'] = True
+                result['warning'] = {
+                    'type': 'qc_refused',
+                    'title': 'Automated Quality Review Unavailable',
+                    'message': 'The AI provider declined to perform quality review on this table. '
+                               'All discovered rows have been included, sorted by discovery quality score. '
+                               'You may want to manually review the results.',
+                    'rows_included': len(final_rows),
+                    'reason': 'AI safety filters may have been triggered when reviewing this type of content'
+                }
+                result['qc_summary'] = {
+                    'total_reviewed': len(discovered_rows),
+                    'kept': len(final_rows),
+                    'rejected': 0,
+                    'promoted': 0,
+                    'demoted': 0,
+                    'reasoning': 'QC bypassed due to AI provider refusal - all rows included sorted by discovery score'
+                }
+                result['processing_time'] = time.time() - start_time
+
+                logger.info(f"[QC_BYPASSED] Returning {len(final_rows)} rows without QC filtering")
+
+            else:
+                # Non-refusal error - actual failure
+                result['error'] = error_msg
+                result['processing_time'] = time.time() - start_time
 
         return result
 
@@ -712,16 +798,20 @@ class QCReviewer:
 
         return '\n'.join(lines)
 
-    def _format_rows(self, rows: List[Dict]) -> str:
+    def _format_rows(self, rows: List[Dict], columns: List[Dict]) -> str:
         """
         Format discovered rows for prompt with row_id.
 
         Args:
             rows: List of discovered row dictionaries
+            columns: List of column definition dictionaries
 
         Returns:
             Formatted rows string
         """
+        # Calculate total research columns (non-ID columns)
+        total_research_cols = len([c for c in columns if not c.get('is_identification')])
+
         lines = []
         for idx, row in enumerate(rows, 1):
             id_values = row.get('id_values', {})
@@ -746,21 +836,20 @@ class QCReviewer:
                 lines.append(f"- Found by: {', '.join(found_by)}")
             lines.append(f"- Source: {source_subdomain}")
 
-            # Show populated research columns if available
+            # Show populated research columns count only (not values)
             research_values = row.get('research_values', {})
             populated_columns = row.get('populated_columns', [])
 
-            if research_values:
-                lines.append(f"- **Populated Research Columns:** {len(research_values)} columns")
-                for col_name, col_value in research_values.items():
-                    # Truncate long values for readability
-                    display_value = col_value[:100] + '...' if len(col_value) > 100 else col_value
-                    lines.append(f"  - {col_name}: {display_value}")
-            elif populated_columns:
-                # If populated_columns is provided but research_values isn't (shouldn't happen, but defensive)
-                research_col_count = len([c for c in populated_columns if c not in id_values])
-                if research_col_count > 0:
-                    lines.append(f"- **Populated Research Columns:** {research_col_count} columns (data available)")
+            if research_values or populated_columns:
+                # Count populated research columns (exclude ID columns)
+                if research_values:
+                    populated_count = len(research_values)
+                else:
+                    populated_count = len([c for c in populated_columns if c not in id_values])
+
+                # Show simple ratio: X/Y columns populated
+                if populated_count > 0:
+                    lines.append(f"- Research Data: {populated_count}/{total_research_cols} columns populated")
 
         return '\n'.join(lines)
 

@@ -1457,6 +1457,12 @@
         border: 1px solid #bbdefb;
     }
 
+    .message-warning {
+        background-color: #fff3e0;
+        color: #e65100;
+        border: 1px solid #ffcc80;
+    }
+
     /* ============================================
        TABLE MAKER STYLES
        ============================================ */
@@ -4130,20 +4136,78 @@
                         <button class="balance-notification-close" onclick="this.parentElement.parentElement.remove()">×</button>
                     </div>
                 `;
-                
+
                 document.body.appendChild(notification);
-                
+
                 // Auto-remove after 8 seconds
                 setTimeout(() => {
                     if (notification.parentElement) {
                         notification.remove();
                     }
                 }, 8000);
-                
+
                 // Fade in animation
                 setTimeout(() => {
                     notification.classList.add('balance-notification-show');
                 }, 100);
+            }
+
+            // Handle general warning messages from WebSocket
+            function handleWarning(data) {
+                if (!data) return;
+
+                const title = data.title || 'Warning';
+                const message = data.message || 'A warning occurred';
+                const warningType = data.warning_type || 'general';
+
+                // Find the most recent card to show the warning
+                let targetCardId = null;
+                if (data.conversation_id) {
+                    // If conversation_id is provided, try to find matching card
+                    for (const [cardId, handlerInfo] of cardHandlers) {
+                        if (handlerInfo && handlerInfo.conversationId === data.conversation_id) {
+                            targetCardId = cardId;
+                            break;
+                        }
+                    }
+                }
+
+                // If no specific card found, use the most recent card
+                if (!targetCardId && cardHandlers.size > 0) {
+                    let latestOrder = -1;
+                    for (const [cardId, handlerInfo] of cardHandlers) {
+                        if (handlerInfo && handlerInfo.registrationOrder > latestOrder) {
+                            targetCardId = cardId;
+                            latestOrder = handlerInfo.registrationOrder;
+                        }
+                    }
+                }
+
+                if (targetCardId) {
+                    // Format warning message with title
+                    const formattedMessage = `<strong>${title}</strong><br>${message}`;
+
+                    // Add any additional details if provided
+                    let detailsHtml = '';
+                    if (data.rows_included) {
+                        detailsHtml += `<br><em>${data.rows_included} rows included</em>`;
+                    }
+
+                    // Show warning in the card's message container
+                    const messageId = `warning-${warningType}-${Date.now()}`;
+                    showMessage(
+                        `${targetCardId}-messages`,
+                        formattedMessage + detailsHtml,
+                        'warning',
+                        false,
+                        messageId
+                    );
+
+                    console.log(`[WARNING] Displayed ${warningType} warning in card ${targetCardId}`);
+                } else {
+                    // No card available - log warning
+                    console.warn('[WARNING] No card found to display warning:', data);
+                }
             }
             
             function showInsufficientBalanceError(errorData, cardId = null) {
@@ -5495,6 +5559,12 @@
                     return; // Table execution complete is handled by dedicated function
                 }
 
+                // Handle general warnings
+                if (data.type === 'warning') {
+                    handleWarning(data);
+                    return; // Warning handled by dedicated function
+                }
+
                 // General error handler - handles all error message types
                 if (data.type === 'error' || data.type === 'validation_failed' || data.type === 'preview_failed' ||
                     data.type === 'config_generation_failed' || data.status === 'FAILED' || data.status === 'ERROR') {
@@ -6290,8 +6360,8 @@
             function showMessage(containerId, message, type = 'info', updateExisting = false, messageId = null) {
                 const container = document.getElementById(containerId);
                 if (!container) return;
-                
-                const icon = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ';
+
+                const icon = type === 'success' ? '✓' : type === 'error' ? '✗' : type === 'warning' ? '⚠' : 'ℹ';
                 
                 // Always try to update if messageId is provided
                 if (messageId) {
