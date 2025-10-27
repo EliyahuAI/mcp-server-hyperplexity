@@ -6859,7 +6859,7 @@
                                     formData.append('action', 'processExcel');
                                     // New file upload should NEVER reuse existing session - always generate new session ID
 
-                                    const uploadResponse = await fetch(`${API_BASE}/validate`, {
+                                    const uploadResponse = await fetch(`${API_BASE}/upload`, {
                                         method: 'POST',
                                         body: formData
                                     });
@@ -7091,7 +7091,7 @@
 
 
                 try {
-                    const response = await fetch(`${API_BASE}/validate`, {
+                    const response = await fetch(`${API_BASE}/upload`, {
                         method: 'POST',
                         body: formData
                     });

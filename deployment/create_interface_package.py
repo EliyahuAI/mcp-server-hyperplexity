@@ -668,7 +668,18 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True, s
 
         # Deploy API Gateway if requested
         if deploy_api_gateway:
-            api_url = setup_api_gateway(lambda_client, function_name, region, stage_name)
+            # Determine background lambda name for /upload endpoint routing
+            background_function_name = None
+            if mode == 'lightweight':
+                # In lightweight mode, determine the background lambda name
+                base_name = LAMBDA_CONFIG["FunctionName"]
+                if 'interface' in base_name:
+                    background_function_name = base_name.replace('interface', 'background')
+                else:
+                    background_function_name = base_name + '-background'
+                logger.info(f"[SUCCESS] Lightweight mode - will route /upload to background lambda: {background_function_name}")
+
+            api_url = setup_api_gateway(lambda_client, function_name, region, stage_name, background_function_name)
             if api_url:
                 logger.info(f"API Gateway deployed successfully. Endpoint: {api_url}")
                 return True, api_url
@@ -712,10 +723,14 @@ def ensure_lambda_permission(lambda_client, function_name, statement_id, source_
         # Continue deployment but log the error clearly.
         pass
 
-def setup_api_gateway(lambda_client, function_name, region, stage_name="prod"):
-    """Set up API Gateway for the Lambda function with simplified /validate and /status endpoints."""
+def setup_api_gateway(lambda_client, function_name, region, stage_name="prod", background_function_name=None):
+    """Set up API Gateway for the Lambda function with simplified /validate and /status endpoints.
+
+    Args:
+        background_function_name: Optional name of background lambda for /upload endpoint
+    """
     logger.info("Setting up simplified API Gateway with Lambda proxy integration...")
-    
+
     try:
         apigateway_client = boto3.client('apigateway', region_name=region)
         account_id = boto3.client('sts').get_caller_identity()['Account']
@@ -724,7 +739,7 @@ def setup_api_gateway(lambda_client, function_name, region, stage_name="prod"):
         # Find or create the REST API
         apis = apigateway_client.get_rest_apis()
         existing_api = next((api for api in apis['items'] if api['name'] == api_name), None)
-        
+
         if existing_api:
             api_id = existing_api['id']
             logger.info(f"Using existing API: {api_id}")
@@ -747,6 +762,12 @@ def setup_api_gateway(lambda_client, function_name, region, stage_name="prod"):
         if not validate_resource:
             validate_resource = apigateway_client.create_resource(restApiId=api_id, parentId=root_resource_id, pathPart='validate')
         validate_resource_id = validate_resource['id']
+
+        # --- Create /upload Resource for file uploads (routes to background lambda) ---
+        upload_resource = next((res for res in resources if res.get('pathPart') == 'upload'), None)
+        if not upload_resource:
+            upload_resource = apigateway_client.create_resource(restApiId=api_id, parentId=root_resource_id, pathPart='upload')
+        upload_resource_id = upload_resource['id']
         
         # --- Create /status and /status/{sessionId} Resources ---
         status_resource = next((res for res in resources if res.get('pathPart') == 'status'), None)
@@ -791,21 +812,33 @@ def setup_api_gateway(lambda_client, function_name, region, stage_name="prod"):
         lambda_arn = f"arn:aws:lambda:{region}:{account_id}:function:{function_name}"
         lambda_integration_uri = f"arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{lambda_arn}/invocations"
 
-        # List of resources and their methods
+        # Determine background lambda URI (for /upload endpoint)
+        if background_function_name:
+            background_lambda_arn = f"arn:aws:lambda:{region}:{account_id}:function:{background_function_name}"
+            background_lambda_integration_uri = f"arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{background_lambda_arn}/invocations"
+            logger.info(f"[SUCCESS] Will route /upload to background lambda: {background_function_name}")
+        else:
+            # Fallback: use interface lambda for /upload if no background specified
+            background_lambda_integration_uri = lambda_integration_uri
+            logger.info("[WARNING] No background lambda specified - /upload will use interface lambda")
+
+        # List of resources and their methods (resource_id, http_method, lambda_uri)
         resource_setups = [
-            (validate_resource_id, 'POST'),
-            (validate_resource_id, 'OPTIONS'),
-            (status_session_resource_id, 'GET'),
-            (status_session_resource_id, 'OPTIONS'),
-            (health_resource_id, 'GET'),
-            (health_resource_id, 'OPTIONS'),
-            (webhook_payment_resource_id, 'POST'),
-            (webhook_payment_resource_id, 'OPTIONS'),
-            (payment_webhook_resource_id, 'POST'),
-            (payment_webhook_resource_id, 'OPTIONS'),
+            (validate_resource_id, 'POST', lambda_integration_uri),
+            (validate_resource_id, 'OPTIONS', lambda_integration_uri),
+            (upload_resource_id, 'POST', background_lambda_integration_uri),  # Route to background
+            (upload_resource_id, 'OPTIONS', background_lambda_integration_uri),
+            (status_session_resource_id, 'GET', lambda_integration_uri),
+            (status_session_resource_id, 'OPTIONS', lambda_integration_uri),
+            (health_resource_id, 'GET', lambda_integration_uri),
+            (health_resource_id, 'OPTIONS', lambda_integration_uri),
+            (webhook_payment_resource_id, 'POST', lambda_integration_uri),
+            (webhook_payment_resource_id, 'OPTIONS', lambda_integration_uri),
+            (payment_webhook_resource_id, 'POST', lambda_integration_uri),
+            (payment_webhook_resource_id, 'OPTIONS', lambda_integration_uri),
         ]
 
-        for resource_id, http_method in resource_setups:
+        for resource_id, http_method, integration_uri in resource_setups:
             try:
                 apigateway_client.put_method(
                     restApiId=api_id,
@@ -819,7 +852,7 @@ def setup_api_gateway(lambda_client, function_name, region, stage_name="prod"):
                     httpMethod=http_method,
                     type='AWS_PROXY',
                     integrationHttpMethod='POST',
-                    uri=lambda_integration_uri
+                    uri=integration_uri
                 )
                 logger.info(f"Set up {http_method} method and integration for resource {resource_id}")
             except apigateway_client.exceptions.ConflictException:
@@ -829,6 +862,12 @@ def setup_api_gateway(lambda_client, function_name, region, stage_name="prod"):
         statement_id = f'apigateway-rest-invoke-{function_name}'
         source_arn = f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*/*/*"
         ensure_lambda_permission(lambda_client, function_name, statement_id, source_arn)
+
+        # Add permission for background lambda if specified
+        if background_function_name and background_function_name != function_name:
+            background_statement_id = f'apigateway-rest-invoke-{background_function_name}'
+            ensure_lambda_permission(lambda_client, background_function_name, background_statement_id, source_arn)
+            logger.info(f"[SUCCESS] Added API Gateway permission for background lambda: {background_function_name}")
 
         # Also ensure the Lambda role has S3 delete permissions
         lambda_role_name = LAMBDA_CONFIG['Role'].split('/')[-1]
