@@ -4051,6 +4051,18 @@
                             : 15000;
                         console.log(`[WEBSOCKET] Connection lost (code: ${event.code}). Reconnecting in ${reconnectDelay}ms (attempt ${reconnectAttempt + 1}/${maxReconnectAttempts})`);
 
+                        // Show warning after 10 failed attempts during full validation
+                        if (reconnectAttempt === 10 && globalState.currentValidationState === 'full' && globalState.activeCardId) {
+                            const messageContainer = `${globalState.activeCardId}-messages`;
+                            showMessage(
+                                messageContainer,
+                                `<strong>Connection Issues</strong><br>Having trouble maintaining connection. If this continues, your results will be emailed to you.`,
+                                'warning',
+                                false,
+                                'connection-warning'
+                            );
+                        }
+
                         setTimeout(() => {
                             console.log(`[WEBSOCKET] Attempting to reconnect to session ${sessionId}...`);
                             connectToSession(sessionId, reconnectAttempt + 1);
@@ -4058,6 +4070,21 @@
                     } else if (isUnexpectedClose) {
                         console.error(`[WEBSOCKET] Max reconnection attempts (${maxReconnectAttempts}) reached for session ${sessionId}`);
                         console.error(`[WEBSOCKET] WebSocket updates will no longer be received. You may need to check status manually or refresh the page.`);
+
+                        // Special handling for full validation disconnections
+                        if (globalState.currentValidationState === 'full' && globalState.activeCardId) {
+                            const messageContainer = `${globalState.activeCardId}-messages`;
+                            const emailAddress = globalState.currentEmail || 'your registered email';
+
+                            showMessage(
+                                messageContainer,
+                                `<strong>Connection Lost</strong><br><br>
+                                Don't worry - your validation is still running on our servers and will be emailed to <strong>${emailAddress}</strong> when complete.<br><br>
+                                If you don't receive it within 30 minutes, please contact <a href="mailto:eliyahu@eliyahu.ai?subject=Validation%20${sessionId}">eliyahu@eliyahu.ai</a> with session ID: <code>${sessionId}</code>`,
+                                'warning',
+                                false
+                            );
+                        }
                     }
                 };
 
