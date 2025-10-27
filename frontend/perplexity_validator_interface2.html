@@ -2838,8 +2838,21 @@
                 const card = document.getElementById(cardId);
                 if (!card) return;
 
-                // Remove existing thinking indicator
+                // Check if an indicator already exists
                 const existing = document.getElementById(`${cardId}-thinking`);
+
+                // CRITICAL FIX: If indicator exists with progress, preserve it and just update the message
+                // This prevents the progress from resetting to 0 when the indicator is recreated
+                if (existing && existing.classList.contains('with-progress') && withProgress) {
+                    // Update the message text only, preserve progress state
+                    const progressText = existing.querySelector('.progress-text');
+                    if (progressText) {
+                        progressText.textContent = message;
+                    }
+                    return existing;
+                }
+
+                // Remove existing indicator only if we need to create a new type
                 if (existing) existing.remove();
 
                 // Add new thinking indicator
@@ -5161,21 +5174,20 @@
                 globalState.configStored = true;
                 globalState.excelFileUploaded = true;
 
-                // Auto-generate preview after a delay to allow progress indicator to complete
-                setTimeout(() => {
-                    // Create preview card first
-                    setTimeout(() => {
-                        console.log('[TABLE_EXECUTION_COMPLETE] Creating preview validation card');
-                        // Clear any existing preview card state to allow new preview
-                        globalState.activePreviewCard = null;
-                        createPreviewCard();
-                    }, 100); // Preview appears at T+600ms
+                // Create preview card immediately
+                console.log('[TABLE_EXECUTION_COMPLETE] Creating preview validation card');
+                globalState.activePreviewCard = null;
+                createPreviewCard();
 
-                    // Complete the thinking indicator with longer hideDelay to stay visible until preview appears
+                // CRITICAL FIX: Only hide the progress indicator AFTER the preview card is created
+                // This prevents the indicator from disappearing before the user sees what's next
+                // Wait for preview card to be visible (createPreviewCard adds DOM elements immediately)
+                setTimeout(() => {
                     if (tableMakerCardId) {
-                        completeThinkingInCard(tableMakerCardId, 'Complete!', 1500); // Stay visible longer
+                        // Complete with a shorter delay since preview is already visible
+                        completeThinkingInCard(tableMakerCardId, 'Complete!', 800);
                     }
-                }, 500);
+                }, 500); // Wait 500ms for preview card to render and become visible
             }
 
             function showRequirementsBox(conversationId, requirements) {
@@ -5227,7 +5239,7 @@
                     <div class="message" style="margin-bottom: 1rem; background-color: #fce4ec; color: #880e4f; border: 1px solid #f8bbd0;">
                         <span class="message-icon">ℹ️</span>
                         <div>
-                            <strong>Table Requirements</strong><br>
+                            <strong>Row Requirements</strong><br>
                             <strong style="font-weight: 700;">Hard Requirements:</strong><br>
                             ${hardReqs}<br>
                             <strong>Soft Requirements:</strong><br>
