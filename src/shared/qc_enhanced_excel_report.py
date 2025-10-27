@@ -366,6 +366,21 @@ def strip_details_sheet_for_customer(excel_content: bytes) -> bytes:
         del wb['Details']
         logger.info(f"[STRIP_DETAILS] Removed Details sheet. Remaining sheets: {wb.sheetnames}")
 
+        # Fix comment sizes: openpyxl doesn't preserve xlsxwriter comment dimensions
+        # Set to 240x388 pixels (2.5 inches x golden ratio @ 96 DPI)
+        comment_count = 0
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            for row in ws.iter_rows():
+                for cell in row:
+                    if cell.comment:
+                        cell.comment.width = 240
+                        cell.comment.height = 388
+                        comment_count += 1
+
+        if comment_count > 0:
+            logger.info(f"[STRIP_DETAILS] Fixed {comment_count} comment sizes to 240x388 pixels")
+
         # Save to buffer
         output_buffer = BytesIO()
         wb.save(output_buffer)

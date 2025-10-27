@@ -75,11 +75,23 @@ def build_table_analysis_from_conversation(
         column_analysis = {}
         for col in columns:
             col_name = col['name']
+
+            # For ID columns, check if researchable for quality validation
+            importance = col.get('importance', 'MEDIUM')
+            is_id = col.get('is_identification', False)
+
+            if is_id and importance == 'ID':
+                # Check if this ID column can be researched on the web
+                if _is_researchable_id_column(col):
+                    # Mark as CRITICAL to enable validation (verifies row generation quality)
+                    importance = 'CRITICAL'
+                    logger.info(f"Marking researchable ID column '{col_name}' as CRITICAL for validation")
+
             column_analysis[col_name] = {
                 'name': col_name,
                 'description': col.get('description', ''),
                 'data_type': infer_data_type(col.get('format', 'String')),
-                'importance': col.get('importance', 'MEDIUM'),
+                'importance': importance,
                 'sample_values': [row.get(col_name, '') for row in rows[:5]],
                 'is_identification': col.get('is_identification', False),
                 'validation_hints': col.get('validation_hints', []),
@@ -265,6 +277,53 @@ def infer_data_type(format_string: str) -> str:
     }
 
     return format_map.get(format_string.lower(), 'string')
+
+
+def _is_researchable_id_column(column: Dict[str, Any]) -> bool:
+    """
+    Determine if an ID column can be researched/validated on the web.
+
+    Researchable ID columns should be marked as CRITICAL to enable validation,
+    which adds quality control for row generation.
+
+    Args:
+        column: Column definition with name, format, description
+
+    Returns:
+        True if researchable (URLs, names, companies), False otherwise
+    """
+    col_name = column.get('name', '').lower()
+    col_format = column.get('format', '').lower()
+    col_desc = column.get('description', '').lower()
+
+    combined = f"{col_name} {col_format} {col_desc}"
+
+    # Researchable patterns
+    researchable = [
+        'url', 'website', 'link', 'site', 'homepage',
+        'company', 'organization', 'firm', 'business', 'institution',
+        'person', 'researcher', 'author', 'name', 'scientist',
+        'email', 'contact', 'location', 'address'
+    ]
+
+    # Non-researchable patterns
+    non_researchable = [
+        'id', 'uuid', 'guid', 'key', 'index', 'number',
+        'date', 'time', 'timestamp', 'code', 'serial'
+    ]
+
+    # Check researchable first
+    for pattern in researchable:
+        if pattern in combined:
+            return True
+
+    # Then check non-researchable
+    for pattern in non_researchable:
+        if pattern in combined:
+            return False
+
+    # Default: not researchable
+    return False
 
 
 def validate_table_analysis(table_analysis: Dict[str, Any]) -> bool:

@@ -210,7 +210,21 @@ Sources:
 
 ### Comment Display Behavior
 
-**Size**: Comments are displayed with a default size of 300x150 pixels
+**Size**: Comments are displayed at 240×388 pixels (2.5 inches × golden ratio)
+- **Width**: 2.5 inches (240 pixels @ 96 DPI)
+- **Height**: 4.045 inches (388 pixels @ 96 DPI, golden ratio of width)
+
+**Technical Implementation**:
+- xlsxwriter sets comment size via `write_comment()` with `{'width': 360, 'height': 582}` parameter
+  - xlsxwriter converts these pixel values to **180pt × 291pt** in VML internally
+- openpyxl sets comment size via `comment.width = 240` and `comment.height = 388`
+  - openpyxl saves these as **240px × 388px** in VML
+- Both approaches display at approximately the same size in Excel (2.5" × 4")
+
+**Comment Size Preservation**:
+- When `strip_details_sheet_for_customer()` removes the Details sheet using openpyxl, it explicitly resets all comment dimensions to 240×388 pixels to preserve the intended size
+- Location: `src/shared/qc_enhanced_excel_report.py:369-382`
+- This fixes the issue where openpyxl would reset comments to default Excel size when loading xlsxwriter-generated files
 
 **Visibility**:
 - Comments appear as small red triangles in the upper-right corner of cells
@@ -443,6 +457,13 @@ If validation fails, the email is NOT sent and the user is NOT charged.
 **Cause**: Using openpyxl to modify xlsxwriter-generated files
 **Solution**: Use dual generation approach (generate both versions natively with xlsxwriter)
 
+### Issue 6: Small Comment Sizes in Customer Excel Files
+**Symptom**: Comments in downloaded/emailed Excel files appear too small (default Excel size instead of 2.5 inches wide)
+**Cause**: `strip_details_sheet_for_customer()` uses openpyxl to remove Details sheet, which resets comment dimensions to defaults when loading xlsxwriter-generated files
+**Solution**: Fixed in 2025-10-27 - `strip_details_sheet_for_customer()` now explicitly sets all comment dimensions to 240×388 pixels after loading and before saving
+**Location**: `src/shared/qc_enhanced_excel_report.py:369-382`
+**Status**: ✅ Fixed
+
 ### Issue 4: Colors Not Appearing
 **Symptom**: Cells are not color-coded despite having validation data
 **Cause**: Field not in validation config, or confidence level not determined
@@ -474,6 +495,7 @@ Planned improvements to the Excel structure:
 
 ## Version History
 
+- **2025-10-27**: Fixed comment size preservation in `strip_details_sheet_for_customer()` - comments now display at 240×388 pixels (2.5" × golden ratio)
 - **2025-10-12**: Added Validation Record sheet, corrected sheet names to Updated/Original Values, implemented dual generation
 - **2025-10-10**: Fixed race condition causing wrong values in comments
 - **2025-10-08**: Added QC integration to Excel generation

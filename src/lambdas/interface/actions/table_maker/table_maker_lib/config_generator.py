@@ -128,15 +128,34 @@ class ConfigGenerator:
             f"{len(research_columns)} research columns"
         )
 
-        # Group research columns by importance for search groups
-        search_groups = self._create_search_groups(research_columns)
+        # Check for researchable ID columns that should be validated
+        researchable_id_columns = []
+        non_researchable_id_columns = []
+
+        for col in identification_columns:
+            if self._is_researchable_id_column(col):
+                researchable_id_columns.append(col)
+            else:
+                non_researchable_id_columns.append(col)
+
+        logger.info(
+            f"ID column analysis: {len(researchable_id_columns)} researchable, "
+            f"{len(non_researchable_id_columns)} non-researchable"
+        )
+
+        # Add researchable ID columns to research columns for validation
+        # This allows them to be included in search groups and validated
+        research_columns_with_ids = research_columns + researchable_id_columns
+
+        # Group research columns (including researchable IDs) by importance for search groups
+        search_groups = self._create_search_groups(research_columns_with_ids)
 
         # Create validation targets for ALL columns (including ID columns for row key generation)
         # ID columns need to be in validation_targets with importance='ID' for row key generation
         validation_targets = []
 
-        # First, add identification columns with importance='ID'
-        for col in identification_columns:
+        # First, add non-researchable identification columns with importance='ID'
+        for col in non_researchable_id_columns:
             validation_targets.append({
                 'column': col['name'],
                 'description': col.get('description', ''),
@@ -146,7 +165,7 @@ class ConfigGenerator:
                 'notes': f"Identification column: {col['name']}",
                 'is_identification': True  # Extra flag for clarity
             })
-            logger.info(f"Added ID column to validation_targets: {col['name']}")
+            logger.info(f"Added non-researchable ID column to validation_targets: {col['name']}")
 
         # Then add research columns for actual validation
         research_targets = self._create_validation_targets(
@@ -154,6 +173,27 @@ class ConfigGenerator:
             search_groups
         )
         validation_targets.extend(research_targets)
+
+        # Add researchable ID columns as CRITICAL validation targets
+        for col in researchable_id_columns:
+            # Find the CRITICAL search group (group_id=1 typically)
+            critical_group_id = next(
+                (g['group_id'] for g in search_groups if 'Critical' in g.get('group_name', '')),
+                1  # Fallback to group 1 if no Critical group found
+            )
+
+            validation_targets.append({
+                'column': col['name'],
+                'description': col.get('description', ''),
+                'importance': 'CRITICAL',  # Mark as CRITICAL for validation
+                'format': col.get('format', 'String'),
+                'search_group': critical_group_id,
+                'notes': f"Researchable ID column - verify accuracy: {col.get('description', col['name'])}",
+                'is_identification': True,  # Still mark as ID for row key generation
+                'preferred_model': 'claude-sonnet-4-5',
+                'search_context_size': 'high'
+            })
+            logger.info(f"Added researchable ID column as CRITICAL validation target: {col['name']}")
 
         # Build complete config
         config = {
@@ -171,7 +211,8 @@ class ConfigGenerator:
                 'conversation_id': table_structure.get('metadata', {}).get('conversation_id', 'unknown'),
                 'version': 1,
                 'identification_columns': [col['name'] for col in identification_columns],
-                'total_research_columns': len(research_columns)
+                'researchable_id_columns': [col['name'] for col in researchable_id_columns],
+                'total_research_columns': len(research_columns) + len(researchable_id_columns)
             }
         }
 
@@ -362,9 +403,11 @@ This configuration was automatically generated from a table structure created th
 an interactive conversation. The validation targets and search groups are organized
 based on the importance levels and data types specified during table design.
 
-Identification columns are included in validation targets with importance='ID' for
-row key generation but are not actively validated as they represent the core
-data being researched.
+Identification Column Handling:
+- Researchable ID columns (URLs, company names, person names, etc.) are marked as CRITICAL
+  and will be validated to ensure row generation quality.
+- Non-researchable ID columns (generic IDs, dates, etc.) are included with importance='ID'
+  for row key generation but are not actively validated.
 """
 
         return notes.strip()
@@ -418,6 +461,75 @@ data being researched.
                 group_ids.add(group_id)
 
         return errors
+
+    def _is_researchable_id_column(self, column: Dict[str, Any]) -> bool:
+        """
+        Determine if an ID column can be researched on the web.
+
+        Researchable ID columns should be validated to ensure row generation quality.
+
+        Args:
+            column: Column definition with name, format, description, etc.
+
+        Returns:
+            True if the column can be researched, False otherwise
+        """
+        column_name = column.get('name', '').lower()
+        column_format = column.get('format', '').lower()
+        column_description = column.get('description', '').lower()
+
+        # Combine all text fields for pattern matching
+        combined_text = f"{column_name} {column_format} {column_description}"
+
+        # Researchable patterns - URLs, companies, organizations, people, etc.
+        researchable_patterns = [
+            # URL/Website columns
+            'url', 'website', 'link', 'homepage', 'site',
+            # Company/Organization columns
+            'company', 'organization', 'organisation', 'firm', 'business',
+            'corporation', 'enterprise', 'startup', 'vendor', 'supplier',
+            # People columns
+            'person', 'researcher', 'author', 'founder', 'ceo', 'contact',
+            'name', 'scientist', 'professor', 'director', 'manager',
+            # Location columns (can be verified)
+            'location', 'address', 'city', 'country', 'region',
+            # Product/Project names (can be verified)
+            'product', 'project', 'program', 'application', 'app',
+            # Email/Contact (can be verified)
+            'email', 'contact'
+        ]
+
+        # Check if any researchable pattern is found
+        for pattern in researchable_patterns:
+            if pattern in combined_text:
+                logger.info(
+                    f"Column '{column['name']}' identified as researchable "
+                    f"(matched pattern: '{pattern}')"
+                )
+                return True
+
+        # Non-researchable patterns - generic IDs, dates, numbers
+        non_researchable_patterns = [
+            'id', 'uuid', 'guid', 'key', 'index', 'number', '#',
+            'date', 'time', 'timestamp', 'created', 'updated',
+            'code', 'serial', 'reference'
+        ]
+
+        # If it matches non-researchable pattern and no researchable pattern, it's not researchable
+        for pattern in non_researchable_patterns:
+            if pattern in combined_text:
+                logger.info(
+                    f"Column '{column['name']}' identified as non-researchable "
+                    f"(matched pattern: '{pattern}')"
+                )
+                return False
+
+        # Default: if no pattern matched, consider it non-researchable
+        logger.info(
+            f"Column '{column['name']}' defaulted to non-researchable "
+            f"(no pattern match)"
+        )
+        return False
 
     def export_config_to_file(
         self,
