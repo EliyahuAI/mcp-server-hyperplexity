@@ -3984,14 +3984,20 @@
                                 }
                             }, 45000); // Send ping every 45 seconds to keep connection alive
 
-                            // Start periodic health checks - less aggressive
+                            // Start periodic health checks with reconnection
                             ws._healthCheckInterval = setInterval(() => {
-                                if (ws.readyState !== WebSocket.OPEN) {
+                                if (ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING) {
+                                    console.warn(`[WEBSOCKET] Health check failed for session ${sessionId}, readyState: ${ws.readyState}. Triggering reconnection...`);
                                     clearInterval(ws._healthCheckInterval);
                                     clearInterval(ws._pingInterval);
                                     sessionWebSockets.delete(sessionId);
+
+                                    // Trigger reconnection
+                                    if (!ws._intentionallyClosed) {
+                                        connectToSession(sessionId, 0); // Reset reconnect attempts for health-check triggered reconnection
+                                    }
                                 }
-                            }, 60000); // Check every 60 seconds, only check readyState
+                            }, 30000); // Check every 30 seconds (more frequent than before for faster recovery)
                         } catch (error) {
                             console.error(`Error subscribing to session ${sessionId}:`, error);
                         }
@@ -4035,18 +4041,23 @@
                     }
 
                     const isUnexpectedClose = event.code !== 1000 && event.code !== 1001;
-                    const maxReconnectAttempts = 5;
+                    const maxReconnectAttempts = 20; // Increased for long-running validations
                     const wasIntentionallyClosed = ws._intentionallyClosed;
 
                     if (isUnexpectedClose && reconnectAttempt < maxReconnectAttempts && !wasIntentionallyClosed) {
-                        const reconnectDelay = Math.min(1000 * Math.pow(2, reconnectAttempt), 10000);
-                        console.log(`[WEBSOCKET] Reconnecting in ${reconnectDelay}ms (attempt ${reconnectAttempt + 1}/${maxReconnectAttempts})`);
+                        // Progressive backoff: 1s, 2s, 4s, 8s, then 15s for remaining attempts
+                        const reconnectDelay = reconnectAttempt < 4
+                            ? 1000 * Math.pow(2, reconnectAttempt)
+                            : 15000;
+                        console.log(`[WEBSOCKET] Connection lost (code: ${event.code}). Reconnecting in ${reconnectDelay}ms (attempt ${reconnectAttempt + 1}/${maxReconnectAttempts})`);
 
                         setTimeout(() => {
+                            console.log(`[WEBSOCKET] Attempting to reconnect to session ${sessionId}...`);
                             connectToSession(sessionId, reconnectAttempt + 1);
                         }, reconnectDelay);
                     } else if (isUnexpectedClose) {
-                        console.error(`[WEBSOCKET] Max reconnection attempts reached for session ${sessionId}`);
+                        console.error(`[WEBSOCKET] Max reconnection attempts (${maxReconnectAttempts}) reached for session ${sessionId}`);
+                        console.error(`[WEBSOCKET] WebSocket updates will no longer be received. You may need to check status manually or refresh the page.`);
                     }
                 };
 
@@ -11281,6 +11292,16 @@ Please provide any additional context, or simply proceed to generate your initia
         // Handle page visibility changes (back/forward navigation)
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) {
+                console.log('[VISIBILITY] Tab became visible, checking WebSocket connections...');
+
+                // Reconnect any disconnected WebSockets
+                sessionWebSockets.forEach((ws, sessionId) => {
+                    if (ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING) {
+                        console.log(`[VISIBILITY] Reconnecting WebSocket for session ${sessionId}`);
+                        sessionWebSockets.delete(sessionId);
+                        connectToSession(sessionId, 0); // Reset reconnect attempts
+                    }
+                });
 
                 // Small delay to ensure state is ready
                 setTimeout(() => {
