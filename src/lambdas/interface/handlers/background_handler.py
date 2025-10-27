@@ -2597,6 +2597,12 @@ def handle_main_processing(event, context):
                     "estimated_validation_time": estimated_total_time_seconds
                 }
 
+                # Extract response size estimate from enhanced_metrics if available
+                response_size_estimate = None
+                if enhanced_metrics:
+                    full_validation_estimates = enhanced_metrics.get('full_validation_estimates', {})
+                    response_size_estimate = full_validation_estimates.get('response_size_estimate')
+
                 frontend_payload = {
                     "markdown_table": preview_payload.get("markdown_table", ""),
                     "enhanced_download_url": preview_payload.get("enhanced_download_url"),
@@ -2613,6 +2619,15 @@ def handle_main_processing(event, context):
                         "credits_needed": max(0, effective_cost - (float(current_balance) if current_balance else 0))
                     }
                 }
+
+                # Add response size estimate for smart delegation system (only if available)
+                if response_size_estimate:
+                    frontend_payload["enhanced_metrics"] = {
+                        "full_validation_estimates": {
+                            "response_size_estimate": response_size_estimate
+                        }
+                    }
+                    logger.debug(f"[RESPONSE_SIZE] Added response size estimate to frontend_payload: {response_size_estimate.get('estimated_full_size_mb', 0):.2f} MB")
                 
                 # Update DynamoDB with the minimal frontend payload
                 update_run_status_for_session(status='COMPLETED',
