@@ -2066,9 +2066,25 @@ def handle_main_processing(event, context):
 
                 # Extract config_version from config_data for revert button display
                 config_version = 1
+                session_version_count = 1
                 if config_data and isinstance(config_data, dict):
                     config_version = config_data.get('storage_metadata', {}).get('version', 1)
                     logger.debug(f"[CONFIG_VERSION] Extracted version {config_version} from config_data for preview_payload")
+
+                # Count how many versions exist in THIS session (for accurate revert button logic)
+                try:
+                    from ..core.unified_s3_manager import UnifiedS3Manager
+                    session_storage_manager = UnifiedS3Manager()
+                    session_info = session_storage_manager.load_session_info(email, clean_session_id)
+                    if session_info and session_info.get('versions'):
+                        session_version_count = len(session_info['versions'])
+                        logger.debug(f"[CONFIG_VERSION] Session has {session_version_count} versions total")
+                    else:
+                        session_version_count = 1
+                        logger.debug(f"[CONFIG_VERSION] No session info found, assuming 1 version")
+                except Exception as e:
+                    logger.warning(f"[CONFIG_VERSION] Failed to count session versions: {e}")
+                    session_version_count = 1
 
                 # Create the markdown table for the response
                 markdown_table = create_markdown_table_from_results(real_results, 3, actual_config_s3_key, S3_UNIFIED_BUCKET, qc_results)
@@ -2082,7 +2098,8 @@ def handle_main_processing(event, context):
                     "estimated_validation_time_minutes": round(estimated_total_time_seconds / 60, 1),
                     "actual_batch_size": effective_batch_size,
                     "estimated_validation_batches": total_batches,
-                    "config_version": config_version,  # Add config version for revert button
+                    "config_version": config_version,  # Current config version number
+                    "session_version_count": session_version_count,  # Total versions in this session
                     "cost_estimates": {
                         "preview_cost": charged_cost,  # What user pays for preview (0)
                         "preview_tokens": total_tokens,
@@ -3231,13 +3248,50 @@ def handle_main_processing(event, context):
                                     logger.debug(f"[DELEGATION_DECISION] Found time estimate in nested location '{parent_key}.{child_key}': {estimated_total_time_seconds}s")
                                     break
 
+                    # Check response size estimate from preview
+                    estimated_response_size_mb = 0.0
+                    response_size_will_exceed_limit = False
+                    MAX_SYNC_RESPONSE_SIZE_MB = 5.0  # Lambda 6MB limit with 1MB safety buffer
+
+                    try:
+                        # Look for response size estimate in enhanced_metrics.full_validation_estimates
+                        if preview_data:
+                            enhanced_metrics = preview_data.get('enhanced_metrics', {})
+                            full_validation_estimates = enhanced_metrics.get('full_validation_estimates', {})
+                            response_size_estimate = full_validation_estimates.get('response_size_estimate', {})
+
+                            estimated_response_size_mb = response_size_estimate.get('estimated_full_size_mb', 0.0)
+                            response_size_will_exceed_limit = response_size_estimate.get('will_exceed_limit', False)
+
+                            if estimated_response_size_mb > 0:
+                                logger.debug(f"[DELEGATION_DECISION] Estimated response size: {estimated_response_size_mb:.2f} MB")
+                                logger.debug(f"[DELEGATION_DECISION] Response size limit: {MAX_SYNC_RESPONSE_SIZE_MB} MB")
+                                logger.debug(f"[DELEGATION_DECISION] Will exceed response limit: {response_size_will_exceed_limit}")
+                    except Exception as size_check_error:
+                        logger.warning(f"[DELEGATION_DECISION] Error checking response size estimate: {size_check_error}")
+
                     if estimated_total_time_seconds and estimated_total_time_seconds > 0:
                         estimated_minutes = estimated_total_time_seconds / 60.0
-                        should_delegate = estimated_minutes > MAX_SYNC_INVOCATION_TIME_MINUTES
+
+                        # Delegate if EITHER time > 15min OR response size > 5MB
+                        time_exceeds_limit = estimated_minutes > MAX_SYNC_INVOCATION_TIME_MINUTES
+                        size_exceeds_limit = estimated_response_size_mb > MAX_SYNC_RESPONSE_SIZE_MB
+
+                        should_delegate = time_exceeds_limit or size_exceeds_limit
 
                         logger.debug(f"[DELEGATION_DECISION] Estimated processing time: {estimated_minutes:.1f} minutes")
                         logger.debug(f"[DELEGATION_DECISION] Sync timeout limit: {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f} minutes")
+                        logger.debug(f"[DELEGATION_DECISION] Time exceeds limit: {time_exceeds_limit}")
+                        logger.debug(f"[DELEGATION_DECISION] Size exceeds limit: {size_exceeds_limit}")
                         logger.debug(f"[DELEGATION_DECISION] Should delegate: {should_delegate}")
+
+                        if should_delegate:
+                            delegation_reason = []
+                            if time_exceeds_limit:
+                                delegation_reason.append(f"time_{estimated_minutes:.1f}min_exceeds_{MAX_SYNC_INVOCATION_TIME_MINUTES:.1f}min")
+                            if size_exceeds_limit:
+                                delegation_reason.append(f"response_{estimated_response_size_mb:.2f}MB_exceeds_{MAX_SYNC_RESPONSE_SIZE_MB}MB")
+                            logger.info(f"[DELEGATION_DECISION] Delegating to async: {', '.join(delegation_reason)}")
                     else:
                         logger.warning(f"[DELEGATION_DECISION] No valid time estimate found in preview data, using sync processing")
                         logger.debug(f"[DELEGATION_DECISION] Available preview data keys: {list(preview_data.keys()) if preview_data else 'None'}")
@@ -3252,7 +3306,8 @@ def handle_main_processing(event, context):
 
             if should_delegate:
                 # ========== ASYNC DELEGATION WORKFLOW ==========
-                logger.debug(f"[DELEGATION] Delegating to async processing (estimated {estimated_minutes:.1f}min > {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f}min)")
+                # delegation_reason was already logged in the decision block above
+                logger.info(f"[DELEGATION] Using async processing workflow")
 
                 try:
                     # Import WebSocket connection function
@@ -3481,7 +3536,14 @@ def handle_main_processing(event, context):
 
             if not should_delegate:
                 # ========== SYNCHRONOUS PROCESSING (CURRENT BEHAVIOR) ==========
-                logger.debug(f"[DELEGATION] Using synchronous processing (estimated {estimated_minutes:.1f}min <= {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f}min)")
+                sync_reasons = []
+                if 'estimated_minutes' in locals() and estimated_minutes:
+                    sync_reasons.append(f"time_{estimated_minutes:.1f}min_<_{MAX_SYNC_INVOCATION_TIME_MINUTES:.1f}min")
+                if 'estimated_response_size_mb' in locals() and estimated_response_size_mb > 0:
+                    sync_reasons.append(f"response_{estimated_response_size_mb:.2f}MB_<_{MAX_SYNC_RESPONSE_SIZE_MB}MB")
+
+                reason_str = f" ({', '.join(sync_reasons)})" if sync_reasons else ""
+                logger.info(f"[DELEGATION] Using synchronous processing{reason_str}")
 
             # Define config_version and results_path for both sync and async paths
             config_version = config_data.get('storage_metadata', {}).get('version', 1) if config_data else 1
@@ -4109,9 +4171,25 @@ def handle_main_processing(event, context):
 
                 # Extract config_version from config_data for revert button display
                 config_version = 1
+                session_version_count = 1
                 if config_data and isinstance(config_data, dict):
                     config_version = config_data.get('storage_metadata', {}).get('version', 1)
                     logger.debug(f"[CONFIG_VERSION] Extracted version {config_version} from config_data for preview_payload (preview_completed path)")
+
+                # Count how many versions exist in THIS session (for accurate revert button logic)
+                try:
+                    from ..core.unified_s3_manager import UnifiedS3Manager
+                    session_storage_manager = UnifiedS3Manager()
+                    session_info = session_storage_manager.load_session_info(email, clean_session_id)
+                    if session_info and session_info.get('versions'):
+                        session_version_count = len(session_info['versions'])
+                        logger.debug(f"[CONFIG_VERSION] Session has {session_version_count} versions total (preview_completed path)")
+                    else:
+                        session_version_count = 1
+                        logger.debug(f"[CONFIG_VERSION] No session info found, assuming 1 version (preview_completed path)")
+                except Exception as e:
+                    logger.warning(f"[CONFIG_VERSION] Failed to count session versions: {e}")
+                    session_version_count = 1
 
                 preview_payload = {
                     "status": "preview_completed",
@@ -4126,7 +4204,8 @@ def handle_main_processing(event, context):
                     "actual_batch_size": effective_batch_size,
                     "estimated_validation_batches": total_batches,
                     "enhanced_download_url": enhanced_download_url,  # Download link for enhanced Excel
-                    "config_version": config_version,  # Add config version for revert button
+                    "config_version": config_version,  # Current config version number
+                    "session_version_count": session_version_count,  # Total versions in this session
                     "cost_estimates": {
                         "preview_cost": charged_cost,  # What user pays for preview (0)
                         "preview_tokens": total_tokens,
