@@ -3977,15 +3977,26 @@
                             // Track last message time for health monitoring
                             ws._lastMessageTime = Date.now();
 
+                            // Track ping metrics
+                            ws._pingsSent = 0;
+                            ws._pongsReceived = 0;
+                            ws._lastPingTime = null;
+
                             // Start keepalive ping to prevent idle timeout (AWS API Gateway default is 10 min)
                             ws._pingInterval = setInterval(() => {
                                 if (ws.readyState === WebSocket.OPEN) {
                                     try {
+                                        ws._pingsSent++;
+                                        ws._lastPingTime = Date.now();
+                                        console.log(`[WEBSOCKET] Sending keepalive ping #${ws._pingsSent} for session ${sessionId}`);
                                         ws.send(JSON.stringify({ action: 'ping' }));
                                     } catch (error) {
-                                        console.error(`Error sending ping for session ${sessionId}:`, error);
+                                        console.error(`[WEBSOCKET] Error sending ping for session ${sessionId}:`, error);
+                                        // If we can't send pings, the connection is likely dead
+                                        clearInterval(ws._pingInterval);
                                     }
                                 } else {
+                                    console.warn(`[WEBSOCKET] Ping interval stopped - connection not open (state: ${ws.readyState})`);
                                     clearInterval(ws._pingInterval);
                                 }
                             }, 45000); // Send ping every 45 seconds to keep connection alive
@@ -4013,10 +4024,18 @@
                 ws.onmessage = (event) => {
                     // Track last message time for health checks
                     ws._lastMessageTime = Date.now();
-                    
+
                     try {
+                        // Check if this is a pong response (text "pong" or any response to ping)
+                        if (event.data === 'pong' || event.data === 'Pong' || event.data === '"pong"') {
+                            ws._pongsReceived++;
+                            const pingLatency = ws._lastPingTime ? Date.now() - ws._lastPingTime : 'unknown';
+                            console.log(`[WEBSOCKET] Received pong #${ws._pongsReceived} for session ${sessionId} (latency: ${pingLatency}ms, sent: ${ws._pingsSent})`);
+                            return; // Don't route pong messages
+                        }
+
                         const data = JSON.parse(event.data);
-                        
+
                         // Validate data is not null/undefined before routing
                         if (data && typeof data === 'object') {
                             // Special logging for COMPLETED messages
@@ -4035,7 +4054,11 @@
                 };
 
                 ws.onclose = (event) => {
-                    console.log(`[WEBSOCKET] Connection closed for session ${sessionId}, code: ${event.code}, reason: ${event.reason}`);
+                    const connectionDuration = ws._lastMessageTime ? ((Date.now() - ws._lastMessageTime) / 1000).toFixed(1) : 'unknown';
+                    console.log(`[WEBSOCKET] Connection closed for session ${sessionId}`);
+                    console.log(`[WEBSOCKET]   Close code: ${event.code}, reason: "${event.reason}"`);
+                    console.log(`[WEBSOCKET]   Pings sent: ${ws._pingsSent || 0}, Pongs received: ${ws._pongsReceived || 0}`);
+                    console.log(`[WEBSOCKET]   Time since last message: ${connectionDuration}s`);
                     sessionWebSockets.delete(sessionId);
 
                     // Clean up all intervals
@@ -5250,7 +5273,7 @@
                 const idBoxHtml = `
                     <div class="message" style="margin-bottom: 1rem; background-color: #e0f7fa; color: #00838f; border: 1px solid #b2ebf2;">
                         <span class="message-icon">ℹ️</span>
-                        <div><strong>ID Columns</strong> (define the row, not validated):<br>${idListHtml}</div>
+                        <div><strong>ID Columns</strong> (defines rows):<br>${idListHtml}</div>
                     </div>
                 `;
 
@@ -11945,7 +11968,7 @@ Please provide any additional context, or simply proceed to generate your initia
                     infoBoxesHtml += `
                         <div class="message" style="margin-bottom: 1rem; background-color: #e0f7fa; color: #00838f; border: 1px solid #b2ebf2;">
                             <span class="message-icon">ℹ️</span>
-                            <div><strong>ID Columns</strong> (define the row, not validated):<br>${idListHtml}</div>
+                            <div><strong>ID Columns</strong> (defines rows):<br>${idListHtml}</div>
                         </div>
                     `;
                 }
