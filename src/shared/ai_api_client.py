@@ -1924,15 +1924,26 @@ class AIAPIClient:
                 logger.warning(f"[FAILED] Model {current_model} failed: {error_msg}")
                 last_error = e
 
-                # If this was a refusal, skip to less restrictive models
+                # If this was a refusal, add remaining lower-quality models from hierarchy
                 if "[REFUSAL]" in error_msg:
-                    logger.warning(f"[REFUSAL_FALLBACK] Detected refusal from {current_model}, will try less restrictive models")
-                    # Add haiku and sonar to the end of the models_to_try list if not already present
-                    fallback_models = ["claude-haiku-4-5", "sonar"]
-                    for fallback_model in fallback_models:
-                        if fallback_model not in models_to_try:
-                            models_to_try.append(fallback_model)
-                            logger.info(f"[REFUSAL_FALLBACK] Added {fallback_model} to fallback models")
+                    logger.warning(f"[REFUSAL_FALLBACK] Detected refusal from {current_model}, adding less restrictive models")
+                    # Get all remaining models from hierarchy that aren't already in models_to_try
+                    try:
+                        current_index = self.MODEL_HIERARCHY.index(current_model)
+                        # Add all remaining models after current one
+                        remaining_models = self.MODEL_HIERARCHY[current_index + 1:]
+                        for fallback_model in remaining_models:
+                            if fallback_model not in models_to_try:
+                                models_to_try.append(fallback_model)
+                                logger.info(f"[REFUSAL_FALLBACK] Added {fallback_model} from hierarchy")
+                    except ValueError:
+                        # Current model not in hierarchy, add default less restrictive models
+                        logger.warning(f"[REFUSAL_FALLBACK] {current_model} not in hierarchy, using default fallbacks")
+                        default_fallbacks = ["claude-haiku-4-5", "sonar"]
+                        for fallback_model in default_fallbacks:
+                            if fallback_model not in models_to_try:
+                                models_to_try.append(fallback_model)
+                                logger.info(f"[REFUSAL_FALLBACK] Added {fallback_model} as default fallback")
 
                 # If soft_schema failed, retry with hard schema before trying next model
                 if soft_schema and model_index == 0:
