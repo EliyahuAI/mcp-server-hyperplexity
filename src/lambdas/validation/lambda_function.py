@@ -5697,6 +5697,35 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 except Exception as outer_e:
                     logger.error(f"[S3_SAVE] Critical error in error handler: {outer_e}")
 
+        # Log response size before returning
+        try:
+            response_json = json.dumps(response, default=str)
+            response_size_mb = len(response_json) / 1024 / 1024
+            logger.warning(f"[RESPONSE_SIZE] Total response size: {response_size_mb:.2f} MB")
+
+            if response_size_mb > 5.5:
+                logger.error(f"[RESPONSE_SIZE] Response exceeds 5.5MB threshold! Will likely hit 413 error.")
+                # Log breakdown
+                if 'body' in response and 'data' in response['body']:
+                    data_size = len(json.dumps(response['body']['data'], default=str)) / 1024 / 1024
+                    logger.error(f"[RESPONSE_SIZE]   - data section: {data_size:.2f} MB")
+                    if 'rows' in response['body']['data']:
+                        rows_size = len(json.dumps(response['body']['data']['rows'], default=str)) / 1024 / 1024
+                        logger.error(f"[RESPONSE_SIZE]     - rows: {rows_size:.2f} MB")
+                    if 'qc_results' in response['body']['data']:
+                        qc_size = len(json.dumps(response['body']['data']['qc_results'], default=str)) / 1024 / 1024
+                        logger.error(f"[RESPONSE_SIZE]     - qc_results: {qc_size:.2f} MB")
+                if 'body' in response and 'metadata' in response['body']:
+                    metadata_size = len(json.dumps(response['body']['metadata'], default=str)) / 1024 / 1024
+                    logger.error(f"[RESPONSE_SIZE]   - metadata section: {metadata_size:.2f} MB")
+                    if 'enhanced_metrics' in response['body']['metadata']:
+                        em = response['body']['metadata']['enhanced_metrics']
+                        if 'all_enhanced_call_data' in em:
+                            aecd_size = len(json.dumps(em['all_enhanced_call_data'], default=str)) / 1024 / 1024
+                            logger.error(f"[RESPONSE_SIZE]     - all_enhanced_call_data: {aecd_size:.2f} MB")
+        except Exception as size_log_error:
+            logger.warning(f"[RESPONSE_SIZE] Failed to log response size: {size_log_error}")
+
         # Return the combined results
         return response
     except ContinuationTriggered as ct:
