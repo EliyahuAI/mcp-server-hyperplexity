@@ -5302,6 +5302,46 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
             logger.info(f"[RESPONSE_SIZE_OPT] Cleaned {len(validation_results)} rows by removing _raw_responses to prevent 413 error")
 
+            # Quick size check - if still too large, strip verbose fields
+            initial_size_mb = len(json.dumps(cleaned_validation_results, default=str)) / 1024 / 1024
+            logger.info(f"[RESPONSE_SIZE_CHECK] Cleaned rows size: {initial_size_mb:.2f} MB")
+
+            # If rows data alone >4MB, strip verbose fields to prevent 413
+            if initial_size_mb > 4.0:
+                logger.warning(f"[RESPONSE_SIZE_OPT] Rows data {initial_size_mb:.2f} MB exceeds 4MB threshold. Stripping verbose fields...")
+
+                lightweight_results = {}
+                for row_key, row_result in cleaned_validation_results.items():
+                    lightweight_row = {}
+                    for field_name, field_data in row_result.items():
+                        if isinstance(field_data, dict):
+                            # Keep only essential fields, strip verbose text
+                            lightweight_row[field_name] = {
+                                'value': field_data.get('value'),
+                                'confidence': field_data.get('confidence'),
+                                'confidence_level': field_data.get('confidence_level'),
+                                'sources': field_data.get('sources', []),  # Keep URLs
+                                'main_source': field_data.get('main_source'),
+                                'update_required': field_data.get('update_required'),
+                                'substantially_different': field_data.get('substantially_different'),
+                                'qc_applied': field_data.get('qc_applied'),
+                                'qc_confidence': field_data.get('qc_confidence'),
+                                'qc_entry': field_data.get('qc_entry'),
+                                'qc_action_taken': field_data.get('qc_action_taken'),
+                                'model': field_data.get('model'),
+                                # Strip: reasoning, quote, explanation, qc_reasoning, qc_citations, citations
+                            }
+                        else:
+                            # Non-dict fields (like next_check, reasons) - keep as-is
+                            lightweight_row[field_name] = field_data
+
+                    lightweight_results[row_key] = lightweight_row
+
+                lightweight_size_mb = len(json.dumps(lightweight_results, default=str)) / 1024 / 1024
+                logger.warning(f"[RESPONSE_SIZE_OPT] After stripping verbose fields: {lightweight_size_mb:.2f} MB (saved {initial_size_mb - lightweight_size_mb:.2f} MB)")
+
+                cleaned_validation_results = lightweight_results
+
             response_data = {
                 # Map row indices to results (cleaned of raw responses)
                 "rows": cleaned_validation_results,
@@ -5697,11 +5737,44 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 except Exception as outer_e:
                     logger.error(f"[S3_SAVE] Critical error in error handler: {outer_e}")
 
-        # Log response size before returning
+        # Calculate response size and estimate full validation size
         try:
             response_json = json.dumps(response, default=str)
             response_size_mb = len(response_json) / 1024 / 1024
             logger.warning(f"[RESPONSE_SIZE] Total response size: {response_size_mb:.2f} MB")
+
+            # If this is a preview, estimate full validation response size
+            is_preview = event.get('is_preview', False)
+            if is_preview and len(validation_results) > 0:
+                total_rows_in_table = event.get('total_rows', len(rows))
+                preview_rows = len(validation_results)
+
+                # Calculate per-row size
+                per_row_size_mb = response_size_mb / preview_rows if preview_rows > 0 else 0
+
+                # Estimate full validation size
+                estimated_full_size_mb = per_row_size_mb * total_rows_in_table
+
+                logger.warning(f"[RESPONSE_SIZE_ESTIMATE] Preview: {preview_rows} rows = {response_size_mb:.2f} MB")
+                logger.warning(f"[RESPONSE_SIZE_ESTIMATE] Per-row average: {per_row_size_mb:.3f} MB")
+                logger.warning(f"[RESPONSE_SIZE_ESTIMATE] Full validation ({total_rows_in_table} rows) would be: {estimated_full_size_mb:.2f} MB")
+
+                if estimated_full_size_mb > 6.0:
+                    logger.error(f"[RESPONSE_SIZE_ESTIMATE] ⚠️  FULL VALIDATION WILL FAIL! Estimated {estimated_full_size_mb:.2f} MB exceeds 6MB Lambda limit")
+
+                # Add estimate to metadata for interface to display
+                if 'enhanced_metrics' in response['body']['metadata']:
+                    if 'full_validation_estimates' not in response['body']['metadata']['enhanced_metrics']:
+                        response['body']['metadata']['enhanced_metrics']['full_validation_estimates'] = {}
+
+                    response['body']['metadata']['enhanced_metrics']['full_validation_estimates']['response_size_estimate'] = {
+                        'preview_size_mb': round(response_size_mb, 2),
+                        'preview_rows': preview_rows,
+                        'per_row_size_mb': round(per_row_size_mb, 3),
+                        'estimated_full_size_mb': round(estimated_full_size_mb, 2),
+                        'will_exceed_limit': estimated_full_size_mb > 6.0,
+                        'lambda_response_limit_mb': 6.0
+                    }
 
             if response_size_mb > 5.5:
                 logger.error(f"[RESPONSE_SIZE] Response exceeds 5.5MB threshold! Will likely hit 413 error.")
