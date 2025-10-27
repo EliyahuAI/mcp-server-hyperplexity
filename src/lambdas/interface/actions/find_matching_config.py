@@ -223,6 +223,95 @@ def get_columns_from_dynamodb(email: str, session_id: str) -> List[str]:
         logger.warning(f"[QC_COLUMNS] Could not get columns from DynamoDB: {e}, falling back to S3 analysis")
         return None
 
+def batch_get_columns_from_dynamodb(email: str, session_ids: List[str]) -> Dict[str, List[str]]:
+    """
+    Batch fetch column names from DynamoDB for multiple sessions at once.
+    Much more efficient than calling get_columns_from_dynamodb in a loop.
+
+    Returns:
+        Dict mapping session_id -> list of column names (or None if not found)
+    """
+    if not session_ids:
+        return {}
+
+    try:
+        import sys
+        import os
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
+        import boto3
+        from boto3.dynamodb.conditions import Key, Attr
+
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        table = dynamodb.Table('perplexity-validator-runs')
+
+        results = {}
+
+        # Query in batches using the email-based GSI for efficiency
+        try:
+            # Get all runs for this user with qc_by_column data
+            response = table.query(
+                IndexName='EmailStartTimeIndex',
+                KeyConditionExpression=Key('email').eq(email),
+                FilterExpression=Attr('qc_metrics').exists() & Attr('qc_metrics.qc_by_column').exists(),
+                ScanIndexForward=False  # Most recent first
+            )
+
+            all_runs = response.get('Items', [])
+
+            # Handle pagination if needed
+            while 'LastEvaluatedKey' in response:
+                response = table.query(
+                    IndexName='EmailStartTimeIndex',
+                    KeyConditionExpression=Key('email').eq(email),
+                    FilterExpression=Attr('qc_metrics').exists() & Attr('qc_metrics.qc_by_column').exists(),
+                    ScanIndexForward=False,
+                    ExclusiveStartKey=response['LastEvaluatedKey']
+                )
+                all_runs.extend(response.get('Items', []))
+
+                # Stop if we have enough data
+                if len(all_runs) > 500:
+                    logger.info(f"[BATCH_QC] Collected {len(all_runs)} runs, stopping pagination")
+                    break
+
+            logger.info(f"[BATCH_QC] Fetched {len(all_runs)} runs with qc_by_column data for {email}")
+
+            # Group by session_id and keep most recent per session
+            session_runs = {}
+            for run in all_runs:
+                run_session_id = run.get('session_id')
+                if run_session_id in session_ids:
+                    if run_session_id not in session_runs:
+                        session_runs[run_session_id] = run
+                    else:
+                        # Keep most recent
+                        if run.get('start_time', '') > session_runs[run_session_id].get('start_time', ''):
+                            session_runs[run_session_id] = run
+
+            # Extract columns for each session
+            for session_id, run in session_runs.items():
+                qc_by_column = run.get('qc_metrics', {}).get('qc_by_column', {})
+                columns = list(qc_by_column.keys())
+                if columns:
+                    results[session_id] = columns
+                    logger.debug(f"[BATCH_QC] Session {session_id}: {len(columns)} columns")
+
+            logger.info(f"[BATCH_QC] Successfully extracted columns for {len(results)}/{len(session_ids)} sessions")
+            return results
+
+        except Exception as query_error:
+            logger.warning(f"[BATCH_QC] Batch query failed: {query_error}, falling back to individual queries")
+            # Fall back to individual queries
+            for session_id in session_ids:
+                columns = get_columns_from_dynamodb(email, session_id)
+                if columns:
+                    results[session_id] = columns
+            return results
+
+    except Exception as e:
+        logger.error(f"[BATCH_QC] Batch get columns failed: {e}")
+        return {}
+
 
 def analyze_table_columns(email: str, session_id: str, storage_manager: UnifiedS3Manager) -> List[str]:
     """Extract column names from uploaded Excel file (with DynamoDB optimization)"""
@@ -908,21 +997,35 @@ def extract_session_and_version_from_config_id(config_id: str) -> Tuple[str, int
         if '_config_v' in config_id:
             # New format: session_20250918_150921_ea332116_config_v1_ai_generated
             session_part = config_id[:config_id.find('_config_v')]
-            version_part = config_id[config_id.find('_config_v') + 8:]  # Skip '_config_v'
-            version_str = version_part.split('_')[0]
-            return session_part, int(version_str)
+            version_part = config_id[config_id.find('_config_v') + 9:]  # Skip '_config_v'
+            # Extract just the numeric version (handles both 'v1' and '1')
+            version_str = ''
+            for char in version_part:
+                if char.isdigit():
+                    version_str += char
+                elif version_str:  # Stop after finding digits
+                    break
+            version = int(version_str) if version_str else 1
+            return session_part, version
         elif '_v' in config_id:
             # Legacy format: session_20250918_150921_ea332116_v1_Configuration_for_AIML_co
             parts = config_id.split('_v')
             if len(parts) >= 2:
                 session_part = parts[0]
-                version_str = parts[1].split('_')[0]
-                return session_part, int(version_str)
-        
+                # Extract just the numeric version
+                version_str = ''
+                for char in parts[1]:
+                    if char.isdigit():
+                        version_str += char
+                    elif version_str:  # Stop after finding digits
+                        break
+                version = int(version_str) if version_str else 1
+                return session_part, version
+
         # Fallback: assume version 1
         return config_id, 1
-    except (ValueError, IndexError):
-        logger.warning(f"Could not parse config_id: {config_id}")
+    except (ValueError, IndexError) as e:
+        logger.debug(f"Could not parse config_id: {config_id}, using fallback (v1). Error: {e}")
         return config_id, 1
 
 def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2) -> Dict[str, Any]:
@@ -996,9 +1099,27 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
         configs_excluded_by_qc = 0
         failed_loads = 0
         max_s3_analyses = 10
+        max_configs_to_check = 50  # Limit total configs checked to avoid timeout
+
+        # BATCH OPTIMIZATION: Pre-fetch qc_by_column data for all candidate configs
+        import re
+        session_pattern = r'^(session_(?:demo_)?\d{8}_\d{6}_[a-f0-9]{8})'
+        candidate_session_ids = []
+        for config_id in successfully_used_configs[:max_configs_to_check]:
+            match = re.match(session_pattern, config_id)
+            if match:
+                candidate_session_ids.append(match.group(1))
+
+        logger.info(f"[FIND_CONFIG] Batch fetching qc_by_column for {len(candidate_session_ids)} sessions")
+        qc_columns_cache = batch_get_columns_from_dynamodb(email, candidate_session_ids)
+        logger.info(f"[FIND_CONFIG] Cached qc_by_column data for {len(qc_columns_cache)} sessions")
 
         # Process configs in order of recency with interleaved qc filter + S3 check
-        for config_id in successfully_used_configs:
+        for idx, config_id in enumerate(successfully_used_configs):
+            # TIMEOUT PROTECTION: Stop after checking too many configs
+            if idx >= max_configs_to_check:
+                logger.warning(f"[FIND_CONFIG] Reached max configs to check limit ({max_configs_to_check}), stopping")
+                break
             # Stop early if we've analyzed enough
             if configs_processed >= max_s3_analyses:
                 logger.warning(f"[FIND_CONFIG] Reached max S3 analyses limit ({max_s3_analyses}), stopping")
@@ -1009,14 +1130,12 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
                 break
 
             # Extract session from config_id
-            import re
-            session_pattern = r'^(session_(?:demo_)?\d{8}_\d{6}_[a-f0-9]{8})'
             match = re.match(session_pattern, config_id)
             config_session_id = match.group(1) if match else None
 
-            # Try qc_by_column exclusionary filter first (fast)
+            # Try qc_by_column exclusionary filter first (fast) - use cached data
             if config_session_id:
-                config_qc_columns = get_columns_from_dynamodb(email, config_session_id)
+                config_qc_columns = qc_columns_cache.get(config_session_id)
 
                 if config_qc_columns:
                     # EXCLUSIONARY CHECK: If config has qc columns NOT in our table, skip

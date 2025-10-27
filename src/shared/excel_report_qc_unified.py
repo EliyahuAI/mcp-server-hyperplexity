@@ -850,8 +850,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             updated_sheet.write(updated_row_idx, col_idx, safe_for_excel(updated_value, should_preserve_formulas(col_name)), cell_format)
                         
                         # Add comment with original value and reasoning (Updated Values sheet format)
+                        # Skip comments for IGNORED and ID columns
                         comment_text = None
-                        if row_validation_data and col_name in row_validation_data:
+                        if should_apply_coloring(col_name) and row_validation_data and col_name in row_validation_data:
                             field_data = row_validation_data[col_name]
                             if isinstance(field_data, dict):
                                 original_value = row_data.get(col_name, '')
@@ -1050,82 +1051,83 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 cell_format = get_confidence_format(original_confidence, format_dict)
                             else:
                                 cell_format = None  # No coloring for IGNORED and ID columns
-                            
+
                             # Create comment with updated value and confidence (Original Values sheet format)
-                            # DEBUG: Log validated_value right before building comment
-                            if col_name == 'Start Date':
-                                logger.info(f"[COMMENT_BUILD_DEBUG] Row {row_idx} {col_name}: About to build comment with validated_value='{validated_value}'")
-
+                            # Skip comments for IGNORED and ID columns
                             comment_parts = []
-                            # ALWAYS show what appears in Updated Values sheet (not just when different)
-                            # Get updated confidence (use QC-adjusted if available)
-                            updated_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
-                            row_qc_data = get_qc_data_for_row(row_key, row_idx)
-                            if row_qc_data and col_name in row_qc_data:
-                                field_qc_data = row_qc_data.get(col_name)
-                                if isinstance(field_qc_data, dict):
-                                    qc_confidence = field_qc_data.get('qc_confidence')
-                                    if qc_confidence and str(qc_confidence).strip():
-                                        updated_confidence = qc_confidence
+                            if should_apply_coloring(col_name):
+                                # DEBUG: Log validated_value right before building comment
+                                if col_name == 'Start Date':
+                                    logger.info(f"[COMMENT_BUILD_DEBUG] Row {row_idx} {col_name}: About to build comment with validated_value='{validated_value}'")
+                                # ALWAYS show what appears in Updated Values sheet (not just when different)
+                                # Get updated confidence (use QC-adjusted if available)
+                                updated_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
+                                row_qc_data = get_qc_data_for_row(row_key, row_idx)
+                                if row_qc_data and col_name in row_qc_data:
+                                    field_qc_data = row_qc_data.get(col_name)
+                                    if isinstance(field_qc_data, dict):
+                                        qc_confidence = field_qc_data.get('qc_confidence')
+                                        if qc_confidence and str(qc_confidence).strip():
+                                            updated_confidence = qc_confidence
 
-                            # Lead with Updated Value and confidence
-                            if updated_confidence:
-                                comment_parts.append(f'Updated Value: {validated_value} ({updated_confidence} Confidence)')
-                            else:
-                                comment_parts.append(f'Updated Value: {validated_value}')
+                                # Lead with Updated Value and confidence
+                                if updated_confidence:
+                                    comment_parts.append(f'Updated Value: {validated_value} ({updated_confidence} Confidence)')
+                                else:
+                                    comment_parts.append(f'Updated Value: {validated_value}')
 
-                            # Add Key Citation
-                            key_citation = None
-                            row_qc_data = get_qc_data_for_row(row_key, row_idx)
-                            if row_qc_data and col_name in row_qc_data:
-                                field_qc_data = row_qc_data.get(col_name)
-                                if isinstance(field_qc_data, dict):
-                                    qc_citations = field_qc_data.get('qc_citations', '')
-                                    if qc_citations and str(qc_citations).strip():
-                                        key_citation = qc_citations
+                                # Add Key Citation
+                                key_citation = None
+                                row_qc_data = get_qc_data_for_row(row_key, row_idx)
+                                if row_qc_data and col_name in row_qc_data:
+                                    field_qc_data = row_qc_data.get(col_name)
+                                    if isinstance(field_qc_data, dict):
+                                        qc_citations = field_qc_data.get('qc_citations', '')
+                                        if qc_citations and str(qc_citations).strip():
+                                            key_citation = qc_citations
 
-                            # If no QC citation, use first validation citation
-                            if not key_citation:
+                                # If no QC citation, use first validation citation
+                                if not key_citation:
+                                    citations = field_data.get('citations', [])
+                                    if citations and len(citations) > 0:
+                                        first_citation = citations[0]
+                                        cite_text = first_citation.get('title', 'Source')
+                                        cite_url = first_citation.get('url', '')
+                                        cite_snippet = first_citation.get('cited_text', '')
+                                        if cite_snippet and len(cite_snippet) > 150:
+                                            cite_snippet = cite_snippet[:150] + "..."
+                                        key_citation = f"{cite_text}"
+                                        if cite_snippet:
+                                            key_citation += f" - {cite_snippet}"
+                                        if cite_url:
+                                            key_citation += f" ({cite_url})"
+
+                                if key_citation:
+                                    # Ensure key citation doesn't have problematic newlines
+                                    clean_citation = key_citation.replace('\n', ' ').replace('\r', ' ')
+                                    comment_parts.append(f'Key Citation: {clean_citation}')
+
+                                # Add Sources section
                                 citations = field_data.get('citations', [])
-                                if citations and len(citations) > 0:
-                                    first_citation = citations[0]
-                                    cite_text = first_citation.get('title', 'Source')
-                                    cite_url = first_citation.get('url', '')
-                                    cite_snippet = first_citation.get('cited_text', '')
-                                    if cite_snippet and len(cite_snippet) > 150:
-                                        cite_snippet = cite_snippet[:150] + "..."
-                                    key_citation = f"{cite_text}"
-                                    if cite_snippet:
-                                        key_citation += f" - {cite_snippet}"
-                                    if cite_url:
-                                        key_citation += f" ({cite_url})"
+                                if citations:
+                                    citation_texts = []
+                                    for i, citation in enumerate(citations, 1):
+                                        cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
+                                        cite_url = citation.get('url', '')
+                                        cite_snippet = citation.get('cited_text', '')
+                                        # Format: [{#}] {Title}: "{quote}" (URL)
+                                        if cite_snippet:
+                                            cite_text += f": \"{cite_snippet}\""
+                                        if cite_url:
+                                            cite_text += f" ({cite_url})"
+                                        citation_texts.append(cite_text)
 
-                            if key_citation:
-                                # Ensure key citation doesn't have problematic newlines
-                                clean_citation = key_citation.replace('\n', ' ').replace('\r', ' ')
-                                comment_parts.append(f'Key Citation: {clean_citation}')
+                                    if citation_texts:
+                                        comment_parts.append(f"Sources:\n" + "\n".join(citation_texts))
 
-                            # Add Sources section
-                            citations = field_data.get('citations', [])
-                            if citations:
-                                citation_texts = []
-                                for i, citation in enumerate(citations, 1):
-                                    cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
-                                    cite_url = citation.get('url', '')
-                                    cite_snippet = citation.get('cited_text', '')
-                                    # Format: [{#}] {Title}: "{quote}" (URL)
-                                    if cite_snippet:
-                                        cite_text += f": \"{cite_snippet}\""
-                                    if cite_url:
-                                        cite_text += f" ({cite_url})"
-                                    citation_texts.append(cite_text)
-
-                                if citation_texts:
-                                    comment_parts.append(f"Sources:\n" + "\n".join(citation_texts))
-
-                            # Create comment only if we have meaningful content
-                            if comment_parts:
-                                comment_text = '\n\n'.join(comment_parts)
+                                # Create comment only if we have meaningful content
+                                if comment_parts:
+                                    comment_text = '\n\n'.join(comment_parts)
 
                         # Write original value - use xlsxwriter's write_formula method for preserved formulas
                         if should_preserve_formulas(col_name) and str(original_value).startswith('='):

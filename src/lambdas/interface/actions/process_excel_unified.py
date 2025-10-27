@@ -520,8 +520,8 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
                 elif excel_file:
                     # This is just an Excel file upload (for config generation) - store and search for matching configs
                     logger.info("Excel file uploaded for config generation - searching for matching configs")
-                    
-                    # Automatically search for matching configs
+
+                    # Automatically search for matching configs (with timeout protection)
                     try:
                         from .find_matching_config import find_matching_configs
                         matching_configs = find_matching_configs(email_address, base_session_id, limit=3)
@@ -533,7 +533,7 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
                     except Exception as e:
                         logger.error(f"Error searching for matching configs: {e}")
                         matching_configs = {'success': False, 'matches': []}
-                    
+
                     return create_response(200, {
                         'success': True,
                         'message': 'Excel file uploaded successfully for config generation',

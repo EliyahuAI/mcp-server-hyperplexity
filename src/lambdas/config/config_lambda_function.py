@@ -39,7 +39,7 @@ def load_config_settings():
         # Fallback to defaults
         return {
             'max_tokens': 16000,
-            'model': ['claude-opus-4-1', 'claude-4-opus-20240229', 'claude-sonnet-4-5']
+            'model': ['claude-opus-4-1', 'claude-opus-4-20240229', 'claude-sonnet-4-5']
         }
 
 def send_websocket_progress(session_id: str, message: str, progress: int = None):

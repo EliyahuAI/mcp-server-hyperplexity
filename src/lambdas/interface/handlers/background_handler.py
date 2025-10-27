@@ -2064,9 +2064,15 @@ def handle_main_processing(event, context):
                 current_balance = check_user_balance(email)
                 logger.debug(f"[BALANCE_CHECK] Current balance: {current_balance}, Quoted full cost: {quoted_full_cost}")
 
+                # Extract config_version from config_data for revert button display
+                config_version = 1
+                if config_data and isinstance(config_data, dict):
+                    config_version = config_data.get('storage_metadata', {}).get('version', 1)
+                    logger.debug(f"[CONFIG_VERSION] Extracted version {config_version} from config_data for preview_payload")
+
                 # Create the markdown table for the response
                 markdown_table = create_markdown_table_from_results(real_results, 3, actual_config_s3_key, S3_UNIFIED_BUCKET, qc_results)
-                
+
                 preview_payload = {
                     "status": "COMPLETED", "session_id": session_id,
                     "markdown_table": markdown_table, "total_rows": total_rows,
@@ -2076,6 +2082,7 @@ def handle_main_processing(event, context):
                     "estimated_validation_time_minutes": round(estimated_total_time_seconds / 60, 1),
                     "actual_batch_size": effective_batch_size,
                     "estimated_validation_batches": total_batches,
+                    "config_version": config_version,  # Add config version for revert button
                     "cost_estimates": {
                         "preview_cost": charged_cost,  # What user pays for preview (0)
                         "preview_tokens": total_tokens,
@@ -4096,9 +4103,15 @@ def handle_main_processing(event, context):
                 
                 # Extract per-row cost from enhanced data (not manual calculation)
                 per_row_cost_full = eliyahu_cost / total_rows_processed if total_rows_processed > 0 else eliyahu_cost
-                
+
                 # Simple batch count for display
                 total_batches = math.ceil(total_rows / effective_batch_size) if total_rows > 0 else 0
+
+                # Extract config_version from config_data for revert button display
+                config_version = 1
+                if config_data and isinstance(config_data, dict):
+                    config_version = config_data.get('storage_metadata', {}).get('version', 1)
+                    logger.debug(f"[CONFIG_VERSION] Extracted version {config_version} from config_data for preview_payload (preview_completed path)")
 
                 preview_payload = {
                     "status": "preview_completed",
@@ -4113,6 +4126,7 @@ def handle_main_processing(event, context):
                     "actual_batch_size": effective_batch_size,
                     "estimated_validation_batches": total_batches,
                     "enhanced_download_url": enhanced_download_url,  # Download link for enhanced Excel
+                    "config_version": config_version,  # Add config version for revert button
                     "cost_estimates": {
                         "preview_cost": charged_cost,  # What user pays for preview (0)
                         "preview_tokens": total_tokens,

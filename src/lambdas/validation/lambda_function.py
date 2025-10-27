@@ -5283,9 +5283,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "message": "Results saved to S3 - use results_s3_key to retrieve"
             }
         else:
+            # CRITICAL: Remove _raw_responses from validation_results to prevent 413 error (>6MB)
+            # _raw_responses contains full prompts + responses which can be 30KB+ per API call
+            # For 59 rows × 5 search groups = 295 responses × 30KB = 8.85MB (exceeds 6MB limit!)
+            cleaned_validation_results = {}
+            for row_key, row_result in validation_results.items():
+                cleaned_row = row_result.copy()
+                if '_raw_responses' in cleaned_row:
+                    del cleaned_row['_raw_responses']
+                    logger.debug(f"[RESPONSE_SIZE_OPT] Removed _raw_responses from row {row_key[:16]}...")
+                cleaned_validation_results[row_key] = cleaned_row
+
+            logger.info(f"[RESPONSE_SIZE_OPT] Cleaned {len(validation_results)} rows by removing _raw_responses to prevent 413 error")
+
             response_data = {
-                # Map row indices to results
-                "rows": validation_results,
+                # Map row indices to results (cleaned of raw responses)
+                "rows": cleaned_validation_results,
                 # Add QC data if available
                 **qc_response_data
             }
@@ -5343,7 +5356,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 }
             }
         }
-        
+
         # DEBUG: Log what we're actually returning in metadata
         logger.debug(f"[METADATA_RETURN_DEBUG] Metadata keys being returned: {list(response['body']['metadata'].keys())}")
         logger.debug(f"[METADATA_RETURN_DEBUG] validation_metrics in metadata: {response['body']['metadata'].get('validation_metrics', 'NOT FOUND')}")

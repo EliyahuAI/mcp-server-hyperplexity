@@ -35,7 +35,8 @@
       "Bash(mv:*)",
       "Bash(git show:*)",
       "Bash(aws lambda list-event-source-mappings:*)",
-      "Bash(git diff:*)"
+      "Bash(git diff:*)",
+      "Bash(aws apigatewayv2 get-apis:*)"
     ],
     "deny": []
   }
