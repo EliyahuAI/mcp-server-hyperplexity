@@ -287,13 +287,7 @@ class SimplifiedSchemaValidator:
             logger.warning("No non-ID fields to validate in multiplex prompt.")
             return "No fields to validate."
         
-        # Build validation intro
-        if len(validation_targets) == 1:
-            validation_intro = f"Please validate the following field: {validation_targets[0].column}"
-        else:
-            validation_intro = f"Please validate the following {len(validation_targets)} fields:"
-        
-        # Build context information (ID fields)
+        # Build context information (ID fields) - needed for validation_intro
         context_lines = []
         id_fields = self.get_id_fields()
 
@@ -315,7 +309,30 @@ class SimplifiedSchemaValidator:
 
         context = "\n".join(context_lines) if context_lines else "No context information available."
         logger.info(f"Final context for multiplex prompt: {context}")
-        
+
+        # Build validation intro with entity context
+        field_names = [f"- {target.column}" for target in validation_targets]
+        field_list = "\n".join(field_names)
+
+        if context_lines:
+            # Include entity context in the intro
+            entity_context = "\n".join([f"- {line}" for line in context_lines])
+            validation_intro = f"""Validate the following field(s) for this specific entity:
+
+ENTITY:
+{entity_context}
+
+FIELDS TO VALIDATE:
+{field_list}"""
+        else:
+            # Fallback if no context
+            if len(validation_targets) == 1:
+                validation_intro = f"Validate the following field:\n{field_list}"
+            else:
+                validation_intro = f"Validate the following {len(validation_targets)} fields:\n{field_list}"
+
+        logger.info(f"Built validation_intro with entity context")
+
         # Build previous validation results
         previous_results_text = ""
         if previous_results and len(previous_results) > 0:
