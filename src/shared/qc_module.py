@@ -1133,25 +1133,34 @@ class QCModule:
 
 def load_prompts_from_file(prompts_file: str = "prompts.yml") -> Dict[str, str]:
     """
-    Load prompts from YAML file.
+    Load prompts from markdown files.
 
     Args:
-        prompts_file: Path to prompts YAML file
+        prompts_file: Path to prompts directory or legacy YAML file (for backward compatibility)
 
     Returns:
         Dictionary of prompt templates
     """
     try:
         # Use proper path resolution for Lambda environment
-        if prompts_file == "prompts.yml":
-            prompts_path = Path(__file__).parent / "prompts.yml"
-        else:
-            prompts_path = Path(prompts_file)
+        prompts_dir = Path(__file__).parent / "prompts"
 
-        with open(prompts_path, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f)
+        # Load QC validation prompt from markdown
+        qc_validation_path = prompts_dir / "qc_validation.md"
+
+        prompts = {}
+
+        if qc_validation_path.exists():
+            with open(qc_validation_path, 'r', encoding='utf-8') as f:
+                prompts['qc_validation'] = f.read()
+            logger.info(f"Loaded qc_validation prompt from {qc_validation_path}")
+        else:
+            logger.error(f"QC validation prompt not found at {qc_validation_path}")
+
+        return prompts
+
     except Exception as e:
-        logger.error(f"Error loading prompts from {prompts_path}: {e}")
+        logger.error(f"Error loading prompts from markdown files: {e}")
         return {}
 
 

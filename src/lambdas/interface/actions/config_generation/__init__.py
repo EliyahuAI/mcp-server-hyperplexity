@@ -468,9 +468,17 @@ def build_unified_generation_prompt(table_analysis: Dict, existing_config: Dict 
                 for ref in formula_info['referenced_columns']:
                     referenced_columns.add(ref['column_name'])
 
+    # Extract conversation_context for Table Maker
+    conversation_context = table_analysis.get('conversation_context', None)
+    if conversation_context:
+        logger.info(f"[CONFIG GENERATION] Found conversation_context with keys: {list(conversation_context.keys())}")
+        logger.debug(f"[CONFIG GENERATION] Conversation context details: research_purpose={bool(conversation_context.get('research_purpose'))}, tablewide_research={bool(conversation_context.get('tablewide_research'))}, column_details={len(conversation_context.get('column_details', []))} columns")
+    else:
+        logger.info("[CONFIG GENERATION] No conversation_context found (not a Table Maker table)")
+
     # Build base prompt with field replacements
     table_analysis_content = build_table_analysis_section(
-        basic_info, column_analysis, domain_info, calculated_columns, referenced_columns, has_formulas
+        basic_info, column_analysis, domain_info, calculated_columns, referenced_columns, has_formulas, conversation_context
     )
 
     # Build validation context and user feedback sections
@@ -1122,10 +1130,21 @@ def build_validation_context_section(latest_validation_results: Dict) -> str:
     return ""
 
 
-def build_table_analysis_section(basic_info, column_analysis, domain_info, calculated_columns, referenced_columns, has_formulas):
-    """Build the table analysis section"""
+def build_table_analysis_section(basic_info, column_analysis, domain_info, calculated_columns, referenced_columns, has_formulas, conversation_context=None):
+    """Build the table analysis section
+
+    Args:
+        basic_info: Basic file information
+        column_analysis: Column-level analysis
+        domain_info: Domain information
+        calculated_columns: Set of columns with formulas
+        referenced_columns: Set of columns referenced in formulas
+        has_formulas: Whether spreadsheet has formulas
+        conversation_context: Optional Table Maker context with research purpose, column definitions, etc.
+    """
     column_count = len(basic_info.get('column_names', []))
 
+    # Start with basic table information
     table_section = f"""
 # TABLE ANALYSIS
 
@@ -1136,9 +1155,62 @@ def build_table_analysis_section(basic_info, column_analysis, domain_info, calcu
 **All Column Names ({column_count} total):**
 {', '.join(basic_info.get('column_names', []))}
 
-**CRITICAL REQUIREMENT:** Your configuration MUST include a validation_target entry for EVERY SINGLE one of these {column_count} columns. No column can be omitted.
+**CRITICAL REQUIREMENT:** Your configuration MUST include a validation_target entry for EVERY SINGLE one of these {column_count} columns. No column can be omitted."""
 
-## Column Details"""
+    # Add Table Maker context if available
+    if conversation_context:
+        table_section += "\n\n"
+        table_section += "═══════════════════════════════════════════════════════════════\n"
+        table_section += "## 📚 TABLE MAKER CONTEXT - Rich Information from AI-Assisted Table Creation\n"
+        table_section += "═══════════════════════════════════════════════════════════════\n\n"
+        table_section += "This table was generated through an AI-assisted Table Maker process. Use this context to inform your configuration:\n\n"
+
+        # Add research purpose
+        research_purpose = conversation_context.get('research_purpose', '')
+        if research_purpose:
+            table_section += f"### Research Purpose\n\n{research_purpose}\n\n"
+
+        # Add user requirements
+        user_requirements = conversation_context.get('user_requirements', '')
+        if user_requirements:
+            table_section += f"### User Requirements\n\n{user_requirements}\n\n"
+
+        # Add tablewide research
+        tablewide_research = conversation_context.get('tablewide_research', '')
+        if tablewide_research:
+            table_section += f"### Tablewide Research Summary\n\n{tablewide_research}\n\n"
+
+        # Add column definitions with rich detail
+        column_details = conversation_context.get('column_details', [])
+        if column_details:
+            table_section += "### Column Definitions from Table Maker\n\n"
+            table_section += "**CRITICAL**: Use the `description` and `validation_strategy` from these column definitions EXACTLY in your validation target `notes`. Do not paraphrase.\n\n"
+
+            for col in column_details:
+                col_name = col.get('name', 'Unknown')
+                description = col.get('description', '')
+                validation_strategy = col.get('validation_strategy', '')
+                format_type = col.get('format', '')
+                is_id = col.get('is_identification', False)
+
+                table_section += f"**{col_name}:**\n"
+                if is_id:
+                    table_section += f"- **Type**: IDENTIFICATION COLUMN\n"
+                table_section += f"- **Description**: {description}\n"
+                if validation_strategy:
+                    table_section += f"- **Validation Strategy**: {validation_strategy}\n"
+                if format_type:
+                    table_section += f"- **Format**: {format_type}\n"
+                table_section += "\n"
+
+        # Add identification columns list
+        identification_columns = conversation_context.get('identification_columns', [])
+        if identification_columns:
+            table_section += f"### Identification Columns\n\n"
+            table_section += f"These columns define what each row represents: {', '.join(identification_columns)}\n\n"
+            table_section += "**NOTE**: Researchable ID columns (names, companies, URLs, institutions) should be placed in validation groups with importance: \"CRITICAL\". Simple ID columns (dates, indices) should be in Group 0 with importance: \"ID\".\n\n"
+
+    table_section += "\n## Column Details"
 
     for col_name, col_info in column_analysis.items():
         sample_values = col_info.get('sample_values', [])[:3]

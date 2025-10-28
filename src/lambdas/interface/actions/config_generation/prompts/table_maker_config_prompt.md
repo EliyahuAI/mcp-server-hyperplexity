@@ -142,10 +142,16 @@ Using all the context provided above:
 
 Write comprehensive `general_notes` that:
 - Explain the table's research purpose (from conversation context)
-- Include key points from tablewide_research
+- **Embed tablewide_research**: Include concise key points from tablewide_research that apply to MULTIPLE columns or the entire table
 - Provide overall validation guidance for this table's domain
 
-**Example**: "This table tracks job opportunities combining radiology expertise with AI/ML skills in healthcare settings. Focus on positions that leverage both medical training and technical capabilities. Prefer current job postings (< 3 months old)."
+**Context Embedding Rules**:
+- If tablewide_research or other context applies to **MULTIPLE COLUMNS** or the **ENTIRE TABLE** → Embed in `general_notes`
+- If context applies to **ONLY ONE COLUMN** → Embed in that column's `notes` field (see Step 4)
+- Focus on non-common knowledge that provides specific context the AI wouldn't know
+- Keep it concise and actionable
+
+**Example**: "This table tracks job opportunities combining radiology expertise with AI/ML skills in healthcare settings. Focus on positions that leverage both medical training and technical capabilities. Prefer current job postings (< 3 months old). [Key point from research: Many positions require specific certifications - validate these requirements.]"
 
 ### Step 3: Define Search Groups
 
@@ -174,31 +180,31 @@ For EACH column (no exceptions):
 **Researchable ID Columns** (is_identification: true, CAN be researched on web):
 - Place in appropriate validation group (1+)
 - Set importance: "CRITICAL"
-- Use column `description` and `validation_strategy` EXACTLY in notes
+- **Notes field**: Use column `description` and `validation_strategy` EXACTLY (copy verbatim, don't paraphrase)
+- **If column-specific context exists**: Append any relevant context from tablewide_research or other sources that applies ONLY to this column
 - **Generate realistic examples** since no actual data rows exist yet - use 2-3 plausible examples that match the column description and format
 - Examples of researchable ID types: "Company Name", "Researcher Name", "Institution", "Job Title", "URL"
 
 **Research Columns** (is_identification: false):
 - Place in appropriate search group (1+)
 - Set importance: "CRITICAL"
-- Use column `description` and `validation_strategy` EXACTLY in notes
+- **Notes field**: Use column `description` and `validation_strategy` EXACTLY (copy verbatim, don't paraphrase)
+- **If column-specific context exists**: Append any relevant context from tablewide_research or other sources that applies ONLY to this column
 - **Generate realistic examples** since no actual data rows exist yet - use 2-3 plausible examples that match the column description and format
 
-### Step 5: Select Models and Context
+**Context Embedding in Column Notes**:
+- Start with the column's `description` and `validation_strategy` (verbatim)
+- Then append: "Additional context: [column-specific information from research]" (only if applicable to just this column)
+- Example: "Description: Company headquarters location. Validation: Verify city and country match the company's official HQ. Additional context: For biotech companies in this dataset, many have multiple locations - prioritize the corporate HQ, not R&D facilities."
 
-- Use `sonar` (default) for straightforward fact-checking
-- Use `sonar-pro` when synthesis of sources needed
-- Use `claude-sonnet-4-5` for complex reasoning or when web search + reasoning needed
-- Set appropriate `search_context_size` (high by default, lower for simple lookups)
-- Set `anthropic_max_web_searches` (0-10) for Claude models based on complexity
+### Step 5: Select Models, Context, and QC Settings
 
-### Step 6: Enable QC
+Follow the guidance from Common Configuration Guidance above:
+- **Model Selection**: Use sonar (default), sonar-pro, or claude models based on complexity
+- **Search Context**: Set `search_context_size` and `anthropic_max_web_searches` per the guidelines
+- **QC Settings**: Enable `enable_qc: true` (recommended for Table Maker configs)
 
-- Set `enable_qc: true` to enable quality control review
-- QC helps catch validation errors and improve accuracy
-- Default QC settings are usually appropriate
-
-### Step 7: Write Summaries
+### Step 6: Write Summaries
 
 **technical_ai_summary**: Explain your configuration decisions with technical details:
 - How you organized search groups and why
@@ -230,13 +236,17 @@ For EACH column (no exceptions):
 2. ✅ **USE ALL CONTEXT**: You have rich information available
    - Conversation context → Inform general_notes and understand purpose
    - Column definitions → Use descriptions and validation strategies EXACTLY in notes
-   - Tablewide research → Embed in general_notes
+   - **Embed tablewide_research/context appropriately**:
+     - Multi-column or table-wide context → `general_notes`
+     - Single-column specific context → That column's `notes` field
 
 3. ✅ **RESEARCHABLE ID COLUMNS**: Upgrade to CRITICAL if they can be verified on web
    - Names, companies, URLs, institutions → Validate these
    - Dates, indices, internal IDs → Keep as ID in Group 0
 
-4. ✅ **USE COLUMN DEFINITIONS EXACTLY**: Copy description and validation_strategy verbatim into notes
+4. ✅ **USE COLUMN DEFINITIONS EXACTLY**:
+   - Copy description and validation_strategy verbatim into column `notes`
+   - Then append any column-specific context if applicable
 
 5. ✅ **GENERATE EXAMPLES**: No actual data rows exist yet - create 2-3 realistic examples for each column
 

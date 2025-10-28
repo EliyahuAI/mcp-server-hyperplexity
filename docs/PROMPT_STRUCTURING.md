@@ -117,6 +117,8 @@ Each prompt must have a corresponding JSON schema that defines the exact structu
 | `table_maker/prompts/row_discovery.md` | `table_maker/schemas/row_discovery_response.json` | N/A (direct response) | ✅ |
 | `table_maker/prompts/qc_review.md` | `table_maker/schemas/qc_review_response.json` | N/A (direct response) | ⚠️ Need to verify |
 
+**Note**: Table Maker context injection was fixed on 2025-10-28. The `build_table_analysis_section()` function now extracts and injects `conversation_context` (research_purpose, user_requirements, tablewide_research, column_details, identification_columns) into the config generation prompt.
+
 ### Config Generation Prompts
 
 | Prompt File | Schema File | Tool Name | Verified |
@@ -129,6 +131,24 @@ Each prompt must have a corresponding JSON schema that defines the exact structu
 **Note**: Config generation prompts mention all required fields in context but lack explicit JSON structure examples showing the complete schema. The AI relies on common_config_guidance.md for field descriptions.
 
 **Note**: Config generation prompts use `column_config_schema.json` wrapped in an AI response schema that includes `updated_config`, `clarifying_questions`, `clarification_urgency`, `technical_ai_summary`, and `ai_summary`. See `config_generation/__init__.py:get_unified_generation_schema()`.
+
+### Validation Prompts
+
+| Prompt File | Schema File | Tool Name | Verified |
+|------------|-------------|-----------|----------|
+| `shared/prompts/multiplex_validation.md` | `shared/perplexity_schema.py:MULTIPLEX_RESPONSE_SCHEMA` | N/A (direct response) | ✅ |
+| `shared/prompts/qc_validation.md` | `shared/perplexity_schema.py:QC_RESPONSE_SCHEMA` | N/A (direct response) | ✅ |
+
+**Note**: Validation prompts were migrated from `prompts.yml` to structured markdown files on 2025-10-28. The prompts preserve all critical nuances from the original YAML including:
+- Exact wording of confidence hierarchy rules
+- Specific examples and format guidance
+- Critical instructions (e.g., "why would you update it with a value that you are less confident in!!?")
+- Minor typos/misspellings preserved from working prompts (e.g., "perticularly", "orignal valie")
+
+**Key Files:**
+- `src/shared/schema_validator_simplified.py:generate_multiplex_prompt()` - Loads and formats multiplex validation prompt
+- `src/shared/qc_module.py:load_prompts_from_file()` - Loads QC validation prompt
+- `src/shared/qc_integration.py:QCIntegrationManager` - Manages QC integration with validation lambda
 
 ## Schema Verification Checklist
 

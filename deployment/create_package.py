@@ -202,17 +202,16 @@ def copy_source_files():
     shutil.copytree(LAMBDA_SRC_DIR, PACKAGE_DIR, dirs_exist_ok=True)
     logger.info(f"Copied contents of {LAMBDA_SRC_DIR} to {PACKAGE_DIR}")
 
-    # 2. Copy all shared files into the package root
+    # 2. Copy all shared files into the package root (includes prompts/ directory)
     shutil.copytree(SHARED_SRC_DIR, PACKAGE_DIR, dirs_exist_ok=True)
     logger.info(f"Copied shared modules from {SHARED_SRC_DIR} to {PACKAGE_DIR}")
-    
-    # 3. Copy prompts.yml for validation lambda (needed by schema_validator_simplified.py)
-    prompts_file = PROJECT_DIR / "src" / "prompts.yml"
-    if prompts_file.exists():
-        shutil.copy(prompts_file, PACKAGE_DIR / "prompts.yml")
-        logger.info("Copied prompts.yml for validation lambda")
+
+    # Verify prompts directory was copied
+    prompts_dir = PACKAGE_DIR / "prompts"
+    if prompts_dir.exists():
+        logger.info(f"Verified prompts directory copied with {len(list(prompts_dir.glob('*.md')))} markdown files")
     else:
-        logger.warning(f"prompts.yml not found at {prompts_file}")
+        logger.warning(f"Prompts directory not found at {prompts_dir}")
     
     # 4. Copy pricing_data.csv for cost calculations
     pricing_file = PROJECT_DIR / "src" / "pricing_data.csv"

@@ -771,6 +771,34 @@ config_result = await config_task
 - Validation config ready when rows are approved
 - CSV template immediately available
 
+**Context Injection (Fixed 2025-10-28):**
+
+The config generation receives rich context from the Table Maker conversation via `config_bridge.py`:
+
+**Data Flow:**
+```
+conversation_state → config_bridge.py → table_analysis → config_generation/__init__.py
+                                             ↓
+                                    conversation_context:
+                                    - research_purpose
+                                    - user_requirements
+                                    - tablewide_research
+                                    - column_details (name, description, validation_strategy, format, is_identification)
+                                    - identification_columns
+```
+
+The `build_table_analysis_section()` function injects this context into the `{{TABLE_ANALYSIS}}` section of the prompt, ensuring the AI sees:
+1. **Research Purpose** - Why the user wanted this table
+2. **User Requirements** - What the user asked for
+3. **Tablewide Research** - Concise research summary about the domain
+4. **Column Definitions** - Full description and validation_strategy for EXACT use in notes
+5. **Identification Columns** - Which columns define what each row represents
+
+**Key Files:**
+- `src/lambdas/interface/actions/table_maker/config_bridge.py` - Assembles conversation_context
+- `src/lambdas/interface/actions/config_generation/__init__.py:build_table_analysis_section()` - Injects context into prompt
+- `src/lambdas/interface/actions/config_generation/prompts/table_maker_config_prompt.md` - Specialized prompt for Table Maker configs
+
 ---
 
 ## Frontend Integration

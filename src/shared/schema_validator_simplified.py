@@ -258,7 +258,7 @@ class SimplifiedSchemaValidator:
         return model_usage
     
     def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None, validation_history: Dict[str, Dict[str, Any]] = None) -> str:
-        """Generate a validation prompt for multiple targets (multiplex) using prompts.yml template."""
+        """Generate a validation prompt for multiple targets (multiplex) using markdown prompt template."""
         # Debug validation history
         if validation_history:
             # Validation history available
@@ -267,13 +267,13 @@ class SimplifiedSchemaValidator:
             # No validation history provided
             pass
         
-        # Load prompts from YAML file
-        prompts_file = Path(__file__).parent / "prompts.yml"
+        # Load multiplex validation prompt from markdown file
+        prompts_file = Path(__file__).parent / "prompts" / "multiplex_validation.md"
         try:
             with open(prompts_file, 'r', encoding='utf-8') as f:
-                prompts = yaml.safe_load(f)
+                multiplex_prompt_template = f.read()
         except Exception as e:
-            logger.error(f"Failed to load prompts.yml: {e}")
+            logger.error(f"Failed to load multiplex_validation.md: {e}")
             # Fallback to a basic prompt
             return "Please validate the provided fields and return results in JSON format."
         
@@ -462,7 +462,7 @@ class SimplifiedSchemaValidator:
             logger.info(f"Group name from search_groups: '{group_name}'")
             logger.info(f"Group description from search_groups: '{group_description}'")
             
-            prompt = prompts['multiplex_validation'].format(
+            prompt = multiplex_prompt_template.format(
                 validation_intro=validation_intro,
                 group_name=group_name_text,
                 group_description=group_description_text,
@@ -470,13 +470,12 @@ class SimplifiedSchemaValidator:
                 context=context,
                 previous_results=previous_results_text,
                 fields_to_validate=fields_to_validate,
-                single_field_note=single_field_note,
                 json_schema_example=json_schema_example
             )
-            
+
         except KeyError as e:
-            logger.error(f"Missing template key in prompts.yml: {e}")
-            return "Template error - please check prompts.yml configuration."
+            logger.error(f"Missing template key in multiplex_validation.md: {e}")
+            return "Template error - please check multiplex_validation.md configuration."
         except Exception as e:
             logger.error(f"Error formatting prompt template: {e}")
             return "Prompt formatting error."
