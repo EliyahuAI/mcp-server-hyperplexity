@@ -15,16 +15,22 @@
   },
 
   "column_definition": {
-    "_comment": "Column definition phase - Defines precise column specifications and search strategy. Uses Claude Haiku (fast, cheap) by default. Switches to sonar-pro automatically when context_web_research items are provided (see column_definition_handler.py line 108)",
-    "model": "claude-haiku-4-5",
+    "_comment": "Column definition phase - Defines precise column specifications and search strategy. ALWAYS uses sonar-pro with web search to find authoritative lists that can provide row candidates en masse (see column_definition_handler.py line 109)",
+    "model": "sonar-pro",
     "max_tokens": 8000,
     "use_web_search": true,
     "web_searches": 3,
+    "web_searches_with_context": 5,
+    "_web_search_note": "Always enabled to find authoritative lists (NIH grants, Wikipedia lists, Crunchbase, etc.). 3 searches baseline, 5 if context_web_research items provided",
     "show_preview_table": false,
     "include_subdomains": true,
     "subdomain_count_min": 2,
-    "subdomain_count_max": 5,
-    "default_target_rows_total": 30
+    "subdomain_count_max": 10,
+    "default_target_rows_total": 30,
+    "_subdomain_strategy": "Use more subdomains (6-10) for challenging/niche topics or complex requirements. More subdomains = better coverage but more overlap. If authoritative lists found, structure subdomains as SEGMENTS of those lists (e.g., 'Countries A-E', 'NIH Awardees A-D')",
+    "overshoot_factor_min": 1.3,
+    "overshoot_factor_max": 1.5,
+    "_overshoot_note": "Always target 30-50% more rows than user requested to ensure delivery after QC and deduplication"
   },
 
   "row_discovery": {

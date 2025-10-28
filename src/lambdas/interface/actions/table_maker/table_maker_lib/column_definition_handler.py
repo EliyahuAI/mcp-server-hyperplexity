@@ -100,16 +100,17 @@ class ColumnDefinitionHandler:
             # Load response schema
             schema = self.schema_validator.load_schema('column_definition_response')
 
-            # Determine if we need web search
+            # ALWAYS enable web search for column definition to find authoritative lists
+            # Use more searches if we have context research items, but always search
             has_context_research = context_web_research and len(context_web_research) > 0
-            web_searches = 3 if has_context_research else 0
+            web_searches = 5 if has_context_research else 3
 
-            # If context research needed, use sonar-pro; otherwise use provided model (Claude)
-            actual_model = "sonar-pro" if has_context_research else model
+            # Use sonar-pro (best search model) for column definition since we always need web access
+            actual_model = "sonar-pro"
 
             logger.info(
                 f"Calling AI API with model: {actual_model}, "
-                f"web_searches: {web_searches}, "
+                f"web_searches: {web_searches} (always enabled for list discovery), "
                 f"context_items: {len(context_web_research) if context_web_research else 0}"
             )
 
@@ -119,8 +120,8 @@ class ColumnDefinitionHandler:
                 model=actual_model,
                 max_tokens=max_tokens,
                 use_cache=False,  # Disable cache for local testing
-                max_web_searches=web_searches,  # Enable web search if context items provided
-                search_context_size='high' if has_context_research else 'low',
+                max_web_searches=web_searches,  # Always enabled to find authoritative lists
+                search_context_size='high',  # Always use high context for comprehensive list discovery
                 debug_name="column_definition"
             )
 

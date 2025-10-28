@@ -949,6 +949,12 @@ async def handle_table_conversation_start(request_data, context):
                     'table_name': result['table_name'],
                     'turn_count': result['turn_count']
                 }
+
+                # Include confirmation_response if provided (for quick approval bypass)
+                if interview_result.get('confirmation_response'):
+                    interview_message['confirmation_response'] = interview_result['confirmation_response']
+                    logger.info(f"[TABLE_MAKER] Including pre-generated confirmation_response for quick approval")
+
                 websocket_client.send_to_session(session_id, interview_message)
                 logger.info(f"[TABLE_MAKER] Sent interview results via WebSocket: mode={result['mode']}, trigger_execution={result['trigger_execution']}, show_structure={result['show_structure']}, ai_message length={len(result['ai_message'])}")
             except Exception as e:
@@ -1237,7 +1243,7 @@ async def handle_table_conversation_continue(request_data, context):
         # Send progress update with interview results
         if websocket_client and session_id:
             try:
-                websocket_client.send_to_session(session_id, {
+                interview_message = {
                     'type': 'table_conversation_update',
                     'conversation_id': conversation_id,
                     'progress': 100,
@@ -1250,7 +1256,14 @@ async def handle_table_conversation_continue(request_data, context):
                     'processing_steps': result['processing_steps'],
                     'table_name': result['table_name'],
                     'turn_count': result['turn_count']
-                })
+                }
+
+                # Include confirmation_response if provided (for quick approval bypass)
+                if interview_result.get('confirmation_response'):
+                    interview_message['confirmation_response'] = interview_result['confirmation_response']
+                    logger.info(f"[TABLE_MAKER] Including pre-generated confirmation_response for quick approval")
+
+                websocket_client.send_to_session(session_id, interview_message)
             except Exception as e:
                 logger.warning(f"[TABLE_MAKER] Failed to send WebSocket update: {e}")
 

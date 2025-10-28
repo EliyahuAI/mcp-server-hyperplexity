@@ -1,169 +1,173 @@
 # Row Discovery Task
 
-## Your Job
+═══════════════════════════════════════════════════════════════
+## 📋 PROMPT MAP - What You'll Find Below
+═══════════════════════════════════════════════════════════════
 
-You are charged with **finding new row entries** for a research table that we are going to build.
+1. **YOUR CORE TASK**: Find {{TARGET_ROWS}} unique entities for subdomain "{{SUBDOMAIN_NAME}}"
+2. **AUTHORITATIVE SOURCE** (if found): The specific database/list to search first
+3. **REQUIREMENTS**: Hard (dealbreakers) and soft (preferences) criteria
+4. **ID FIELDS**: The identification columns you must populate
+5. **RESEARCH FIELDS**: Optional additional data to include if found
+6. **SCORING GUIDE**: How to score relevancy, reliability, and recency
+7. **OUTPUT FORMAT**: Exact JSON structure to return
+8. **FINAL REMINDER**: Core task repeated with key instructions
 
-These rows are characterized by their **ID fields** (identification columns). Your task is to:
+═══════════════════════════════════════════════════════════════
+## 🎯 YOUR CORE TASK
+═══════════════════════════════════════════════════════════════
 
-1. **Use web search** to find unique entries that match the specified requirements within the specified subdomain. 
-2. **Populate ID fields** with actual values from your search results
-3. **Score each entry** for relevance, source reliability, and recency
-4. **Provide reasoning** for why the entry is a good fit
+**GOAL:** Find **{{TARGET_ROWS}} unique, real entities** for subdomain: **{{SUBDOMAIN_NAME}}**
 
-### Search Tips
-1. Use sources that are likely to yield many results at once. Sites that aggregate the information you are looking for (e.g. indeed for jobs, nyt for news, etc) are great.
-2. When you come up short, iterate until you find something. Use provided search recommendations to get what we need.
-3. Do not fabricate anything. Only use real entities.
+**DELIVERABLE:** JSON array of candidates with:
+- ID fields populated (required)
+- Research fields populated (if information readily available)
+- Scores for relevancy, reliability, recency
+- Source URLs and match rationale
 
----
-
-## REQUIREMENTS (Must be visible and clear)
-
-**NOTE:** These requirements focus on criteria that can be easily determined from search results. More complex criteria have been converted into research columns that will be validated later.
-
-### Hard Requirements (Absolute - entity MUST meet these):
-{{HARD_REQUIREMENTS}}
-
-### Soft Requirements (Preferences - better scores if met):
-{{SOFT_REQUIREMENTS}}
-
-**Instructions:**
-- **Hard requirements are dealbreakers** - don't include entities that violate these
-- **Soft requirements improve scoring** but aren't required - include entities that meet hard requirements even if they don't meet all soft requirements
-- Score entities higher when they meet more soft requirements
-- An entity that meets all hard requirements but few soft requirements should still be included (with a moderate score)
+**KEY RULES:**
+1. ✅ Only real entities - NEVER fabricate
+2. ✅ Use exact field names from ID fields list below
+3. ✅ Include entities even with moderate scores (we'll filter later)
+4. ✅ If you find < {{TARGET_ROWS}}, return what you found (don't invent more)
 
 ---
 
-## Context About This Table (not specifically your task - you are just identifying candidate rows)
+{{DISCOVERED_LIST_INFO}}
 
-**User's Original Request:**
-{{USER_CONTEXT}}
-
-**Table Purpose:**
-{{TABLE_PURPOSE}}
-
-**Background Research Context:**
-{{TABLEWIDE_RESEARCH}}
-
----
-
-## Your Specific Assignment
+═══════════════════════════════════════════════════════════════
+## ⚙️ YOUR SPECIFIC ASSIGNMENT
+═══════════════════════════════════════════════════════════════
 
 **Subdomain:** {{SUBDOMAIN_NAME}}
 
 **Focus Area:** {{SUBDOMAIN_FOCUS}}
 
-**IMPORTANT NOTE:** This subdomain is a suggested focus to help organize parallel search efforts and avoid overlap with other workers. However, you should include relevant entities outside this focus if you find them during your searches. The subdomain is not a strict boundary - it's a starting point.
+**Note:** This subdomain is a suggested focus to organize parallel work. Include relevant entities outside this focus if you find them during searches.
 
 ---
 
-**Target:** Find **{{TARGET_ROWS}} unique entries**
-
----
-
-## Recommended Searches
-
-Make sure to try these search queries to find entries:
+**Recommended Search Queries:**
 {{SEARCH_QUERIES}}
 
+**Search Strategy:**
+1. If an authoritative list URL is provided above → **START THERE FIRST**
+2. Use the example candidates to understand what types of entities to find
+3. Use aggregator sites that list many entities at once (e.g., NIH RePORTER, faculty directories, company databases)
+4. Only use general web search if authoritative sources are insufficient
+5. Do not fabricate - only include real entities you actually found
+
 ---
 
-## ID Fields to Populate
+═══════════════════════════════════════════════════════════════
+## ✔️ REQUIREMENTS - What Entities Must/Should Have
+═══════════════════════════════════════════════════════════════
 
-For each entry you find, populate these ID fields with ACTUAL values from your search:
+**Context About This Table:**
+- User's Original Request: {{USER_CONTEXT}}
+- Table Purpose: {{TABLE_PURPOSE}}
+- Background Research: {{TABLEWIDE_RESEARCH}}
+
+**Hard Requirements (Absolute - entity MUST meet ALL of these):**
+{{HARD_REQUIREMENTS}}
+
+**Soft Requirements (Preferences - better scores if met):**
+{{SOFT_REQUIREMENTS}}
+
+**Instructions:**
+- ❌ **Hard requirements are dealbreakers** - don't include entities that violate these
+- ✅ **Soft requirements improve scoring** but aren't required
+- Score entities higher when they meet more soft requirements
+- An entity meeting all hard requirements but few soft requirements should still be included (with moderate score)
+
+---
+
+═══════════════════════════════════════════════════════════════
+## 🆔 ID FIELDS - Must Populate for Every Entity
+═══════════════════════════════════════════════════════════════
+
+For each entity you find, populate these ID fields with ACTUAL values from your search:
 
 {{ID_COLUMNS}}
 
-**Example of populated ID fields:**
+**Example:**
 ```json
 {
-  "Company Name": "Anthropic",
-  "Website": "https://anthropic.com"
-}
-```
-
-**Another example:**
-```json
-{
-  "Company Name": "PathAI",
-  "Website": "https://www.pathai.com"
+  "id_values": {
+    "Researcher Name": "Elizabeth Hillman",
+    "Institution": "Columbia University"
+  }
 }
 ```
 
 ---
 
-## Research Columns to Populate (If Available)
+═══════════════════════════════════════════════════════════════
+## 📊 RESEARCH FIELDS - Optional (Populate If Readily Available)
+═══════════════════════════════════════════════════════════════
 
-**NEW: Opportunistic Population**
-
-If you find information about these research columns during your search, POPULATE THEM in the `research_values` field. If not found, leave them empty or omit them.
+**Opportunistic Population:** If you find this information during your search, include it. If not readily available, leave blank or omit.
 
 {{RESEARCH_COLUMNS}}
 
 **Instructions:**
-- Try to populate as many research columns as possible from search results
-- If information is readily available (in search snippets, company pages, etc.), include it
-- If information requires deep research or isn't found, leave blank (empty string) or omit
+- Try to populate as many as possible from search results
+- If information is in search snippets or easily accessible pages, include it
+- If information requires deep research or isn't found, leave blank or omit
 - Don't fabricate - only include what you actually found
-- This is optional and opportunistic - focus on finding good ID matches first
+- Focus on finding good ID matches first, research data is secondary
 
 **Example:**
-
-Search result: *"Ginkgo Bioworks, a Boston-based synthetic biology company with 400 employees, posted a Head of AI position..."*
-
-Populated:
 ```json
 {
   "id_values": {
-    "Company Name": "Ginkgo Bioworks",
-    "Website": "https://ginkgobioworks.com"
+    "Researcher Name": "Elizabeth Hillman",
+    "Institution": "Columbia University"
   },
   "research_values": {
-    "Industry Sector": "Synthetic biology / Biotech",
-    "Employee Count": "400",
-    "Has Job Posting": "Yes - Head of AI"
+    "Title": "Professor of Biomedical Engineering",
+    "Country": "United States",
+    "Research Focus Area": "Optical imaging and microscopy for neuroscience"
   },
-  "populated_columns": ["Company Name", "Website", "Industry Sector", "Employee Count", "Has Job Posting"],
-  "missing_columns": ["Has GenAI Program"]
+  "populated_columns": ["Researcher Name", "Institution", "Title", "Country", "Research Focus Area"],
+  "missing_columns": ["Email Address", "LinkedIn Profile", "Funding Amount"]
 }
 ```
 
-**Note:** The `research_values`, `populated_columns`, and `missing_columns` fields are all optional. If you don't find any research column data, you can omit these fields entirely.
-
 ---
 
-## Scoring Each Entry
-
-Score each entry on three dimensions (0-1.0 scale):
+═══════════════════════════════════════════════════════════════
+## 📈 SCORING - Rate Each Entity on 3 Dimensions (0-1.0 scale)
+═══════════════════════════════════════════════════════════════
 
 ### 1. Relevancy (0-1.0)
-How well does this entry match the requirements?
-- 1.0 = Perfect match
-- 0.7 = Strong match, minor gaps
-- 0.4 = Moderate match
-- 0.0 = Weak match
+How well does this entity match the requirements?
+- **1.0** = Perfect match (meets all hard + most soft requirements)
+- **0.7** = Strong match (meets all hard + some soft requirements)
+- **0.4** = Moderate match (meets all hard requirements, few soft)
+- **0.0** = Weak match (violates hard requirements - don't include)
 
 ### 2. Source Reliability (0-1.0)
 How reliable are your information sources?
-- 1.0 = Primary sources (official website, Crunchbase, official docs)
-- 0.7 = Secondary sources (TechCrunch, LinkedIn, major news outlets)
-- 0.4 = Tertiary sources (blogs, forums, aggregators)
-- 0.0 = Unreliable or unverified
+- **1.0** = Primary sources (official website, government database, official docs)
+- **0.7** = Secondary sources (LinkedIn, major news outlets, TechCrunch)
+- **0.4** = Tertiary sources (blogs, forums, aggregators)
+- **0.0** = Unreliable or unverified
 
 ### 3. Recency (0-1.0)
 How recent is the information?
-- 1.0 = Less than 3 months old
-- 0.7 = 3-6 months old
-- 0.4 = 6-12 months old
-- 0.0 = More than 12 months or date unknown
+- **1.0** = Less than 3 months old
+- **0.7** = 3-6 months old
+- **0.4** = 6-12 months old
+- **0.0** = More than 12 months or date unknown
 
 ---
 
-## Output Format
+{{PREVIOUS_SEARCH_IMPROVEMENTS}}
 
-Return JSON in this exact format:
+═══════════════════════════════════════════════════════════════
+## 📤 OUTPUT FORMAT - Return Exactly This JSON Structure
+═══════════════════════════════════════════════════════════════
 
 ```json
 {
@@ -171,24 +175,24 @@ Return JSON in this exact format:
   "candidates": [
     {
       "id_values": {
-        "Company Name": "Anthropic",
-        "Website": "https://anthropic.com"
+        "Field Name 1": "value",
+        "Field Name 2": "value"
       },
       "research_values": {
-        "Industry Sector": "AI Safety Research",
-        "Employee Count": "150-300"
+        "Optional Field 1": "value",
+        "Optional Field 2": "value"
       },
-      "populated_columns": ["Company Name", "Website", "Industry Sector", "Employee Count"],
-      "missing_columns": ["Other Research Column"],
+      "populated_columns": ["Field Name 1", "Field Name 2", "Optional Field 1"],
+      "missing_columns": ["Optional Field 3", "Optional Field 4"],
       "score_breakdown": {
         "relevancy": 0.95,
         "reliability": 1.0,
         "recency": 0.9
       },
-      "match_rationale": "Leading AI safety research company with active hiring for ML engineers",
+      "match_rationale": "Brief 1-2 sentence explanation of why this entity is a good match",
       "source_urls": [
-        "https://anthropic.com/careers",
-        "https://www.crunchbase.com/organization/anthropic"
+        "https://source1.com/page",
+        "https://source2.com/page"
       ]
     }
   ]
@@ -196,35 +200,30 @@ Return JSON in this exact format:
 ```
 
 **Requirements:**
-- Use EXACT field names from ID fields list above
-- Each entry must be UNIQUE (different from other entries)
-- Always include all three dimension scores
-- Keep rationale to 1-2 sentences
-- Include specific source URLs
-- `research_values`, `populated_columns`, and `missing_columns` are OPTIONAL - only include if you found research data
+- ✅ Use EXACT field names from ID fields list above (copy them exactly)
+- ✅ Each entity must be UNIQUE (different from other entries)
+- ✅ Always include all three dimension scores (relevancy, reliability, recency)
+- ✅ Keep match_rationale to 1-2 sentences
+- ✅ Include specific source URLs where you found the information
+- ✅ `research_values`, `populated_columns`, and `missing_columns` are OPTIONAL
 
 ---
 
-## Important Notes
+═══════════════════════════════════════════════════════════════
+## ⚠️ IF NO MATCHES FOUND (This is a bad outcome - avoid if possible)
+═══════════════════════════════════════════════════════════════
 
-- **Find real entries:** Don't make up placeholder names or generic examples
-- **Use exact field names:** Copy field names exactly as shown in ID fields list
-- **Return candidates array:** Even if empty, always return {"candidates": []}
-- **No minimum quality:** Include entries that are real even if scores are moderate (we'll filter later) 
+**Lower quality results are greatly preferred over no results** - as long as they are real entities.
 
-{{PREVIOUS_SEARCH_IMPROVEMENTS}}
-
-## If No Matches Found
-
-This is a bad outcome - lower quality results are greatly preferred - as long as they are real. If you cannot provide results of any quality at all, you must explain why. If your searches return 0 candidates, you MUST provide a "no_matches_reason" field explaining why:
+If you absolutely cannot find ANY entities that meet the hard requirements, explain why:
 
 ```json
 {
-  "subdomain": "Healthcare AI Companies",
-  "no_matches_reason": "Search queries returned general information about healthcare but no specific company matches. Queries may need to be more specific or use different search terms.",
+  "subdomain": "{{SUBDOMAIN_NAME}}",
+  "no_matches_reason": "Specific explanation of why no matches were found (e.g., search queries returned general information but no specific entities, database was not accessible, etc.)",
   "search_improvements": [
-    "Try more specific queries like 'healthcare AI startups radiology' instead of general 'healthcare AI'",
-    "Search for company directories or funding databases rather than news articles"
+    "Suggestion 1 for improving search strategy",
+    "Suggestion 2 for different query approaches"
   ],
   "candidates": []
 }
@@ -232,13 +231,17 @@ This is a bad outcome - lower quality results are greatly preferred - as long as
 
 **Possible reasons to report:**
 - "Search queries too broad/narrow, no specific entity results"
-- "Web search returned no relevant results for this subdomain"
+- "Authoritative list database not accessible or returned no results"
 - "Queries found general information but no identifiable entities"
 - "Technical/niche subdomain with limited public information"
 
-## Search Improvements (Optional)
+---
 
-If you experienced difficulties finding good candidates or had to try multiple search approaches, provide suggestions in the `search_improvements` array. This helps improve results for subsequent subdomains.
+═══════════════════════════════════════════════════════════════
+## 💡 SEARCH IMPROVEMENTS (Optional - Help Future Searches)
+═══════════════════════════════════════════════════════════════
+
+If you experienced difficulties finding candidates or had to try multiple search approaches, provide suggestions in the `search_improvements` array.
 
 **Include search_improvements if:**
 - Initial search queries didn't work well and you had to reformulate
@@ -246,14 +249,14 @@ If you experienced difficulties finding good candidates or had to try multiple s
 - Certain search terms or approaches proved more effective than others
 - You discovered missing context that would help narrow results
 
-**Examples:**
+**Example:**
 ```json
 {
-  "subdomain": "News Stories",
+  "subdomain": "{{SUBDOMAIN_NAME}}",
   "search_improvements": [
-    "Headlines work better than searching for 'story descriptions'",
-    "Adding date ranges to queries improves result relevance",
-    "Primary news sources are more reliable than aggregators"
+    "Faculty directories work better than general web search for researchers",
+    "Adding institution name to queries improves result specificity",
+    "Grant databases provide more complete contact information than publications"
   ],
   "candidates": [...]
 }
@@ -261,37 +264,44 @@ If you experienced difficulties finding good candidates or had to try multiple s
 
 ---
 
-## Domain Filtering Feedback (Optional)
+═══════════════════════════════════════════════════════════════
+## 🚫 DOMAIN FILTERING FEEDBACK (Optional - Reduce Noise)
+═══════════════════════════════════════════════════════════════
 
-If you notice patterns about which domains provided poor results during your search, provide feedback in the `domain_filtering_recommendations` field. This helps refine domain filtering for subsequent searches or retriggers.
+If you notice patterns about which domains provided poor results, provide feedback in `domain_filtering_recommendations`.
 
-**IMPORTANT: You can only recommend EXCLUSIONS, not inclusions. Included domains are set by the user at the start and should not be changed by discovery workers.**
+**IMPORTANT: You can only recommend EXCLUSIONS, not inclusions.**
 
 **Provide domain_filtering_recommendations if:**
 - You encountered noise or low-quality results from certain domains
-- Current domain filters seem not restrictive enough
 - Specific domains consistently provided irrelevant or low-quality information
 
 **Format:**
 ```json
 {
-  "subdomain": "Healthcare AI Companies",
+  "subdomain": "{{SUBDOMAIN_NAME}}",
   "domain_filtering_recommendations": {
-    "add_to_excluded": ["medium.com", "forbes.com"],
-    "reasoning": "Medium posts were often opinion pieces. Forbes articles were mostly sponsored content without concrete company information."
+    "add_to_excluded": ["domain1.com", "domain2.com"],
+    "reasoning": "Specific explanation of why these domains should be excluded"
   },
   "candidates": [...]
 }
 ```
 
-**Guidelines:**
-- Only recommend domains to EXCLUDE, not to include
-- Be specific about which domains hindered your search
-- Explain why certain domains should be excluded
-- This is optional - only provide if you have clear observations
-- These recommendations will be aggregated and considered by QC
-
 ---
 
-This helps us improve search strategies for future subdomains.
-Return your findings as valid JSON.
+═══════════════════════════════════════════════════════════════
+## 🎯 FINAL REMINDER - Your Core Task
+═══════════════════════════════════════════════════════════════
+
+**GOAL:** Find **{{TARGET_ROWS}} unique, real entities** for: **{{SUBDOMAIN_NAME}}**
+
+**CRITICAL INSTRUCTIONS:**
+1. ✅ If authoritative list URL provided above → **SEARCH THERE FIRST**
+2. ✅ Use example candidates to understand what types of entities to find
+3. ✅ Only include REAL entities you actually found (never fabricate)
+4. ✅ Use EXACT field names from ID fields list
+5. ✅ Include entities even with moderate scores (we filter later)
+6. ✅ Return valid JSON in the format specified above
+
+**Return your findings as valid JSON.**

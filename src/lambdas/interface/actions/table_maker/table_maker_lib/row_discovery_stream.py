@@ -755,6 +755,28 @@ class RowDiscoveryStream:
                 if soft_requirements is None:
                     soft_requirements = self._format_requirements(soft_reqs)
 
+            # Format discovered list information if available
+            discovered_list_info = ''
+            has_url = subdomain.get('discovered_list_url') and subdomain['discovered_list_url'].strip()
+            has_candidates = subdomain.get('candidates') and len(subdomain['candidates']) > 0
+
+            if has_url or has_candidates:
+                discovered_list_info = "\n## ⚠️ AUTHORITATIVE SOURCE FOUND - START HERE\n\n"
+
+                if has_url:
+                    discovered_list_info += f"**Authoritative List URL:** {subdomain['discovered_list_url']}\n\n"
+                    discovered_list_info += f"**CRITICAL:** You MUST search this URL first to find entities. This is your primary data source.\n\n"
+
+                if has_candidates:
+                    candidates_list = '\n'.join(f'- {c}' for c in subdomain['candidates'][:10])
+                    discovered_list_info += f"**Example Entities to Look For:**\n{candidates_list}\n\n"
+                    discovered_list_info += f"**INSTRUCTIONS:**\n"
+                    discovered_list_info += f"1. Search the authoritative list above for entities similar to these examples\n"
+                    discovered_list_info += f"2. These examples show the EXACT TYPE of entities you need\n"
+                    discovered_list_info += f"3. Find as many similar entities as possible from the authoritative source\n"
+                    discovered_list_info += f"4. Only use general web search if the authoritative list is insufficient\n"
+                    discovered_list_info += f"5. These are NOT constraints - find ALL relevant entities, not just these\n\n"
+
             variables = {
                 'SUBDOMAIN_NAME': subdomain['name'],
                 'SUBDOMAIN_FOCUS': subdomain['focus'],
@@ -768,7 +790,8 @@ class RowDiscoveryStream:
                 'USER_CONTEXT': search_strategy.get('user_context', 'General research table'),
                 'TABLE_PURPOSE': search_strategy.get('table_purpose', search_strategy.get('description', '')),
                 'TABLEWIDE_RESEARCH': search_strategy.get('tablewide_research', ''),
-                'PREVIOUS_SEARCH_IMPROVEMENTS': improvements_text
+                'PREVIOUS_SEARCH_IMPROVEMENTS': improvements_text,
+                'DISCOVERED_LIST_INFO': discovered_list_info
             }
 
             # Try template first

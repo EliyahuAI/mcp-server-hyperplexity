@@ -3598,9 +3598,11 @@
                 }
 
                 // Add buttons above estimates
-                // Check if revert button should be shown (only if version > 1)
+                // Check if revert button should be shown (only if this session has 2+ versions)
+                // Use session_version_count if available (accurate), otherwise fall back to config_version
+                const sessionVersionCount = previewData.session_version_count || 0;
                 const currentVersion = previewData.config_version || globalState.currentConfig?.config_version || 1;
-                const showRevertButton = currentVersion > 1;
+                const showRevertButton = sessionVersionCount >= 2;
 
                 const revertButtonHtml = showRevertButton ?
                     `<button type="button" class="std-button quaternary" data-action="revert-config">
@@ -3768,12 +3770,10 @@
                         variant: sufficientBalance ? 'primary' : 'secondary',
                         width: 'full',
                         callback: async (e) => {
-                            // console.log('[BUTTON] Process Table button clicked - sufficientBalance:', sufficientBalance);
                             const button = e.target.closest('button');
 
                             if (sufficientBalance) {
                                 // User has sufficient balance - proceed with processing
-                                // console.log('[BUTTON] Sufficient balance - calling createProcessingCard()');
                                 globalState.hasInsufficientBalance = false;
                                 markButtonSelected(button, '✨ Processing...');
                                 globalState.activePreviewCard = null;
@@ -3784,7 +3784,6 @@
                                 // Mark that user attempted processing from preview
                                 globalState.userAttemptedProcessing = true;
                                 globalState.pendingProcessingTrigger = () => {
-                                    // console.log('[AUTO-TRIGGER] pendingProcessingTrigger called - searching for Process Table button');
                                     // console.trace('[AUTO-TRIGGER] Stack trace:');
                                     globalState.activePreviewCard = null;
 
@@ -3793,7 +3792,6 @@
                                     for (const button of buttons) {
                                         const buttonText = button.querySelector('.button-text, span');
                                         if (buttonText && buttonText.textContent.includes('Process Table')) {
-                                            // console.log('[AUTO-TRIGGER] Found Process Table button - clicking it programmatically');
                                             button.click();
                                             break;
                                         }
@@ -4001,7 +3999,7 @@
                                     try {
                                         ws._pingsSent++;
                                         ws._lastPingTime = Date.now();
-                                        console.log(`[WEBSOCKET] Sending keepalive ping #${ws._pingsSent} for session ${sessionId}`);
+                                        // Sending keepalive ping
                                         ws.send(JSON.stringify({ action: 'ping' }));
                                     } catch (error) {
                                         console.error(`[WEBSOCKET] Error sending ping for session ${sessionId}:`, error);
@@ -4043,7 +4041,7 @@
                         if (event.data === 'pong' || event.data === 'Pong' || event.data === '"pong"') {
                             ws._pongsReceived++;
                             const pingLatency = ws._lastPingTime ? Date.now() - ws._lastPingTime : 'unknown';
-                            console.log(`[WEBSOCKET] Received pong #${ws._pongsReceived} for session ${sessionId} (latency: ${pingLatency}ms, sent: ${ws._pingsSent})`);
+                            // Received pong
                             return; // Don't route pong messages
                         }
 
@@ -4068,10 +4066,7 @@
 
                 ws.onclose = (event) => {
                     const connectionDuration = ws._lastMessageTime ? ((Date.now() - ws._lastMessageTime) / 1000).toFixed(1) : 'unknown';
-                    console.log(`[WEBSOCKET] Connection closed for session ${sessionId}`);
-                    console.log(`[WEBSOCKET]   Close code: ${event.code}, reason: "${event.reason}"`);
-                    console.log(`[WEBSOCKET]   Pings sent: ${ws._pingsSent || 0}, Pongs received: ${ws._pongsReceived || 0}`);
-                    console.log(`[WEBSOCKET]   Time since last message: ${connectionDuration}s`);
+                    // Connection closed
                     sessionWebSockets.delete(sessionId);
 
                     // Clean up all intervals
@@ -4091,7 +4086,7 @@
                         const reconnectDelay = reconnectAttempt < 4
                             ? 1000 * Math.pow(2, reconnectAttempt)
                             : 15000;
-                        console.log(`[WEBSOCKET] Connection lost (code: ${event.code}). Reconnecting in ${reconnectDelay}ms (attempt ${reconnectAttempt + 1}/${maxReconnectAttempts})`);
+                        // Connection lost, reconnecting...
 
                         // Show warning after 10 failed attempts during full validation
                         if (reconnectAttempt === 10 && globalState.currentValidationState === 'full' && globalState.activeCardId) {
@@ -4106,7 +4101,7 @@
                         }
 
                         setTimeout(() => {
-                            console.log(`[WEBSOCKET] Attempting to reconnect to session ${sessionId}...`);
+                            // Attempting to reconnect...
                             connectToSession(sessionId, reconnectAttempt + 1);
                         }, reconnectDelay);
                     } else if (isUnexpectedClose) {
@@ -4239,7 +4234,7 @@
                         messageId
                     );
 
-                    console.log(`[WARNING] Displayed ${warningType} warning in card ${targetCardId}`);
+                    // Warning displayed
                 } else {
                     // No card available - log warning
                     console.warn('[WARNING] No card found to display warning:', data);
@@ -4633,7 +4628,7 @@
 
                     // Calculate next delay with exponential backoff
                     const delay = Math.min(INITIAL_POLL_DELAY * Math.pow(2, pollingAttempts - 1), MAX_POLL_DELAY);
-                    console.log(`[POLLING] Next order check in ${delay / 1000}s (attempt ${pollingAttempts}/${MAX_POLLING_ATTEMPTS})`);
+                    // Next order check scheduled
 
                     // Schedule next poll
                     orderPollingTimeout = setTimeout(() => pollForOrders(messageContainer), delay);
@@ -4991,7 +4986,7 @@
                 }
 
                 // DEBUG: Log execution updates to help debug info boxes
-                console.log('[DEBUG] handleTableExecutionUpdate - step:', currentStep, 'discovered_rows:', message.discovered_rows ? message.discovered_rows.length : 'none', 'total_discovered:', message.total_discovered);
+                // Handling table execution update
 
                 // Handle step-specific updates (ONLY for real execution)
                 switch(currentStep) {
@@ -5045,7 +5040,7 @@
                         // Rows discovered - show rows box
                         // Backend sends discovered_rows during step 2 (row discovery phase)
                         if (message.discovered_rows) {
-                            console.log('[DEBUG] Showing discovered rows box:', message.discovered_rows.length, 'rows');
+                            // Showing discovered rows
                             showDiscoveredRowsBox(
                                 conversationId,
                                 message.discovered_rows,
@@ -5175,7 +5170,7 @@
                 globalState.excelFileUploaded = true;
 
                 // Create preview card immediately
-                console.log('[TABLE_EXECUTION_COMPLETE] Creating preview validation card');
+                // Creating preview validation card
                 globalState.activePreviewCard = null;
                 createPreviewCard();
 
@@ -5507,7 +5502,7 @@
                 .then(data => {
                     // The existing preview card rendering logic will handle the response
                     // through WebSocket messages
-                    console.log('Preview auto-triggered successfully');
+                    // Preview auto-triggered
                 })
                 .catch(error => {
                     console.error('Preview auto-trigger failed:', error);
@@ -6090,7 +6085,7 @@
             // This is the old handler - will be removed since we have the updated one below
 
             function handleProcessingWebSocketMessage(data, cardId) {
-                console.log(`[WS] Received message - status: ${data.status}, cardId: ${cardId}`);
+                // WebSocket message received
 
                 if (data.status === 'PROCESSING') {
                     // Set this card as active for ticker display
@@ -6120,7 +6115,6 @@
                     // Progress routed to card level;
 
                 } else if (data.status === 'COMPLETED') {
-                    // console.log('[WS] 🎉 Received COMPLETED status - starting cleanup');
                     // Hide ticker but KEEP messages for next validation
                     globalState.currentValidationState = null;
                     hideTicker(cardId);
@@ -6136,9 +6130,7 @@
                     globalState.processingState.validationCompleted = true;
                     globalState.workflowPhase = 'completed';
                     // Reset guard flag - processing complete
-                    // console.log('[GUARD] ✅ Processing completed - clearing guard flag (was: ' + globalState.processingInProgress + ')');
                     globalState.processingInProgress = false;
-                    // console.log('[GUARD] Guard flag now: ' + globalState.processingInProgress);
                     
                     // First update to 100% if we have a progress bar
                     const indicator = document.getElementById(`${cardId}-thinking`);
@@ -6169,9 +6161,10 @@
                             `• Remaining balance: $${globalState.accountBalance.toFixed(2)}` : 
                             `• Balance updating...`;
                         
-                        // Check if revert button should be shown (only if version > 1)
+                        // Check if revert button should be shown (only if this session has 2+ versions)
+                        const sessionVersionCount = data.session_version_count || 0;
                         const currentVersion = data.config_version || globalState.currentConfig?.config_version || 1;
-                        const showRevertButton = currentVersion > 1;
+                        const showRevertButton = sessionVersionCount >= 2;
 
                         // Calculate button colors based on reverse cycle (last button = green)
                         // With revert (4 buttons): quaternary, tertiary, secondary, primary
@@ -6301,9 +6294,7 @@
                     globalState.excelFileUploaded = true;
                     
                     // DEBUG: Log data structure for clarifying questions
-                    if (data.config_data) console.log('🔍 FRONTEND_DEBUG: data.config_data keys:', Object.keys(data.config_data));
-                    if (data.config) console.log('🔍 FRONTEND_DEBUG: data.config keys:', Object.keys(data.config));
-                    if (data.response_data) console.log('🔍 FRONTEND_DEBUG: data.response_data keys:', Object.keys(data.response_data));
+                    // Config data received
 
                     // Try multiple locations for clarifying questions
                     let questions = null;
@@ -8597,7 +8588,7 @@
                             globalState.savedQuestions = questionsToShow;
                         }
                     } catch (error) {
-                        console.error('🔍 FRONTEND_DEBUG: Backend fallback failed:', error);
+                        console.error('[ERROR] Backend fallback failed:', error);
                     }
                 }
 
@@ -8726,7 +8717,7 @@ Please provide any additional context, or simply proceed to generate your initia
 
                         if (!uploadResponse.ok) {
                             const errorText = await uploadResponse.text();
-                            console.error('Config generation upload failed with status:', uploadResponse.status, 'Response:', errorText);
+                            console.error('[ERROR] Config generation upload failed with status:', uploadResponse.status);
                             throw new Error(`Failed to upload Excel file to unified storage: ${uploadResponse.status} - ${errorText}`);
                         }
 
@@ -8967,7 +8958,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 for (let i = 0; i < words.length; i++) {
                     currentText += (i > 0 ? ' ' : '') + words[i];
                     element.innerHTML = renderMarkdown(currentText);
-                    await sleep(40); // ~25 words per second
+                    await sleep(27); // ~37 words per second (1.5x faster than 40ms)
                 }
             }
 
@@ -9112,7 +9103,7 @@ Please provide any additional context, or simply proceed to generate your initia
                     const data = await response.json();
 
                     // DEBUG: Log full response to understand what we're getting
-                    if (data.error) console.log('🔍 FRONTEND_DEBUG: Backend error:', data.error);
+                    // Backend error received
 
                     if (data.success && data.clarifying_questions) {
                         return {
@@ -9125,7 +9116,7 @@ Please provide any additional context, or simply proceed to generate your initia
                         return null;
                     }
                 } catch (error) {
-                    console.error('🔍 FRONTEND_DEBUG: Error fetching clarifying questions from backend:', error);
+                    console.error('[ERROR] Error fetching clarifying questions from backend:', error);
                     return null;
                 }
             }
@@ -9215,7 +9206,7 @@ Please provide any additional context, or simply proceed to generate your initia
                             globalState.savedQuestions = questionsToShow;
                         }
                     } catch (error) {
-                        console.error('🔍 FRONTEND_DEBUG: Backend fallback failed in refinement:', error);
+                        console.error('[ERROR] Backend fallback failed in refinement:', error);
                     }
                 }
 
@@ -9836,7 +9827,6 @@ Please provide any additional context, or simply proceed to generate your initia
                     console.trace('[GUARD] Stack trace of duplicate call:');
                     return null;
                 }
-                // console.log('[GUARD] ✅ Processing started - setting guard flag');
                 globalState.processingInProgress = true;
 
                 const cardId = generateCardId();
@@ -9993,7 +9983,6 @@ Please provide any additional context, or simply proceed to generate your initia
                     // Progress routed to card level;
                     showMessage(`${cardId}-messages`, `Error: ${error.message}`, 'error');
                     // Reset guard flag on error
-                    // console.log('[GUARD] ✅ Processing error - clearing guard flag');
                     globalState.processingInProgress = false;
                 }
             }
@@ -10068,9 +10057,10 @@ Please provide any additional context, or simply proceed to generate your initia
                     </div>
                 `;
 
-                // Check if revert button should be shown (only if version > 1)
+                // Check if revert button should be shown (only if this session has 2+ versions)
+                const sessionVersionCount = completionData.session_version_count || 0;
                 const currentVersion = completionData.config_version || globalState.currentConfig?.config_version || 1;
-                const showRevertButton = currentVersion > 1;
+                const showRevertButton = sessionVersionCount >= 2;
 
                 buttons = [
                     {
@@ -11156,7 +11146,7 @@ Please provide any additional context, or simply proceed to generate your initia
                                                         try {
                                                             globalState.pendingProcessingTrigger();
                                                         } catch (error) {
-                                                            console.error(`[RESTORE-DEBUG] Auto-processing trigger failed:`, error);
+                                                            console.error(`[ERROR] Auto-processing trigger failed:`, error);
                                                         }
                                                         globalState.userAttemptedProcessing = false;
                                                         globalState.pendingProcessingTrigger = null;
@@ -11438,12 +11428,12 @@ Please provide any additional context, or simply proceed to generate your initia
         // Handle page visibility changes (back/forward navigation)
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) {
-                console.log('[VISIBILITY] Tab became visible, checking WebSocket connections...');
+                // Tab became visible, checking connections
 
                 // Reconnect any disconnected WebSockets
                 sessionWebSockets.forEach((ws, sessionId) => {
                     if (ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING) {
-                        console.log(`[VISIBILITY] Reconnecting WebSocket for session ${sessionId}`);
+                        // Reconnecting WebSocket
                         sessionWebSockets.delete(sessionId);
                         connectToSession(sessionId, 0); // Reset reconnect attempts
                     }
@@ -11546,7 +11536,8 @@ Please provide any additional context, or simply proceed to generate your initia
             conversationId: null,
             messages: [],
             previewData: null,
-            cardId: null
+            cardId: null,
+            confirmationResponse: null  // Stores pre-generated confirmation to skip AI round-trip
         };
 
         // Create table maker card
@@ -11600,7 +11591,7 @@ Please provide any additional context, or simply proceed to generate your initia
 
             // Register handler with the card ID
             registerCardHandler(cardId, ['table_conversation_update'], (data) => {
-                console.log('[TABLE_MAKER] Received WebSocket update:', data);
+                // Table maker WebSocket update
                 handleTableConversationUpdate(data, cardId);
             });
         }
@@ -11660,13 +11651,13 @@ Please provide any additional context, or simply proceed to generate your initia
                     if (data.session_id && !globalState.sessionId) {
                         globalState.sessionId = data.session_id;
                         localStorage.setItem('sessionId', data.session_id);
-                        console.log(`[TABLE_MAKER] Stored new session ID: ${data.session_id}`);
+                        // Stored session ID
                     }
 
                     // Connect to WebSocket session
                     connectToSession(globalState.sessionId);
 
-                    console.log(`[TABLE_MAKER] Conversation started, waiting for updates via WebSocket: ${data.conversation_id}`);
+                    // Conversation started
                 } else {
                     completeThinkingInCard(cardId, 'Failed to start');
                     showMessage(`${cardId}-messages`,
@@ -11686,7 +11677,7 @@ Please provide any additional context, or simply proceed to generate your initia
 
         // Handle table conversation updates from WebSocket
         function handleTableConversationUpdate(data, cardId) {
-            console.log('[TABLE_MAKER] Processing update:', data);
+            // Processing table maker update
 
             // Update progress if available
             if (data.progress !== undefined) {
@@ -11705,10 +11696,16 @@ Please provide any additional context, or simply proceed to generate your initia
             if (data.progress === 100 && aiMessage && !isGenerating && !previewGenerated) {
                 tableMakerState.messages.push({ role: 'ai', content: aiMessage });
 
+                // Store confirmation_response if provided (MODE 2 only)
+                if (data.confirmation_response) {
+                    tableMakerState.confirmationResponse = data.confirmation_response;
+                    // Stored confirmation response
+                }
+
                 // Determine which UI to show based on mode
                 if (!isReady) {
                     // MODE 1 or MODE 2: Complete the indicator properly
-                    console.log(`[TABLE_MAKER] MODE ${showStructure ? '2' : '1'}: Completing progress indicator`);
+                    // Completing progress indicator
                     completeThinkingInCard(cardId, 'Response received');
 
                     // Add AI message with streaming
@@ -11734,11 +11731,11 @@ Please provide any additional context, or simply proceed to generate your initia
                     }
 
                     // Show refinement input with Submit button
-                    console.log(`[TABLE_MAKER] MODE ${showStructure ? '2' : '1'}: Showing refinement input with Submit button`);
+                    // Showing refinement input
                     showRefinementInput(cardId);
                 } else if (isReady) {
                     // MODE 3: Don't complete the indicator, keep it running for table generation
-                    console.log('[TABLE_MAKER] MODE 3: Execution starting - keeping progress indicator active');
+                    // Execution starting
                     updateThinkingInCard(cardId, 'Starting table generation...');
 
                     // Add AI message with streaming
@@ -11788,7 +11785,7 @@ Please provide any additional context, or simply proceed to generate your initia
                         cardSubtitle.textContent = data.table_name;
                     }
                 } else {
-                    console.log('[TABLE_MAKER] No stored preview card ID, creating new card');
+                    // Creating new preview card
                     createTablePreviewCard(data.preview_data, data.download_url, data.table_name);
                 }
             }
@@ -11943,13 +11940,7 @@ Please provide any additional context, or simply proceed to generate your initia
             const futureIds = previewData.future_ids || previewData.rows?.additional_rows || [];
 
             // Debug logging for additional rows
-            console.log('[TABLE_MAKER] Preview data keys:', Object.keys(previewData));
-            console.log('[TABLE_MAKER] previewData.rows:', previewData.rows);
-            console.log('[TABLE_MAKER] rows?.sample_rows length:', previewData.rows?.sample_rows?.length);
-            console.log('[TABLE_MAKER] rows?.additional_rows length:', previewData.rows?.additional_rows?.length);
-            console.log('[TABLE_MAKER] future_ids:', previewData.future_ids);
-            console.log('[TABLE_MAKER] futureIds array:', futureIds);
-            console.log('[TABLE_MAKER] futureIds.length:', futureIds.length);
+            // Populating table preview
 
             // Separate ID and Research columns
             const idColumns = columns.filter(c => c.is_identification);
@@ -12083,7 +12074,57 @@ Please provide any additional context, or simply proceed to generate your initia
 
             const userMessage = input.value.trim();
 
-            // Blank submission = affirmative (user approves)
+            // Check if this is a simple confirmation (blank, "yes", "looks good", etc.)
+            const isSimpleConfirmation = !userMessage ||
+                /^(yes|yeah|yep|yup|sure|ok|okay|good|great|perfect|sounds good|looks good|go|go for it|start|proceed)\.?$/i.test(userMessage);
+
+            // If it's a simple confirmation AND we have a pre-generated confirmation_response, use it
+            if (isSimpleConfirmation && tableMakerState.confirmationResponse) {
+                // Using pre-generated confirmation response
+
+                // Add user message to chat (show actual message or affirmative)
+                const displayMessage = userMessage || '✓ Confirmed';
+                addChatMessage(cardId, 'user', displayMessage);
+                tableMakerState.messages.push({ role: 'user', content: userMessage || 'Yes, looks good. Please generate this table.' });
+
+                // Hide refinement input but keep buttons to show "Thinking..." state
+                const refinementDiv = document.getElementById(`${cardId}-refinement`);
+                if (refinementDiv) refinementDiv.style.display = 'none';
+
+                // Show thinking indicator
+                showThinkingInCard(cardId, 'Starting table generation...', true);
+
+                // Use pre-generated confirmation response
+                const confirmData = tableMakerState.confirmationResponse;
+
+                // Add AI confirmation message with streaming
+                addChatMessage(cardId, 'ai', confirmData.ai_message, false, 'normal');
+                tableMakerState.messages.push({ role: 'ai', content: confirmData.ai_message });
+
+                // Clear confirmation response (used once)
+                tableMakerState.confirmationResponse = null;
+
+                // Simulate the update message that would come from WebSocket
+                // This triggers execution flow in handleTableConversationUpdate
+                setTimeout(() => {
+                    handleTableConversationUpdate({
+                        type: 'table_conversation_update',
+                        conversation_id: tableMakerState.conversationId,
+                        progress: 100,
+                        ai_message: confirmData.ai_message,
+                        trigger_execution: true,  // This is the key - triggers execution
+                        show_structure: false,
+                        context_web_research: confirmData.context_web_research || [],
+                        processing_steps: confirmData.processing_steps || [],
+                        table_name: confirmData.table_name || tableMakerState.table_name,
+                        turn_count: (tableMakerState.messages.filter(m => m.role === 'user').length)
+                    }, cardId);
+                }, 100);
+
+                return;
+            }
+
+            // Otherwise, send to backend for AI processing (user wants changes)
             const messageToSend = userMessage || 'Yes, looks good. Please generate this table.';
 
             // Add user message to chat (show actual message or affirmative)
@@ -12116,7 +12157,7 @@ Please provide any additional context, or simply proceed to generate your initia
 
                 if (data.success && data.status === 'processing') {
                     // Request queued - thinking indicator already showing, no button needed
-                    console.log(`[TABLE_MAKER] Conversation continue queued, waiting for updates`);
+                    // Conversation continue queued
                 } else {
                     completeThinkingInCard(cardId, 'Error');
                     showMessage(`${cardId}-messages`,
@@ -12213,7 +12254,7 @@ Please provide any additional context, or simply proceed to generate your initia
 
                     // Check if this is table/config generation completion
                     if (message.includes('Table generation complete')) {
-                        console.log('[CONFIG_CARD] Config generation complete, creating validation card');
+                        // Config generation complete
                         validationAutoTriggered = true;  // Set flag to prevent duplicates
 
                         // Update global state
@@ -12227,7 +12268,7 @@ Please provide any additional context, or simply proceed to generate your initia
 
                         // Create Preview Validation card and auto-trigger validation
                         setTimeout(() => {
-                            console.log('[CONFIG_CARD] Creating preview validation card');
+                            // Creating preview validation card
                             createPreviewCard();  // This will auto-trigger validation
                         }, 500);
                     }
@@ -12252,7 +12293,7 @@ Please provide any additional context, or simply proceed to generate your initia
 
                 if (data.success && data.status === 'processing') {
                     // Async mode - wait for WebSocket updates (handler already registered above)
-                    console.log('[TABLE_FINALIZE_CARD] Async processing started, waiting for WebSocket updates');
+                    // Async processing started
 
                 } else if (data.success) {
                     // Synchronous mode (legacy fallback)
@@ -12333,7 +12374,7 @@ Please provide any additional context, or simply proceed to generate your initia
 
         // Helper function to trigger preview validation
         function triggerPreviewValidation(cardId) {
-            console.log('[TABLE_VALIDATE] Starting preview validation');
+            // Starting preview validation
 
             // First, add download button for unvalidated table
             const messagesDiv = document.getElementById(`${cardId}-messages`);
@@ -12389,7 +12430,7 @@ Please provide any additional context, or simply proceed to generate your initia
             }).then(response => response.json())
               .then(data => {
                   if (data.status === 'processing') {
-                      console.log('[TABLE_VALIDATE] Preview validation queued, waiting for WebSocket updates');
+                      // Preview validation queued
                       // WebSocket updates will handle the progress
                   } else if (data.error) {
                       completeThinkingInCard(cardId, 'Validation failed');

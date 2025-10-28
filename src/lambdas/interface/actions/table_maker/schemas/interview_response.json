@@ -20,6 +20,35 @@
       "minLength": 20,
       "description": "Your response to the user. NEVER EMPTY. ALWAYS has content. MODE 1: Your questions. MODE 2: Table structure description. MODE 3: Confirmation message with timing. Use markdown formatting."
     },
+    "confirmation_response": {
+      "type": "object",
+      "description": "Pre-generated confirmation response to use if user approves (mode=2 only). Contains fields needed to skip redundant AI round-trip when user says 'yes' or presses submit with blank input.",
+      "properties": {
+        "ai_message": {
+          "type": "string",
+          "minLength": 20,
+          "description": "Confirmation message to show when user approves (e.g., 'Great! Starting table generation now (3-4 minutes)...')"
+        },
+        "context_web_research": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Same as parent context_web_research (entities/topics that need web research)"
+        },
+        "processing_steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Same as parent processing_steps (specific action phrases)"
+        },
+        "table_name": {
+          "type": "string",
+          "description": "Same as parent table_name"
+        }
+      }
+    },
     "context_web_research": {
       "type": "array",
       "items": {

@@ -1,7 +1,7 @@
 # Table Maker - Independent Row Discovery System
 
-**Version:** 2.2 (Search Improvements Feedback + 3-Level Escalation + ID Column Constraints)
-**Last Updated:** October 24, 2025
+**Version:** 2.3 (Strategic Subdomain Scaling + Overshoot Targeting)
+**Last Updated:** October 27, 2025
 **Status:** Production Ready (Lambda Integrated)
 
 ---
@@ -53,6 +53,36 @@ python test_local_e2e_sequential.py
 - Duration: 1-3 minutes
 - Cost: $0.05-0.15
 - Output: 8-15 validated companies in `output/local_tests/`
+
+---
+
+## What's New in Version 2.3
+
+### Strategic Subdomain Scaling (2-10 Subdomains)
+- **Raised Limit**: Subdomain max increased from 5 to 10
+- **Adaptive Scaling**: More subdomains for challenging/niche topics
+- **Decision Matrix**: Clear guidelines for when to use 2-3 vs 8-10 subdomains
+- **Examples**: Fortune 500 (2-3) vs Government AI Initiatives (8-10)
+
+### Intelligent Overshoot Targeting
+- **30-50% Buffer**: Always target more rows than promised to user
+- **Deduplication Compensation**: Formula adjusts for overlap (10% per extra subdomain)
+- **Guaranteed Delivery**: Ensures we deliver what we promised after QC
+- **Formula-Driven**: `total_target = user_requested × overshoot × dedup_compensation`
+
+### Comprehensive Row Allocation Strategy
+- **Worked Examples**: Detailed calculations for common scenarios
+- **Distribution Options**: Even or weighted distribution based on subdomain yield
+- **Integration with Global Counter**: Strategy works synergistically with early stopping
+- **Documented in Config**: `overshoot_factor_min/max` in table_maker_config.json
+
+### Updated Column Definition Prompt
+- **Decision Matrix**: Table showing subdomain count by difficulty/complexity
+- **Calculation Examples**: Step-by-step worked examples with math
+- **Rationale Explained**: Why more subdomains for challenging topics
+- **Clear Guidelines**: When to use 2-3 vs 6-8 vs 8-10 subdomains
+
+**Result:** Reliable delivery of promised row counts, even for challenging/niche topics.
 
 ---
 
@@ -173,6 +203,146 @@ python test_local_e2e_sequential.py
 5. **Parallel Execution:** Config generation doesn't block QC
 6. **Cost Tracking:** Every API call tracked with enhanced_data
 7. **Simple ID Columns:** Short, repeatable identifiers prevent discovery failures
+8. **Strategic Overshooting:** Always target 30-50% more rows than promised to ensure delivery
+9. **Adaptive Subdomain Scaling:** 2-10 subdomains based on difficulty and complexity
+
+---
+
+## Subdomain & Row Allocation Strategy
+
+**Version 2.3 Enhancement:** Strategic subdomain count and row targeting to ensure reliable delivery.
+
+### Core Philosophy
+
+**We prefer to overshoot the number of rows we promise in conversation.**
+
+The system automatically adjusts subdomain count and row targets based on:
+- Discovery difficulty (how niche/rare the entities are)
+- User's requested row count
+- Requirement complexity (simple list vs. multi-criteria)
+
+### Subdomain Count Decision Matrix
+
+| User Requested | Topic Difficulty | Complexity | Subdomains | Rationale |
+|----------------|------------------|------------|------------|-----------|
+| ≤20 rows | Common/Easy | Simple | 2-3 | Efficient, minimal overlap |
+| 21-50 rows | Moderate | Moderate | 4-5 | Balanced coverage |
+| 51-100 rows | Challenging/Niche | Complex | 6-8 | Wide net for rare entities |
+| 100+ rows | Very Niche | Very Complex | 8-10 | Maximum parallel coverage |
+
+**Examples:**
+- "Fortune 500 companies" → 2-3 subdomains (well-known, easy to find)
+- "Biotech companies hiring AI engineers" → 5-6 subdomains (niche intersection, multiple criteria)
+- "Academic papers on quantum AI from 2024" → 7-8 subdomains (very specific, time-bound)
+- "Local government AI initiatives globally" → 9-10 subdomains (very rare, geographically dispersed)
+
+### Row Target Calculation Formula
+
+```python
+# Step 1: Determine overshoot factor based on complexity
+overshoot_factor = 1.3 to 1.5  # 30-50% buffer
+
+# Step 2: Calculate deduplication compensation (more subdomains = more overlap)
+dedup_compensation = 1.0 + ((subdomain_count - 2) * 0.10)
+
+# Step 3: Calculate total internal target
+total_internal_target = user_requested * overshoot_factor * dedup_compensation
+
+# Step 4: Distribute across subdomains
+target_per_subdomain = total_internal_target / subdomain_count
+```
+
+### Worked Examples
+
+**Example 1: User wants 20 rows, common topic**
+- Topic: "Fortune 500 companies"
+- Subdomains: 3 (easy to find)
+- Overshoot: 1.3 (30% buffer)
+- Dedup: 1.0 + (1 × 0.10) = 1.1
+- Total target: 20 × 1.3 × 1.1 = 29 rows
+- Per subdomain: 29 ÷ 3 ≈ 10 rows each
+
+**Example 2: User wants 50 rows, niche topic**
+- Topic: "Biotech companies hiring AI engineers"
+- Subdomains: 6 (challenging, multi-criteria)
+- Overshoot: 1.4 (40% buffer)
+- Dedup: 1.0 + (4 × 0.10) = 1.4
+- Total target: 50 × 1.4 × 1.4 = 98 rows
+- Per subdomain: 98 ÷ 6 ≈ 16 rows each
+
+**Example 3: User wants 100 rows, very niche**
+- Topic: "Government AI initiatives globally"
+- Subdomains: 9 (very rare, dispersed)
+- Overshoot: 1.5 (50% buffer)
+- Dedup: 1.0 + (7 × 0.10) = 1.7
+- Total target: 100 × 1.5 × 1.7 = 255 rows
+- Per subdomain: 255 ÷ 9 ≈ 28 rows each
+
+### Why This Strategy Works
+
+**Why Overshoot:**
+- QC review rejects 10-30% of discovered candidates
+- Deduplication removes overlaps between subdomains
+- We want to DELIVER what we promised, not fall short
+- Better to have extra options than to scramble for more rows
+
+**Why More Subdomains for Challenging Topics:**
+- Niche entities are spread across different niches/categories
+- Each subdomain explores a different angle or approach
+- Wider net → better chance of finding rare entities
+- More parallel workers → faster discovery
+
+**Why More Subdomains = Higher Targets:**
+- More subdomains → more overlap in discovered entities
+- Deduplication removes 10-15% per extra subdomain
+- Compensation factor ensures we still hit final target
+- Example: 10 subdomains might find same company 3-4 times
+
+**Why Complex Requirements Need More Subdomains:**
+- Multi-criteria searches ("biotech" AND "hiring" AND "AI") are harder
+- Each subdomain can focus on one aspect of complexity
+- Parallel workers can specialize in different criteria combinations
+- Lower per-subdomain targets prevent worker fatigue
+
+### Distribution Strategies
+
+**Even Distribution (Default):**
+```json
+{
+  "total_target": 60,
+  "subdomains": 6,
+  "distribution": [10, 10, 10, 10, 10, 10]
+}
+```
+
+**Weighted Distribution (When Yield Varies):**
+```json
+{
+  "total_target": 60,
+  "subdomains": 5,
+  "distribution": [15, 12, 12, 12, 9],
+  "rationale": {
+    "subdomain_1": "High-yield category (1.5x average)",
+    "subdomain_2-4": "Medium-yield (1.2x average)",
+    "subdomain_5": "Catch-all (0.9x average)"
+  }
+}
+```
+
+### Integration with Global Counter
+
+The subdomain strategy works synergistically with the global counter:
+
+1. **Target calculation** determines total rows needed across all subdomains
+2. **Global counter** tracks progress and stops early when target met
+3. **Early stopping** at 100% threshold (configurable)
+
+**Example:**
+- User wants: 50 rows
+- System targets: 70 rows (40% overshoot)
+- Subdomains: 5 × 14 rows each
+- Global counter: Stops after subdomain 3 if 70 rows found
+- Final result: 60-65 rows after QC → deliver 50+ to user
 
 ---
 
@@ -309,7 +479,11 @@ Round 2 discovers: "Date ranges improve relevance"
 {
   "column_definition": {
     "model": "claude-haiku-4-5",
-    "max_tokens": 12000
+    "max_tokens": 8000,
+    "subdomain_count_min": 2,
+    "subdomain_count_max": 10,
+    "overshoot_factor_min": 1.3,
+    "overshoot_factor_max": 1.5
   }
 }
 ```

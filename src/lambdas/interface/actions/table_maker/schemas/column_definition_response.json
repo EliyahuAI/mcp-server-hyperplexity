@@ -121,6 +121,18 @@
                 "description": "Number of candidate rows to find for this subdomain (allows small allocations for niche subdomains)",
                 "minimum": 1
               },
+              "discovered_list_url": {
+                "type": "string",
+                "description": "Optional: URL of authoritative list/database where candidates can be found (e.g., NIH RePORTER, Wikipedia list, Crunchbase). Leave empty if no single authoritative source exists."
+              },
+              "candidates": {
+                "type": "array",
+                "description": "Optional: 3-10 actual example candidates discovered from authoritative lists, with their primary ID values (e.g., ['Anthropic', 'OpenAI'] for companies or ['John Andrews - USC', 'Sarah Davis - MIT'] for researchers). Must be REAL entities found via web search, not made-up examples.",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10
+              },
               "included_domains": {
                 "type": "array",
                 "description": "Optional: Override default included domains for this specific subdomain",

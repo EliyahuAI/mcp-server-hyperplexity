@@ -1,13 +1,238 @@
 # Column Definition Task
 
-## What You're Doing
+═══════════════════════════════════════════════════════════════
+## 📋 PROMPT MAP - What You'll Find Below
+═══════════════════════════════════════════════════════════════
 
-We have an outline of a series of columns for a research table. Your job is to:
-1. **Precisely specify these columns** with detailed descriptions and validation strategies
-2. **Provide background research** from specific research topics (if provided)
-3. **Create a search strategy** to find the entities that will populate this table
+1. **YOUR CORE TASK**: Define columns, find authoritative lists, create search strategy
+2. **STEP 1 (CRITICAL)**: Find authoritative lists that can provide row candidates en masse
+3. **INFORMATION PROVIDED**: Conversation context, user requirements, research topics
+4. **EXAMPLE**: Job search table showing complete output structure
+5. **ROW REQUIREMENTS**: Define hard and soft requirements for valid rows
+6. **KEY PRINCIPLES**: Column naming, ID vs research columns, descriptions, validation
+7. **YOUR TASK**: Step-by-step instructions with subdomain strategy
+8. **DOMAIN FILTERING**: Optional include/exclude domains (use carefully)
+9. **SUBDOMAIN DESIGN**: How to structure subdomains as organizational tools
+10. **FINAL REMINDER**: Core task repeated with critical constraints
 
-## Information Provided
+═══════════════════════════════════════════════════════════════
+## 🎯 YOUR CORE TASK
+═══════════════════════════════════════════════════════════════
+
+**GOAL:** Define precise column specifications and search strategy for populating a research table
+
+**DELIVERABLES:**
+- Column definitions (ID columns + research columns) with detailed descriptions
+- Search strategy with 2-10 subdomains covering the search space
+- Authoritative lists (URLs + candidates) for as many subdomains as possible
+- Hard and soft requirements defining valid rows
+- Table name and tablewide research context
+
+**KEY RULES:**
+1. ✅ Find authoritative lists FIRST (NIH grants, Wikipedia lists, Crunchbase, etc.)
+2. ✅ Use SHORT column names (details go in description)
+3. ✅ ID columns = simple identifiers, Research columns = validated complex data
+4. ✅ Search queries must find LISTS not individual entities
+5. ✅ Each subdomain gets its own discovered list and candidates
+
+---
+
+═══════════════════════════════════════════════════════════════
+## ⚠️ STEP 1: Find Authoritative Lists (CRITICAL - Do This First!)
+═══════════════════════════════════════════════════════════════
+
+**BEFORE defining columns, use web search to find authoritative lists that can provide row candidates en masse.**
+
+### Strategy: Think "Where is the complete list?"
+
+Ask yourself: **"Is there an existing directory, database, or authoritative list I can use?"**
+
+#### Examples of Authoritative Lists:
+
+**Need funded researchers?**
+- NIH RePORTER database of all NIH grants
+- NSF Awards database
+- EU Horizon grants database
+
+**Need countries?**
+- Wikipedia list of sovereign states
+- UN member states list
+- ISO 3166 country codes
+
+**Need AI companies?**
+- Crunchbase AI category companies
+- LinkedIn companies tagged "artificial intelligence"
+- CBInsights AI 100 list
+
+**Need universities?**
+- Carnegie Classification of institutions
+- Times Higher Education rankings
+- National university associations
+
+**Need government officials?**
+- Official government directories
+- Wikipedia lists by position/country
+- Parliamentary/Congressional databases
+
+**Need academic papers?**
+- arXiv categories
+- PubMed searches with filters
+- Google Scholar subject searches
+
+**Need companies in sector X?**
+- Industry association member lists
+- Stock exchange sector listings
+- Trade publication directories
+
+### How to Use Lists in Subdomains
+
+**If you find a complete authoritative list**, structure subdomains by SEGMENTS of that list:
+
+**Example 1: Countries**
+```json
+"subdomains": [
+  {
+    "name": "Countries A-E",
+    "focus": "Sovereign nations from Afghanistan to Estonia",
+    "discovered_list_url": "https://en.wikipedia.org/wiki/List_of_sovereign_states",
+    "candidates": ["Afghanistan", "Albania", "Algeria", "Angola", "Argentina"],
+    "search_queries": [
+      "site:wikipedia.org list of sovereign states",
+      "UN member states alphabetical list"
+    ],
+    "target_rows": 50
+  },
+  {
+    "name": "Countries F-M",
+    "focus": "Sovereign nations from Fiji to Myanmar",
+    "discovered_list_url": "https://en.wikipedia.org/wiki/List_of_sovereign_states",
+    "candidates": ["Fiji", "Finland", "France", "Gabon", "Gambia"],
+    "search_queries": [
+      "site:wikipedia.org list of sovereign states",
+      "UN member states alphabetical list"
+    ],
+    "target_rows": 60
+  }
+]
+```
+
+**Example 2: NIH Researchers**
+```json
+"subdomains": [
+  {
+    "name": "2024 NIH Awardees (Surnames A-D)",
+    "focus": "NIH-funded researchers with surnames starting A-D",
+    "discovered_list_url": "https://reporter.nih.gov/",
+    "candidates": ["John Andrews - USC", "Sarah Davis - MIT", "Robert Chen - Stanford"],
+    "search_queries": [
+      "site:reporter.nih.gov 2024 grants awarded",
+      "NIH RePORTER principal investigators 2024"
+    ],
+    "target_rows": 50
+  }
+]
+```
+
+**Example 3: Top AI Companies**
+```json
+"subdomains": [
+  {
+    "name": "Forbes AI 50 Companies",
+    "focus": "Companies from Forbes AI 50 2024 list",
+    "discovered_list_url": "https://www.forbes.com/lists/ai50/",
+    "candidates": ["Anthropic", "OpenAI", "Databricks", "Scale AI", "Hugging Face"],
+    "search_queries": [
+      "site:forbes.com AI 50 list 2024",
+      "Forbes top AI companies 2024 complete list"
+    ],
+    "target_rows": 50
+  },
+  {
+    "name": "Crunchbase AI Companies (Series B+)",
+    "focus": "Well-funded AI companies from Crunchbase",
+    "discovered_list_url": "https://www.crunchbase.com/discover/organization.companies",
+    "candidates": ["Cohere", "Inflection AI", "Adept", "Character.AI", "Jasper"],
+    "search_queries": [
+      "site:crunchbase.com AI companies Series B funding",
+      "Crunchbase artificial intelligence category funded"
+    ],
+    "target_rows": 30
+  }
+]
+```
+
+### When No Complete List Exists
+
+If you can't find ONE complete authoritative list, look for MULTIPLE partial lists:
+
+**Example: GenAI Job Postings**
+```json
+"subdomains": [
+  {
+    "name": "LinkedIn GenAI Jobs - Top Tech",
+    "focus": "Generative AI positions at major tech companies on LinkedIn",
+    "discovered_list_url": "https://www.linkedin.com/jobs/search/?keywords=generative%20AI",
+    "candidates": ["Senior GenAI Engineer at Google", "AI Researcher at Meta", "ML Engineer at Anthropic"],
+    "search_queries": [
+      "LinkedIn jobs generative AI FAANG",
+      "site:linkedin.com/jobs generative AI engineer 2024"
+    ],
+    "target_rows": 40
+  },
+  {
+    "name": "Y Combinator AI Startups Hiring",
+    "focus": "YC-backed AI companies with open positions",
+    "discovered_list_url": "https://www.ycombinator.com/companies",
+    "candidates": ["ML Engineer at Vanta", "AI Researcher at Ramp", "GenAI Engineer at Brex"],
+    "search_queries": [
+      "Y Combinator batch 2024 AI companies hiring",
+      "site:ycombinator.com/companies AI machine learning"
+    ],
+    "target_rows": 20
+  }
+]
+```
+
+**Note how search_queries target AGGREGATOR SITES that list many entities at once, not individual entity searches.**
+
+---
+
+### Output Format for Discovered Lists
+
+**CRITICAL:** Each subdomain should have its OWN discovered list and candidates specific to that subdomain's focus area.
+
+In each subdomain object, include:
+- `discovered_list_url`: URL of the authoritative list source (if found for THIS subdomain)
+- `candidates`: Array of 3-10 specific example candidates from THIS subdomain's list with their primary ID values
+- If candidates include compound IDs, format them clearly (e.g., "John Andrews - USC" for researcher + institution)
+
+**Search Queries Must Find LISTS, Not Individual Entities:**
+- ❌ BAD: "preclinical imaging director pharma" → Returns individuals one at a time
+- ✅ GOOD: "Charles River Laboratories imaging staff directory" → Returns many people at once
+- ❌ BAD: "AI researcher Stanford" → Returns individuals
+- ✅ GOOD: "Stanford AI faculty list" → Returns many researchers at once
+- ❌ BAD: "biotech startup founder" → Returns individuals
+- ✅ GOOD: "Y Combinator biotech batch 2024" → Returns many companies at once
+
+**Examples of Good List-Finding Search Queries:**
+- "NIH RePORTER grants [disease/field]" → Grant database with many recipients
+- "[University] faculty directory [department]" → Complete faculty list
+- "[Conference] speakers 2024" → List of all speakers
+- "Forbes [industry] 50 list 2024" → Curated top 50 list
+- "[Company] leadership team" → Complete team roster
+- "Crunchbase [category] companies series B" → Database of companies
+
+**IMPORTANT:**
+- These candidates should be ACTUAL entities you found via web search, not made-up examples!
+- Each subdomain's candidates should be DIFFERENT and specific to that subdomain's focus
+- If a subdomain focuses on "NIH-funded researchers", candidates should come from NIH RePORTER
+- If a subdomain focuses on "EU researchers", candidates should come from EU grant databases
+
+---
+
+═══════════════════════════════════════════════════════════════
+## 📚 INFORMATION PROVIDED
+═══════════════════════════════════════════════════════════════
 
 **Conversation History:** The discussion with the user that led to this table
 {{CONVERSATION_CONTEXT}}
@@ -20,7 +245,9 @@ We have an outline of a series of columns for a research table. Your job is to:
 
 ---
 
-## Example: Job Search Table
+═══════════════════════════════════════════════════════════════
+## 📝 EXAMPLE: Job Search Table
+═══════════════════════════════════════════════════════════════
 
 **User wants:** Track great jobs for Jenifer Siegelman (see LinkedIn profile)
 
@@ -148,7 +375,9 @@ We have an outline of a series of columns for a research table. Your job is to:
 
 ---
 
-## Row Requirements (Minimum 1 Required)
+═══════════════════════════════════════════════════════════════
+## ✔️ ROW REQUIREMENTS (Minimum 1 Required)
+═══════════════════════════════════════════════════════════════
 
 **CRITICAL:** You must define at least ONE requirement for what makes a good row. You can specify hard requirements, soft requirements, or both.
 
@@ -205,7 +434,9 @@ Example: "Looking for authoritative sources with detailed analysis. Company size
 
 ---
 
-## Key Principles
+═══════════════════════════════════════════════════════════════
+## 🔑 KEY PRINCIPLES
+═══════════════════════════════════════════════════════════════
 
 ### Column Naming Guidelines
 
@@ -292,7 +523,9 @@ Be explicit and actionable:
 
 ---
 
-## Your Task
+═══════════════════════════════════════════════════════════════
+## 📋 YOUR TASK - Step by Step
+═══════════════════════════════════════════════════════════════
 
 Using the information provided above:
 
@@ -307,28 +540,92 @@ Using the information provided above:
 - Example sources/details go in description, NOT in the column name
 
 2. **Create search strategy**
-   - 2-5 subdomains that cover the search space
+   - 2-10 subdomains that cover the search space
    - Each subdomain has: name, focus, search_queries (3-5), target_rows
    - Search queries should yield multiple entities (lists, directories)
+
+   **CRITICAL: Subdomain Count & Row Target Strategy**
+
+   The number of subdomains and total target rows should be determined strategically based on:
+   - **Discovery difficulty** (how niche/rare the entities are)
+   - **User's requested row count** (what they asked for in conversation)
+   - **Requirement complexity** (simple list vs. multi-criteria search)
+
+   **Subdomain Count Decision Matrix:**
+   | User Wants | Topic Difficulty | Complexity | Use Subdomains | Rationale |
+   |------------|------------------|------------|----------------|-----------|
+   | ≤20 rows | Common/Easy | Simple | 2-3 | Efficient, low overlap |
+   | 21-50 rows | Moderate | Moderate | 4-5 | Balanced coverage |
+   | 51-100 rows | Challenging/Niche | Complex | 6-8 | Wide net needed |
+   | 100+ rows | Very Niche | Very Complex | 8-10 | Maximum coverage |
+
+   **Examples:**
+   - "Fortune 500 companies" → 2-3 subdomains (common, easy to find)
+   - "Biotech companies hiring AI engineers" → 5-6 subdomains (niche, multiple criteria)
+   - "Academic papers on quantum AI from 2024" → 7-8 subdomains (very specific, time-bound)
+   - "Local government AI initiatives globally" → 9-10 subdomains (very rare, dispersed)
+
+   **Target Row Calculation Formula:**
+   ```
+   overshoot_factor = 1.3 to 1.5 (30-50% buffer to ensure delivery)
+   dedup_compensation = 1.0 + ((subdomain_count - 2) * 0.10)  # 10% overlap per extra subdomain
+
+   total_internal_target = user_requested * overshoot_factor * dedup_compensation
+   target_per_subdomain = total_internal_target / subdomain_count (can be weighted or even)
+   ```
+
+   **Worked Examples:**
+
+   1. **User wants 20 rows, common topic (Fortune 500):**
+      - Subdomains: 3 (easy topic)
+      - overshoot_factor: 1.3
+      - dedup_compensation: 1.0 + (1 * 0.10) = 1.1
+      - total_internal_target: 20 * 1.3 * 1.1 = 28.6 ≈ 29
+      - target_per_subdomain: 29 / 3 ≈ 10 each
+
+   2. **User wants 50 rows, niche topic (biotech hiring AI engineers):**
+      - Subdomains: 6 (challenging, multi-criteria)
+      - overshoot_factor: 1.4
+      - dedup_compensation: 1.0 + (4 * 0.10) = 1.4
+      - total_internal_target: 50 * 1.4 * 1.4 = 98
+      - target_per_subdomain: 98 / 6 ≈ 16 each
+
+   3. **User wants 100 rows, very niche (government AI initiatives):**
+      - Subdomains: 9 (very rare, global search)
+      - overshoot_factor: 1.5
+      - dedup_compensation: 1.0 + (7 * 0.10) = 1.7
+      - total_internal_target: 100 * 1.5 * 1.7 = 255
+      - target_per_subdomain: 255 / 9 ≈ 28 each
+
+   **Why Overshoot:**
+   - QC review rejects 10-30% of candidates on average
+   - Deduplication removes overlaps between subdomains
+   - We want to DELIVER what we promised, not fall short
+   - Better to have options than to scramble for more rows
+
+   **Why More Subdomains for Challenging Topics:**
+   - Niche entities are spread across different niches
+   - Each subdomain explores a different angle
+   - Wider net → better chance of finding rare entities
+   - More subdomains = more overlap, hence higher targets needed
+
+   **Why Complex Requirements Need More Subdomains:**
+   - Multi-criteria searches ("biotech" AND "hiring" AND "AI") are harder
+   - Each subdomain can focus on one aspect of complexity
+   - Parallel workers can specialize in different criteria combinations
+   - Lower per-subdomain targets prevent worker fatigue
 
    **Subdomain Design Guidelines:**
    - First subdomains: Specific, focused categories (e.g., "AI Research", "Healthcare AI")
    - Last subdomain: Catch-all for remaining entities (e.g., "Other AI Companies", "Additional Opportunities Not in Above Categories")
    - This ensures complete coverage - nothing is excluded
 
-   **target_rows Strategy:**
-   - Use "up to N" approach where N = total target for entire table
-   - Each subdomain can return UP TO the full target
-   - Richer subdomains will naturally return more candidates
-   - Less relevant subdomains will return fewer
-   - Deduplication and QC will select the best from all subdomains
-
-   **Example for 3 subdomains (total target: 10 rows):**
-   - Subdomain 1: "AI Research Companies" - target_rows: 10 (up to 10)
-   - Subdomain 2: "Healthcare AI Companies" - target_rows: 10 (up to 10)
-   - Subdomain 3: "Other AI Companies" - target_rows: 10 (up to 10)
-   - Total discovered: might be 8 + 7 + 3 = 18 candidates
-   - After deduplication + QC: final 10 best selected
+   **Distribution Strategy (target_rows per subdomain):**
+   - **Even distribution:** When all subdomains are equally productive
+   - **Weighted distribution:** When some subdomains are richer than others
+     - High-yield subdomain: 1.2x average
+     - Medium-yield subdomain: 1.0x average
+     - Low-yield/catch-all subdomain: 0.6x average
 
 3. **Name the table** clearly and descriptively
 
@@ -336,7 +633,9 @@ Using the information provided above:
 
 ---
 
-## Domain Filtering (Optional)
+═══════════════════════════════════════════════════════════════
+## 🌐 DOMAIN FILTERING (Optional - Use Carefully)
+═══════════════════════════════════════════════════════════════
 
 You can optionally specify domain filtering to focus searches on reliable sources and avoid noise.
 
@@ -425,7 +724,9 @@ Subdomains can override these settings if needed for specific searches.
 
 ---
 
-## Subdomain Design Guidelines (Updated)
+═══════════════════════════════════════════════════════════════
+## 🎯 SUBDOMAIN DESIGN GUIDELINES
+═══════════════════════════════════════════════════════════════
 
 **IMPORTANT: Subdomains are focus areas to help parallel workers avoid overlap, NOT strict boundaries.**
 
@@ -456,4 +757,26 @@ A row discovered in the "AI Research Companies" subdomain might actually fit bet
    - Workers CAN include entities outside their focus if found during searches
    - Think of it as "start here, but don't feel constrained"
 
-Return valid JSON matching the schema.
+---
+
+═══════════════════════════════════════════════════════════════
+## 🎯 FINAL REMINDER - Your Core Task
+═══════════════════════════════════════════════════════════════
+
+**GOAL:** Define precise column specifications and search strategy for populating a research table
+
+**CRITICAL INSTRUCTIONS:**
+1. ✅ Use web search to find authoritative lists FIRST (NIH RePORTER, Wikipedia lists, Crunchbase, etc.)
+2. ✅ Structure subdomains as SEGMENTS of discovered lists when possible
+3. ✅ Each subdomain gets its OWN discovered_list_url and candidates array
+4. ✅ Search queries must target LISTS/aggregators, not individual entities
+   - ❌ BAD: "AI researcher Stanford" → Returns individuals
+   - ✅ GOOD: "Stanford AI faculty list" → Returns many researchers at once
+5. ✅ Keep column names SHORT (details in description)
+6. ✅ ID columns = simple identifiers (1-5 words), Research columns = complex validated data
+7. ✅ At least ONE requirement (hard or soft) is required
+8. ✅ Use 2-10 subdomains based on difficulty (more for niche topics)
+9. ✅ Overshoot target rows by 30-50% to ensure delivery after QC
+10. ✅ Only use included_domains if user EXPLICITLY requested specific sources
+
+**Return your column definitions and search strategy as valid JSON.**

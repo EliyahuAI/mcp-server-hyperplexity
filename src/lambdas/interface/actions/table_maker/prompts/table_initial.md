@@ -37,14 +37,21 @@ If the user has provided enough detail to design a good table, show the structur
 3. **Ask for confirmation**: End your ai_message with "Ready to generate this table?" or similar
 4. Set `show_structure: true`
 5. Set `ready_to_generate: true`
+6. **Populate confirmation_response**: Pre-generate the response that will be shown if user approves
+   - This enables frontend to skip redundant AI round-trip for simple "yes" / blank / submit confirmations
+   - `confirmation_response.ai_message`: Brief confirmation like "Great! Starting table generation now (3-4 minutes)..."
+   - `confirmation_response.context_web_research`: Copy from parent context_web_research
+   - `confirmation_response.processing_steps`: Copy from parent processing_steps
+   - `confirmation_response.table_name`: Copy from parent table_name
 
 **CRITICAL CONSTRAINTS FOR MODE 2:**
 - `proposed_rows`: Must include 3 fully populated sample rows (ALL columns filled)
 - `proposed_columns`: Must include complete column definitions with names, descriptions, types, and importance
 - `ai_message`: Briefly describe the table structure (1-2 sentences). End with "Ready to generate this table?" DO NOT ask clarifying questions. DO NOT mention timing.
 - `clarifying_questions`: Return empty string ""
+- `confirmation_response`: MUST be populated with pre-generated confirmation message and metadata
 - DO NOT mix structure presentation with question-asking
-- DO NOT mention "3-4 minutes" or any time estimates (frontend handles this)
+- DO NOT mention "3-4 minutes" or any time estimates in ai_message (save that for confirmation_response.ai_message)
 
 ## Guidelines
 
