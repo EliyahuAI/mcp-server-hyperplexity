@@ -317,19 +317,17 @@ class SimplifiedSchemaValidator:
         if context_lines:
             # Include entity context in the intro
             entity_context = "\n".join([f"- {line}" for line in context_lines])
-            validation_intro = f"""Validate the following field(s) for this specific entity:
-
-ENTITY:
+            validation_intro = f"""ENTITY:
 {entity_context}
 
-FIELDS TO VALIDATE:
+FIELDS TO RESEARCH:
 {field_list}"""
         else:
             # Fallback if no context
             if len(validation_targets) == 1:
-                validation_intro = f"Validate the following field:\n{field_list}"
+                validation_intro = f"FIELD TO RESEARCH:\n{field_list}"
             else:
-                validation_intro = f"Validate the following {len(validation_targets)} fields:\n{field_list}"
+                validation_intro = f"FIELDS TO RESEARCH ({len(validation_targets)} fields):\n{field_list}"
 
         logger.info(f"Built validation_intro with entity context")
 

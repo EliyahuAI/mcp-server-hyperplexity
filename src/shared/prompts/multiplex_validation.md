@@ -4,8 +4,8 @@
 ## 📋 PROMPT MAP - What You'll Find Below
 ═══════════════════════════════════════════════════════════════
 
-1. **YOUR RESEARCH GOAL**: The specific fields you need to research and validate
-2. **VALIDATION GUIDANCE**: How to approach validation for this table
+1. **YOUR RESEARCH GOAL**: The specific data points you need to look up for this entity
+2. **HOW TO VERIFY**: Guidance on checking accuracy and assigning confidence
 3. **CONTEXT**: Row identification information
 4. **PREVIOUS RESULTS**: Other validated columns for this row
 5. **FIELD GROUP**: Related fields being validated together
@@ -14,26 +14,26 @@
 8. **RESPONSE FORMAT**: JSON structure and requirements
 
 ═══════════════════════════════════════════════════════════════
-## 🎯 YOUR RESEARCH GOAL - Fields to Validate
+## 🎯 YOUR RESEARCH GOAL - Fields to Research
 ═══════════════════════════════════════════════════════════════
 
-**Your goal is to research and validate the following field(s) for this specific row:**
+**Your goal is to RESEARCH the following field(s) for this specific entity:**
 
 {validation_intro}
 
-**What to do**: Use web search (when available) to find authoritative information about these specific fields for this entity. Verify existing values and update only if you can provide higher confidence information.
+**What to do**: Use web search to find current, authoritative information about these specific data points for this entity. Look up the actual values (prices, metrics, news, projections, etc.) from reliable sources.
 
 ---
 
 ═══════════════════════════════════════════════════════════════
-## 📚 VALIDATION GUIDANCE - How to Validate This Table
+## 📚 HOW TO VERIFY - Accuracy Standards and Preferred Sources
 ═══════════════════════════════════════════════════════════════
 
-**This section provides guidance on HOW to validate, NOT what to research:**
+**Use these standards when checking the accuracy of the data you research:**
 
 {general_notes}
 
-**Remember**: Your research should focus on the specific fields listed above, not on the table's overall purpose. Use this guidance to understand validation standards and preferred sources.
+**Remember**: Focus your web search on finding the actual data values for the entity above. These standards tell you HOW to assess accuracy and which sources to prefer, not WHAT to search for.
 
 ---
 
