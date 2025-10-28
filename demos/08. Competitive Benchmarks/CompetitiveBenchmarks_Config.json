@@ -71,7 +71,7 @@
     {
       "column": "Category",
       "description": "Market category or segment classification for the vendor",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "AI Platform",
@@ -84,7 +84,7 @@
     {
       "column": "Capability Coverage",
       "description": "Key products, services, or capabilities offered by the vendor",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Bedrock, SageMaker",
@@ -97,7 +97,7 @@
     {
       "column": "Integrations Breadth",
       "description": "Types of integration options and connectivity approaches available",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "APIs",
@@ -110,7 +110,7 @@
     {
       "column": "Ecosystem Posture",
       "description": "Vendor's approach to ecosystem participation and openness",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Cloud platform",
@@ -123,7 +123,7 @@
     {
       "column": "Typical Buyer",
       "description": "Primary buyer personas or decision-maker roles that purchase from this vendor",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "CIO/Data",
@@ -136,7 +136,7 @@
     {
       "column": "Deployment Pattern",
       "description": "Common deployment models or hosting approaches for the vendor's solutions",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Cloud",
@@ -149,7 +149,7 @@
     {
       "column": "Compliance Notes",
       "description": "Compliance certifications, security attestations, or governance documentation available",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Cloud compliance",
@@ -162,7 +162,7 @@
     {
       "column": "Perceived Strengths",
       "description": "Key competitive advantages or strengths recognized in the market",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Breadth of OSS",
@@ -175,7 +175,7 @@
     {
       "column": "Risks / Watchouts",
       "description": "Potential risks, limitations, or concerns when considering this vendor",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Complexity for small teams",

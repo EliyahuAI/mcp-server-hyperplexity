@@ -65,7 +65,7 @@
     {
       "column": "Platform Mix",
       "description": "Primary platforms where topic engagement is occurring, listed in order of activity",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "LinkedIn/News",
@@ -78,7 +78,7 @@
     {
       "column": "Baseline Engagement",
       "description": "Typical engagement level for this topic across monitored platforms",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "High",
@@ -104,7 +104,7 @@
     {
       "column": "Notable Voices",
       "description": "Key influencers, organizations, or publication types driving conversation",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Aerospace cos",
@@ -117,7 +117,7 @@
     {
       "column": "Sentiment (-2\u2026+2)",
       "description": "Overall sentiment score on a scale from -2 (very negative) to +2 (very positive)",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "+0",
@@ -130,7 +130,7 @@
     {
       "column": "Regions Active",
       "description": "Geographic regions showing significant engagement activity",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "EU/US",
@@ -143,7 +143,7 @@
     {
       "column": "Narrative Snapshot",
       "description": "Brief summary of the dominant narrative or conversation themes",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "AI for detection",
@@ -156,7 +156,7 @@
     {
       "column": "Risk/Watchout",
       "description": "Potential risks, concerns, or negative developments to monitor",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Compliance fatigue",
@@ -169,7 +169,7 @@
     {
       "column": "Suggested Action",
       "description": "Recommended strategic response or communication approach",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Case studies",

@@ -16,7 +16,7 @@
    - **DO NOT use calculated columns as ID fields** - they are derived data, not unique identifiers
 
 2. **Source Columns** ({{SOURCE_COLUMNS_LIST}}):
-   - Mark as **CRITICAL** importance with strict format validation to prevent formula breakage
+   - Mark as **RESEARCH** importance with strict format validation to prevent formula breakage
    - These provide the input data for calculations and must be accurate
    - Add notes explaining their role in calculations with explicit examples
    - Ensure data types are preserved (numbers as numbers, dates as dates)

@@ -59,7 +59,7 @@
     {
       "column": "Region",
       "description": "Geographic region or jurisdiction where the regulation applies",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "EU",
@@ -74,7 +74,7 @@
     {
       "column": "Status",
       "description": "Current implementation status of the regulation",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Adopted",
@@ -89,7 +89,7 @@
     {
       "column": "Scope (short)",
       "description": "Brief description of what the regulation covers",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "AI systems risk-tiered",
@@ -104,7 +104,7 @@
     {
       "column": "Covered Entities",
       "description": "Types of organizations or entities subject to the regulation",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "AI Orgs",
@@ -119,7 +119,7 @@
     {
       "column": "Obligation Themes",
       "description": "Key compliance obligations and requirements themes",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "4-day disclosure, board oversight",
@@ -134,7 +134,7 @@
     {
       "column": "Artifacts Needed",
       "description": "Documentation and deliverables required for compliance",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Compliance reports",
@@ -149,7 +149,7 @@
     {
       "column": "Impact Level (L/M/H)",
       "description": "Assessment of regulatory impact level on the organization",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "H",
@@ -162,7 +162,7 @@
     {
       "column": "Nearest Milestone",
       "description": "Next key compliance milestone or deadline",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Annual review",
@@ -177,7 +177,7 @@
     {
       "column": "Internal Owner",
       "description": "Internal team or department responsible for compliance",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Compliance + IT",

@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class ValidationTarget:
     column: str
     description: str
-    importance: str = "MEDIUM"  # ID, CRITICAL, HIGH, MEDIUM, LOW, IGNORED
+    importance: str = "RESEARCH"  # ID, RESEARCH, CRITICAL (backwards compat), IGNORED
     format: str = "String"
     notes: str = ""
     examples: List[str] = None
@@ -154,8 +154,8 @@ class SimplifiedSchemaValidator:
                 if target.importance.upper() not in ["ID", "IGNORED"]]
     
     def get_critical_fields(self) -> List[ValidationTarget]:
-        """Get fields with CRITICAL importance level."""
-        return [target for target in self.validation_targets if target.importance.upper() == "CRITICAL"]
+        """Get fields with RESEARCH or CRITICAL importance level (backwards compatible)."""
+        return [target for target in self.validation_targets if target.importance.upper() in ("RESEARCH", "CRITICAL")]
     
     def group_by_search_group(self, targets: List[ValidationTarget] = None) -> Dict[int, List[ValidationTarget]]:
         """Group validation targets by search_group for multiplexing."""
@@ -236,7 +236,7 @@ class SimplifiedSchemaValidator:
             issues.append("Duplicate column names found in validation targets")
         
         # Check for valid importance levels
-        valid_importance = {"ID", "CRITICAL", "HIGH", "MEDIUM", "LOW", "IGNORED"}
+        valid_importance = {"ID", "RESEARCH", "CRITICAL", "IGNORED"}  # CRITICAL for backwards compatibility
         for target in self.validation_targets:
             if target.importance.upper() not in valid_importance:
                 issues.append(f"Invalid importance level '{target.importance}' for column '{target.column}'")
@@ -685,7 +685,7 @@ if __name__ == "__main__":
             {
                 "column": "Status",
                 "description": "Current status",
-                "importance": "CRITICAL",
+                "importance": "RESEARCH",
                 "format": "String",
                 "examples": ["Active", "Inactive"]
             },

@@ -1,31 +1,39 @@
 # Multiplex Field Validation
 
 ═══════════════════════════════════════════════════════════════
-## 📋 PROMPT MAP
+## 📋 PROMPT MAP - What You'll Find Below
 ═══════════════════════════════════════════════════════════════
 
-1. **VALIDATION INTRO**: Field(s) being validated
-2. **TABLE GUIDANCE**: Specific context for this table
-3. **CONTEXT**: Row identification
-4. **PREVIOUS RESULTS**: Other validated columns
+1. **YOUR RESEARCH GOAL**: The specific fields you need to research and validate
+2. **VALIDATION GUIDANCE**: How to approach validation for this table
+3. **CONTEXT**: Row identification information
+4. **PREVIOUS RESULTS**: Other validated columns for this row
 5. **FIELD GROUP**: Related fields being validated together
-6. **FIELDS TO VALIDATE**: Detailed requirements
-7. **CONFIDENCE RUBRIC**: Assignment criteria
+6. **DETAILED FIELD REQUIREMENTS**: Format, examples, and notes for each field
+7. **CONFIDENCE RUBRIC**: How to assign confidence levels
 8. **RESPONSE FORMAT**: JSON structure and requirements
 
 ═══════════════════════════════════════════════════════════════
-## 🔍 MULTIPLE FIELDS RESEARCH and UPDATE
+## 🎯 YOUR RESEARCH GOAL - Fields to Validate
 ═══════════════════════════════════════════════════════════════
 
+**Your goal is to research and validate the following field(s) for this specific row:**
+
 {validation_intro}
+
+**What to do**: Use web search (when available) to find authoritative information about these specific fields for this entity. Verify existing values and update only if you can provide higher confidence information.
 
 ---
 
 ═══════════════════════════════════════════════════════════════
-## 📚 SPECIFIC TABLE GUIDANCE
+## 📚 VALIDATION GUIDANCE - How to Validate This Table
 ═══════════════════════════════════════════════════════════════
 
+**This section provides guidance on HOW to validate, NOT what to research:**
+
 {general_notes}
+
+**Remember**: Your research should focus on the specific fields listed above, not on the table's overall purpose. Use this guidance to understand validation standards and preferred sources.
 
 ---
 

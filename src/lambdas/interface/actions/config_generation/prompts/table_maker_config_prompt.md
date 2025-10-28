@@ -70,7 +70,7 @@ Columns marked with `is_identification: true` in the column definitions are ID c
 
 **INSTRUCTION**: ID columns can be handled in two ways:
 1. **Group 0 with importance: "ID"** - If the ID column is simple and doesn't need web research (e.g., dates, indices, simple labels)
-2. **Validation group with importance: "CRITICAL"** - If the ID column is RESEARCHABLE on the web (e.g., company names, person names, URLs, institutions, products)
+2. **Validation group with importance: "RESEARCH"** - If the ID column is RESEARCHABLE on the web (e.g., company names, person names, URLs, institutions, products)
 
 **Researchable ID columns** should be validated because:
 - They can be verified for accuracy (e.g., "Is this the correct company name?")
@@ -96,8 +96,8 @@ Columns marked with `is_identification: true` in the column definitions are ID c
 **What this means**:
 - Every column gets a validation target entry
 - Simple ID columns (dates, indices) → Group 0 with importance: "ID"
-- Researchable ID columns (names, companies, URLs) → Validation group with importance: "CRITICAL"
-- Research columns → Validation groups with importance: "CRITICAL"
+- Researchable ID columns (names, companies, URLs) → Validation group with importance: "RESEARCH"
+- Research columns → Validation groups with importance: "RESEARCH"
 - NO column should have importance: "IGNORED"
 
 ### 2. Use ALL Available Context
@@ -179,7 +179,7 @@ For EACH column (no exceptions):
 
 **Researchable ID Columns** (is_identification: true, CAN be researched on web):
 - Place in appropriate validation group (1+)
-- Set importance: "CRITICAL"
+- Set importance: "RESEARCH"
 - **Notes field**: Use column `description` and `validation_strategy` EXACTLY (copy verbatim, don't paraphrase)
 - **If column-specific context exists**: Append any relevant context from tablewide_research or other sources that applies ONLY to this column
 - **Generate realistic examples** since no actual data rows exist yet - use 2-3 plausible examples that match the column description and format
@@ -187,7 +187,7 @@ For EACH column (no exceptions):
 
 **Research Columns** (is_identification: false):
 - Place in appropriate search group (1+)
-- Set importance: "CRITICAL"
+- Set importance: "RESEARCH"
 - **Notes field**: Use column `description` and `validation_strategy` EXACTLY (copy verbatim, don't paraphrase)
 - **If column-specific context exists**: Append any relevant context from tablewide_research or other sources that applies ONLY to this column
 - **Generate realistic examples** since no actual data rows exist yet - use 2-3 plausible examples that match the column description and format
@@ -230,7 +230,7 @@ Follow the guidance from Common Configuration Guidance above:
 
 1. ✅ **NO IGNORED COLUMNS**: Every single column must have a validation target
    - ID columns → Group 0 with importance: "ID"
-   - Research columns → Groups 1+ with importance: "CRITICAL"
+   - Research columns → Groups 1+ with importance: "RESEARCH"
    - NEVER use importance: "IGNORED" for any column
 
 2. ✅ **USE ALL CONTEXT**: You have rich information available

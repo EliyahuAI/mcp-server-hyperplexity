@@ -768,7 +768,7 @@ These columns are used in calculations and require strict format validation:"""
 - **{col_name}**: CALCULATED COLUMN - Mark as IGNORED importance, these should not be validated by AI as they are dependent columns containing formulas, NOT suitable as ID field"""
         elif col_name in referenced_columns:
             column_formula_context += f"""
-- **{col_name}**: SOURCE COLUMN - Mark as CRITICAL importance, strict format validation required, can be ID field if unique"""
+- **{col_name}**: SOURCE COLUMN - Mark as RESEARCH importance, strict format validation required, can be ID field if unique"""
 
     # Replace template fields
     return (formula_template

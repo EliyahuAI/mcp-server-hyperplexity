@@ -56,7 +56,7 @@ We have an outline of a series of columns for a research table. Your job is to:
       "name": "Job Responsibilities",
       "description": "Key duties and expectations for the role, including clinical, technical, research, and leadership responsibilities. Focus on specific tasks related to medical imaging, AI/ML development, protocol development, or team leadership.",
       "format": "String",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "is_identification": false,
       "validation_strategy": "Extract from job posting description section, focusing on day-to-day responsibilities, required tasks, and key deliverables. Look for bullet points under 'Responsibilities' or 'What You'll Do' sections."
     },
@@ -64,7 +64,7 @@ We have an outline of a series of columns for a research table. Your job is to:
       "name": "Match Score",
       "description": "Numerical score (1-10) indicating how well this role matches Jenifer's background in radiology, AI/ML, public health, and leadership. Higher scores indicate better alignment with her expertise.",
       "format": "Number",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "is_identification": false,
       "validation_strategy": "Compare job requirements against Jenifer's LinkedIn profile. Score based on: radiology/medical imaging requirements (0-3 points), AI/ML technical skills (0-3 points), public health or research focus (0-2 points), leadership opportunities (0-2 points). Sum for total score."
     },
@@ -72,7 +72,7 @@ We have an outline of a series of columns for a research table. Your job is to:
       "name": "Key Match Reasons",
       "description": "2-3 bullet points explaining the strongest alignment points between this role and Jenifer's background. Focus on specific skills, experiences, or qualifications that make her an excellent candidate.",
       "format": "String",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "is_identification": false,
       "validation_strategy": "Extract top 2-3 requirements from job posting that match Jenifer's background. Reference specific experiences from her LinkedIn: radiology board certification, AI/ML publications, public health MPH, leadership roles. Format as concise bullet points."
     },
@@ -80,7 +80,7 @@ We have an outline of a series of columns for a research table. Your job is to:
       "name": "Location",
       "description": "Geographic location of the position (city, state/region). Note if remote, hybrid, or on-site. Include relocation considerations if relevant.",
       "format": "String",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "is_identification": false,
       "validation_strategy": "Extract from job posting location field or description. Check if remote/hybrid options mentioned. Note any relocation assistance or geographic flexibility mentioned in the posting."
     },
@@ -88,7 +88,7 @@ We have an outline of a series of columns for a research table. Your job is to:
       "name": "Job Posting URL",
       "description": "Direct link to the job application page or posting. Must be an active, accessible URL that leads to the specific position.",
       "format": "URL",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "is_identification": false,
       "validation_strategy": "Verify URL is active and leads to the correct job posting. Check that it's a direct link (not a search results page) and includes application instructions or an apply button."
     }

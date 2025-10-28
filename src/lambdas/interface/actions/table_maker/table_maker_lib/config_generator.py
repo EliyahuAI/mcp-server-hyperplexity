@@ -185,7 +185,7 @@ class ConfigGenerator:
             validation_targets.append({
                 'column': col['name'],
                 'description': col.get('description', ''),
-                'importance': 'CRITICAL',  # Mark as CRITICAL for validation
+                'importance': 'RESEARCH',  # Mark as RESEARCH for validation
                 'format': col.get('format', 'String'),
                 'search_group': critical_group_id,
                 'notes': f"Researchable ID column - verify accuracy: {col.get('description', col['name'])}",
@@ -230,7 +230,7 @@ class ConfigGenerator:
         """
         # Group columns by importance level
         importance_groups = {
-            'CRITICAL': [],
+            'RESEARCH': [],
             'HIGH': [],
             'MEDIUM': [],
             'LOW': []
@@ -244,14 +244,14 @@ class ConfigGenerator:
         group_id = 1
 
         # Create search group for CRITICAL columns (use Claude for better accuracy)
-        if importance_groups['CRITICAL']:
+        if importance_groups['RESEARCH']:
             search_groups.append({
                 'group_id': group_id,
                 'group_name': 'Critical Validation',
                 'description': 'Critical fields requiring highest accuracy',
                 'model': 'claude-sonnet-4-5',
                 'search_context': 'high',
-                'column_count': len(importance_groups['CRITICAL'])
+                'column_count': len(importance_groups['RESEARCH'])
             })
             group_id += 1
 
@@ -313,7 +313,7 @@ class ConfigGenerator:
         for group in search_groups:
             group_name = group['group_name']
             if 'Critical' in group_name:
-                importance_to_group['CRITICAL'] = group['group_id']
+                importance_to_group['RESEARCH'] = group['group_id']
             elif 'High Priority' in group_name:
                 importance_to_group['HIGH'] = group['group_id']
             elif 'Standard' in group_name:
@@ -338,7 +338,7 @@ class ConfigGenerator:
             }
 
             # Add specific model override for CRITICAL fields
-            if importance == 'CRITICAL':
+            if importance == 'RESEARCH':
                 target['preferred_model'] = 'claude-sonnet-4-5'
                 target['search_context_size'] = 'high'
 

@@ -34,7 +34,7 @@
           "name": {"type": "string"},
           "description": {"type": "string"},
           "format": {"type": "string"},
-          "importance": {"type": "string", "enum": ["ID", "CRITICAL"]},
+          "importance": {"type": "string", "enum": ["ID", "RESEARCH"]},
           "is_identification": {"type": "boolean"}
         }
       }

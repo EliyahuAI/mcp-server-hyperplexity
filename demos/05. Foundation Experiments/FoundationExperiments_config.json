@@ -70,7 +70,7 @@
     {
       "column": "Field",
       "description": "Primary research domain or interdisciplinary field classification",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "AI/Graphs",
@@ -83,7 +83,7 @@
     {
       "column": "Essence",
       "description": "Core experimental approach, methodology, or key innovation in concise technical terms",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Denoising diffusion for generation",
@@ -96,7 +96,7 @@
     {
       "column": "Dataset / System",
       "description": "Primary experimental system, dataset, or biological/physical system studied",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Bacterial immune system / mammalian cells",
@@ -109,7 +109,7 @@
     {
       "column": "Key Result (brief)",
       "description": "Primary experimental outcome or achievement in concise terms",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Comparative climate projections",
@@ -122,7 +122,7 @@
     {
       "column": "Limitations",
       "description": "Known constraints, challenges, or boundaries of the experimental approach",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Batch effects",
@@ -135,7 +135,7 @@
     {
       "column": "Reproducibility Notes",
       "description": "Assessment of replication status, verification methods, or reproducibility challenges",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "CASP verification/benchmarks",
@@ -148,7 +148,7 @@
     {
       "column": "Hypothesis Link",
       "description": "Specific connection between this foundational work and current working hypothesis",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Adopt skip-connections in model backbone",
@@ -161,7 +161,7 @@
     {
       "column": "Next Experiment",
       "description": "Proposed follow-up experiment or research direction building on this foundation",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Ablate skip-depth vs. generalization",

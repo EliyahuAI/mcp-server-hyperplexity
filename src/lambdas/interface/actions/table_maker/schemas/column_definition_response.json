@@ -23,7 +23,7 @@
           },
           "importance": {
             "type": "string",
-            "enum": ["ID", "CRITICAL"],
+            "enum": ["ID", "RESEARCH", "CRITICAL", "IGNORED"],
             "description": "Column importance level"
           },
           "is_identification": {

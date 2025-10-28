@@ -122,7 +122,7 @@ def validate_config_structure(config_data: Dict) -> Tuple[bool, List[str], List[
                 
                 # Validate importance levels
                 if 'importance' in target:
-                    valid_importance = ['ID', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'IGNORED']
+                    valid_importance = ['ID', 'RESEARCH', 'CRITICAL', 'IGNORED']  # CRITICAL for backwards compatibility
                     if target['importance'] not in valid_importance:
                         errors.append(f"validation_targets[{i}].importance must be one of: {', '.join(valid_importance)}")
                 

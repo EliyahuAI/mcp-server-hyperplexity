@@ -57,7 +57,7 @@
     {
       "column": "Sector",
       "description": "Industry sector or business vertical the company operates in",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Banking",
@@ -70,7 +70,7 @@
     {
       "column": "HQ Region",
       "description": "Geographic region where company headquarters is located",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "APAC",
@@ -83,7 +83,7 @@
     {
       "column": "Employees (band)",
       "description": "Employee count range indicating company size",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "10k+",
@@ -96,7 +96,7 @@
     {
       "column": "Tech Signals",
       "description": "Technology indicators or technical characteristics observed from company's tech presence",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "At-scale content",
@@ -109,7 +109,7 @@
     {
       "column": "Likely Pain Point",
       "description": "Inferred business or technical challenges the company likely faces",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Alert fatigue",
@@ -122,7 +122,7 @@
     {
       "column": "Solution Fit Rationale",
       "description": "Reasoning for how solutions could address the company's specific needs",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "AI model registry + audits",
@@ -135,7 +135,7 @@
     {
       "column": "ICP Score (0-100)",
       "description": "Ideal Customer Profile score rating how well the prospect fits target criteria",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "Number",
       "examples": [
         "70",
@@ -148,7 +148,7 @@
     {
       "column": "First-Touch Angle",
       "description": "Recommended initial outreach approach or value proposition for first contact",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Data-product accelerator deck",
@@ -161,7 +161,7 @@
     {
       "column": "Next Action",
       "description": "Recommended next step or action item for sales team follow-up",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "BDR email + call",

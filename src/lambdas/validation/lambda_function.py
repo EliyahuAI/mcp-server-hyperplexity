@@ -1791,7 +1791,7 @@ def get_config_generation_schema() -> Dict:
                     "properties": {
                         "column": {"type": "string"},
                         "description": {"type": "string"},
-                        "importance": {"type": "string", "enum": ["ID", "CRITICAL", "HIGH", "MEDIUM", "LOW"]},
+                        "importance": {"type": "string", "enum": ["ID", "RESEARCH", "CRITICAL", "IGNORED"]},  # CRITICAL for backwards compatibility
                         "format": {"type": "string"},
                         "notes": {"type": "string"},
                         "examples": {"type": "array", "items": {"type": "string"}},

@@ -64,7 +64,7 @@
     {
       "column": "Sector",
       "description": "Industry sector classification for the client company",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Biopharma",
@@ -77,7 +77,7 @@
     {
       "column": "Trigger Window",
       "description": "Time period or event window when outreach opportunity occurs",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Q1/Q3",
@@ -90,7 +90,7 @@
     {
       "column": "Trigger Type",
       "description": "Category of business event that creates outreach opportunity",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Conference",
@@ -103,7 +103,7 @@
     {
       "column": "Trigger Summary",
       "description": "Specific description of the business event or initiative",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Companion diagnostics initiatives",
@@ -116,7 +116,7 @@
     {
       "column": "Outreach Angle",
       "description": "Proposed approach or value proposition for outreach tailored to client's current business context",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "AI for predictive maintenance",
@@ -129,7 +129,7 @@
     {
       "column": "Buyer Persona",
       "description": "Target decision maker role within the client organization",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Clinical Ops VP",
@@ -142,7 +142,7 @@
     {
       "column": "Priority (1-5)",
       "description": "Internal priority ranking for the outreach opportunity on a scale where 1=highest strategic value/urgency and 5=lowest priority",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "Number",
       "examples": [
         "1",
@@ -155,7 +155,7 @@
     {
       "column": "Next Step",
       "description": "Proposed next action for the outreach opportunity",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Offer data harmonization brief",
@@ -168,7 +168,7 @@
     {
       "column": "Notes",
       "description": "Additional context or strategic notes for the outreach including key talking points and proof points",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Cite pharmacovigilance workflows",

@@ -90,7 +90,7 @@
     {
       "column": "Start Date",
       "description": "Conference start date",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "Date",
       "examples": [
         "2025-07-13",
@@ -103,7 +103,7 @@
     {
       "column": "End Date",
       "description": "Conference end date",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "Date",
       "examples": [
         "2025-07-18",
@@ -116,7 +116,7 @@
     {
       "column": "City",
       "description": "City where the conference is held",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Amsterdam",
@@ -129,7 +129,7 @@
     {
       "column": "Country/Region",
       "description": "Country or region where the conference takes place",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Brazil",
@@ -142,7 +142,7 @@
     {
       "column": "Venue",
       "description": "Specific venue or facility name where conference is held",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Boise Centre",
@@ -155,7 +155,7 @@
     {
       "column": "Format",
       "description": "Conference delivery format (in-person, hybrid, virtual, etc.)",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Hybrid",
@@ -168,7 +168,7 @@
     {
       "column": "Price / Range (USD)",
       "description": "Conference registration pricing in USD",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "2025 conf pass listed $2,295 (sold out); 2026 TBA",
@@ -181,7 +181,7 @@
     {
       "column": "Est. Size",
       "description": "Estimated or announced conference attendance size",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "1.5k+ in-person (announced)",
@@ -194,7 +194,7 @@
     {
       "column": "Audience/Demographics",
       "description": "Target audience and attendee demographics",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "AI engineers, founders, VPs of AI",
@@ -207,7 +207,7 @@
     {
       "column": "Primary Themes",
       "description": "Main technical themes and topics covered at the conference",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Agentic AI, LLM engineering, evals, toolchains",
@@ -220,7 +220,7 @@
     {
       "column": "Website",
       "description": "Official conference website URL",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "URL",
       "examples": [
         "https://2025.emnlp.org/",
@@ -233,7 +233,7 @@
     {
       "column": "Sponsor/Expo Info",
       "description": "Sponsorship and exhibition information or URLs",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "N/A",
@@ -246,7 +246,7 @@
     {
       "column": "CFP/Submission Notes",
       "description": "Call for Papers and submission deadline information",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "ARR-based schedule; tutorials/workshops calls live",
@@ -259,7 +259,7 @@
     {
       "column": "Relevance to Hyperplexity (1-5)",
       "description": "Internal relevance score from 1 (low) to 5 (high) for Hyperplexity business interests",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "Number",
       "examples": [
         "3",
@@ -272,7 +272,7 @@
     {
       "column": "Notes",
       "description": "Additional internal notes about conference relevance and strategic value",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Broad AI; high signal for agentic AI and evaluation.",

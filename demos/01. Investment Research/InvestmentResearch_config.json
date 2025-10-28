@@ -1,5 +1,5 @@
 {
-  "general_notes": "Configuration for market research/competitive intelligence data validation as of September 22, 2025. This table contains stock analysis data with identifiers, financial metrics, news summaries, and investment recommendations. Financial metrics should return confident values even if slightly delayed. News and projections must be organized by date and source with reliability indicators. Investment recommendations should synthesize all available information.",
+  "general_notes": "This table contains stock analysis data for investment research. Validate financial metrics using authoritative sources (Yahoo Finance, company investor relations, SEC filings, Bloomberg). Focus on the company's actual financial data - stock prices, market cap, PE ratios, sector classifications. For news and projections, verify facts and organize by date/source with reliability indicators. Financial metrics should return confident values even if slightly delayed (within 24 hours). Investment recommendations should synthesize all validated information with clear rationale based on the data.",
   "default_model": "sonar",
   "default_search_context_size": "high",
   "anthropic_max_web_searches_default": 1,
@@ -91,7 +91,7 @@
     {
       "column": "Sector",
       "description": "Industry sector classification",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String (sector name)",
       "examples": [
         "Communication Services",
@@ -104,7 +104,7 @@
     {
       "column": "Current_Price",
       "description": "Current stock price in USD - must return confident value even if slightly delayed",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "Decimal number (USD)",
       "examples": [
         "102.28",
@@ -117,7 +117,7 @@
     {
       "column": "Market_Cap_B",
       "description": "Market capitalization - must return confident value with proper units",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String with unit (B for billions, T for trillions)",
       "examples": [
         "1.06B",
@@ -130,7 +130,7 @@
     {
       "column": "PE_Ratio",
       "description": "Price-to-earnings ratio - must return confident value",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "Decimal number",
       "examples": [
         "16.92",
@@ -143,7 +143,7 @@
     {
       "column": "Last_Updated",
       "description": "Date when data was last updated",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "Date (YYYY-MM-DD)",
       "examples": [
         "2025-09-22"
@@ -154,7 +154,7 @@
     {
       "column": "Latest News",
       "description": "Recent news organized by date and source with reliability indicators",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String (bulleted list organized by date and source)",
       "examples": [
         "\u2022 [2025-09-20, Reuters - High Reliability] Q3 earnings beat expectations with EPS of $1.25 vs $1.18 expected\n\u2022 [2025-09-18, Bloomberg - High Reliability] CEO announces new product line expansion\n\u2022 [2025-09-15, MarketWatch - Medium Reliability] Analyst upgrades price target to $250"
@@ -165,7 +165,7 @@
     {
       "column": "Projections",
       "description": "Analyst projections organized by date and source with reliability indicators",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String (bulleted list organized by date and source)",
       "examples": [
         "\u2022 [2025-09-20, Goldman Sachs - High Reliability] 12-month PT: $245 (Buy rating)\n\u2022 [2025-09-18, Morgan Stanley - High Reliability] FY2026 EPS estimate: $12.50\n\u2022 [2025-09-15, Zacks - Medium Reliability] Consensus PT: $240 (Strong Buy)"
@@ -176,7 +176,7 @@
     {
       "column": "Invest Now?",
       "description": "Investment recommendation synthesizing all validated financial metrics, news, and projections",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String (recommendation with comprehensive rationale)",
       "examples": [
         "Buy - Strong fundamentals with current price $234 below consensus PT $245, positive earnings momentum, and institutional accumulation",

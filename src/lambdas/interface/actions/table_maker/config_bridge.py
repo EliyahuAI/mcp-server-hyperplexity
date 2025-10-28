@@ -83,8 +83,8 @@ def build_table_analysis_from_conversation(
             if is_id and importance == 'ID':
                 # Check if this ID column can be researched on the web
                 if _is_researchable_id_column(col):
-                    # Mark as CRITICAL to enable validation (verifies row generation quality)
-                    importance = 'CRITICAL'
+                    # Mark as RESEARCH to enable validation (verifies row generation quality)
+                    importance = 'RESEARCH'
                     logger.info(f"Marking researchable ID column '{col_name}' as CRITICAL for validation")
 
             column_analysis[col_name] = {

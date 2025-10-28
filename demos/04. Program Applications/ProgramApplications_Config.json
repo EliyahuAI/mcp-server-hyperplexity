@@ -71,7 +71,7 @@
     {
       "column": "Paper Title",
       "description": "Title of academic paper being evaluated for program fit",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "A Graph-Retrieval-Augmented Generation Framework Enhances Decision-Making in the Circular Economy",
@@ -84,7 +84,7 @@
     {
       "column": "Year",
       "description": "Publication year of the academic paper",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "Number",
       "examples": [
         "2024",
@@ -96,7 +96,7 @@
     {
       "column": "Core Technique",
       "description": "Primary technical method or approach described in the paper",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Adaptive reasoning methods",
@@ -109,7 +109,7 @@
     {
       "column": "Program Fit Score (0100)",
       "description": "Numerical score (0-100) indicating how well the paper aligns with program objectives using standardized rubric",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "Number",
       "examples": [
         "65",
@@ -122,7 +122,7 @@
     {
       "column": "Potential Use Cases",
       "description": "Specific applications or implementations of the paper's techniques within the program",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Agent cooperation in simulation environments",
@@ -135,7 +135,7 @@
     {
       "column": "Risks / Barriers",
       "description": "Potential challenges or obstacles to implementing the paper's techniques in the program",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Data integration",
@@ -148,7 +148,7 @@
     {
       "column": "Required Resources",
       "description": "Computational, data, or infrastructure resources needed to implement the paper's approach",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Compute + benchmark",
@@ -161,7 +161,7 @@
     {
       "column": "Tentative Timeline",
       "description": "Estimated time duration for implementing or integrating the paper's techniques",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "12 mo",
@@ -174,7 +174,7 @@
     {
       "column": "Notes / Next Steps",
       "description": "Additional observations and recommended actions for program integration",
-      "importance": "CRITICAL",
+      "importance": "RESEARCH",
       "format": "String",
       "examples": [
         "Apply to privacy module",
