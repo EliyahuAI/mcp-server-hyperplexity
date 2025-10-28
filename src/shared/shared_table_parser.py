@@ -483,12 +483,12 @@ class S3TableParser:
                         cell_value = row[i] if i < len(row) else ""
                         row_dict[header] = str(cell_value).strip() if cell_value else ""
 
-                        # Generate full row hash
-                        if generate_row_key:
-                            row_key = generate_row_key(row_dict, primary_keys=None)
-                            row_dict['_row_key'] = row_key
+                    # Generate full row hash (AFTER building complete row dict)
+                    if generate_row_key:
+                        row_key = generate_row_key(row_dict, primary_keys=None)
+                        row_dict['_row_key'] = row_key
 
-                        structured_data.append(row_dict)
+                    structured_data.append(row_dict)
             
             return {
                 'filename': filename,

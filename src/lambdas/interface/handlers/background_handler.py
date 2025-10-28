@@ -3376,7 +3376,7 @@ def handle_main_processing(event, context):
                         'processing_metadata': {
                             'S3_UNIFIED_BUCKET': S3_UNIFIED_BUCKET,
                             'VALIDATOR_LAMBDA_NAME': VALIDATOR_LAMBDA_NAME,
-                            'table_data': table_data,  # Store table_data for Excel generation
+                            'table_data': table_data,  # Store table_data for Excel generation (parser bug now fixed)
                             'config_version': config_data.get('storage_metadata', {}).get('version', 1) if config_data else 1  # Track config version
                         }
                     }
