@@ -820,7 +820,7 @@ async def execute_full_table_generation(
             conversation_id=conversation_id,
             current_step=2,
             total_steps=4,
-            status='Step 2/4: Discovering rows and generating validation config (parallel)',
+            status='Finding and checking candidate rows...',
             progress_percent=25
         )
 
@@ -936,12 +936,64 @@ async def execute_full_table_generation(
             logger.info(f"[EXECUTION] Step 2 complete: {len(final_rows)} consolidated rows")
             logger.info(f"[EXECUTION] Config generation still running in background...")
 
+            # Update template CSV with discovered candidate rows (all rows, not just first 15)
+            try:
+                import csv
+                import io
+
+                csv_buffer = io.StringIO()
+
+                # Get ID columns and all column names
+                id_columns_list = [col['name'] for col in columns if col.get('is_identification')]
+                all_column_names = [col['name'] for col in columns]
+
+                writer = csv.DictWriter(csv_buffer, fieldnames=all_column_names)
+                writer.writeheader()
+
+                # Write all discovered rows with ID columns and research_values filled
+                for row in final_rows:
+                    csv_row = {}
+                    research_values = row.get('research_values', {})
+
+                    for col_name in all_column_names:
+                        if col_name in id_columns_list:
+                            # Fill ID columns from id_values
+                            csv_row[col_name] = row.get('id_values', {}).get(col_name, '')
+                        elif col_name in research_values:
+                            # Fill research columns if populated during discovery
+                            csv_row[col_name] = research_values.get(col_name, '')
+                        else:
+                            # Leave other columns empty
+                            csv_row[col_name] = ''
+
+                    writer.writerow(csv_row)
+
+                csv_content = csv_buffer.getvalue()
+
+                # Update the template CSV in session folder (overwrite the header-only version)
+                csv_filename = f"{table_name.replace(' ', '_')}_template.csv"
+                session_path = storage_manager.get_session_path(email, session_id)
+                csv_s3_key = f"{session_path}{csv_filename}"
+
+                storage_manager.s3_client.put_object(
+                    Bucket=storage_manager.bucket_name,
+                    Key=csv_s3_key,
+                    Body=csv_content,
+                    ContentType='text/csv'
+                )
+                logger.info(
+                    f"[EXECUTION] Updated template CSV with {len(final_rows)} discovered candidate rows: {csv_s3_key}"
+                )
+            except Exception as e:
+                logger.error(f"[EXECUTION] Failed to update template CSV: {e}", exc_info=True)
+
             # Prepare discovered rows preview for frontend (first 15 rows with id_values only)
             # This is Info Box 3: "Discovered Rows" (shown after discovery, before QC)
+            # Note: At this point, rows have 'match_score' from consolidation (not 'row_score' yet)
             discovered_rows_preview = [
                 {
                     "id_values": row.get("id_values", {}),
-                    "row_score": row.get("row_score", 0)
+                    "row_score": row.get("match_score", 0)  # Use match_score pre-QC
                 }
                 for row in final_rows[:15]  # First 15 rows only
             ]
@@ -1013,7 +1065,7 @@ async def execute_full_table_generation(
             conversation_id=conversation_id,
             current_step=4,
             total_steps=4,
-            status=f'Step 4/4: Quality control review of {len(final_rows)} rows',
+            status=f'Finding and checking candidate rows... (reviewing {len(final_rows)} candidates)',
             progress_percent=75
         )
 
@@ -1309,21 +1361,24 @@ async def execute_full_table_generation(
 
         logger.info(f"[EXECUTION] Step 4 complete: {len(approved_rows)} approved rows (after {retry_count} retrigger(s))")
 
-        # Build progress message
+        # Build progress message based on what's still running
+        # At this point, QC is done but config might still be running
         progress_message_parts = []
         if result.get('insufficient_rows'):
             progress_message_parts.append(f"Only {len(approved_rows)} rows found")
         else:
-            progress_message_parts.append('Finalizing validation configuration...')
+            # Config is still running in background - indicate we're waiting for it
+            progress_message_parts.append('Wrapping up validation configuration...')
 
-        progress_message = ' | '.join(progress_message_parts) if progress_message_parts else 'Finalizing validation configuration...'
+        progress_message = ' | '.join(progress_message_parts) if progress_message_parts else 'Wrapping up validation configuration...'
 
         # Prepare approved rows preview for frontend (first 15 rows with id_values only)
         # This updates Info Box 3 from "Discovered Rows" to "Approved Rows" after QC
+        # Note: QC sets 'row_score', but fallback to 'match_score' if QC was bypassed
         approved_rows_preview = [
             {
                 "id_values": row.get("id_values", {}),
-                "row_score": row.get("row_score", 0)
+                "row_score": row.get("row_score", row.get("match_score", 0))  # row_score from QC, fallback to match_score
             }
             for row in approved_rows[:15]  # First 15 approved rows only
         ]
