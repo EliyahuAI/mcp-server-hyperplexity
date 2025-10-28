@@ -315,19 +315,27 @@ class SimplifiedSchemaValidator:
         field_list = "\n".join(field_names)
 
         if context_lines:
-            # Include entity context in the intro
+            # Include entity context in the intro with clear research directive
             entity_context = "\n".join([f"- {line}" for line in context_lines])
-            validation_intro = f"""ENTITY:
+            validation_intro = f"""**ENTITY YOU ARE RESEARCHING:**
 {entity_context}
 
-FIELDS TO RESEARCH:
-{field_list}"""
+**INFORMATION TO LOOK UP (research these specific data points for the entity above):**
+{field_list}
+
+Find the CURRENT, ACTUAL VALUES for these fields. Use web search to look up the specific data (prices, projections, news, metrics, etc.) for this entity."""
         else:
             # Fallback if no context
             if len(validation_targets) == 1:
-                validation_intro = f"FIELD TO RESEARCH:\n{field_list}"
+                validation_intro = f"""**INFORMATION TO LOOK UP:**
+{field_list}
+
+Find the CURRENT, ACTUAL VALUE for this field."""
             else:
-                validation_intro = f"FIELDS TO RESEARCH ({len(validation_targets)} fields):\n{field_list}"
+                validation_intro = f"""**INFORMATION TO LOOK UP ({len(validation_targets)} fields):**
+{field_list}
+
+Find the CURRENT, ACTUAL VALUES for these fields."""
 
         logger.info(f"Built validation_intro with entity context")
 

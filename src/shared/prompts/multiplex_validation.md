@@ -4,76 +4,69 @@
 ## 📋 PROMPT MAP - What You'll Find Below
 ═══════════════════════════════════════════════════════════════
 
-1. **YOUR RESEARCH GOAL**: The specific data points you need to look up for this entity
-2. **HOW TO VERIFY**: Guidance on checking accuracy and assigning confidence
-3. **CONTEXT**: Row identification information
-4. **PREVIOUS RESULTS**: Other validated columns for this row
-5. **FIELD GROUP**: Related fields being validated together
-6. **DETAILED FIELD REQUIREMENTS**: Format, examples, and notes for each field
-7. **CONFIDENCE RUBRIC**: How to assign confidence levels
-8. **RESPONSE FORMAT**: JSON structure and requirements
+1. **WHAT TO RESEARCH**: The specific information you need to look up
+2. **BACKGROUND CONTEXT**: Entity identification (NOT what to research)
+3. **ACCURACY STANDARDS**: How to verify information quality (NOT what to research)
+4. **PREVIOUS DATA**: Already validated fields for reference
+5. **FIELD DETAILS**: Format requirements and examples
+6. **CONFIDENCE LEVELS**: How to assign confidence ratings
+7. **RESPONSE FORMAT**: JSON structure
 
 ═══════════════════════════════════════════════════════════════
-## 🎯 YOUR RESEARCH GOAL - Fields to Research
+## 🎯 WHAT TO RESEARCH - Your Research Task
 ═══════════════════════════════════════════════════════════════
-
-**Your goal is to RESEARCH the following field(s) for this specific entity:**
 
 {validation_intro}
 
-**What to do**: Use web search to find current, authoritative information about these specific data points for this entity. Look up the actual values (prices, metrics, news, projections, etc.) from reliable sources.
+**Your task**: Use web search to find the CURRENT, ACTUAL VALUES for the fields above. Search for the specific data points (prices, projections, news, metrics, etc.) for this entity.
 
 ---
 
 ═══════════════════════════════════════════════════════════════
-## 📚 HOW TO VERIFY - Accuracy Standards and Preferred Sources
+## 📍 BACKGROUND CONTEXT - Entity Information (NOT what to research)
 ═══════════════════════════════════════════════════════════════
 
-**Use these standards when checking the accuracy of the data you research:**
-
-{general_notes}
-
-**Remember**: Focus your web search on finding the actual data values for the entity above. These standards tell you HOW to assess accuracy and which sources to prefer, not WHAT to search for.
-
----
-
-═══════════════════════════════════════════════════════════════
-## 🔍 CONTEXT INFORMATION
-═══════════════════════════════════════════════════════════════
-
-Makes sure your response is within this context:
+**This section tells you WHICH entity you're researching. This is CONTEXT, not research targets:**
 
 {context}
 
 ---
 
 ═══════════════════════════════════════════════════════════════
-## 📊 CURRENT RESULTS FOR OTHER COLUMNS
+## ✅ ACCURACY STANDARDS - How to Verify Quality (NOT what to research)
 ═══════════════════════════════════════════════════════════════
 
-Additional context come from validated entries for other columns (with their confidence levels):
+**These are QUALITY STANDARDS for verifying the information you find. Use preferred sources and formatting:**
+
+{general_notes}
+
+---
+
+═══════════════════════════════════════════════════════════════
+## 📊 PREVIOUS DATA - Already Validated Fields (Reference only)
+═══════════════════════════════════════════════════════════════
+
+**Other fields already validated for this entity (for context/reference):**
 
 {previous_results}
 
 ---
 
 ═══════════════════════════════════════════════════════════════
-## 🔧 FIELD GROUP INFORMATION
+## 📝 FIELD DETAILS - Format Requirements and Examples
 ═══════════════════════════════════════════════════════════════
 
-This is the group of fields that you are reviewing and updating:
-
-{group_name}
-
-{group_description}
-
----
-
-═══════════════════════════════════════════════════════════════
-## 📝 FIELDS TO REVIEW AND UPDATE IF NEEDED
-═══════════════════════════════════════════════════════════════
+**For each field you're researching, here are the requirements:**
 
 {fields_to_validate}
+
+**Structure of each field:**
+- **Field Name**: (This is what you need to research - find the ACTUAL value for this entity)
+- **Current Value**: (Existing value to verify)
+- **Description**: (What this field represents - NOT what to research, just context)
+- **Format**: (How to format your answer - NOT what to research)
+- **Notes**: (Quality standards for this specific field - NOT what to research)
+- **Examples**: (Sample formatting - NOT what to research)
 
 ---
 
