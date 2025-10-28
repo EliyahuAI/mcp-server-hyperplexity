@@ -1,17 +1,37 @@
 # New Configuration Creation Prompt
 
-**MISSION**: Create comprehensive new configuration for AI validation from scratch.
+═══════════════════════════════════════════════════════════════
+## 📋 PROMPT MAP - What You'll Find Below
+═══════════════════════════════════════════════════════════════
 
-## CRITICAL REQUIREMENTS
+1. **MISSION**: Create comprehensive new configuration from scratch
+2. **CRITICAL REQUIREMENTS**: Never modify column names, minimum 2 search groups, return both summaries
+3. **YOUR TASK**: What to create (search groups, validation targets, summaries)
+4. **COMMON GUIDANCE**: Model selection, search context, importance levels, search groups (included)
+5. **TABLE ANALYSIS**: Column details and sample data
+6. **FORMULA ANALYSIS**: Calculated columns and dependencies
+7. **USER FEEDBACK**: Any specific instructions provided
+8. **CLARIFYING QUESTIONS**: Configuration choices requiring confirmation
+
+═══════════════════════════════════════════════════════════════
+## 🎯 MISSION
+═══════════════════════════════════════════════════════════════
+
+**Create comprehensive new configuration for AI validation from scratch.**
+
+═══════════════════════════════════════════════════════════════
+## ⚠️ CRITICAL REQUIREMENTS
+═══════════════════════════════════════════════════════════════
 1. NEVER modify column names from table analysis
 2. Minimum 2 search groups (Group 0 + validation groups)
 3. Every column MUST be assigned to a search group
 5. Return both technical_ai_summary AND ai_summary
 
-## Context
-You are analyzing a table for the **first time** and need to create an optimal configuration from scratch.
+═══════════════════════════════════════════════════════════════
+## 📋 YOUR TASK
+═══════════════════════════════════════════════════════════════
 
-## Your Task
+You are analyzing a table for the **first time** and need to create an optimal configuration from scratch.
 Create a comprehensive configuration that includes:
 
 1. **Search Groups** (MANDATORY - minimum 1 group)
@@ -46,7 +66,9 @@ Create a comprehensive configuration that includes:
 
 {{USER_FEEDBACK_SECTION}}
 
-## CLARIFYING QUESTIONS - CONFIGURATION CHOICES
+═══════════════════════════════════════════════════════════════
+## ❓ CLARIFYING QUESTIONS - CONFIGURATION CHOICES
+═══════════════════════════════════════════════════════════════
 Generate questions that explain what you configured and suggest specific improvements:
 
 **Good**: "I configured searches for current revenue data - would you prefer quarterly breakdowns instead?"
@@ -54,7 +76,9 @@ Generate questions that explain what you configured and suggest specific improve
 
 Reference your actual configuration decisions and offer concrete alternatives that might work better. These must no refer to any technical details of the configuration. They should focus on the business needs, cost/accuracy tradeoffs for context and performance models, and critical assumptions.
 
-## Response Requirements
+═══════════════════════════════════════════════════════════════
+## 📤 RESPONSE REQUIREMENTS
+═══════════════════════════════════════════════════════════════
 You MUST use the generate_config_and_questions tool with:
 - Complete updated_config with all required fields
 - Specific clarifying_questions (2-4 questions)

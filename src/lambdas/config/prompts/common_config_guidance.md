@@ -2,7 +2,9 @@
 
 This document contains shared guidelines used by both new config creation and refinement processes.
 
-## Model Selection Guidelines
+═══════════════════════════════════════════════════════════════
+## 🤖 MODEL SELECTION GUIDELINES
+═══════════════════════════════════════════════════════════════
 - **Default Model**: `sonar` is the default for most use cases - particularly for new configurations
 - **Alternative Models**: Available models include:
   - Perplexity models: `sonar` (recommended for simple fact checking- default for new configurations), `sonar-pro` (recommended deeper synthesis of sources, a great inexpensive upgrade for more reasoning)
@@ -13,7 +15,9 @@ This document contains shared guidelines used by both new config creation and re
   - Consider the validation complexity before choosing Anthropic models
   - Rely on the anthropic QC layer (with or without web-search) to process the full information for the row. Sonar/Sonar Pro validation with Sonnet QC without web search is a great first approach.
 
-## Search Context Size Guidelines for Perplexity
+═══════════════════════════════════════════════════════════════
+## 🔍 SEARCH CONTEXT SIZE GUIDELINES (Perplexity)
+═══════════════════════════════════════════════════════════════
 - **Values**: `"low"`,  `"medium"`,`"high"` (default), (Perplexity only)
 - **Global Default**: Set `default_search_context_size` at the root level (defaults to `"high"`, unless you it is a simple fact lookup -> `"low"`). Setting search context to `"low"` results in the fastest results. 
 - **Per-Search Group Override**: You can use `search_context_size` field for specific search groups
@@ -21,7 +25,9 @@ This document contains shared guidelines used by both new config creation and re
   - Use `"high"` for most columns (cheap enough with sonar, takes time but worth it).
   - Use `"medium"`, and `"low"` when search results are obvious.
 
-## Anthropic Web Search Guidelines
+═══════════════════════════════════════════════════════════════
+## 🌐 ANTHROPIC WEB SEARCH GUIDELINES
+═══════════════════════════════════════════════════════════════
 - **Global Default**: Set `anthropic_max_web_searches_default` at the root level (defaults to 1)
 - **Per-Search Group Override**: Use `anthropic_max_web_searches` field (0-10) for specific search groups  
 - **Recommended Values**:
@@ -32,15 +38,21 @@ This document contains shared guidelines used by both new config creation and re
 - **Cost Control**: Lower values reduce API costs but may miss current information
 
 
-## Importance Level Guidelines
+═══════════════════════════════════════════════════════════════
+## ⭐ IMPORTANCE LEVEL GUIDELINES
+═══════════════════════════════════════════════════════════════
 - **ID**: These define the rows - at least one column must be assigned 'ID', usually it is one or more columns to the left of the table.  Getting these right is critical as these define the row information and the stability of the analysis.  An Index is not enough.
 - **CRITICAL**: ANy column requiring research that we can help with
 - **IGNORED**: Indices, metadata, internal fields, timestamps, calculated/formula columns that are dependent on other columns and need calculation not AI approximation. 
 
-## Search Group Strategy
+═══════════════════════════════════════════════════════════════
+## 📊 SEARCH GROUP STRATEGY
+═══════════════════════════════════════════════════════════════
 Create search groups based on where information typically appears together. Are these elements usually found together? For example, a conference start date, end date, and location are almost always found together, and should be part of the same group. Critically, these groups are processed sequentially, from low to high with information aggregated along the way - make sure that more sophisticated and fragile information is presented after information that it might need first!
 
-## Intelligent Analysis Process
+═══════════════════════════════════════════════════════════════
+## 🧠 INTELLIGENT ANALYSIS PROCESS
+═══════════════════════════════════════════════════════════════
 
 When analyzing any table, follow this process:
 
@@ -51,7 +63,9 @@ When analyzing any table, follow this process:
 6. **Extract real examples** from the actual data if provided and consistent with the guidance, otherwise specify a new consistent set.  Examples must match the requirements, update the examples to be in scope. Strongly prefer consistent formatting across the examples.  
 7. **Assign importance levels** based on column criticality, mark calculated/formula columns as IGNORED as they are dependent on other columns and require calculation not AI research, ID columns needed to specify the row precisely, critical columns which serve the tables primary purpose. Make sure to mark any columns that you do not know what they are as IGNORED.
 
-## Analysis Presentation Format
+═══════════════════════════════════════════════════════════════
+## 📝 ANALYSIS PRESENTATION FORMAT
+═══════════════════════════════════════════════════════════════
 
 Show your assumptions clearly in this format:
 
@@ -71,7 +85,9 @@ Show your assumptions clearly in this format:
 |--------|------------|--------|-------|---------------------|
 | [name] | [level] | [type] | [formatting rules] | [actual values] |
 
-## Clarification Urgency Scale
+═══════════════════════════════════════════════════════════════
+## 🎚️ CLARIFICATION URGENCY SCALE
+═══════════════════════════════════════════════════════════════
 
 **Use these anchored levels:**
 - 0.0-0.1 = MINIMAL (configuration is solid, minor tweaks only)
@@ -82,7 +98,10 @@ Show your assumptions clearly in this format:
 
 **REFINEMENT RULE**: Always use LOWER urgency than the original configurations
 
-## CLARIFYING QUESTIONS - CONFIGURATION CHOICES
+═══════════════════════════════════════════════════════════════
+## ❓ CLARIFYING QUESTIONS - CONFIGURATION CHOICES
+═══════════════════════════════════════════════════════════════
+
 Generate questions that explain what you configured and suggest specific improvements:
 
 **Good**: "I configured searches for current revenue data - would you prefer quarterly breakdowns instead?"
@@ -104,7 +123,9 @@ Only ask when genuinely unclear or need confirmation that would likely impprove 
 - ❌ Specific model preferences 
 - ❌ Technical details
 
-## Format Detection Guidelines
+═══════════════════════════════════════════════════════════════
+## 📐 FORMAT DETECTION GUIDELINES
+═══════════════════════════════════════════════════════════════
 
 Auto-detect from sample data:
 - Dates: YYYY-MM-DD, MM/DD/YYYY patterns, be consistent about the inclusion of time. 
@@ -113,11 +134,15 @@ Auto-detect from sample data:
 - Emails: @ symbol patterns
 - Strings: Default for text data
 
-## Units and Measurements Guidelines
+═══════════════════════════════════════════════════════════════
+## 📏 UNITS AND MEASUREMENTS GUIDELINES
+═══════════════════════════════════════════════════════════════
 
 **Units Consistency**: If a column contains values with units (e.g., $B for billions, °C for temperature, mg for dosage, etc), make sure to specify in the notes that all values should consistently include the same units across all rows. This ensures validation results maintain proper unit formatting. When you detect a potential variablity in units of response, make sure the examples include consistent units (dont mit $T with $B, etc.)
 
-## Quality Control (QC) Settings Guidelines
+═══════════════════════════════════════════════════════════════
+## ✅ QUALITY CONTROL (QC) SETTINGS GUIDELINES
+═══════════════════════════════════════════════════════════════
 
 QC provides automated review of validation outputs to improve accuracy and consistency.
 
@@ -134,7 +159,10 @@ QC provides automated review of validation outputs to improve accuracy and consi
 - **Disable QC**: Only for simple fact-checking tasks or when speed is more important than accuracy
 
 
-## Search Group Requirements (MANDATORY)
+═══════════════════════════════════════════════════════════════
+## 🔴 SEARCH GROUP REQUIREMENTS (MANDATORY)
+═══════════════════════════════════════════════════════════════
+
 Search groups are **REQUIRED** for every configuration - they are essential for building an effective search strategy and cannot be omitted.
 
 **MANDATORY REQUIREMENTS:**
@@ -146,7 +174,9 @@ Search groups are **REQUIRED** for every configuration - they are essential for 
 - **Upper limit**: Maximum 10
 - **No ungrouped fields allowed**: Every column must belong to a search group for optimal performance
 
-## Embedding Tablewide Context Research
+═══════════════════════════════════════════════════════════════
+## 📚 EMBEDDING TABLEWIDE CONTEXT RESEARCH
+═══════════════════════════════════════════════════════════════
 
 When **tablewide context research** is provided (e.g., background about a specific company, methodology, or domain-specific information), you MUST embed it appropriately:
 

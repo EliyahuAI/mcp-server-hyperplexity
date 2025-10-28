@@ -1,18 +1,42 @@
 # Configuration Refinement Prompt
 
-**MISSION**: Make targeted improvements to existing configuration based on user instructions, an existing configuration, and past results with confidence levels (low medium and high) 
+═══════════════════════════════════════════════════════════════
+## 📋 PROMPT MAP - What You'll Find Below
+═══════════════════════════════════════════════════════════════
 
-## CRITICAL REQUIREMENTS
+1. **MISSION**: Make targeted improvements to existing configuration
+2. **CRITICAL REQUIREMENTS**: Never modify column names, only requested changes, lower urgency
+3. **YOUR TASK**: Refine existing config with surgical changes
+4. **COMMON GUIDANCE**: Model selection, search context, importance levels, search groups (included)
+5. **CONVERSATION CONTEXT**: Analyze config evolution and recent changes
+6. **PERFORMANCE-BASED REFINEMENT**: Priority levels for addressing issues
+7. **OPTIMIZATION STRATEGIES**: How to fix low confidence, restructure groups, adjust models
+8. **TABLE ANALYSIS**: Column details and sample data
+9. **FORMULA ANALYSIS**: Calculated columns and dependencies
+10. **VALIDATION CONTEXT**: Performance data from previous runs
+11. **USER FEEDBACK**: Specific refinement instructions
+12. **FINAL REMINDER**: Core mission and requirements
+
+═══════════════════════════════════════════════════════════════
+## 🎯 MISSION
+═══════════════════════════════════════════════════════════════
+
+**Make targeted improvements to existing configuration based on user instructions, an existing configuration, and past results with confidence levels (low, medium, high)**
+
+═══════════════════════════════════════════════════════════════
+## ⚠️ CRITICAL REQUIREMENTS
+═══════════════════════════════════════════════════════════════
 1. NEVER modify column names from table analysis
 2. Make ONLY changes that address user's specific request
 3. Use LOWER urgency than new configurations (0.1-0.3 range)
 4. Every column MUST be assigned to a search group
 5. Return both technical_ai_summary AND ai_summary
 
-## Context
-You are working with an **existing configuration** that has been previously created and potentially refined. Your goal is to make **surgical changes** based on the user's specific instructions while preserving the overall structure and previous decisions.
+═══════════════════════════════════════════════════════════════
+## 📋 YOUR TASK
+═══════════════════════════════════════════════════════════════
 
-## Your Task
+You are working with an **existing configuration** that has been previously created and potentially refined. Your goal is to make **surgical changes** based on the user's specific instructions while preserving the overall structure and previous decisions.
 Refine the existing configuration by:
 
 1. **Analyzing the current configuration and conversation evolution**
@@ -45,7 +69,9 @@ Refine the existing configuration by:
 
 {{FORMULA_ANALYSIS}}
 
-## Conversation Context Analysis
+═══════════════════════════════════════════════════════════════
+## 💬 CONVERSATION CONTEXT ANALYSIS
+═══════════════════════════════════════════════════════════════
 
 **CRITICAL**: Before making any changes, analyze the conversation history AND performance data:
 1. **Review the config_change_log entries** in chronological order
@@ -57,7 +83,9 @@ Refine the existing configuration by:
 
 This conversation context is essential for making informed refinements that build on previous interactions rather than contradicting them.
 
-## Performance-Based Refinement Priority
+═══════════════════════════════════════════════════════════════
+## 🎯 PERFORMANCE-BASED REFINEMENT PRIORITY
+═══════════════════════════════════════════════════════════════
 
 **HIGH PRIORITY** (Address these first):
 - Columns with >20% overall QC fail rate or >30% value fail rate
@@ -72,13 +100,17 @@ This conversation context is essential for making informed refinements that buil
 **LOW PRIORITY**:
 - Cosmetic changes to well-performing configurations
 - Model changes that don't address specific performance issues
-## Refinement Principles
+═══════════════════════════════════════════════════════════════
+## 💡 REFINEMENT PRINCIPLES
+═══════════════════════════════════════════════════════════════
 - **Preserve what works**: Don't change existing settings if they look like they are getting good high confidence results (there is preview information here somewhere)
 - **Focus on user needs**: Address specific instructions given
 - **Document changes**: Clearly explain what and why you changed
 - **Use exact column names**: Always reference columns by their exact names from the table analysis
 
-## Primary Optimization Strategies
+═══════════════════════════════════════════════════════════════
+## 🔧 PRIMARY OPTIMIZATION STRATEGIES
+═══════════════════════════════════════════════════════════════
 
 ### 1. Low Confidence Analysis
 **CRITICAL**: When reviewing preview results, specifically identify fields returning low confidence that should be readily available online. Would you be happy if someone gave you these results? What can we do to make sure we capture this information?
@@ -103,7 +135,9 @@ Did we look at enough sources? For perplexity models, increasing search_context 
 - **general_notes**: Clear, business-focused guidance without technical implementation details. This is a great way to foundationally direct all of the research. 
 - **column notes**: Utilize column notes to add nuance to the requirements. This can be helpful to guide specific columns and to add details on required formats. When a user specifically mentions an issue with a column - this detail must be explicit in the notes. 
 
-## Common Refinement Scenarios
+═══════════════════════════════════════════════════════════════
+## 📌 COMMON REFINEMENT SCENARIOS
+═══════════════════════════════════════════════════════════════
 - **Restructure search groups** to better reflect where information appears in sources.
 - **Increase context model** based on business priorities and user feedback
 - **Choose a smarter model** based on business priorities and user feedback
@@ -121,6 +155,7 @@ Did we look at enough sources? For perplexity models, increasing search_context 
 
 {{USER_FEEDBACK_SECTION}}
 
-
-## REFINEMENT FOCUS REMINDER
+═══════════════════════════════════════════════════════════════
+## 🎯 REFINEMENT FOCUS REMINDER
+═══════════════════════════════════════════════════════════════
 **Your mission**: Make targeted improvements to an existing configuration based on aggregated user instructions and validation results. Preserve what works, fix what doesn't, and use exact column names. Return both technical and simple AI summaries with your changes - that make sense in the context of refinement. 
