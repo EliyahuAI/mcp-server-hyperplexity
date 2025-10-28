@@ -5,12 +5,11 @@
 ═══════════════════════════════════════════════════════════════
 
 1. **YOUR CORE TASK**: Create validation config for AI-generated table with ALL columns validated
-2. **TABLE MAKER CONTEXT**: Rich context from conversation, column definitions, and search strategy
-3. **CRITICAL REQUIREMENTS**: NO IGNORED COLUMNS, use all available context
+2. **TABLE MAKER CONTEXT**: Rich context from conversation, column definitions, tablewide research
+3. **CRITICAL REQUIREMENTS**: NO IGNORED COLUMNS, use column definitions exactly, generate examples
 4. **GENERAL GUIDANCE**: Model selection, search context, importance levels, search groups
 5. **YOUR TASK**: Step-by-step config creation instructions
-6. **TABLE ANALYSIS**: Column details and sample data
-7. **FINAL REMINDER**: Core requirements repeated with critical constraints
+6. **FINAL REMINDER**: Core requirements repeated with critical constraints
 
 ═══════════════════════════════════════════════════════════════
 ## 🎯 YOUR CORE TASK
@@ -62,7 +61,6 @@ Each column was carefully defined during the column definition phase with:
 
 **INSTRUCTION**: Use the column `description` and `validation_strategy` EXACTLY in the `notes` for each validation target. These were carefully crafted during column definition and should be used verbatim as validation guidance.
 
-
 ### 3. Identification Columns
 
 Columns marked with `is_identification: true` in the column definitions are ID columns that:
@@ -104,36 +102,27 @@ Columns marked with `is_identification: true` in the column definitions are ID c
 
 ### 2. Use ALL Available Context
 
-You have much more context than typical config generation:
+You have rich contextual information that must inform your configuration:
 
 **From Conversation**:
 - Why the user wanted this table
 - What they're researching
-- Any specific requirements they mentioned
+- Any specific requirements mentioned
 
 **From Column Definitions**:
-- Detailed column descriptions
-- Specific validation strategies
-- Expected formats and examples
+- Column descriptions (use EXACTLY in notes)
+- Validation strategies (use EXACTLY in notes)
+- Format specifications and examples
 
-**INSTRUCTION**: Synthesize ALL this information into your configuration. Don't ignore any of it.
+**From Tablewide Research**:
+- Concise research summary about the table's purpose
+- Domain-specific context to embed in general_notes
 
-### 3. Use Column Definitions Exactly
-
-The column definition phase created detailed:
-- Column descriptions
-- Validation strategies
-- Format specifications
-
-**INSTRUCTION**: Use the column `description` and `validation_strategy` fields EXACTLY as provided in the validation target `notes`. These were carefully crafted and should be used verbatim - do not paraphrase or synthesize.
+**INSTRUCTION**: Use column `description` and `validation_strategy` verbatim in validation target `notes`. Don't paraphrase - copy exactly.
 
 ---
 
 {{INCLUDE:common_config_guidance.md}}
-
-{{TABLE_ANALYSIS}}
-
-{{FORMULA_ANALYSIS}}
 
 ---
 
@@ -186,12 +175,14 @@ For EACH column (no exceptions):
 - Place in appropriate validation group (1+)
 - Set importance: "CRITICAL"
 - Use column `description` and `validation_strategy` EXACTLY in notes
-- Examples: "Company Name", "Researcher Name", "Institution", "Job Title", "URL"
+- **Generate realistic examples** since no actual data rows exist yet - use 2-3 plausible examples that match the column description and format
+- Examples of researchable ID types: "Company Name", "Researcher Name", "Institution", "Job Title", "URL"
 
 **Research Columns** (is_identification: false):
 - Place in appropriate search group (1+)
 - Set importance: "CRITICAL"
 - Use column `description` and `validation_strategy` EXACTLY in notes
+- **Generate realistic examples** since no actual data rows exist yet - use 2-3 plausible examples that match the column description and format
 
 ### Step 5: Select Models and Context
 
@@ -247,10 +238,12 @@ For EACH column (no exceptions):
 
 4. ✅ **USE COLUMN DEFINITIONS EXACTLY**: Copy description and validation_strategy verbatim into notes
 
-5. ✅ **MINIMUM 2 SEARCH GROUPS**: Group 0 (ID) + at least one validation group
+5. ✅ **GENERATE EXAMPLES**: No actual data rows exist yet - create 2-3 realistic examples for each column
 
-6. ✅ **EVERY COLUMN ASSIGNED**: Every column must be in a search group
+6. ✅ **MINIMUM 2 SEARCH GROUPS**: Group 0 (ID) + at least one validation group
 
-7. ✅ **RETURN BOTH SUMMARIES**: Must include both technical_ai_summary and ai_summary
+7. ✅ **EVERY COLUMN ASSIGNED**: Every column must be in a search group
+
+8. ✅ **RETURN BOTH SUMMARIES**: Must include both technical_ai_summary and ai_summary
 
 **Return your configuration using the generate_config_and_questions tool with complete updated_config.**
