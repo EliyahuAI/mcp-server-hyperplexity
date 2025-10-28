@@ -413,12 +413,20 @@ def build_unified_generation_prompt(table_analysis: Dict, existing_config: Dict 
 
     is_new_config = not (has_existing_config or has_validation_data)
 
-    logger.debug(f"REFINEMENT DETECTION: existing_config={bool(has_existing_config)}, validation_data={bool(has_validation_data)}, is_new_config={is_new_config}")
+    # Check if this is from Table Maker (special prompt with NO IGNORED COLUMNS rule)
+    metadata = table_analysis.get('metadata', {})
+    is_table_maker = metadata.get('generated_by') == 'table_maker'
+
+    logger.debug(f"REFINEMENT DETECTION: existing_config={bool(has_existing_config)}, validation_data={bool(has_validation_data)}, is_new_config={is_new_config}, is_table_maker={is_table_maker}")
 
     # Load the appropriate prompt template
     current_dir = os.path.dirname(__file__)
 
-    if is_new_config:
+    if is_table_maker:
+        # Table Maker mode: Use specialized prompt with NO IGNORED COLUMNS requirement
+        prompt_file = os.path.join(current_dir, 'prompts', 'table_maker_config_prompt.md')
+        logger.info("Using Table Maker config prompt (NO IGNORED COLUMNS)")
+    elif is_new_config:
         prompt_file = os.path.join(current_dir, 'prompts', 'create_new_config_prompt.md')
     else:
         prompt_file = os.path.join(current_dir, 'prompts', 'refine_existing_config_prompt.md')

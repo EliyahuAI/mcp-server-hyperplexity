@@ -732,10 +732,12 @@ async def execute_full_table_generation(
 
             logger.info(f"[EXECUTION] Step 1 complete: {len(columns)} columns, table: {table_name}")
 
-            # Add tablewide_research to conversation_state for config generation
+            # Add tablewide_research and search_strategy to conversation_state for config generation
             conversation_state['tablewide_research'] = column_result.get('tablewide_research', '')
+            conversation_state['search_strategy'] = search_strategy  # Rich context: requirements, subdomains, discovered lists
             if conversation_state.get('tablewide_research'):
                 logger.info(f"[EXECUTION] Stored tablewide_research in conversation_state for config generation")
+            logger.info(f"[EXECUTION] Stored search_strategy with {len(search_strategy.get('subdomains', []))} subdomains in conversation_state")
 
             # Create minimal CSV with column headers for config generation
             import csv
