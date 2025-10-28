@@ -6282,9 +6282,13 @@
                     const card = document.getElementById(cardId);
                     const isTableMakerCard = card && card.querySelector('.card-title')?.textContent.includes('Table Maker');
 
-                    if (!isTableMakerCard) {
-                        completeThinkingInCard(cardId, 'Configuration generated!');
+                    if (isTableMakerCard) {
+                        // Silently skip config completion for table maker - it handles its own completion
+                        console.log('[Table Maker] Ignoring config_generation_complete - table maker handles own completion');
+                        return;
                     }
+
+                    completeThinkingInCard(cardId, 'Configuration generated!');
                     // Progress routed to card level;
 
                     // Debug: Log the entire data structure to find where questions are
@@ -6292,7 +6296,7 @@
                     globalState.currentConfig = data;
                     // Mark Excel file as uploaded since backend saves it during AI config generation
                     globalState.excelFileUploaded = true;
-                    
+
                     // DEBUG: Log data structure for clarifying questions
                     // Config data received
 
@@ -6309,14 +6313,14 @@
                     // Config data should now come directly from API response
                     } else {
                     }
-                    
+
                     if (questions) {
                         globalState.savedQuestions = questions;
                     } else {
                     }
 
                     let aiMessage = data.ai_summary || data.ai_response || 'Configuration generated successfully!';
-                    
+
                     await addChatMessage(cardId, 'ai', aiMessage);
                     
                     // Add config ID display if available - place it at end of card, not in chat
