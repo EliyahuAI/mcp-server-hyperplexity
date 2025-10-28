@@ -5329,7 +5329,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 'qc_entry': field_data.get('qc_entry'),
                                 'qc_action_taken': field_data.get('qc_action_taken'),
                                 'model': field_data.get('model'),
-                                # Strip: reasoning, quote, explanation, qc_reasoning, qc_citations, citations
+                                'citations': field_data.get('citations', []),  # Keep citations for Excel reports
+                                # Strip: reasoning, quote, explanation, qc_reasoning, qc_citations
                             }
                         else:
                             # Non-dict fields (like next_check, reasons) - keep as-is

@@ -28,11 +28,10 @@
 **KEY RULES:**
 1. ✅ **CRITICAL**: EVERY column must have a validation target - NO columns can be marked as IGNORED
 2. ✅ Use conversation context to understand table purpose and user requirements
-3. ✅ Use column definitions (descriptions, validation strategies) from column definition phase
-4. ✅ Use search strategy (requirements, subdomains, discovered lists) to inform validation approach
-5. ✅ Use tablewide_research to provide context in general_notes
-6. ✅ Create search groups based on where information appears together
-7. ✅ All columns defined as ID columns during table generation must be in Group 0
+3. ✅ Use column definitions (descriptions, validation strategies) EXACTLY in notes
+4. ✅ Use tablewide_research to provide context in general_notes
+5. ✅ Create search groups based on where information appears together
+6. ✅ Researchable ID columns (names, companies, URLs) should be validated
 
 ---
 
@@ -61,27 +60,28 @@ Each column was carefully defined during the column definition phase with:
 - **Format**: Expected data format
 - **Importance**: Whether it's an ID column or research column
 
-**INSTRUCTION**: Use the column `description` and `validation_strategy` to write detailed `notes` for each validation target. Don't just copy them - synthesize them into clear validation guidance.
+**INSTRUCTION**: Use the column `description` and `validation_strategy` EXACTLY in the `notes` for each validation target. These were carefully crafted during column definition and should be used verbatim as validation guidance.
 
-### 3. Search Strategy
 
-The Table Maker defined a search strategy including:
-
-- **Requirements**: Hard and soft requirements that define valid rows (from search_strategy.requirements)
-- **Subdomains**: Focus areas that guided row discovery (from search_strategy.subdomains)
-- **Discovered Lists**: Authoritative sources found (URLs and example candidates from each subdomain)
-- **Requirements Notes**: Overall guidance about what makes a good row
-
-**INSTRUCTION**: Use requirements and discovered lists to inform your validation approach. If the search strategy found specific authoritative sources (e.g., "NIH RePORTER grants"), mention these in notes as preferred sources.
-
-### 4. Identification Columns
+### 3. Identification Columns
 
 Columns marked with `is_identification: true` in the column definitions are ID columns that:
 - Define what each row represents
 - Were used to discover/identify entities during row generation
-- Should ALL be placed in Group 0 (context group, not validated)
+- Typically go in Group 0 (context group)
 
-**INSTRUCTION**: Group 0 must contain ALL ID columns. These provide context for validating research columns but are not themselves validated.
+**INSTRUCTION**: ID columns can be handled in two ways:
+1. **Group 0 with importance: "ID"** - If the ID column is simple and doesn't need web research (e.g., dates, indices, simple labels)
+2. **Validation group with importance: "CRITICAL"** - If the ID column is RESEARCHABLE on the web (e.g., company names, person names, URLs, institutions, products)
+
+**Researchable ID columns** should be validated because:
+- They can be verified for accuracy (e.g., "Is this the correct company name?")
+- They can be enriched with additional context
+- They serve as quality control for row generation
+
+**Examples**:
+- ✅ Validate: "Company Name", "Researcher Name", "Institution", "Job Title", "Product Name", "URL"
+- ❌ Don't validate: "Index", "Row Number", "Date Created", "Internal ID"
 
 ---
 
@@ -97,8 +97,9 @@ Columns marked with `is_identification: true` in the column definitions are ID c
 
 **What this means**:
 - Every column gets a validation target entry
-- ID columns (is_identification: true) go in Group 0 with importance: "ID"
-- Research columns go in Groups 1+ with importance: "CRITICAL"
+- Simple ID columns (dates, indices) → Group 0 with importance: "ID"
+- Researchable ID columns (names, companies, URLs) → Validation group with importance: "CRITICAL"
+- Research columns → Validation groups with importance: "CRITICAL"
 - NO column should have importance: "IGNORED"
 
 ### 2. Use ALL Available Context
@@ -115,27 +116,16 @@ You have much more context than typical config generation:
 - Specific validation strategies
 - Expected formats and examples
 
-**From Search Strategy**:
-- Requirements (hard/soft) that define valid rows
-- Discovered authoritative sources
-- Example candidates from those sources
-
 **INSTRUCTION**: Synthesize ALL this information into your configuration. Don't ignore any of it.
 
-### 3. Embed Tablewide Research
+### 3. Use Column Definitions Exactly
 
-The `tablewide_research` field contains concise context about this table's purpose (e.g., "Target roles combining radiology expertise with AI/ML skills in healthcare settings").
-
-**INSTRUCTION**: Embed key points from tablewide_research into your `general_notes`. This provides essential context for all validation queries.
-
-### 4. Respect Column Definition Decisions
-
-The column definition phase already decided:
-- Which columns are ID fields vs research fields
-- Column descriptions and validation strategies
+The column definition phase created detailed:
+- Column descriptions
+- Validation strategies
 - Format specifications
 
-**INSTRUCTION**: Honor these decisions. Place all ID columns in Group 0, use their descriptions/strategies to inform validation notes.
+**INSTRUCTION**: Use the column `description` and `validation_strategy` fields EXACTLY as provided in the validation target `notes`. These were carefully crafted and should be used verbatim - do not paraphrase or synthesize.
 
 ---
 
@@ -157,16 +147,14 @@ Using all the context provided above:
 
 1. Read the **research_purpose** and **user_requirements** from conversation context
 2. Read the **tablewide_research** to understand the table's goal
-3. Review the **requirements** from search_strategy to understand what makes valid rows
-4. Note any **discovered lists** or authoritative sources found
+3. Review the column definitions to understand what each column represents
 
 ### Step 2: Create General Notes
 
 Write comprehensive `general_notes` that:
 - Explain the table's research purpose (from conversation context)
 - Include key points from tablewide_research
-- Reference requirements from search strategy if relevant
-- Provide overall validation guidance
+- Provide overall validation guidance for this table's domain
 
 **Example**: "This table tracks job opportunities combining radiology expertise with AI/ML skills in healthcare settings. Focus on positions that leverage both medical training and technical capabilities. Prefer current job postings (< 3 months old)."
 
@@ -175,32 +163,35 @@ Write comprehensive `general_notes` that:
 Create search groups based on where information appears together:
 
 **Group 0 (Required)**:
-- ALL columns with `is_identification: true` from column definitions
-- These define what each row represents
-- Not validated, just provide context
+- Simple ID columns that don't need web research (dates, indices, internal IDs)
+- These provide context but don't need validation
 
 **Groups 1+**:
-- Organize research columns by information sources
-- Columns whose data appears together in typical sources should share a group
+- Researchable ID columns (company names, person names, URLs, institutions)
+- Research columns from column definitions
+- Organize by information sources - columns whose data appears together should share a group
 - Consider the validation strategies from column definitions when grouping
 
 ### Step 4: Create Validation Targets
 
 For EACH column (no exceptions):
 
-**ID Columns** (is_identification: true):
+**Simple ID Columns** (is_identification: true, not researchable):
 - Place in Group 0
 - Set importance: "ID"
 - Minimal notes (used for context only)
+- Examples: "Index", "Date Created", "Row Number"
+
+**Researchable ID Columns** (is_identification: true, CAN be researched on web):
+- Place in appropriate validation group (1+)
+- Set importance: "CRITICAL"
+- Use column `description` and `validation_strategy` EXACTLY in notes
+- Examples: "Company Name", "Researcher Name", "Institution", "Job Title", "URL"
 
 **Research Columns** (is_identification: false):
 - Place in appropriate search group (1+)
 - Set importance: "CRITICAL"
-- Write detailed notes synthesizing:
-  - Column description from column definition
-  - Validation strategy from column definition
-  - Relevant requirements or discovered sources from search strategy
-  - Format specifications and examples
+- Use column `description` and `validation_strategy` EXACTLY in notes
 
 ### Step 5: Select Models and Context
 
@@ -221,7 +212,8 @@ For EACH column (no exceptions):
 **technical_ai_summary**: Explain your configuration decisions with technical details:
 - How you organized search groups and why
 - Which models you chose and why
-- How you used the table maker context (conversation, column defs, search strategy)
+- How you used the table maker context (conversation, column definitions, tablewide research)
+- Which ID columns you upgraded to CRITICAL for validation and why
 - Any assumptions you made
 
 **ai_summary**: Simple business-friendly overview:
@@ -246,13 +238,14 @@ For EACH column (no exceptions):
 
 2. ✅ **USE ALL CONTEXT**: You have rich information available
    - Conversation context → Inform general_notes and understand purpose
-   - Column definitions → Use descriptions and validation strategies in notes
-   - Search strategy → Reference requirements and discovered lists
+   - Column definitions → Use descriptions and validation strategies EXACTLY in notes
    - Tablewide research → Embed in general_notes
 
-3. ✅ **ALL ID COLUMNS IN GROUP 0**: Columns with `is_identification: true` ALL go in Group 0
+3. ✅ **RESEARCHABLE ID COLUMNS**: Upgrade to CRITICAL if they can be verified on web
+   - Names, companies, URLs, institutions → Validate these
+   - Dates, indices, internal IDs → Keep as ID in Group 0
 
-4. ✅ **RESPECT COLUMN DEFINITIONS**: Honor the decisions made during column definition phase
+4. ✅ **USE COLUMN DEFINITIONS EXACTLY**: Copy description and validation_strategy verbatim into notes
 
 5. ✅ **MINIMUM 2 SEARCH GROUPS**: Group 0 (ID) + at least one validation group
 

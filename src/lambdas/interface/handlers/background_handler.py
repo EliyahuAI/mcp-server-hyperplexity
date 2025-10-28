@@ -2163,14 +2163,24 @@ def handle_main_processing(event, context):
                 # Add enhanced timing data if available
                 if enhanced_metrics and enhanced_metrics.get('full_validation_estimates'):
                     timing_estimates = enhanced_metrics['full_validation_estimates'].get('timing_estimates', {})
-                    
+
                     # Add timing fields to cost_estimates for frontend
                     preview_payload['cost_estimates']['actual_processing_time_seconds'] = timing_estimates.get('actual_processing_time_seconds', 0.0)
                     preview_payload['cost_estimates']['actual_time_per_batch_seconds'] = timing_estimates.get('actual_time_per_batch_seconds', 0.0)
-                    
+
                     logger.debug(f"[ENHANCED_TIMING] Added timing data - processing: {timing_estimates.get('actual_processing_time_seconds', 0):.3f}s, "
                                f"per batch: {timing_estimates.get('actual_time_per_batch_seconds', 0):.3f}s")
-                
+
+                    # Add response size estimate for delegation decision (similar to time estimates)
+                    response_size_estimate = enhanced_metrics['full_validation_estimates'].get('response_size_estimate')
+                    if response_size_estimate:
+                        preview_payload['enhanced_metrics'] = {
+                            'full_validation_estimates': {
+                                'response_size_estimate': response_size_estimate
+                            }
+                        }
+                        logger.info(f"[RESPONSE_SIZE] Saved response size estimate to preview_payload: {response_size_estimate.get('estimated_full_size_mb', 0):.2f} MB")
+
                 # Add key frontend-expected fields to cost_estimates object (frontend looks for them here)
                 cost_estimates_update = {
                     "quoted_validation_cost": quoted_full_cost,  # Price BEFORE discount (what it costs without discount)

@@ -122,9 +122,6 @@ def build_table_analysis_from_conversation(
         # This is the concise research summary from the LLM's table generation
         tablewide_research = conversation_state.get('tablewide_research', '')
 
-        # Extract search_strategy with rich context about requirements, subdomains, discovered lists
-        search_strategy = conversation_state.get('search_strategy', {})
-
         # Build conversation_context (NEW FIELD)
         # This enriches the existing config generation without breaking compatibility
         conversation_context = {
@@ -137,8 +134,7 @@ def build_table_analysis_from_conversation(
             'user_requirements': extract_user_requirements(messages),
             'clarifying_questions_asked': extract_clarifying_questions(messages),
             'readiness_confidence': conversation_state.get('readiness_confidence', 0.0),
-            'tablewide_research': tablewide_research,  # Research to embed in general/column notes
-            'search_strategy': search_strategy  # Requirements, subdomains, discovered lists, candidates
+            'tablewide_research': tablewide_research  # Research to embed in general/column notes
         }
 
         # Assemble complete table_analysis
@@ -153,19 +149,8 @@ def build_table_analysis_from_conversation(
         logger.info(f"Built table_analysis with {len(columns)} columns and {len(rows)} sample rows")
         logger.info(f"Identified {len(identification_columns)} ID columns: {identification_columns}")
 
-        # Log rich search_strategy context being passed
-        if search_strategy:
-            num_subdomains = len(search_strategy.get('subdomains', []))
-            num_requirements = len(search_strategy.get('requirements', []))
-            has_discovered_lists = any(
-                sd.get('discovered_list_url') or sd.get('candidates')
-                for sd in search_strategy.get('subdomains', [])
-            )
-            logger.info(
-                f"Search strategy context: {num_subdomains} subdomains, "
-                f"{num_requirements} requirements, "
-                f"discovered_lists={has_discovered_lists}"
-            )
+        if tablewide_research:
+            logger.info(f"Tablewide research available for config generation: {tablewide_research[:100]}...")
 
         return table_analysis
 
