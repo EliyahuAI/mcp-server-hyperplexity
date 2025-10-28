@@ -121,10 +121,12 @@ Each prompt must have a corresponding JSON schema that defines the exact structu
 
 | Prompt File | Schema File | Tool Name | Verified |
 |------------|-------------|-----------|----------|
-| `config_generation/prompts/table_maker_config_prompt.md` | `config_generation/schemas/column_config_schema.json` (wrapped) | `generate_config_and_questions` | ✅ |
-| `config_generation/prompts/create_new_config_prompt.md` | `config_generation/schemas/column_config_schema.json` (wrapped) | `generate_config_and_questions` | ✅ |
-| `config_generation/prompts/refine_existing_config_prompt.md` | `config_generation/schemas/column_config_schema.json` (wrapped) | `generate_config_and_questions` | ✅ |
+| `config_generation/prompts/table_maker_config_prompt.md` | `config_generation/schemas/column_config_schema.json` (wrapped) | `generate_config_and_questions` | ⚠️ Fields mentioned, needs explicit JSON structure |
+| `config_generation/prompts/create_new_config_prompt.md` | `config_generation/schemas/column_config_schema.json` (wrapped) | `generate_config_and_questions` | ⚠️ Fields mentioned, needs explicit JSON structure |
+| `config_generation/prompts/refine_existing_config_prompt.md` | `config_generation/schemas/column_config_schema.json` (wrapped) | `generate_config_and_questions` | ⚠️ Fields mentioned, needs explicit JSON structure |
 | `config_generation/prompts/common_config_guidance.md` | N/A (included in others) | N/A | N/A |
+
+**Note**: Config generation prompts mention all required fields in context but lack explicit JSON structure examples showing the complete schema. The AI relies on common_config_guidance.md for field descriptions.
 
 **Note**: Config generation prompts use `column_config_schema.json` wrapped in an AI response schema that includes `updated_config`, `clarifying_questions`, `clarification_urgency`, `technical_ai_summary`, and `ai_summary`. See `config_generation/__init__.py:get_unified_generation_schema()`.
 
@@ -159,6 +161,80 @@ When creating or modifying a prompt, verify:
 - [ ] Example JSON in prompt validates against schema
 - [ ] All required fields present in examples
 - [ ] Field values match expected types and constraints
+
+## Config Schema Field Coverage
+
+The config generation prompts use `column_config_schema.json` which has these required top-level fields:
+- `search_groups` (array) - **✅ Covered** in common_config_guidance.md and all prompts
+- `validation_targets` (array) - **✅ Covered** in common_config_guidance.md and all prompts
+
+Optional top-level fields:
+- `general_notes` (string) - **✅ Covered** - explicitly instructed in all prompts
+- `default_model` (string) - **✅ Covered** in common_config_guidance.md MODEL SELECTION section
+- `default_search_context_size` (enum) - **✅ Covered** in common_config_guidance.md SEARCH CONTEXT section
+- `anthropic_max_web_searches_default` (integer) - **✅ Covered** in common_config_guidance.md ANTHROPIC WEB SEARCH section
+- `qc_settings` (object) - **✅ Covered** in common_config_guidance.md QUALITY CONTROL section
+
+### Search Group Schema Fields
+
+Required fields for each search group:
+- `group_id` (integer) - **⚠️ Mentioned** but not explicitly in JSON examples
+- `group_name` (string) - **⚠️ Mentioned** but not explicitly in JSON examples
+- `description` (string) - **✅ Covered** in instructions
+- `model` (string) - **✅ Covered** in instructions
+
+Optional fields:
+- `search_context` (enum: low/medium/high) - **✅ Covered** in common_config_guidance.md
+- `anthropic_max_web_searches` (integer 0-10) - **✅ Covered** in common_config_guidance.md
+
+### Validation Target Schema Fields
+
+Required fields for each validation target:
+- `column` (string) - **✅ Covered** explicitly
+- `description` (string) - **✅ Covered** explicitly
+- `importance` (enum: ID/CRITICAL/IGNORED) - **✅ Covered** explicitly (Table Maker: no IGNORED)
+- `format` (string) - **✅ Covered** explicitly
+- `examples` (array of strings) - **✅ Covered** explicitly (Table Maker: must generate)
+- `search_group` (integer) - **✅ Covered** explicitly
+
+Optional fields:
+- `notes` (string) - **✅ Covered** explicitly (Table Maker: use column definitions exactly)
+- `preferred_model` (string) - **⚠️ Not explicitly mentioned** in prompts
+- `search_context_size` (enum) - **⚠️ Not explicitly mentioned** in prompts
+- `formula_info` (object) - **✅ Covered** via FORMULA_ANALYSIS template variable
+
+### Recommendations
+
+1. **Add explicit JSON structure examples** to config prompts showing:
+   ```json
+   {
+     "general_notes": "...",
+     "default_model": "sonar",
+     "search_groups": [
+       {
+         "group_id": 0,
+         "group_name": "ID Group",
+         "description": "...",
+         "model": "sonar"
+       }
+     ],
+     "validation_targets": [
+       {
+         "column": "Column Name",
+         "description": "...",
+         "importance": "CRITICAL",
+         "format": "String",
+         "notes": "...",
+         "examples": ["example1", "example2"],
+         "search_group": 1
+       }
+     ]
+   }
+   ```
+
+2. **Document optional per-column overrides** (`preferred_model`, `search_context_size`) in prompts or accept that these are advanced features not commonly used.
+
+3. **QC settings structure** could be more explicit in prompts with example JSON.
 
 ## Common Schema-Prompt Mismatches
 
