@@ -126,11 +126,17 @@ You have rich contextual information that must inform your configuration:
 
 ---
 
+{{TABLE_ANALYSIS}}
+
+{{FORMULA_ANALYSIS}}
+
+---
+
 ═══════════════════════════════════════════════════════════════
 ## 📋 YOUR TASK - Step by Step
 ═══════════════════════════════════════════════════════════════
 
-Using all the context provided above:
+Using all the context provided above (including the table analysis with column definitions and conversation context):
 
 ### Step 1: Understand the Table
 
