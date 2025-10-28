@@ -1260,7 +1260,7 @@ def get_unified_generation_schema() -> Dict:
                 "updated_config": config_schema,  # Use the loaded config schema directly
                 "clarifying_questions": {
                     "type": "string",
-                    "description": "Questions that reference your actual configuration decisions and suggest concrete alternatives. Format: 'I configured [specific choice] - would [specific alternative] work better?' Avoid generic 'Should I do A or B?' questions."
+                    "description": "CRITICAL: Questions shown AFTER user sees preview - NEVER reference preview data. Keep to 2-3 questions max, only when needed. Use short, clear lay-person language. General terms only ('more thorough searching' NOT 'high search context'). NEVER mention specific models, costs, or technical parameters. Limit to 2 options maximum. Example: 'Should I prioritize recent information or include historical data?'"
                 },
                 "clarification_urgency": {
                     "type": "number",
@@ -1268,11 +1268,11 @@ def get_unified_generation_schema() -> Dict:
                 },
                 "technical_ai_summary": {
                     "type": "string",
-                    "description": "Technical summary explaining what you did, highlighting assumptions that you needed to make. Include details about search groups, context, criticality, and specific configuration decisions. The focus changes depending on whether the configuration is new or a refinement (you are updating an existing configuration):\n\nFOR NEW CONFIGURATIONS: What is your understanding of the context of this table? What were your assumptions? Does this need refinement? \n\n FOR REFINEMENTS: Focus on changes made and the reasons why they were made. Does this need futher refinement?"
+                    "description": "Technical summary explaining what you did, highlighting assumptions. Include details about search groups, context, and configuration decisions. Can reference preview data/results since this is shown BEFORE next preview. FOR NEW CONFIGS: Your understanding, assumptions, whether refinement needed. FOR REFINEMENTS: Changes made and reasons."
                 },
                 "ai_summary": {
                     "type": "string",
-                    "description": "Simple lay person description of what is happening without explicitly mentioning search groups, context, or criticality. This should be shorter and clearer than the technical summary. Examples: 'Increased search context to high' becomes 'Instructed Perplexity to look at more sources', 'Created dedicated search group' becomes 'Looking for that value by itself'. Focus on the 'why' in simple terms."
+                    "description": "Short, clear lay-person summary. Use general terms ('more thorough searching' NOT 'high search context', 'more advanced AI' NOT model names). NEVER mention specific models or costs. Can reference preview results since shown BEFORE next preview. Keep it brief and focus on business value."
                 }
             },
             "additionalProperties": False

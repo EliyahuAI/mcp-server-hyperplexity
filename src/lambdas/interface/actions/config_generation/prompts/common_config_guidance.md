@@ -82,27 +82,51 @@ Show your assumptions clearly in this format:
 
 **REFINEMENT RULE**: Always use LOWER urgency than the original configurations
 
-## CLARIFYING QUESTIONS - CONFIGURATION CHOICES
-Generate questions that explain what you configured and suggest specific improvements:
+## CLARIFYING QUESTIONS - When and How to Ask
 
-**Good**: "I configured searches for current revenue data - would you prefer quarterly breakdowns instead?"
-**Bad**: "Should I validate revenue or skip it?"
+**IMPORTANT CONTEXT**: Clarifying questions are shown to the user AFTER they see the validation preview results. DO NOT reference the preview data in your questions - you can see the preview, but the user sees questions AFTER reviewing it.
 
-Reference your actual configuration decisions and offer concrete alternatives that might work better. These must no refer to any technical details of the configuration. They should focus on the business needs, cost/accuracy tradeoffs for context and performance models, and critical assumptions.
+**When to Ask Questions:**
+- ONLY ask when genuinely unclear or when clarification would significantly improve results
+- Prefer NO questions if the configuration is solid
+- Keep total questions to 2-3 maximum (shorter is better)
 
-Only ask when genuinely unclear or need confirmation that would likely impprove the quality of your search. Format your questions nicely, and clearly, requiring no technical understanding of the user.
+**How to Format Questions:**
 
-### Types of Questions to Ask:
-- **Risky Assumptions**: "Is my understanding of [specific assumption] correct?"
-- **A/B Clarifications**: "I have assumed  [option A], is [option B] more accurate?"
-- **Cost/Accuracy Tradeoff**: "Are you OK with increasing the AI usage to achieve better accuracy? I can use more advanced models and or more searches - but this can amplify cost." This is a good question when items are missed, or require complex synthesis, and you have held back in your recommendations.  
+✅ **GOOD - Clear, lay-person language:**
+- "Should I prioritize recent information (last 6 months) or include historical data?"
+- "Do you need detailed breakdowns or summary-level information?"
 
-### Avoid Asking:
+❌ **BAD - References preview, technical details, or specific models:**
+- "The preview shows X - should I change Y?" (user hasn't seen preview yet when answering)
+- "Should I use claude-sonnet-4-5 instead of sonar-pro?" (exposes internal model names)
+- "Should I increase anthropic_max_web_searches from 1 to 3?" (technical parameter)
+- "Should I set search_context_size to high?" (technical detail)
+
+**Question Format Rules:**
+1. **Limit A/B choices to 2 options maximum** - don't offer 3+ alternatives
+2. **Use general terms** - "more thorough searching" not "high search context"
+3. **Never mention specific models or costs** - "more advanced AI" not "claude-opus-4-1 at $15 per 1M tokens"
+4. **Keep it short** - one clear sentence per question
+5. **Focus on business needs** - what information they want, not how we get it
+6. **Don't reference preview data** - questions are shown AFTER preview, so don't say "I noticed X in the results"
+
+**Cost/Accuracy Tradeoff Language:**
+- ✅ "Would you like more thorough analysis? This increases AI usage."
+- ❌ "Should I upgrade to claude-opus-4-1 for $15/million tokens?"
+
+**Types of Questions to Ask:**
+- **Risky Assumptions**: "Should I focus on [assumption] or [alternative]?"
+- **Scope Clarification**: "Do you need [option A] or [option B]?"
+- **Quality Tradeoff**: "Would you like more thorough searching? This increases processing time and AI usage."
+
+**Avoid Asking:**
 - ❌ Obvious table purposes (clear from column names)
 - ❌ Clear data formats (evident from sample data)
-- ❌ Standard examples (use real data from table)
-- ❌ Specific model preferences 
-- ❌ Technical details
+- ❌ Questions about preview data (questions shown after user sees preview)
+- ❌ Specific model preferences (internal technical details)
+- ❌ Technical parameters (search context, token limits, etc.)
+- ❌ Questions with 3+ options (limit to 2 choices)
 
 ## Format Detection Guidelines
 
