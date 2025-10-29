@@ -1634,39 +1634,29 @@ def handle_main_processing(event, context):
                     logger.debug(f"[QC_MERGE_DEBUG] QC results structure: {list(qc_results.keys())[:3]}")
                     logger.debug(f"[QC_MERGE_DEBUG] real_results keys sample: {list(real_results.keys())[:3]}")
 
-                    # Create mapping from hash keys (QC) to numeric keys (validation results)
-                    # QC uses hash keys, validation results use numeric string keys
-                    qc_hash_keys = list(qc_results.keys())
-                    validation_numeric_keys = list(real_results.keys())
+                    # FIXED: Both QC and validation results use hash keys - match them directly
+                    # Previous bug: incorrectly mapped by position, causing cross-row contamination
+                    for row_key, row_qc_data in qc_results.items():
+                        if row_key in real_results:
+                            logger.debug(f"[QC_MERGE_DEBUG] Row {row_key}: QC fields = {list(row_qc_data.keys())}")
+                            for field_name, field_qc_data in row_qc_data.items():
+                                logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: QC data keys = {list(field_qc_data.keys()) if isinstance(field_qc_data, dict) else 'not dict'}")
+                                logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: qc_applied = {field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
 
-                    # Map QC hash keys to validation numeric keys by position
-                    for i, qc_hash_key in enumerate(qc_hash_keys):
-                        if i < len(validation_numeric_keys):
-                            validation_key = validation_numeric_keys[i]
-                            row_qc_data = qc_results[qc_hash_key]
+                                if isinstance(field_qc_data, dict) and (field_qc_data.get('qc_applied') is True or field_qc_data.get('qc_applied') == 'Yes'):
+                                    # Since QC is now comprehensive, always use QC values when available
+                                    qc_entry = field_qc_data.get('qc_entry', '')
+                                    qc_confidence = field_qc_data.get('qc_confidence', '')
+                                    logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: has qc_entry = {bool(qc_entry)}, has qc_confidence = {bool(qc_confidence)}")
 
-                            logger.debug(f"[QC_MERGE_DEBUG] Mapping QC hash key {qc_hash_key} -> validation key {validation_key}")
+                                    # Always use QC entry and confidence when available (comprehensive QC)
+                                    if qc_entry and str(qc_entry).strip():
+                                        real_results[row_key][field_name]['value'] = qc_entry
+                                        logger.debug(f"[QC_MERGE] {field_name}: Using QC entry value: {qc_entry}")
 
-                            if validation_key in real_results:
-                                logger.debug(f"[QC_MERGE_DEBUG] Row {validation_key}: QC fields = {list(row_qc_data.keys())}")
-                                for field_name, field_qc_data in row_qc_data.items():
-                                    logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: QC data keys = {list(field_qc_data.keys()) if isinstance(field_qc_data, dict) else 'not dict'}")
-                                    logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: qc_applied = {field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
-
-                                    if isinstance(field_qc_data, dict) and (field_qc_data.get('qc_applied') is True or field_qc_data.get('qc_applied') == 'Yes'):
-                                        # Since QC is now comprehensive, always use QC values when available
-                                        qc_entry = field_qc_data.get('qc_entry', '')
-                                        qc_confidence = field_qc_data.get('qc_confidence', '')
-                                        logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: has qc_entry = {bool(qc_entry)}, has qc_confidence = {bool(qc_confidence)}")
-
-                                        # Always use QC entry and confidence when available (comprehensive QC)
-                                        if qc_entry and str(qc_entry).strip():
-                                            real_results[validation_key][field_name]['value'] = qc_entry
-                                            logger.debug(f"[QC_MERGE] {field_name}: Using QC entry value: {qc_entry}")
-
-                                        if qc_confidence and str(qc_confidence).strip():
-                                            real_results[validation_key][field_name]['confidence_level'] = qc_confidence
-                                            logger.debug(f"[QC_MERGE] {field_name}: Using QC confidence: {qc_confidence}")
+                                    if qc_confidence and str(qc_confidence).strip():
+                                        real_results[row_key][field_name]['confidence_level'] = qc_confidence
+                                        logger.debug(f"[QC_MERGE] {field_name}: Using QC confidence: {qc_confidence}")
                 logger.debug(f"[EXCEL_DEBUG] validation_results keys: {list(validation_results.keys())}")
                 logger.debug(f"[EXCEL_DEBUG] real_results type: {type(real_results)}, keys: {list(real_results.keys()) if isinstance(real_results, dict) else 'N/A'}")
                 if isinstance(real_results, dict) and real_results:
@@ -3844,38 +3834,29 @@ def handle_main_processing(event, context):
                 logger.debug(f"[QC_MERGE_FULL_DEBUG] QC results structure: {list(qc_results.keys())[:3]}")
                 logger.debug(f"[QC_MERGE_FULL_DEBUG] real_results keys sample: {list(real_results.keys())[:3]}")
 
-                # Create mapping from hash keys (QC) to numeric keys (validation results)
-                qc_hash_keys = list(qc_results.keys())
-                validation_numeric_keys = list(real_results.keys())
+                # FIXED: Both QC and validation results use hash keys - match them directly
+                # Previous bug: incorrectly mapped by position, causing cross-row contamination
+                for row_key, row_qc_data in qc_results.items():
+                    if row_key in real_results:
+                        logger.debug(f"[QC_MERGE_FULL_DEBUG] Row {row_key}: QC fields = {list(row_qc_data.keys())}")
+                        for field_name, field_qc_data in row_qc_data.items():
+                            logger.debug(f"[QC_MERGE_FULL_DEBUG] Field {field_name}: QC data keys = {list(field_qc_data.keys()) if isinstance(field_qc_data, dict) else 'not dict'}")
+                            logger.debug(f"[QC_MERGE_FULL_DEBUG] Field {field_name}: qc_applied = {field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
 
-                # Map QC hash keys to validation numeric keys by position
-                for i, qc_hash_key in enumerate(qc_hash_keys):
-                    if i < len(validation_numeric_keys):
-                        validation_key = validation_numeric_keys[i]
-                        row_qc_data = qc_results[qc_hash_key]
+                            if isinstance(field_qc_data, dict) and (field_qc_data.get('qc_applied') is True or field_qc_data.get('qc_applied') == 'Yes'):
+                                # Since QC is now comprehensive, always use QC values when available
+                                qc_entry = field_qc_data.get('qc_entry', '')
+                                qc_confidence = field_qc_data.get('qc_confidence', '')
+                                logger.debug(f"[QC_MERGE_FULL_DEBUG] Field {field_name}: has qc_entry = {bool(qc_entry)}, has qc_confidence = {bool(qc_confidence)}")
 
-                        logger.debug(f"[QC_MERGE_FULL_DEBUG] Mapping QC hash key {qc_hash_key} -> validation key {validation_key}")
+                                # Always use QC entry and confidence when available (comprehensive QC)
+                                if qc_entry and str(qc_entry).strip():
+                                    real_results[row_key][field_name]['value'] = qc_entry
+                                    logger.debug(f"[QC_MERGE_FULL] {field_name}: Using QC entry value: {qc_entry}")
 
-                        if validation_key in real_results:
-                            logger.debug(f"[QC_MERGE_FULL_DEBUG] Row {validation_key}: QC fields = {list(row_qc_data.keys())}")
-                            for field_name, field_qc_data in row_qc_data.items():
-                                logger.debug(f"[QC_MERGE_FULL_DEBUG] Field {field_name}: QC data keys = {list(field_qc_data.keys()) if isinstance(field_qc_data, dict) else 'not dict'}")
-                                logger.debug(f"[QC_MERGE_FULL_DEBUG] Field {field_name}: qc_applied = {field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
-
-                                if isinstance(field_qc_data, dict) and (field_qc_data.get('qc_applied') is True or field_qc_data.get('qc_applied') == 'Yes'):
-                                    # Since QC is now comprehensive, always use QC values when available
-                                    qc_entry = field_qc_data.get('qc_entry', '')
-                                    qc_confidence = field_qc_data.get('qc_confidence', '')
-                                    logger.debug(f"[QC_MERGE_FULL_DEBUG] Field {field_name}: has qc_entry = {bool(qc_entry)}, has qc_confidence = {bool(qc_confidence)}")
-
-                                    # Always use QC entry and confidence when available (comprehensive QC)
-                                    if qc_entry and str(qc_entry).strip():
-                                        real_results[validation_key][field_name]['value'] = qc_entry
-                                        logger.debug(f"[QC_MERGE_FULL] {field_name}: Using QC entry value: {qc_entry}")
-
-                                    if qc_confidence and str(qc_confidence).strip():
-                                        real_results[validation_key][field_name]['confidence_level'] = qc_confidence
-                                        logger.debug(f"[QC_MERGE_FULL] {field_name}: Using QC confidence: {qc_confidence}")
+                                if qc_confidence and str(qc_confidence).strip():
+                                    real_results[row_key][field_name]['confidence_level'] = qc_confidence
+                                    logger.debug(f"[QC_MERGE_FULL] {field_name}: Using QC confidence: {qc_confidence}")
             # Extract enhanced metrics from validation response
             enhanced_metrics = metadata.get('enhanced_metrics', {})
             # validation_metrics is nested inside enhanced_metrics
