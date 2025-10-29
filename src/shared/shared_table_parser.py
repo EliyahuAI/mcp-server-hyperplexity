@@ -198,7 +198,8 @@ class S3TableParser:
         return response['Body'].read()
 
     def parse_s3_table(self, bucket: str, key: str, sheet_name: Optional[str] = None,
-                      extract_formulas: bool = False, id_fields: Optional[List[str]] = None,
+                      extract_formulas: bool = False, extract_history: bool = False,
+                      id_fields: Optional[List[str]] = None,
                       use_focused: bool = True, save_cleaned: bool = True) -> Dict[str, Any]:
         """
         Parse Excel/CSV from S3 into standard JSON format
@@ -208,13 +209,15 @@ class S3TableParser:
             key: S3 object key
             sheet_name: Excel sheet name (optional, uses first sheet if not specified)
             extract_formulas: Whether to extract Excel formulas with descriptions (default: False)
+            extract_history: Whether to extract validation history from cell comments (default: False)
             id_fields: List of ID field names for row key generation (optional)
             use_focused: Whether to prefer focused/cleaned versions if available (default: True)
             save_cleaned: Whether to save cleaned version if cleaning is performed (default: True)
 
         Returns:
-            Structured table data with metadata, optionally including formulas.
-            If id_fields provided, each row will include a 'row_key' field.
+            Structured table data with metadata, optionally including formulas and history.
+            If id_fields provided, each row will include a '_row_key' field.
+            If extract_history=True, each row will include a '_history' dict with validation history.
         """
         try:
             # CRITICAL: Check for cached parsed JSON first to ensure row key consistency
@@ -255,7 +258,7 @@ class S3TableParser:
             elif filename.endswith(('.xlsx', '.xls')):
                 if not OPENPYXL_AVAILABLE:
                     raise ImportError("openpyxl is required for Excel file support")
-                result = self._parse_excel_content(file_content, filename, sheet_name, extract_formulas, id_fields)
+                result = self._parse_excel_content(file_content, filename, sheet_name, extract_formulas, extract_history, id_fields)
             else:
                 raise ValueError(f"Unsupported file format: {filename}")
 
@@ -675,8 +678,21 @@ class S3TableParser:
             self.logger.error(f"Failed to parse CSV content: {str(e)}")
             raise
     
-    def _parse_excel_content(self, file_content: bytes, filename: str, sheet_name: Optional[str] = None, extract_formulas: bool = False, id_fields: Optional[List[str]] = None) -> Dict[str, Any]:
-        """Parse Excel content into structured format"""
+    def _parse_excel_content(self, file_content: bytes, filename: str, sheet_name: Optional[str] = None, extract_formulas: bool = False, extract_history: bool = False, id_fields: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Parse Excel content into structured format.
+
+        Args:
+            file_content: Raw Excel file bytes
+            filename: Original filename
+            sheet_name: Sheet to parse (None = auto-detect, prefers "Updated Values")
+            extract_formulas: Extract formula information
+            extract_history: Extract validation history from cell comments
+            id_fields: ID field names for row key generation
+
+        Returns:
+            Parsed table data with row keys, and optionally formulas/history
+        """
         try:
             # Create temporary file
             with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
@@ -720,8 +736,9 @@ class S3TableParser:
                     self.logger.debug("Advanced table detector not available, using basic detection")
 
                 # Read data with robust table detection
-                if extract_formulas:
-                    # Get both cell objects and values for formula extraction
+                # Extract cell objects if we need formulas OR history (both need access to cell objects)
+                if extract_formulas or extract_history:
+                    # Get both cell objects and values for formula/history extraction
                     all_rows, all_cell_objects = self._extract_rows_with_formulas(worksheet)
                 else:
                     all_rows = list(worksheet.iter_rows(values_only=True))
@@ -904,6 +921,7 @@ class S3TableParser:
                         # After headers are found, keep ALL data rows (even sparse ones)
                         row_dict = {}
                         formula_dict = {} if extract_formulas else None
+                        history_dict = {} if extract_history else None
 
                         # Map data from original columns to headers using indices
                         for header_idx, header in enumerate(clean_headers):
@@ -925,6 +943,21 @@ class S3TableParser:
                                         formula_info = self._extract_formula_info(cell_obj, clean_headers, worksheet)
                                         if formula_info:
                                             formula_dict[header] = formula_info
+
+                            # Extract history from cell comments if requested
+                            if extract_history and all_cell_objects:
+                                actual_row_idx = table_start_row + 1 + row_idx
+                                if actual_row_idx < len(all_cell_objects) and header_idx < len(header_column_indices):
+                                    original_col_idx = header_column_indices[header_idx]
+                                    if original_col_idx < len(all_cell_objects[actual_row_idx]):
+                                        cell_obj = all_cell_objects[actual_row_idx][original_col_idx]
+                                        history_info = self._extract_history_from_cell(cell_obj, header, row_dict[header])
+                                        if history_info:
+                                            history_dict[header] = history_info
+
+                        # Attach history to row_dict if we extracted any
+                        if extract_history and history_dict:
+                            row_dict['_history'] = history_dict
 
                         temp_rows.append(row_dict)
                         if extract_formulas:
@@ -948,6 +981,7 @@ class S3TableParser:
                         # After headers are found, keep ALL data rows (even sparse ones)
                         row_dict = {}
                         formula_dict = {} if extract_formulas else None
+                        history_dict = {} if extract_history else None
 
                         for i, header in enumerate(clean_headers):
                             cell_value = row[i] if i < len(row) else None
@@ -961,6 +995,19 @@ class S3TableParser:
                                     formula_info = self._extract_formula_info(cell_obj, clean_headers, worksheet)
                                     if formula_info:
                                         formula_dict[header] = formula_info
+
+                            # Extract history from cell comments if requested
+                            if extract_history and all_cell_objects:
+                                actual_row_idx = table_start_row + 1 + row_idx
+                                if actual_row_idx < len(all_cell_objects) and i < len(all_cell_objects[actual_row_idx]):
+                                    cell_obj = all_cell_objects[actual_row_idx][i]
+                                    history_info = self._extract_history_from_cell(cell_obj, header, row_dict[header])
+                                    if history_info:
+                                        history_dict[header] = history_info
+
+                        # Attach history to row_dict if we extracted any
+                        if extract_history and history_dict:
+                            row_dict['_history'] = history_dict
 
                         temp_rows.append(row_dict)
                         if extract_formulas:
@@ -1992,6 +2039,65 @@ class S3TableParser:
                 'validation_history': {},
                 'file_timestamp': ''
             }
+
+    def _extract_history_from_cell(self, cell_obj, column_name: str, cell_value: str) -> Optional[Dict]:
+        """
+        Extract validation history from a single cell's comment.
+
+        Args:
+            cell_obj: Excel cell object with potential comment
+            column_name: Column name (for logging)
+            cell_value: Current cell value
+
+        Returns:
+            History dict if comment found, None otherwise
+            {
+                'prior_value': str,
+                'prior_confidence': str,
+                'original_value': str,  # Current cell value
+                'original_key_citation': str,
+                'original_sources': list[str],
+                'original_sources_full': list[str]
+            }
+
+        Note on timestamps:
+            Timestamp fields (prior_timestamp, original_timestamp) are intentionally
+            omitted to prevent cache invalidation. Timestamps change on every file read,
+            which would invalidate the parsed table cache unnecessarily. Since no current
+            code uses these fields, they are excluded for cache stability.
+            If needed in the future, timestamps can be added via post-processing from
+            the Validation Record sheet without affecting the cached parsed data.
+        """
+        if not cell_obj or not cell_value or not str(cell_value).strip():
+            return None
+
+        # Extract comment if it exists
+        comment_text = ""
+        if cell_obj.comment:
+            comment_text = cell_obj.comment.text if hasattr(cell_obj.comment, 'text') else str(cell_obj.comment)
+
+        if not comment_text:
+            return None
+
+        # Parse comment to extract historical data
+        parsed_comment = self._parse_validation_comment(comment_text)
+        if not parsed_comment:
+            return None
+
+        # Build field history
+        # IMPORTANT: Updated Values sheet cell = Original/Current (INPUT)
+        #            Updated Values sheet comment "Original Value:" = Prior (from Original Values sheet)
+        field_history = {
+            'prior_value': parsed_comment.get('original_value', ''),  # From comment's "Original Value:" field
+            'prior_confidence': parsed_comment.get('original_confidence', ''),
+            'original_value': str(cell_value).strip(),  # Updated Values sheet cell = INPUT
+            'original_confidence': parsed_comment.get('original_confidence', ''),
+            'original_key_citation': parsed_comment.get('key_citation', ''),
+            'original_sources': parsed_comment.get('sources', []),  # URLs for backward compatibility
+            'original_sources_full': parsed_comment.get('sources_full', [])  # Full citation text
+        }
+
+        return field_history
 
     def _parse_validation_comment(self, comment_text: str) -> Dict:
         """

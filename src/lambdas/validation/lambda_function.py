@@ -3011,7 +3011,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # CRITICAL: For continuations, load existing results from S3 to append to them
         validation_results = {}
-        all_qc_results = {}  # row_key -> field_name -> qc_data (must be initialized here for continuations)
+        # REMOVED: all_qc_results - QC data now embedded in validation_results[row_key]['_qc']
         existing_token_usage = {}
         existing_enhanced_metrics = {}
         skip_count = 0
@@ -3038,13 +3038,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 response_s3 = s3_client.get_object(Bucket=s3_bucket, Key=results_s3_key)
                 existing_results = json.loads(response_s3['Body'].read().decode('utf-8'))
 
-                # Load existing validation results and QC data
+                # Load existing validation results (QC data embedded in results)
                 validation_results = existing_results.get('validation_results', {})
-                all_qc_results = existing_results.get('qc_results', {})
+                # REMOVED: all_qc_results loading - QC data now in validation_results[row_key]['_qc']
                 existing_token_usage = existing_results.get('token_usage', {})
                 existing_enhanced_metrics = existing_results.get('enhanced_metrics', {})
 
-                logger.debug(f"[CONTINUATION_LOAD] Loaded {len(all_qc_results)} existing QC result sets")
+                logger.debug(f"[CONTINUATION_LOAD] Loaded {len(validation_results)} existing validation results with embedded QC")
 
                 # CRITICAL: Skip already-processed rows to avoid duplicate work
                 skip_count = len(validation_results)
@@ -3124,8 +3124,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         batches_without_claude = 0
         batch_manager = None  # Will be set in process_all_rows
 
-        # Track QC data across all rows
-        # NOTE: all_qc_results initialized earlier (line 2927) and loaded from S3 for continuations
+        # Track QC metrics across all rows
+        # NOTE: QC data embedded in validation_results[row_key]['_qc'] - no separate tracking needed
         qc_metrics_summary = {
             'total_rows_processed': 0,
             'total_fields_reviewed': 0,
@@ -3143,7 +3143,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
         
         async def process_all_rows(progress_queue):
-            nonlocal validation_results, total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, batch_timing_data, total_batches, total_expected_ai_calls, batches_with_claude, batches_without_claude, batch_manager, search_groups_count, all_qc_results, qc_metrics_summary
+            nonlocal validation_results, total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, batch_timing_data, total_batches, total_expected_ai_calls, batches_with_claude, batches_without_claude, batch_manager, search_groups_count, qc_metrics_summary
 
             # Thread-safe shared tracking of missing columns by search group
             # Format: {group_id: {column_name: {past_columns: [list], count: int}}}
@@ -3475,11 +3475,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     )
 
                                     # Save cumulative results to S3 WITH COST TRACKING
+                                    # NOTE: QC data embedded in validation_results[row_key]['_qc'] - no separate qc_results needed
                                     cumulative_results = {
-                                        'validation_results': validation_results,
+                                        'validation_results': validation_results,  # Contains embedded '_qc' data
                                         'token_usage': continuation_token_usage,  # [FIX] Include cost tracking
                                         'enhanced_metrics': continuation_enhanced_metrics,  # [FIX] Include enhanced metrics
-                                        'qc_results': all_qc_results,  # CRITICAL: Preserve QC data across continuations
                                         'batch_timing_data': all_batch_times,
                                         'continuation_metadata': {
                                             'batches_completed': batch_index + 1,
@@ -3707,7 +3707,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         async def process_row(session, row, row_idx, batch_manager=None, batch_number=None, progress_queue=None, guidance_by_group=None, missing_columns_tracker=None, tracker_lock=None):
             """Process a single row with progressive multiplexing."""
-            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, total_expected_ai_calls, qc_manager, all_qc_results, qc_metrics_summary, validator, config
+            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, total_expected_ai_calls, qc_manager, qc_metrics_summary, validator, config
 
             # Initialize guidance dict and tracker if not provided (fallback for backward compatibility)
             if guidance_by_group is None:
@@ -4024,12 +4024,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                                 # QC results are stored as metadata only - interface lambda will prioritize QC values for display
 
-                    # Store QC results for final response
+                    # Embed QC results directly in validation results (no separate mapping needed)
                     logger.debug(f"[QC_RESULTS_DEBUG] Row {row_idx}: qc_results_by_field = {qc_results_by_field}")
                     if qc_results_by_field:
-                        # Store QC results using hash key (for Excel compatibility)
-                        all_qc_results[row_key] = qc_results_by_field
-                        logger.debug(f"[QC_RESULTS_DEBUG] Stored QC results for row_idx {row_idx} with hash_key {row_key}: {len(qc_results_by_field)} fields")
+                        # Embed QC results directly in row_results under '_qc' key
+                        row_results['_qc'] = qc_results_by_field
+
+                        logger.debug(f"[QC_RESULTS_DEBUG] Embedded QC results in row_results for row_idx {row_idx} with hash_key {row_key}: {len(qc_results_by_field)} fields")
 
                         # Debug: Show the actual values being stored
                         for field_name, qc_data in qc_results_by_field.items():
@@ -5070,7 +5071,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Get QC fail rates for models parameter if QC was used
         qc_fail_rates_by_column = {}
-        if all_qc_results and qc_manager:
+        if qc_manager and qc_metrics_summary.get('total_rows_processed', 0) > 0:
             qc_fail_rates_by_column = qc_manager.cost_tracker.get_qc_fail_rates_by_column()
 
         # ========== COST_DEBUG: Pre-QC Cost Analysis ==========
@@ -5151,19 +5152,28 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
             # Convert set to list for JSON serialization
             qc_metrics_summary['qc_models_used'] = list(qc_metrics_summary.get('qc_models_used', set()))
+
+            # Extract QC data from embedded '_qc' in validation_results (for backward compatibility)
+            extracted_qc_results = {}
+            qc_row_count = 0
+            for row_key, row_data in validation_results.items():
+                if isinstance(row_data, dict) and '_qc' in row_data:
+                    extracted_qc_results[row_key] = row_data['_qc']
+                    qc_row_count += 1
+
             qc_response_data = {
-                'qc_results': all_qc_results,  # May be empty if no modifications
+                'qc_results': extracted_qc_results,  # Extracted from embedded data for backward compatibility
                 'qc_metrics': qc_metrics_summary
             }
             logger.debug(f"QC Summary: {qc_metrics_summary['total_rows_processed']} rows processed, "
                        f"{qc_metrics_summary['total_fields_reviewed']} fields reviewed, "
                        f"{qc_metrics_summary['total_fields_modified']} fields modified, "
                        f"${qc_metrics_summary.get('total_qc_cost', 0):.4f} cost")
-            logger.debug(f"[QC_RESPONSE_DEBUG] Including QC data in response - qc_results count: {len(all_qc_results)}, metrics: {qc_metrics_summary}")
-            logger.debug(f"[QC_RESPONSE_DEBUG] all_qc_results keys: {list(all_qc_results.keys())}")
-            if all_qc_results:
-                sample_key = list(all_qc_results.keys())[0]
-                sample_value = all_qc_results[sample_key]
+            logger.debug(f"[QC_RESPONSE_DEBUG] Extracted QC data from {qc_row_count} rows with embedded '_qc', metrics: {qc_metrics_summary}")
+            logger.debug(f"[QC_RESPONSE_DEBUG] extracted_qc_results keys: {list(extracted_qc_results.keys())}")
+            if extracted_qc_results:
+                sample_key = list(extracted_qc_results.keys())[0]
+                sample_value = extracted_qc_results[sample_key]
                 logger.debug(f"[QC_RESPONSE_DEBUG] Sample QC result - key: {sample_key}, fields: {list(sample_value.keys()) if isinstance(sample_value, dict) else 'Not a dict'}")
 
             # Log QC fail rate summary if available
@@ -5192,7 +5202,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         qc_enhanced_aggregated_metrics = aggregated_metrics.copy() if aggregated_metrics else {'providers': {}, 'totals': {}}
 
         # Add QC-specific provider tracking if QC was used
-        if all_qc_results and qc_manager:
+        if qc_manager and qc_metrics_summary.get('total_rows_processed', 0) > 0:
             qc_tracker_metrics = qc_manager.get_qc_metrics()
 
             # Add QC costs to the specific provider (anthropic for QC)
@@ -5489,10 +5499,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 }
 
-                # Include QC data if available (use direct variables, not from response)
-                # For async requests, response['body']['data'] doesn't include QC data
-                if all_qc_results:
-                    cumulative_results['qc_results'] = all_qc_results
+                # QC data is embedded in validation_results[row_key]['_qc'] - no separate save needed
+                # Removed: all_qc_results is deprecated
                 if qc_metrics_summary and qc_metrics_summary.get('total_rows_processed', 0) > 0:
                     cumulative_results['qc_metrics'] = qc_metrics_summary
 

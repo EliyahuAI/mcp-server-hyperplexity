@@ -951,8 +951,8 @@ def handle_async_completion_in_background_handler(event, context):
                     'statusCode': 200,
                     'body': {
                         'data': {
-                            'rows': async_validation_results['validation_results'],
-                            # CRITICAL: QC results and metrics must be in body.data to match sync format
+                            'rows': async_validation_results['validation_results'],  # Contains embedded '_qc' data
+                            # NOTE: qc_results extracted by validation lambda for backward compatibility
                             'qc_results': async_validation_results.get('qc_results', {}),
                             'qc_metrics': async_validation_results.get('qc_metrics', {})
                         },
@@ -1469,13 +1469,14 @@ def handle_main_processing(event, context):
 
             logger.debug(f"[PREVIEW_TABLE_DATA] Using ID fields for row key generation: {id_fields}")
 
-            # Parse table_data ONCE at the beginning (parser will generate row keys)
+            # Parse table_data ONCE at the beginning (parser will generate row keys AND extract history)
             from shared_table_parser import S3TableParser
             table_parser = S3TableParser()
             table_data = table_parser.parse_s3_table(
                 storage_manager.bucket_name,
                 actual_excel_s3_key,
                 extract_formulas=True,
+                extract_history=True,  # Extract validation history in same pass
                 id_fields=id_fields if id_fields else None
             )
 
@@ -1489,7 +1490,7 @@ def handle_main_processing(event, context):
                 'status': f'🔍 Running AI validation on {preview_max_rows} sample rows...',
                 'session_id': session_id
             }, "preview_progress_validation")
-            
+
             # Update start_time to when background handler actually begins validation processing
             if run_key:
                 update_run_status_for_session(
@@ -1500,18 +1501,15 @@ def handle_main_processing(event, context):
                     percent_complete=5
                 )
 
-            # Extract validation history once for both preview and full mode
+            # Extract validation history from parsed table data (history is embedded in _history field)
             validation_history = {}
             try:
-                logger.debug(f"[PREVIEW_HISTORY] Extracting validation history from {actual_excel_s3_key}")
-                history_data = table_parser.extract_validation_history(
-                    storage_manager.bucket_name,
-                    actual_excel_s3_key,
-                    parsed_data=table_data,
-                    id_fields=id_fields  # Pass id_fields for consistent row key generation
-                )
-                validation_history = history_data.get('validation_history', {})
-                logger.debug(f"[PREVIEW_HISTORY] Extracted history for {len(validation_history)} row keys")
+                # Convert row-embedded history to row_key-indexed format
+                for row in table_data.get('data', []):
+                    row_key = row.get('_row_key')
+                    if row_key and '_history' in row:
+                        validation_history[row_key] = row['_history']
+                logger.debug(f"[PREVIEW_HISTORY] Extracted history for {len(validation_history)} row keys from parsed data")
             except Exception as e:
                 logger.warning(f"[PREVIEW_HISTORY] Failed to extract validation history: {e}")
                 validation_history = {}
@@ -1624,40 +1622,57 @@ def handle_main_processing(event, context):
                 # Extract metadata first (use consistent structure)
                 real_results = validation_results.get('body', {}).get('data', {}).get('rows', {})
 
-                # Extract QC data if present (it's at the top level of validation_results, not in metadata)
-                qc_results = validation_results.get('qc_results', {})
+                # Extract QC metrics (still at top level for backward compatibility)
                 qc_metrics_data = validation_results.get('qc_metrics', {})
-                logger.debug(f"[QC_DEBUG] Extracted QC data - results: {len(qc_results)} rows, metrics: {qc_metrics_data.get('total_fields_reviewed', 0)} fields reviewed")
+
+                # Count rows with embedded QC data
+                qc_row_count = sum(1 for row_data in real_results.values() if isinstance(row_data, dict) and '_qc' in row_data)
+                logger.debug(f"[QC_DEBUG] Found {qc_row_count} rows with embedded '_qc' data, metrics: {qc_metrics_data.get('total_fields_reviewed', 0)} fields reviewed")
 
                 # Merge QC data into real_results for display purposes (QC values take precedence)
-                if qc_results:
-                    logger.debug(f"[QC_MERGE] Merging QC data into preview results for display")
-                    logger.debug(f"[QC_MERGE_DEBUG] QC results structure: {list(qc_results.keys())[:3]}")
-                    logger.debug(f"[QC_MERGE_DEBUG] real_results keys sample: {list(real_results.keys())[:3]}")
+                # QC data is now embedded in real_results[row_key]['_qc']
+                qc_merge_count = 0
+                for row_key, row_data in real_results.items():
+                    if not isinstance(row_data, dict) or '_qc' not in row_data:
+                        continue
 
-                    # FIXED: Both QC and validation results use hash keys - match them directly
-                    # Previous bug: incorrectly mapped by position, causing cross-row contamination
-                    for row_key, row_qc_data in qc_results.items():
-                        if row_key in real_results:
-                            logger.debug(f"[QC_MERGE_DEBUG] Row {row_key}: QC fields = {list(row_qc_data.keys())}")
-                            for field_name, field_qc_data in row_qc_data.items():
-                                logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: QC data keys = {list(field_qc_data.keys()) if isinstance(field_qc_data, dict) else 'not dict'}")
-                                logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: qc_applied = {field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
+                    row_qc_data = row_data['_qc']
+                    qc_merge_count += 1
 
-                                if isinstance(field_qc_data, dict) and (field_qc_data.get('qc_applied') is True or field_qc_data.get('qc_applied') == 'Yes'):
-                                    # Since QC is now comprehensive, always use QC values when available
-                                    qc_entry = field_qc_data.get('qc_entry', '')
-                                    qc_confidence = field_qc_data.get('qc_confidence', '')
-                                    logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: has qc_entry = {bool(qc_entry)}, has qc_confidence = {bool(qc_confidence)}")
+                    logger.debug(f"[QC_MERGE_DEBUG] Row {row_key}: QC fields = {list(row_qc_data.keys())}")
 
-                                    # Always use QC entry and confidence when available (comprehensive QC)
-                                    if qc_entry and str(qc_entry).strip():
-                                        real_results[row_key][field_name]['value'] = qc_entry
-                                        logger.debug(f"[QC_MERGE] {field_name}: Using QC entry value: {qc_entry}")
+                    for field_name, field_qc_data in row_qc_data.items():
+                        logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: QC data keys = {list(field_qc_data.keys()) if isinstance(field_qc_data, dict) else 'not dict'}")
+                        logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: qc_applied = {field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
 
-                                    if qc_confidence and str(qc_confidence).strip():
-                                        real_results[row_key][field_name]['confidence_level'] = qc_confidence
-                                        logger.debug(f"[QC_MERGE] {field_name}: Using QC confidence: {qc_confidence}")
+                        if isinstance(field_qc_data, dict) and (field_qc_data.get('qc_applied') is True or field_qc_data.get('qc_applied') == 'Yes'):
+                            # Since QC is now comprehensive, always use QC values when available
+                            qc_entry = field_qc_data.get('qc_entry', '')
+                            qc_confidence = field_qc_data.get('qc_confidence', '')
+                            logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: has qc_entry = {bool(qc_entry)}, has qc_confidence = {bool(qc_confidence)}")
+
+                            # Check field exists in row_data before merging (prevent KeyError)
+                            if field_name not in row_data:
+                                logger.warning(f"[QC_MERGE] Field {field_name} not found in row_data, skipping QC merge for this field")
+                                continue
+
+                            if not isinstance(row_data[field_name], dict):
+                                logger.warning(f"[QC_MERGE] Field {field_name} in row_data is not a dict, skipping QC merge for this field")
+                                continue
+
+                            # Always use QC entry and confidence when available (comprehensive QC)
+                            if qc_entry and str(qc_entry).strip():
+                                row_data[field_name]['value'] = qc_entry
+                                logger.debug(f"[QC_MERGE] {field_name}: Using QC entry value: {qc_entry}")
+
+                            if qc_confidence and str(qc_confidence).strip():
+                                row_data[field_name]['confidence_level'] = qc_confidence
+                                logger.debug(f"[QC_MERGE] {field_name}: Using QC confidence: {qc_confidence}")
+
+                if qc_merge_count > 0:
+                    logger.debug(f"[QC_MERGE] Merged QC data from {qc_merge_count} rows with embedded '_qc'")
+                    logger.debug(f"[QC_MERGE] QC values now embedded in real_results - no separate qc_results dict needed")
+
                 logger.debug(f"[EXCEL_DEBUG] validation_results keys: {list(validation_results.keys())}")
                 logger.debug(f"[EXCEL_DEBUG] real_results type: {type(real_results)}, keys: {list(real_results.keys()) if isinstance(real_results, dict) else 'N/A'}")
                 if isinstance(real_results, dict) and real_results:
@@ -2078,7 +2093,8 @@ def handle_main_processing(event, context):
                     session_version_count = 1
 
                 # Create the markdown table for the response
-                markdown_table = create_markdown_table_from_results(real_results, 3, actual_config_s3_key, S3_UNIFIED_BUCKET, qc_results)
+                # Note: QC data already merged into real_results, no separate qc_results needed
+                markdown_table = create_markdown_table_from_results(real_results, 3, actual_config_s3_key, S3_UNIFIED_BUCKET)
 
                 preview_payload = {
                     "status": "COMPLETED", "session_id": session_id,
@@ -3068,16 +3084,17 @@ def handle_main_processing(event, context):
             from shared_table_parser import S3TableParser
             table_parser = S3TableParser()
 
-            # Parse table to get structure and row count (parser will generate row keys)
+            # Parse table to get structure and row count (parser will generate row keys AND extract history)
             table_data = table_parser.parse_s3_table(
                 storage_manager.bucket_name,
                 actual_excel_s3_key,
                 extract_formulas=True,
+                extract_history=True,  # Extract validation history in same pass
                 id_fields=id_fields if id_fields else None
             )
             total_rows_in_file = len(table_data.get('data', []))
             rows_to_process = min(max_rows, total_rows_in_file) if max_rows else total_rows_in_file
-            logger.info(f"Parser generated row keys for {total_rows_in_file} rows")
+            logger.info(f"Parser generated row keys and extracted history for {total_rows_in_file} rows")
 
             # The actual batching loop
             all_validation_results = {}
@@ -3151,20 +3168,17 @@ def handle_main_processing(event, context):
 
                 logger.debug(f"[PAYLOAD_GENERATION] Processing {len(excel_rows)} rows (row keys already generated by parser)")
 
-                # Load validation history using new extract_validation_history method
+                # Extract validation history from parsed table data (history is embedded in _history field)
                 validation_history = {}
                 try:
-                    # Use S3TableParser to extract validation history from Updated Values sheet
-                    # Pass parsed table_data so row keys match (includes deduplication)
-                    history_data = table_parser.extract_validation_history(
-                        storage_manager.bucket_name,
-                        actual_excel_s3_key,
-                        parsed_data=table_data,
-                        id_fields=id_fields  # Pass id_fields for consistent row key generation
-                    )
+                    # Convert row-embedded history to row_key-indexed format
+                    for row in excel_rows:
+                        row_key = row.get('_row_key')
+                        if row_key and '_history' in row:
+                            validation_history[row_key] = row['_history']
 
-                    # Extract the validation_history dict from the returned structure
-                    original_validation_history = history_data.get('validation_history', {})
+                    # Use validation_history directly (already in correct format)
+                    original_validation_history = validation_history
 
                     logger.debug(f"[PAYLOAD_GENERATION] Loaded validation history for {len(original_validation_history)} row keys from Excel")
 
@@ -4105,7 +4119,8 @@ def handle_main_processing(event, context):
                 total_rows_processed = validation_results.get('total_processed_rows', len(real_results) if real_results else 0)
                 
                 # Create the markdown table for the response
-                markdown_table = create_markdown_table_from_results(real_results, 3, actual_config_s3_key, S3_UNIFIED_BUCKET, qc_results)
+                # Note: QC data already merged into real_results, no separate qc_results needed
+                markdown_table = create_markdown_table_from_results(real_results, 3, actual_config_s3_key, S3_UNIFIED_BUCKET)
                 
                 # --- Start of Complex Estimations Logic ---
                 

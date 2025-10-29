@@ -18,6 +18,9 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
     Always shows the first 3 rows in a transposed table format with confidence emojis.
     Fields are ordered by: ID fields first, then by search_group ascending, with a Search Group column at the end.
     ID fields show blue circles (🔵) with their actual values from the original Excel data.
+
+    Note: qc_results parameter is deprecated and ignored. QC data is now embedded in validation_results
+          by the background handler before this function is called.
     """
     if not validation_results:
         return "No validation results available."
@@ -140,18 +143,10 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
                 confidence = field_result.get('confidence_level', 'UNKNOWN')
                 value = field_result.get('value', '')
 
-                # Check if QC results are available and override validation data (behind the scenes)
-                if qc_results and row_key in qc_results:
-                    row_qc_data = qc_results[row_key]
-                    if field_name in row_qc_data:
-                        field_qc_data = row_qc_data[field_name]
-                        if isinstance(field_qc_data, dict) and field_qc_data.get('qc_applied', False):
-                            # Use QC data when qc_applied=True, even if values are empty
-                            # This ensures QC-cleared values (empty strings) are properly displayed
-                            confidence = field_qc_data.get('qc_confidence', confidence)
-                            value = field_qc_data.get('qc_entry', value)
+                # NOTE: QC data already merged into validation_results by background handler
+                # No need to check qc_results separately - values/confidence already reflect QC changes
 
-                # Override confidence for IGNORED fields to show blue emoji (after QC check)
+                # Override confidence for IGNORED fields to show blue emoji
                 if config.get('importance') == 'IGNORED':
                     confidence = 'ID'
 
