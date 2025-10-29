@@ -4288,6 +4288,9 @@ def handle_main_processing(event, context):
                 if event.get('async_completion_mode') and event.get('table_data'):
                     table_data = event['table_data']
                     logger.debug(f"[ASYNC_COMPLETION] Using restored table_data from delegation context")
+                elif 'table_data' in locals() and table_data is not None:
+                    # Reuse table_data that was already parsed earlier in this invocation
+                    logger.debug(f"[TABLE_REUSE] Reusing table_data from earlier in this invocation ({len(table_data.get('data', []))} rows)")
                 else:
                     # Parse table data for sync processing or if not available from context
                     try:
