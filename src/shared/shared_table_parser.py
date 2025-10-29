@@ -217,6 +217,14 @@ class S3TableParser:
             If id_fields provided, each row will include a 'row_key' field.
         """
         try:
+            # CRITICAL: Check for cached parsed JSON first to ensure row key consistency
+            # This prevents regenerating row keys with different id_fields
+            parsed_cache_key = self._get_parsed_cache_key(key)
+            cached_result = self._try_load_parsed_cache(bucket, parsed_cache_key, id_fields)
+            if cached_result:
+                self.logger.info(f"[SUCCESS] Using cached parsed table from {parsed_cache_key}")
+                return cached_result
+
             # Check for focused version if enabled
             actual_key = key
             is_focused = False
@@ -308,11 +316,171 @@ class S3TableParser:
                         except Exception as e:
                             self.logger.error(f"[ERROR] Failed to upload cleaned file to S3: {str(e)}")
 
+            # Save parsed JSON to cache for future use
+            # This ensures row keys are never regenerated with different id_fields
+            self._save_parsed_cache(bucket, parsed_cache_key, result, id_fields)
+
             return result
 
         except Exception as e:
             self.logger.error(f"Failed to parse S3 table {bucket}/{key}: {str(e)}")
             raise
+
+    def _get_parsed_cache_key(self, key: str) -> str:
+        """
+        Generate the cache key for a parsed table.
+
+        Args:
+            key: Original S3 key (e.g., 'uploads/table.xlsx')
+
+        Returns:
+            Cache key with _parsed.json suffix (e.g., 'uploads/table_parsed.json')
+        """
+        # Split the key into directory and filename
+        if '/' in key:
+            directory, filename = key.rsplit('/', 1)
+        else:
+            directory = ''
+            filename = key
+
+        # Remove file extension and add _parsed.json
+        base_name = Path(filename).stem
+        cache_filename = f"{base_name}_parsed.json"
+
+        # Reconstruct the full cache key
+        if directory:
+            cache_key = f"{directory}/{cache_filename}"
+        else:
+            cache_key = cache_filename
+
+        return cache_key
+
+    def _try_load_parsed_cache(self, bucket: str, cache_key: str, id_fields: Optional[List[str]]) -> Optional[Dict]:
+        """
+        Attempt to load cached parsed JSON from S3.
+
+        Args:
+            bucket: S3 bucket name
+            cache_key: Cache key (with _parsed.json suffix)
+            id_fields: ID fields that should match the cache
+
+        Returns:
+            Cached parsed data if valid, None otherwise
+        """
+        try:
+            # Get the original source file key (remove _parsed.json suffix)
+            if cache_key.endswith('_parsed.json'):
+                # Reconstruct original key - need to determine file type
+                # Try common extensions in order of likelihood
+                base_key = cache_key[:-len('_parsed.json')]
+
+                # Check if any of these files exist
+                for ext in ['.xlsx', '.csv', '.xls']:
+                    original_key = f"{base_key}{ext}"
+                    try:
+                        # Get metadata for both files
+                        cache_metadata = self.s3_client.head_object(Bucket=bucket, Key=cache_key)
+                        original_metadata = self.s3_client.head_object(Bucket=bucket, Key=original_key)
+
+                        cache_modified = cache_metadata['LastModified']
+                        original_modified = original_metadata['LastModified']
+
+                        # Check if cache is newer than source
+                        if cache_modified < original_modified:
+                            self.logger.info(f"[CACHE_SKIP] Cache is older than source file. Cache: {cache_modified}, Source: {original_modified}")
+                            return None
+
+                        # Cache is valid, proceed to load it
+                        break
+                    except ClientError as e:
+                        if e.response.get('Error', {}).get('Code') in ['404', 'NoSuchKey']:
+                            continue  # Try next extension
+                        raise
+                else:
+                    # No original file found
+                    self.logger.warning(f"[CACHE_SKIP] Could not find original source file for cache validation")
+                    return None
+
+            # Try to load the cached file
+            self.logger.debug(f"[CACHE_CHECK] Attempting to load cache from s3://{bucket}/{cache_key}")
+            response = self.s3_client.get_object(Bucket=bucket, Key=cache_key)
+            cached_data = json.loads(response['Body'].read())
+
+            # Validate that the cache has the expected structure
+            if 'metadata' not in cached_data or 'data' not in cached_data:
+                self.logger.warning(f"[CACHE_SKIP] Cache missing required structure (metadata/data)")
+                return None
+
+            # Validate that id_fields match what was used to generate the cache
+            cached_id_fields = cached_data.get('metadata', {}).get('id_fields')
+
+            # Handle None vs empty list comparison
+            if id_fields != cached_id_fields:
+                self.logger.warning(
+                    f"[CACHE_SKIP] ID fields mismatch. "
+                    f"Requested: {id_fields}, Cached: {cached_id_fields}"
+                )
+                return None
+
+            # Verify that rows have _row_key if id_fields were used
+            if id_fields and cached_data.get('data'):
+                first_row = cached_data['data'][0]
+                if '_row_key' not in first_row:
+                    self.logger.warning(f"[CACHE_SKIP] Cache missing _row_key despite having id_fields")
+                    return None
+
+            self.logger.info(
+                f"[CACHE_HIT] Loaded cached parsed table with {len(cached_data.get('data', []))} rows "
+                f"and id_fields={id_fields}"
+            )
+            return cached_data
+
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', '')
+            if error_code in ['404', 'NoSuchKey']:
+                self.logger.debug(f"[CACHE_MISS] No cache found at s3://{bucket}/{cache_key}")
+            else:
+                self.logger.warning(f"[CACHE_ERROR] Failed to load cache: {str(e)}")
+            return None
+        except Exception as e:
+            self.logger.warning(f"[CACHE_ERROR] Failed to load/validate cache: {str(e)}")
+            return None
+
+    def _save_parsed_cache(self, bucket: str, cache_key: str, parsed_data: Dict, id_fields: Optional[List[str]]) -> None:
+        """
+        Save parsed JSON to S3 cache for future use.
+
+        Args:
+            bucket: S3 bucket name
+            cache_key: Cache key (with _parsed.json suffix)
+            parsed_data: Parsed table data to cache
+            id_fields: ID fields used for row key generation
+        """
+        try:
+            # Add id_fields to metadata for validation on cache load
+            if 'metadata' not in parsed_data:
+                parsed_data['metadata'] = {}
+            parsed_data['metadata']['id_fields'] = id_fields
+
+            # Serialize to JSON
+            cache_content = json.dumps(parsed_data, indent=2, ensure_ascii=False)
+
+            # Upload to S3
+            self.s3_client.put_object(
+                Bucket=bucket,
+                Key=cache_key,
+                Body=cache_content.encode('utf-8'),
+                ContentType='application/json'
+            )
+
+            self.logger.info(
+                f"[CACHE_SAVE] Saved parsed table cache to s3://{bucket}/{cache_key} "
+                f"with {len(parsed_data.get('data', []))} rows and id_fields={id_fields}"
+            )
+
+        except Exception as e:
+            # Don't fail the entire parsing operation if cache save fails
+            self.logger.warning(f"[CACHE_ERROR] Failed to save cache: {str(e)}")
 
     def _generate_csv_from_data(self, parsed_data: Dict[str, Any]) -> str:
         """Generate CSV content from parsed data structure."""
