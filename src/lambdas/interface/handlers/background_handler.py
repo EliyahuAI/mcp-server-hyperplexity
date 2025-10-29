@@ -1507,7 +1507,8 @@ def handle_main_processing(event, context):
                 history_data = table_parser.extract_validation_history(
                     storage_manager.bucket_name,
                     actual_excel_s3_key,
-                    parsed_data=table_data
+                    parsed_data=table_data,
+                    id_fields=id_fields  # Pass id_fields for consistent row key generation
                 )
                 validation_history = history_data.get('validation_history', {})
                 logger.debug(f"[PREVIEW_HISTORY] Extracted history for {len(validation_history)} row keys")
@@ -3158,7 +3159,8 @@ def handle_main_processing(event, context):
                     history_data = table_parser.extract_validation_history(
                         storage_manager.bucket_name,
                         actual_excel_s3_key,
-                        parsed_data=table_data
+                        parsed_data=table_data,
+                        id_fields=id_fields  # Pass id_fields for consistent row key generation
                     )
 
                     # Extract the validation_history dict from the returned structure

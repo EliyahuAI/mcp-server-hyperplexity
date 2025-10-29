@@ -1811,7 +1811,7 @@ class S3TableParser:
 
         return base_description
 
-    def extract_validation_history(self, bucket: str, key: str, parsed_data: Dict[str, Any] = None) -> Dict:
+    def extract_validation_history(self, bucket: str, key: str, parsed_data: Dict[str, Any] = None, id_fields: Optional[List[str]] = None) -> Dict:
         """
         Extract validation history from Updated Values sheet + Validation Record.
 
@@ -1819,6 +1819,7 @@ class S3TableParser:
             bucket: S3 bucket name
             key: S3 object key for previously validated Excel file
             parsed_data: Already-parsed data with row keys (optional, will parse if not provided)
+            id_fields: ID field names for row key generation (used in fallback parsing)
 
         Returns:
             {
@@ -1844,10 +1845,9 @@ class S3TableParser:
 
             # Parse the file if not already parsed (to get row keys with proper deduplication)
             if not parsed_data:
-                self.logger.info("No parsed_data provided, parsing file to get row keys")
-                # Note: We don't have id_fields here, so this will use full row hash
-                # This is a fallback - callers should provide parsed_data
-                parsed_data = self.parse_s3_table(bucket, key, sheet_name="Updated Values")
+                self.logger.info(f"No parsed_data provided, parsing file with id_fields={id_fields}")
+                # Parse with id_fields to ensure consistent row key generation
+                parsed_data = self.parse_s3_table(bucket, key, sheet_name="Updated Values", id_fields=id_fields)
 
             # Extract row keys from parsed data
             parsed_rows = parsed_data.get('data', [])
