@@ -394,6 +394,16 @@ class RowDiscovery:
             # Extract final rows
             result['final_rows'] = consolidation_result['final_rows']
 
+            # Send discovered rows to frontend in real-time
+            if websocket_callback and result['final_rows']:
+                websocket_callback(
+                    status='Discovered rows - reviewing quality...',
+                    progress_percent=55,
+                    discovered_rows=result['final_rows'],
+                    total_discovered=len(result['final_rows'])
+                )
+                logger.info(f"[DISCOVERY] Sent {len(result['final_rows'])} discovered rows to frontend")
+
             # Keep all candidates before filtering (for later use)
             all_candidates_before_filter = []
             for stream in successful_streams:

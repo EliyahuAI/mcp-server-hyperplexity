@@ -857,6 +857,17 @@ async def execute_full_table_generation(
                 progress_percent = kwargs.pop('progress_percent', 25)
                 status = kwargs.pop('status', 'Discovering rows...')
 
+                # If discovered_rows are included, format them with rounded scores
+                if 'discovered_rows' in kwargs:
+                    raw_rows = kwargs.pop('discovered_rows')
+                    kwargs['discovered_rows'] = [
+                        {
+                            "id_values": row.get("id_values", {}),
+                            "row_score": round(row.get("match_score", 0), 2)
+                        }
+                        for row in raw_rows[:15]  # First 15 rows only
+                    ]
+
                 send_execution_progress(
                     session_id=session_id,
                     conversation_id=conversation_id,
@@ -987,52 +998,13 @@ async def execute_full_table_generation(
             except Exception as e:
                 logger.error(f"[EXECUTION] Failed to update template CSV: {e}", exc_info=True)
 
-            # Prepare discovered rows preview for frontend (first 15 rows with id_values only)
-            # This is Info Box 3: "Discovered Rows" (shown after discovery, before QC)
-            # Note: At this point, rows have 'match_score' from consolidation (not 'row_score' yet)
-            discovered_rows_preview = [
-                {
-                    "id_values": row.get("id_values", {}),
-                    "row_score": row.get("match_score", 0)  # Use match_score pre-QC
-                }
-                for row in final_rows[:15]  # First 15 rows only
-            ]
+            # Track original discovered count for later (before retrigger modifies final_rows)
+            # Note: Discovered rows are now sent in real-time from row_discovery.py
             total_discovered_count = len(final_rows)
+            original_discovered_count = total_discovered_count
 
             logger.info(
-                f"[DEBUG] Discovered rows preview created: "
-                f"{len(discovered_rows_preview)} rows, total={total_discovered_count}"
-            )
-
-            # Send progress update with discovered_rows
-            # FRONTEND IMPLEMENTATION NOTE (Info Box 3):
-            # Display "Discovered Rows" after row discovery completes
-            # - Header: "Discovered Rows: X total" (use green button color to match success)
-            # - Show first 10-15 rows with ID values only
-            # - Display format: "{ID Column 1}: {value}, {ID Column 2}: {value}, ..."
-            # - Show "+Y more rows" if total_discovered > 15
-            # - This box will be UPDATED after QC to show "Approved Rows"
-            logger.info(
-                f"[DEBUG] Sending WebSocket with discovered_rows: "
-                f"count={len(discovered_rows_preview)}, total={total_discovered_count}"
-            )
-            logger.info(
-                f"[DEBUG] Sample discovered_rows data: {discovered_rows_preview[:2] if discovered_rows_preview else 'NONE'}"
-            )
-
-            send_execution_progress(
-                session_id=session_id,
-                conversation_id=conversation_id,
-                current_step=2,
-                total_steps=4,
-                status='Reviewing and prioritizing rows by relevance, reliability, and recency...',
-                progress_percent=55,
-                discovered_rows=discovered_rows_preview,  # First 15 rows for display
-                total_discovered=total_discovered_count   # Total count
-            )
-
-            logger.info(
-                f"[DEBUG] WebSocket message sent for step 2 with discovered_rows"
+                f"[DISCOVERY] Discovery complete: {total_discovered_count} rows found"
             )
 
         except Exception as e:
@@ -1275,6 +1247,13 @@ async def execute_full_table_generation(
                             )
 
                     # Merge new rows with existing approved rows (deduplicate by ID values)
+                    # IMPORTANT: Reset final_rows to only contain approved rows from first QC
+                    # Second QC will see:
+                    #   (1) Approved rows from QC1 (with their qc_score from QC1)
+                    #   (2) New rows from retrigger (with their match_score from discovery)
+                    # Second QC doesn't know about QC1 - it just evaluates all rows it sees
+                    final_rows = list(approved_rows)  # Start fresh with only approved rows
+
                     existing_ids = set()
                     for row in approved_rows:
                         id_values = row.get('id_values', {})
@@ -1283,7 +1262,7 @@ async def execute_full_table_generation(
                             id_key = tuple(sorted(id_values.items()))
                             existing_ids.add(id_key)
 
-                    # Add new rows that don't duplicate existing
+                    # Add new rows that don't duplicate existing approved rows
                     merged_count = 0
                     for new_row in new_rows:
                         id_values = new_row.get('id_values', {})
@@ -1294,7 +1273,12 @@ async def execute_full_table_generation(
                                 merged_count += 1
                                 existing_ids.add(id_key)
 
-                    logger.info(f"[RETRIGGER] Merged {merged_count} new unique rows, total now: {len(final_rows)}")
+                    logger.info(f"[RETRIGGER] Merged {merged_count} new unique rows with {len(approved_rows)} approved rows, total now: {len(final_rows)}")
+
+                    # Update original_discovered_count to include retrigger rows
+                    # This ensures the frontend sees the total cumulative count, not a shrinking number
+                    original_discovered_count = original_discovered_count + merged_count
+                    logger.info(f"[RETRIGGER] Updated original_discovered_count to {original_discovered_count} (includes retrigger rows)")
 
                     # Save merged discovery results
                     merged_discovery_result = {
@@ -1333,7 +1317,7 @@ async def execute_full_table_generation(
                 approved_rows = final_rows
                 break
 
-        # Store final approved rows
+        # Store final approved rows (second QC has full authority)
         result['approved_rows'] = approved_rows
         result['row_count'] = len(approved_rows)
 
@@ -1378,13 +1362,28 @@ async def execute_full_table_generation(
         approved_rows_preview = [
             {
                 "id_values": row.get("id_values", {}),
-                "row_score": row.get("row_score", row.get("match_score", 0))  # row_score from QC, fallback to match_score
+                "row_score": round(row.get("row_score", row.get("match_score", 0)), 2)  # Round to 2 decimal places
             }
             for row in approved_rows[:15]  # First 15 approved rows only
         ]
 
         # Extract QC summary for frontend display
         qc_summary = qc_result.get('qc_summary', {}) if qc_result else {}
+
+        # For retrigger cases, simplify QC summary to avoid confusion
+        # (promoted/demoted counts are messy when rows go through 2 QC rounds)
+        if retry_count > 0:
+            total_reviewed = qc_result.get('total_reviewed', len(approved_rows) + qc_summary.get('rejected', 0))
+            rejected = qc_summary.get('rejected', 0)
+            qc_summary = {
+                'total_reviewed': total_reviewed,
+                'approved': len(approved_rows),
+                'rejected': rejected,
+                'rejection_rate': round(rejected / total_reviewed, 2) if total_reviewed > 0 else 0,
+                'rounds': 2,  # Indicate 2 rounds of search and QC were performed
+                'note': '2 rounds of search and QC'
+            }
+            logger.info(f"[QC] Retrigger QC summary simplified: {len(approved_rows)} approved, {rejected} rejected from {total_reviewed} total (2 rounds)")
 
         logger.info(
             f"[DEBUG] Sending WebSocket with approved_rows: "
@@ -1400,16 +1399,15 @@ async def execute_full_table_generation(
         # - Display format: "{ID Column 1}: {value}, {ID Column 2}: {value}, ..."
         # - Show "+Z more rows" if total_approved > 15
         # - Include QC summary stats if available:
-        #   * Promoted rows: rows upgraded from lower quality
-        #   * Demoted rows: rows downgraded but kept
-        #   * Rejected rows: rows removed from final set
-        # - QC summary display (if available): "QC Review: +X promoted, -Y rejected"
+        #   * Single QC: Promoted/demoted/rejected counts
+        #   * Retrigger (2 rounds): Simplified to show rejection_rate and note '2 rounds of search and QC'
+        # - QC summary display: "QC Review: +X promoted, -Y rejected" (single) or "Y% rejected (2 rounds)" (retrigger)
 
         # Build kwargs for additional fields
         additional_fields = {
             'approved_rows': approved_rows_preview,  # First 15 rows for display
             'total_approved': len(approved_rows),
-            'total_discovered': len(final_rows),  # Total before QC filtering
+            'total_discovered': original_discovered_count,  # Use tracked count (includes retrigger rows, doesn't shrink)
             'qc_summary': qc_summary  # QC summary with promoted/demoted/rejected counts
         }
 

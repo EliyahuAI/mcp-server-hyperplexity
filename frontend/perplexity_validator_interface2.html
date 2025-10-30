@@ -5333,7 +5333,10 @@
                     return;
                 }
 
-                console.log('[DEBUG] Found progress content, building rows box');
+                console.log('[DEBUG] Found progress content, building/updating rows box');
+
+                // Check if rows box already exists (for incremental updates)
+                let existingRowsBox = card.querySelector('.discovered-rows-box');
 
                 // Build rows list (top 10-15 rows)
                 const rowsToShow = discoveredRows.slice(0, 15);
@@ -5357,22 +5360,38 @@
                     ? `<br><em>+ ${totalCount - 15} more rows</em>`
                     : '';
 
-                // Create rows box HTML (Primary color - green)
-                const rowsBoxHtml = `
-                    <div class="message discovered-rows-box" data-total-count="${totalCount}" style="margin-bottom: 1rem; background-color: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7;">
-                        <span class="message-icon">ℹ️</span>
-                        <div class="discovered-rows-content">
-                            <strong>Discovered Rows: <span class="row-count-text">${totalCount} total</span></strong><br>
-                            ${rowsListHtml}${moreRowsHtml}
+                if (existingRowsBox) {
+                    // UPDATE existing box (for real-time updates)
+                    console.log('[DEBUG] Updating existing rows box');
+                    existingRowsBox.setAttribute('data-total-count', totalCount);
+                    const rowCountText = existingRowsBox.querySelector('.row-count-text');
+                    if (rowCountText) {
+                        rowCountText.textContent = `${totalCount} total`;
+                    }
+                    const rowsContent = existingRowsBox.querySelector('.discovered-rows-content');
+                    if (rowsContent) {
+                        rowsContent.innerHTML = `<strong>Discovered Rows: <span class="row-count-text">${totalCount} total</span></strong><br>` +
+                            rowsListHtml + moreRowsHtml;
+                    }
+                } else {
+                    // CREATE new box (first time)
+                    console.log('[DEBUG] Creating new rows box');
+                    const rowsBoxHtml = `
+                        <div class="message discovered-rows-box" data-total-count="${totalCount}" style="margin-bottom: 1rem; background-color: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7;">
+                            <span class="message-icon">ℹ️</span>
+                            <div class="discovered-rows-content">
+                                <strong>Discovered Rows: <span class="row-count-text">${totalCount} total</span></strong><br>
+                                ${rowsListHtml}${moreRowsHtml}
+                            </div>
                         </div>
-                    </div>
-                `;
+                    `;
+                    progressContent.innerHTML += rowsBoxHtml;
+                }
 
-                // Add to progress content
-                progressContent.innerHTML += rowsBoxHtml;
-
-                // Scroll card into view
-                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Scroll card into view (only on first creation, not updates)
+                if (!existingRowsBox) {
+                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
             }
 
             function updateRowsBoxWithApproved(conversationId, approvedRows, totalApproved, qcSummary, totalDiscovered) {

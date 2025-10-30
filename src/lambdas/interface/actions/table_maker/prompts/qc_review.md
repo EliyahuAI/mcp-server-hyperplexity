@@ -261,14 +261,27 @@ Feedback from discovery workers about which domains were helpful or problematic.
 
 ### How to Request Retrigger Discovery
 
-If results are insufficient and you believe a different search strategy could help, you can request ONE additional discovery cycle.
+**When to Retrigger:**
+
+You should request a retrigger ONLY when ALL of these conditions are met:
+
+1. **Insufficient Quality Rows**: Fewer than 4 rows meet the hard requirements (would be kept after QC)
+2. **Confidence in Better Strategy**: You have identified a specific, concrete search approach that is likely to yield better results
+3. **Clear Deficiency**: You can articulate what was wrong with the current search strategy and how a new approach would address it
+
+**When NOT to Retrigger:**
+
+- If 4+ rows meet hard requirements (even if soft requirements aren't fully met)
+- If the topic is genuinely rare/niche and unlikely to yield more results
+- If you cannot identify a meaningfully different search strategy
+- If the current search strategy was already well-designed and comprehensive
 
 **Provide this field in your response:**
 
 ```json
 "retrigger_discovery": {
   "should_retrigger": true,
-  "reason": "Why retrigger is needed - what was wrong with current approach",
+  "reason": "Clear explanation: (1) Why current results are insufficient, (2) What was wrong with current search approach, (3) Why new strategy is likely to succeed",
   "new_subdomains": [
     {
       "name": "Completely New Subdomain Name",
@@ -300,8 +313,8 @@ If results are insufficient and you believe a different search strategy could he
 - **Specify COMPLETELY NEW subdomains**, not modifications of existing ones. Redesign the search strategy from scratch.
 - You can optionally adjust requirements (make them more/less strict) or excluded domain filters
 - **You can only modify EXCLUDED domains, not included domains.** Included domains are set by the user and should not be changed.
-- This will run ONE additional discovery cycle and merge results with existing rows (deduplication will be applied)
-- Only use this if you genuinely believe different searches will find better results
+- This will run ONE additional discovery cycle
+- Only use this if you meet ALL conditions above
 - If you don't want to retrigger, omit this field or set should_retrigger: false
 
 ---
