@@ -72,7 +72,7 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
     
     # Then add any validation fields not in config (excluding internal/meta fields)
     for field_name in sorted(list(validation_field_names)): # sort for consistent order
-        if field_name not in field_keys and field_name not in ['holistic_validation', 'reasons', 'next_check', '_raw_responses', 'validation_history']:
+        if field_name not in field_keys and field_name not in ['holistic_validation', 'reasons', 'next_check', '_raw_responses', 'validation_history', '_qc', '_history']:
             field_keys.append(field_name)
     
     # Sort function: ID fields first, then preserve original config order

@@ -319,13 +319,7 @@ def create_validation_record_sheet(workbook, header_format, validation_results, 
     # Write validation record entries
     row_idx = 1
 
-    if should_overwrite and existing_validation_record:
-        # Skip the first record (will be replaced by new run)
-        records_to_write = existing_validation_record[1:]
-    else:
-        records_to_write = existing_validation_record or []
-
-    # Write new run first
+    # Write new run first (always at row 1)
     validation_record_sheet.write(row_idx, 0, run_number)
     validation_record_sheet.write(row_idx, 1, run_time)
     validation_record_sheet.write(row_idx, 2, session_id)
@@ -337,18 +331,25 @@ def create_validation_record_sheet(workbook, header_format, validation_results, 
     validation_record_sheet.write(row_idx, 8, updated_conf_str)
     row_idx += 1
 
-    # Write historical records
-    for record in records_to_write:
-        validation_record_sheet.write(row_idx, 0, record.get('Run_Number', ''))
-        validation_record_sheet.write(row_idx, 1, record.get('Run_Time', ''))
-        validation_record_sheet.write(row_idx, 2, record.get('Session_ID', ''))
-        validation_record_sheet.write(row_idx, 3, record.get('Configuration_ID', ''))
-        validation_record_sheet.write(row_idx, 4, record.get('Run_Key', ''))
-        validation_record_sheet.write(row_idx, 5, record.get('Rows', ''))
-        validation_record_sheet.write(row_idx, 6, record.get('Columns', ''))
-        validation_record_sheet.write(row_idx, 7, record.get('Original_Confidences', ''))
-        validation_record_sheet.write(row_idx, 8, record.get('Updated_Confidences', ''))
-        row_idx += 1
+    # Write ALL historical records, incrementing run numbers if we overwrote run 1
+    if existing_validation_record:
+        for record in existing_validation_record:
+            # If we overwrote run 1, increment all old run numbers by 1
+            old_run_number = record.get('Run_Number', 1)
+            if should_overwrite:
+                # Push all old runs down by 1 (old run 1 becomes run 2, etc.)
+                old_run_number = old_run_number + 1
+
+            validation_record_sheet.write(row_idx, 0, old_run_number)
+            validation_record_sheet.write(row_idx, 1, record.get('Run_Time', ''))
+            validation_record_sheet.write(row_idx, 2, record.get('Session_ID', ''))
+            validation_record_sheet.write(row_idx, 3, record.get('Configuration_ID', ''))
+            validation_record_sheet.write(row_idx, 4, record.get('Run_Key', ''))
+            validation_record_sheet.write(row_idx, 5, record.get('Rows', ''))
+            validation_record_sheet.write(row_idx, 6, record.get('Columns', ''))
+            validation_record_sheet.write(row_idx, 7, record.get('Original_Confidences', ''))
+            validation_record_sheet.write(row_idx, 8, record.get('Updated_Confidences', ''))
+            row_idx += 1
 
     logger.info(f"[VALIDATION_RECORD] Created Validation Record sheet with {row_idx - 1} runs")
     return validation_record_sheet
