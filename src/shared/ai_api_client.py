@@ -1479,6 +1479,79 @@ class AIAPIClient:
                         f"Error: {str(e)}, check_time: {cache_check_time:.3f}s)")
             return None
     
+    async def _move_bad_cache_to_debug(self, cache_key: str, api_provider: str, failure_reason: str,
+                                       prompt: str = None, expected_columns: List[str] = None,
+                                       actual_columns: List[str] = None, cached_response: Dict = None) -> bool:
+        """
+        Move a bad cache entry to the debug folder with context about the failure.
+
+        Args:
+            cache_key: The cache key for the bad entry
+            api_provider: 'anthropic' or 'perplexity'
+            failure_reason: Why the cache entry was rejected
+            prompt: Optional prompt that was used
+            expected_columns: Optional list of expected column names
+            actual_columns: Optional list of actual column names returned
+            cached_response: Optional cached response data
+
+        Returns:
+            bool: True if successfully moved, False otherwise
+        """
+        try:
+            s3_key = self._get_cache_s3_key(cache_key, api_provider)
+
+            # Try to get the cached entry
+            try:
+                async with self.s3_session.client('s3') as s3_client:
+                    response = await s3_client.get_object(Bucket=self.s3_bucket, Key=s3_key)
+                    cache_data = json.loads(await response['Body'].read())
+            except Exception as e:
+                logger.warning(f"Could not retrieve bad cache entry for archival: {e}")
+                cache_data = cached_response if cached_response else {}
+
+            # Create debug entry with failure context
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]
+            service = 'claude' if api_provider == 'anthropic' else 'perplexity'
+
+            debug_entry = {
+                'failure_reason': failure_reason,
+                'cache_key': cache_key,
+                'rejected_at': datetime.now(timezone.utc).isoformat(),
+                'api_provider': api_provider,
+                'cached_data': cache_data,
+                'prompt_hash': hashlib.md5(prompt.encode()).hexdigest()[:16] if prompt else None,
+                'prompt_preview': prompt[:500] if prompt else None,
+                'expected_columns': expected_columns,
+                'actual_columns': actual_columns
+            }
+
+            # Save to debug folder
+            debug_key = f"debug/bad_cache/{service}/{timestamp}_{cache_key[:8]}_rejected.json"
+
+            async with self.s3_session.client('s3') as s3_client:
+                await s3_client.put_object(
+                    Bucket=self.s3_bucket,
+                    Key=debug_key,
+                    Body=json.dumps(debug_entry, indent=2),
+                    ContentType='application/json'
+                )
+
+            logger.info(f"[BAD_CACHE] Archived bad cache entry to {debug_key}")
+
+            # Now delete the bad cache entry
+            try:
+                async with self.s3_session.client('s3') as s3_client:
+                    await s3_client.delete_object(Bucket=self.s3_bucket, Key=s3_key)
+                logger.info(f"[BAD_CACHE] Deleted bad cache entry: {s3_key}")
+                return True
+            except Exception as e:
+                logger.error(f"[BAD_CACHE] Failed to delete bad cache entry: {e}")
+                return False
+
+        except Exception as e:
+            logger.error(f"[BAD_CACHE] Failed to move bad cache to debug: {e}")
+            return False
+
     async def _save_to_cache(self, cache_key: str, response: Dict, token_usage: Dict, processing_time: float, model: str, api_provider: str = 'anthropic'):
         """Save response to cache including enhanced metrics."""
         try:
@@ -1488,7 +1561,7 @@ class AIAPIClient:
             except Exception as e:
                 logger.warning(f"Failed to generate enhanced metrics for cache: {e}")
                 enhanced_metrics = {}
-            
+
             cache_entry = {
                 'api_response': response,
                 'cached_at': datetime.now(timezone.utc).isoformat(),
@@ -1773,7 +1846,9 @@ class AIAPIClient:
                             'is_cached': True,  # BULLETPROOF: Always True for cache hits - never take from cached_data  # BULLETPROOF: Always True for cache hits - never take from cached_data
                             'model_used': current_model,
                             'citations': citations,
-                            'enhanced_data': enhanced_data
+                            'enhanced_data': enhanced_data,
+                            'cache_key': cache_key,  # Add cache_key for bad cache handling
+                            'api_provider': api_provider  # Add api_provider for bad cache handling
                         }
                 
                 # Log that we're making an API call (no cache hit)
@@ -1853,11 +1928,13 @@ class AIAPIClient:
                     logger.warning(f"[SKIP] Unknown provider for model {current_model}")
                     continue
                 
-                # If we got a result, add model info and normalize response format
+                # If we got a result, add model info, cache key, and normalize response format
                 if result:
                     result['model_used'] = current_model
                     result['used_backup_model'] = model_index > 0
-                    
+                    result['cache_key'] = cache_key  # Add cache_key to result for bad cache handling
+                    result['api_provider'] = api_provider  # Add api_provider for bad cache handling
+
                     # Normalize response format: Convert all responses to Perplexity format for unified parsing
                     if api_provider == 'anthropic':
                         # Convert Claude tool response to Perplexity format
@@ -1865,7 +1942,7 @@ class AIAPIClient:
                         claude_response = result['response']
                         structured_data = self.extract_structured_response(claude_response, tool_name)
                         validation_results = structured_data.get('validation_results', structured_data)
-                        
+
                         # Convert to Perplexity format that parser expects
                         result['response'] = {
                             'choices': [{

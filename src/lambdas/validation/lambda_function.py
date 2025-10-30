@@ -4361,6 +4361,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     total_cache_misses += 1
                     total_cache_hits -= 1
 
+                    # Move bad cache entry to debug folder with context
+                    cache_key = shared_client_result.get('cache_key')
+                    api_provider_from_result = shared_client_result.get('api_provider')
+                    if cache_key and api_provider_from_result:
+                        failure_reason = f"Incomplete response - missing columns: {list(missing_columns)}"
+                        logger.info(f"[BAD_CACHE] Moving bad cache entry to debug folder: {cache_key[:8]}...")
+                        try:
+                            await ai_client._move_bad_cache_to_debug(
+                                cache_key=cache_key,
+                                api_provider=api_provider_from_result,
+                                failure_reason=failure_reason,
+                                prompt=prompt,
+                                expected_columns=expected_columns,
+                                actual_columns=actual_columns,
+                                cached_response=api_response
+                            )
+                        except Exception as e:
+                            logger.error(f"[BAD_CACHE] Failed to move bad cache to debug: {e}")
+
                     # Enhance prompt with missing column information
                     missing_column_names = list(missing_columns)
                     past_column_names = list(actual_columns)
@@ -4369,8 +4388,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         enhanced_prompt += f"**Important! No field exactly matching '{missing_col}' was identified in your past output (past output columns: {', '.join(past_column_names)}). Make sure it is included this time!**\n"
                     logger.info(f"Enhanced prompt with missing column information: {missing_column_names}")
 
-                    # Make fresh API call with cache disabled using unified approach
-                    logger.info(f"Making fresh unified API call for {api_provider} with cache disabled")
+                    # Make fresh API call with cache ENABLED so it overwrites the bad entry
+                    logger.info(f"Making fresh unified API call for {api_provider_from_result} with cache enabled to overwrite bad entry")
 
                     # Use the same unified approach for fresh calls with group name
                     if group_name:
@@ -4387,10 +4406,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                     shared_client_result = await ai_client.call_structured_api(
                         prompt=enhanced_prompt,
-                        model=model, 
+                        model=model,
                         schema=tool_schema,
                         tool_name="validate_data",
-                        use_cache=False,  # Disable cache for fresh call
+                        use_cache=True,  # Enable cache to overwrite bad entry with good response
                         max_web_searches=max_web_searches,
                         search_context_size=search_context_size,
                         debug_name=fresh_debug_name
