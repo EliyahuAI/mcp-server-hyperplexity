@@ -1630,7 +1630,7 @@ class AIAPIClient:
                 debug_entry['error'] = str(error)
                 debug_entry['error_type'] = type(error).__name__
                 debug_entry['stack_trace'] = traceback.format_exc()
-                
+
                 # Extract HTTP status if available
                 error_str = str(error)
                 if '(429)' in error_str:
@@ -1639,14 +1639,26 @@ class AIAPIClient:
                     debug_entry['error_details'] = {'http_status': 499, 'error_type': 'client_disconnect'}
                 elif '(529)' in error_str:
                     debug_entry['error_details'] = {'http_status': 529, 'error_type': 'overloaded'}
+                elif '[REFUSAL]' in error_str or 'stop_reason=refusal' in error_str:
+                    debug_entry['error_details'] = {'error_type': 'refusal', 'stop_reason': 'refusal'}
             else:
                 debug_entry['response'] = response_data
-            
+
             # Save to S3 debug folder with clearer structure
-            if self.use_unified_structure:
-                s3_key = f"debug/{api_provider}/{debug_filename}"
+            # Route refusals to separate directory
+            is_refusal = error and ('[REFUSAL]' in str(error) or 'stop_reason=refusal' in str(error))
+
+            if is_refusal:
+                # Save refusals to debug/refusals/ for easy isolation
+                if self.use_unified_structure:
+                    s3_key = f"debug/refusals/{debug_filename}"
+                else:
+                    s3_key = f"api_debug/refusals/{debug_filename}"
             else:
-                s3_key = f"api_debug/{api_provider}/{debug_filename}"
+                if self.use_unified_structure:
+                    s3_key = f"debug/{api_provider}/{debug_filename}"
+                else:
+                    s3_key = f"api_debug/{api_provider}/{debug_filename}"
 
             # Use async S3 client to avoid blocking event loop
             async with self.s3_session.client('s3') as s3_client:
@@ -1657,10 +1669,15 @@ class AIAPIClient:
                     ContentType='application/json'
                 )
 
-            logger.debug(f"[DEBUG] Saved debug data to s3://{self.s3_bucket}/{s3_key}")
-            
+            if is_refusal:
+                logger.warning(f"[REFUSAL_DEBUG] Saved refusal debug data to s3://{self.s3_bucket}/{s3_key}")
+            else:
+                logger.debug(f"[DEBUG] Saved debug data to s3://{self.s3_bucket}/{s3_key}")
+
             # Also log key information
             if error:
+                if is_refusal:
+                    logger.warning(f"[REFUSAL_DEBUG] Model {model} refused request - saved to debug/refusals/")
                 logger.error(f"[DEBUG] API call failed - Provider: {api_provider}, Model: {model}, Error: {str(error)}")
                 logger.error(f"[DEBUG] Request URL: {request_data.get('url', 'N/A')}")
                 logger.error(f"[DEBUG] Request headers keys: {list(request_data.get('headers', {}).keys())}")
@@ -2764,17 +2781,20 @@ class AIAPIClient:
                                 'is_cached': False,  # BULLETPROOF: Always False for fresh API calls  # BULLETPROOF: Always False for fresh API calls
                                 'citations': self.extract_citations_from_response(response_json)
                             }
-                        elif response.status == 529:
+                        elif response.status in [502, 503, 529]:
+                            # Retry on transient infrastructure errors
                             if attempt < max_retries:
                                 delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
-                                logger.warning(f"[ERROR] Claude API overloaded (529) on attempt {attempt + 1}/{max_retries + 1}. "
-                                             f"Retrying in {delay:.1f}s. Error: {response_text}")
+                                error_type = {502: 'Bad Gateway', 503: 'Service Unavailable', 529: 'Overloaded'}[response.status]
+                                logger.warning(f"[ERROR] Claude API {error_type} ({response.status}) on attempt {attempt + 1}/{max_retries + 1}. "
+                                             f"Retrying in {delay:.1f}s. Error: {response_text[:200]}")
                                 await asyncio.sleep(delay)
                                 continue
                             else:
-                                logger.error(f"[ERROR] Claude API overloaded (529) - max retries exceeded. Error: {response_text}")
-                                error = Exception(f"Claude API overloaded after {max_retries} retries (529): {response_text}")
-                                await self._save_debug_data('anthropic', normalized_model, debug_request, 
+                                error_type = {502: 'Bad Gateway', 503: 'Service Unavailable', 529: 'Overloaded'}[response.status]
+                                logger.error(f"[ERROR] Claude API {error_type} ({response.status}) - max retries exceeded. Error: {response_text[:200]}")
+                                error = Exception(f"Claude API {error_type} after {max_retries} retries ({response.status}): {response_text[:500]}")
+                                await self._save_debug_data('anthropic', normalized_model, debug_request,
                                                           response_text, error=error, context=f"attempt_{attempt}_status_{response.status}")
                                 raise error
                         else:
@@ -2784,8 +2804,8 @@ class AIAPIClient:
                                 error = Exception(f"Claude API client disconnected (499): {response_text}")
                             else:
                                 error = Exception(f"Claude API returned status {response.status}: {response_text}")
-                            
-                            await self._save_debug_data('anthropic', normalized_model, debug_request, 
+
+                            await self._save_debug_data('anthropic', normalized_model, debug_request,
                                                       response_text, error=error, context=f"attempt_{attempt}_status_{response.status}")
                             raise error
                         

@@ -4328,7 +4328,7 @@ def handle_main_processing(event, context):
 
                         table_data = table_parser.parse_s3_table(
                             storage_manager.bucket_name,
-                            excel_s3_key,
+                            actual_excel_s3_key,
                             extract_formulas=True,
                             id_fields=id_fields if id_fields else None
                         )
