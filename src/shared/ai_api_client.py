@@ -1520,9 +1520,12 @@ class AIAPIClient:
                 'api_provider': api_provider,
                 'cached_data': cache_data,
                 'prompt_hash': hashlib.md5(prompt.encode()).hexdigest()[:16] if prompt else None,
-                'prompt_preview': prompt[:500] if prompt else None,
+                'prompt_preview': prompt[:1000] if prompt else None,  # First 1000 chars for quick review
+                'prompt_full': prompt if prompt else None,  # Full prompt for complete debugging
+                'prompt_length': len(prompt) if prompt else 0,
                 'expected_columns': expected_columns,
-                'actual_columns': actual_columns
+                'actual_columns': actual_columns,
+                'missing_columns': list(set(expected_columns or []) - set(actual_columns or [])) if expected_columns and actual_columns else []
             }
 
             # Save to debug folder
