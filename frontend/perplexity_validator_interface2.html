@@ -5267,8 +5267,8 @@
                 if (!progressContent) return;
 
                 // Separate ID and research columns
-                const idColumns = columns.filter(c => c.is_identification);
-                const researchColumns = columns.filter(c => !c.is_identification);
+                const idColumns = columns.filter(c => c.importance && c.importance.toUpperCase() === 'ID');
+                const researchColumns = columns.filter(c => !c.importance || c.importance.toUpperCase() !== 'ID');
 
                 // Create ID columns box HTML (REUSE existing pattern from lines 11097-11110)
                 const idListHtml = idColumns.map(col => {
@@ -11966,8 +11966,8 @@ Please provide any additional context, or simply proceed to generate your initia
             // Populating table preview
 
             // Separate ID and Research columns
-            const idColumns = columns.filter(c => c.is_identification);
-            const researchColumns = columns.filter(c => !c.is_identification);
+            const idColumns = columns.filter(c => c.importance && c.importance.toUpperCase() === 'ID');
+            const researchColumns = columns.filter(c => !c.importance || c.importance.toUpperCase() !== 'ID');
 
             // Build TRANSPOSED markdown table with blue dots BEFORE column names
             let markdownTable = '';
@@ -11977,7 +11977,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 // Transposed: each column becomes a row, blue dot before ID columns
                 const transposedRows = columns.map(col => {
                     const colName = col.name || col;
-                    const isId = col.is_identification;
+                    const isId = col.importance && col.importance.toUpperCase() === 'ID';
                     const idMarker = isId ? '🔵 ' : '';
                     const values = rowsToShow.map(row => {
                         const value = row[colName] || '';

@@ -499,9 +499,9 @@ class RowDiscoveryStream:
             raise ValueError("Columns must be a non-empty list")
 
         # Check for at least one ID column
-        id_columns = [col for col in columns if col.get('is_identification', False)]
+        id_columns = [col for col in columns if col.get('importance', '').upper() == 'ID']
         if len(id_columns) == 0:
-            raise ValueError("At least one column must be marked as identification")
+            raise ValueError("At least one column must have importance='ID'")
 
         # Validate search strategy
         if not isinstance(search_strategy, dict):
@@ -708,7 +708,7 @@ class RowDiscoveryStream:
             Filled prompt string from template
         """
         # Extract ID columns with descriptions
-        id_columns = [col for col in columns if col.get('is_identification')]
+        id_columns = [col for col in columns if col.get('importance', '').upper() == 'ID']
 
         # Format ID columns with descriptions
         id_columns_text = []

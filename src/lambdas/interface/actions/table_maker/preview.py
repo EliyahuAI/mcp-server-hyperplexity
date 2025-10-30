@@ -719,7 +719,7 @@ def _generate_future_ids(conversation_state: Dict[str, Any],
         logger.info("[PREVIEW_GENERATE] No additional_rows from LLM, generating future IDs with AI")
 
         # Get identification columns
-        id_columns = [col for col in columns if col.get('is_identification', False)]
+        id_columns = [col for col in columns if col.get('importance', '').upper() == 'ID']
 
         if not id_columns:
             logger.warning("[PREVIEW_GENERATE] No identification columns found")

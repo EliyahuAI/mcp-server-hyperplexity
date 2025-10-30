@@ -120,8 +120,8 @@ class ConfigGenerator:
             Complete configuration dictionary
         """
         # Separate identification vs research columns
-        identification_columns = [col for col in columns if col.get('is_identification', False)]
-        research_columns = [col for col in columns if not col.get('is_identification', False)]
+        identification_columns = [col for col in columns if col.get('importance', '').upper() == 'ID']
+        research_columns = [col for col in columns if col.get('importance', '').upper() != 'ID']
 
         logger.info(
             f"Building config: {len(identification_columns)} ID columns, "

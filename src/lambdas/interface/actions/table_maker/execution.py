@@ -955,7 +955,7 @@ async def execute_full_table_generation(
                 csv_buffer = io.StringIO()
 
                 # Get ID columns and all column names
-                id_columns_list = [col['name'] for col in columns if col.get('is_identification')]
+                id_columns_list = [col['name'] for col in columns if col.get('importance', '').upper() == 'ID']
                 all_column_names = [col['name'] for col in columns]
 
                 writer = csv.DictWriter(csv_buffer, fieldnames=all_column_names)
@@ -1480,7 +1480,7 @@ async def execute_full_table_generation(
             csv_buffer = io.StringIO()
 
             # Get ID columns and all column names
-            id_columns = [col['name'] for col in columns if col.get('is_identification')]
+            id_columns = [col['name'] for col in columns if col.get('importance', '').upper() == 'ID']
             all_column_names = [col['name'] for col in columns]
 
             writer = csv.DictWriter(csv_buffer, fieldnames=all_column_names)

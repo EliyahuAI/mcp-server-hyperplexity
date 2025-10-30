@@ -610,9 +610,9 @@ class RowDiscovery:
             raise ValueError("columns must be a non-empty list")
 
         # Check for at least one ID column
-        id_columns = [col for col in columns if col.get('is_identification', False)]
+        id_columns = [col for col in columns if col.get('importance', '').upper() == 'ID']
         if len(id_columns) == 0:
-            raise ValueError("At least one column must be marked as identification")
+            raise ValueError("At least one column must have importance='ID'")
 
         # Validate target_row_count
         if not isinstance(target_row_count, int) or target_row_count < 1:

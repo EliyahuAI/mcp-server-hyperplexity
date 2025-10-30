@@ -2265,6 +2265,21 @@ def handle_main_processing(event, context):
                                 validated_sheet = table_data.get('metadata', {}).get('sheet_name') if isinstance(table_data, dict) else None
 
                                 logger.debug(f"[PREVIEW_EXCEL] Reusing table_data with {len(table_data.get('data', []))} rows (row keys already added)")
+                                # DEBUG: Check if rows have _row_key
+                                if table_data.get('data'):
+                                    first_row = table_data['data'][0]
+                                    has_row_key = '_row_key' in first_row if isinstance(first_row, dict) else False
+                                    logger.error(f"[PREVIEW_EXCEL_DEBUG] First row type: {type(first_row)}, has _row_key: {has_row_key}")
+                                    if has_row_key:
+                                        logger.error(f"[PREVIEW_EXCEL_DEBUG] First row _row_key: {first_row.get('_row_key')}")
+                                        logger.error(f"[PREVIEW_EXCEL_DEBUG] Sample row keys from table_data: {[row.get('_row_key')[:16] for row in table_data['data'][:3] if isinstance(row, dict) and row.get('_row_key')]}")
+                                    else:
+                                        logger.error(f"[PREVIEW_EXCEL_DEBUG] First row keys: {list(first_row.keys())[:10] if isinstance(first_row, dict) else 'Not a dict'}")
+
+                                # DEBUG: Check validation result keys
+                                if isinstance(real_results, dict) and real_results:
+                                    validation_keys_sample = list(real_results.keys())[:3]
+                                    logger.error(f"[PREVIEW_EXCEL_DEBUG] Validation result keys sample: {[k[:16] for k in validation_keys_sample]}")
 
                                 excel_buffer = create_qc_enhanced_excel_for_interface(
                                     table_data, validation_results, config_data, session_id,

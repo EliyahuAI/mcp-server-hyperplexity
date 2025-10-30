@@ -57,7 +57,7 @@ def build_table_analysis_from_conversation(
 
         # Extract identification columns
         identification_columns = [
-            col['name'] for col in columns if col.get('is_identification', False)
+            col['name'] for col in columns if col.get('importance', '').upper() == 'ID'
         ]
 
         # Build basic_info
@@ -78,9 +78,8 @@ def build_table_analysis_from_conversation(
 
             # For ID columns, check if researchable for quality validation
             importance = col.get('importance', 'MEDIUM')
-            is_id = col.get('is_identification', False)
 
-            if is_id and importance == 'ID':
+            if importance.upper() == 'ID':
                 # Check if this ID column can be researched on the web
                 if _is_researchable_id_column(col):
                     # Mark as RESEARCH to enable validation (verifies row generation quality)
@@ -93,7 +92,6 @@ def build_table_analysis_from_conversation(
                 'data_type': infer_data_type(col.get('format', 'String')),
                 'importance': importance,
                 'sample_values': [row.get(col_name, '') for row in rows[:5]],
-                'is_identification': col.get('is_identification', False),
                 'validation_hints': col.get('validation_hints', []),
                 'expected_format': col.get('format', 'String')
             }

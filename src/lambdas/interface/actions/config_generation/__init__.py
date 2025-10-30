@@ -1191,10 +1191,10 @@ def build_table_analysis_section(basic_info, column_analysis, domain_info, calcu
                 description = col.get('description', '')
                 validation_strategy = col.get('validation_strategy', '')
                 format_type = col.get('format', '')
-                is_id = col.get('is_identification', False)
+                importance = col.get('importance', '')
 
                 table_section += f"**{col_name}:**\n"
-                if is_id:
+                if importance.upper() == 'ID':
                     table_section += f"- **Type**: IDENTIFICATION COLUMN\n"
                 table_section += f"- **Description**: {description}\n"
                 if validation_strategy:

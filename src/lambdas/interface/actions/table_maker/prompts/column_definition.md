@@ -268,7 +268,6 @@ In each subdomain object, include:
       "description": "Official job title as listed in the posting",
       "format": "String",
       "importance": "ID",
-      "is_identification": true,
       "validation_strategy": ""
     },
     {
@@ -276,7 +275,6 @@ In each subdomain object, include:
       "description": "Organization or institution offering the position",
       "format": "String",
       "importance": "ID",
-      "is_identification": true,
       "validation_strategy": ""
     },
     {
@@ -284,7 +282,6 @@ In each subdomain object, include:
       "description": "Key duties and expectations for the role, including clinical, technical, research, and leadership responsibilities. Focus on specific tasks related to medical imaging, AI/ML development, protocol development, or team leadership.",
       "format": "String",
       "importance": "RESEARCH",
-      "is_identification": false,
       "validation_strategy": "Extract from job posting description section, focusing on day-to-day responsibilities, required tasks, and key deliverables. Look for bullet points under 'Responsibilities' or 'What You'll Do' sections."
     },
     {
@@ -292,7 +289,6 @@ In each subdomain object, include:
       "description": "Numerical score (1-10) indicating how well this role matches Jenifer's background in radiology, AI/ML, public health, and leadership. Higher scores indicate better alignment with her expertise.",
       "format": "Number",
       "importance": "RESEARCH",
-      "is_identification": false,
       "validation_strategy": "Compare job requirements against Jenifer's LinkedIn profile. Score based on: radiology/medical imaging requirements (0-3 points), AI/ML technical skills (0-3 points), public health or research focus (0-2 points), leadership opportunities (0-2 points). Sum for total score."
     },
     {
@@ -300,7 +296,6 @@ In each subdomain object, include:
       "description": "2-3 bullet points explaining the strongest alignment points between this role and Jenifer's background. Focus on specific skills, experiences, or qualifications that make her an excellent candidate.",
       "format": "String",
       "importance": "RESEARCH",
-      "is_identification": false,
       "validation_strategy": "Extract top 2-3 requirements from job posting that match Jenifer's background. Reference specific experiences from her LinkedIn: radiology board certification, AI/ML publications, public health MPH, leadership roles. Format as concise bullet points."
     },
     {
@@ -308,7 +303,6 @@ In each subdomain object, include:
       "description": "Geographic location of the position (city, state/region). Note if remote, hybrid, or on-site. Include relocation considerations if relevant.",
       "format": "String",
       "importance": "RESEARCH",
-      "is_identification": false,
       "validation_strategy": "Extract from job posting location field or description. Check if remote/hybrid options mentioned. Note any relocation assistance or geographic flexibility mentioned in the posting."
     },
     {
@@ -316,7 +310,6 @@ In each subdomain object, include:
       "description": "Direct link to the job application page or posting. Must be an active, accessible URL that leads to the specific position.",
       "format": "URL",
       "importance": "RESEARCH",
-      "is_identification": false,
       "validation_strategy": "Verify URL is active and leads to the correct job posting. Check that it's a direct link (not a search results page) and includes application instructions or an apply button."
     }
   ],
@@ -483,7 +476,8 @@ Example: "Looking for authoritative sources with detailed analysis. Company size
 **Rule of Thumb:** If you can find this value in a bullet-point list, directory, or index, it's a good ID column. If it requires reading multiple paragraphs and synthesizing information, it should be a research column instead.
 
 **Technical Requirements:**
-- No validation strategy needed (empty string)
+- Set `importance: "ID"`
+- Set `validation_strategy: ""` (empty string - no validation needed)
 - Used to uniquely identify each row
 - Will be discovered during row discovery phase (not validated later)
 
@@ -506,8 +500,9 @@ Example: "Looking for authoritative sources with detailed analysis. Company size
 **These act as validation filters:** Rows with "No" for critical research columns can be filtered out during validation.
 
 **Technical requirements:**
+- Set `importance: "RESEARCH"` (or "CRITICAL" for must-have data)
 - Detailed descriptions explaining EXACTLY what data to find
-- Specific validation strategies explaining HOW to find the data
+- Specific validation strategies explaining HOW to find the data (REQUIRED - cannot be empty)
 - May reference specific sources, methods, or criteria
 - Focus on actionable, findable information
 
@@ -773,10 +768,11 @@ A row discovered in the "AI Research Companies" subdomain might actually fit bet
    - ❌ BAD: "AI researcher Stanford" → Returns individuals
    - ✅ GOOD: "Stanford AI faculty list" → Returns many researchers at once
 5. ✅ Keep column names SHORT (details in description)
-6. ✅ ID columns = simple identifiers (1-5 words), Research columns = complex validated data
-7. ✅ At least ONE requirement (hard or soft) is required
-8. ✅ Use 2-10 subdomains based on difficulty (more for niche topics)
-9. ✅ Overshoot target rows by 30-50% to ensure delivery after QC
-10. ✅ Only use included_domains if user EXPLICITLY requested specific sources
+6. ✅ ID columns: Set `importance: "ID"` and `validation_strategy: ""` (empty). Use for simple identifiers (1-5 words)
+7. ✅ Research columns: Set `importance: "RESEARCH"` and provide detailed `validation_strategy` (REQUIRED)
+8. ✅ At least ONE requirement (hard or soft) is required
+9. ✅ Use 2-10 subdomains based on difficulty (more for niche topics)
+10. ✅ Overshoot target rows by 30-50% to ensure delivery after QC
+11. ✅ Only use included_domains if user EXPLICITLY requested specific sources
 
 **Return your column definitions and search strategy as valid JSON.**

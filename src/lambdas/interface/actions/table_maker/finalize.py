@@ -565,7 +565,7 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
 
                 # Extract identification columns
                 identification_columns = [
-                    col['name'] for col in columns if col.get('is_identification', False)
+                    col['name'] for col in columns if col.get('importance', '').upper() == 'ID'
                 ]
 
                 # Build table_analysis structure for config generation

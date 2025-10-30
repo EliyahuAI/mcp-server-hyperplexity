@@ -322,7 +322,7 @@ class ColumnDefinitionHandler:
             # Add research columns
             research_columns = [
                 col['name'] for col in columns_info
-                if not col.get('is_identification', False)
+                if col.get('importance', '').upper() != 'ID'
             ]
             if research_columns:
                 requirements_parts.append(f"**Research Columns**: {', '.join(research_columns)}")
@@ -432,8 +432,8 @@ class ColumnDefinitionHandler:
         missing_strategies = []
 
         for col in columns:
-            # Check if this is a research column (not identification)
-            if not col.get('is_identification', False):
+            # Check if this is a research column (importance != "ID")
+            if col.get('importance', '').upper() != 'ID':
                 # Research column must have validation_strategy
                 if not col.get('validation_strategy'):
                     missing_strategies.append(col.get('name', 'unknown'))
@@ -502,8 +502,8 @@ class ColumnDefinitionHandler:
         Returns:
             Summary dictionary with statistics
         """
-        id_columns = [col for col in columns if col.get('is_identification', False)]
-        research_columns = [col for col in columns if not col.get('is_identification', False)]
+        id_columns = [col for col in columns if col.get('importance', '').upper() == 'ID']
+        research_columns = [col for col in columns if col.get('importance', '').upper() != 'ID']
 
         return {
             'total_columns': len(columns),

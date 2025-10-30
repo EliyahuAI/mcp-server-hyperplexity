@@ -7,7 +7,7 @@
       "description": "ACTUAL SPECIFIC columns for tracking the entities the user wants to research (e.g., if tracking AI companies: 'Company Name', 'Website', 'Is Hiring for AI?'). DO NOT create meta-columns like 'Table Name', 'Column Name', 'Description', 'Format' - those are for describing tables, not for tracking the actual entities.",
       "items": {
         "type": "object",
-        "required": ["name", "description", "format", "importance", "is_identification"],
+        "required": ["name", "description", "format", "importance"],
         "properties": {
           "name": {
             "type": "string",
@@ -24,11 +24,7 @@
           "importance": {
             "type": "string",
             "enum": ["ID", "RESEARCH", "CRITICAL", "IGNORED"],
-            "description": "Column importance level"
-          },
-          "is_identification": {
-            "type": "boolean",
-            "description": "Whether this column is used for row identification"
+            "description": "Column importance level. Use 'ID' for identification columns (simple identifiers like names, dates, URLs). Use 'RESEARCH' for columns requiring validation."
           },
           "validation_strategy": {
             "type": "string",
