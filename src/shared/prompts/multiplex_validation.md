@@ -18,7 +18,7 @@
 
 {validation_intro}
 
-**Your task**: Use web search to find the CURRENT, ACTUAL VALUES for the fields above. Search for the specific data points (prices, projections, news, metrics, etc.) for this entity.
+**Your task**: Use web search to find the CURRENT, ACTUAL VALUES for the fields above. Search for the specific data points (prices, projections, news, metrics, etc.) for the entity described in the context below.
 
 ---
 
@@ -56,17 +56,18 @@
 ## 📝 FIELD DETAILS - Format Requirements and Examples
 ═══════════════════════════════════════════════════════════════
 
-**For each field you're researching, here are the requirements:**
+**For each current value that you will research you will recieve this context and guidance - do not research these**
+
+- **Field Name**: (This is the name of the field)
+- **Description**: (What this field represents)
+- **Format**: (How to format your answer)
+- **Notes**: (Quality standards for this specific field)
+- **Examples**: (Sample formatting)
+
+**THIS IS THE WHERE YOU FOCUS YOUR RESEARCH!!**
+- **Current Value**: (Existing value to verify and research using the context and guidance provided!)
 
 {fields_to_validate}
-
-**Structure of each field:**
-- **Field Name**: (This is what you need to research - find the ACTUAL value for this entity)
-- **Current Value**: (Existing value to verify)
-- **Description**: (What this field represents - NOT what to research, just context)
-- **Format**: (How to format your answer - NOT what to research)
-- **Notes**: (Quality standards for this specific field - NOT what to research)
-- **Examples**: (Sample formatting - NOT what to research)
 
 ---
 
@@ -113,4 +114,5 @@ Please respond with a JSON array containing an object for each field.
 - Use provided examples to guide your updates format and expected values
 - Always include all required fields: column, answer, confidence, original_confidence, reasoning, sources
 - Use newline characters correctly so that they are formatted in an excel cell, perticularly for bullets, lists, and other formatted text.
+- Do not research the context and guidance - research only the Current Value in the context provided
 - Double check your updated response and confidence - speak precisely, there is not room for error.

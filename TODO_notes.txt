@@ -23,53 +23,22 @@ Should be able to update table by responding to email.
 tables in preview that were not completed should get notices by email to complete
 
 
-
-----
-
-The batch handling for claude 4,0 opus still crashed a call even with the advanced batch handling. 
-----
-The config generations are not printing the config ids. 
-----
-
-
-Update text about adding to be in the cart, notify about pushing the shopping cart to checkout. 
-review using code to add to card
-
 --- 
 The use of dummy columns to get a better answer - these are background questions that will help guide an answer that are added and removed that aid in the search. 
-
+(easy addition during table making)
 
 
 
 ---
-
 Preview of table when asking questions at the beginning of generate config with AI. The original questions should make it to the config
 
-
---- 
-For validation history, we should pass the reasoning for the last value as well, and the sources. 
-
-
-
-----
-new vs historical is not working 
-
+---
+Use the Table maker process for AI generation vs the current. Start with something simple and fun Anything strange about this table that I need to know about? then interview based on the table
 
 -----
 had a 94% match and a failed preview over websocket that was not handled. 
+need to get partial matching to work, along with adding columns. 
 
-
-
-
-----
-Need to make sure Updated sheet is being looked for with priority (I see this in the config l;ambda logs: 
-	
-No 'Results' sheet found, using first sheet: 'Congresses Master List'
-
-
------
-
-add table wide memory if it comes across it should store by key, we should pass this info up to the validator. 
 
 
 ---
@@ -92,15 +61,14 @@ What to do with tables that are3 rows or less?
 
 
 ----
-
 Progress updates should have time estimates and interval updates (this will take 70s, use this array 5s - this, 10s that
-
+Need better fodder for fun updates... Joke punchlines?
 
 
 
 ---
- Should read in any excel formulas and work with them. 
-Needs testinng
+Should read in any excel formulas and work with them. 
+Needs more testing 
 
 ----
 
@@ -110,12 +78,7 @@ Overall QA
 + Track quality. 
 ----
 
-
-
-
-
-WORKING ON
-
+BUSINESS Plan and Pitch!
 
 
 
