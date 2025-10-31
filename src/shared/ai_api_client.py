@@ -1818,6 +1818,10 @@ class AIAPIClient:
                             citations = self.extract_citations_from_perplexity_response(cached_data['api_response'])
                         else:
                             citations = self.extract_citations_from_response(cached_data['api_response'])
+
+                        # Log cache path for debugging
+                        cache_s3_key = self._get_cache_s3_key(cache_key, api_provider)
+                        logger.warning(f"[STRUCTURED_CACHE_HIT] Model={current_model}, Citations={len(citations)}, Cache: s3://{self.cache_bucket}/{cache_s3_key}")
                         
                         # Generate enhanced metrics for cached response
                         try:
@@ -2004,6 +2008,10 @@ class AIAPIClient:
                     else:
                         # Perplexity response is already in the correct format
                         result['citations'] = self.extract_citations_from_perplexity_response(result.get('response', {}))
+
+                    # Log citation extraction for debugging
+                    cache_s3_key = self._get_cache_s3_key(cache_key, api_provider) if cache_key else 'no-cache'
+                    logger.warning(f"[STRUCTURED_API_CITATIONS] Model={current_model}, Provider={api_provider}, Citations={len(result.get('citations', []))}, Cache: s3://{self.cache_bucket}/{cache_s3_key}")
 
                     # Monitor for legacy model references in response content
                     response_str = json.dumps(result.get('response', {})).lower()
