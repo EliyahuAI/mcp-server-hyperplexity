@@ -370,7 +370,10 @@ class QCModule:
                 # Updated Value (Proposed) - show the actual validated value
                 field_output.append(f"### Updated Value (Proposed): `{answer}`")
                 field_output.append(f"* **Updated Confidence (Proposed):** {confidence}")
-                field_output.append(f"* **Reasoning:** {reasoning}")
+
+                # Show explanation (AI's reasoning for the answer)
+                if explanation:
+                    field_output.append(f"* **Explanation:** {explanation}")
 
                 # Show citations with full text from structured citation data
                 if citations and any(citations):  # Check if citations exist and are not empty
@@ -403,8 +406,11 @@ class QCModule:
                 # Only show this if we had actual citations (to avoid duplication)
                 if citations and any(citations) and sources:
                     field_output.append(f"* **Source URLs:** {', '.join(sources)}")
-                if explanation:
-                    field_output.append(f"* **Explanation:** {explanation}")
+
+                # Show supporting quotes if available (provides context when citation snippets not available)
+                supporting_quotes = field_data.get('supporting_quotes', '')
+                if supporting_quotes and supporting_quotes.strip():
+                    field_output.append(f"* **Supporting Quotes:** {supporting_quotes}")
                 field_output.append(f"* **Substantially Different from Original:** {'Yes' if str(answer).strip() != str(original_value).strip() else 'No'}")
 
                 field_output.append("")

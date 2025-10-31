@@ -650,29 +650,30 @@ Find the CURRENT, ACTUAL VALUES for these fields."""
                 
                 answer = item.get('answer', '')
                 confidence_level = item.get('confidence', 'LOW')
-                original_confidence = item.get('original_confidence')  # New field
-                reasoning = item.get('reasoning', item.get('quote', ''))  # Support both old and new field names
+                original_confidence = item.get('original_confidence')
                 sources = item.get('sources', [])
+                supporting_quotes = item.get('supporting_quotes', '')
                 explanation = item.get('explanation', '')
                 consistent_with_model_knowledge = item.get('consistent_with_model_knowledge', '')
-                
+
                 # Keep confidence as string for display (no numeric conversion)
                 confidence_str = confidence_level
-                
+
                 # Determine main source
                 main_source = sources[0] if sources else ""
-                
-                # Store as tuple: (value, confidence_level, sources, confidence_level, reasoning, main_source, original_confidence, explanation, consistent_with_model_knowledge)
+
+                # Store as tuple: (value, confidence_level, sources, confidence_level, main_source, original_confidence, explanation, consistent_with_model_knowledge, supporting_quotes)
+                # Note: reasoning field removed - use supporting_quotes for quotes and explanation for AI's reasoning
                 parsed_results[column] = (
                     answer,
-                    confidence_str,  # String confidence, not numeric
-                    sources,
-                    confidence_str,  # Keep as string
-                    reasoning,  # Changed from quote
-                    main_source,
-                    original_confidence,  # New field
-                    explanation,  # New field
-                    consistent_with_model_knowledge
+                    confidence_str,  # [0]
+                    sources,  # [1]
+                    confidence_str,  # [2]
+                    main_source,  # [3]
+                    original_confidence,  # [4]
+                    explanation,  # [5]
+                    consistent_with_model_knowledge,  # [6]
+                    supporting_quotes  # [7]
                 )
             
             return parsed_results

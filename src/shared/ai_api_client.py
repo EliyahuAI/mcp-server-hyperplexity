@@ -2629,11 +2629,13 @@ class AIAPIClient:
                     tool_content = content_item.get('content', [])
                     for result_item in tool_content:
                         if result_item.get('type') == 'web_search_result':
+                            # Extract content/snippet from Anthropic web search result
+                            # The 'content' field contains the actual text snippet from the page
+                            content = result_item.get('content', '')
                             citation = {
                                 'url': result_item.get('url', ''),
                                 'title': result_item.get('title', ''),
-                                'cited_text': '',  # Removed encrypted content to reduce costs
-                                'encrypted_index': ''  # Removed encrypted index to reduce costs
+                                'cited_text': content,  # Include the content snippet
                             }
                             citations.append(citation)
                 
@@ -2647,16 +2649,14 @@ class AIAPIClient:
                                 citations.append({
                                     'url': citation.get('url', ''),
                                     'title': citation.get('title', ''),
-                                    'cited_text': citation.get('cited_text', ''),
-                                    'encrypted_index': citation.get('encrypted_index', '')
+                                    'cited_text': citation.get('cited_text', '')
                                 })
                             elif isinstance(citation, str):
                                 # If citation is a string, use it as the title
                                 citations.append({
                                     'url': '',
                                     'title': citation,
-                                    'cited_text': '',
-                                    'encrypted_index': ''
+                                    'cited_text': ''
                                 })
                 
                 # Legacy format support - tool_result blocks
@@ -2670,19 +2670,17 @@ class AIAPIClient:
                                     citations.append({
                                         'url': citation.get('url', ''),
                                         'title': citation.get('title', ''),
-                                        'cited_text': citation.get('cited_text', ''),
-                                        'encrypted_index': citation.get('encrypted_index', '')
+                                        'cited_text': citation.get('cited_text', '')
                                     })
                                 elif isinstance(citation, str):
                                     # If citation is a string, use it as the title
                                     citations.append({
                                         'url': '',
                                         'title': citation,
-                                        'cited_text': '',
-                                        'encrypted_index': ''
+                                        'cited_text': ''
                                     })
             
-            logger.debug(f"Extracted &citations from Claude response")
+            logger.debug(f"Extracted {len(citations)} citations from Claude response")
             return citations
             
         except Exception as e:

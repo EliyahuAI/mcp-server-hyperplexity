@@ -4,6 +4,13 @@
 
 The Perplexity Validator system maintains comprehensive citation tracking throughout the validation lifecycle. Citations are preserved with full text, including source titles, URLs, and quoted snippets, ensuring complete traceability of validated information.
 
+**Note on Anthropic Citations**: Anthropic's web search API returns encrypted content that cannot be used. Therefore, Anthropic citations only include:
+- Page title
+- URL
+- Page age (when available)
+
+To compensate, the system includes a `supporting_quotes` field where the AI extracts key quotes and data points from the sources it accessed, providing context even when full citation snippets are not available from the API.
+
 ## Citation Flow
 
 ### 1. Initial Validation
@@ -95,6 +102,7 @@ The QC module displays citations for three value levels:
     'original_confidence': 'MEDIUM',
     'reasoning': 'Validation reasoning',
     'sources': ['url1', 'url2'],  # URLs only
+    'supporting_quotes': 'Key excerpts: "specific data" and "important statement"',  # NEW: Key quotes from sources
     'citations': [  # Structured citation objects
         {
             'title': 'Source Title',
@@ -163,6 +171,15 @@ if field_history.get('original_sources_full'):
 - Full quotes and snippets maintained
 - Source titles and URLs preserved
 
+### Supporting Quotes Field
+- **Purpose**: Provides key excerpts when full citation snippets are unavailable (e.g., Anthropic API)
+- **Content**: AI extracts important quotes, data points, dates, and statements from sources
+- **Location**: Appears in:
+  - QC prompt (so reviewer sees the quotes)
+  - Details sheet "Supporting Quotes" column
+  - Cell comments (indirectly through QC citations)
+- **Use Case**: Particularly valuable for Anthropic validations where citation snippets are encrypted
+
 ### Backward Compatibility
 - Maintains URL-only lists for legacy code
 - Gracefully handles both structured and text citations
@@ -170,6 +187,7 @@ if field_history.get('original_sources_full'):
 
 ### QC Integration
 - QC system sees full citation context
+- Supporting quotes provide additional context for sources
 - Can evaluate source quality and relevance
 - Makes informed decisions about validation accuracy
 

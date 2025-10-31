@@ -20,12 +20,12 @@ MULTIPLEX_RESPONSE_SCHEMA = {
                 "enum": ["HIGH", "MEDIUM", "LOW", None],
                 "description": "Confidence in the original value: HIGH=correct, MEDIUM=minor issues, LOW=wrong, None=blank stays blank"
             },
-            "reasoning": {"type": "string", "description": "Direct quote from web search results (when available), authoritative sources, or current data. When web search is available, use it to verify recent information for accuracy. When not available, use training knowledge and note any limitations."},
             "sources": {"type": "array", "items": {"type": "string"}, "description": "List of source URLs that support the validation"},
+            "supporting_quotes": {"type": "string", "description": "Key quotes or excerpts from sources that directly support the answer. Include specific data points, dates, or statements that validate the response. This provides context when full citation snippets are not available."},
             "explanation": {"type": "string", "description": "Explanation of the validation result, succinct reason you believe the provided answer is correct"},
             "consistent_with_model_knowledge": {"type": "string", "description": "Whether the answer is consistent with general knowledge outside of the provided sources"}
         },
-        "required": ["column", "answer", "confidence", "original_confidence", "reasoning", "sources"]
+        "required": ["column", "answer", "confidence", "original_confidence", "sources", "explanation"]
     }
 }
 

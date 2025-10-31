@@ -313,22 +313,37 @@ Feedback from discovery workers about which domains were helpful or problematic.
 **Included Domains:** {{CURRENT_INCLUDED_DOMAINS}}
 **Excluded Domains:** {{CURRENT_EXCLUDED_DOMAINS}}
 
-### How to Request Retrigger Discovery
+### When to Use RETRIGGER vs PROMOTE (1-3 approved rows)
 
-**When to Retrigger:**
+**Use RETRIGGER when:**
+1. **Identified new search domains** - Clear gaps in what we searched
+2. **Table structure is good** - ID columns are fine, requirements reasonable
+3. **Specific new strategy** - Can articulate exactly what new subdomains to add
+4. **Worth the cost** - Likely to find significantly more good rows
 
-You should request a retrigger ONLY when ALL of these conditions are met:
+**Examples:**
+- "Searched only tech companies, should also search healthcare and finance sectors"
+- "Searched only NIH grants, should also search NSF and private foundations"
+- "Searched only 2024, should expand to 2023-2024"
 
-1. **Insufficient Quality Rows**: Fewer than {{MIN_ROW_COUNT}} rows meet the hard requirements (would be kept after QC)
-2. **Confidence in Better Strategy**: You have identified a specific, concrete search approach that is likely to yield better results
-3. **Clear Deficiency**: You can articulate what was wrong with the current search strategy and how a new approach would address it
+**Use PROMOTE (don't retrigger) when:**
+1. **Already searched comprehensively** - Covered all relevant domains
+2. **No obvious gaps** - Can't identify new places to look
+3. **Some decent rejected rows** - Have rows with qc_score 0.3-0.49 that could be promoted
+4. **Diminishing returns** - New searches unlikely to find better rows
 
-**When NOT to Retrigger:**
+**Examples:**
+- "Searched all major sectors comprehensively, just need to lower bar slightly"
+- "Already covered tech, healthcare, finance, education - no new sectors to try"
+- "Have 2 excellent rows and 3 decent rows (0.35-0.45) - just promote the decent ones"
 
-- If {{MIN_ROW_COUNT}}+ rows meet hard requirements (even if soft requirements aren't fully met)
-- If the topic is genuinely rare/niche and unlikely to yield more results
-- If you cannot identify a meaningfully different search strategy
-- If the current search strategy was already well-designed and comprehensive
+**PROMOTE Action:**
+- Just return your approved/rejected rows as-is
+- System will automatically promote top rejected rows to meet MIN_ROW_COUNT
+- No retrigger_discovery field needed
+- You don't need to manually promote - backend handles it
+
+### Criteria for RETRIGGER
 
 **Provide this field in your response:**
 
@@ -373,42 +388,78 @@ You should request a retrigger ONLY when ALL of these conditions are met:
 
 ---
 
-## 7. Autonomous Recovery Decision (If 0 Rows Approved)
+## 7. Options 4 & 5: Zero Rows Approved - RESTRUCTURE or GIVE_UP
 
 ### CRITICAL: When 0 Rows Approved After QC
 
-**If you approve 0 rows (all rows rejected or no rows discovered), you MUST make an autonomous decision:**
+**If you approve 0 rows, you MUST choose between RESTRUCTURE or GIVE_UP.**
 
-Can restructuring the table help, or is this request fundamentally impossible?
+### Decision Criteria (EXPLICIT)
 
-### Your Decision Options
+**Use RESTRUCTURE (Option 4) when:**
 
-**Option A: RECOVERABLE - Restructure and Retry**
-- The topic/domain exists and has discoverable entities
-- The problem was in HOW we structured the table (columns, requirements, search strategy)
-- We can fix it by: simplifying ID columns, relaxing requirements, or broadening search domains
-- **Action**: Provide `recovery_decision` with restructuring instructions
+1. **Found SOME candidates** (even if all rejected)
+   - Discovery returned 5+ candidates that you rejected
+   - Shows entities exist, just didn't meet our criteria
 
-**Option B: UNRECOVERABLE - Give Up**
-- The topic is too niche, doesn't exist, or entities are genuinely undiscoverable via web search
-- No amount of restructuring will help (e.g., "companies that don't exist", "proprietary internal data")
-- **Action**: Provide `recovery_decision` explaining why it's impossible
+2. **Table structure is the problem:**
+   - ID columns too complex (required fields not in search results)
+   - Requirements too strict (hard requirements filtering out everything)
+   - Search too narrow (focused on subset when broader exists)
 
-### Decision Criteria
+3. **You can explain HOW to fix:**
+   - "Simplify ID from X to Y"
+   - "Change requirement Z from hard to soft"
+   - "Broaden search from A to include B"
 
-**Choose RECOVERABLE if:**
-- Subdomain results show partial matches that were filtered out by strict criteria
-- ID columns are too complex (e.g., requiring specific fields not in search results)
-- Requirements are too strict (hard requirements that could be softened)
-- Search strategy was too narrow (could expand to related domains)
-- **Key indicator**: "The entities exist, but our table structure made them hard to discover"
+4. **Evidence entities exist:**
+   - Starting tables had sample entities
+   - Some subdomains found partial matches
+   - Search improvements suggest strategy issues (not entity absence)
 
-**Choose UNRECOVERABLE if:**
-- All subdomains returned 0 results even after escalation
-- Web search fundamentally cannot answer this (proprietary data, future predictions, etc.)
-- Topic is fabricated or extremely rare (< 5 entities globally)
-- Requirements contradict each other or are impossible to satisfy
-- **Key indicator**: "The entities don't exist or are impossible to discover via web search"
+**Key Indicator:** "Entities exist but our table design prevented successful discovery"
+
+---
+
+**Use GIVE_UP (Option 5) when:**
+
+1. **Found ZERO candidates across ALL subdomains**
+   - Every subdomain: 0 results
+   - Even after 3-level escalation
+   - No partial matches anywhere
+
+2. **Entities fundamentally don't exist:**
+   - Request is contradictory ("profitable companies that lost money")
+   - Topic is fabricated or fictional
+   - Fewer than 5 such entities exist globally
+
+3. **Requires undiscoverable data:**
+   - Proprietary internal data
+   - Future predictions not yet determined
+   - Private/confidential information
+
+4. **No structural fix will help:**
+   - Even simplest possible table structure won't find entities
+   - Web search fundamentally cannot answer this
+
+**Key Indicator:** "Entities don't exist or are impossible to discover via web search"
+
+### Quick Decision Guide
+
+**Ask yourself:**
+1. Did we find ANY candidates? (YES → likely RESTRUCTURE, NO → likely GIVE_UP)
+2. Were candidates rejected due to table structure? (YES → RESTRUCTURE)
+3. Were candidates rejected due to being wrong entities entirely? (YES → GIVE_UP)
+4. Can I explain how to fix the table? (YES → RESTRUCTURE, NO → GIVE_UP)
+
+**Examples:**
+
+| Situation | Decision | Why |
+|-----------|----------|-----|
+| Found 10 candidates, all rejected (ID too complex) | RESTRUCTURE | Entities exist, structure broken |
+| Found 0 candidates everywhere | GIVE_UP | Entities don't exist |
+| Found 5 candidates, wrong topic entirely | GIVE_UP | Searching for wrong thing |
+| Found 8 candidates, rejected (requirements too strict) | RESTRUCTURE | Can relax requirements |
 
 ### Response Format for recovery_decision
 

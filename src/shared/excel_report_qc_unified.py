@@ -1209,13 +1209,13 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                 detail_headers.extend(["Column", "Original Value", "Updated Value", "QC Value",
                                 "QC Original Confidence", "QC Updated Confidence", "QC Confidence",
                                 "QC Applied", "QC Reasoning", "Update Importance", "QC Sources", "QC Citations",
-                                "Final Value", "Reasoning", "Sources", "Citations",
-                                "Explanation", "Consistent with Model", "Model", "Timestamp", "New"])
+                                "Final Value", "Sources", "Citations", "Supporting Quotes",
+                                "Explanation", "Consistent with Model", "Model", "Timestamp"])
             else:
                 detail_headers.extend(["Column", "Original Value", "Original Confidence", "Validated Value",
-                                "Validation Confidence", "Final Value", "Reasoning", "Sources", "Citations",
-                                "Explanation", "Consistent with Model", "Model", "Timestamp", "New"])
-            
+                                "Validation Confidence", "Final Value", "Sources", "Citations", "Supporting Quotes",
+                                "Explanation", "Consistent with Model", "Model", "Timestamp"])
+
             for col_idx, header in enumerate(detail_headers):
                 details_sheet.write(0, col_idx, header, header_format)
                 details_sheet.set_column(col_idx, col_idx, 20)
@@ -1478,9 +1478,6 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 details_sheet.write(detail_row, col_idx, safe_for_excel(final_value, should_preserve_formulas(field_name)), final_format)  # Final Value
                             col_idx += 1
 
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('reasoning', ''))))  # Reasoning
-                            col_idx += 1
-
                             # Sources column - blend validation and QC sources when QC is applied
                             try:
                                 validation_sources = field_data.get('sources', []) or []
@@ -1533,7 +1530,10 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 citations_text = ''
                             details_sheet.write(detail_row, col_idx, safe_for_excel(citations_text))  # Citations
                             col_idx += 1
-                            
+
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('supporting_quotes', ''))))  # Supporting Quotes
+                            col_idx += 1
+
                             details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('explanation', ''))))  # Explanation
                             col_idx += 1
                             details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('consistent_with_model_knowledge', ''))))  # Consistent with Model
@@ -1542,7 +1542,6 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             col_idx += 1
                             details_sheet.write(detail_row, col_idx, safe_for_excel(current_timestamp))  # Timestamp
                             col_idx += 1
-                            details_sheet.write(detail_row, col_idx, 'New')  # Mark as new
 
                             # Track this combination as processed
                             processed_row_keys.add((row_key, field_name))
@@ -1584,8 +1583,8 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                     standard_columns = ['Column', 'Original Value', 'Updated Value', 'QC Value',
                                       'QC Original Confidence', 'QC Updated Confidence', 'QC Confidence',
                                       'QC Applied', 'QC Reasoning', 'Update Importance', 'QC Sources', 'QC Citations',
-                                      'Final Value', 'Reasoning', 'Sources', 'Citations', 'Explanation',
-                                      'Consistent with Model', 'Model', 'Timestamp', 'New']
+                                      'Final Value', 'Sources', 'Citations', 'Supporting Quotes', 'Explanation',
+                                      'Consistent with Model', 'Model', 'Timestamp']
 
                     # Handle field name mapping for backward compatibility
                     field_mapping = {

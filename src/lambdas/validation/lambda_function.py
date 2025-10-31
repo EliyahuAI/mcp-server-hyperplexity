@@ -4579,29 +4579,33 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     parsed_result = parsed_results[target.column]
                     
                     # Create result structure matching expected format
-                    # Tuple structure: (value, confidence, sources, confidence_level, reasoning, main_source, original_confidence, explanation, consistent_with_model_knowledge)
+                    # Tuple structure: (value, confidence, sources, confidence_level, main_source, original_confidence, explanation, consistent_with_model_knowledge, supporting_quotes)
+                    # Note: reasoning field removed - use supporting_quotes for source quotes and explanation for AI reasoning
                     row_results[target.column] = {
                         'value': parsed_result[0],
                         'confidence': parsed_result[1],  # String confidence
                         'sources': parsed_result[2],
                         'confidence_level': parsed_result[3],
-                        'reasoning': parsed_result[4],
-                        'main_source': parsed_result[5],
-                        'original_confidence': parsed_result[6] if len(parsed_result) > 6 else None,
-                        'explanation': parsed_result[7] if len(parsed_result) > 7 else '',
+                        'main_source': parsed_result[4],
+                        'original_confidence': parsed_result[5] if len(parsed_result) > 5 else None,
+                        'explanation': parsed_result[6] if len(parsed_result) > 6 else '',
                         'response_id': response_id,
                         'model': model
                     }
-                    
+
                     # Add optional fields
+                    if len(parsed_result) > 7:
+                        row_results[target.column]['consistent_with_model_knowledge'] = parsed_result[7]
+
                     if len(parsed_result) > 8:
-                        row_results[target.column]['consistent_with_model_knowledge'] = parsed_result[8]
-                    
+                        row_results[target.column]['supporting_quotes'] = parsed_result[8]
+
                     # Add citations from API response
                     row_results[target.column]['citations'] = citations
-                    
-                    # Keep quote for backward compatibility
-                    row_results[target.column]['quote'] = parsed_result[4]
+
+                    # Keep quote and reasoning for backward compatibility (map to explanation)
+                    row_results[target.column]['quote'] = parsed_result[6] if len(parsed_result) > 6 else ''
+                    row_results[target.column]['reasoning'] = parsed_result[6] if len(parsed_result) > 6 else ''  # Map to explanation for backward compat
                     
                     processed_count += 1
                     
