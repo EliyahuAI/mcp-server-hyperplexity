@@ -1,0 +1,178 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Background Research Response",
+  "description": "Schema for background research output - finds authoritative sources and starting tables before column definition",
+  "type": "object",
+  "required": [
+    "tablewide_research",
+    "authoritative_sources",
+    "starting_tables",
+    "discovery_patterns",
+    "domain_specific_context"
+  ],
+  "properties": {
+    "tablewide_research": {
+      "type": "string",
+      "description": "2-3 paragraph summary of the domain, key facts, and context that will help with column definition. Should include: (1) How entities are typically identified/catalogued, (2) What authoritative sources exist, (3) What challenges might arise in discovery, (4) Any domain-specific considerations.",
+      "minLength": 300
+    },
+    "authoritative_sources": {
+      "type": "array",
+      "description": "List of databases, directories, APIs, or lists that contain the target entities",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "url", "type", "description", "coverage", "access", "update_frequency"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the source"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL of the source"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["database", "directory", "api", "list", "index", "aggregator"],
+            "description": "Type of source"
+          },
+          "description": {
+            "type": "string",
+            "description": "What it contains and why it's valuable"
+          },
+          "coverage": {
+            "type": "string",
+            "description": "How comprehensive (percentage, count, or qualitative assessment)"
+          },
+          "access": {
+            "type": "string",
+            "enum": ["public", "requires_auth", "paid"],
+            "description": "Access level required"
+          },
+          "update_frequency": {
+            "type": "string",
+            "enum": ["real-time", "daily", "weekly", "monthly", "annual", "static"],
+            "description": "How often the source is updated"
+          }
+        }
+      }
+    },
+    "starting_tables": {
+      "type": "array",
+      "description": "Explicit examples of existing tables/lists with actual entity names (NOT just URLs). Each table must include sample entities.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "source_name",
+          "source_url",
+          "entity_type",
+          "entity_count_estimate",
+          "sample_entities",
+          "completeness",
+          "update_frequency"
+        ],
+        "properties": {
+          "source_name": {
+            "type": "string",
+            "description": "Descriptive name of the source"
+          },
+          "source_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL to the actual page with the list"
+          },
+          "entity_type": {
+            "type": "string",
+            "description": "What type of entities (companies, people, papers, jobs, etc.)"
+          },
+          "entity_count_estimate": {
+            "type": "string",
+            "description": "Approximate number of entities available"
+          },
+          "sample_entities": {
+            "type": "array",
+            "description": "CRITICAL: Actual sample entities from this source (NOT just URLs!). Must include identifying details, not just names.",
+            "minItems": 5,
+            "items": {
+              "type": "string",
+              "description": "Entity with identifying details (e.g., 'Dr. Jane Smith - Stanford University - Neural Networks for Medical Imaging')"
+            }
+          },
+          "completeness": {
+            "type": "string",
+            "description": "How complete/comprehensive this source is"
+          },
+          "update_frequency": {
+            "type": "string",
+            "description": "How often this source is updated"
+          },
+          "discovery_notes": {
+            "type": "string",
+            "description": "Optional notes on how to use this source for discovery"
+          }
+        }
+      }
+    },
+    "discovery_patterns": {
+      "type": "object",
+      "description": "How entities are typically discovered in this domain",
+      "required": ["primary_pattern", "description", "challenges", "recommendations"],
+      "properties": {
+        "primary_pattern": {
+          "type": "string",
+          "enum": ["complete_list", "searchable_database", "aggregator", "distributed"],
+          "description": "Primary discovery pattern for this domain"
+        },
+        "description": {
+          "type": "string",
+          "description": "Explanation of how entities are typically found"
+        },
+        "challenges": {
+          "type": "array",
+          "description": "Challenges in discovering entities",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recommendations": {
+          "type": "array",
+          "description": "Recommendations for successful discovery",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "domain_specific_context": {
+      "type": "object",
+      "description": "Domain-specific facts and context",
+      "required": ["key_facts", "common_identifiers", "data_availability"],
+      "properties": {
+        "key_facts": {
+          "type": "array",
+          "description": "Important facts about this domain",
+          "minItems": 2,
+          "items": {
+            "type": "string"
+          }
+        },
+        "common_identifiers": {
+          "type": "array",
+          "description": "How entities in this domain are typically identified",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "data_availability": {
+          "type": "string",
+          "description": "Assessment of how easy/hard it will be to find and validate this data"
+        }
+      }
+    }
+  }
+}

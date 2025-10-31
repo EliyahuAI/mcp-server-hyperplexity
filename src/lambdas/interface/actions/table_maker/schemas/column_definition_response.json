@@ -85,9 +85,9 @@
         },
         "subdomains": {
           "type": "array",
-          "description": "2-5 subdomains for parallel row discovery with search queries and targets",
+          "description": "2-10 subdomains for parallel row discovery with search queries and targets",
           "minItems": 2,
-          "maxItems": 5,
+          "maxItems": 10,
           "items": {
             "type": "object",
             "required": ["name", "focus", "search_queries", "target_rows"],
@@ -155,6 +155,38 @@
     "tablewide_research": {
       "type": "string",
       "description": "Overall research context and objectives for this table"
+    },
+    "sample_rows": {
+      "type": "array",
+      "description": "Optional: 5-15 example rows from background research starting tables that can be used immediately for QC review. Each row should have ID column values filled in. These rows will be merged with rows from discovery phase (with discovery phase taking precedence for duplicates based on model quality).",
+      "items": {
+        "type": "object",
+        "required": ["id_values", "source", "model_used"],
+        "properties": {
+          "id_values": {
+            "type": "object",
+            "description": "ID column values for this row (e.g., {'Company Name': 'Anthropic', 'Website': 'anthropic.com'})",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "string",
+            "description": "Which starting table this row came from (e.g., 'Forbes AI 50 2024', 'NIH RePORTER Dementia Research')"
+          },
+          "match_score": {
+            "type": "number",
+            "description": "Confidence score 0-1 for how well this row matches requirements (default 0.8 for curated list entries)",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "model_used": {
+            "type": "string",
+            "description": "Model that provided this row (use 'column_definition' for rows from this phase)",
+            "default": "column_definition"
+          }
+        }
+      }
     }
   }
 }

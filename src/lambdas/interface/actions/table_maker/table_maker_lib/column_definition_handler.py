@@ -35,16 +35,17 @@ class ColumnDefinitionHandler:
     async def define_columns(
         self,
         conversation_context: Dict[str, Any],
-        context_web_research: List[str] = None,
-        model: str = "claude-haiku-4-5",
+        background_research_result: Dict[str, Any] = None,
+        model: str = "claude-sonnet-4-5",
         max_tokens: int = 8000
     ) -> Dict[str, Any]:
         """
-        Define precise column specifications and search strategy from conversation context.
+        Define precise column specifications and search strategy using background research.
 
         Args:
             conversation_context: Full conversation history and approved requirements
-            model: AI model to use (default: claude-sonnet-4-5)
+            background_research_result: Output from background_research_handler (REQUIRED)
+            model: AI model to use (default: claude-sonnet-4-5, no web search needed)
             max_tokens: Maximum tokens for AI response
 
         Returns:
@@ -52,9 +53,10 @@ class ColumnDefinitionHandler:
             {
                 'success': bool,
                 'columns': List[Dict],  # Column definitions with validation strategies
-                'search_strategy': Dict,  # Search strategy with subdomain hints
+                'search_strategy': Dict,  # Search strategy with subdomains
                 'table_name': str,
                 'tablewide_research': str,
+                'sample_rows': List[Dict],  # NEW: Sample rows from starting tables
                 'processing_time': float,  # Seconds
                 'error': Optional[str]
             }
@@ -65,6 +67,7 @@ class ColumnDefinitionHandler:
             'search_strategy': {},
             'table_name': '',
             'tablewide_research': '',
+            'sample_rows': [],  # NEW
             'processing_time': 0.0,
             'error': None
         }
@@ -78,50 +81,116 @@ class ColumnDefinitionHandler:
             conversation_history = self._format_conversation_history(conversation_context)
             user_requirements = self._extract_user_requirements(conversation_context)
 
-            # Format context research items if provided
-            research_context = ""
-            if context_web_research and len(context_web_research) > 0:
-                research_context = "\n\n**CONTEXT TO RESEARCH** (affects column design and validation):\n"
-                for item in context_web_research:
-                    research_context += f"- {item}\n"
-                research_context += "\nUse web search to understand these items, then incorporate findings into column descriptions and validation strategies."
+            # Format background research for injection
+            if background_research_result and background_research_result.get('success'):
+                formatted_research = self._format_research_for_prompt(background_research_result)
+                logger.info("[RESEARCH] Injected background research into prompt")
+            else:
+                formatted_research = "(No background research available)"
+                logger.warning("[RESEARCH] No background research provided - column definition may struggle")
+
+            # Check if this is a restructure (after 0 rows found)
+            restructuring_guidance = conversation_context.get('restructuring_guidance', {})
+            is_restructure = restructuring_guidance.get('is_restructure', False)
+
+            # Build restructuring section conditionally (not hardcoded in prompt)
+            if is_restructure:
+                logger.info("[RESTRUCTURE] Building restructuring section from guidance")
+
+                # Get the original failed structure for reference
+                original_columns = restructuring_guidance.get('original_columns', [])
+                original_requirements = restructuring_guidance.get('original_requirements', [])
+
+                # Format original structure
+                original_structure = "**Original Failed Structure:**\n\n"
+                if original_columns:
+                    original_structure += "**ID Columns:** "
+                    id_cols = [c.get('name', '') for c in original_columns if c.get('importance') == 'ID']
+                    original_structure += ", ".join(id_cols) if id_cols else "(None)"
+                    original_structure += "\n\n"
+
+                    original_structure += "**Research Columns:** "
+                    research_cols = [c.get('name', '') for c in original_columns if c.get('importance') in ['RESEARCH', 'CRITICAL']]
+                    original_structure += ", ".join(research_cols) if research_cols else "(None)"
+                    original_structure += "\n\n"
+
+                if original_requirements:
+                    original_structure += "**Hard Requirements:** "
+                    hard = [r.get('requirement', '') for r in original_requirements if r.get('type') == 'hard']
+                    original_structure += "; ".join(hard) if hard else "(None)"
+                    original_structure += "\n\n"
+
+                    original_structure += "**Soft Requirements:** "
+                    soft = [r.get('requirement', '') for r in original_requirements if r.get('type') == 'soft']
+                    original_structure += "; ".join(soft) if soft else "(None)"
+                    original_structure += "\n"
+
+                restructuring_section = f"""
+═══════════════════════════════════════════════════════════════
+## 🔄 RESTRUCTURING MODE - Previous Attempt Failed (0 Rows Found)
+═══════════════════════════════════════════════════════════════
+
+**IMPORTANT: This is a RESTRUCTURE after your previous table structure failed to find any rows.**
+
+### What Failed
+
+**Failure Reason:** {restructuring_guidance.get('failure_reason', 'Zero rows discovered')}
+
+{original_structure}
+
+### QC's Analysis and Guidance
+
+**Column Changes Needed:**
+{restructuring_guidance.get('column_changes', 'No specific guidance provided')}
+
+**Requirement Changes Needed:**
+{restructuring_guidance.get('requirement_changes', 'No specific guidance provided')}
+
+**Search Strategy Changes:**
+{restructuring_guidance.get('search_broadening', 'No specific guidance provided')}
+
+### Your Restructure Task
+
+Apply QC's guidance above to create a MORE DISCOVERABLE table:
+1. **Simplify ID columns** - Make them 1-5 words, simple identifiers
+2. **Relax requirements** - Move hard → soft → research columns
+3. **Broaden search** - Target where entities are actually listed
+4. **Add support columns** - Break complex validations into steps
+5. **Prioritize FINDABILITY** over specificity
+
+**Key Principle:** The entities likely exist, but your previous structure made them impossible to find via web search. Make it simpler and broader while keeping the user's intent.
+
+**The background research is still valid and will be reused** - same starting tables and authoritative sources, just restructure how you use them.
+
+---
+
+"""
+            else:
+                restructuring_section = ""  # Empty for normal mode
 
             # Build prompt with variables
             variables = {
                 'CONVERSATION_CONTEXT': conversation_history,
                 'USER_REQUIREMENTS': user_requirements,
-                'CONTEXT_RESEARCH': research_context
+                'BACKGROUND_RESEARCH': formatted_research,
+                'RESTRUCTURING_SECTION': restructuring_section
             }
 
-            logger.debug(f"Loading prompt template with {len(variables)} variables")
-            logger.info(f"Context research items: {len(context_web_research) if context_web_research else 0}")
+            logger.debug(f"Loading prompt template with {len(variables)} variables (restructure={is_restructure})")
             prompt = self.prompt_loader.load_prompt('column_definition', variables)
 
             # Load response schema
             schema = self.schema_validator.load_schema('column_definition_response')
 
-            # ALWAYS enable web search for column definition to find authoritative lists
-            # Use more searches if we have context research items, but always search
-            has_context_research = context_web_research and len(context_web_research) > 0
-            web_searches = 5 if has_context_research else 3
-
-            # Use sonar-pro (best search model) for column definition since we always need web access
-            actual_model = "sonar-pro"
-
-            logger.info(
-                f"Calling AI API with model: {actual_model}, "
-                f"web_searches: {web_searches} (always enabled for list discovery), "
-                f"context_items: {len(context_web_research) if context_web_research else 0}"
-            )
+            # Call API (no web search needed - research phase already did that)
+            logger.info(f"Calling AI API with model: {model} (no web search - using research output)")
 
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
-                model=actual_model,
+                model=model,
                 max_tokens=max_tokens,
-                use_cache=False,  # Disable cache for local testing
-                max_web_searches=web_searches,  # Always enabled to find authoritative lists
-                search_context_size='high',  # Always use high context for comprehensive list discovery
+                use_cache=True,  # Enable cache (standard practice)
                 debug_name="column_definition"
             )
 
@@ -131,22 +200,22 @@ class ColumnDefinitionHandler:
                 logger.error(f"API call failed: {error_detail}")
                 raise Exception(f"AI API call failed: {error_detail}")
 
-            # Extract structured response (same pattern as interview.py)
+            # Extract structured response using AI client's method (handles all formats)
             raw_response = api_response.get('response', {})
 
-            # Parse the structured content from choices[0].message.content
-            if 'choices' in raw_response and len(raw_response['choices']) > 0:
-                content = raw_response['choices'][0]['message']['content']
-                ai_response = json.loads(content) if isinstance(content, str) else content
-            elif 'columns' in raw_response and 'search_strategy' in raw_response:
-                # Response is already structured (from cache or direct format)
-                ai_response = raw_response
-            else:
-                logger.error(f"Unexpected response structure: {json.dumps(raw_response, indent=2)[:500]}")
-                # Fallback to old extraction method
-                ai_response = self._extract_structured_response(raw_response)
+            logger.debug(f"Raw response keys: {list(raw_response.keys())}")
 
-            logger.debug(f"Extracted AI response keys: {list(ai_response.keys())}")
+            # Use AI client's extract_structured_response method
+            try:
+                ai_response = self.ai_client.extract_structured_response(
+                    raw_response,
+                    tool_name="column_definition"
+                )
+                logger.debug(f"Extracted AI response keys: {list(ai_response.keys())}")
+            except Exception as extract_error:
+                logger.error(f"Failed to extract structured response: {extract_error}")
+                logger.error(f"Response format: {json.dumps(raw_response, indent=2)[:500]}")
+                raise
 
             # Validate response against schema
             validation_result = self.schema_validator.validate_ai_response(
@@ -179,6 +248,11 @@ class ColumnDefinitionHandler:
             result['search_strategy'] = search_strategy
             result['table_name'] = ai_response.get('table_name', '')
             result['tablewide_research'] = ai_response.get('tablewide_research', '')
+            result['sample_rows'] = ai_response.get('sample_rows', [])  # NEW
+
+            # Log sample rows if provided
+            if result['sample_rows']:
+                logger.info(f"Column definition provided {len(result['sample_rows'])} sample rows from starting tables")
 
             # Extract and format requirements for downstream use (Phase 1, Items 2 and 4)
             hard_reqs, soft_reqs = self._separate_requirements(requirements)
@@ -563,3 +637,65 @@ class ColumnDefinitionHandler:
         logger.debug(f"Formatted {len(requirements)} requirements into bullet list")
 
         return formatted
+
+    def _format_research_for_prompt(self, research_result: Dict[str, Any]) -> str:
+        """
+        Format background research result for injection into column definition prompt.
+
+        Args:
+            research_result: Output from background_research_handler.conduct_research()
+
+        Returns:
+            Formatted research string for prompt injection
+        """
+        if not research_result or not research_result.get('success'):
+            return "(Background research unavailable)"
+
+        output = []
+
+        # Tablewide Research Summary
+        tablewide = research_result.get('tablewide_research', '')
+        if tablewide:
+            output.append("### Research Summary\n")
+            output.append(tablewide)
+            output.append("\n")
+
+        # Authoritative Sources
+        sources = research_result.get('authoritative_sources', [])
+        if sources:
+            output.append("\n### Authoritative Sources\n")
+            for source in sources:
+                output.append(f"**{source.get('name')}** ({source.get('type')})")
+                output.append(f"- URL: {source.get('url')}")
+                output.append(f"- Coverage: {source.get('coverage')}")
+                output.append(f"- {source.get('description')}")
+                output.append("")
+
+        # Starting Tables (CRITICAL)
+        tables = research_result.get('starting_tables', [])
+        if tables:
+            output.append("\n### Starting Tables (Use These for Subdomains)\n")
+            for table in tables:
+                output.append(f"\n**{table.get('source_name')}**")
+                output.append(f"- Source: {table.get('source_url')}")
+                output.append(f"- Entity Type: {table.get('entity_type')}")
+                output.append(f"- Count: {table.get('entity_count_estimate')}")
+                output.append(f"\nSample Entities (extract as sample_rows):")
+                for entity in table.get('sample_entities', []):
+                    output.append(f"  - {entity}")
+                output.append("")
+
+        # Discovery Patterns
+        patterns = research_result.get('discovery_patterns', {})
+        if patterns:
+            output.append("\n### Discovery Recommendations\n")
+            output.append(f"**Pattern:** {patterns.get('primary_pattern')}")
+            output.append(f"\n{patterns.get('description')}\n")
+
+            recs = patterns.get('recommendations', [])
+            if recs:
+                output.append("\n**Recommendations:**")
+                for rec in recs:
+                    output.append(f"- {rec}")
+
+        return "\n".join(output)

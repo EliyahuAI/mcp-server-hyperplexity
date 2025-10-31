@@ -1,13 +1,14 @@
 """
 Independent Row Discovery Execution Handler for Lambda.
 
-This module orchestrates the 4-step pipeline using LOCAL components directly:
-1. Column Definition
+This module orchestrates the 5-step pipeline using LOCAL components directly:
+0. Background Research (Internal - finds authoritative sources and starting tables)
+1. Column Definition (uses research output)
 2. Row Discovery (with progressive escalation)
 3. Consolidation (built into row_discovery)
 4. QC Review
 
-The LOCAL components (from table_maker/src/) are the SOURCE OF TRUTH.
+The LOCAL components (from table_maker_lib/) are the SOURCE OF TRUTH.
 This file just adds Lambda infrastructure wrappers (S3, WebSocket, runs DB).
 
 WEBSOCKET MESSAGES FOR FRONTEND:
@@ -125,6 +126,7 @@ except ImportError:
     logger.warning("WebSocket client not available")
 
 # Import LOCAL components (no modifications)
+from .table_maker_lib.background_research_handler import BackgroundResearchHandler
 from .table_maker_lib.column_definition_handler import ColumnDefinitionHandler
 from .table_maker_lib.row_discovery import RowDiscovery
 from .table_maker_lib.qc_reviewer import QCReviewer
@@ -545,6 +547,64 @@ async def _generate_validation_config(
         }
 
 
+def _merge_rows_with_preference(
+    sample_rows: list,
+    discovered_rows: list,
+    id_column_names: list
+) -> list:
+    """
+    Merge sample rows from column definition with discovered rows from discovery phase.
+    Discovery rows take precedence for duplicates (better model quality scoring).
+
+    Args:
+        sample_rows: Rows from column definition (from starting tables)
+        discovered_rows: Rows from discovery phase (from web search)
+        id_column_names: Names of ID columns for deduplication
+
+    Returns:
+        Merged list of rows with duplicates removed (discovered rows preferred)
+    """
+    if not sample_rows:
+        return discovered_rows
+
+    if not discovered_rows:
+        return sample_rows
+
+    # Build lookup of discovered rows by ID values
+    discovered_lookup = {}
+    for row in discovered_rows:
+        id_values = row.get('id_values', {})
+        # Create key from ID column values (normalized)
+        id_key = tuple(sorted([
+            (col, str(id_values.get(col, '')).lower().strip())
+            for col in id_column_names
+        ]))
+        discovered_lookup[id_key] = row
+
+    # Add sample rows that aren't duplicates
+    merged = list(discovered_rows)  # Start with all discovered rows
+    added_from_samples = 0
+
+    for sample_row in sample_rows:
+        id_values = sample_row.get('id_values', {})
+        id_key = tuple(sorted([
+            (col, str(id_values.get(col, '')).lower().strip())
+            for col in id_column_names
+        ]))
+
+        if id_key not in discovered_lookup:
+            # Not a duplicate - add it
+            merged.append(sample_row)
+            added_from_samples += 1
+
+    logger.info(
+        f"[MERGE] Final result: {len(discovered_rows)} from discovery + "
+        f"{added_from_samples} unique from samples = {len(merged)} total"
+    )
+
+    return merged
+
+
 async def execute_full_table_generation(
     email: str,
     session_id: str,
@@ -558,15 +618,24 @@ async def execute_full_table_generation(
     It only adds Lambda infrastructure wrappers (S3, WebSocket, runs DB).
 
     Pipeline Flow:
-        Step 1: Column Definition (~10-40s)
+        Step 0: Background Research (~30-60s, internal)
+            - Find authoritative sources and starting tables
+            - Extract sample entities
+            - On restructure: Use cached research (skip this step)
+            ↓
+        Step 1: Column Definition (~10-20s)
+            - Use research output to design table structure
+            - Extract 5-15 sample rows from starting tables
             ↓
         Step 2: Row Discovery + Config Generation START IN PARALLEL
             ├─→ Row Discovery (60-120s) - progressive escalation
+            │   - Merge sample_rows with discovered rows
             └─→ Config Generation (20-40s) - runs in background
             ↓
-        [Row Discovery completes]
+        [Row Discovery + Merge completes]
             ↓
         Step 3: QC Review starts immediately (~8-15s) - doesn't wait for config
+            - Reviews merged rows (sample + discovered)
             ↓
         [QC Review completes]
             ↓
@@ -576,8 +645,8 @@ async def execute_full_table_generation(
             ↓
         Complete
 
-    Total Duration: ~1-3 minutes (config runs in parallel, QC doesn't wait)
-    Total Cost: ~$0.05-0.20 (includes config generation)
+    Total Duration: ~2-3.5 minutes (research adds ~30-60s, but cached on restructure)
+    Total Cost: ~$0.07-0.25 (includes research + config generation)
 
     Args:
         email: User email
@@ -644,6 +713,7 @@ async def execute_full_table_generation(
         prompt_loader = PromptLoader(prompts_dir)
         schema_validator = SchemaValidator(schemas_dir)
 
+        background_research_handler = BackgroundResearchHandler(ai_client, prompt_loader, schema_validator)
         column_handler = ColumnDefinitionHandler(ai_client, prompt_loader, schema_validator)
         row_discovery = RowDiscovery(ai_client, prompt_loader, schema_validator)
         qc_reviewer = QCReviewer(ai_client, prompt_loader, schema_validator)
@@ -654,7 +724,7 @@ async def execute_full_table_generation(
             conversation_id=conversation_id,
             current_step=0,
             total_steps=4,
-            status='Starting Independent Row Discovery pipeline',
+            status='Starting table generation pipeline',
             progress_percent=0
         )
 
@@ -665,37 +735,129 @@ async def execute_full_table_generation(
                     session_id=session_id,
                     run_key=run_key,
                     status='IN_PROGRESS',
-                    run_type='Table Generation (Independent Row Discovery)',
-                    verbose_status='Starting 4-step pipeline',
+                    run_type='Table Generation (Background Research + Row Discovery)',
+                    verbose_status='Starting 5-step pipeline (Step 0 internal)',
                     percent_complete=0
                 )
             except Exception as e:
                 logger.warning(f"[EXECUTION] Failed to update run status: {e}")
 
         # ======================================================================
+        # STEP 0: Background Research (Internal - Always runs or uses cache)
+        # ======================================================================
+        logger.info("[EXECUTION] Step 0 (Internal): Background Research")
+
+        # Check for cached research (restructure mode)
+        cached_research = conversation_state.get('cached_background_research')
+
+        if cached_research:
+            logger.info("[STEP 0] Using cached background research (restructure mode - skipping research)")
+            background_research_result = cached_research
+
+            send_execution_progress(
+                session_id=session_id,
+                conversation_id=conversation_id,
+                current_step=0,
+                total_steps=4,
+                status='Using cached domain research (restructure mode)',
+                progress_percent=10
+            )
+        else:
+            logger.info("[STEP 0] Running background research (finding authoritative sources and starting tables)")
+
+            send_execution_progress(
+                session_id=session_id,
+                conversation_id=conversation_id,
+                current_step=0,
+                total_steps=4,
+                status='Researching domain and finding authoritative sources...',
+                progress_percent=5
+            )
+
+            # Get research config
+            research_config = config.get('background_research', {})
+
+            # Run background research
+            background_research_result = await background_research_handler.conduct_research(
+                conversation_context=conversation_state,
+                context_research_items=conversation_state.get('context_web_research', []),
+                model=research_config.get('model', 'sonar-pro'),
+                max_tokens=research_config.get('max_tokens', 8000),
+                search_context_size=research_config.get('search_context_size', 'high'),
+                max_web_searches=research_config.get('max_web_searches', 5)
+            )
+
+            # Validate success
+            if not background_research_result.get('success'):
+                error_msg = background_research_result.get('error', 'Background research failed')
+                logger.error(f"[STEP 0] Background research failed: {error_msg}")
+                result['error'] = f'Background research failed: {error_msg}'
+                return result
+
+            # Save to S3
+            _save_to_s3(
+                storage_manager, email, session_id, conversation_id,
+                'background_research_result.json', background_research_result
+            )
+
+            # Track API call
+            _add_api_call_to_runs(
+                session_id=session_id,
+                run_key=run_key,
+                api_response=background_research_result,
+                model=research_config.get('model', 'sonar-pro'),
+                processing_time=background_research_result.get('processing_time', 0.0),
+                call_type='background_research',
+                status='IN_PROGRESS',
+                verbose_status='Background research complete'
+            )
+
+            # Send completion update
+            sources_count = len(background_research_result.get('authoritative_sources', []))
+            tables_count = len(background_research_result.get('starting_tables', []))
+
+            send_execution_progress(
+                session_id=session_id,
+                conversation_id=conversation_id,
+                current_step=0,
+                total_steps=4,
+                status=f'Background research complete ({sources_count} sources, {tables_count} starting tables)',
+                progress_percent=25,
+                research_sources_count=sources_count,
+                starting_tables_count=tables_count
+            )
+
+            logger.info(
+                f"[STEP 0] Background research complete: "
+                f"{sources_count} authoritative sources, "
+                f"{tables_count} starting tables, "
+                f"time: {background_research_result.get('processing_time', 0):.2f}s"
+            )
+
+        # ======================================================================
         # STEP 1: Column Definition
         # ======================================================================
-        logger.info("[EXECUTION] Step 1/4: Column Definition")
+        logger.info("[EXECUTION] Step 1/4: Column Definition (using background research)")
 
         send_execution_progress(
             session_id=session_id,
             conversation_id=conversation_id,
             current_step=1,
             total_steps=4,
-            status='Step 1/4: Defining columns and search strategy',
-            progress_percent=5
+            status='Step 1/4: Defining columns and search strategy using background research',
+            progress_percent=30
         )
 
         try:
             # Get config for column definition
             col_config = config.get('column_definition', {})
-            col_model = col_config.get('model', 'claude-haiku-4-5')
-            col_max_tokens = col_config.get('max_tokens', 12000)
+            col_model = col_config.get('model', 'claude-sonnet-4-5')
+            col_max_tokens = col_config.get('max_tokens', 8000)
 
-            # Call column definition handler (same as local test)
+            # Call column definition handler with background research
             column_result = await column_handler.define_columns(
                 conversation_context=conversation_state,
-                context_web_research=conversation_state.get('context_web_research', []),
+                background_research_result=background_research_result,  # NEW - from Step 0
                 model=col_model,
                 max_tokens=col_max_tokens
             )
@@ -708,8 +870,12 @@ async def execute_full_table_generation(
             columns = column_result['columns']
             search_strategy = column_result['search_strategy']
             table_name = column_result.get('table_name', 'Unknown Table')
+            sample_rows = column_result.get('sample_rows', [])  # NEW - from starting tables
 
             result['table_name'] = table_name
+
+            if sample_rows:
+                logger.info(f"[STEP 1] Column definition provided {len(sample_rows)} sample rows from starting tables")
 
             # Track API call
             _add_api_call_to_runs(
@@ -916,6 +1082,16 @@ async def execute_full_table_generation(
             final_rows = discovery_result.get('final_rows', [])
             stream_results = discovery_result.get('stream_results', [])
 
+            # Merge sample_rows from column definition with discovered rows
+            if sample_rows:
+                logger.info(f"[MERGE] Merging {len(sample_rows)} sample rows with {len(final_rows)} discovered rows")
+                final_rows = _merge_rows_with_preference(
+                    sample_rows=sample_rows,
+                    discovered_rows=final_rows,
+                    id_column_names=[col['name'] for col in columns if col.get('importance') == 'ID']
+                )
+                logger.info(f"[MERGE] After merge: {len(final_rows)} total rows for QC review")
+
             # Track each subdomain's API calls
             for stream_result in stream_results:
                 subdomain_name = stream_result.get('subdomain', 'Unknown')
@@ -1118,6 +1294,143 @@ async def execute_full_table_generation(
                     result['insufficient_rows'] = True
                     result['insufficient_rows_statement'] = qc_result.get('insufficient_rows_statement', '')
                     result['insufficient_rows_recommendations'] = qc_result.get('insufficient_rows_recommendations', [])
+
+                    # If we have 0 approved rows, check QC's autonomous recovery decision
+                    if len(approved_rows) == 0:
+                        logger.warning(
+                            f"[ZERO_ROWS] No approved rows after {retry_count} retrigger(s). "
+                            "Checking QC's autonomous recovery decision..."
+                        )
+
+                        # Save QC result to S3 for debugging
+                        _save_to_s3(
+                            storage_manager, email, session_id, conversation_id,
+                            'qc_result.json', qc_result
+                        )
+
+                        # Get QC's autonomous decision
+                        recovery_decision = qc_result.get('recovery_decision', {})
+                        decision = recovery_decision.get('decision', 'give_up')  # Default to give_up if not provided
+                        reasoning = recovery_decision.get('reasoning', '')
+
+                        logger.info(f"[RECOVERY_DECISION] QC decided: {decision} - {reasoning}")
+
+                        if decision == 'restructure':
+                            # RECOVERABLE: AI will restructure and retry automatically
+                            logger.info("[AUTONOMOUS_RESTRUCTURE] QC determined this is recoverable. Restructuring table...")
+
+                            restructuring_guidance = recovery_decision.get('restructuring_guidance', {})
+                            user_facing_message = recovery_decision.get('user_facing_message',
+                                'Restructuring the table with simpler columns and broader criteria. Retrying discovery...')
+
+                            # IMPORTANT: Cancel config generation task if still running
+                            # We're going back to Step 1, so config is no longer relevant
+                            if config_generation_task and not config_generation_task.done():
+                                logger.info("[RESTRUCTURE] Canceling parallel config generation (no longer needed)")
+                                config_generation_task.cancel()
+                                try:
+                                    await config_generation_task
+                                except asyncio.CancelledError:
+                                    logger.info("[RESTRUCTURE] Config generation cancelled successfully")
+                                except Exception as e:
+                                    logger.warning(f"[RESTRUCTURE] Error canceling config task: {e}")
+
+                            # Get discovery context for transparency
+                            discovery_result = result.get('discovery_result', {})
+                            search_improvements = []
+                            for stream in discovery_result.get('stream_results', []):
+                                improvements = stream.get('search_improvements', [])
+                                search_improvements.extend(improvements)
+
+                            # Send frontend message to clear state and show restructure notice
+                            send_execution_progress(
+                                session_id=session_id,
+                                conversation_id=conversation_id,
+                                current_step=0,  # Back to beginning
+                                total_steps=4,
+                                status='Restructuring table...',
+                                progress_percent=0,
+                                clear_previous_state=True,  # Tell frontend to clear displayed columns/rows
+                                restructure_notice=user_facing_message,
+                                autonomous_restructure=True,
+                                restructuring_guidance=restructuring_guidance,  # Full guidance for transparency
+                                search_improvements=search_improvements[:10],  # Top 10 improvements
+                                qc_reasoning=reasoning  # Why QC decided to restructure
+                            )
+
+                            # Update run status
+                            if run_key:
+                                try:
+                                    update_run_status(
+                                        session_id=session_id,
+                                        run_key=run_key,
+                                        status='IN_PROGRESS',
+                                        verbose_status='Restructuring table - restarting from column definition',
+                                        percent_complete=0  # Back to start
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"[EXECUTION] Failed to update run status: {e}")
+
+                            # Set result to trigger restructure
+                            result['success'] = False
+                            result['restructure_needed'] = True
+                            result['restructuring_guidance'] = restructuring_guidance
+                            result['user_facing_message'] = user_facing_message
+                            result['conversation_state'] = conversation_state  # Pass full state for context
+                            result['original_user_request'] = conversation_state.get('interview_context', {}).get('user_goal', '')
+                            result['row_count'] = 0
+                            result['approved_rows'] = []
+
+                            # Return early - conversation.py will restart from column definition
+                            return result
+
+                        else:
+                            # UNRECOVERABLE: Give up and show apology
+                            logger.error("[GIVE_UP] QC determined this request is fundamentally impossible")
+
+                            fundamental_problem = recovery_decision.get('fundamental_problem',
+                                'This type of information is not discoverable via web searches.')
+                            user_facing_apology = recovery_decision.get('user_facing_apology',
+                                'I apologize, but I wasn\'t able to find any rows for this table. ' +
+                                'This type of information isn\'t discoverable through web searches.')
+
+                            # Send failure message with apology
+                            send_execution_progress(
+                                session_id=session_id,
+                                conversation_id=conversation_id,
+                                current_step=4,
+                                total_steps=4,
+                                status='Unable to discover rows',
+                                progress_percent=100,
+                                execution_failed=True,
+                                fundamental_problem=fundamental_problem,
+                                user_facing_apology=user_facing_apology,
+                                show_new_table_card=True  # Signal frontend to show "Get Started" card
+                            )
+
+                            # Update run status to FAILED
+                            if run_key:
+                                try:
+                                    update_run_status(
+                                        session_id=session_id,
+                                        run_key=run_key,
+                                        status='FAILED',
+                                        verbose_status=f'Unrecoverable: {fundamental_problem[:100]}',
+                                        percent_complete=100
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"[EXECUTION] Failed to update run status: {e}")
+
+                            # Set result as failed with apology
+                            result['success'] = False
+                            result['error'] = fundamental_problem
+                            result['user_facing_apology'] = user_facing_apology
+                            result['show_new_table_card'] = True
+                            result['row_count'] = 0
+                            result['approved_rows'] = []
+
+                            # Return early - hard failure, frontend shows apology + new table card
+                            return result
 
                 # ======================================================================
                 # Phase 2, Item 6: Check for QC retrigger request

@@ -14,14 +14,30 @@
     "emphasis": "sketch_approval"
   },
 
-  "column_definition": {
-    "_comment": "Column definition phase - Defines precise column specifications and search strategy. ALWAYS uses sonar-pro with web search to find authoritative lists that can provide row candidates en masse (see column_definition_handler.py line 109)",
+  "background_research": {
+    "_comment": "Step 0 - ALWAYS runs before column definition. Finds authoritative sources and starting tables to guide column design. On restructure, cached research is ALWAYS reused (never re-run)",
+
     "model": "sonar-pro",
+    "_note_model": "Recommended: sonar-pro (Perplexity), sonar (Perplexity), or claude-sonnet-4-5 (Anthropic with web search)",
     "max_tokens": 8000,
-    "use_web_search": true,
-    "web_searches": 3,
-    "web_searches_with_context": 5,
-    "_web_search_note": "Always enabled to find authoritative lists (NIH grants, Wikipedia lists, Crunchbase, etc.). 3 searches baseline, 5 if context_web_research items provided",
+
+    "_web_search_params_info": "Web search parameters differ by model family:",
+    "search_context_size": "high",
+    "_note_search_context": "FOR PERPLEXITY MODELS ONLY (sonar, sonar-pro). Options: low/medium/high. High = comprehensive research",
+    "max_web_searches": 5,
+    "_note_max_web_searches": "FOR ANTHROPIC MODELS ONLY (claude-*). Number of web searches Claude can perform (if model=claude-sonnet-4-5)",
+
+    "min_starting_tables": 2,
+    "_note_min_tables": "Minimum number of starting tables with sample entities required before proceeding to column definition",
+    "min_sample_entities_per_table": 5,
+    "_note_min_entities": "Each starting table must include at least this many actual sample entities (not just URLs)"
+  },
+
+  "column_definition": {
+    "_comment": "Step 1 - Defines column specifications and search strategy using background research output as input",
+    "model": "claude-sonnet-4-5",
+    "_note_model": "Recommended: claude-sonnet-4-5 (receives formatted research, no web search needed)",
+    "max_tokens": 8000,
     "show_preview_table": false,
     "include_subdomains": true,
     "subdomain_count_min": 2,
@@ -176,10 +192,14 @@
   "execution": {
     "_comment": "Overall execution settings for table generation pipeline",
     "total_steps": 4,
-    "_note_steps": "Interview -> Column Definition -> Row Discovery -> Finalization",
-    "estimated_duration_seconds": 240,
-    "enable_parallel_step2": true,
-    "_note_parallel_step2": "When true, column_definition and config_generation run in parallel"
+    "_note_steps": "USER-VISIBLE: Step 1=Column Definition, Step 2=Row Discovery, Step 3=QC Review, Step 4=Finalization. INTERNAL Step 0=Background Research (not counted in user-facing progress)",
+    "internal_step_0_name": "background_research",
+    "_note_step_0": "Background research runs as Step 0 (internal). User sees progress 0%->25% during this phase, then Step 1 starts at 25%",
+    "_restructure_caching": "On restructure, background research is ALWAYS reused from cache (never re-run). Research is cached in conversation_state automatically.",
+    "estimated_duration_seconds": 280,
+    "_note_duration": "Increased from 240s to account for new background research phase (~30-60s)",
+    "enable_parallel_step2": false,
+    "_note_parallel_step2_deprecated": "Deprecated - config_generation still runs in parallel with row discovery, but background_research must complete before column_definition"
   },
 
   "_REMOVED_SETTINGS_SUMMARY": {

@@ -104,7 +104,13 @@
       "description": "Optional: Recommendations for improving results (only if insufficient_rows=true)",
       "items": {
         "type": "object",
+        "required": ["type", "recommendation"],
         "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["search_broadening", "table_restructuring", "criteria_adjustment"],
+            "description": "Type of recommendation: search_broadening (adjust request wording), table_restructuring (change columns), or criteria_adjustment (relax requirements)"
+          },
           "issue": {
             "type": "string",
             "description": "The problem identified"
@@ -113,6 +119,52 @@
             "type": "string",
             "description": "How to address it"
           }
+        }
+      }
+    },
+    "recovery_decision": {
+      "type": "object",
+      "description": "REQUIRED when 0 rows approved: Autonomous decision on whether to restructure or give up",
+      "required": ["decision", "reasoning"],
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": ["restructure", "give_up"],
+          "description": "restructure = can fix with column/requirement changes, give_up = fundamentally impossible"
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "2-3 sentences explaining why you chose this decision"
+        },
+        "restructuring_guidance": {
+          "type": "object",
+          "description": "Required if decision=restructure. Instructions for how to restructure the table.",
+          "properties": {
+            "column_changes": {
+              "type": "string",
+              "description": "Specific instructions for column generator to restructure columns"
+            },
+            "requirement_changes": {
+              "type": "string",
+              "description": "How to adjust hard/soft requirements"
+            },
+            "search_broadening": {
+              "type": "string",
+              "description": "How to expand search strategy/domains"
+            }
+          }
+        },
+        "fundamental_problem": {
+          "type": "string",
+          "description": "Required if decision=give_up. Specific issue that makes this impossible."
+        },
+        "user_facing_message": {
+          "type": "string",
+          "description": "Required if decision=restructure. Message shown to user during automatic restructure."
+        },
+        "user_facing_apology": {
+          "type": "string",
+          "description": "Required if decision=give_up. Apology message explaining why it's impossible."
         }
       }
     },

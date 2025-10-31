@@ -5185,6 +5185,100 @@
                 }, 500); // Wait 500ms for preview card to render and become visible
             }
 
+            function handleTableExecutionRestructure(message) {
+                const conversationId = message.conversation_id;
+                let tableMakerCardId = null;
+                if (cardHandlers.size > 0) {
+                    tableMakerCardId = Array.from(cardHandlers.keys()).pop();
+                }
+                if (!tableMakerCardId) return;
+
+                console.log('[RESTRUCTURE] Clearing previous state and showing restructure notice');
+                clearTableExecutionState(tableMakerCardId);
+                updateThinkingProgress(tableMakerCardId, 0, 'Restructuring table...');
+
+                const card = document.getElementById(tableMakerCardId);
+                if (card) {
+                    const messagesDiv = document.getElementById(`${tableMakerCardId}-messages`);
+                    if (messagesDiv) {
+                        const restructureMsg = document.createElement('div');
+                        restructureMsg.className = 'message message-info';
+                        restructureMsg.innerHTML = `
+                            <span class="message-icon">[INFO]</span>
+                            <div>
+                                <strong>Restructuring Table</strong><br>
+                                ${message.user_facing_message || 'Adjusting table structure to improve row discovery...'}
+                                ${message.restructuring_guidance ? createRestructureDetails(message) : ''}
+                            </div>
+                        `;
+                        messagesDiv.appendChild(restructureMsg);
+                    }
+                }
+            }
+
+            function handleTableExecutionUnrecoverable(message) {
+                let tableMakerCardId = null;
+                if (cardHandlers.size > 0) {
+                    tableMakerCardId = Array.from(cardHandlers.keys()).pop();
+                }
+                if (!tableMakerCardId) return;
+
+                console.log('[UNRECOVERABLE] Request is impossible');
+                completeThinkingInCard(tableMakerCardId, 'Unable to discover rows');
+
+                const card = document.getElementById(tableMakerCardId);
+                if (card) {
+                    const messagesDiv = document.getElementById(`${tableMakerCardId}-messages`);
+                    if (messagesDiv) {
+                        const apologyMsg = document.createElement('div');
+                        apologyMsg.className = 'message message-error';
+                        apologyMsg.innerHTML = `
+                            <span class="message-icon">[NOTICE]</span>
+                            <div>${message.user_facing_apology || "I wasn't able to find rows for this table."}</div>
+                        `;
+                        messagesDiv.appendChild(apologyMsg);
+                    }
+                }
+
+                if (message.show_new_table_card) {
+                    setTimeout(() => showGetStartedCard(), 1500);
+                }
+            }
+
+            function clearTableExecutionState(cardId) {
+                const card = document.getElementById(cardId);
+                if (!card) return;
+                const progressContent = document.getElementById(`${cardId}-progress-content`);
+                if (!progressContent) return;
+                const infoBoxes = progressContent.querySelectorAll('.info-box');
+                infoBoxes.forEach(box => box.remove());
+                console.log(`[CLEAR_STATE] Removed ${infoBoxes.length} info boxes`);
+            }
+
+            function createRestructureDetails(message) {
+                const guidance = message.restructuring_guidance || {};
+                const improvements = message.search_improvements || [];
+                const reasoning = message.qc_reasoning || '';
+                let html = '<details style="margin-top: 10px; font-size: 14px;"><summary style="cursor: pointer; color: #2196F3;">Show Details</summary><div style="margin-top: 8px; padding-left: 12px; border-left: 3px solid #2196F3;">';
+                if (reasoning) html += `<p><strong>Why:</strong> ${reasoning}</p>`;
+                if (guidance.column_changes) html += `<p><strong>Column Changes:</strong> ${guidance.column_changes}</p>`;
+                if (guidance.requirement_changes) html += `<p><strong>Requirements:</strong> ${guidance.requirement_changes}</p>`;
+                if (guidance.search_broadening) html += `<p><strong>Search Broadening:</strong> ${guidance.search_broadening}</p>`;
+                if (improvements.length > 0) {
+                    html += '<p><strong>Lessons Learned:</strong></p><ul style="margin: 4px 0; padding-left: 20px;">';
+                    improvements.slice(0, 5).forEach(imp => html += `<li>${imp}</li>`);
+                    html += '</ul>';
+                }
+                html += '</div></details>';
+                return html;
+            }
+
+            function showGetStartedCard() {
+                console.log('[GET_STARTED] Showing new "Get Started" card (same as after email validation)');
+                // Reuse the same Get Started card shown after email validation
+                createUploadOrDemoCard();
+            }
+
             function showRequirementsBox(conversationId, requirements) {
                 // Find the most recent card
                 if (cardHandlers.size === 0) return;
@@ -5606,6 +5700,18 @@
                 if (data.type === 'table_execution_complete') {
                     handleTableExecutionComplete(data);
                     return; // Table execution complete is handled by dedicated function
+                }
+
+                // Handle Table Maker autonomous restructure
+                if (data.type === 'table_execution_restructure') {
+                    handleTableExecutionRestructure(data);
+                    return; // Table execution restructure is handled by dedicated function
+                }
+
+                // Handle Table Maker unrecoverable failure
+                if (data.type === 'table_execution_unrecoverable') {
+                    handleTableExecutionUnrecoverable(data);
+                    return; // Table execution unrecoverable is handled by dedicated function
                 }
 
                 // Handle general warnings

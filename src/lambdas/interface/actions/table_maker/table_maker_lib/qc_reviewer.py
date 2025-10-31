@@ -143,7 +143,8 @@ class QCReviewer:
                 'AGGREGATED_DOMAIN_RECOMMENDATIONS': self._format_domain_recommendations(discovery_result),
                 'CURRENT_INCLUDED_DOMAINS': self._format_domain_list(search_strategy, 'included'),
                 'CURRENT_EXCLUDED_DOMAINS': self._format_domain_list(search_strategy, 'excluded'),
-                'RETRIGGER_ALLOWED': 'true' if retrigger_allowed else 'false'
+                'RETRIGGER_ALLOWED': 'true' if retrigger_allowed else 'false',
+                'MIN_ROW_COUNT': str(min_row_count)  # Configurable threshold from config
             }
 
             logger.debug(f"Loading QC review prompt with {len(variables)} variables")

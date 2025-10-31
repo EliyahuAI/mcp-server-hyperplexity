@@ -121,7 +121,7 @@ You will:
 3. **Assign QC scores** (0-1) with more nuance than discovery scoring
 4. **Adjust priorities** (promote exceptional fits, demote marginal ones)
 
-**IMPORTANT:** We need at least 4 usable results. If discovery found fewer than 4 total entities, you'll be asked to provide recommendations for improvement.
+**IMPORTANT:** We need at least {{MIN_ROW_COUNT}} usable results. If discovery found fewer than {{MIN_ROW_COUNT}} total entities, you'll be asked to provide recommendations for improvement.
 
 ### Three-Tier System: Keep or Reject?
 
@@ -265,13 +265,13 @@ Feedback from discovery workers about which domains were helpful or problematic.
 
 You should request a retrigger ONLY when ALL of these conditions are met:
 
-1. **Insufficient Quality Rows**: Fewer than 4 rows meet the hard requirements (would be kept after QC)
+1. **Insufficient Quality Rows**: Fewer than {{MIN_ROW_COUNT}} rows meet the hard requirements (would be kept after QC)
 2. **Confidence in Better Strategy**: You have identified a specific, concrete search approach that is likely to yield better results
 3. **Clear Deficiency**: You can articulate what was wrong with the current search strategy and how a new approach would address it
 
 **When NOT to Retrigger:**
 
-- If 4+ rows meet hard requirements (even if soft requirements aren't fully met)
+- If {{MIN_ROW_COUNT}}+ rows meet hard requirements (even if soft requirements aren't fully met)
 - If the topic is genuinely rare/niche and unlikely to yield more results
 - If you cannot identify a meaningfully different search strategy
 - If the current search strategy was already well-designed and comprehensive
@@ -319,19 +319,72 @@ You should request a retrigger ONLY when ALL of these conditions are met:
 
 ---
 
-## 7. User-Facing Feedback (If Results Are Insufficient)
+## 7. Autonomous Recovery Decision (If 0 Rows Approved)
 
-### Message to User (If We Came Up Short)
+### CRITICAL: When 0 Rows Approved After QC
 
-**ONLY provide this section if discovery found fewer than 4 total entities.**
+**If you approve 0 rows (all rows rejected or no rows discovered), you MUST make an autonomous decision:**
 
-If the discovery process returned fewer than 4 candidates total (not just 4 kept after QC, but 4 discovered in total), you must provide user-friendly feedback explaining what happened and how they can improve their request.
+Can restructuring the table help, or is this request fundamentally impossible?
 
-**Tone:** Apologetic and encouraging - we tried our best, here's what we attempted, and here's how you can help us do better.
+### Your Decision Options
 
-**NO technical jargon:** Don't mention subdomains, models, escalation levels, sonar, claude, search strategies, or other system internals.
+**Option A: RECOVERABLE - Restructure and Retry**
+- The topic/domain exists and has discoverable entities
+- The problem was in HOW we structured the table (columns, requirements, search strategy)
+- We can fix it by: simplifying ID columns, relaxing requirements, or broadening search domains
+- **Action**: Provide `recovery_decision` with restructuring instructions
 
-### insufficient_rows_statement
+**Option B: UNRECOVERABLE - Give Up**
+- The topic is too niche, doesn't exist, or entities are genuinely undiscoverable via web search
+- No amount of restructuring will help (e.g., "companies that don't exist", "proprietary internal data")
+- **Action**: Provide `recovery_decision` explaining why it's impossible
+
+### Decision Criteria
+
+**Choose RECOVERABLE if:**
+- Subdomain results show partial matches that were filtered out by strict criteria
+- ID columns are too complex (e.g., requiring specific fields not in search results)
+- Requirements are too strict (hard requirements that could be softened)
+- Search strategy was too narrow (could expand to related domains)
+- **Key indicator**: "The entities exist, but our table structure made them hard to discover"
+
+**Choose UNRECOVERABLE if:**
+- All subdomains returned 0 results even after escalation
+- Web search fundamentally cannot answer this (proprietary data, future predictions, etc.)
+- Topic is fabricated or extremely rare (< 5 entities globally)
+- Requirements contradict each other or are impossible to satisfy
+- **Key indicator**: "The entities don't exist or are impossible to discover via web search"
+
+### Response Format for recovery_decision
+
+**If RECOVERABLE - Provide restructuring guidance:**
+```json
+"recovery_decision": {
+  "decision": "restructure",
+  "reasoning": "Clear explanation of why this is recoverable (2-3 sentences)",
+  "restructuring_guidance": {
+    "column_changes": "Specific instructions for column generator: 'Simplify ID columns to only Company Name and Website. Move Product Name to a research column.'",
+    "requirement_changes": "How to adjust requirements: 'Make funding status a soft requirement instead of hard. Broaden to include both series A and seed stage.'",
+    "search_broadening": "How to expand search strategy: 'Include also digital health companies, not just pure AI companies.'"
+  },
+  "user_facing_message": "I found that the table structure was too specific. I'm restructuring it with simpler columns and broader criteria. Retrying discovery now..."
+}
+```
+
+**If UNRECOVERABLE - Admit defeat:**
+```json
+"recovery_decision": {
+  "decision": "give_up",
+  "reasoning": "Clear explanation of why this cannot work (2-3 sentences)",
+  "fundamental_problem": "Specific issue that makes this impossible: 'This topic requires proprietary company data that isn't publicly available via web search.'",
+  "user_facing_apology": "I apologize, but I wasn't able to find any rows for this table. [Explain the fundamental problem in friendly terms]. Unfortunately, this type of information isn't discoverable through web searches. Would you like to try a different table topic?"
+}
+```
+
+**NO technical jargon in user_facing messages:** Don't mention subdomains, models, escalation levels, sonar, claude, search strategies, or other system internals.
+
+### insufficient_rows_statement (DEPRECATED - use recovery_decision instead)
 
 A brief, friendly summary (2-3 sentences) explaining what we tried and why results were limited.
 
@@ -353,36 +406,45 @@ A brief, friendly summary (2-3 sentences) explaining what we tried and why resul
 
 ### insufficient_rows_recommendations
 
-An array of specific, actionable suggestions for how the user can modify their ORIGINAL REQUEST to get better results.
+An array of specific, actionable suggestions for how the user can modify their request to get better results.
 
-**Focus on:**
-- What to add to their initial request
-- How to rephrase or broaden their criteria
-- Specific language they could include
-- Alternative angles they might not have considered
+**Focus on THREE types of recommendations:**
+
+1. **Search Broadening** - How to adjust the original request wording
+2. **Table Restructuring** - How to change columns to make discovery easier
+3. **Criteria Adjustment** - How to relax requirements or add alternatives
 
 **Example:**
 ```json
 "insufficient_rows_recommendations": [
   {
+    "type": "search_broadening",
     "issue": "Your request focused on a very specific combination of criteria",
     "recommendation": "Try adding phrases like 'including early-stage companies' or 'companies working in related medical imaging fields' to your original request"
   },
   {
-    "issue": "We found it challenging to locate companies in such a narrow specialty",
-    "recommendation": "Consider broadening your request to include 'AI companies in healthcare diagnostics' or 'medical imaging AI' rather than focusing only on radiology"
+    "type": "table_restructuring",
+    "issue": "The ID columns required very specific details that weren't discoverable",
+    "recommendation": "Consider simplifying your ID columns to just 'Company Name' and 'Website' instead of requiring 'Product Name' and 'Founding Year' as identifiers"
   },
   {
+    "type": "criteria_adjustment",
     "issue": "Many relevant companies might use different terminology",
     "recommendation": "In your request, you could add: 'include companies that describe themselves as clinical decision support or diagnostic AI, not just radiology AI'"
+  },
+  {
+    "type": "table_restructuring",
+    "issue": "Some data columns might work better as ID columns for discoverability",
+    "recommendation": "Move 'Industry Focus' from a data column to an ID column, so we can search for 'healthcare AI companies' more directly"
   }
 ]
 ```
 
 **Format guidelines:**
+- Include `type` field for each recommendation (search_broadening, table_restructuring, criteria_adjustment)
 - Plain, conversational language
-- Focus on modifying the ORIGINAL REQUEST (not technical search parameters)
 - Specific suggestions the user can understand and act on
+- **Table restructuring recommendations** should suggest concrete column changes
 - Encouraging tone - "you could try", "consider adding", "might help to include"
 
 ---

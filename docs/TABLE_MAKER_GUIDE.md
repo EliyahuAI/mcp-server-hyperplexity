@@ -1,7 +1,7 @@
 # Table Maker - Independent Row Discovery System
 
-**Version:** 2.3 (Strategic Subdomain Scaling + Overshoot Targeting)
-**Last Updated:** October 27, 2025
+**Version:** 2.5 (Background Research Phase + Enhanced Discoverability)
+**Last Updated:** October 31, 2025
 **Status:** Production Ready (Lambda Integrated)
 
 ---
@@ -36,9 +36,10 @@ The Table Maker system generates research tables by discovering entities through
 ### 30-Second Overview
 
 ```
-User Request → Interview → Column Definition → Row Discovery → QC Review → CSV + Config
-                                    ↓
-                          (Progressive Escalation: sonar → sonar-pro)
+User Request → Interview → Background Research → Column Definition → Row Discovery → QC Review → CSV + Config
+                                (Step 0)              (Step 1)          (Step 2)       (Step 3)
+                           Find sources & tables   Use research      Merge samples
+                           Extract sample rows     Output samples    + discovered
 ```
 
 ### Running a Test
@@ -53,6 +54,67 @@ python test_local_e2e_sequential.py
 - Duration: 1-3 minutes
 - Cost: $0.05-0.15
 - Output: 8-15 validated companies in `output/local_tests/`
+
+---
+
+## What's New in Version 2.5
+
+### Background Research Phase (MAJOR ENHANCEMENT)
+- **Separate Research Step**: Background research now runs BEFORE column definition (Step 0)
+- **Finds Authoritative Sources**: Identifies databases, directories, and lists that contain entities
+- **Extracts Starting Tables**: Gets ACTUAL sample entities (not just URLs) from sources
+- **Sample Rows to QC**: Column definition extracts 5-15 sample rows that go straight to QC
+- **Research Caching**: On restructure, research is ALWAYS reused (saves 30-60s and $0.02-0.05)
+- **Model Split**: Research uses sonar-pro, column definition uses claude-sonnet-4-5
+- **Better Discoverability**: Column definition designs table based on what's actually findable
+
+**Key Benefits:**
+- Higher success rate (research shows what's findable before designing table)
+- Faster column definition (no web search needed)
+- Immediate candidates (sample rows from research)
+- Efficient restructure (research reused, not repeated)
+
+### Enhanced Discoverability Guidance
+- **Design for Row Discovery**: New prompt sections emphasizing table structure affects findability
+- **Support Columns Strategy**: Break complex validations into discoverable steps
+  - Example: Institution Email Pattern → Email (85% success vs 30% direct)
+  - Example: Has AI Team → Has AI Ethics Program (70% vs 40%)
+- **Original Structure on Restructure**: Shows what failed to help AI understand what to fix
+
+### Streamlined Prompts
+- **Column Definition**: Reduced from 1115 to 427 lines (62% reduction)
+- **Proper Conditionals**: Restructuring section only shows when needed (not hardcoded)
+- **Clear Sections**: Follows PROMPT_STRUCTURING.md guidelines
+
+---
+
+## What's New in Version 2.4
+
+### Autonomous Failure Recovery (MAJOR ENHANCEMENT)
+- **AI Makes Recovery Decision**: When 0 rows found, QC autonomously decides: restructure or give up
+- **Two-Path Recovery Flow**:
+  - **RECOVERABLE** → AI restructures table automatically and retries execution
+  - **UNRECOVERABLE** → AI apologizes, frontend shows "Get Started" card for new table
+- **No User Intervention Needed**: System handles recovery automatically without asking user
+- **Intelligent Analysis**: QC analyzes if entities exist but structure was wrong, or if request is impossible
+- **Restructuring Guidance**: QC provides specific instructions:
+  - `column_changes`: How to simplify ID columns
+  - `requirement_changes`: How to relax hard requirements
+  - `search_broadening`: How to expand search domains
+- **Friendly User Messages**: Non-technical messages for both restructure and give-up scenarios
+- **Frontend Integration**: New WebSocket messages (`table_execution_restructure`, `table_execution_unrecoverable`)
+
+**Result:** Zero-row failures either self-correct automatically or fail gracefully with clear explanation.
+
+---
+
+## What's New in Version 2.3.1 (Superseded by 2.4)
+
+### Zero-Row Failure Handling
+- **Early Exit on Zero Rows**: System stops execution when QC approves 0 rows
+- **User-Facing Feedback**: Provides `insufficient_rows_statement` and recommendations
+
+**Note:** Version 2.4 replaces hard failure with conversational recovery.
 
 ---
 
@@ -147,14 +209,25 @@ python test_local_e2e_sequential.py
 
 ## Architecture Overview
 
-### The 4-Step Pipeline
+### The 5-Step Pipeline (Step 0 Internal)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ Step 1: Column Definition (~10-40s)                             │
-│  • Define columns (ID vs data columns)                          │
-│  • Create search strategy with subdomains                       │
-│  • Model: claude-haiku-4-5 or sonar-pro (if web research)      │
+│ Step 0: Background Research (~30-60s) INTERNAL                  │
+│  • Find authoritative sources (databases, directories, lists)   │
+│  • Extract starting tables with ACTUAL sample entities          │
+│  • Document discovery patterns and domain context               │
+│  • Model: sonar-pro (configurable)                              │
+│  • On restructure: ALWAYS cached and reused (skips this step)   │
+└─────────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 1: Column Definition (~10-20s)                             │
+│  • Use background research to design table structure            │
+│  • Define columns (ID vs research columns)                      │
+│  • Create search strategy referencing starting tables           │
+│  • Extract 5-15 sample rows from starting tables                │
+│  • Model: claude-sonnet-4-5 (no web search needed)              │
 └─────────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -163,27 +236,21 @@ python test_local_e2e_sequential.py
 │  Row Discovery (60-120s):              Config Generation (20-40s)│
 │   • Process subdomains in parallel      • Build validation rules │
 │   • 3-Level progressive escalation:     • Based on columns       │
-│     - Level 1: sonar (high context)    • Runs in background     │
-│     - Level 2: sonar-pro (high)                                 │
-│     - Level 3: claude-haiku (fallback)                          │
+│     - Level 1: sonar-pro (high)        • Runs in background     │
+│     - Level 2: claude-haiku (fallback)                          │
+│     - Level 3: claude-sonnet (final)                            │
+│   • Merge with sample rows from Step 1                          │
 │   • Collect search improvements feedback                        │
-│   • Pass learnings to next round/subdomain                      │
 │   • Tag candidates with metadata                                │
 └─────────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Step 3: Consolidation (built into row_discovery)                │
-│  • Deduplicate entities (fuzzy matching)                        │
-│  • Calculate match scores                                       │
-│  • Filter by threshold (default: 0.6)                           │
-└─────────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ Step 4: QC Review (~8-15s)                                      │
+│ Step 3: Consolidation & QC Review (~8-15s)                      │
+│  • Deduplicate merged rows (fuzzy matching)                     │
 │  • Review each candidate (claude-sonnet-4-5)                    │
 │  • Assign qc_score, keep/reject, priority                       │
 │  • Filter: keep=true AND qc_score >= 0.5                        │
-│  • Flexible row count (no artificial limits)                    │
+│  • If 0 rows: Autonomous recovery decision                      │
 └─────────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -196,15 +263,17 @@ python test_local_e2e_sequential.py
 
 ### Key Principles
 
-1. **3-Level Progressive Escalation:** Start cheap (sonar), escalate to premium (sonar-pro), fallback to Claude if needed
-2. **Continuous Learning:** Search improvements feed back into subsequent rounds and subdomains
-3. **Quality Over Quantity:** QC layer ensures relevance
-4. **No Row Limits:** Keep all quality rows (not arbitrarily capped at 20)
-5. **Parallel Execution:** Config generation doesn't block QC
-6. **Cost Tracking:** Every API call tracked with enhanced_data
-7. **Simple ID Columns:** Short, repeatable identifiers prevent discovery failures
-8. **Strategic Overshooting:** Always target 30-50% more rows than promised to ensure delivery
-9. **Adaptive Subdomain Scaling:** 2-10 subdomains based on difficulty and complexity
+1. **Background Research First:** Find authoritative sources before designing table structure
+2. **Design for Discoverability:** Table structure determines if rows can be found
+3. **Support Columns Strategy:** Break complex validations into discoverable steps
+4. **Research Caching:** Always reuse research on restructure (mandatory optimization)
+5. **Progressive Escalation:** Start with sonar-pro, escalate to claude-haiku, final claude-sonnet
+6. **Continuous Learning:** Search improvements feed back into subsequent rounds and subdomains
+7. **Sample + Discovered Rows:** Column definition provides samples, discovery finds more, merged for QC
+8. **Quality Over Quantity:** QC layer ensures relevance
+9. **No Row Limits:** Keep all quality rows (not arbitrarily capped)
+10. **Simple ID Columns:** Short, repeatable identifiers prevent discovery failures
+11. **Strategic Overshooting:** Target 30-50% more rows to ensure delivery after QC
 
 ---
 
@@ -527,10 +596,18 @@ Round 2 discovers: "Date ranges improve relevance"
   "qc_review": {
     "model": "claude-sonnet-4-5",
     "max_tokens": 16000,
-    "min_qc_score": 0.5  // Final quality threshold
+    "min_qc_score": 0.5,  // Final quality threshold
+    "min_row_count": 4,  // Minimum rows to guarantee (promotes rejected if needed)
+    "min_row_count_for_frontend": 4  // Threshold for triggering recovery decision
   }
 }
 ```
+
+**Recovery Threshold Configuration:**
+- `min_row_count`: QC will promote rejected rows to meet this minimum
+- `min_row_count_for_frontend`: Below this, QC makes autonomous recovery decision (restructure or give up)
+- Both are configurable - adjust based on your use case
+- Typical values: 3-8 rows depending on table complexity
 
 ### ID Column Requirements (CRITICAL)
 
@@ -596,6 +673,18 @@ Round 2 discovers: "Date ranges improve relevance"
 - Higher → Fewer final rows (stricter quality)
 - Lower → More final rows (more lenient quality)
 - **Recommended:** `0.5` for flexible quality
+
+**`min_row_count` (4):**
+- Minimum rows QC guarantees by promoting rejected rows
+- Higher → More rows guaranteed but lower quality
+- Lower → Fewer rows but higher quality
+- **Recommended:** `4` for most use cases, `2-3` for niche topics
+
+**`min_row_count_for_frontend` (4):**
+- Threshold below which autonomous recovery kicks in
+- Should typically match or be slightly lower than `min_row_count`
+- Below this threshold, QC decides: restructure or give up
+- **Recommended:** Same as `min_row_count`
 
 ---
 
@@ -874,6 +963,79 @@ User can download the CSV template with:
 ## Troubleshooting
 
 ### Common Issues
+
+**0. Zero Rows Found - Autonomous Recovery**
+
+**Symptoms:** Discovery found 0 rows or QC approved 0 rows after reviewing candidates
+
+**What Happens (NEW in v2.4):**
+- QC approves 0 rows after reviewing discovered candidates
+- **QC makes autonomous decision**: Can this be fixed by restructuring?
+- System takes one of two paths automatically (no user input needed)
+
+**Path A: RECOVERABLE - Autonomous Restructure**
+
+**QC Determines:**
+- Entities exist but table structure made them hard to discover
+- Can fix by: simpler ID columns, relaxed requirements, broader search
+
+**System Actions:**
+1. QC provides `restructuring_guidance` with specific instructions
+2. Frontend shows friendly message: "Restructuring table with simpler columns..."
+3. System restarts from column definition with guidance
+4. Retries execution automatically
+5. Run status: `IN_PROGRESS` (not failed)
+
+**User Experience:**
+- Sees progress message: "I found that the table structure was too specific. I'm restructuring it with simpler columns and broader criteria. Retrying discovery now..."
+- No action required - system handles it
+- Progress continues as if nothing failed
+
+**Path B: UNRECOVERABLE - Give Up**
+
+**QC Determines:**
+- Entities don't exist or are impossible to discover via web search
+- Examples: Proprietary data, fabricated topics, contradictory requirements
+
+**System Actions:**
+1. QC provides `user_facing_apology` explaining why
+2. Frontend shows apology + "Get Started" card for new table
+3. Run status: `FAILED`
+4. Conversation ends
+
+**User Experience:**
+- Sees apology: "I apologize, but I wasn't able to find any rows for this table. This type of information requires proprietary data that isn't publicly available. Would you like to try a different table topic?"
+- Sees "Get Started" card to create new table
+- Can start fresh with different topic
+
+**Causes:**
+- Discovery found few/no candidates matching requirements
+- QC rejected all discovered candidates as low quality
+- Topic too niche or search strategy too narrow
+- Requirements too strict or contradictory
+- ID columns too complex or specific
+- Request requires proprietary/internal data
+
+**System Behavior (v2.4):**
+- QC analyzes subdomain results, search improvements, domain recommendations
+- Makes intelligent decision based on evidence
+- Provides restructuring guidance if recoverable
+- Admits defeat with explanation if unrecoverable
+- No user decision-making required
+- System will NOT generate empty CSV when 0 rows approved
+
+**Decision Flow:**
+```
+0 Rows Found → QC Analyzes
+                  ↓
+      ┌───────────┴────────────┐
+      ↓                        ↓
+  RECOVERABLE             UNRECOVERABLE
+      ↓                        ↓
+Restructure + Retry       Apology + New Card
+      ↓                        ↓
+(Automatic)              (User starts over)
+```
 
 **1. Row Discovery Fails - Complex ID Columns**
 

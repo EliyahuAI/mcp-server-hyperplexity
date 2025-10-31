@@ -643,6 +643,154 @@ async def _trigger_execution(
 
         logger.info(f"[TABLE_MAKER] Execution pipeline complete. Success: {execution_result.get('success')}")
 
+        # Check if autonomous restructure is needed (QC decided it's recoverable)
+        if execution_result.get('restructure_needed'):
+            logger.info(f"[AUTONOMOUS_RESTRUCTURE] QC determined table can be restructured. Restarting execution with guidance...")
+
+            restructuring_guidance = execution_result.get('restructuring_guidance', {})
+            user_facing_message = execution_result.get('user_facing_message', '')
+            conversation_state = execution_result.get('conversation_state', {})
+
+            # Send WebSocket notification about restructuring
+            if websocket_client and session_id:
+                try:
+                    websocket_client.send_to_session(session_id, {
+                        'type': 'table_execution_restructure',
+                        'conversation_id': conversation_id,
+                        'phase': 'restructure',
+                        'status': 'Restructuring table automatically...',
+                        'user_facing_message': user_facing_message,
+                        'autonomous_restructure': True,
+                        'clear_previous_state': True  # Tell frontend to clear displayed state
+                    })
+                    logger.info(f"[TABLE_MAKER] Sent restructure notification with clear_previous_state")
+                except Exception as ws_error:
+                    logger.error(f"[TABLE_MAKER] Failed to send restructure notification: {ws_error}")
+
+            # Load background research from S3 for caching (ALWAYS reuse on restructure)
+            storage_manager = UnifiedS3Manager()
+            background_research_result = None
+            try:
+                research_s3_key = f"tables/{email}/{session_id}/table_maker/{conversation_id}/background_research_result.json"
+                response = storage_manager.s3_client.get_object(
+                    Bucket=storage_manager.bucket_name,
+                    Key=research_s3_key
+                )
+                background_research_result = json.loads(response['Body'].read().decode('utf-8'))
+                logger.info(f"[RESTRUCTURE] Loaded background research from S3 for caching")
+            except Exception as e:
+                logger.error(f"[RESTRUCTURE] Failed to load background research from S3: {e}")
+                logger.error("[RESTRUCTURE] Cannot restructure without research - falling back to give up")
+                # TODO: Handle this edge case - maybe just fail gracefully
+
+            # Load original column definition to show what failed
+            column_definition_result = None
+            try:
+                column_s3_key = f"tables/{email}/{session_id}/table_maker/{conversation_id}/column_definition_result.json"
+                response = storage_manager.s3_client.get_object(
+                    Bucket=storage_manager.bucket_name,
+                    Key=column_s3_key
+                )
+                column_definition_result = json.loads(response['Body'].read().decode('utf-8'))
+                logger.info(f"[RESTRUCTURE] Loaded original column definition for reference")
+            except Exception as e:
+                logger.warning(f"[RESTRUCTURE] Failed to load original column definition: {e}")
+
+            # Extract original structure
+            original_columns = column_definition_result.get('columns', []) if column_definition_result else []
+            original_requirements = column_definition_result.get('search_strategy', {}).get('requirements', []) if column_definition_result else []
+
+            # Inject restructuring guidance into conversation context
+            # This will be passed to column_definition_handler
+            conversation_state['restructuring_guidance'] = {
+                'is_restructure': True,
+                'column_changes': restructuring_guidance.get('column_changes', ''),
+                'requirement_changes': restructuring_guidance.get('requirement_changes', ''),
+                'search_broadening': restructuring_guidance.get('search_broadening', ''),
+                'previous_attempt_failed': True,
+                'failure_reason': 'Zero rows found with previous structure',
+                'original_columns': original_columns,  # NEW - show what failed
+                'original_requirements': original_requirements  # NEW
+            }
+
+            # Cache background research for reuse (MANDATORY - always reuse on restructure)
+            if background_research_result:
+                conversation_state['cached_background_research'] = background_research_result
+                logger.info(f"[RESTRUCTURE] Cached background research in conversation_state (will skip Step 0)")
+
+            logger.info(f"[RESTRUCTURE] Injected guidance into conversation context")
+            logger.info(f"[RESTRUCTURE_GUIDANCE] Column changes: {restructuring_guidance.get('column_changes')}")
+            logger.info(f"[RESTRUCTURE_GUIDANCE] Requirement changes: {restructuring_guidance.get('requirement_changes')}")
+            logger.info(f"[RESTRUCTURE_GUIDANCE] Search broadening: {restructuring_guidance.get('search_broadening')}")
+            logger.info(f"[RESTRUCTURE] Original structure: {len(original_columns)} columns, {len(original_requirements)} requirements")
+
+            # Save updated conversation state with restructuring context
+            try:
+                s3_key = f"tables/{email}/{session_id}/table_maker/{conversation_id}/conversation_state.json"
+                storage_manager.s3_client.put_object(
+                    Bucket=storage_manager.bucket_name,
+                    Key=s3_key,
+                    Body=json.dumps(conversation_state, indent=2),
+                    ContentType='application/json'
+                )
+                logger.info(f"[RESTRUCTURE] Saved conversation state with guidance to {s3_key}")
+            except Exception as e:
+                logger.error(f"[RESTRUCTURE] Failed to save conversation state: {e}")
+
+            # Trigger new execution with the same conversation but with guidance injected
+            logger.info("[RESTRUCTURE] Triggering new execution with restructuring guidance...")
+
+            # Call execution again asynchronously (via background task or direct call)
+            from . import execution as exec_module
+            asyncio.create_task(
+                exec_module.execute_full_table_generation(
+                    email=email,
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    conversation_state=conversation_state,
+                    run_key=run_key
+                )
+            )
+
+            logger.info("[RESTRUCTURE] New execution triggered. Waiting for results...")
+            # Don't send completion - new execution will handle that
+            return
+
+        # Check if this is an unrecoverable failure (QC decided to give up)
+        if execution_result.get('show_new_table_card'):
+            logger.error(f"[UNRECOVERABLE] QC determined request is impossible: {execution_result.get('error')}")
+
+            if websocket_client and session_id:
+                try:
+                    websocket_client.send_to_session(session_id, {
+                        'type': 'table_execution_unrecoverable',
+                        'conversation_id': conversation_id,
+                        'phase': 'failed',
+                        'status': 'Unable to discover rows',
+                        'fundamental_problem': execution_result.get('error'),
+                        'user_facing_apology': execution_result.get('user_facing_apology'),
+                        'show_new_table_card': True  # Tell frontend to show "Get Started" card
+                    })
+                    logger.info(f"[TABLE_MAKER] Sent unrecoverable failure message")
+                except Exception as ws_error:
+                    logger.error(f"[TABLE_MAKER] Failed to send unrecoverable message: {ws_error}")
+
+            # Update run status to FAILED (if not already done)
+            if run_key:
+                try:
+                    update_run_status(
+                        session_id=session_id,
+                        run_key=run_key,
+                        status='FAILED',
+                        verbose_status=execution_result.get('error', 'Unrecoverable failure')[:200],
+                        percent_complete=100
+                    )
+                except Exception as e:
+                    logger.error(f"[TABLE_MAKER] Failed to update run status: {e}")
+
+            # Don't send completion or error - special unrecoverable message sent
+            return
+
         # Send completion message via WebSocket
         # NOTE: csv_s3_key and config_s3_key are NOT included - preview handler will
         # find them from session_info.json (table_path and versions.X.config.config_path)
@@ -671,13 +819,21 @@ async def _trigger_execution(
 
             if websocket_client and session_id:
                 try:
-                    websocket_client.send_to_session(session_id, {
+                    error_message = {
                         'type': 'table_execution_error',
                         'conversation_id': conversation_id,
                         'status': 'Execution failed',
                         'error': error_msg,
                         'failed_at_step': execution_result.get('failed_at_step')
-                    })
+                    }
+
+                    # Include insufficient rows feedback if available
+                    if execution_result.get('insufficient_rows'):
+                        error_message['insufficient_rows'] = True
+                        error_message['insufficient_rows_statement'] = execution_result.get('insufficient_rows_statement', '')
+                        error_message['insufficient_rows_recommendations'] = execution_result.get('insufficient_rows_recommendations', [])
+
+                    websocket_client.send_to_session(session_id, error_message)
                 except Exception as ws_error:
                     logger.warning(f"[TABLE_MAKER] Failed to send error message: {ws_error}")
 
@@ -1126,6 +1282,28 @@ async def handle_table_conversation_continue(request_data, context):
 
         logger.info(f"[TABLE_MAKER] Restored interview with {len(interview_handler.messages)} messages")
 
+        # Check if we're in recovery mode (zero rows found, awaiting user guidance)
+        conversation_status = conversation_state.get('status', 'in_progress')
+        recovery_context = conversation_state.get('recovery_context', {})
+
+        if conversation_status == 'recovery':
+            logger.info(f"[TABLE_MAKER] In recovery mode - handling user response to zero rows failure")
+
+            # Add recovery context to user message so LLM knows the situation
+            recovery_intro = f"""
+--- RECOVERY CONTEXT ---
+Previous execution found 0 rows. System reported: {recovery_context.get('insufficient_rows_statement', '')}
+Retry count so far: {recovery_context.get('retry_count', 0)}
+
+Recommendations that were provided to user:
+"""
+            for rec in recovery_context.get('insufficient_rows_recommendations', [])[:3]:
+                recovery_intro += f"\n- {rec.get('recommendation', '')}"
+
+            recovery_intro += "\n\n--- USER'S RESPONSE TO FAILURE ---\n"
+
+            user_message = recovery_intro + user_message + "\n\n--- END OF RECOVERY RESPONSE ---\n\nBased on the user's response, determine if we should: (1) retry with same structure, (2) restructure the table (go back to column definition), or (3) cancel. Set trigger_execution=true ONLY if user wants to retry."
+
         # If there's preview data from a previous generation, inject it into the user message
         # so the LLM can see the complete table structure when refining
         preview_data = conversation_state.get('preview_data')
@@ -1224,6 +1402,11 @@ async def handle_table_conversation_continue(request_data, context):
         conversation_state['interview_context'] = interview_handler.get_interview_context()
         conversation_state['context_web_research'] = result['context_web_research']  # Update research items
         conversation_state['trigger_execution'] = result['trigger_execution']
+
+        # Clear recovery context if we're moving forward (either retry or restructure)
+        if conversation_status == 'recovery':
+            logger.info(f"[TABLE_MAKER] Clearing recovery context - user provided guidance")
+            conversation_state.pop('recovery_context', None)
 
         # Save updated conversation state to S3
         save_result = _save_conversation_state_to_s3(
