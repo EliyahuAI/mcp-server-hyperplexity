@@ -2078,6 +2078,9 @@ class AIAPIClient:
             except Exception as e:
                 error_msg = str(e)
                 logger.warning(f"[FAILED] Model {current_model} failed: {error_msg}")
+                # Log full traceback for debugging
+                import traceback
+                logger.error(f"[FAILED_TRACEBACK] Model {current_model}:\n{traceback.format_exc()}")
                 last_error = e
 
                 # If this was a refusal, add remaining lower-quality models from hierarchy
