@@ -1632,7 +1632,7 @@ class AIAPIClient:
                 cache_s3_key = self._get_cache_s3_key(cache_key, api_provider)
                 debug_entry['cache_info'] = {
                     'cache_key': cache_key,
-                    'cache_path': f"s3://{self.cache_bucket}/{cache_s3_key}"
+                    'cache_path': f"s3://{self.s3_bucket}/{cache_s3_key}"
                 }
             
             if error:
@@ -1830,7 +1830,7 @@ class AIAPIClient:
 
                         # Log cache path for debugging
                         cache_s3_key = self._get_cache_s3_key(cache_key, api_provider)
-                        logger.info(f"[STRUCTURED_CACHE_HIT] Model={current_model}, Citations={len(citations)}, Cache: s3://{self.cache_bucket}/{cache_s3_key}")
+                        logger.info(f"[STRUCTURED_CACHE_HIT] Model={current_model}, Citations={len(citations)}, Cache: s3://{self.s3_bucket}/{cache_s3_key}")
                         
                         # Generate enhanced metrics for cached response
                         try:
@@ -2020,7 +2020,7 @@ class AIAPIClient:
 
                     # Log citation extraction for debugging
                     cache_s3_key = self._get_cache_s3_key(cache_key, api_provider) if cache_key else 'no-cache'
-                    logger.info(f"[STRUCTURED_API_CITATIONS] Model={current_model}, Provider={api_provider}, Citations={len(result.get('citations', []))}, Cache: s3://{self.cache_bucket}/{cache_s3_key}")
+                    logger.info(f"[STRUCTURED_API_CITATIONS] Model={current_model}, Provider={api_provider}, Citations={len(result.get('citations', []))}, Cache: s3://{self.s3_bucket}/{cache_s3_key}")
 
                     # Monitor for legacy model references in response content
                     response_str = json.dumps(result.get('response', {})).lower()
@@ -2286,7 +2286,7 @@ class AIAPIClient:
                 
                 extracted_citations = self.extract_citations_from_response(cached_data['api_response'])
                 cache_s3_key = self._get_cache_s3_key(cache_key, 'anthropic')
-                logger.info(f"[CACHE_CITATIONS] Anthropic cache hit, extracted {len(extracted_citations)} citations. Cache file: s3://{self.cache_bucket}/{cache_s3_key}")
+                logger.info(f"[CACHE_CITATIONS] Anthropic cache hit, extracted {len(extracted_citations)} citations. Cache file: s3://{self.s3_bucket}/{cache_s3_key}")
 
                 return {
                     'response': cached_data['api_response'],
@@ -2842,7 +2842,7 @@ class AIAPIClient:
 
                             extracted_citations = self.extract_citations_from_response(response_json)
                             cache_s3_key = self._get_cache_s3_key(cache_key, 'anthropic') if cache_key else 'no-cache'
-                            logger.info(f"[FRESH_CITATIONS] Anthropic fresh call, extracted {len(extracted_citations)} citations. Will cache to: s3://{self.cache_bucket}/{cache_s3_key}")
+                            logger.info(f"[FRESH_CITATIONS] Anthropic fresh call, extracted {len(extracted_citations)} citations. Will cache to: s3://{self.s3_bucket}/{cache_s3_key}")
 
                             return {
                                 'response': response_json,
