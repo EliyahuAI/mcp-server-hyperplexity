@@ -1644,6 +1644,13 @@ class AIAPIClient:
             else:
                 debug_entry['response'] = response_data
 
+                # Add parsed citations to debug data for easier inspection
+                if response_data and isinstance(response_data, dict):
+                    if api_provider == 'anthropic':
+                        debug_entry['extracted_citations'] = self.extract_citations_from_response(response_data)
+                    elif api_provider == 'perplexity':
+                        debug_entry['extracted_citations'] = self.extract_citations_from_perplexity_response(response_data)
+
             # Save to S3 debug folder with clearer structure
             # Route refusals to separate directory
             is_refusal = error and ('[REFUSAL]' in str(error) or 'stop_reason=refusal' in str(error))
