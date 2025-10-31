@@ -2225,13 +2225,18 @@ class AIAPIClient:
                     logger.warning(f"Failed to generate enhanced metrics for cached anthropic response: {e}")
                     enhanced_data = {}
                 
+                extracted_citations = self.extract_citations_from_response(cached_data['api_response'])
+                cache_s3_key = self._get_cache_s3_key(cache_key, 'anthropic')
+                logger.info(f"[CACHE_CITATIONS] Anthropic cache hit, extracted {len(extracted_citations)} citations. Cache file: s3://{self.cache_bucket}/{cache_s3_key}")
+
                 return {
                     'response': cached_data['api_response'],
                     'token_usage': token_usage,
                     'processing_time': cached_data.get('processing_time', 0),
                     'is_cached': True,  # BULLETPROOF: Always True for cache hits - never take from cached_data  # BULLETPROOF: Always True for cache hits - never take from cached_data
-                    'citations': self.extract_citations_from_response(cached_data['api_response']),
-                    'enhanced_data': enhanced_data
+                    'citations': extracted_citations,
+                    'enhanced_data': enhanced_data,
+                    'cache_key': cache_key  # Include for debugging
                 }
         
         # Log that we're making an API call (no cache hit)
@@ -2682,7 +2687,9 @@ class AIAPIClient:
                                         'cited_text': ''
                                     })
             
-            logger.debug(f"Extracted {len(citations)} citations from Claude response")
+            logger.info(f"[CITATION_EXTRACT] Extracted {len(citations)} citations from Claude response")
+            if len(citations) > 0:
+                logger.info(f"[CITATION_EXTRACT] Sample: title='{citations[0].get('title', '')[:50]}...', url='{citations[0].get('url', '')[:50]}...', has_cited_text={bool(citations[0].get('cited_text'))}")
             return citations
             
         except Exception as e:
@@ -2774,12 +2781,17 @@ class AIAPIClient:
                             if 'sonnet-3' in response_str or '3-5-sonnet' in response_str or '3.5-sonnet' in response_str or 'claude-3' in response_str:
                                 logger.warning(f"[LEGACY_MODEL_REFERENCE] Response from {normalized_model} contains references to legacy Sonnet 3.x models. This may indicate model confusion.")
 
+                            extracted_citations = self.extract_citations_from_response(response_json)
+                            cache_s3_key = self._get_cache_s3_key(cache_key, 'anthropic') if cache_key else 'no-cache'
+                            logger.info(f"[FRESH_CITATIONS] Anthropic fresh call, extracted {len(extracted_citations)} citations. Will cache to: s3://{self.cache_bucket}/{cache_s3_key}")
+
                             return {
                                 'response': response_json,
                                 'token_usage': token_usage,
                                 'processing_time': processing_time,
                                 'is_cached': False,  # BULLETPROOF: Always False for fresh API calls  # BULLETPROOF: Always False for fresh API calls
-                                'citations': self.extract_citations_from_response(response_json)
+                                'citations': extracted_citations,
+                                'cache_key': cache_key  # Include for debugging
                             }
                         elif response.status in [502, 503, 529]:
                             # Retry on transient infrastructure errors

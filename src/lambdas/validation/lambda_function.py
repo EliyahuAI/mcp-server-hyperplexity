@@ -4603,6 +4603,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Add citations from API response
                     row_results[target.column]['citations'] = citations
 
+                    # Debug log citations being stored
+                    if citations:
+                        logger.info(f"[CITATIONS_STORED] {target.column}: Stored {len(citations)} citations (model={model})")
+                    else:
+                        logger.warning(f"[CITATIONS_EMPTY] {target.column}: No citations from API (model={model})")
+
                     # Keep quote and reasoning for backward compatibility (map to explanation)
                     row_results[target.column]['quote'] = parsed_result[6] if len(parsed_result) > 6 else ''
                     row_results[target.column]['reasoning'] = parsed_result[6] if len(parsed_result) > 6 else ''  # Map to explanation for backward compat
