@@ -2629,14 +2629,16 @@ class AIAPIClient:
                     tool_content = content_item.get('content', [])
                     for result_item in tool_content:
                         if result_item.get('type') == 'web_search_result':
-                            # Extract content/snippet from Anthropic web search result
-                            # The 'content' field contains the actual text snippet from the page
-                            content = result_item.get('content', '')
+                            # Extract from Anthropic web search result
+                            # Note: Anthropic only provides encrypted_content (not usable), so cited_text will be empty
+                            # We extract title, URL, and page_age
                             citation = {
                                 'url': result_item.get('url', ''),
                                 'title': result_item.get('title', ''),
-                                'cited_text': content,  # Include the content snippet
+                                'cited_text': '',  # Anthropic provides only encrypted_content (not usable)
+                                'page_age': result_item.get('page_age', '')
                             }
+                            logger.debug(f"[CITATION_EXTRACT] Anthropic citation: title='{citation['title'][:50] if citation['title'] else 'empty'}...', url='{citation['url'][:50] if citation['url'] else 'empty'}...'")
                             citations.append(citation)
                 
                 # Legacy format support - tool_use blocks with web_search

@@ -96,7 +96,7 @@ def get_qc_response_format_schema():
                 },
                 "qc_citations": {
                     "type": "string",
-                    "description": "Key source citation with most important part summarized for cell comments (format: 'title [key_excerpt] ... full_context URL')"
+                    "description": "ONLY include actual source citations if QC performed additional research and found new sources. Format: '[QC1] Title: \"key quote\" (URL)' or '[QC1] Title (URL)'. Leave empty if no new sources were consulted. DO NOT use this field for [UNVERIFIED] or explanatory text - those belong in qc_reasoning."
                 },
                 "update_importance": {
                     "type": "string",
