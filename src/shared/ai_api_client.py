@@ -1644,12 +1644,33 @@ class AIAPIClient:
             else:
                 debug_entry['response'] = response_data
 
-                # Add parsed citations to debug data for easier inspection
+                # Add parsed data to debug for easier inspection
                 if response_data and isinstance(response_data, dict):
+                    # Extract citations
                     if api_provider == 'anthropic':
                         debug_entry['extracted_citations'] = self.extract_citations_from_response(response_data)
                     elif api_provider == 'perplexity':
                         debug_entry['extracted_citations'] = self.extract_citations_from_perplexity_response(response_data)
+
+                    # Parse validation response JSON for tool-based calls
+                    try:
+                        if 'choices' in response_data:
+                            content = response_data['choices'][0]['message'].get('content', '')
+                            if content:
+                                # Try to parse as JSON
+                                try:
+                                    parsed_json = json.loads(content)
+                                    debug_entry['parsed_validation_response'] = parsed_json
+                                except json.JSONDecodeError:
+                                    # Try to extract from markdown code block
+                                    if "```json" in content:
+                                        json_start = content.find("```json") + 7
+                                        json_end = content.find("```", json_start)
+                                        if json_end > json_start:
+                                            parsed_json = json.loads(content[json_start:json_end].strip())
+                                            debug_entry['parsed_validation_response'] = parsed_json
+                    except Exception as parse_error:
+                        debug_entry['parse_error'] = str(parse_error)
 
             # Save to S3 debug folder with clearer structure
             # Route refusals to separate directory
