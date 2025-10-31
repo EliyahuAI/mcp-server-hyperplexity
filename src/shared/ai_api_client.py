@@ -1591,7 +1591,8 @@ class AIAPIClient:
             logger.error(f"Failed to cache API response: {str(e)}")
     
     async def _save_debug_data(self, api_provider: str, model: str, request_data: Dict,
-                              response_data: Any, error: Exception = None, context: str = "", debug_name: str = None):
+                              response_data: Any, error: Exception = None, context: str = "", debug_name: str = None,
+                              cache_key: str = None):
         """Save debug data for API calls to help diagnose issues."""
         # Check if debug saves are disabled (e.g., for standalone mode)
         if os.environ.get('DISABLE_AI_DEBUG_SAVES', '').lower() == 'true':
@@ -1625,6 +1626,14 @@ class AIAPIClient:
                 'error_details': None,
                 'stack_trace': None
             }
+
+            # Add cache information if available
+            if cache_key:
+                cache_s3_key = self._get_cache_s3_key(cache_key, api_provider)
+                debug_entry['cache_info'] = {
+                    'cache_key': cache_key,
+                    'cache_path': f"s3://{self.cache_bucket}/{cache_s3_key}"
+                }
             
             if error:
                 debug_entry['error'] = str(error)
@@ -1821,7 +1830,7 @@ class AIAPIClient:
 
                         # Log cache path for debugging
                         cache_s3_key = self._get_cache_s3_key(cache_key, api_provider)
-                        logger.warning(f"[STRUCTURED_CACHE_HIT] Model={current_model}, Citations={len(citations)}, Cache: s3://{self.cache_bucket}/{cache_s3_key}")
+                        logger.info(f"[STRUCTURED_CACHE_HIT] Model={current_model}, Citations={len(citations)}, Cache: s3://{self.cache_bucket}/{cache_s3_key}")
                         
                         # Generate enhanced metrics for cached response
                         try:
@@ -2011,7 +2020,7 @@ class AIAPIClient:
 
                     # Log citation extraction for debugging
                     cache_s3_key = self._get_cache_s3_key(cache_key, api_provider) if cache_key else 'no-cache'
-                    logger.warning(f"[STRUCTURED_API_CITATIONS] Model={current_model}, Provider={api_provider}, Citations={len(result.get('citations', []))}, Cache: s3://{self.cache_bucket}/{cache_s3_key}")
+                    logger.info(f"[STRUCTURED_API_CITATIONS] Model={current_model}, Provider={api_provider}, Citations={len(result.get('citations', []))}, Cache: s3://{self.cache_bucket}/{cache_s3_key}")
 
                     # Monitor for legacy model references in response content
                     response_str = json.dumps(result.get('response', {})).lower()
@@ -2050,6 +2059,20 @@ class AIAPIClient:
                         # Continue with original response if validation fails
 
                     logger.debug(f"[SUCCESS] Model {current_model} succeeded with unified response format")
+
+                    # Save debug data for successful call
+                    if result.get('response'):
+                        await self._save_debug_data(
+                            api_provider=api_provider,
+                            model=current_model,
+                            request_data={'prompt': prompt, 'schema': schema, 'max_web_searches': max_web_searches},
+                            response_data=result.get('response'),
+                            error=None,
+                            context=context,
+                            debug_name=debug_name,
+                            cache_key=cache_key
+                        )
+
                     return result
                     
             except Exception as e:
