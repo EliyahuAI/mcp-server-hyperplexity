@@ -72,6 +72,31 @@ def build_table_analysis_from_conversation(
         }
 
         # Build column_analysis
+        # IMPORTANT: Track ID columns to ensure at least one remains
+        id_columns_list = [col for col in columns if col.get('importance', '').upper() == 'ID']
+
+        # Strategy: ALWAYS keep the first ID column as ID (when in doubt, keep the first)
+        # This ensures predictable behavior and at least 1 ID column always remains
+        columns_to_keep_as_id = set()
+
+        if id_columns_list:
+            # Always keep the first ID column as ID
+            first_id_col = id_columns_list[0]
+            columns_to_keep_as_id.add(first_id_col['name'])
+
+            # For remaining ID columns, keep non-researchable ones as ID too
+            for col in id_columns_list[1:]:
+                if not _is_researchable_id_column(col):
+                    # Non-researchable (dates, codes, etc) - keep as ID
+                    columns_to_keep_as_id.add(col['name'])
+
+            logger.info(
+                f"Found {len(id_columns_list)} ID columns. "
+                f"Keeping {len(columns_to_keep_as_id)} as ID "
+                f"(first: '{first_id_col['name']}' + {len(columns_to_keep_as_id) - 1} non-researchable). "
+                f"Converting {len(id_columns_list) - len(columns_to_keep_as_id)} researchable ones to RESEARCH."
+            )
+
         column_analysis = {}
         for col in columns:
             col_name = col['name']
@@ -80,11 +105,11 @@ def build_table_analysis_from_conversation(
             importance = col.get('importance', 'MEDIUM')
 
             if importance.upper() == 'ID':
-                # Check if this ID column can be researched on the web
-                if _is_researchable_id_column(col):
+                # Only convert to RESEARCH if this column is NOT in the "keep as ID" set
+                if col_name not in columns_to_keep_as_id and _is_researchable_id_column(col):
                     # Mark as RESEARCH to enable validation (verifies row generation quality)
                     importance = 'RESEARCH'
-                    logger.info(f"Marking researchable ID column '{col_name}' as CRITICAL for validation")
+                    logger.info(f"Converting researchable ID column '{col_name}' to RESEARCH for validation")
 
             column_analysis[col_name] = {
                 'name': col_name,

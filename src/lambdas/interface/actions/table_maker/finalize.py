@@ -563,13 +563,58 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                         except Exception as e:
                             logger.warning(f"[TABLE_FINALIZE] Failed to send config WebSocket update: {e}")
 
-                # Extract identification columns
+                # Extract identification columns and ensure at least 1 remains
+                # (Match logic from config_bridge.py to keep first ID column + non-researchable ones)
+                from .config_bridge import _is_researchable_id_column
+
+                id_columns_list = [col for col in columns if col.get('importance', '').upper() == 'ID']
+                columns_to_keep_as_id = set()
+
+                if id_columns_list:
+                    # Always keep first ID column as ID
+                    first_id_col = id_columns_list[0]
+                    columns_to_keep_as_id.add(first_id_col['name'])
+
+                    # Keep non-researchable ones as ID too
+                    for col in id_columns_list[1:]:
+                        if not _is_researchable_id_column(col):
+                            columns_to_keep_as_id.add(col['name'])
+
+                    logger.info(
+                        f"[TABLE_FINALIZE] Found {len(id_columns_list)} ID columns. "
+                        f"Keeping {len(columns_to_keep_as_id)} as ID (first: '{first_id_col['name']}'). "
+                        f"Converting {len(id_columns_list) - len(columns_to_keep_as_id)} to RESEARCH."
+                    )
+
+                # Build column_analysis with adjusted importance
+                column_analysis = {}
+                for col in columns:
+                    col_name = col['name']
+                    importance = col.get('importance', 'MEDIUM')
+
+                    # Convert researchable ID columns to RESEARCH (except those in keep set)
+                    if importance.upper() == 'ID':
+                        if col_name not in columns_to_keep_as_id and _is_researchable_id_column(col):
+                            importance = 'RESEARCH'
+                            logger.info(f"[TABLE_FINALIZE] Converting '{col_name}' from ID to RESEARCH for validation")
+
+                    column_analysis[col_name] = {
+                        'name': col_name,
+                        'description': col.get('description', ''),
+                        'data_type': col.get('format', 'String'),
+                        'importance': importance,
+                        'sample_values': [row.get(col_name, '') for row in sample_rows[:3]]
+                    }
+
+                # Extract final identification columns after conversion
                 identification_columns = [
-                    col['name'] for col in columns if col.get('importance', '').upper() == 'ID'
+                    name for name, info in column_analysis.items()
+                    if info['importance'].upper() == 'ID'
                 ]
 
+                logger.info(f"[TABLE_FINALIZE] Final ID columns for config: {identification_columns}")
+
                 # Build table_analysis structure for config generation
-                # IMPORTANT: Use sample_rows (from preview) for sample_values since we're running in parallel
                 table_analysis = {
                     'basic_info': {
                         'filename': f"{table_name_snake}.csv",
@@ -577,17 +622,7 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                         'total_columns': len(columns),
                         'has_header': True
                     },
-                    'column_analysis': {
-                        col['name']: {
-                            'name': col['name'],
-                            'description': col.get('description', ''),
-                            'data_type': col.get('format', 'String'),
-                            'importance': col.get('importance', 'MEDIUM'),
-                            'sample_values': [row.get(col['name'], '') for row in sample_rows[:3]],  # Use sample_rows
-                            'is_identification': col.get('is_identification', False)
-                        }
-                        for col in columns
-                    },
+                    'column_analysis': column_analysis,
                     'domain_info': {
                         'domain': conversation_state.get('context_research', {}).get('domain', 'research'),
                         'insights': conversation_state.get('context_research', {}).get('insights', '')

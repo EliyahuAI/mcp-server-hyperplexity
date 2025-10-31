@@ -226,7 +226,61 @@ Note: Row 2 (PathAI) omits qc_rationale since qc_score matches row_score - no ex
 
 ---
 
-## 6. Retrigger Section (Technical - For System)
+## 5B. DECISION TREE - What Action to Take After Review
+
+**After reviewing rows, you have FOUR possible outcomes based on how many you approved:**
+
+### Count Your Approved Rows
+
+Count rows with: `keep=true` AND `qc_score >= 0.5`
+
+```
+Approved Count >= {{MIN_ROW_COUNT}} (typically 4)?
+    YES → ✅ Option 1: SUCCESS (return approved rows, you're done)
+    NO  → Continue to decision tree below ↓
+```
+
+### Decision Tree for Insufficient Rows
+
+```
+Approved: 1-3 rows?
+    ↓
+Can you identify NEW subdomains to search (domains we didn't explore)?
+    YES → 🔄 Option 2: RETRIGGER (add new subdomains, keep table structure)
+    NO  → ⬆️ Option 3: PROMOTE (system auto-promotes top rejected rows)
+
+Approved: 0 rows?
+    ↓
+Do entities exist but table structure prevented discovery?
+    YES → 🔧 Option 4: RESTRUCTURE (redesign table, restart from column definition)
+    NO  → ❌ Option 5: GIVE_UP (apologize, show new table card)
+```
+
+### Quick Reference
+
+| Approved | Can Find More? | Table Structure | Action |
+|----------|----------------|-----------------|--------|
+| >= 4 | N/A | N/A | ✅ SUCCESS |
+| 1-3 | YES (new domains) | Good | 🔄 RETRIGGER |
+| 1-3 | NO | Good | ⬆️ PROMOTE |
+| 0 | N/A | Broken | 🔧 RESTRUCTURE |
+| 0 | N/A | Fine but no entities | ❌ GIVE_UP |
+
+### Key Questions to Ask Yourself
+
+**For 1-3 approved rows:**
+1. Did we search all relevant domains? (NO → RETRIGGER, YES → PROMOTE)
+2. Are there obvious search domains we missed? (YES → RETRIGGER, NO → PROMOTE)
+
+**For 0 approved rows:**
+1. Did we find ANY candidates (even if rejected)? (YES → likely RESTRUCTURE, NO → likely GIVE_UP)
+2. Were ID columns too complex? (YES → RESTRUCTURE)
+3. Were requirements too strict? (YES → RESTRUCTURE)
+4. Do these entities fundamentally not exist? (YES → GIVE_UP)
+
+---
+
+## 6. Option 2: RETRIGGER - Add New Subdomains (1-3 approved, more to find)
 
 **This section provides system context to help you decide if requesting a retrigger would help.**
 

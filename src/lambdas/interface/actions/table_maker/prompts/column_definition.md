@@ -341,15 +341,21 @@ Return JSON with this structure:
 
 **Extract 5-15 sample rows from background research starting tables.**
 
+**CRITICAL: These MUST be REAL entities from the starting tables provided in background research. Do NOT make up, invent, or create example entities.**
+
 **Why:** Gives QC immediate candidates without waiting for discovery. Discovery will find more rows and merge them (discovery takes precedence for duplicates based on model quality).
 
 **How to Populate:**
-1. Look at `starting_tables` from background research
-2. Extract 5-15 sample entities (prefer entities with complete info)
-3. Fill ID column values only (research columns stay empty)
-4. Set `match_score` based on fit with requirements (0.7-0.95 typical)
-5. Set `source` to starting table name
-6. Set `model_used` to "column_definition"
+1. **Look at `starting_tables`** from background research section above
+2. **Extract 5-15 ACTUAL sample entities** from the sample_entities lists provided
+3. **Use REAL entity names** - these must be entities that actually appear in the starting tables
+4. Fill ID column values only (research columns stay empty)
+5. Set `match_score` based on fit with requirements (0.7-0.95 typical)
+6. Set `source` to the starting table name (must match one of the starting_tables)
+7. Set `model_used` to "column_definition"
+
+**Example:**
+If background research shows starting table "Forbes AI 50 2024" with sample_entities: ["Anthropic", "OpenAI", "Scale AI"], then your sample_rows should use THOSE ACTUAL NAMES (Anthropic, OpenAI, Scale AI), NOT made-up examples.
 
 ### Required vs Optional Fields
 
