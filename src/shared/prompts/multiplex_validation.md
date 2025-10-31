@@ -1,16 +1,35 @@
 # Multiplex Field Validation
 
 ═══════════════════════════════════════════════════════════════
+## 🔍 FOCUSED RESEARCH QUESTIONS - USE THIS FOR WEB SEARCH
+═══════════════════════════════════════════════════════════════
+
+**Entity Context:** {context}
+
+**Research Questions:**
+{research_questions}
+
+**Suggested Search Query:** `{suggested_search}`
+
+**IMPORTANT: Use the above information to formulate your web searches. Focus on finding specific, current information about these exact questions.**
+
+═══════════════════════════════════════════════════════════════
+
+---
+
+═══════════════════════════════════════════════════════════════
 ## 📋 PROMPT MAP - What You'll Find Below
 ═══════════════════════════════════════════════════════════════
 
-1. **WHAT TO RESEARCH**: The specific information you need to look up
-2. **BACKGROUND CONTEXT**: Entity identification (NOT what to research)
-3. **ACCURACY STANDARDS**: How to verify information quality (NOT what to research)
-4. **PREVIOUS DATA**: Already validated fields for reference
-5. **FIELD DETAILS**: Format requirements and examples
-6. **CONFIDENCE LEVELS**: How to assign confidence ratings
-7. **RESPONSE FORMAT**: JSON structure
+1. **FOCUSED RESEARCH QUESTIONS**: Simple, direct questions for web search (ABOVE)
+2. **WHAT TO RESEARCH**: The specific information you need to look up
+3. **BACKGROUND CONTEXT**: Entity identification (NOT what to research)
+4. **FULL ORIGINAL ROW CONTEXT**: All original unvalidated data for reference (NOT what to research)
+5. **ACCURACY STANDARDS**: How to verify information quality (NOT what to research)
+6. **PREVIOUS DATA**: Already validated fields for reference
+7. **FIELD DETAILS**: Format requirements and examples
+8. **CONFIDENCE LEVELS**: How to assign confidence ratings
+9. **RESPONSE FORMAT**: JSON structure
 
 ═══════════════════════════════════════════════════════════════
 ## 🎯 WHAT TO RESEARCH - Your Research Task
@@ -29,6 +48,16 @@
 **This section tells you WHICH entity you're researching. This is CONTEXT, not research targets:**
 
 {context}
+
+---
+
+═══════════════════════════════════════════════════════════════
+## 📄 FULL ORIGINAL ROW CONTEXT - All Original Data (NOT what to research)
+═══════════════════════════════════════════════════════════════
+
+**Complete original row data for context (unvalidated values - for reference only):**
+
+{original_row_context}
 
 ---
 
@@ -56,7 +85,7 @@
 ## 📝 FIELD DETAILS - Format Requirements and Examples
 ═══════════════════════════════════════════════════════════════
 
-**For each current value that you will research you will recieve this context and guidance - do not research these**
+**For each field you will receive:**
 
 - **Field Name**: (This is the name of the field)
 - **Description**: (What this field represents)
@@ -64,8 +93,11 @@
 - **Notes**: (Quality standards for this specific field)
 - **Examples**: (Sample formatting)
 
-**THIS IS THE WHERE YOU FOCUS YOUR RESEARCH!!**
-- **Current Value**: (Existing value to verify and research using the context and guidance provided!)
+**VALUES TO CONSIDER:**
+- **Current Value** (to be validated/updated): The value that needs validation/updating in this run
+- **Previous Value** (from Original Values sheet): The historical validated value from a prior validation run (if available)
+
+**YOUR TASK**: Validate and update the **Current Value** using web search and the guidance provided. Compare it to the **Previous Value** (if available) to understand what has changed.
 
 {fields_to_validate}
 
@@ -84,6 +116,20 @@ Assign confidence levels to the original and updated values:
 - **LOW**: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value- it is low confidence
 
 - **None**: For blank values that should remain blank (no confidence assignment needed). If the orignal valie is blank, and you have nothing to add, provied a null confidence.
+
+---
+
+═══════════════════════════════════════════════════════════════
+## 🔍 REMINDER: FOCUSED RESEARCH QUESTIONS
+═══════════════════════════════════════════════════════════════
+
+**Before generating your response, remember to search for:**
+
+{research_questions}
+
+**Suggested Search Query:** `{suggested_search}`
+
+**Entity:** {context}
 
 ---
 

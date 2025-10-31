@@ -367,8 +367,8 @@ class QCModule:
                         field_output.append(f"* **Original Values sheet entry:** `{field_history['original_value']}`")
                 field_output.append("")
 
-                # Updated Value (Proposed) - always say "Now" for cache efficiency
-                field_output.append(f"### Updated Value (Proposed): Now")
+                # Updated Value (Proposed) - show the actual validated value
+                field_output.append(f"### Updated Value (Proposed): `{answer}`")
                 field_output.append(f"* **Updated Confidence (Proposed):** {confidence}")
                 field_output.append(f"* **Reasoning:** {reasoning}")
 

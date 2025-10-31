@@ -310,6 +310,62 @@ class SimplifiedSchemaValidator:
         context = "\n".join(context_lines) if context_lines else "No context information available."
         logger.info(f"Final context for multiplex prompt: {context}")
 
+        # Build focused research questions (for early in prompt to guide web searches)
+        research_questions = []
+        for target in validation_targets:
+            current_val = row.get(target.column, '')
+            # Build simple research question: Entity + Field + Description
+            entity_str = ", ".join(context_lines) if context_lines else "Unknown entity"
+            research_questions.append(f"**{target.column}**: {target.description}")
+            if current_val:
+                research_questions.append(f"  Current value to verify: `{current_val}`")
+
+        research_question_section = "\n".join(research_questions)
+
+        # Build simple search query suggestion
+        search_terms = []
+        # Add first few words from first ID field
+        if context_lines:
+            first_id = context_lines[0].split(':')[1].strip() if ':' in context_lines[0] else context_lines[0]
+            search_terms.extend(first_id.split()[:3])
+        # Add field names
+        for target in validation_targets:
+            search_terms.append(target.column.replace('_', ' '))
+
+        suggested_search = " ".join(search_terms)
+
+        # Build full original row context (all columns for reference, excluding fields being validated)
+        # This gives the AI complete context about the entity, not just ID fields
+        original_row_context_lines = []
+        validation_target_columns = {t.column for t in validation_targets}
+        id_field_columns = {f.column for f in id_fields}
+
+        # Include all columns that are NOT being validated in this call
+        for col_name, col_value in row.items():
+            # Skip internal fields (start with _)
+            if col_name.startswith('_'):
+                continue
+            # Skip columns being validated (these are shown separately with full details)
+            if col_name in validation_target_columns:
+                continue
+            # Skip ID fields (already shown in primary context above)
+            if col_name in id_field_columns:
+                continue
+            # Skip empty values (no context value)
+            if not col_value or str(col_value).strip() == '':
+                continue
+
+            # Add this field to original row context
+            original_row_context_lines.append(f"{col_name}: {col_value}")
+
+        # Build the full original row context text
+        original_row_context = ""
+        if original_row_context_lines:
+            original_row_context = "\n".join(original_row_context_lines)
+            logger.info(f"Added {len(original_row_context_lines)} additional context fields from original row")
+        else:
+            logger.debug("No additional original row context fields to add")
+
         # Build validation intro with entity context
         field_names = [f"- {target.column}" for target in validation_targets]
         field_list = "\n".join(field_names)
@@ -356,7 +412,11 @@ Find the CURRENT, ACTUAL VALUES for these fields."""
         for i, target in enumerate(validation_targets, 1):
             field_parts = []
             field_parts.append(f"----- FIELD {i}: {target.column} -----")
-            field_parts.append(f"Current Value: {row.get(target.column, '')}")
+
+            # Show current value that needs validation/updating
+            current_value = row.get(target.column, '')
+            field_parts.append(f"**Current Value** (to be validated/updated): {current_value}")
+
             field_parts.append(f"Description: {target.description}")
 
             if target.format:
@@ -374,17 +434,15 @@ Find the CURRENT, ACTUAL VALUES for these fields."""
                 for example in target.examples:
                     field_parts.append(f"  - {example}")
 
-            # Include current value validation context if available
+            # Include validation history if available
             if validation_history and target.column in validation_history:
                 field_history = validation_history[target.column]
 
-                # Current value validation context (from most recent validation)
-                if field_history.get('prior_value'):  # 'prior' in history = current in prompt
-                    prior_ts = field_history.get('prior_timestamp', '')
-                    # Use "Previously" if no timestamp available (avoids cache break from S3 LastModified)
-                    ts_display = f"validation on {prior_ts}" if prior_ts else "previous validation"
-                    field_parts.append(f"\nCurrent Value validation context (from {ts_display}):")
+                # Previous value from Original Values sheet (historical baseline)
+                if field_history.get('original_value'):
+                    field_parts.append(f"\n**Previous Value** (from Original Values sheet): {field_history['original_value']}")
 
+                    # Include context from the most recent validation of the previous value
                     if field_history.get('prior_confidence'):
                         field_parts.append(f"  Confidence: {field_history['prior_confidence']}")
 
@@ -395,9 +453,21 @@ Find the CURRENT, ACTUAL VALUES for these fields."""
                         sources_str = ', '.join(field_history['original_sources'])
                         field_parts.append(f"  Sources: {sources_str}")
 
-                # Prior value (from Original Values sheet - older validation)
-                if field_history.get('original_value'):
-                    field_parts.append(f"\nPrior Value (from Original Values sheet): {field_history['original_value']}")
+                # Also show most recent prior validation if different from original_value
+                elif field_history.get('prior_value'):
+                    prior_ts = field_history.get('prior_timestamp', '')
+                    ts_display = f"from {prior_ts}" if prior_ts else "from previous validation"
+                    field_parts.append(f"\n**Previous Value** ({ts_display}): {field_history['prior_value']}")
+
+                    if field_history.get('prior_confidence'):
+                        field_parts.append(f"  Confidence: {field_history['prior_confidence']}")
+
+                    if field_history.get('original_key_citation'):
+                        field_parts.append(f"  Key Citation: {field_history['original_key_citation']}")
+
+                    if field_history.get('original_sources'):
+                        sources_str = ', '.join(field_history['original_sources'])
+                        field_parts.append(f"  Sources: {sources_str}")
 
             fields_parts.append("\n".join(field_parts))
         
@@ -487,10 +557,13 @@ Find the CURRENT, ACTUAL VALUES for these fields."""
             
             prompt = multiplex_prompt_template.format(
                 validation_intro=validation_intro,
+                research_questions=research_question_section,
+                suggested_search=suggested_search,
                 group_name=group_name_text,
                 group_description=group_description_text,
                 general_notes=general_notes,
                 context=context,
+                original_row_context=original_row_context,
                 previous_results=previous_results_text,
                 fields_to_validate=fields_to_validate,
                 json_schema_example=json_schema_example
