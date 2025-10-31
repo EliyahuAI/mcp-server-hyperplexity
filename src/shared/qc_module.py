@@ -408,7 +408,7 @@ class QCModule:
                     field_output.append(f"* **Source URLs:** {', '.join(sources)}")
 
                 # Show supporting quotes if available (provides context when citation snippets not available)
-                supporting_quotes = field_data.get('supporting_quotes', '')
+                supporting_quotes = result.get('supporting_quotes', '')
                 if supporting_quotes and supporting_quotes.strip():
                     field_output.append(f"* **Supporting Quotes:** {supporting_quotes}")
                 field_output.append(f"* **Substantially Different from Original:** {'Yes' if str(answer).strip() != str(original_value).strip() else 'No'}")

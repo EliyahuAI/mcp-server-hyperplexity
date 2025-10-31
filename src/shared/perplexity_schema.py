@@ -21,7 +21,7 @@ MULTIPLEX_RESPONSE_SCHEMA = {
                 "description": "Confidence in the original value: HIGH=correct, MEDIUM=minor issues, LOW=wrong, None=blank stays blank"
             },
             "sources": {"type": "array", "items": {"type": "string"}, "description": "List of source URLs that support the validation"},
-            "supporting_quotes": {"type": "string", "description": "Key quotes or excerpts from sources that directly support the answer. Include specific data points, dates, or statements that validate the response. This provides context when full citation snippets are not available."},
+            "supporting_quotes": {"type": "string", "description": "Key quotes from sources with citation references. Format: '[1] \"exact quote\" - optional context' where [1] refers to the citation number from the sources list. Include specific data points, dates, or statements. Example: '[1] \"Revenue increased 11% to $158.9B\" from Q3 2024 earnings' or '[2] \"CEO announced\" and [3] \"Company confirmed partnership\"'. Always include quote marks around direct quotes and reference the citation number."},
             "explanation": {"type": "string", "description": "Explanation of the validation result, succinct reason you believe the provided answer is correct"},
             "consistent_with_model_knowledge": {"type": "string", "description": "Whether the answer is consistent with general knowledge outside of the provided sources"}
         },
