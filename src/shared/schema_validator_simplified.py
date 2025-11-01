@@ -257,8 +257,16 @@ class SimplifiedSchemaValidator:
             model_usage[model].append(target.column)
         return model_usage
     
-    def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None, validation_history: Dict[str, Dict[str, Any]] = None) -> str:
-        """Generate a validation prompt for multiple targets (multiplex) using markdown prompt template."""
+    def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None, validation_history: Dict[str, Dict[str, Any]] = None, has_web_search: bool = True) -> str:
+        """Generate a validation prompt for multiple targets (multiplex) using markdown prompt template.
+
+        Args:
+            row: The data row being validated
+            targets: List of validation targets (fields to validate)
+            previous_results: Results from previous validation groups (optional)
+            validation_history: Historical validation data (optional)
+            has_web_search: Whether the model has web search capability (default True for Perplexity, False for Anthropic without search)
+        """
         # Debug validation history
         if validation_history:
             # Validation history available
@@ -287,7 +295,7 @@ class SimplifiedSchemaValidator:
             logger.warning("No non-ID fields to validate in multiplex prompt.")
             return "No fields to validate."
         
-        # Build context information (ID fields) - needed for validation_intro
+        # Build context information (ID fields + additional fields if needed)
         context_lines = []
         id_fields = self.get_id_fields()
 
@@ -297,6 +305,7 @@ class SimplifiedSchemaValidator:
         for target in self.validation_targets:
             logger.debug(f"Target: {target.column}, importance: {target.importance}")
 
+        # Add all ID fields to context
         if id_fields:
             logger.debug(f"Processing {len(id_fields)} ID fields for context")
             for id_field in id_fields:
@@ -305,34 +314,78 @@ class SimplifiedSchemaValidator:
                 context_lines.append(context_line)
                 logger.info(f"Added ID context: {context_line}")
         else:
-            logger.warning("No ID fields found - context will be empty")
+            logger.warning("No ID fields found - will use first 2 RESEARCH fields for context")
+
+        # Ensure at least 2 context fields: if <2 ID fields, add first RESEARCH fields
+        if len(context_lines) < 2:
+            needed = 2 - len(context_lines)
+            logger.info(f"Need {needed} more context fields (have {len(context_lines)})")
+
+            # Get validation targets (RESEARCH fields) that aren't already in context
+            existing_context_cols = {line.split(':')[0] for line in context_lines}
+            for target in validation_targets:
+                if target.column not in existing_context_cols:
+                    field_value = row.get(target.column, '')
+                    context_line = f"{target.column}: {field_value}"
+                    context_lines.append(context_line)
+                    logger.info(f"Added additional context field: {context_line}")
+                    needed -= 1
+                    if needed == 0:
+                        break
 
         context = "\n".join(context_lines) if context_lines else "No context information available."
-        logger.info(f"Final context for multiplex prompt: {context}")
+        logger.info(f"Final context for multiplex prompt ({len(context_lines)} fields): {context}")
 
-        # Build focused research questions (for early in prompt to guide web searches)
-        research_questions = []
-        for target in validation_targets:
-            current_val = row.get(target.column, '')
-            # Build simple research question: Entity + Field + Description
-            entity_str = ", ".join(context_lines) if context_lines else "Unknown entity"
-            research_questions.append(f"**{target.column}**: {target.description}")
-            if current_val:
-                research_questions.append(f"  Current value to verify: `{current_val}`")
+        # Build focused research questions (for preliminary search task)
+        # Format: Search group name/description, then numbered questions
+        research_questions_list = []
 
-        research_question_section = "\n".join(research_questions)
+        # Get search group information
+        group_name = ""
+        group_description = ""
+        if self.search_groups and validation_targets:
+            search_group_id = validation_targets[0].search_group
+            for group in self.search_groups:
+                if group.get('group_id') == search_group_id:
+                    group_name = group.get('group_name', '')
+                    group_description = group.get('description', '')
+                    break
 
-        # Build simple search query suggestion
-        search_terms = []
-        # Add first few words from first ID field
-        if context_lines:
-            first_id = context_lines[0].split(':')[1].strip() if ':' in context_lines[0] else context_lines[0]
-            search_terms.extend(first_id.split()[:3])
-        # Add field names
-        for target in validation_targets:
-            search_terms.append(target.column.replace('_', ' '))
+        # Build the research questions section
+        # Start with context
+        research_questions_list.append("**Context:**")
+        for context_line in context_lines:
+            research_questions_list.append(context_line)
+        research_questions_list.append("")
 
-        suggested_search = " ".join(search_terms)
+        # Add field count and "Research Questions" header
+        num_fields = len(validation_targets)
+        if num_fields == 1:
+            research_questions_list.append("**Research Question:**")
+        else:
+            research_questions_list.append(f"**{num_fields} Research Questions:**")
+
+        # Add search group name and description (if available)
+        if group_name and group_description:
+            research_questions_list.append(f"{group_name}: {group_description}")
+            research_questions_list.append("")
+
+        # Add each field as a numbered question
+        for i, target in enumerate(validation_targets, 1):
+            # Use description if available, otherwise use notes
+            question_text = target.description if target.description else target.notes
+
+            # Format the question
+            if num_fields == 1:
+                # Single field: no number
+                question_line = f"**{target.column}**: {question_text}???"
+            else:
+                # Multiple fields: numbered
+                question_line = f"**{i}. {target.column}**: {question_text}???"
+
+            research_questions_list.append(question_line)
+
+        research_question_section = "\n".join(research_questions_list)
 
         # Build full original row context (all columns for reference, excluding fields being validated)
         # This gives the AI complete context about the entity, not just ID fields
@@ -366,35 +419,6 @@ class SimplifiedSchemaValidator:
         else:
             logger.debug("No additional original row context fields to add")
 
-        # Build validation intro with entity context
-        field_names = [f"- {target.column}" for target in validation_targets]
-        field_list = "\n".join(field_names)
-
-        if context_lines:
-            # Include entity context in the intro with clear research directive
-            entity_context = "\n".join([f"- {line}" for line in context_lines])
-            validation_intro = f"""**ENTITY YOU ARE RESEARCHING:**
-{entity_context}
-
-**INFORMATION TO LOOK UP (research these specific data points for the entity above):**
-{field_list}
-
-Find the CURRENT, ACTUAL VALUES for these fields. Use web search to look up the specific data (prices, projections, news, metrics, etc.) for this entity."""
-        else:
-            # Fallback if no context
-            if len(validation_targets) == 1:
-                validation_intro = f"""**INFORMATION TO LOOK UP:**
-{field_list}
-
-Find the CURRENT, ACTUAL VALUE for this field."""
-            else:
-                validation_intro = f"""**INFORMATION TO LOOK UP ({len(validation_targets)} fields):**
-{field_list}
-
-Find the CURRENT, ACTUAL VALUES for these fields."""
-
-        logger.info(f"Built validation_intro with entity context")
-
         # Build previous validation results
         previous_results_text = ""
         if previous_results and len(previous_results) > 0:
@@ -415,7 +439,7 @@ Find the CURRENT, ACTUAL VALUES for these fields."""
 
             # Show current value that needs validation/updating
             current_value = row.get(target.column, '')
-            field_parts.append(f"**Current Value** (to be validated/updated): {current_value}")
+            field_parts.append(f"**Current Value**: {current_value}")
 
             field_parts.append(f"Description: {target.description}")
 
@@ -502,14 +526,14 @@ Find the CURRENT, ACTUAL VALUES for these fields."""
                     example_obj[field_name] = "HIGH|MEDIUM|LOW"
                 elif field_name == 'original_confidence':
                     example_obj[field_name] = "HIGH|MEDIUM|LOW|null"
-                elif field_name == 'quote':
-                    example_obj[field_name] = "direct quote from source if available"
+                elif field_name == 'supporting_quotes':
+                    example_obj[field_name] = '[1] "exact quote from source" - context'
+                elif field_name == 'explanation':
+                    example_obj[field_name] = "Succinct reason for this answer"
                 elif field_name == 'sources':
                     example_obj[field_name] = ["source URL 1", "source URL 2"]
-                elif field_name in ['update_required', 'substantially_different']:
-                    example_obj[field_name] = "true/false"
                 elif field_name == 'consistent_with_model_knowledge':
-                    example_obj[field_name] = "YES/NO followed by brief explanation"
+                    example_obj[field_name] = "YES - aligns with general knowledge about this topic"
                 else:
                     # Generic handling for other fields
                     if field_type == 'boolean':
@@ -522,45 +546,17 @@ Find the CURRENT, ACTUAL VALUES for these fields."""
             # Format as JSON example
             import json
             json_example = json.dumps([example_obj], indent=2)
-            json_schema_example = f"Each object must have the following structure:\n\n{json_example}"
-            
-            # Get group information from search_groups for the fields being validated
-            group_name = ""
-            group_description = ""
-            
-            # Find the most relevant search group for the fields being validated
-            if self.search_groups and validation_targets:
-                # Get the search group ID from the first validation target
-                search_group_id = validation_targets[0].search_group
-                
-                # Find the corresponding search group
-                for group in self.search_groups:
-                    if group.get('group_id') == search_group_id:
-                        group_name = group.get('group_name', '')
-                        group_description = group.get('description', '')
-                        break
-                
-                # If no match found, use the first search group as fallback
-                if not group_name and self.search_groups:
-                    first_group = self.search_groups[0]
-                    group_name = first_group.get('group_name', '')
-                    group_description = first_group.get('description', '')
-            
-            # Format group information (only include if values exist)
-            group_name_text = f"Group: {group_name}" if group_name else ""
-            group_description_text = f"Description: {group_description}" if group_description else ""
-            
-            # Log for debugging
-            logger.info(f"Search groups available: {len(self.search_groups)}")
-            logger.info(f"Group name from search_groups: '{group_name}'")
-            logger.info(f"Group description from search_groups: '{group_description}'")
-            
+            json_schema_example = json_example  # Just the JSON, no extra text
+
+            # Generate search instruction based on web search availability
+            if has_web_search:
+                search_instruction = "**Use this section to guide your initial web searches.** Detailed field requirements for synthesis appear below."
+            else:
+                search_instruction = "**Use this section to focus your analysis.** You will synthesize answers from your knowledge and the detailed context provided below."
+
             prompt = multiplex_prompt_template.format(
-                validation_intro=validation_intro,
+                search_instruction=search_instruction,
                 research_questions=research_question_section,
-                suggested_search=suggested_search,
-                group_name=group_name_text,
-                group_description=group_description_text,
                 general_notes=general_notes,
                 context=context,
                 original_row_context=original_row_context,

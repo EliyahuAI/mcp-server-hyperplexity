@@ -1,81 +1,56 @@
-# Multiplex Field Validation
+# Table Entry Validation and Research
+
+You are validating and updating several field values for a single row in a research table.
 
 ═══════════════════════════════════════════════════════════════
-## 🔍 FOCUSED RESEARCH QUESTIONS - USE THIS FOR WEB SEARCH
+## 🎯 FOCUSED TASK
 ═══════════════════════════════════════════════════════════════
 
-**Entity Context:** {context}
+{search_instruction}
 
-**Research Questions:**
 {research_questions}
 
-**Suggested Search Query:** `{suggested_search}`
+═══════════════════════════════════════════════════════════════
 
-**IMPORTANT: Use the above information to formulate your web searches. Focus on finding specific, current information about these exact questions.**
+---
+
+═══════════════════════════════════════════════════════════════
+## 📋 WHAT YOU'LL FIND BELOW
+═══════════════════════════════════════════════════════════════
+
+The sections below provide detailed context for **synthesizing your search results** into validated answers:
+
+- **GENERAL NOTES**: Validation context for the broader research effort this subtask falls within
+- **CONTEXT & PREVIOUS DATA**: Other fields from this row and prior validations for reference
+- **FIELD DETAILS**: Detailed requirements, format, notes, and examples for each field
+- **CONFIDENCE LEVELS**: How to assign confidence ratings to your findings
+- **RESPONSE FORMAT**: Required JSON structure and critical validation rules
 
 ═══════════════════════════════════════════════════════════════
 
 ---
 
 ═══════════════════════════════════════════════════════════════
-## 📋 PROMPT MAP - What You'll Find Below
+## 📋 GENERAL NOTES
 ═══════════════════════════════════════════════════════════════
-
-1. **FOCUSED RESEARCH QUESTIONS**: Simple, direct questions for web search (ABOVE)
-2. **WHAT TO RESEARCH**: The specific information you need to look up
-3. **BACKGROUND CONTEXT**: Entity identification (NOT what to research)
-4. **FULL ORIGINAL ROW CONTEXT**: All original unvalidated data for reference (NOT what to research)
-5. **ACCURACY STANDARDS**: How to verify information quality (NOT what to research)
-6. **PREVIOUS DATA**: Already validated fields for reference
-7. **FIELD DETAILS**: Format requirements and examples
-8. **CONFIDENCE LEVELS**: How to assign confidence ratings
-9. **RESPONSE FORMAT**: JSON structure
-
-═══════════════════════════════════════════════════════════════
-## 🎯 WHAT TO RESEARCH - Your Research Task
-═══════════════════════════════════════════════════════════════
-
-{validation_intro}
-
-**Your task**: Use web search to find the CURRENT, ACTUAL VALUES for the fields above. Search for the specific data points (prices, projections, news, metrics, etc.) for the entity described in the context below.
-
----
-
-═══════════════════════════════════════════════════════════════
-## 📍 BACKGROUND CONTEXT - Entity Information (NOT what to research)
-═══════════════════════════════════════════════════════════════
-
-**This section tells you WHICH entity you're researching. This is CONTEXT, not research targets:**
-
-{context}
-
----
-
-═══════════════════════════════════════════════════════════════
-## 📄 FULL ORIGINAL ROW CONTEXT - All Original Data (NOT what to research)
-═══════════════════════════════════════════════════════════════
-
-**Complete original row data for context (unvalidated values - for reference only):**
-
-{original_row_context}
-
----
-
-═══════════════════════════════════════════════════════════════
-## ✅ ACCURACY STANDARDS - How to Verify Quality (NOT what to research)
-═══════════════════════════════════════════════════════════════
-
-**These are QUALITY STANDARDS for verifying the information you find. Use preferred sources and formatting:**
 
 {general_notes}
 
 ---
 
 ═══════════════════════════════════════════════════════════════
-## 📊 PREVIOUS DATA - Already Validated Fields (Reference only)
+## 📊 CONTEXT & PREVIOUS DATA
 ═══════════════════════════════════════════════════════════════
 
-**Other fields already validated for this entity (for context/reference):**
+**Context for this row:**
+
+{context}
+
+**Other fields from this row (unvalidated - for reference only):**
+
+{original_row_context}
+
+**Previous validations for this row:**
 
 {previous_results}
 
@@ -104,32 +79,18 @@
 ---
 
 ═══════════════════════════════════════════════════════════════
-## ⭐ CONFIDENCE RUBRICS
+## ⭐ CONFIDENCE LEVELS
 ═══════════════════════════════════════════════════════════════
 
-Assign confidence levels to the original and updated values:
+Assign confidence levels to both original and updated values:
 
 - **HIGH**: Claim is a widely accepted fact, directly verified by authoritative source, or straightforward calculation that matches the guidance provided, without cause for pause. Claim matches the guidance provided.
 
-- **MEDIUM**: Good estimates, confident projections, or respectable but not definitive sources that are consistent with the guidance .provided.
+- **MEDIUM**: Good estimates, confident projections, or respectable but not definitive sources that are consistent with the guidance provided.
 
-- **LOW**: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value- it is low confidence
+- **LOW**: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value it is low confidence.
 
-- **None**: For blank values that should remain blank (no confidence assignment needed). If the orignal valie is blank, and you have nothing to add, provied a null confidence.
-
----
-
-═══════════════════════════════════════════════════════════════
-## 🔍 REMINDER: FOCUSED RESEARCH QUESTIONS
-═══════════════════════════════════════════════════════════════
-
-**Before generating your response, remember to search for:**
-
-{research_questions}
-
-**Suggested Search Query:** `{suggested_search}`
-
-**Entity:** {context}
+- **None**: For blank values that should remain blank (no confidence assignment needed). If the original value is blank, and you have nothing to add, provide a null confidence.
 
 ---
 
@@ -137,28 +98,41 @@ Assign confidence levels to the original and updated values:
 ## 📤 RESPONSE FORMAT
 ═══════════════════════════════════════════════════════════════
 
-Please respond with a JSON array containing an object for each field.
+Return a JSON array with one object per field:
 
-### JSON SCHEMA EXAMPLE
-
+```json
 {json_schema_example}
+```
 
-### IMPORTANT
+### REQUIRED FIELDS
 
-- For each field, use the provided examples as guidance for expected formats and values.
-- Do not use quotation marks around your responses.
-- Assess both the quality of your updated answer (confidence) and the quality of the original value (original_confidence) using the same confidence rubric.
-- Only provide a different validated value if you can achieve improve significantly on than the original value.
-- NEVER replace an original value with an updated value in which you have lower confidence. If you are more confident in the Original value, why would you update it with a value that you are less confident in!!?
-- The response MUST be valid JSON array format
-- Each field must have its own object in the array
-- Include the exact column name in each object - exactly as defined in the FIELD input
-- Place actual URLs in the sources arrays, not reference numbers
-- When web search is available, perform web search only when helpful and include direct quotes from web search results or authoritative sources in the reasoning field. When web search is not available, or not helpful, use your training knowledge and cite knowledge cutoff limitations where relevant.
-- Extract specific text snippets that support your answer when available, include the source page title if it is available for context.
-- If you cannot find information for a field that was originally blank, assign None confidence if the field should remain blank
-- Use provided examples to guide your updates format and expected values
-- Always include all required fields: column, answer, confidence, original_confidence, reasoning, sources
-- Use newline characters correctly so that they are formatted in an excel cell, perticularly for bullets, lists, and other formatted text.
-- Do not research the context and guidance - research only the Current Value in the context provided
-- Double check your updated response and confidence - speak precisely, there is not room for error.
+Each object in the response array MUST include:
+- **column**: Exact field name from FIELD DETAILS
+- **answer**: The validated value
+- **confidence**: HIGH, MEDIUM, LOW, or None
+- **original_confidence**: HIGH, MEDIUM, LOW, or None (for the original value)
+- **sources**: Array of source URLs
+- **explanation**: Succinct reason you believe the answer is correct
+
+Optional fields:
+- **supporting_quotes**: Direct quotes from sources with citation format '[1] "exact quote"'
+- **consistent_with_model_knowledge**: Whether answer aligns with general knowledge
+
+### CRITICAL REQUIREMENTS
+
+- **Do not use quotation marks around your responses** (except in JSON structure itself)
+- **Assess both confidences**: Rate the quality of your updated answer (confidence) AND the quality of the original value (original_confidence) using the same confidence rubric
+- **Only update if significantly better**: Only provide a different validated value if you can improve significantly on the original value
+- **NEVER replace with lower confidence**: If you are more confident in the original value, why would you update it with a value that you are less confident in?
+- **Use exact column names**: Include the exact column name in each object - exactly as defined in the FIELD DETAILS above
+- **Include sources**: If you used web search, place actual URLs in the sources array. If using knowledge, cite your knowledge cutoff limitations where relevant
+- **Include quotes/evidence**: If you have direct quotes from sources, use the supporting_quotes field with citation format: '[1] "exact quote from source" - context' where [1] refers to the citation number from sources array
+- **Provide explanation**: Always include the explanation field with succinct reasoning for your answer
+- **Handle blanks appropriately**: If you cannot find or determine information for a field that was originally blank, assign None confidence if the field should remain blank
+- **Use examples as guides**: Use provided examples to guide your update format and expected values
+- **Format for Excel**: Use newline characters correctly so that they are formatted in an Excel cell, particularly for bullets, lists, and other formatted text
+- **Stay focused**: Do not research the context and guidance - focus only on the fields listed above
+- **Double check everything**: Double check your updated response and confidence - speak precisely, there is no room for error
+- **Valid JSON required**: The response MUST be valid JSON array format
+
+---

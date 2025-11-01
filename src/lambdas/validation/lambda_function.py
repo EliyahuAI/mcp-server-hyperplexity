@@ -4182,7 +4182,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.debug(f"Using resolved search context size: {search_context_size}")
             logger.debug(f"Using resolved max web searches: {max_web_searches}")
 
-            prompt = local_validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history)
+            # Determine if web search is available (Perplexity always has it, Anthropic only if max_web_searches > 0)
+            has_web_search = api_provider == 'perplexity' or (api_provider == 'anthropic' and max_web_searches > 0)
+            logger.debug(f"Web search available: {has_web_search}")
+
+            prompt = local_validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history, has_web_search=has_web_search)
 
             # Append proactive guidance if provided
             if proactive_guidance:
