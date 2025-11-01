@@ -37,7 +37,9 @@
       "Bash(aws lambda list-event-source-mappings:*)",
       "Bash(git diff:*)",
       "Bash(aws apigatewayv2 get-apis:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(/tmp/debug_files/miller_qc.txt)",
+      "Bash(/tmp/debug_files/miller_qc_full.txt)"
     ],
     "deny": []
   }
