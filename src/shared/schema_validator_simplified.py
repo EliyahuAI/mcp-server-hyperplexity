@@ -375,6 +375,9 @@ class SimplifiedSchemaValidator:
             # Use description if available, otherwise use notes
             question_text = target.description if target.description else target.notes
 
+            # Get current value for this field
+            current_value = row.get(target.column, '')
+
             # Format the question
             if num_fields == 1:
                 # Single field: no number
@@ -384,6 +387,10 @@ class SimplifiedSchemaValidator:
                 question_line = f"**{i}. {target.column}**: {question_text}???"
 
             research_questions_list.append(question_line)
+
+            # Add current value if it exists
+            if current_value and str(current_value).strip():
+                research_questions_list.append(f"   Current value: {current_value}")
 
         research_question_section = "\n".join(research_questions_list)
 
