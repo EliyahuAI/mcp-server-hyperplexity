@@ -77,7 +77,10 @@ def get_qc_response_format_schema():
                 },
                 "answer": {
                     "type": "string",
-                    "description": "MANDATORY: The QC Entry/value - required for ALL QC responses regardless of action type"
+                    "description": "MANDATORY: The QC Entry/value - required for ALL QC responses regardless of action type. This must be the actual content value, NOT a confidence level.",
+                    "not": {
+                        "enum": ["HIGH", "MEDIUM", "LOW"]
+                    }
                 },
                 "confidence": {
                     "type": "string",
