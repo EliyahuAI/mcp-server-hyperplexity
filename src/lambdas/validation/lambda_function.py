@@ -533,13 +533,12 @@ async def validate_with_anthropic(
             },
             {
                 "name": "validate_data",
-                "description": "Provide structured validation results for data fields",
+                "description": "Provide structured validation results for data fields. Use this tool to provide your final structured response AFTER conducting any necessary web searches.",
                 "input_schema": tool_schema
             }
         ],
         "tool_choice": {
-            "type": "tool",
-            "name": "validate_data"
+            "type": "auto"  # Let Claude use web search, then structured response
         }
     }
     

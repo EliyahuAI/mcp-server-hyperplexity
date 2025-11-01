@@ -1964,9 +1964,16 @@ class AIAPIClient:
 
                         tools.append({
                             "name": tool_name,
-                            "description": f"Provide structured response using {tool_name}",
+                            "description": f"Provide structured response using {tool_name}. Use this tool to provide your final structured response AFTER conducting any necessary web searches.",
                             "input_schema": schema
                         })
+
+                        # If web search is available, use "auto" to let Claude decide when to search
+                        # Otherwise, force the structured response tool
+                        if max_web_searches > 0:
+                            tool_choice = {"type": "auto"}  # Let Claude use web search, then structured response
+                        else:
+                            tool_choice = {"type": "tool", "name": tool_name}  # Force structured response immediately
 
                         data = {
                             "model": current_model_normalized,
@@ -1974,7 +1981,7 @@ class AIAPIClient:
                             "temperature": 0.1,
                             "messages": [{"role": "user", "content": domain_filtered_prompt}],
                             "tools": tools,
-                            "tool_choice": {"type": "tool", "name": tool_name}  # Force tool use for structured output
+                            "tool_choice": tool_choice
                         }
 
                     result = await self._make_single_anthropic_call("https://api.anthropic.com/v1/messages",
@@ -2127,9 +2134,16 @@ class AIAPIClient:
                                 })
                             tools.append({
                                 "name": tool_name,
-                                "description": f"Provide structured response using {tool_name}",
+                                "description": f"Provide structured response using {tool_name}. Use this tool to provide your final structured response AFTER conducting any necessary web searches.",
                                 "input_schema": schema
                             })
+
+                            # If web search is available, use "auto" to let Claude decide when to search
+                            # Otherwise, force the structured response tool
+                            if max_web_searches > 0:
+                                tool_choice = {"type": "auto"}  # Let Claude use web search, then structured response
+                            else:
+                                tool_choice = {"type": "tool", "name": tool_name}  # Force structured response immediately
 
                             data = {
                                 "model": current_model_normalized,
@@ -2137,7 +2151,7 @@ class AIAPIClient:
                                 "temperature": 0.1,
                                 "messages": [{"role": "user", "content": prompt}],
                                 "tools": tools,
-                                "tool_choice": {"type": "tool", "name": tool_name}
+                                "tool_choice": tool_choice
                             }
 
                             result = await self._make_single_anthropic_call("https://api.anthropic.com/v1/messages",
@@ -2938,7 +2952,7 @@ class AIAPIClient:
 
                             # Save debug data for refusal
                             await self._save_debug_data('anthropic', normalized_model, debug_request,
-                                                      response_json, context="refusal")
+                                                      response_json, context="refusal", cache_key=cache_key)
 
                             # Raise an exception that will trigger model fallback
                             raise Exception(f"[REFUSAL] {error_msg} (stop_reason=refusal)")
@@ -2949,7 +2963,7 @@ class AIAPIClient:
 
                         # Save debug data for successful call
                         await self._save_debug_data('anthropic', normalized_model, debug_request,
-                                                  response_json, context="single_call_success")
+                                                  response_json, context="single_call_success", cache_key=cache_key)
                         
                         token_usage = self._extract_token_usage(response_json, normalized_model)
                         
@@ -2977,13 +2991,13 @@ class AIAPIClient:
                         }
                     else:
                         error = Exception(f"Anthropic API returned status {response.status}: {response_text}")
-                        await self._save_debug_data('anthropic', normalized_model, debug_request, 
-                                                  response_text, error=error, context=f"single_call_status_{response.status}")
+                        await self._save_debug_data('anthropic', normalized_model, debug_request,
+                                                  response_text, error=error, context=f"single_call_status_{response.status}", cache_key=cache_key)
                         raise error
-                        
+
         except Exception as e:
-            await self._save_debug_data('anthropic', normalized_model, debug_request, 
-                                      None, error=e, context="single_call_exception")
+            await self._save_debug_data('anthropic', normalized_model, debug_request,
+                                      None, error=e, context="single_call_exception", cache_key=cache_key)
             raise
     
     def _clean_anthropic_soft_schema_response(self, response_json: Dict, schema: Dict = None) -> Dict:
