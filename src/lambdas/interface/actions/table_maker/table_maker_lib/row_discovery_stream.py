@@ -594,7 +594,7 @@ class RowDiscoveryStream:
                 schema=schema,
                 model=scoring_model,
                 tool_name='row_discovery_integrated',
-                use_cache=False,  # Don't cache - web results change
+                use_cache=True,  # Enable caching for testing/debugging (normally False because web results change)
                 max_tokens=16000,  # Increased for finding multiple entities with details
                 max_web_searches=max_web_searches,  # For Claude models (Perplexity uses subdomain queries)
                 search_context_size=search_context_size,  # For Perplexity models
