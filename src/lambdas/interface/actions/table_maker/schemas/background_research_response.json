@@ -69,8 +69,8 @@
     },
     "starting_tables": {
       "type": "array",
-      "description": "Explicit examples of existing tables/lists with actual entity names (NOT just URLs). Each table must include sample entities.",
-      "minItems": 1,
+      "description": "Explicit examples of existing tables/lists with actual entity names (NOT just URLs). Each table must include sample entities. Can be empty array if needs_user_input=true.",
+      "minItems": 0,
       "items": {
         "type": "object",
         "required": [
