@@ -3877,6 +3877,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         value = row_data.get(id_field.column, '')
                         if value:
                             row_id_values.append(str(value))
+
+                    # If no ID fields, use first column as identifier
+                    if not row_id_values and row_data:
+                        first_column = list(row_data.keys())[0]
+                        first_value = row_data.get(first_column, '')
+                        if first_value:
+                            row_id_values.append(str(first_value))
+
                     row_ids = ' - '.join(row_id_values) if row_id_values else 'Unknown'
 
                     # Check each validated field
@@ -4071,6 +4079,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 value = row_data.get(id_field.column, '')
                                 if value:
                                     row_id_values.append(str(value))
+
+                            # If no ID fields, use first column as identifier
+                            if not row_id_values and row_data:
+                                first_column = list(row_data.keys())[0]
+                                first_value = row_data.get(first_column, '')
+                                if first_value:
+                                    row_id_values.append(str(first_value))
+
                             row_ids = ' - '.join(row_id_values) if row_id_values else 'Unknown'
 
                             # Check each field for high importance
