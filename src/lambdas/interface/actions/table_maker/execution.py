@@ -747,10 +747,52 @@ async def execute_full_table_generation(
         # ======================================================================
         logger.info("[EXECUTION] Step 0 (Internal): Background Research")
 
+        # Check if this is a retry after user provided document text
+        # Look for large pasted content in recent conversation turns
+        is_document_paste_retry = False
+        messages = conversation_state.get('messages', [])
+        if messages and len(messages) > 0:
+            last_user_message = None
+            for msg in reversed(messages):
+                if msg.get('role') == 'user':
+                    last_user_message = msg.get('content', '')
+                    break
+
+            # If last user message is very long (>2000 chars), assume it's pasted document
+            if last_user_message and len(last_user_message) > 2000:
+                is_document_paste_retry = True
+                logger.info(f"[STEP 0] Detected document paste retry - user provided {len(last_user_message)} chars of text")
+
         # Check for cached research (restructure mode)
         cached_research = conversation_state.get('cached_background_research')
 
-        if cached_research:
+        if is_document_paste_retry:
+            # Skip background research - user already provided the complete data in conversation
+            # Column definition will see it in conversation history
+            logger.info("[STEP 0] SKIPPING background research - user provided document text, proceeding directly to column definition")
+
+            # Create minimal research result for column definition to use
+            background_research_result = {
+                'success': True,
+                'needs_user_input': False,
+                'tablewide_research': 'User provided complete document text for enumeration.',
+                'authoritative_sources': [],
+                'starting_tables': [],
+                'discovery_patterns': {'primary_pattern': 'complete_list', 'description': 'User-provided document', 'challenges': [], 'recommendations': []},
+                'domain_specific_context': {'key_facts': [], 'common_identifiers': [], 'data_availability': 'Provided by user'},
+                'processing_time': 0.0
+            }
+
+            send_execution_progress(
+                session_id=session_id,
+                conversation_id=conversation_id,
+                current_step=0,
+                total_steps=4,
+                status='Using document text you provided',
+                progress_percent=25
+            )
+
+        elif cached_research:
             logger.info("[STEP 0] Using cached background research (restructure mode - skipping research)")
             background_research_result = cached_research
 
