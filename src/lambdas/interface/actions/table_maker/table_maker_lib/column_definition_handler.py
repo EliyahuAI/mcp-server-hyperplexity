@@ -288,11 +288,19 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             result['search_strategy'] = search_strategy
             result['table_name'] = ai_response.get('table_name', '')
             result['tablewide_research'] = ai_response.get('tablewide_research', '')
-            result['sample_rows'] = ai_response.get('sample_rows', [])  # NEW
+            result['sample_rows'] = ai_response.get('sample_rows', [])
+            result['complete_rows'] = ai_response.get('complete_rows')  # NEW - for complete enumeration
 
             # Log sample rows if provided
             if result['sample_rows']:
                 logger.info(f"Column definition provided {len(result['sample_rows'])} sample rows from starting tables")
+
+            # Log complete rows if provided
+            if result.get('complete_rows'):
+                skip_discovery = result['complete_rows'].get('skip_row_discovery', False)
+                if skip_discovery:
+                    row_count = len(result['complete_rows'].get('rows', []))
+                    logger.info(f"Column definition provided complete_rows with {row_count} rows - row discovery will be skipped")
 
             # Extract and format requirements for downstream use (Phase 1, Items 2 and 4)
             hard_reqs, soft_reqs = self._separate_requirements(requirements)
