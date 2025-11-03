@@ -2273,6 +2273,10 @@ def handle_main_processing(event, context):
                                     if has_row_key:
                                         logger.error(f"[PREVIEW_EXCEL_DEBUG] First row _row_key: {first_row.get('_row_key')}")
                                         logger.error(f"[PREVIEW_EXCEL_DEBUG] Sample row keys from table_data: {[row.get('_row_key')[:16] for row in table_data['data'][:3] if isinstance(row, dict) and row.get('_row_key')]}")
+                                        # Show first row ID fields to understand what was hashed
+                                        id_fields = config_data.get('id_fields', [])
+                                        first_row_id_data = {k: first_row.get(k) for k in id_fields if k in first_row}
+                                        logger.error(f"[PREVIEW_EXCEL_DEBUG] First row ID field values: {first_row_id_data}")
                                     else:
                                         logger.error(f"[PREVIEW_EXCEL_DEBUG] First row keys: {list(first_row.keys())[:10] if isinstance(first_row, dict) else 'Not a dict'}")
 
@@ -2280,6 +2284,13 @@ def handle_main_processing(event, context):
                                 if isinstance(real_results, dict) and real_results:
                                     validation_keys_sample = list(real_results.keys())[:3]
                                     logger.error(f"[PREVIEW_EXCEL_DEBUG] Validation result keys sample: {[k[:16] for k in validation_keys_sample]}")
+                                    # Show first validation result's ID field data
+                                    if validation_keys_sample:
+                                        first_val_key = validation_keys_sample[0]
+                                        first_val_result = real_results[first_val_key]
+                                        id_fields = config_data.get('id_fields', [])
+                                        first_val_id_data = {k: first_val_result.get(k) for k in id_fields if k in first_val_result}
+                                        logger.error(f"[PREVIEW_EXCEL_DEBUG] First validation result ID values: {first_val_id_data}")
 
                                 excel_buffer = create_qc_enhanced_excel_for_interface(
                                     table_data, validation_results, config_data, session_id,
