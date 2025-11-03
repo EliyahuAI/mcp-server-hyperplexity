@@ -198,16 +198,16 @@
         },
         "skip_rationale": {
           "type": "string",
-          "description": "REQUIRED when skip_row_discovery=true. Explain why row discovery can be skipped. Examples: 'List of countries in Africa is exhaustive and well-known', 'References are from provided paper - complete enumeration possible', 'JUMP START: Forbes AI 50 2024 list from background research perfectly matches user request for top AI companies - directly copying all 50 rows with company names and descriptions'."
+          "description": "REQUIRED when skip_row_discovery=true, omit when false. Explain why row discovery can be skipped. Examples: 'List of countries in Africa is exhaustive and well-known', 'References are from provided paper - complete enumeration possible', 'JUMP START: Forbes AI 50 2024 list from background research perfectly matches user request for top AI companies - directly copying all 50 rows with company names and descriptions'."
         },
         "mode": {
           "type": "string",
           "enum": ["complete_enumeration", "jump_start"],
-          "description": "Mode type: 'complete_enumeration' for well-known finite lists (countries, planets, etc.), 'jump_start' for directly copying rows from a reliable starting table found in background research."
+          "description": "REQUIRED when skip_row_discovery=true, omit when false. Mode type: 'complete_enumeration' for well-known finite lists (countries, planets, etc.), 'jump_start' for directly copying rows from a reliable starting table found in background research."
         },
         "rows": {
           "type": "array",
-          "description": "Complete list of ALL rows. For complete_enumeration: must be exhaustive (all countries, all planets, etc.). For jump_start: directly copy ALL rows from the starting table with as many columns as available in source. Must be REAL entities in reasonable order (alphabetical, chronological, or logical).",
+          "description": "REQUIRED when skip_row_discovery=true, omit when false. Complete list of ALL rows. For complete_enumeration: must be exhaustive (all countries, all planets, etc.). For jump_start: directly copy ALL rows from the starting table with as many columns as available in source. Must be REAL entities in reasonable order (alphabetical, chronological, or logical).",
           "items": {
             "type": "object",
             "required": ["id_values", "source"],
@@ -242,7 +242,7 @@
           "minItems": 1
         }
       },
-      "required": ["skip_row_discovery", "skip_rationale", "mode", "rows"]
+      "required": ["skip_row_discovery"]
     }
   }
 }

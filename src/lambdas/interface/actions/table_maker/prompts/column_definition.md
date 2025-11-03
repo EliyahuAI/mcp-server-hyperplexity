@@ -276,6 +276,14 @@ When the list of rows is **obvious, exhaustive, and well-defined**.
 
 **IMPORTANT:** You do NOT have web search access - you can only use what background research provided
 
+**⚠️ CRITICAL - Output Priority for Complete Enumeration:**
+
+When using complete_rows mode:
+1. **Output complete_rows FIRST and COMPLETELY** - This is the most important part
+2. Keep other sections minimal (columns, search_strategy) since they won't be used
+3. If token budget is limited, prioritize complete_rows.rows array over everything else
+4. Better to have complete rows with minimal columns than truncated rows
+
 **Validation Rules:**
 ```json
 // ✅ GOOD - Use complete_rows
