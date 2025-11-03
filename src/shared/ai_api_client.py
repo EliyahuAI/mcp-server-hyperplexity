@@ -2067,18 +2067,10 @@ class AIAPIClient:
 
                     logger.debug(f"[SUCCESS] Model {current_model} succeeded with unified response format")
 
-                    # Save debug data for successful call
-                    if result.get('response'):
-                        await self._save_debug_data(
-                            api_provider=api_provider,
-                            model=current_model,
-                            request_data={'prompt': prompt, 'schema': schema, 'max_web_searches': max_web_searches},
-                            response_data=result.get('response'),
-                            error=None,
-                            context=context,
-                            debug_name=debug_name,
-                            cache_key=cache_key
-                        )
+                    # NOTE: Debug data is already saved by the provider-specific call functions:
+                    #   - _make_single_anthropic_call (for Anthropic)
+                    #   - _make_single_perplexity_structured_call (for Perplexity)
+                    # Removed duplicate logging here to prevent duplicate debug entries for both providers
 
                     return result
                     
