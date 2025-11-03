@@ -794,6 +794,25 @@ async def execute_full_table_generation(
                 result['error'] = f'Background research failed: {error_msg}'
                 return result
 
+            # Check if background research needs user input (e.g., can't access PDF)
+            if background_research_result.get('needs_user_input'):
+                user_message = background_research_result.get('user_request_message',
+                    'I need additional information to complete the research. Please provide more details.')
+                logger.info(f"[STEP 0] Background research needs user input: {user_message}")
+
+                # Send back to conversation with user request
+                send_table_maker_message(
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    message=user_message,
+                    requires_response=True
+                )
+
+                result['needs_user_input'] = True
+                result['user_request_message'] = user_message
+                result['error'] = 'Background research requires user input'
+                return result
+
             # Save to S3
             _save_to_s3(
                 storage_manager, email, session_id, conversation_id,
