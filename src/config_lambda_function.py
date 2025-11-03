@@ -184,6 +184,16 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         
         # Get the updated config and add conversation tracking
         updated_config = response_data.get('updated_config')
+
+        # Parse updated_config if it's a JSON string (double-encoded)
+        if updated_config and isinstance(updated_config, str):
+            try:
+                updated_config = json.loads(updated_config)
+                logger.info("[CONFIG_PARSING] Successfully parsed updated_config from JSON string")
+            except json.JSONDecodeError as e:
+                logger.error(f"[CONFIG_PARSING] Failed to parse updated_config JSON: {e}")
+                raise ValueError(f"Invalid JSON in updated_config: {str(e)}")
+
         clarifying_questions = response_data.get('clarifying_questions', '')
         clarification_urgency = response_data.get('clarification_urgency', 0.0)
         ai_summary = response_data.get('ai_summary', '')

@@ -85,8 +85,8 @@ Review the validator's work and provide YOUR final QC decisions:
 
 **JSON Response Fields (ALL MANDATORY for EVERY field):**
 - **answer**: Your final QC value (confirm Updated Value OR provide your own correction)
-- **confidence**: YOUR confidence in the QC value you're providing
-- **original_confidence**: YOUR assessment of confidence in the Original/Current input value
+- **confidence**: YOUR confidence in the QC value you're providing 
+- **original_confidence**: YOUR assessment of confidence in the Original/Current input value, always ≤ confidence
 - **updated_confidence**: YOUR assessment of the validator's Updated Value confidence
 - **qc_reasoning**: Explain your QC decision and any changes you made
 - **qc_citations**: Provide citations supporting your QC decision
