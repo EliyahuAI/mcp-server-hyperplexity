@@ -272,9 +272,14 @@ When the list of rows is **obvious, exhaustive, and well-defined**.
 - Check if `sample_entities` contains ALL entities or just a sample:
   - Count in entity_count_estimate should match sample_entities array length
   - If counts match → Use complete_rows mode
-  - If only partial extraction → Fall back to normal row discovery
+  - If only partial extraction → Check conversation for user-provided document text
 
-**IMPORTANT:** You do NOT have web search access - you can only use what background research provided
+**IMPORTANT - Extracting from Conversation:**
+If background research is empty/incomplete BUT you see user pasted large document text in CONVERSATION CONTEXT:
+- The user provided the complete document after background research couldn't access it
+- Extract ALL entities directly from the pasted text in the conversation
+- Use complete_rows mode with entities you extracted
+- You do NOT need web search - the document is in the conversation history
 
 **⚠️ CRITICAL - Output Priority for Complete Enumeration:**
 

@@ -207,15 +207,15 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             # Load response schema
             schema = self.schema_validator.load_schema('column_definition_response')
 
-            # Call API (no web search needed - research phase already did that)
-            logger.info(f"Calling AI API with model: {model} (no web search - using research output)")
+            # Call API (no web search - extract from conversation if needed)
+            logger.info(f"Calling AI API with model: {model} (no web search - using research output or conversation)")
 
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
                 model=model,
                 max_tokens=max_tokens,
-                max_web_searches=0,  # NO web search - background research already provided all needed data
+                max_web_searches=0,  # NO web search - can extract from conversation history
                 use_cache=True,  # Enable cache (standard practice)
                 debug_name="column_definition"
             )
