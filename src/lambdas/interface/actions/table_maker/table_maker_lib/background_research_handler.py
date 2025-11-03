@@ -199,9 +199,15 @@ class BackgroundResearchHandler:
             # Extract enhanced_data for API call tracking
             enhanced_data = api_response.get('enhanced_data', {})
 
+            # Check if research needs user input (e.g., can't access PDF)
+            needs_user_input = structured_response.get('needs_user_input', False)
+            user_request_message = structured_response.get('user_request_message', '')
+
             # Success!
             result.update({
                 'success': True,
+                'needs_user_input': needs_user_input,
+                'user_request_message': user_request_message,
                 'tablewide_research': structured_response['tablewide_research'],
                 'authoritative_sources': structured_response['authoritative_sources'],
                 'starting_tables': structured_response['starting_tables'],
@@ -210,6 +216,9 @@ class BackgroundResearchHandler:
                 'enhanced_data': enhanced_data,
                 'processing_time': time.time() - start_time
             })
+
+            if needs_user_input:
+                logger.info(f"[NEEDS_USER_INPUT] Background research requires user help: {user_request_message}")
 
             logger.info(
                 f"Background research complete: "
