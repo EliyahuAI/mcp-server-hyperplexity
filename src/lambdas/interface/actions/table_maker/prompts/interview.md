@@ -204,6 +204,23 @@ In the next 3-4 minutes, I will:
 
 **Format is critical:** Start with "COMPLETE ENUMERATION:" to signal background research to extract ALL entities.
 
+**⚠️ WARN USER if document access may be needed:**
+
+If user provides ONLY a URL/link to a document (without pasting content), include a friendly warning in your ai_message:
+
+**Example:**
+```
+User: "Extract references from https://arxiv.org/pdf/2510.13928"
+
+ai_message: "I'll create a table to verify all references from arXiv:2510.13928...
+
+**Note:** If I can't access the full PDF through web search, I may need you to copy and paste the complete paper text (including the references section) so I can extract all citations.
+
+Ready to generate this table?"
+```
+
+This sets expectations early that document access might be needed.
+
 **context_web_research - Include ONLY:**
 - ✅ Complete enumeration signals (see above)
 - ✅ Specific entities: "Eliyahu.AI background"
