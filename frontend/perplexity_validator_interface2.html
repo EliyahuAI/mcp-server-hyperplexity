@@ -5217,46 +5217,70 @@
             }
 
             function handleTableMakerNeedsInput(message) {
+                console.log('[NEEDS_INPUT] Background research needs user help', message);
+
                 let tableMakerCardId = null;
                 if (cardHandlers.size > 0) {
                     tableMakerCardId = Array.from(cardHandlers.keys()).pop();
                 }
-                if (!tableMakerCardId) return;
 
-                console.log('[NEEDS_INPUT] Background research needs user help');
+                console.log('[NEEDS_INPUT] Card ID:', tableMakerCardId);
+                if (!tableMakerCardId) {
+                    console.error('[NEEDS_INPUT] No card ID found');
+                    return;
+                }
 
                 const card = document.getElementById(tableMakerCardId);
-                if (card) {
-                    // Stop and hide progress indicator
-                    const progressContent = document.getElementById(`${tableMakerCardId}-progress-content`);
-                    if (progressContent) {
-                        progressContent.style.display = 'none';
-                    }
+                console.log('[NEEDS_INPUT] Card element:', card);
+                if (!card) {
+                    console.error('[NEEDS_INPUT] Card element not found');
+                    return;
+                }
 
-                    // Complete thinking state
-                    completeThinkingInCard(tableMakerCardId, 'Need your help');
+                // Stop and hide progress indicator
+                const progressContent = document.getElementById(`${tableMakerCardId}-progress-content`);
+                console.log('[NEEDS_INPUT] Progress content:', progressContent);
+                if (progressContent) {
+                    progressContent.style.display = 'none';
+                    console.log('[NEEDS_INPUT] Hidden progress indicator');
+                }
 
-                    const messagesDiv = document.getElementById(`${tableMakerCardId}-messages`);
-                    if (messagesDiv) {
-                        const requestMsg = document.createElement('div');
-                        requestMsg.className = 'message message-assistant';
-                        requestMsg.innerHTML = `
-                            <span class="message-icon">[REQUEST]</span>
-                            <div>${message.message || "I need additional information to continue."}</div>
-                        `;
-                        messagesDiv.appendChild(requestMsg);
-                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-                    }
+                // Complete thinking state - stop spinner on button
+                console.log('[NEEDS_INPUT] Calling completeThinkingInCard');
+                completeThinkingInCard(tableMakerCardId, 'Need your help');
 
-                    // Re-enable input for user to respond
-                    const inputField = document.getElementById('table-maker-input');
-                    const sendButton = document.getElementById('table-maker-send');
-                    if (inputField && sendButton) {
-                        inputField.disabled = false;
-                        inputField.placeholder = "Paste the document text here...";
-                        inputField.focus();
-                        sendButton.disabled = false;
-                    }
+                // Show request message
+                const messagesDiv = document.getElementById(`${tableMakerCardId}-messages`);
+                console.log('[NEEDS_INPUT] Messages div:', messagesDiv);
+                if (messagesDiv) {
+                    const requestMsg = document.createElement('div');
+                    requestMsg.className = 'message message-assistant';
+                    requestMsg.innerHTML = `
+                        <span class="message-icon">[REQUEST]</span>
+                        <div>${message.message || "I need additional information to continue."}</div>
+                    `;
+                    messagesDiv.appendChild(requestMsg);
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                    console.log('[NEEDS_INPUT] Added request message');
+                }
+
+                // Re-enable input for user to respond
+                const inputField = document.getElementById('table-maker-input');
+                const sendButton = document.getElementById('table-maker-send');
+                console.log('[NEEDS_INPUT] Input field:', inputField, 'Send button:', sendButton);
+
+                if (inputField) {
+                    inputField.disabled = false;
+                    inputField.placeholder = "Paste the document text here...";
+                    inputField.focus();
+                    console.log('[NEEDS_INPUT] Enabled and focused input');
+                }
+
+                if (sendButton) {
+                    sendButton.disabled = false;
+                    // Remove thinking class if present
+                    sendButton.classList.remove('thinking');
+                    console.log('[NEEDS_INPUT] Enabled send button');
                 }
             }
 
