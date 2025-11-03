@@ -5216,6 +5216,40 @@
                 }
             }
 
+            function handleTableMakerNeedsInput(message) {
+                let tableMakerCardId = null;
+                if (cardHandlers.size > 0) {
+                    tableMakerCardId = Array.from(cardHandlers.keys()).pop();
+                }
+                if (!tableMakerCardId) return;
+
+                console.log('[NEEDS_INPUT] Background research needs user help');
+                completeThinkingInCard(tableMakerCardId, 'Need your help');
+
+                const card = document.getElementById(tableMakerCardId);
+                if (card) {
+                    const messagesDiv = document.getElementById(`${tableMakerCardId}-messages`);
+                    if (messagesDiv) {
+                        const requestMsg = document.createElement('div');
+                        requestMsg.className = 'message message-assistant';
+                        requestMsg.innerHTML = `
+                            <span class="message-icon">[REQUEST]</span>
+                            <div>${message.message || "I need additional information to continue."}</div>
+                        `;
+                        messagesDiv.appendChild(requestMsg);
+                    }
+
+                    // Re-enable input for user to respond
+                    const inputField = document.getElementById('table-maker-input');
+                    const sendButton = document.getElementById('table-maker-send');
+                    if (inputField && sendButton) {
+                        inputField.disabled = false;
+                        inputField.focus();
+                        sendButton.disabled = false;
+                    }
+                }
+            }
+
             function handleTableExecutionUnrecoverable(message) {
                 let tableMakerCardId = null;
                 if (cardHandlers.size > 0) {
@@ -5706,6 +5740,12 @@
                 if (data.type === 'table_execution_restructure') {
                     handleTableExecutionRestructure(data);
                     return; // Table execution restructure is handled by dedicated function
+                }
+
+                // Handle Table Maker needs user input (e.g., can't access PDF)
+                if (data.type === 'table_maker_needs_input') {
+                    handleTableMakerNeedsInput(data);
+                    return;
                 }
 
                 // Handle Table Maker unrecoverable failure
