@@ -17,8 +17,8 @@
   "background_research": {
     "_comment": "Step 0 - ALWAYS runs before column definition. Finds authoritative sources and starting tables to guide column design. On restructure, cached research is ALWAYS reused (never re-run)",
 
-    "model": "sonar-pro",
-    "_note_model": "Recommended: sonar-pro (Perplexity), sonar (Perplexity), or claude-sonnet-4-5 (Anthropic with web search)",
+    "model": "claude-haiku-4-5",
+    "_note_model": "Recommended: claude-haiku-4-5 (can access PDFs for complete enumeration), sonar-pro (fast for general research), or claude-sonnet-4-5 (highest quality)",
     "max_tokens": 8000,
     "_note_max_tokens": "Auto-tripled to 24000 when COMPLETE ENUMERATION signal detected (large entity lists need more output space)",
 
