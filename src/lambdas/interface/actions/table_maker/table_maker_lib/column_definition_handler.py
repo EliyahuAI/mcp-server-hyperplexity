@@ -94,19 +94,33 @@ class ColumnDefinitionHandler:
                 )
 
                 if is_complete_enumeration:
-                    # Count entities to estimate token needs
-                    total_entities = sum(
+                    # Count entities - check both extracted and expected count
+                    total_entities_extracted = sum(
                         len(table.get('sample_entities', []))
                         for table in starting_tables
                         if table.get('is_complete_enumeration', False)
                     )
 
-                    # Boost max_tokens if we need to output all entities as complete_rows
-                    if total_entities > 20:  # More than 20 entities = likely needs boost
+                    # Also check entity_count_estimate to see expected total
+                    import re
+                    total_entities_expected = 0
+                    for table in starting_tables:
+                        if table.get('is_complete_enumeration', False):
+                            count_str = table.get('entity_count_estimate', '')
+                            numbers = re.findall(r'\d+', count_str)
+                            if numbers:
+                                total_entities_expected = max(total_entities_expected, int(numbers[0]))
+
+                    # Use the larger number (expected or extracted)
+                    total_entities = max(total_entities_extracted, total_entities_expected)
+
+                    # Boost max_tokens for complete enumeration (always boost if flag is set)
+                    if total_entities > 10 or is_complete_enumeration:  # Lower threshold or always boost
                         original_max_tokens = max_tokens
                         max_tokens = min(max_tokens * 3, 24000)  # Triple tokens, cap at 24k
                         logger.info(
-                            f"[COMPLETE ENUMERATION] Detected {total_entities} entities - "
+                            f"[COMPLETE ENUMERATION] Detected {total_entities_extracted} extracted, "
+                            f"{total_entities_expected} expected - "
                             f"increasing max_tokens from {original_max_tokens} to {max_tokens} "
                             f"to output complete_rows"
                         )
