@@ -880,6 +880,16 @@ async def execute_full_table_generation(
 
                 logger.info(f"[CHECKPOINT] Incomplete extraction for enumeration task - requesting user help")
 
+                # Send final progress update to stop progress indicator
+                send_execution_progress(
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    current_step=0,
+                    total_steps=4,
+                    status='Waiting for document content...',
+                    progress_percent=100  # Complete the progress bar
+                )
+
                 result['needs_user_input'] = True
                 result['user_request_message'] = user_message
                 result['error'] = f'USER_INPUT_NEEDED: {user_message}'
@@ -891,7 +901,7 @@ async def execute_full_table_generation(
                             run_key=run_key,
                             status='WAITING_FOR_USER',
                             verbose_status='Need complete document text for enumeration',
-                            percent_complete=15
+                            percent_complete=100  # Complete for run tracking
                         )
                     except Exception as e:
                         logger.warning(f"[EXECUTION] Failed to update run status: {e}")
