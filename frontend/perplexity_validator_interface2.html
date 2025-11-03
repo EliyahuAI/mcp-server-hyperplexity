@@ -9061,7 +9061,27 @@ Please provide any additional context, or simply proceed to generate your initia
                         await streamText(messageDiv, content);
                     }
                 } else {
-                    messageDiv.innerHTML = renderMarkdown(content);
+                    // For user messages, truncate if very long (pasted documents)
+                    let displayContent = content;
+                    if (content.length > 500) {
+                        displayContent = content.substring(0, 500) + '... [' + (content.length - 500) + ' more characters]';
+                    }
+                    messageDiv.innerHTML = renderMarkdown(displayContent);
+                    messageDiv.title = 'Click to expand'; // Tooltip
+
+                    // Add click to expand for truncated messages
+                    if (content.length > 500) {
+                        messageDiv.style.cursor = 'pointer';
+                        messageDiv.onclick = function() {
+                            if (this.innerHTML.includes('more characters]')) {
+                                this.innerHTML = renderMarkdown(content);
+                                this.title = 'Click to collapse';
+                            } else {
+                                this.innerHTML = renderMarkdown(displayContent);
+                                this.title = 'Click to expand';
+                            }
+                        };
+                    }
                 }
 
                 // Scroll to bottom - defer to avoid forced reflow
