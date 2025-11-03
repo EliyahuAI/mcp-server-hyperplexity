@@ -22,6 +22,7 @@ import logging
 import json
 import os
 import asyncio
+import random
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -51,6 +52,27 @@ except ImportError:
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# Fun progress messages for the 50% analyzing stage
+FUN_PROGRESS_MESSAGES = [
+    "Cogitating...",
+    "Pondering...",
+    "Percolating...",
+    "Tinkering...",
+    "Wrangling...",
+    "Marinating...",
+    "Noodling...",
+    "Vibing...",
+    "Spelunking...",
+    "Pontificating...",
+    "De-hyperbolizing...",
+    "Detectivising...",
+]
+
+
+def _get_random_progress_message() -> str:
+    """Return a random fun progress message."""
+    return random.choice(FUN_PROGRESS_MESSAGES)
 
 
 def _send_interview_progress(session_id: str, conversation_id: str, turn_number: int) -> None:
@@ -978,17 +1000,8 @@ async def handle_table_conversation_start(request_data, context):
             logger.warning(f"[TABLE_MAKER] Failed to create run record: {e}")
             run_key = None
 
-        # Send initial progress update
-        if websocket_client and session_id:
-            try:
-                websocket_client.send_to_session(session_id, {
-                    'type': 'table_conversation_update',
-                    'conversation_id': conversation_id,
-                    'progress': 10,
-                    'status': 'Starting conversation...'
-                })
-            except Exception as e:
-                logger.warning(f"[TABLE_MAKER] Failed to send WebSocket update: {e}")
+        # Skip initial "Starting" message - go straight to analyzing
+        # (removed to avoid unnecessary UI flickering)
 
         # Use local table_maker prompts and schemas
         prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
@@ -1000,14 +1013,14 @@ async def handle_table_conversation_start(request_data, context):
             schemas_dir=schemas_dir
         )
 
-        # Send progress update
+        # Send progress update with random fun message
         if websocket_client and session_id:
             try:
                 websocket_client.send_to_session(session_id, {
                     'type': 'table_conversation_update',
                     'conversation_id': conversation_id,
-                    'progress': 30,
-                    'status': 'Analyzing your request...'
+                    'progress': 50,
+                    'status': _get_random_progress_message()
                 })
             except Exception as e:
                 logger.warning(f"[TABLE_MAKER] Failed to send WebSocket update: {e}")
@@ -1254,17 +1267,8 @@ async def handle_table_conversation_continue(request_data, context):
         # Get run_key for database tracking
         run_key = conversation_state.get('run_key')
 
-        # Send initial progress update
-        if websocket_client and session_id:
-            try:
-                websocket_client.send_to_session(session_id, {
-                    'type': 'table_conversation_update',
-                    'conversation_id': conversation_id,
-                    'progress': 10,
-                    'status': 'Continuing conversation...'
-                })
-            except Exception as e:
-                logger.warning(f"[TABLE_MAKER] Failed to send WebSocket update: {e}")
+        # Skip initial "Continuing" message - go straight to analyzing
+        # (removed to avoid unnecessary UI flickering)
 
         # Use local table_maker prompts and schemas
         prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
@@ -1336,14 +1340,14 @@ Recommendations that were provided to user:
             user_message = table_context + f"=== USER'S LATEST REQUEST (address this in the ongoing conversation) ===\n{user_message}\n=== END OF LATEST REQUEST ===\n"
             logger.info(f"[TABLE_MAKER] Added preview table context to refinement request ({len(columns)} columns, {len(rows)} sample rows, {len(future_ids)} additional IDs)")
 
-        # Send progress update
+        # Send progress update with random fun message
         if websocket_client and session_id:
             try:
                 websocket_client.send_to_session(session_id, {
                     'type': 'table_conversation_update',
                     'conversation_id': conversation_id,
-                    'progress': 30,
-                    'status': 'Analyzing your feedback...'
+                    'progress': 50,
+                    'status': _get_random_progress_message()
                 })
             except Exception as e:
                 logger.warning(f"[TABLE_MAKER] Failed to send WebSocket update: {e}")
