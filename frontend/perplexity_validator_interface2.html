@@ -5216,87 +5216,6 @@
                 }
             }
 
-            function handleTableMakerNeedsInput(message) {
-                console.log('[NEEDS_INPUT] Background research needs user help', message);
-
-                let tableMakerCardId = null;
-                if (cardHandlers.size > 0) {
-                    tableMakerCardId = Array.from(cardHandlers.keys()).pop();
-                }
-
-                console.log('[NEEDS_INPUT] Card ID:', tableMakerCardId);
-                if (!tableMakerCardId) {
-                    console.error('[NEEDS_INPUT] No card ID found');
-                    return;
-                }
-
-                const card = document.getElementById(tableMakerCardId);
-                console.log('[NEEDS_INPUT] Card element:', card);
-                if (!card) {
-                    console.error('[NEEDS_INPUT] Card element not found');
-                    return;
-                }
-
-                // Stop and hide progress indicator
-                const progressContent = document.getElementById(`${tableMakerCardId}-progress-content`);
-                console.log('[NEEDS_INPUT] Progress content:', progressContent);
-                if (progressContent) {
-                    progressContent.style.display = 'none';
-                    console.log('[NEEDS_INPUT] Hidden progress indicator');
-                }
-
-                // Complete thinking state - stop spinner on button
-                console.log('[NEEDS_INPUT] Calling completeThinkingInCard');
-                completeThinkingInCard(tableMakerCardId, 'Need your help');
-
-                // Show request message
-                const messagesDiv = document.getElementById(`${tableMakerCardId}-messages`);
-                console.log('[NEEDS_INPUT] Messages div:', messagesDiv);
-                if (messagesDiv) {
-                    const requestMsg = document.createElement('div');
-                    requestMsg.className = 'message message-assistant';
-                    requestMsg.innerHTML = `
-                        <span class="message-icon">[REQUEST]</span>
-                        <div>${message.message || "I need additional information to continue."}</div>
-                    `;
-                    messagesDiv.appendChild(requestMsg);
-                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-                    console.log('[NEEDS_INPUT] Added request message');
-                }
-
-                // Re-show and re-enable input for user to respond
-                const inputContainer = document.getElementById(`${tableMakerCardId}-input-container`);
-                const inputField = document.getElementById(`${tableMakerCardId}-input`);
-                console.log('[NEEDS_INPUT] Input container:', inputContainer, 'Input field:', inputField);
-
-                if (inputContainer) {
-                    inputContainer.style.display = 'block';
-                    console.log('[NEEDS_INPUT] Showed input container');
-                }
-
-                if (inputField) {
-                    inputField.disabled = false;
-                    inputField.value = ''; // Clear previous input
-                    inputField.placeholder = "Paste the complete document text here (including references/sections)...";
-                    inputField.focus();
-                    console.log('[NEEDS_INPUT] Enabled and focused input');
-                }
-
-                // Re-enable the submit button and stop thinking state
-                const buttonsDiv = document.getElementById(`${tableMakerCardId}-buttons`);
-                console.log('[NEEDS_INPUT] Buttons div:', buttonsDiv);
-                if (buttonsDiv) {
-                    const submitButton = buttonsDiv.querySelector('button.primary');
-                    console.log('[NEEDS_INPUT] Submit button:', submitButton);
-                    if (submitButton) {
-                        submitButton.disabled = false;
-                        submitButton.classList.remove('thinking');
-                        submitButton.textContent = 'Submit';
-                        console.log('[NEEDS_INPUT] Enabled submit button');
-                    }
-                }
-            }
-
             function handleTableExecutionUnrecoverable(message) {
                 let tableMakerCardId = null;
                 if (cardHandlers.size > 0) {
@@ -5787,12 +5706,6 @@
                 if (data.type === 'table_execution_restructure') {
                     handleTableExecutionRestructure(data);
                     return; // Table execution restructure is handled by dedicated function
-                }
-
-                // Handle Table Maker needs user input (e.g., can't access PDF)
-                if (data.type === 'table_maker_needs_input') {
-                    handleTableMakerNeedsInput(data);
-                    return;
                 }
 
                 // Handle Table Maker unrecoverable failure

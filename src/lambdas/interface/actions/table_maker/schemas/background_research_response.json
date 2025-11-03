@@ -3,16 +3,14 @@
   "title": "Background Research Response",
   "description": "Schema for background research output - finds authoritative sources and starting tables before column definition",
   "type": "object",
-  "required": [],
+  "required": [
+    "tablewide_research",
+    "authoritative_sources",
+    "starting_tables",
+    "discovery_patterns",
+    "domain_specific_context"
+  ],
   "properties": {
-    "needs_user_input": {
-      "type": "boolean",
-      "description": "Set to true if you cannot complete the research task and need the user to provide additional information (e.g., cannot access PDF, need user to paste document text, need credentials). When true, provide user_request_message."
-    },
-    "user_request_message": {
-      "type": "string",
-      "description": "REQUIRED when needs_user_input=true. Friendly message with: (1) what went wrong, (2) why you need help, (3) clear recommendation for how user can help. Example: 'I cannot access the full PDF of arXiv:2510.13928 through web search - the abstract page doesn't include the references section. To extract all citations, please copy and paste the complete paper text (including the references/bibliography section) into the chat.'"
-    },
     "tablewide_research": {
       "type": "string",
       "description": "2-3 paragraph summary of the domain, key facts, and context that will help with column definition. Should include: (1) How entities are typically identified/catalogued, (2) What authoritative sources exist, (3) What challenges might arise in discovery, (4) Any domain-specific considerations.",
@@ -63,8 +61,8 @@
     },
     "starting_tables": {
       "type": "array",
-      "description": "Explicit examples of existing tables/lists with actual entity names (NOT just URLs). Each table must include sample entities. Can be empty array if needs_user_input=true.",
-      "minItems": 0,
+      "description": "Explicit examples of existing tables/lists with actual entity names (NOT just URLs). Each table must include sample entities.",
+      "minItems": 1,
       "items": {
         "type": "object",
         "required": [

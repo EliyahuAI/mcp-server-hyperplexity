@@ -665,28 +665,6 @@ async def _trigger_execution(
 
         logger.info(f"[TABLE_MAKER] Execution pipeline complete. Success: {execution_result.get('success')}")
 
-        # Check if background research needs user input (e.g., can't access PDF)
-        if execution_result.get('needs_user_input'):
-            user_message = execution_result.get('user_request_message',
-                'I need additional information to continue. Please provide more details.')
-            logger.info(f"[TABLE_MAKER] Background research needs user input, returning to conversation")
-
-            # Send message back to conversation
-            if websocket_client and session_id:
-                try:
-                    websocket_client.send_to_session(session_id, {
-                        'type': 'table_maker_needs_input',
-                        'conversation_id': conversation_id,
-                        'message': user_message,
-                        'resume_conversation': True
-                    })
-                    logger.info(f"[TABLE_MAKER] Sent needs_input message via WebSocket")
-                except Exception as e:
-                    logger.warning(f"[TABLE_MAKER] Failed to send needs_input message: {e}")
-
-            # Return without failing - conversation should resume
-            return
-
         # Check if autonomous restructure is needed (QC decided it's recoverable)
         if execution_result.get('restructure_needed'):
             logger.info(f"[AUTONOMOUS_RESTRUCTURE] QC determined table can be restructured. Restarting execution with guidance...")

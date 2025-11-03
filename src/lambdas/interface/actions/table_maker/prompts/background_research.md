@@ -186,17 +186,10 @@ Set `is_complete_enumeration: false`
 **YOUR SEARCH TASK:** {{CONTEXT_RESEARCH_ITEMS}}
 
 **CRITICAL REQUIREMENTS:**
-1. ✅ If "COMPLETE ENUMERATION:" → Extract ALL entities, set is_complete_enumeration=true, exact count
+1. ✅ If "COMPLETE ENUMERATION:" → Extract ALL entities from CONVERSATION CONTEXT, set is_complete_enumeration=true, exact count
 2. ✅ Extract ACTUAL entity names (not just URLs)
-3. ✅ Use web search extensively (don't rely on training data)
-4. ✅ Provide 5-15 samples (or ALL for complete enumeration)
-5. ⚠️ **If you CANNOT complete the task** (can't access PDF, need document text, need credentials):
-   - Set `needs_user_input: true`
-   - Provide `user_request_message` with 3 parts:
-     1. What went wrong (e.g., "I cannot access the full PDF through web search")
-     2. Why you need help (e.g., "the abstract page doesn't include references")
-     3. Clear recommendation (e.g., "Please copy and paste the complete paper text including the references section")
-   - This will pause execution and ask the user
-6. ✅ Return valid JSON matching format above
+3. ✅ For complete enumeration, user should have pasted document text in conversation - extract from there
+4. ✅ Provide 5-15 samples for discovery mode, or ALL entities for complete enumeration
+5. ✅ Return valid JSON matching format above
 
 **Return your research as valid JSON.**
