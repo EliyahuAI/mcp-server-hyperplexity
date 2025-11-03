@@ -5224,10 +5224,18 @@
                 if (!tableMakerCardId) return;
 
                 console.log('[NEEDS_INPUT] Background research needs user help');
-                completeThinkingInCard(tableMakerCardId, 'Need your help');
 
                 const card = document.getElementById(tableMakerCardId);
                 if (card) {
+                    // Stop and hide progress indicator
+                    const progressContent = document.getElementById(`${tableMakerCardId}-progress-content`);
+                    if (progressContent) {
+                        progressContent.style.display = 'none';
+                    }
+
+                    // Complete thinking state
+                    completeThinkingInCard(tableMakerCardId, 'Need your help');
+
                     const messagesDiv = document.getElementById(`${tableMakerCardId}-messages`);
                     if (messagesDiv) {
                         const requestMsg = document.createElement('div');
@@ -5237,6 +5245,7 @@
                             <div>${message.message || "I need additional information to continue."}</div>
                         `;
                         messagesDiv.appendChild(requestMsg);
+                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
                     }
 
                     // Re-enable input for user to respond
@@ -5244,6 +5253,7 @@
                     const sendButton = document.getElementById('table-maker-send');
                     if (inputField && sendButton) {
                         inputField.disabled = false;
+                        inputField.placeholder = "Paste the document text here...";
                         inputField.focus();
                         sendButton.disabled = false;
                     }
