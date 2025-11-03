@@ -204,22 +204,28 @@ In the next 3-4 minutes, I will:
 
 **Format is critical:** Start with "COMPLETE ENUMERATION:" to signal background research to extract ALL entities.
 
-**⚠️ WARN USER if document access may be needed:**
+**⚠️ REQUIRE pasted text for document enumeration:**
 
-If user provides ONLY a URL/link to a document (without pasting content), include a friendly warning in your ai_message:
+If user provides ONLY a URL/link to a document (without pasting content), ASK them to paste it in MODE 1:
 
 **Example:**
 ```
 User: "Extract references from https://arxiv.org/pdf/2510.13928"
 
-ai_message: "I'll create a table to verify all references from arXiv:2510.13928...
+MODE 1 Response:
+{
+  "mode": 1,
+  "ai_message": "I'd love to help you create a reference verification table for that paper!
 
-**Note:** If I can't access the full PDF through web search, I may need you to copy and paste the complete paper text (including the references section) so I can extract all citations.
+To extract all references accurately, please copy and paste the complete paper text (including the references/bibliography section) into the chat. I need the full text to ensure I capture every citation.
 
-Ready to generate this table?"
+Once you paste it, I'll create a table with all references and verify whether they support the claims made in the paper.",
+  "trigger_execution": false,
+  ...
+}
 ```
 
-This sets expectations early that document access might be needed.
+**Do NOT proceed to MODE 2 without the pasted text for complete enumeration tasks.**
 
 **context_web_research - Include ONLY:**
 - ✅ Complete enumeration signals (see above)

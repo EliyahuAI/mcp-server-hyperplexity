@@ -834,81 +834,8 @@ async def execute_full_table_generation(
                 f"time: {background_research_result.get('processing_time', 0):.2f}s"
             )
 
-        # ======================================================================
-        # CHECKPOINT: Validate Research Completeness
-        # ======================================================================
-        # For COMPLETE ENUMERATION tasks, verify we got a complete list
-        # If not, request user to paste document text
-        context_research_items = conversation_state.get('context_web_research', [])
-        is_complete_enumeration_task = any(
-            item.startswith('COMPLETE ENUMERATION:')
-            for item in context_research_items
-        )
-
-        if is_complete_enumeration_task:
-            logger.info("[CHECKPOINT] COMPLETE ENUMERATION task - validating research extracted complete list")
-
-            # Check if research successfully extracted complete list
-            starting_tables = background_research_result.get('starting_tables', [])
-
-            # Valid complete enumeration has:
-            # 1. At least one table with is_complete_enumeration=true
-            # 2. Exact count (no ~ or vague numbers)
-            # 3. Entity count > 5 (not just samples)
-            has_complete_list = False
-            for table in starting_tables:
-                if table.get('is_complete_enumeration', False):
-                    entity_count_str = table.get('entity_count_estimate', '')
-                    # Extract number from string like "54 entities" or "27 citations"
-                    import re
-                    numbers = re.findall(r'\d+', entity_count_str)
-                    if numbers and not '~' in entity_count_str:
-                        count = int(numbers[0])
-                        actual_entities = len(table.get('sample_entities', []))
-                        if count > 5 and count == actual_entities:
-                            has_complete_list = True
-                            logger.info(f"[CHECKPOINT] Found complete list: {count} entities extracted")
-                            break
-
-            if not has_complete_list:
-                # Research didn't produce complete enumeration - ask user for help
-                user_message = (
-                    "I attempted to extract the complete list but couldn't access all the required data. "
-                    "To create a complete table, please copy and paste the full document text "
-                    "(including all items, references, or sections you want tracked) into the chat."
-                )
-
-                logger.info(f"[CHECKPOINT] Incomplete extraction for enumeration task - requesting user help")
-
-                # Send final progress update to stop progress indicator
-                send_execution_progress(
-                    session_id=session_id,
-                    conversation_id=conversation_id,
-                    current_step=0,
-                    total_steps=4,
-                    status='Waiting for document content...',
-                    progress_percent=100  # Complete the progress bar
-                )
-
-                result['needs_user_input'] = True
-                result['user_request_message'] = user_message
-                result['error'] = f'USER_INPUT_NEEDED: {user_message}'
-
-                if run_key:
-                    try:
-                        update_run_status(
-                            session_id=session_id,
-                            run_key=run_key,
-                            status='WAITING_FOR_USER',
-                            verbose_status='Need complete document text for enumeration',
-                            percent_complete=100  # Complete for run tracking
-                        )
-                    except Exception as e:
-                        logger.warning(f"[EXECUTION] Failed to update run status: {e}")
-
-                return result
-            else:
-                logger.info("[CHECKPOINT] Complete enumeration validated - proceeding to column definition")
+        # No checkpoint needed - interview ensures document text is pasted upfront
+        # Background research and column definition extract from conversation
 
         # ======================================================================
         # STEP 1: Column Definition
