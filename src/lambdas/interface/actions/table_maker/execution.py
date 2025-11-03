@@ -800,17 +800,25 @@ async def execute_full_table_generation(
                     'I need additional information to complete the research. Please provide more details.')
                 logger.info(f"[STEP 0] Background research needs user input: {user_message}")
 
-                # Send back to conversation with user request
-                send_table_maker_message(
-                    session_id=session_id,
-                    conversation_id=conversation_id,
-                    message=user_message,
-                    requires_response=True
-                )
-
+                # TODO: Implement conversation kickback mechanism
+                # For now, return as error so conversation handler can display message to user
                 result['needs_user_input'] = True
                 result['user_request_message'] = user_message
-                result['error'] = 'Background research requires user input'
+                result['error'] = f'USER_INPUT_NEEDED: {user_message}'
+
+                # Update run status to show waiting for user
+                if run_key:
+                    try:
+                        update_run_status(
+                            session_id=session_id,
+                            run_key=run_key,
+                            status='WAITING_FOR_USER',
+                            verbose_status='Waiting for user to provide required information',
+                            percent_complete=10
+                        )
+                    except Exception as e:
+                        logger.warning(f"[EXECUTION] Failed to update run status: {e}")
+
                 return result
 
             # Save to S3
