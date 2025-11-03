@@ -3,13 +3,7 @@
   "title": "Background Research Response",
   "description": "Schema for background research output - finds authoritative sources and starting tables before column definition",
   "type": "object",
-  "required": [
-    "tablewide_research",
-    "authoritative_sources",
-    "starting_tables",
-    "discovery_patterns",
-    "domain_specific_context"
-  ],
+  "required": [],
   "properties": {
     "needs_user_input": {
       "type": "boolean",

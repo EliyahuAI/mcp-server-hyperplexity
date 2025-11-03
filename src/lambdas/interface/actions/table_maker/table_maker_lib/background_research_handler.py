@@ -177,14 +177,20 @@ class BackgroundResearchHandler:
                 logger.error(f"Response format: {json.dumps(raw_response, indent=2)[:1000]}")
                 raise
 
-            # Validate required fields
-            required_fields = ['tablewide_research', 'authoritative_sources', 'starting_tables',
-                             'discovery_patterns', 'domain_specific_context']
-            missing_fields = [f for f in required_fields if f not in structured_response]
+            # Check if this is a user input request (can skip other validation)
+            needs_user_input = structured_response.get('needs_user_input', False)
 
-            if missing_fields:
-                logger.error(f"Missing required fields in AI response: {missing_fields}")
-                raise Exception(f"AI response missing fields: {', '.join(missing_fields)}")
+            if not needs_user_input:
+                # Validate required fields only when NOT requesting user input
+                required_fields = ['tablewide_research', 'authoritative_sources', 'starting_tables',
+                                 'discovery_patterns', 'domain_specific_context']
+                missing_fields = [f for f in required_fields if f not in structured_response]
+
+                if missing_fields:
+                    logger.error(f"Missing required fields in AI response: {missing_fields}")
+                    raise Exception(f"AI response missing fields: {', '.join(missing_fields)}")
+            else:
+                logger.info("[NEEDS_USER_INPUT] Skipping field validation - user input requested")
 
             # Validate starting tables have sample entities
             starting_tables = structured_response.get('starting_tables', [])
@@ -208,11 +214,11 @@ class BackgroundResearchHandler:
                 'success': True,
                 'needs_user_input': needs_user_input,
                 'user_request_message': user_request_message,
-                'tablewide_research': structured_response['tablewide_research'],
-                'authoritative_sources': structured_response['authoritative_sources'],
-                'starting_tables': structured_response['starting_tables'],
-                'discovery_patterns': structured_response['discovery_patterns'],
-                'domain_specific_context': structured_response['domain_specific_context'],
+                'tablewide_research': structured_response.get('tablewide_research', ''),
+                'authoritative_sources': structured_response.get('authoritative_sources', []),
+                'starting_tables': structured_response.get('starting_tables', []),
+                'discovery_patterns': structured_response.get('discovery_patterns', {}),
+                'domain_specific_context': structured_response.get('domain_specific_context', {}),
                 'enhanced_data': enhanced_data,
                 'processing_time': time.time() - start_time
             })
