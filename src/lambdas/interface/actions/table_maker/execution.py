@@ -678,6 +678,9 @@ async def execute_full_table_generation(
         'error': None
     }
 
+    # Initialize variables that may be skipped in complete enumeration mode
+    original_discovered_count = 0
+
     try:
         logger.info(f"[EXECUTION] Starting Independent Row Discovery pipeline for {conversation_id}")
 
@@ -1020,6 +1023,7 @@ async def execute_full_table_generation(
             # Skip directly to config generation and CSV creation
             # We'll use final_rows as approved_rows (no QC needed)
             approved_rows = final_rows
+            original_discovered_count = len(final_rows)
             qc_result = {
                 'success': True,
                 'approved_rows': approved_rows,
