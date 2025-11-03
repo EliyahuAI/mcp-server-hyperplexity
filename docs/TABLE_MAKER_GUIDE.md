@@ -57,6 +57,47 @@ python test_local_e2e_sequential.py
 
 ---
 
+## What's New in Version 2.6
+
+### Complete Rows Mode - Skip Row Discovery (NEW FEATURE)
+- **Two Skip Modes**: Complete enumeration OR jump start from starting tables
+- **Skips Row Discovery & QC**: When enabled, saves 60-120s and $0.05-0.15 per table
+- **AI Decision**: Column definition AI autonomously decides when to use each mode
+- **Safe Default**: When in doubt, AI runs normal row discovery flow
+
+#### Mode 1: Complete Enumeration (Well-Known Lists)
+For obvious, exhaustive, well-defined lists that don't require web research.
+
+**Examples:**
+- ✅ Items from a specific document (references, chapters, sections, authors)
+- ✅ Geographic/political entities (countries in a region, states, provinces)
+- ✅ Well-defined finite sets (planets, elements, calendar units)
+- ✅ Official rosters (cabinet members, board members, committee members)
+
+#### Mode 2: JUMP START (Perfect Starting Table Match)
+**MAJOR VALUE:** When background research found a reliable starting table that perfectly matches user request.
+
+**How It Works:**
+1. Background research finds authoritative starting table (Forbes list, NIH database, Wikipedia list)
+2. Column definition AI recognizes starting table perfectly matches user intent
+3. AI directly copies ALL rows with ALL available columns from starting table
+4. Rows go straight to CSV with research columns pre-filled
+5. Saves 60-120s + gives user pre-populated data columns
+
+**Examples:**
+- ✅ Background research found authoritative ranked list that matches user's request perfectly
+- ✅ Background research found official database/registry with all needed entities
+- ✅ Background research found curated directory with comprehensive entity details
+
+**Key Benefit:** Not just faster - user gets a **pre-populated table** with descriptions, URLs, dates, and other data already filled in from the authoritative source!
+
+**Examples Where Row Discovery Still Needed:**
+- ❌ Open-ended discovery (dynamic, constantly changing entities) - **unless** perfect starting table exists (then use JUMP START)
+- ❌ Broad topic searches (requires web search for entity discovery)
+- ❌ Real-time data (needs active discovery)
+
+---
+
 ## What's New in Version 2.5
 
 ### Background Research Phase (MAJOR ENHANCEMENT)
@@ -209,7 +250,7 @@ python test_local_e2e_sequential.py
 
 ## Architecture Overview
 
-### The 5-Step Pipeline (Step 0 Internal)
+### The 5-Step Pipeline (Step 0 Internal, Steps 2-3 Optional)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -226,32 +267,38 @@ python test_local_e2e_sequential.py
 │  • Use background research to design table structure            │
 │  • Define columns (ID vs research columns)                      │
 │  • Create search strategy referencing starting tables           │
-│  • Extract 5-15 sample rows from starting tables                │
+│  • OPTIONAL: If rows obvious OR perfect starting table, skip:  │
+│    - complete_enumeration: Well-known finite lists              │
+│    - jump_start: Copy ALL rows from starting table (+ columns!)│
+│    - Saves ~70-135s, $0.065-0.185                              │
+│  • Otherwise: Extract 5-15 sample rows from starting tables     │
 │  • Model: claude-sonnet-4-5 (no web search needed)              │
 └─────────────────────────────────────────────────────────────────┘
                             ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ Step 2: Row Discovery + Config Generation (PARALLEL)            │
-│                                                                  │
-│  Row Discovery (60-120s):              Config Generation (20-40s)│
-│   • Process subdomains in parallel      • Build validation rules │
-│   • 3-Level progressive escalation:     • Based on columns       │
-│     - Level 1: sonar-pro (high)        • Runs in background     │
-│     - Level 2: claude-haiku (fallback)                          │
-│     - Level 3: claude-sonnet (final)                            │
-│   • Merge with sample rows from Step 1                          │
-│   • Collect search improvements feedback                        │
-│   • Tag candidates with metadata                                │
-└─────────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ Step 3: Consolidation & QC Review (~8-15s)                      │
-│  • Deduplicate merged rows (fuzzy matching)                     │
-│  • Review each candidate (claude-sonnet-4-5)                    │
-│  • Assign qc_score, keep/reject, priority                       │
-│  • Filter: keep=true AND qc_score >= 0.5                        │
-│  • If 0 rows: Autonomous recovery decision                      │
-└─────────────────────────────────────────────────────────────────┘
+                   ┌────────┴────────┐
+                   │   complete_rows  │
+                   │    provided?     │
+                   └────────┬────────┘
+                            │
+              ┌─────────────┴─────────────┐
+              │ YES                       │ NO
+              ↓                           ↓
+     ┌────────────────────┐      ┌─────────────────────────────────────┐
+     │ SKIP Steps 2-3     │      │ Step 2: Row Discovery + Config Gen  │
+     │                    │      │  • Row Discovery (60-120s)          │
+     │ Mode 1: complete_  │      │  • Config Generation (20-40s)       │
+     │   enumeration      │      │  • 3-Level escalation               │
+     │ Mode 2: jump_start │      │  • Merge with sample rows            │
+     │   (w/ research_    │      └──────────┬──────────────────────────┘
+     │    values!)        │                 ↓
+     └────────┬───────────┘      ┌─────────────────────────────────────┐
+              │                  │ Step 3: Consolidation & QC Review   │
+              │                  │  • Deduplicate merged rows           │
+              │                  │  • Review each candidate             │
+              │                  │  • Autonomous recovery if 0 rows     │
+              │                  └──────────┬──────────────────────────┘
+              │                             │
+              └─────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ Mutual Completion: Wait for Config + Generate CSV               │
@@ -264,16 +311,19 @@ python test_local_e2e_sequential.py
 ### Key Principles
 
 1. **Background Research First:** Find authoritative sources before designing table structure
-2. **Design for Discoverability:** Table structure determines if rows can be found
-3. **Support Columns Strategy:** Break complex validations into discoverable steps
-4. **Research Caching:** Always reuse research on restructure (mandatory optimization)
-5. **Progressive Escalation:** Start with sonar-pro, escalate to claude-haiku, final claude-sonnet
-6. **Continuous Learning:** Search improvements feed back into subsequent rounds and subdomains
-7. **Sample + Discovered Rows:** Column definition provides samples, discovery finds more, merged for QC
-8. **Quality Over Quantity:** QC layer ensures relevance
-9. **No Row Limits:** Keep all quality rows (not arbitrarily capped)
-10. **Simple ID Columns:** Short, repeatable identifiers prevent discovery failures
-11. **Strategic Overshooting:** Target 30-50% more rows to ensure delivery after QC
+2. **Smart Skip Options (v2.6):**
+   - **Complete Enumeration:** Skip discovery for obvious, exhaustive lists
+   - **JUMP START:** When starting table perfectly matches, copy all rows with pre-filled columns
+3. **Design for Discoverability:** Table structure determines if rows can be found
+4. **Support Columns Strategy:** Break complex validations into discoverable steps
+5. **Research Caching:** Always reuse research on restructure (mandatory optimization)
+6. **Progressive Escalation:** Start with sonar-pro, escalate to claude-haiku, final claude-sonnet
+7. **Continuous Learning:** Search improvements feed back into subsequent rounds and subdomains
+8. **Sample + Discovered Rows:** Column definition provides samples, discovery finds more, merged for QC
+9. **Quality Over Quantity:** QC layer ensures relevance
+10. **No Row Limits:** Keep all quality rows (not arbitrarily capped)
+11. **Simple ID Columns:** Short, repeatable identifiers prevent discovery failures
+12. **Strategic Overshooting:** Target 30-50% more rows to ensure delivery after QC
 
 ---
 

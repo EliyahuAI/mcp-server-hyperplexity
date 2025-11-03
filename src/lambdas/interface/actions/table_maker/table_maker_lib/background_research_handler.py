@@ -87,6 +87,23 @@ class BackgroundResearchHandler:
             conversation_history = self._format_conversation_history(conversation_context)
             user_requirements = self._extract_user_requirements(conversation_context)
 
+            # Check if complete enumeration is requested (needs more tokens)
+            is_complete_enumeration = False
+            if context_research_items:
+                is_complete_enumeration = any(
+                    item.startswith('COMPLETE ENUMERATION:')
+                    for item in context_research_items
+                )
+
+            # Boost max_tokens for complete enumeration cases (need room for full lists)
+            if is_complete_enumeration:
+                original_max_tokens = max_tokens
+                max_tokens = min(max_tokens * 3, 24000)  # Triple tokens, cap at 24k
+                logger.info(
+                    f"[COMPLETE ENUMERATION] Detected - increasing max_tokens from "
+                    f"{original_max_tokens} to {max_tokens} to accommodate full entity list"
+                )
+
             # Format context research items if provided
             research_items_text = ""
             if context_research_items and len(context_research_items) > 0:
@@ -226,7 +243,10 @@ class BackgroundResearchHandler:
         Returns:
             Formatted conversation history string
         """
+        # Try conversation_turns first (old format), then messages (new format)
         turns = conversation_context.get('conversation_turns', [])
+        if not turns:
+            turns = conversation_context.get('messages', [])
 
         if not turns:
             return "(No conversation history available)"
@@ -237,9 +257,18 @@ class BackgroundResearchHandler:
             content = turn.get('content', '')
 
             if role == 'user':
-                formatted.append(f"User: {content}")
+                formatted.append(f"Turn {len(formatted)//2 + 1} - USER: {content}")
             elif role == 'assistant':
-                formatted.append(f"Assistant: {content}")
+                # For assistant messages, check if it's JSON (interview response)
+                # If so, extract the ai_message field for readability
+                try:
+                    parsed = json.loads(content) if isinstance(content, str) and content.startswith('{') else None
+                    if parsed and 'ai_message' in parsed:
+                        formatted.append(f"Turn {len(formatted)//2 + 1} - ASSISTANT: {parsed['ai_message']}")
+                    else:
+                        formatted.append(f"Turn {len(formatted)//2 + 1} - ASSISTANT: {content}")
+                except:
+                    formatted.append(f"Turn {len(formatted)//2 + 1} - ASSISTANT: {content}")
 
         return "\n\n".join(formatted)
 

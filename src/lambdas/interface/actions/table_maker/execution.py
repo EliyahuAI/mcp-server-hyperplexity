@@ -977,15 +977,96 @@ async def execute_full_table_generation(
             return result
 
         # ======================================================================
+        # CHECK FOR COMPLETE ROWS (Skip Row Discovery & QC if provided)
+        # ======================================================================
+        complete_rows_data = column_result.get('complete_rows')
+        skip_row_discovery = complete_rows_data and complete_rows_data.get('skip_row_discovery', False)
+
+        if skip_row_discovery:
+            mode = complete_rows_data.get('mode', 'complete_enumeration')
+            logger.info(f"[EXECUTION] SKIP MODE: complete_rows provided (mode: {mode}), skipping row discovery and QC")
+            logger.info(f"[EXECUTION] Skip rationale: {complete_rows_data.get('skip_rationale', 'Not provided')}")
+
+            # Extract complete rows
+            final_rows = complete_rows_data.get('rows', [])
+
+            # Check if jump_start mode has research_values pre-filled
+            rows_with_research = sum(1 for row in final_rows if row.get('research_values'))
+            if mode == 'jump_start' and rows_with_research > 0:
+                logger.info(f"[EXECUTION] JUMP START mode: Using {len(final_rows)} rows from starting table, {rows_with_research} rows have research_values pre-filled")
+            else:
+                logger.info(f"[EXECUTION] Using {len(final_rows)} complete rows provided by column definition")
+
+            # Add model_used field if not present (for consistency)
+            for row in final_rows:
+                if 'model_used' not in row:
+                    row['model_used'] = 'column_definition_complete'
+                if 'match_score' not in row:
+                    row['match_score'] = 1.0
+
+            # Send progress update
+            send_execution_progress(
+                session_id=session_id,
+                conversation_id=conversation_id,
+                current_step=2,
+                total_steps=4,
+                status=f'Using {len(final_rows)} complete rows (row discovery skipped)',
+                progress_percent=50
+            )
+
+            # Skip directly to config generation and CSV creation
+            # We'll use final_rows as approved_rows (no QC needed)
+            approved_rows = final_rows
+            qc_result = {
+                'success': True,
+                'approved_rows': approved_rows,
+                'skipped': True,
+                'skip_rationale': complete_rows_data.get('skip_rationale')
+            }
+
+            # Save placeholder discovery result (for tracking)
+            discovery_result = {
+                'success': True,
+                'final_rows': final_rows,
+                'stream_results': [],
+                'stats': {
+                    'total_candidates_found': len(final_rows),
+                    'duplicates_removed': 0,
+                    'below_threshold': 0
+                },
+                'skipped': True,
+                'skip_rationale': complete_rows_data.get('skip_rationale')
+            }
+            _save_to_s3(
+                storage_manager, email, session_id, conversation_id,
+                'discovery_result.json', discovery_result
+            )
+
+            # Save placeholder QC result
+            _save_to_s3(
+                storage_manager, email, session_id, conversation_id,
+                'qc_result.json', qc_result
+            )
+
+            logger.info(f"[EXECUTION] Steps 2-4 skipped. Proceeding to config generation and CSV.")
+
+            # Jump to config generation and CSV creation (after the QC section)
+            # We'll set a flag and let the code flow continue
+            skip_to_csv_generation = True
+        else:
+            skip_to_csv_generation = False
+
+        # ======================================================================
         # STEP 2: Row Discovery + Config Generation (PARALLEL)
         # ======================================================================
-        logger.info("[EXECUTION] Step 2/4: Row Discovery + Config Generation (parallel)")
+        if not skip_to_csv_generation:
+            logger.info("[EXECUTION] Step 2/4: Row Discovery + Config Generation (parallel)")
 
-        send_execution_progress(
-            session_id=session_id,
-            conversation_id=conversation_id,
-            current_step=2,
-            total_steps=4,
+            send_execution_progress(
+                session_id=session_id,
+                conversation_id=conversation_id,
+                current_step=2,
+                total_steps=4,
             status='Finding and checking candidate rows...',
             progress_percent=25
         )
@@ -1743,6 +1824,20 @@ async def execute_full_table_generation(
         # ======================================================================
         # MUTUAL COMPLETION: Wait for Config Generation
         # ======================================================================
+        # Start config generation if we skipped row discovery (it wasn't started earlier)
+        if skip_to_csv_generation:
+            logger.info("[EXECUTION] Starting config generation (was skipped during row discovery phase)")
+            config_generation_task = asyncio.create_task(
+                _generate_validation_config(
+                    email=email,
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    conversation_state=conversation_state,
+                    columns=columns,
+                    table_name=table_name
+                )
+            )
+
         logger.info("[EXECUTION] Waiting for config generation to complete...")
 
         # DO NOT send WebSocket update here - config is silent in background

@@ -188,7 +188,24 @@ In the next 3-4 minutes, I will:
 
 ## Guidelines
 
+**Detecting Complete Enumeration Cases:**
+
+**IMPORTANT:** If the user provides or requests a FINITE, WELL-DEFINED list, note this in context_web_research:
+
+**Signals that indicate complete enumeration:**
+- User provides complete list in message (copy-pasted references, list of items)
+- User requests items from a specific source (document, page, section)
+- User wants a well-defined finite set (geographic entities, official rosters)
+
+**When detected, add to context_web_research:**
+- ✅ "COMPLETE ENUMERATION: Extract ALL [items] from [source] - user provided full text in conversation"
+- ✅ "COMPLETE ENUMERATION: [Type] is finite set - enumerate all items, not sample"
+- ✅ "User pasted complete document - extract ALL entities from conversation text"
+
+**Format is critical:** Start with "COMPLETE ENUMERATION:" to signal background research to extract ALL entities.
+
 **context_web_research - Include ONLY:**
+- ✅ Complete enumeration signals (see above)
 - ✅ Specific entities: "Eliyahu.AI background"
 - ✅ Very recent info: "Q4 2025 regulations"
 - ✅ Specialized knowledge
@@ -197,6 +214,7 @@ In the next 3-4 minutes, I will:
 
 **processing_steps - Be Specific:**
 - ✅ "Researching Eliyahu.AI Context", "Finding GenAI Job Postings", "Analyzing Political Coverage Sources"
+- ✅ "Extracting Complete List from [Source]" (for complete enumeration)
 - ❌ "Finding Companies", "Analyzing Data", "Validating Information"
 
 **Prefer inference over questions** - Only use MODE 1 when truly unclear.

@@ -94,16 +94,20 @@
           },
           "sample_entities": {
             "type": "array",
-            "description": "CRITICAL: Actual sample entities from this source (NOT just URLs!). Must include identifying details, not just names.",
+            "description": "CRITICAL: Actual sample entities from this source (NOT just URLs!). Must include identifying details, not just names. For COMPLETE ENUMERATION cases (paper references, countries, etc.), provide ALL entities here, not just a sample.",
             "minItems": 5,
             "items": {
               "type": "string",
-              "description": "Entity with identifying details (e.g., 'Dr. Jane Smith - Stanford University - Neural Networks for Medical Imaging')"
+              "description": "Entity with identifying details (e.g., 'Dr. Jane Smith - Stanford University - Neural Networks for Medical Imaging' OR '[1] Vaswani et al. - Attention Is All You Need - arXiv:1706.03762')"
             }
+          },
+          "is_complete_enumeration": {
+            "type": "boolean",
+            "description": "Set to true if this starting table represents a COMPLETE, EXHAUSTIVE list where ALL entities are provided (e.g., all references from a specific paper, all countries in Africa, all U.S. states). When true, sample_entities should contain ALL entities, not just a sample."
           },
           "completeness": {
             "type": "string",
-            "description": "How complete/comprehensive this source is"
+            "description": "How complete/comprehensive this source is (percentage, count estimate, or qualitative)"
           },
           "update_frequency": {
             "type": "string",

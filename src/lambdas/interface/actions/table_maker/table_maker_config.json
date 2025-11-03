@@ -20,6 +20,7 @@
     "model": "sonar-pro",
     "_note_model": "Recommended: sonar-pro (Perplexity), sonar (Perplexity), or claude-sonnet-4-5 (Anthropic with web search)",
     "max_tokens": 8000,
+    "_note_max_tokens": "Auto-tripled to 24000 when COMPLETE ENUMERATION signal detected (large entity lists need more output space)",
 
     "_web_search_params_info": "Web search parameters differ by model family:",
     "search_context_size": "high",
@@ -38,6 +39,7 @@
     "model": "claude-sonnet-4-5",
     "_note_model": "Recommended: claude-sonnet-4-5 (receives formatted research, no web search needed)",
     "max_tokens": 8000,
+    "_note_max_tokens": "Auto-tripled to 24000 when complete_enumeration detected with >20 entities (needs space to output all entities in complete_rows)",
     "show_preview_table": false,
     "include_subdomains": true,
     "subdomain_count_min": 2,

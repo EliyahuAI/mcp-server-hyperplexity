@@ -85,6 +85,31 @@ class ColumnDefinitionHandler:
             if background_research_result and background_research_result.get('success'):
                 formatted_research = self._format_research_for_prompt(background_research_result)
                 logger.info("[RESEARCH] Injected background research into prompt")
+
+                # Check if complete enumeration was found (may need more tokens for output)
+                starting_tables = background_research_result.get('starting_tables', [])
+                is_complete_enumeration = any(
+                    table.get('is_complete_enumeration', False)
+                    for table in starting_tables
+                )
+
+                if is_complete_enumeration:
+                    # Count entities to estimate token needs
+                    total_entities = sum(
+                        len(table.get('sample_entities', []))
+                        for table in starting_tables
+                        if table.get('is_complete_enumeration', False)
+                    )
+
+                    # Boost max_tokens if we need to output all entities as complete_rows
+                    if total_entities > 20:  # More than 20 entities = likely needs boost
+                        original_max_tokens = max_tokens
+                        max_tokens = min(max_tokens * 3, 24000)  # Triple tokens, cap at 24k
+                        logger.info(
+                            f"[COMPLETE ENUMERATION] Detected {total_entities} entities - "
+                            f"increasing max_tokens from {original_max_tokens} to {max_tokens} "
+                            f"to output complete_rows"
+                        )
             else:
                 formatted_research = "(No background research available)"
                 logger.warning("[RESEARCH] No background research provided - column definition may struggle")
@@ -190,6 +215,7 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
                 schema=schema,
                 model=model,
                 max_tokens=max_tokens,
+                max_web_searches=0,  # NO web search - background research already provided all needed data
                 use_cache=True,  # Enable cache (standard practice)
                 debug_name="column_definition"
             )

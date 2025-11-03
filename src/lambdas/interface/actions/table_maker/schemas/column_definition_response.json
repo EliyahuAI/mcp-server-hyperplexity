@@ -187,6 +187,62 @@
           }
         }
       }
+    },
+    "complete_rows": {
+      "type": "object",
+      "description": "Optional: ONLY provide this if (1) the list of rows is obvious/exhaustive (e.g., 'countries in Africa', 'planets in solar system') OR (2) background research found a reliable starting table that perfectly matches user needs (JUMP START mode). When provided, row discovery and QC will be SKIPPED entirely. DO NOT use this for open-ended discovery tasks (e.g., 'AI companies', 'research papers on topic X').",
+      "properties": {
+        "skip_row_discovery": {
+          "type": "boolean",
+          "description": "Set to true to skip row discovery and QC phases entirely. Use when: (1) rows are obvious/complete and don't require web research, OR (2) a reliable starting table from background research is a perfect match (JUMP START)."
+        },
+        "skip_rationale": {
+          "type": "string",
+          "description": "REQUIRED when skip_row_discovery=true. Explain why row discovery can be skipped. Examples: 'List of countries in Africa is exhaustive and well-known', 'References are from provided paper - complete enumeration possible', 'JUMP START: Forbes AI 50 2024 list from background research perfectly matches user request for top AI companies - directly copying all 50 rows with company names and descriptions'."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["complete_enumeration", "jump_start"],
+          "description": "Mode type: 'complete_enumeration' for well-known finite lists (countries, planets, etc.), 'jump_start' for directly copying rows from a reliable starting table found in background research."
+        },
+        "rows": {
+          "type": "array",
+          "description": "Complete list of ALL rows. For complete_enumeration: must be exhaustive (all countries, all planets, etc.). For jump_start: directly copy ALL rows from the starting table with as many columns as available in source. Must be REAL entities in reasonable order (alphabetical, chronological, or logical).",
+          "items": {
+            "type": "object",
+            "required": ["id_values", "source"],
+            "properties": {
+              "id_values": {
+                "type": "object",
+                "description": "ID column values for this row (e.g., {'Country': 'Nigeria', 'Capital': 'Abuja'}). For jump_start mode, include ALL columns available from the starting table, not just ID columns.",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "research_values": {
+                "type": "object",
+                "description": "Optional: Research column values already available from the starting table (jump_start mode only). Include any data columns that were in the source table and map to your defined columns.",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "source": {
+                "type": "string",
+                "description": "Source of this row. For jump_start mode, cite the specific starting table (e.g., 'Forbes AI 50 2024', 'NIH RePORTER grant database', 'Wikipedia list of African countries')."
+              },
+              "match_score": {
+                "type": "number",
+                "description": "Confidence score 0-1 for this row. Default 1.0 for complete enumerations from reliable sources, 0.9+ for jump_start from authoritative starting tables.",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 1.0
+              }
+            }
+          },
+          "minItems": 1
+        }
+      },
+      "required": ["skip_row_discovery", "skip_rationale", "mode", "rows"]
     }
   }
 }

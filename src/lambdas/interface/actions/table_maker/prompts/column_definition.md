@@ -10,8 +10,9 @@
 3. **DESIGN PRINCIPLES**: Discoverability, support columns, ID vs research columns
 4. **REQUIREMENTS**: Hard vs soft requirements, self-contained specifications
 5. **SUBDOMAINS**: Strategy for organizing parallel discovery
-6. **OUTPUT FORMAT**: JSON structure with sample_rows
-7. **FINAL REMINDER**: Critical requirements checklist
+6. **COMPLETE ROWS (OPTIONAL)**: When to skip row discovery with complete enumeration
+7. **OUTPUT FORMAT**: JSON structure with sample_rows or complete_rows
+8. **FINAL REMINDER**: Critical requirements checklist
 
 ═══════════════════════════════════════════════════════════════
 ## 🎯 YOUR CORE TASK
@@ -248,6 +249,164 @@ target_per_subdomain = total_target / subdomain_count
 **Add more based on needs:**
 - Avoid news for technical queries: `["cnn.com", "foxnews.com"]`
 - Avoid forums for factual queries: `["quora.com"]`
+
+---
+
+═══════════════════════════════════════════════════════════════
+## ⚡ OPTIONAL: COMPLETE ROWS (Skip Row Discovery)
+═══════════════════════════════════════════════════════════════
+
+**WHEN TO USE:** Two scenarios when you should skip row discovery:
+
+### Scenario 1: Complete Enumeration (Well-Known Lists)
+When the list of rows is **obvious, exhaustive, and well-defined**.
+
+**Examples Where You SHOULD Use complete_enumeration mode:**
+- ✅ Items from a specific document (when ALL items provided by background research)
+- ✅ Geographic/political entities (countries, states, provinces)
+- ✅ Well-defined finite sets (planets, elements, calendar units)
+- ✅ Official rosters (cabinet members, board members, committee members)
+
+**How to Recognize Complete Enumeration from Background Research:**
+- Look for starting_tables with `is_complete_enumeration: true`
+- Check if `sample_entities` contains ALL entities or just a sample:
+  - Count in entity_count_estimate should match sample_entities array length
+  - If counts match → Use complete_rows mode
+  - If only partial extraction → Fall back to normal row discovery
+
+**IMPORTANT:** You do NOT have web search access - you can only use what background research provided
+
+**Validation Rules:**
+```json
+// ✅ GOOD - Use complete_rows
+{
+  "entity_count_estimate": "54 entities",  // Exact count
+  "is_complete_enumeration": true,
+  "sample_entities": [ /* 54 items */ ]  // Count matches!
+}
+
+// ❌ BAD - Don't use complete_rows, run discovery
+{
+  "entity_count_estimate": "~50-60 entities",  // Vague
+  "is_complete_enumeration": true,
+  "sample_entities": [ /* only 5 items */ ]  // Incomplete!
+}
+```
+
+### Scenario 2: JUMP START (Perfect Starting Table Match)
+When background research found a **reliable starting table that perfectly matches** the user's request.
+
+**Examples Where You SHOULD Use jump_start mode:**
+- ✅ User wants "top AI companies" → Background research found "Forbes AI 50 2024" list with 50 companies
+- ✅ User wants "NIH dementia research grants" → Background research found NIH RePORTER database with grant details
+- ✅ User wants "countries in Africa with capitals" → Background research found Wikipedia list with all data
+- ✅ User wants "S&P 500 companies" → Background research found authoritative S&P 500 list with company details
+- ✅ User wants "FDA approved drugs for diabetes" → Background research found FDA database with complete drug list
+
+**Key Criteria for JUMP START:**
+1. Starting table source is **reliable/authoritative** (Forbes, NIH, Wikipedia, FDA, etc.)
+2. Starting table **perfectly matches user intent** (not tangentially related)
+3. Starting table has **good coverage** (most or all entities the user wants)
+4. Starting table includes **multiple columns** (not just names - has descriptions, URLs, metadata)
+5. You can **directly copy** the data without needing to transform it significantly
+
+**Examples Where You SHOULD NOT Use complete_rows:**
+- ❌ AI companies (open-ended, constantly changing) - unless a perfect starting table exists (JUMP START)
+- ❌ Research papers on a topic (needs discovery) - too broad
+- ❌ Job postings (dynamic, requires search)
+- ❌ News articles about X (requires web search)
+- ❌ People who work at a company (not publicly enumerable)
+
+**Quality Requirements When Providing complete_rows:**
+
+1. **MUST BE REAL**: Every row must be a real entity, not made-up examples
+2. **MUST BE ORDERED**: Rows should be in a logical order (alphabetical, chronological, by importance)
+3. **MUST BE EXHAUSTIVE/COMPLETE**: For complete_enumeration: ALL entities. For jump_start: ALL rows from starting table
+4. **MUST BE ACCURATE**: ID values must be correct and properly formatted
+5. **FOR JUMP START**: Copy as many columns as available from the starting table, not just ID columns
+
+**Structure Examples:**
+
+**Complete Enumeration Mode:**
+```json
+{
+  "complete_rows": {
+    "skip_row_discovery": true,
+    "skip_rationale": "Background research extracted complete list of all entities. This is a finite, well-defined set where all items were enumerated in the starting table.",
+    "mode": "complete_enumeration",
+    "rows": [
+      {
+        "id_values": {
+          "Entity ID": "Item 1",
+          "Additional ID": "Detail 1"
+        },
+        "source": "Source name from background research",
+        "match_score": 1.0
+      },
+      {
+        "id_values": {
+          "Entity ID": "Item 2",
+          "Additional ID": "Detail 2"
+        },
+        "source": "Source name from background research",
+        "match_score": 1.0
+      }
+      // ... all entities from background research starting_table
+    ]
+  }
+}
+```
+
+**JUMP START Mode (Copy from Starting Table):**
+```json
+{
+  "complete_rows": {
+    "skip_row_discovery": true,
+    "skip_rationale": "JUMP START: Forbes AI 50 2024 list from background research perfectly matches user request for top AI companies. Directly copying all 50 rows with company names, descriptions, and funding data already available in the starting table.",
+    "mode": "jump_start",
+    "rows": [
+      {
+        "id_values": {
+          "Company Name": "Anthropic",
+          "Website": "anthropic.com"
+        },
+        "research_values": {
+          "Description": "AI safety and research company focused on developing reliable, interpretable AI systems",
+          "Total Funding": "$7.3B",
+          "Founded": "2021"
+        },
+        "source": "Forbes AI 50 2024",
+        "match_score": 0.95
+      },
+      {
+        "id_values": {
+          "Company Name": "OpenAI",
+          "Website": "openai.com"
+        },
+        "research_values": {
+          "Description": "AI research and deployment company creating safe AGI",
+          "Total Funding": "$11.3B",
+          "Founded": "2015"
+        },
+        "source": "Forbes AI 50 2024",
+        "match_score": 0.95
+      }
+      // ... all 50 companies from Forbes list
+    ]
+  }
+}
+```
+
+**What Happens When You Use complete_rows:**
+- ✅ Row discovery phase is **SKIPPED** (saves 60-120s and $0.05-0.15)
+- ✅ QC review is **SKIPPED** (saves 8-15s and $0.015-0.035)
+- ✅ For **jump_start**: Research columns pre-filled from starting table (huge time saver!)
+- ✅ Rows go directly to CSV generation
+- ✅ Config generation still runs in parallel
+
+**When in doubt, DO NOT use complete_rows.** It's better to run row discovery than to provide incomplete or inaccurate rows.
+
+**JUMP START is most valuable when the starting table has rich data** - don't just copy names, copy descriptions, URLs, dates, and any other relevant columns from the source!
 
 ---
 

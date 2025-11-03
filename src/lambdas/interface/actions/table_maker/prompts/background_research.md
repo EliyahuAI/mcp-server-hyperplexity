@@ -78,6 +78,18 @@
 **Specific Research Items:** Topics the user mentioned needing research on (if any)
 {{CONTEXT_RESEARCH_ITEMS}}
 
+**⚠️ CRITICAL - COMPLETE ENUMERATION SIGNAL:**
+
+If ANY research item starts with "COMPLETE ENUMERATION:", this is a **MANDATORY, NON-NEGOTIABLE signal** that you MUST:
+
+1. **Extract ALL entities** - Not 5 samples, not 10 samples, but EVERY SINGLE entity
+2. **List them explicitly in sample_entities** - The complete, exhaustive list
+3. **Set is_complete_enumeration: true**
+4. **Set exact count** - entity_count_estimate must be exact number (e.g., "54 citations", NOT "~50-60")
+5. **Be explicit** - Do not summarize, do not truncate, list every item fully
+
+**This is the ENTIRE PURPOSE of the complete enumeration feature - to avoid row discovery by providing the complete list here.**
+
 ---
 
 ## 🔍 RESEARCH METHODOLOGY
@@ -150,12 +162,56 @@
 
 **CRITICAL: Do NOT just provide URLs - extract ACTUAL entities from the sources!**
 
-**Good Starting Table:**
+#### 🎯 SPECIAL CASE: Complete Enumeration
+
+**IMPORTANT:** If the user's request is for a FINITE, COMPLETE, WELL-DEFINED list where all entities can be enumerated, you MUST:
+
+1. Set `is_complete_enumeration: true` in the starting_table
+2. **Extract ALL entities** - Use web search to access the source and get the complete list
+   - Put the COMPLETE list in `sample_entities` (not just 5 samples)
+   - Use web search to find and extract the full list
+3. Set entity_count_estimate to the EXACT count (e.g., "54 entities", "27 items")
+4. **Quality requirement**: Every entity in `sample_entities` must be REAL and include full details
+
+**Common patterns that indicate complete enumeration:**
+- Items from a specific document (references, chapters, authors, sections)
+- Geographic/political boundaries (countries in region, states, provinces)
+- Well-defined finite sets (planets, elements, days/months)
+- Official rosters with fixed membership (cabinet, board, committee)
+
+**CRITICAL: When user provides document content in the conversation:**
+- The full document text is in the CONVERSATION CONTEXT above
+- You MUST extract ALL entities from that provided text
+- Do NOT just sample 5 items - extract the COMPLETE list
+- Count the exact number and set entity_count_estimate to exact count
+- Example: User pastes paper → Extract ALL references (not just 5 samples)
+
+**Example: Complete Enumeration:**
+```json
+{
+  "source_name": "Descriptive name of complete source",
+  "source_url": "https://...",
+  "entity_type": "Type of entities",
+  "entity_count_estimate": "54 entities",  // EXACT count
+  "is_complete_enumeration": true,
+  "sample_entities": [
+    "Entity 1 with complete identifying details",
+    "Entity 2 with complete identifying details",
+    "Entity 3 with complete identifying details",
+    // ... ALL entities (all 54)
+  ],
+  "completeness": "Complete - all entities enumerated",
+  "update_frequency": "static"
+}
+```
+
+**Good Starting Table (Sample for Discovery):**
 ```json
 {
   "source_name": "NIH Reporter 2024 AI Research Grants",
   "source_url": "https://reporter.nih.gov/...",
   "entity_count_estimate": "~150 grants",
+  "is_complete_enumeration": false,
   "sample_entities": [
     "Dr. Jane Smith - Stanford University - Neural Networks for Medical Imaging",
     "Dr. Robert Chen - MIT - AI-Driven Drug Discovery",
