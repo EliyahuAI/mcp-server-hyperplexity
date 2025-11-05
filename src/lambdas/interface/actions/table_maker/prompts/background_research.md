@@ -62,41 +62,60 @@ List databases/directories/APIs where entities can be found:
 - What it contains, coverage, access level
 - Update frequency
 
-### 4. Starting Tables (Required - Extract Samples)
+### 4. Starting Tables (Required)
 
-If you find existing lists/tables with entities:
-- Extract 5-15 ACTUAL sample entities with identifying details
-- Example: "Dr. Jane Smith - Stanford - Neural Networks for Medical Imaging"
-- NOT just "See Forbes list" - extract the actual names
+**SIZE-BASED DECISION:** How many entities does the table have?
 
-**Complete Enumeration Detection:**
-If user request indicates complete enumeration (e.g., "all references from paper X", "all countries in region Y"):
+**Small Tables (≤15 rows):**
+- Extract ALL entities inline (not just 5-15 samples)
+- Put complete list in `sample_entities`
 - Set `is_complete_enumeration: true`
-- Extract ALL entities if possible
-- If document text was pasted in conversation, extract from there
-- Set exact entity count (e.g., "54 references")
+- Set exact count: "12 entities" (not "~10-15")
+- Example: User wants "all 12 Zodiac signs" → Extract all 12
+
+**Large Tables (>15 rows):**
+- Extract 5-15 samples only
+- Note the table in `identified_tables` instead (see Section 5)
+- Set `is_complete_enumeration: false`
+- Example: Forbes AI 50 has 50 companies → Extract 5-15 samples, add to identified_tables
+
+**Format:**
+- Extract ACTUAL entity names with details
+- Example: "Dr. Jane Smith - Stanford - Neural Networks for Medical Imaging"
+- NOT just "See Forbes list" - extract actual names
 
 ### 5. Identified Tables (Optional - Trigger Step 0b Extraction)
 
+**SIZE-BASED DECISION:** Use identified_tables for large tables (>15 rows) or multiple tables
+
 **When to set extract_table=true:**
 
-✅ **Trigger table extraction if:**
-- You found a specific URL with a table (HTML table, list with clear columns) embedded
-- The table contains the entities the user wants (election results, company rankings, member rosters)
-- The table has multiple columns of data (not just names)
-- Extracting the complete table would satisfy the user's request
-- Examples: Election results table, Forbes ranked list, faculty directory table, reference list
-- The entries are too long to be captured in Starting Tables (usually more than 15 rows), and require a dedicated task.
+✅ **Trigger if table has >15 rows:**
+- You found a table with 20+ entities → Too large for inline extraction
+- Put in `identified_tables` instead of `starting_tables`
+- Examples: Forbes AI 50 (50 rows), Election results (20+ candidates), Faculty directory (30+ people)
 
+✅ **Trigger if multiple tables:**
+- Found 3 different tables to extract → Use identified_tables for all 3
+- Each table gets its own entry with extract_table=true
+
+✅ **Trigger if user explicitly requested specific URL:**
+- User said "extract from this document" with URL
+- Even if small, use identified_tables to ensure complete extraction
+
+❌ **Don't trigger if:**
+- Table ≤15 rows → Extract inline in starting_tables instead
+- Just a database/directory without specific table URL
+- Searchable/queryable source (not static table)
 
 **What to provide:**
 - `url`: Specific URL where table exists
 - `table_name`: Descriptive name
-- `estimated_rows`: How many rows you see/expect
-- `columns`: List of column names you can see in the table
+- `estimated_rows`: How many rows (must be >15 for size-based triggering)
+- `columns`: Column names visible in table
 - `extract_table: true`
 - `target_rows`: Optional filter (e.g., "only winners", "School Committee only")
-- `extraction_priority`: "high" if user specifically requested, "medium" otherwise
+- `extraction_priority`: "high" if user requested, "medium" otherwise
 
 ═══════════════════════════════════════════════════════════════
 ## 💡 RESEARCH METHODOLOGY
