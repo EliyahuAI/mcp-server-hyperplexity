@@ -18,7 +18,10 @@
 
 **FOCUS ON THIS SPECIFIC PAGE:** {{TABLE_URL}}
 
-Search is configured with low context to focus on this exact page. Do not pull from other pages.
+Your search is configured to focus on this exact URL:
+- search_context_size: low (focused, not broad)
+- Domain filter: Set to this page's domain
+- **Search for information AT THIS URL** - not related pages from same domain
 
 The page may have:
 - ✅ Article text mentioning entities → Extract and structure into rows
