@@ -4,11 +4,13 @@
 ## 🔍 YOUR RESEARCH TASK
 ═══════════════════════════════════════════════════════════════
 
-Answer these research questions:
+**SEARCH FOR:**
 
 {{CONTEXT_RESEARCH_ITEMS}}
 
 **For:** {{USER_REQUIREMENTS}}
+
+**Your research will inform column design and row discovery strategy.**
 
 ═══════════════════════════════════════════════════════════════
 ## 📋 YOUR DELIVERABLES
@@ -18,7 +20,7 @@ Answer these research questions:
 2. **Discovery patterns** - How entities are typically found
 3. **Authoritative sources** - Databases/directories containing entities
 4. **Starting tables** - Extract 5-15 sample entities from lists you find
-5. **Identified tables** (optional) - Note extractable tables for Step 0b
+5. **Identified tables** (optional) - Tables that should be fully extracted by Step 0b
 
 ═══════════════════════════════════════════════════════════════
 ## 📚 USER CONTEXT
@@ -70,19 +72,36 @@ If user request indicates complete enumeration (e.g., "all references from paper
 - If document text was pasted in conversation, extract from there
 - Set exact entity count (e.g., "54 references")
 
-### 5. Identified Tables (Optional - For Step 0b Extraction)
+### 5. Identified Tables (Optional - Trigger Step 0b Extraction)
 
-If you find specific URLs with extractable table structure:
-- Note the URL, table name, estimated rows, expected columns
-- Set `extract_table: true` to trigger Step 0b (table extraction)
-- Use when: clear table structure, specific URL, need complete extraction
-- Skip when: just found a database/directory without specific table URL
+**When to set extract_table=true:**
 
-**When to identify tables for extraction:**
-- User explicitly requests data from specific URL/document
-- You found a table with clear structure (e.g., election results table, Forbes ranked list)
-- Complete enumeration needed and table accessible
-- User pasted document text but you need web access to specific table
+✅ **Trigger table extraction if:**
+- You found a specific URL with a structured table (HTML table, list with clear columns)
+- The table contains the entities the user wants (election results, company rankings, member rosters)
+- The table has multiple columns of data (not just names)
+- Extracting the complete table would satisfy the user's request
+- Examples: Election results table, Forbes ranked list, faculty directory table, reference list
+
+✅ **Also trigger if:**
+- User explicitly mentioned a specific document/URL to extract from
+- Complete enumeration needed but table requires web access (user can't paste it)
+- You found the authoritative source but can only see a preview (pagination, requires JS)
+
+❌ **Don't trigger if:**
+- Just found a database/directory without specific table URL (use as authoritative_source instead)
+- The source is searchable/queryable (not a static table)
+- Only found article/page text (not structured table)
+- Table structure unclear or no specific URL
+
+**What to provide:**
+- `url`: Specific URL where table exists
+- `table_name`: Descriptive name
+- `estimated_rows`: How many rows you see/expect
+- `columns`: List of column names you can see in the table
+- `extract_table: true`
+- `target_rows`: Optional filter (e.g., "only winners", "School Committee only")
+- `extraction_priority`: "high" if user specifically requested, "medium" otherwise
 
 ═══════════════════════════════════════════════════════════════
 ## 💡 RESEARCH METHODOLOGY

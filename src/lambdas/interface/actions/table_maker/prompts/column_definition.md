@@ -70,14 +70,15 @@
 ⚠️ You have strong knowledge of the complete set and can enumerate all items
 
 **When in Doubt:**
-- If you can confidently generate ALL the rows the user wants → Complete Rows Path
-- If you're unsure or missing data → Row Discovery Path (safer)
-- Complete rows can use: extracted_tables, starting_tables, conversation text, OR your model knowledge
-- Better to provide complete rows when possible (saves 60-120s and $0.05-0.15)
+- Can you enumerate the complete set yourself? → Try Complete Rows Path
+- Is the set well-defined and finite? → Try Complete Rows Path
+- Would row discovery find better/more data than you can generate? → Row Discovery Path
+- Complete rows saves 60-120s and $0.05-0.15 when done correctly
+- Row discovery can bring messy, irrelevant results if not well-scoped
 
 **Decision:**
-- **Path A**: You have/can generate complete data → Output complete_rows
-- **Path B**: Need web search to find entities → Output subdomains + sample_rows
+- **Path A**: You can generate/assemble ALL the rows → Output complete_rows
+- **Path B**: Need web search to discover entities → Output subdomains + sample_rows
 
 ═══════════════════════════════════════════════════════════════
 ## 📚 INFORMATION PROVIDED
@@ -195,21 +196,26 @@ Provide 1-2 sentences of overall guidance about good rows. Not a requirement its
 ## 📊 PATH A: COMPLETE ROWS (Skip Row Discovery)
 ═══════════════════════════════════════════════════════════════
 
-**WHEN TO USE:** You have complete entity data available from ANY source:
-- extracted_tables (from Step 0b)
-- starting_tables (with complete enumeration)
-- Conversation text (user pasted document)
-- Your model knowledge (for well-known finite sets)
+**YOUR ROLE:** You are the GENERATOR/ASSEMBLER of complete rows
+
+**You generate complete_rows by:**
+- Assembling from extracted_tables (Step 0b provided complete data)
+- Parsing from starting_tables (if is_complete_enumeration=true)
+- Extracting from conversation (user pasted document text)
+- Enumerating from your model knowledge (well-known finite sets)
+
+**You are NOT just copying** - you parse, map to your columns, and structure the output.
 
 ### Scenario 1: JUMP START (extracted_tables available)
 
 **Step 0b extracted complete tables for you.**
 
-**How to Use:**
+**Your Job: Assemble complete_rows from extracted data**
 1. Check background_research for `extracted_tables` field
-2. Use extracted_tables[].rows directly as complete_rows
-3. Each extracted table has: table_name, source_url, rows[], extraction_complete
-4. Copy rows with all available columns (ID + research columns if present)
+2. Parse extracted_tables[].rows into your column structure
+3. Map source columns to your defined ID/research columns
+4. Generate complete_rows with ALL rows from extracted_tables
+5. Include research_values if source had those columns
 
 **Example:**
 ```json
@@ -235,15 +241,12 @@ Provide 1-2 sentences of overall guidance about good rows. Not a requirement its
 
 **Background research extracted ALL entities in starting_tables.sample_entities**
 
-**How to Recognize:**
-- `starting_tables[].is_complete_enumeration: true`
-- `entity_count_estimate` matches `sample_entities.length`
-- Example: "54 entities" and 54 items in array
-
-**How to Use:**
-1. Extract all entities from starting_tables[].sample_entities
-2. Parse each entity string into ID column values
-3. Use complete_enumeration mode
+**Your Job: Parse and structure the complete list**
+1. Check for `starting_tables[].is_complete_enumeration: true`
+2. Verify entity_count_estimate matches sample_entities.length
+3. Parse each entity string from sample_entities into ID columns
+4. Generate complete_rows with ALL parsed entities
+5. Use complete_enumeration mode
 
 **Example:**
 ```json
@@ -267,33 +270,31 @@ Provide 1-2 sentences of overall guidance about good rows. Not a requirement its
 
 **User pasted complete document in conversation**
 
-**How to Recognize:**
-- Background research incomplete/empty
-- Large text block in CONVERSATION CONTEXT
-- User explicitly said "extract all from this document"
-
-**How to Use:**
-1. Extract ALL entities from conversation text
-2. Parse into ID columns
-3. Use complete_enumeration mode
+**Your Job: Extract and structure from conversation**
+1. Find the complete entity list in CONVERSATION CONTEXT
+2. Extract ALL entities from the pasted text
+3. Parse each entity into your defined ID columns
+4. Generate complete_rows with ALL extracted entities
+5. Use complete_enumeration mode
 
 ### Scenario 4: Model Knowledge (well-known finite sets)
 
 **You have complete knowledge of the set**
 
-**Examples:**
+**Your Job: Generate complete rows from your knowledge**
+1. Identify that this is a well-known finite set you can enumerate
+2. Generate ALL entities from your model knowledge
+3. Structure into your defined ID columns (add research columns if you know them)
+4. Set source to "Model Knowledge (as of January 2025)"
+5. Use complete_enumeration mode
+
+**Examples of sets you can enumerate:**
 - Countries (all UN member states, countries in a region)
 - US states and capitals
 - Planets in solar system
 - Elements in periodic table
 - Months of the year
 - Official government positions (US cabinet, Senate committees)
-
-**How to Use:**
-1. Enumerate ALL entities from your knowledge
-2. Set source to "Model Knowledge (as of January 2025)"
-3. Use complete_enumeration mode
-4. Ensure list is exhaustive and accurate
 
 **Example:**
 ```json
