@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["columns", "table_name"],
+  "required": ["columns", "table_name", "trigger_row_discovery"],
   "properties": {
     "columns": {
       "type": "array",
@@ -208,15 +208,15 @@
     },
     "trigger_row_discovery": {
       "type": "boolean",
-      "description": "Set to true if row discovery should run to find more rows or populate missing columns. Set to false if you have provided ALL the rows the user wants with sufficient data."
+      "description": "REQUIRED. Set to true if row discovery should run to find more rows or populate missing columns. Set to false if you have provided ALL the rows the user wants with sufficient data. When true, you MUST include discovery_guidance and subdomains. When false, you MUST include skip_rationale and MUST NOT include subdomains."
     },
     "skip_rationale": {
       "type": "string",
-      "description": "REQUIRED when trigger_row_discovery=false. Explain why row discovery is not needed (e.g., 'Generated complete set of 50 US states from model knowledge', 'Extracted all 54 references from conversation', 'Step 0b provided complete table with all requested data')"
+      "description": "REQUIRED ONLY when trigger_row_discovery=false, MUST be omitted when true. Explain why row discovery is not needed (e.g., 'Generated complete set of 50 US states from model knowledge', 'Extracted all 54 references from conversation', 'Step 0b provided complete table with all requested data')"
     },
     "discovery_guidance": {
       "type": "string",
-      "description": "REQUIRED when trigger_row_discovery=true. Guide row discovery on what to focus on (e.g., 'Need to populate Employee Count and Has Job Posting columns for all rows', 'Need to find 20 more companies beyond the 30 provided')"
+      "description": "REQUIRED ONLY when trigger_row_discovery=true, MUST be omitted when false. Guide row discovery on what to focus on (e.g., 'Need to populate Employee Count and Has Job Posting columns for all rows', 'Need to find 20 more companies beyond the 30 provided', 'Focus on finding smaller startups not in the Forbes list')"
     }
   }
 }

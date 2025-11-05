@@ -624,19 +624,26 @@ async def execute_full_table_generation(
             - Extract sample entities
             - On restructure: Use cached research (skip this step)
             ↓
+        Step 0b: Table Extraction (OPTIONAL, ~20-40s, sequential after Step 0)
+            - Triggered if Step 0 identified extractable tables
+            - Extracts complete tables from URLs
+            - Uses site-specific search
+            ↓
         Step 1: Column Definition (~10-20s)
             - Use research output to design table structure
-            - Extract 5-15 sample rows from starting tables
+            - Generate rows from: extracted_tables, starting_tables, conversation, or model knowledge
+            - Populate all columns with reliable data (ID + research columns)
+            - Decide: trigger_row_discovery (true/false)
             ↓
-        Step 2: Row Discovery + Config Generation START IN PARALLEL
+        Step 2: Row Discovery + Config Generation (CONDITIONAL - only if trigger_row_discovery=true)
             ├─→ Row Discovery (60-120s) - progressive escalation
-            │   - Merge sample_rows with discovered rows
+            │   - Merge initial_rows (from column_definition) with discovered rows
             └─→ Config Generation (20-40s) - runs in background
             ↓
-        [Row Discovery + Merge completes]
+        [Row Discovery + Merge completes, OR skipped if trigger_row_discovery=false]
             ↓
         Step 3: QC Review starts immediately (~8-15s) - doesn't wait for config
-            - Reviews merged rows (sample + discovered)
+            - Reviews merged rows (initial + discovered, OR just initial rows)
             ↓
         [QC Review completes]
             ↓
@@ -1061,7 +1068,7 @@ async def execute_full_table_generation(
         # CHECK: Should We Skip Row Discovery?
         # ======================================================================
         # Column definition generates rows and decides if discovery is needed
-        initial_rows = column_result.get('rows', [])
+        # initial_rows already extracted above at line 949
         trigger_row_discovery = column_result.get('trigger_row_discovery', True)
         skip_rationale = column_result.get('skip_rationale')
         discovery_guidance = column_result.get('discovery_guidance')
@@ -1143,6 +1150,14 @@ async def execute_full_table_generation(
         if not skip_to_csv_generation:
             logger.info("[EXECUTION] Step 2/4: Row Discovery + Config Generation (parallel)")
 
+            # Validate that subdomains exist if row discovery triggered
+            num_subdomains = len(search_strategy.get('subdomains', []))
+            if trigger_row_discovery and num_subdomains == 0:
+                error_msg = "trigger_row_discovery=true but no subdomains provided in search_strategy"
+                logger.error(f"[EXECUTION] {error_msg}")
+                result['error'] = error_msg
+                return result
+
             send_execution_progress(
                 session_id=session_id,
                 conversation_id=conversation_id,
@@ -1163,9 +1178,6 @@ async def execute_full_table_generation(
             early_stop_threshold_percentage = discovery_config.get('early_stop_threshold_percentage', 120)
             soft_schema = discovery_config.get('soft_schema', True)
             config_max_parallel = discovery_config.get('max_parallel_streams')
-
-            # Calculate dynamic max_parallel_streams
-            num_subdomains = len(search_strategy.get('subdomains', []))
             if config_max_parallel is None:
                 max_parallel_streams = min(num_subdomains, 5)
                 logger.info(

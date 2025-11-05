@@ -338,6 +338,10 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
                 result['search_strategy']['formatted_hard_requirements'] = result['formatted_hard_requirements']
                 result['search_strategy']['formatted_soft_requirements'] = result['formatted_soft_requirements']
 
+                # Add discovery guidance if provided (tells discovery what to focus on)
+                if result.get('discovery_guidance'):
+                    result['search_strategy']['discovery_guidance'] = result['discovery_guidance']
+
             # PHASE 1: Capture enhanced_data and call metadata
             enhanced_data = api_response.get('enhanced_data', {})
             result['enhanced_data'] = enhanced_data
