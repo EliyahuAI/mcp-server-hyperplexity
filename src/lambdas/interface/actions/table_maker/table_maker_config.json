@@ -54,7 +54,7 @@
     "model": "claude-sonnet-4-5",
     "_note_model": "Recommended: claude-sonnet-4-5 (receives formatted research, no web search needed)",
     "max_tokens": 32000,
-    "_note_max_tokens": "Increased to 32000 to handle large entity counts (50+ rows). Will auto-triple to cap (96000→24000 cap) when entity count >20.",
+    "_note_max_tokens": "Set to 32000 to handle large entity counts (50+ rows). No auto-boost logic - uses this value directly.",
     "show_preview_table": false,
     "include_subdomains": true,
     "subdomain_count_min": 2,
