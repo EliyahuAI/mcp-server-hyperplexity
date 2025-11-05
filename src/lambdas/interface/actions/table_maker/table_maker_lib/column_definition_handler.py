@@ -102,14 +102,22 @@ class ColumnDefinitionHandler:
                     count_str = table.get('entity_count_estimate', '')
                     numbers = re.findall(r'\d+', count_str)
                     if numbers:
-                        total_entities += int(numbers[0])
+                        count = int(numbers[0])
+                        total_entities += count
+                        logger.debug(f"Starting table '{table.get('source_name')}': {count} entities from estimate")
                     else:
                         # Fallback to sample_entities length
-                        total_entities += len(table.get('sample_entities', []))
+                        count = len(table.get('sample_entities', []))
+                        total_entities += count
+                        logger.debug(f"Starting table '{table.get('source_name')}': {count} entities from sample length")
 
                 # Count from extracted_tables
                 for table in extracted_tables:
-                    total_entities += table.get('rows_extracted', 0)
+                    count = table.get('rows_extracted', 0)
+                    total_entities += count
+                    logger.debug(f"Extracted table '{table.get('table_name')}': {count} rows")
+
+                logger.info(f"[ENTITY COUNT] Total entities across all sources: {total_entities}")
 
                 # Boost max_tokens if outputting many rows (>20 entities)
                 if total_entities > 20:
@@ -120,6 +128,8 @@ class ColumnDefinitionHandler:
                         f"increasing max_tokens from {original_max_tokens} to {max_tokens} "
                         f"to output all rows"
                     )
+                else:
+                    logger.info(f"[ENTITY COUNT] {total_entities} entities - using standard max_tokens {max_tokens}")
             else:
                 formatted_research = "(No background research available)"
                 logger.warning("[RESEARCH] No background research provided - column definition may struggle")
