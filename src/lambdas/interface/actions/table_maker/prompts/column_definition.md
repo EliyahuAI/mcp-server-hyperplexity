@@ -1,61 +1,96 @@
 # Column Definition Task
 
 {{RESTRUCTURING_SECTION}}
-═══════════════════════════════════════════════════════════════
-## 📋 PROMPT MAP - What You'll Find Below
-═══════════════════════════════════════════════════════════════
-
-1. **YOUR CORE TASK**: Define columns and search strategy using background research
-2. **BACKGROUND RESEARCH**: Authoritative sources and starting tables (Step 0 output)
-3. **DESIGN PRINCIPLES**: Discoverability, support columns, ID vs research columns
-4. **REQUIREMENTS**: Hard vs soft requirements, self-contained specifications
-5. **SUBDOMAINS**: Strategy for organizing parallel discovery
-6. **COMPLETE ROWS (OPTIONAL)**: When to skip row discovery with complete enumeration
-7. **OUTPUT FORMAT**: JSON structure with sample_rows or complete_rows
-8. **FINAL REMINDER**: Critical requirements checklist
 
 ═══════════════════════════════════════════════════════════════
-## 🎯 YOUR CORE TASK
+## 📊 DATA SOURCES AVAILABLE
 ═══════════════════════════════════════════════════════════════
 
-**GOAL:** Define table structure and search strategy using background research as foundation
+**From Background Research (Step 0 + Step 0b):**
 
-**DELIVERABLES:**
-- Column definitions (ID + research columns)
-- Search strategy with 2-10 subdomains
-- Hard and soft requirements (minimum 1)
-- Sample rows from starting tables (5-15 rows)
-- Table name and tablewide research
+1. **tablewide_research** - Domain overview with key facts and patterns (already researched for you)
+2. **starting_tables** - Sample entities (5-15) showing what's findable
+3. **extracted_tables** - Complete table extractions from Step 0b (if available)
+4. **authoritative_sources** - Databases, directories where entities exist
+5. **discovery_patterns** - How entities are typically found
 
-**KEY RULES:**
-1. ✅ **Use background research** - Starting tables show what's findable
-2. ✅ **Design for discoverability** - Make row identification EASY
-3. ✅ **Use support columns** - Break complex validations into steps
-4. ✅ **Keep ID columns simple** - 1-5 words, no synthesis required
-5. ✅ **Offload to research columns** - Let validation handle specifics
-6. ✅ **Output sample rows** - Extract 5-15 from starting tables
+**From Conversation:**
+- User's original request and requirements
+- Possibly pasted document text with complete entity list
 
----
+**Priority for Complete Rows:**
+1. **extracted_tables** (if exists) - Complete data already extracted by Step 0b
+2. **starting_tables.is_complete_enumeration=true** - Complete list in starting_tables
+3. **Conversation document text** - User pasted full list in conversation
+4. **Otherwise** - Use starting_tables samples and trigger row discovery
 
 ═══════════════════════════════════════════════════════════════
-## 📚 BACKGROUND RESEARCH (From Step 0)
+## 🎯 YOUR TASK & OUTPUTS
 ═══════════════════════════════════════════════════════════════
 
-**The background research phase has already identified authoritative sources and starting tables.**
+**ALWAYS OUTPUT (Both Paths):**
+- ✅ Column definitions (ID + research columns)
+- ✅ Requirements (hard + soft, minimum 1)
+- ✅ Table name
 
+**CONDITIONAL OUTPUT (Depends on Path):**
+
+**Path A: Complete Rows** (if extracted_tables OR complete enumeration detected)
+- ✅ complete_rows (all entities from extracted_tables or starting_tables or conversation)
+- ❌ NO subdomains/search_strategy (row discovery skipped)
+- ❌ NO sample_rows (have complete rows instead)
+
+**Path B: Row Discovery** (normal flow - need to discover rows)
+- ✅ Subdomains (2-10) with search strategy
+- ✅ sample_rows (5-15 from starting_tables)
+- ❌ NO complete_rows (will discover via row discovery)
+
+═══════════════════════════════════════════════════════════════
+## ⚡ DECISION LOGIC: Which Path?
+═══════════════════════════════════════════════════════════════
+
+### Check in Priority Order:
+
+**1. Do you have extracted_tables?**
+- If YES → **Path A: Complete Rows (JUMP START)**
+- These are complete table extractions from Step 0b
+- Use extracted_tables.rows directly as complete_rows
+- Skip row discovery
+
+**2. Does starting_tables have is_complete_enumeration: true?**
+- Check if entity_count_estimate matches sample_entities length
+- Example: "54 entities" and 54 items in sample_entities
+- If YES → **Path A: Complete Rows (Complete Enumeration)**
+- Use starting_tables.sample_entities as complete_rows
+- Skip row discovery
+
+**3. Does conversation have pasted document text?**
+- Look for large text blocks with entity lists in CONVERSATION CONTEXT
+- If YES → **Path A: Complete Rows (Manual Extraction)**
+- Extract all entities from conversation text
+- Skip row discovery
+
+**4. None of the above?**
+- **Path B: Row Discovery (Normal Flow)**
+- Use starting_tables samples to design columns
+- Output subdomains and search_strategy
+- Trigger row discovery
+
+═══════════════════════════════════════════════════════════════
+## 📚 INFORMATION PROVIDED
+═══════════════════════════════════════════════════════════════
+
+**Conversation History:**
+{{CONVERSATION_CONTEXT}}
+
+**User's Requirements:**
+{{USER_REQUIREMENTS}}
+
+**Background Research:**
 {{BACKGROUND_RESEARCH}}
 
-**How to Use This Research:**
-1. **Starting Tables** → Use sample entities to design ID column structure
-2. **Authoritative Sources** → Reference these in subdomain `discovered_list_url` fields
-3. **Discovery Patterns** → Follow recommended approach (complete list, searchable database, etc.)
-4. **Common Identifiers** → Use these for ID column naming
-5. **Sample Entities** → Extract 5-15 as sample_rows in your output
-
----
-
 ═══════════════════════════════════════════════════════════════
-## 💡 DESIGN PRINCIPLES
+## 💡 DESIGN PRINCIPLES (ALWAYS APPLY)
 ═══════════════════════════════════════════════════════════════
 
 ### Principle 1: Design for Discoverability
@@ -102,22 +137,8 @@
 - Set `importance: "RESEARCH"` and provide detailed `validation_strategy`
 - Examples: Job posting status, funding stage, program existence, detailed descriptions
 
----
-
 ═══════════════════════════════════════════════════════════════
-## 📚 INFORMATION PROVIDED
-═══════════════════════════════════════════════════════════════
-
-**Conversation History:**
-{{CONVERSATION_CONTEXT}}
-
-**User's Requirements:**
-{{USER_REQUIREMENTS}}
-
----
-
-═══════════════════════════════════════════════════════════════
-## ✔️ REQUIREMENTS SPECIFICATION
+## ✔️ REQUIREMENTS SPECIFICATION (ALWAYS REQUIRED)
 ═══════════════════════════════════════════════════════════════
 
 **You must define at least ONE requirement (hard or soft, or both).**
@@ -167,15 +188,121 @@ Provide 1-2 sentences of overall guidance about good rows. Not a requirement its
 
 **Example:** "Looking for authoritative sources with detailed analysis. Company size matters less than innovation."
 
----
-
 ═══════════════════════════════════════════════════════════════
-## 📊 SUBDOMAINS STRATEGY
+## 📊 PATH A: COMPLETE ROWS (Skip Row Discovery)
 ═══════════════════════════════════════════════════════════════
 
-**Subdomains organize parallel discovery workers. They are focus areas, not strict boundaries.**
+**WHEN TO USE:** You have complete entity data available (extracted_tables, complete enumeration, or conversation text)
 
-### Subdomain Count (2-10)
+### Scenario 1: JUMP START (extracted_tables available)
+
+**Step 0b extracted complete tables for you.**
+
+**How to Use:**
+1. Check background_research for `extracted_tables` field
+2. Use extracted_tables[].rows directly as complete_rows
+3. Each extracted table has: table_name, source_url, rows[], extraction_complete
+4. Copy rows with all available columns (ID + research columns if present)
+
+**Example:**
+```json
+{
+  "complete_rows": {
+    "skip_row_discovery": true,
+    "skip_rationale": "JUMP START: Step 0b extracted complete table with 50 rows from Forbes AI 50 2024",
+    "mode": "jump_start",
+    "rows": [
+      // Copy from extracted_tables[0].rows
+      {
+        "id_values": {"Company Name": "Anthropic", "Website": "anthropic.com"},
+        "research_values": {"Description": "...", "Funding": "$7.3B"},
+        "source": "Forbes AI 50 2024",
+        "match_score": 0.95
+      }
+    ]
+  }
+}
+```
+
+### Scenario 2: Complete Enumeration (starting_tables)
+
+**Background research extracted ALL entities in starting_tables.sample_entities**
+
+**How to Recognize:**
+- `starting_tables[].is_complete_enumeration: true`
+- `entity_count_estimate` matches `sample_entities.length`
+- Example: "54 entities" and 54 items in array
+
+**How to Use:**
+1. Extract all entities from starting_tables[].sample_entities
+2. Parse each entity string into ID column values
+3. Use complete_enumeration mode
+
+**Example:**
+```json
+{
+  "complete_rows": {
+    "skip_row_discovery": true,
+    "skip_rationale": "Complete enumeration: Background research extracted all 54 references from paper",
+    "mode": "complete_enumeration",
+    "rows": [
+      {
+        "id_values": {"Reference": "[1] Vaswani et al.", "Title": "Attention Is All You Need"},
+        "source": "Paper references",
+        "match_score": 1.0
+      }
+    ]
+  }
+}
+```
+
+### Scenario 3: Manual Extraction (conversation text)
+
+**User pasted complete document in conversation**
+
+**How to Recognize:**
+- Background research incomplete/empty
+- Large text block in CONVERSATION CONTEXT
+- User explicitly said "extract all from this document"
+
+**How to Use:**
+1. Extract ALL entities from conversation text
+2. Parse into ID columns
+3. Use complete_enumeration mode
+
+**⚠️ CRITICAL - Output Priority:**
+When using complete_rows:
+1. Output complete_rows FIRST and COMPLETELY
+2. Keep columns/requirements sections minimal
+3. If token budget limited, prioritize rows over everything else
+4. Better to have complete rows with minimal columns than truncated rows
+
+**Requirements for complete_rows:**
+- ✅ MUST BE REAL (no made-up examples)
+- ✅ MUST BE ORDERED (logical order)
+- ✅ MUST BE EXHAUSTIVE (ALL entities)
+- ✅ MUST BE ACCURATE (correct values)
+
+═══════════════════════════════════════════════════════════════
+## 📊 PATH B: ROW DISCOVERY (Normal Flow)
+═══════════════════════════════════════════════════════════════
+
+**WHEN TO USE:** No complete data available - need to discover rows via web search
+
+### Use Background Research
+
+**How to Use starting_tables:**
+1. Look at sample_entities to understand entity structure
+2. Design ID columns based on what appears in samples
+3. Use authoritative_sources for subdomain discovered_list_url
+4. Follow discovery_patterns recommendations
+
+**Example:**
+If starting_tables shows: "Dr. Jane Smith - Stanford - Neural Networks"
+→ ID columns: "Researcher Name", "Institution"
+→ Research columns: "Research Area"
+
+### Subdomains Strategy (2-10 subdomains)
 
 **Decision Matrix:**
 | User Wants | Topic Difficulty | Use Subdomains | Rationale |
@@ -221,335 +348,131 @@ target_per_subdomain = total_target / subdomain_count
 - `target_rows`: How many to find here
 
 **Optional (from background research):**
-- `discovered_list_url`: URL of authoritative list
-- `candidates`: 3-10 sample entities from starting tables
+- `discovered_list_url`: URL of authoritative list from authoritative_sources
+- `candidates`: 3-10 sample entities from starting_tables
 
 **Search Queries Must Find LISTS:**
 - ❌ BAD: "AI researcher Stanford" → Returns individuals
 - ✅ GOOD: "Stanford AI faculty list" → Returns many at once
 
----
+### Domain Filtering (Optional)
 
-═══════════════════════════════════════════════════════════════
-## 🌐 DOMAIN FILTERING (Optional)
-═══════════════════════════════════════════════════════════════
+**Include Domains (USE SPARINGLY):**
+- ONLY add if user EXPLICITLY requested specific sources
+- Example: User says "focusing on Crunchbase" → `["crunchbase.com"]`
 
-### Include Domains (USE SPARINGLY)
+**Exclude Domains (Safe to Use):**
+- Default: `["youtube.com", "reddit.com"]`
+- Add more based on needs (news sites for technical queries, forums for factual queries)
 
-**ONLY add if user EXPLICITLY requested specific sources.**
+### Sample Rows
 
-- User: "Find companies, focusing on Crunchbase" → `["crunchbase.com"]` ✅
-- User: "Find biotech companies" → `[]` (don't guess) ✅
+**Extract 5-15 sample rows from starting_tables:**
+- Use ACTUAL entities from starting_tables.sample_entities
+- Fill ID column values only (research columns stay empty)
+- Set `match_score` based on fit (0.7-0.95 typical)
+- Set `source` to starting table name
+- Set `model_used` to "column_definition"
 
-### Exclude Domains (Safe to Use)
-
-**Default exclusions:**
-- `["youtube.com", "reddit.com"]` (unless user wants video/social)
-
-**Add more based on needs:**
-- Avoid news for technical queries: `["cnn.com", "foxnews.com"]`
-- Avoid forums for factual queries: `["quora.com"]`
-
----
-
-═══════════════════════════════════════════════════════════════
-## ⚡ OPTIONAL: COMPLETE ROWS (Skip Row Discovery)
-═══════════════════════════════════════════════════════════════
-
-**WHEN TO USE:** Two scenarios when you should skip row discovery:
-
-### Scenario 1: Complete Enumeration (Well-Known Lists)
-When the list of rows is **obvious, exhaustive, and well-defined**.
-
-**Examples Where You SHOULD Use complete_enumeration mode:**
-- ✅ Items from a specific document (when ALL items provided by background research)
-- ✅ Geographic/political entities (countries, states, provinces)
-- ✅ Well-defined finite sets (planets, elements, calendar units)
-- ✅ Official rosters (cabinet members, board members, committee members)
-
-**How to Recognize Complete Enumeration from Background Research:**
-- Look for starting_tables with `is_complete_enumeration: true`
-- Check if `sample_entities` contains ALL entities or just a sample:
-  - Count in entity_count_estimate should match sample_entities array length
-  - If counts match → Use complete_rows mode
-  - If only partial extraction → Check conversation for user-provided document text
-
-**IMPORTANT - Extracting from Conversation:**
-If background research is empty/incomplete BUT you see user pasted large document text in CONVERSATION CONTEXT:
-- The user provided the complete document after background research couldn't access it
-- Extract ALL entities directly from the pasted text in the conversation
-- Use complete_rows mode with entities you extracted
-- You do NOT need web search - the document is in the conversation history
-
-**⚠️ CRITICAL - Output Priority for Complete Enumeration:**
-
-When using complete_rows mode:
-1. **Output complete_rows FIRST and COMPLETELY** - This is the most important part
-2. Keep other sections minimal (columns, search_strategy) since they won't be used
-3. If token budget is limited, prioritize complete_rows.rows array over everything else
-4. Better to have complete rows with minimal columns than truncated rows
-
-**Validation Rules:**
-```json
-// ✅ GOOD - Use complete_rows
-{
-  "entity_count_estimate": "54 entities",  // Exact count
-  "is_complete_enumeration": true,
-  "sample_entities": [ /* 54 items */ ]  // Count matches!
-}
-
-// ❌ BAD - Don't use complete_rows, run discovery
-{
-  "entity_count_estimate": "~50-60 entities",  // Vague
-  "is_complete_enumeration": true,
-  "sample_entities": [ /* only 5 items */ ]  // Incomplete!
-}
-```
-
-### Scenario 2: JUMP START (Perfect Starting Table Match)
-When background research found a **reliable starting table that perfectly matches** the user's request.
-
-**Examples Where You SHOULD Use jump_start mode:**
-- ✅ User wants "top AI companies" → Background research found "Forbes AI 50 2024" list with 50 companies
-- ✅ User wants "NIH dementia research grants" → Background research found NIH RePORTER database with grant details
-- ✅ User wants "countries in Africa with capitals" → Background research found Wikipedia list with all data
-- ✅ User wants "S&P 500 companies" → Background research found authoritative S&P 500 list with company details
-- ✅ User wants "FDA approved drugs for diabetes" → Background research found FDA database with complete drug list
-
-**Key Criteria for JUMP START:**
-1. Starting table source is **reliable/authoritative** (Forbes, NIH, Wikipedia, FDA, etc.)
-2. Starting table **perfectly matches user intent** (not tangentially related)
-3. Starting table has **good coverage** (most or all entities the user wants)
-4. Starting table includes **multiple columns** (not just names - has descriptions, URLs, metadata)
-5. You can **directly copy** the data without needing to transform it significantly
-
-**Examples Where You SHOULD NOT Use complete_rows:**
-- ❌ AI companies (open-ended, constantly changing) - unless a perfect starting table exists (JUMP START)
-- ❌ Research papers on a topic (needs discovery) - too broad
-- ❌ Job postings (dynamic, requires search)
-- ❌ News articles about X (requires web search)
-- ❌ People who work at a company (not publicly enumerable)
-
-**Quality Requirements When Providing complete_rows:**
-
-1. **MUST BE REAL**: Every row must be a real entity, not made-up examples
-2. **MUST BE ORDERED**: Rows should be in a logical order (alphabetical, chronological, by importance)
-3. **MUST BE EXHAUSTIVE/COMPLETE**: For complete_enumeration: ALL entities. For jump_start: ALL rows from starting table
-4. **MUST BE ACCURATE**: ID values must be correct and properly formatted
-5. **FOR JUMP START**: Copy as many columns as available from the starting table, not just ID columns
-
-**Structure Examples:**
-
-**Complete Enumeration Mode:**
+**Example:**
 ```json
 {
-  "complete_rows": {
-    "skip_row_discovery": true,
-    "skip_rationale": "Background research extracted complete list of all entities. This is a finite, well-defined set where all items were enumerated in the starting table.",
-    "mode": "complete_enumeration",
-    "rows": [
-      {
-        "id_values": {
-          "Entity ID": "Item 1",
-          "Additional ID": "Detail 1"
-        },
-        "source": "Source name from background research",
-        "match_score": 1.0
-      },
-      {
-        "id_values": {
-          "Entity ID": "Item 2",
-          "Additional ID": "Detail 2"
-        },
-        "source": "Source name from background research",
-        "match_score": 1.0
-      }
-      // ... all entities from background research starting_table
-    ]
-  }
-}
-```
-
-**JUMP START Mode (Copy from Starting Table):**
-```json
-{
-  "complete_rows": {
-    "skip_row_discovery": true,
-    "skip_rationale": "JUMP START: Forbes AI 50 2024 list from background research perfectly matches user request for top AI companies. Directly copying all 50 rows with company names, descriptions, and funding data already available in the starting table.",
-    "mode": "jump_start",
-    "rows": [
-      {
-        "id_values": {
-          "Company Name": "Anthropic",
-          "Website": "anthropic.com"
-        },
-        "research_values": {
-          "Description": "AI safety and research company focused on developing reliable, interpretable AI systems",
-          "Total Funding": "$7.3B",
-          "Founded": "2021"
-        },
-        "source": "Forbes AI 50 2024",
-        "match_score": 0.95
-      },
-      {
-        "id_values": {
-          "Company Name": "OpenAI",
-          "Website": "openai.com"
-        },
-        "research_values": {
-          "Description": "AI research and deployment company creating safe AGI",
-          "Total Funding": "$11.3B",
-          "Founded": "2015"
-        },
-        "source": "Forbes AI 50 2024",
-        "match_score": 0.95
-      }
-      // ... all 50 companies from Forbes list
-    ]
-  }
-}
-```
-
-**What Happens When You Use complete_rows:**
-- ✅ Row discovery phase is **SKIPPED** (saves 60-120s and $0.05-0.15)
-- ✅ QC review is **SKIPPED** (saves 8-15s and $0.015-0.035)
-- ✅ For **jump_start**: Research columns pre-filled from starting table (huge time saver!)
-- ✅ Rows go directly to CSV generation
-- ✅ Config generation still runs in parallel
-
-**When in doubt, DO NOT use complete_rows.** It's better to run row discovery than to provide incomplete or inaccurate rows.
-
-**JUMP START is most valuable when the starting table has rich data** - don't just copy names, copy descriptions, URLs, dates, and any other relevant columns from the source!
-
----
-
-═══════════════════════════════════════════════════════════════
-## 📤 OUTPUT FORMAT
-═══════════════════════════════════════════════════════════════
-
-Return JSON with this structure:
-
-```json
-{
-  "columns": [
-    {
-      "name": "Company Name",
-      "description": "Name of the AI company",
-      "format": "String",
-      "importance": "ID",
-      "validation_strategy": ""
-    },
-    {
-      "name": "Institution Email Pattern",
-      "description": "Email format used by the institution (support column)",
-      "format": "String",
-      "importance": "RESEARCH",
-      "validation_strategy": "Visit institution directory, find 2-3 example emails, identify pattern"
-    },
-    {
-      "name": "Has Active Job Posting",
-      "description": "Whether company has open AI/ML positions",
-      "format": "Boolean/URL",
-      "importance": "RESEARCH",
-      "validation_strategy": "Check careers page, LinkedIn jobs, note posting URL if found"
-    }
-  ],
-  "search_strategy": {
-    "description": "Find AI companies with comprehensive coverage",
-    "requirements": [
-      {
-        "requirement": "Must be a company",
-        "type": "hard",
-        "rationale": "Basic entity type"
-      },
-      {
-        "requirement": "Prefers companies with AI/ML teams",
-        "type": "soft",
-        "rationale": "Increases likelihood of relevant job postings"
-      }
-    ],
-    "requirements_notes": "Focus on well-known companies first, expand to startups.",
-    "default_excluded_domains": ["youtube.com", "reddit.com"],
-    "subdomains": [
-      {
-        "name": "Forbes AI 50 Companies",
-        "focus": "Top AI companies from Forbes 2024 list",
-        "discovered_list_url": "https://www.forbes.com/lists/ai50/",
-        "candidates": ["Anthropic", "OpenAI", "Databricks", "Scale AI"],
-        "search_queries": [
-          "Forbes AI 50 2024 complete list",
-          "site:forbes.com AI 50"
-        ],
-        "target_rows": 25
-      }
-    ]
-  },
-  "table_name": "AI Companies Hiring Status",
-  "tablewide_research": "Track AI companies and their hiring activities for ML positions",
   "sample_rows": [
     {
-      "id_values": {
-        "Company Name": "Anthropic",
-        "Website": "anthropic.com"
-      },
+      "id_values": {"Company Name": "Anthropic", "Website": "anthropic.com"},
       "source": "Forbes AI 50 2024",
       "match_score": 0.95,
-      "model_used": "column_definition"
-    },
-    {
-      "id_values": {
-        "Company Name": "OpenAI",
-        "Website": "openai.com"
-      },
-      "source": "Forbes AI 50 2024",
-      "match_score": 0.90,
       "model_used": "column_definition"
     }
   ]
 }
 ```
 
-### Sample Rows (NEW - IMPORTANT)
+═══════════════════════════════════════════════════════════════
+## 📤 OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════
 
-**Extract 5-15 sample rows from background research starting tables.**
+### Path A: Complete Rows Output
 
-**CRITICAL: These MUST be REAL entities from the starting tables provided in background research. Do NOT make up, invent, or create example entities.**
+```json
+{
+  "columns": [
+    {
+      "name": "Column Name",
+      "description": "Description",
+      "format": "String",
+      "importance": "ID",
+      "validation_strategy": ""
+    }
+  ],
+  "search_strategy": {
+    "description": "Brief description",
+    "requirements": [
+      {"requirement": "Must be X", "type": "hard", "rationale": "Why"},
+      {"requirement": "Prefers Y", "type": "soft", "rationale": "Why"}
+    ],
+    "requirements_notes": "Overall guidance"
+  },
+  "table_name": "Table Name",
+  "complete_rows": {
+    "skip_row_discovery": true,
+    "skip_rationale": "Why skipping (JUMP START, complete enumeration, etc.)",
+    "mode": "jump_start" or "complete_enumeration",
+    "rows": [
+      {
+        "id_values": {"Col1": "val1", "Col2": "val2"},
+        "research_values": {"Col3": "val3"},
+        "source": "Source name",
+        "match_score": 0.95
+      }
+    ]
+  }
+}
+```
 
-**Why:** Gives QC immediate candidates without waiting for discovery. Discovery will find more rows and merge them (discovery takes precedence for duplicates based on model quality).
+### Path B: Row Discovery Output
 
-**How to Populate:**
-1. **Look at `starting_tables`** from background research section above
-2. **Extract 5-15 ACTUAL sample entities** from the sample_entities lists provided
-3. **Use REAL entity names** - these must be entities that actually appear in the starting tables
-4. Fill ID column values only (research columns stay empty)
-5. Set `match_score` based on fit with requirements (0.7-0.95 typical)
-6. Set `source` to the starting table name (must match one of the starting_tables)
-7. Set `model_used` to "column_definition"
-
-**Example:**
-If background research shows starting table "Forbes AI 50 2024" with sample_entities: ["Anthropic", "OpenAI", "Scale AI"], then your sample_rows should use THOSE ACTUAL NAMES (Anthropic, OpenAI, Scale AI), NOT made-up examples.
-
-### Required vs Optional Fields
-
-**Required Fields (Must Be Present):**
-- `columns` (array) - Column definitions
-  - Each column needs: name, description, format, importance
-  - ID columns need: validation_strategy = ""
-  - Research columns need: validation_strategy = detailed instructions
-- `search_strategy` (object)
-  - `description` (string)
-  - `requirements` (array, minimum 1) - At least one hard or soft requirement
-  - `requirements_notes` (string)
-  - `subdomains` (array, 2-10 items)
-    - Each needs: name, focus, search_queries (2-5), target_rows
-    - Optional: discovered_list_url, candidates
-- `table_name` (string)
-- `tablewide_research` (string)
-
-**Optional Fields:**
-- `sample_rows` (array) - Highly recommended, extracted from starting_tables
-- `search_strategy.default_included_domains` (array) - Use sparingly
-- `search_strategy.default_excluded_domains` (array) - Safe to use
+```json
+{
+  "columns": [
+    {
+      "name": "Column Name",
+      "description": "Description",
+      "format": "String",
+      "importance": "ID",
+      "validation_strategy": ""
+    }
+  ],
+  "search_strategy": {
+    "description": "Search strategy description",
+    "requirements": [
+      {"requirement": "Must be X", "type": "hard", "rationale": "Why"},
+      {"requirement": "Prefers Y", "type": "soft", "rationale": "Why"}
+    ],
+    "requirements_notes": "Overall guidance",
+    "default_excluded_domains": ["youtube.com", "reddit.com"],
+    "subdomains": [
+      {
+        "name": "Subdomain Name",
+        "focus": "Focus description",
+        "discovered_list_url": "https://source.com",
+        "candidates": ["Entity 1", "Entity 2"],
+        "search_queries": ["query 1", "query 2"],
+        "target_rows": 25
+      }
+    ]
+  },
+  "table_name": "Table Name",
+  "sample_rows": [
+    {
+      "id_values": {"Col1": "val1", "Col2": "val2"},
+      "source": "Starting table name",
+      "match_score": 0.95,
+      "model_used": "column_definition"
+    }
+  ]
+}
+```
 
 ### Column Naming Rules
 
@@ -561,40 +484,30 @@ If background research shows starting table "Forbes AI 50 2024" with sample_enti
 - Name: "Far-Right US Coverage"
 - Description: "How far-right US sources like Breitbart, Daily Wire report this story"
 
----
-
 ═══════════════════════════════════════════════════════════════
-## 🎯 FINAL REMINDER - Critical Requirements
+## 🎯 FINAL CHECKLIST
 ═══════════════════════════════════════════════════════════════
 
-**GOAL:** Define table structure using background research as foundation
+**ALWAYS OUTPUT:**
+- [ ] Column definitions (ID + research columns)
+- [ ] Requirements (at least 1 hard or soft)
+- [ ] Table name
 
-**CRITICAL CHECKLIST:**
+**CHECK DATA SOURCES (Priority Order):**
+- [ ] Do I have extracted_tables? → Use for JUMP START
+- [ ] Is starting_tables.is_complete_enumeration: true? → Use for complete enumeration
+- [ ] Does conversation have pasted document? → Extract manually
+- [ ] None of above? → Row discovery path
 
-**🔍 Design for Discoverability:**
-- [ ] Can I find entities matching requirements via simple web search?
-- [ ] Are ID columns simple identifiers (1-5 words)?
-- [ ] Have I moved filtering criteria to research columns?
+**IF COMPLETE ROWS PATH:**
+- [ ] Output complete_rows with ALL entities
+- [ ] Skip subdomains/search_strategy
+- [ ] Prioritize rows output if token limited
 
-**📚 Use Background Research:**
-- [ ] Have I referenced starting tables in subdomains?
-- [ ] Have I extracted 5-15 sample_rows from starting tables?
-- [ ] Have I used authoritative sources in `discovered_list_url`?
-- [ ] Have I followed the recommended discovery pattern?
-
-**🔧 Support Columns:**
-- [ ] Have I added support columns for complex validations?
-- [ ] Are support columns easier to validate than final targets?
-
-**📋 Requirements:**
-- [ ] At least ONE requirement defined (hard or soft)?
-- [ ] Are requirements self-contained (understandable without context)?
-- [ ] Are most requirements soft (not overly restrictive)?
-
-**🎯 If Restructuring:**
-- [ ] Have I applied QC's column_changes guidance?
-- [ ] Have I applied requirement_changes guidance?
-- [ ] Have I applied search_broadening guidance?
-- [ ] Is the table simpler and more discoverable now?
+**IF ROW DISCOVERY PATH:**
+- [ ] Use starting_tables to design discoverable columns
+- [ ] Output subdomains (2-10) with search strategy
+- [ ] Output sample_rows from starting_tables
+- [ ] Design for discoverability (not too narrow)
 
 **Return your response as valid JSON matching the format above.**
