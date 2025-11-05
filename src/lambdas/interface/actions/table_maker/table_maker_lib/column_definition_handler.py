@@ -744,16 +744,14 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
                 output.append(f"- Rows Extracted: {table.get('rows_extracted')}")
                 output.append(f"- Extraction Complete: {table.get('extraction_complete')}")
 
-                # Show first few rows as preview
+                # Show ALL rows (column definition needs complete data)
                 rows = table.get('rows', [])
                 if rows and len(rows) > 0:
-                    output.append(f"\n**Preview (first 3 rows):**")
-                    for i, row in enumerate(rows[:3]):
+                    output.append(f"\n**ALL Extracted Rows ({len(rows)} total):**")
+                    for i, row in enumerate(rows):
                         output.append(f"  Row {i+1}: {row}")
-                    if len(rows) > 3:
-                        output.append(f"  ... and {len(rows) - 3} more rows")
 
-                output.append("\n**Use complete_rows mode and copy ALL rows from this table.**")
+                output.append("\n**Use these rows - all extracted data is shown above.**")
                 output.append("")
 
         # Starting Tables (CRITICAL - for samples or complete enumeration)
