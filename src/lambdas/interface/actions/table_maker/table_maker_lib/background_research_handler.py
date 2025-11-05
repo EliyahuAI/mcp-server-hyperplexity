@@ -58,9 +58,10 @@ class BackgroundResearchHandler:
                 'success': bool,
                 'tablewide_research': str,  # 2-3 paragraph overview
                 'authoritative_sources': List[Dict],  # Databases, directories, APIs
-                'starting_tables': List[Dict],  # Tables with sample entities
+                'starting_tables': List[Dict],  # Tables with sample entities (≤15 rows)
                 'discovery_patterns': Dict,  # How entities are found
                 'domain_specific_context': Dict,  # Key facts and identifiers
+                'identified_tables': List[Dict],  # Tables for Step 0b extraction (>15 rows)
                 'processing_time': float,  # Seconds
                 'enhanced_data': Dict,  # API call metadata
                 'error': Optional[str]
@@ -73,6 +74,7 @@ class BackgroundResearchHandler:
             'starting_tables': [],
             'discovery_patterns': {},
             'domain_specific_context': {},
+            'identified_tables': [],  # NEW - for Step 0b triggering
             'processing_time': 0.0,
             'enhanced_data': {},
             'error': None
@@ -207,6 +209,7 @@ class BackgroundResearchHandler:
                 'starting_tables': structured_response['starting_tables'],
                 'discovery_patterns': structured_response['discovery_patterns'],
                 'domain_specific_context': structured_response['domain_specific_context'],
+                'identified_tables': structured_response.get('identified_tables', []),  # NEW - for Step 0b
                 'enhanced_data': enhanced_data,
                 'processing_time': time.time() - start_time
             })
@@ -215,6 +218,7 @@ class BackgroundResearchHandler:
                 f"Background research complete: "
                 f"{len(result['authoritative_sources'])} sources, "
                 f"{len(result['starting_tables'])} starting tables, "
+                f"{len(result.get('identified_tables', []))} identified tables, "
                 f"time: {result['processing_time']:.2f}s"
             )
 
@@ -223,6 +227,13 @@ class BackgroundResearchHandler:
                 logger.info(
                     f"  Starting table: {table.get('source_name')} "
                     f"({len(table.get('sample_entities', []))} sample entities)"
+                )
+
+            # Log summary of identified tables
+            for table in result.get('identified_tables', []):
+                logger.info(
+                    f"  Identified table: {table.get('table_name')} "
+                    f"({table.get('estimated_rows')} rows, extract_table={table.get('extract_table')})"
                 )
 
             return result
