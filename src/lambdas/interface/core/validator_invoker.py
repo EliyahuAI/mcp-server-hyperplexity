@@ -312,40 +312,11 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                     target['column'] = target['name']
                 # Keep both fields for backward compatibility
 
-        # Get ID fields from config for row key generation - BEFORE parsing table
-        id_fields = []
-        logger.info("Searching for ID fields in validation targets...")
-        for i, target in enumerate(config_data.get('validation_targets', [])):
-            importance = target.get('importance', '')
-            logger.debug(f"Target {i}: importance='{importance}', column='{target.get('column')}', name='{target.get('name')}'")
-            if importance.upper() == 'ID':
-                # Support both 'name' and 'column' fields
-                field_name = target.get('name') or target.get('column')
-                if field_name and field_name not in id_fields:
-                    id_fields.append(field_name)
-                    logger.info(f"Found ID field: {field_name}")
-                else:
-                    logger.warning(f"ID target found but no field name: {target}")
-            else:
-                logger.debug(f"Target '{target.get('column')}' has importance '{importance}' (not ID)")
-
-        # Check generation_metadata.identification_columns (table maker configs) if no ID fields found
-        if not id_fields and config_data.get('generation_metadata', {}).get('identification_columns'):
-            id_fields = config_data['generation_metadata']['identification_columns']
-            logger.info(f"Found ID fields in generation_metadata: {id_fields}")
-
-        # If no ID fields found, try to use SimplifiedSchemaValidator to determine primary keys
-        if not id_fields:
-            try:
-                validator = SimplifiedSchemaValidator(config_data)
-                id_fields = validator.primary_key
-                logger.info(f"Using primary keys from SimplifiedSchemaValidator: {id_fields}")
-            except ImportError:
-                logger.warning("SimplifiedSchemaValidator not available in deployment package")
-            except Exception as e:
-                logger.warning(f"Could not use SimplifiedSchemaValidator: {e}")
-
-        logger.info(f"ID fields for row key generation: {id_fields}")
+        # CRITICAL: Always use full-row hashing (id_fields=None) for consistent row keys
+        # Row history tracking is now handled via cell comments, not row key stability
+        # Full-row hashing ensures validation results match Excel rows regardless of ID field config
+        id_fields = None
+        logger.info(f"[VALIDATOR_INVOKER] Using full-row hashing (id_fields=None) for consistent row key generation")
 
         # Parse table with ID fields to get rows with correct row keys
         logger.info(f"Using shared_table_parser with id_fields to parse table")
@@ -488,9 +459,12 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
             sample_row = rows[0]
             logger.info("Sample row data for first row:")
             logger.info(f"  _row_key: {sample_row.get('_row_key', 'NOT FOUND')[:16]}...")
-            for id_field in id_fields:
-                value = sample_row.get(id_field, 'NOT FOUND')
-                logger.info(f"  {id_field}: {value}")
+            if id_fields:
+                for id_field in id_fields:
+                    value = sample_row.get(id_field, 'NOT FOUND')
+                    logger.info(f"  {id_field}: {value}")
+            else:
+                logger.info(f"  Using full-row hashing (no specific ID fields)")
 
         # Use validation history passed by caller (already extracted by background_handler)
         if validation_history is None:

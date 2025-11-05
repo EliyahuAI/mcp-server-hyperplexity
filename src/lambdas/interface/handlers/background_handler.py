@@ -1451,23 +1451,11 @@ def handle_main_processing(event, context):
 
                 return {'statusCode': 500, 'body': json.dumps({'status': 'failed', 'error': 'Files not found'})}
 
-            # Extract ID fields from config (needed for parser)
-            # Try multiple sources since different config generators store them differently
-            id_fields = []
-
-            # Method 1: Check validation_targets for importance='ID' (standard configs)
-            for target in config_data.get('validation_targets', []):
-                if target.get('importance', '').upper() == 'ID':
-                    field_name = target.get('name') or target.get('column')
-                    if field_name and field_name not in id_fields:
-                        id_fields.append(field_name)
-
-            # Method 2: Check generation_metadata.identification_columns (table maker configs)
-            if not id_fields and config_data.get('generation_metadata', {}).get('identification_columns'):
-                id_fields = config_data['generation_metadata']['identification_columns']
-                logger.debug(f"[PREVIEW_TABLE_DATA] Found ID fields in generation_metadata: {id_fields}")
-
-            logger.debug(f"[PREVIEW_TABLE_DATA] Using ID fields for row key generation: {id_fields}")
+            # CRITICAL: Always use full-row hashing (id_fields=None) for consistent row keys
+            # Row history tracking is now handled via cell comments, not row key stability
+            # Full-row hashing ensures validation results match Excel rows regardless of ID field config
+            id_fields = None
+            logger.info(f"[PREVIEW_TABLE_DATA] Using full-row hashing (id_fields=None) for consistent row key generation")
 
             # Parse table_data ONCE at the beginning (parser will generate row keys AND extract history)
             from shared_table_parser import S3TableParser
@@ -3085,26 +3073,11 @@ def handle_main_processing(event, context):
             
             logger.info(f"Retrieved files from unified storage - Excel: {actual_excel_s3_key}, Config: {actual_config_s3_key}")
             
-            # Extract ID fields from config (needed for parser row key generation)
-            id_fields = []
-            for target in config_data.get('validation_targets', []):
-                if target.get('importance', '').upper() == 'ID':
-                    field_name = target.get('name') or target.get('column')
-                    if field_name:
-                        id_fields.append(field_name)
-
-            # Fallback to SimplifiedSchemaValidator primary keys if no explicit ID fields
-            if not id_fields:
-                try:
-                    from simplified_schema_validator import SimplifiedSchemaValidator
-                    validator = SimplifiedSchemaValidator(config_data)
-                    id_fields = validator.primary_key
-                    logger.debug(f"Using primary keys from SimplifiedSchemaValidator: {id_fields}")
-                except Exception as e:
-                    logger.warning(f"Could not use SimplifiedSchemaValidator: {e}")
-                    id_fields = []
-
-            logger.debug(f"Using ID fields for row key generation: {id_fields}")
+            # CRITICAL: Always use full-row hashing (id_fields=None) for consistent row keys
+            # Row history tracking is now handled via cell comments, not row key stability
+            # Full-row hashing ensures validation results match Excel rows regardless of ID field config
+            id_fields = None
+            logger.info(f"[FULL_VALIDATION] Using full-row hashing (id_fields=None) for consistent row key generation")
 
             # Use shared table parser to get row count (handles both CSV and Excel)
             from shared_table_parser import S3TableParser
