@@ -47,7 +47,7 @@ class TableExtractionHandler:
         Args:
             identified_tables: List of table metadata from background research
                 Each should have: url, table_name, estimated_rows, columns, extract_table
-                Optional: target_rows (if specified, extract up to this many rows; if omitted, extract all)
+                Optional: target_rows (string filter/specification for which rows to extract, e.g., "only winners")
             conversation_context: Optional conversation history (for context)
             model: AI model to use (default: sonar for Perplexity)
             max_tokens: Maximum tokens for AI response
@@ -185,7 +185,7 @@ class TableExtractionHandler:
 
             # Format target rows instruction
             if target_rows:
-                target_instruction = f"**Target:** Extract up to {target_rows} rows from this table."
+                target_instruction = f"**Target Rows Filter:** {target_rows}\n\nExtract ONLY rows matching this specification."
             else:
                 target_instruction = "**Target:** Extract ALL rows from this table (complete extraction)."
 

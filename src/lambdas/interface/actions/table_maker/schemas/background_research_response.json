@@ -177,6 +177,53 @@
           "description": "Assessment of how easy/hard it will be to find and validate this data"
         }
       }
+    },
+    "identified_tables": {
+      "type": "array",
+      "description": "Optional: Tables identified that have extractable structure and should be passed to table extraction (Step 0b). Only include if you found specific table URLs with clear structure.",
+      "items": {
+        "type": "object",
+        "required": ["url", "table_name", "estimated_rows", "columns", "extract_table"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL where the table can be found"
+          },
+          "table_name": {
+            "type": "string",
+            "description": "Descriptive name for this table"
+          },
+          "estimated_rows": {
+            "type": ["number", "string"],
+            "description": "Approximate number of rows in the table (can be number or string like '~50')"
+          },
+          "columns": {
+            "type": "array",
+            "description": "Expected column names in the table",
+            "items": {
+              "type": "string"
+            }
+          },
+          "extract_table": {
+            "type": "boolean",
+            "description": "Set to true to trigger table extraction (Step 0b) for this URL"
+          },
+          "target_rows": {
+            "type": "string",
+            "description": "Optional: Filter or specification for which rows to extract (e.g., 'only winners', 'School Committee only', 'top 10 ranked'). If omitted, extract all rows from the table."
+          },
+          "extraction_priority": {
+            "type": "string",
+            "enum": ["high", "medium", "low"],
+            "description": "Priority for extraction. High = user specifically requested, medium = good source, low = opportunistic"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Optional notes about this table (structure, pagination, access requirements)"
+          }
+        }
+      }
     }
   }
 }

@@ -1,195 +1,245 @@
-# Background Research - Find Sources and Extract Starting Tables
+# Background Research - Tablewide Context and Discovery Patterns
 
 ═══════════════════════════════════════════════════════════════
-## 📋 PROMPT MAP - What You'll Find Below
+## 🔍 YOUR RESEARCH TASK
 ═══════════════════════════════════════════════════════════════
 
-1. **YOUR SEARCH TASK**: Specific entities to find and extract
-2. **COMPLETE ENUMERATION CHECK**: Special handling for finite lists
-3. **SEARCH METHODOLOGY**: How to find authoritative sources
-4. **OUTPUT REQUIREMENTS**: Starting tables with sample entities
-5. **FINAL REMINDER**: Core task and validation
+Research the domain to answer these questions:
 
-═══════════════════════════════════════════════════════════════
-## 🎯 YOUR SEARCH TASK
-═══════════════════════════════════════════════════════════════
-
-**USER WANTS:** {{USER_REQUIREMENTS}}
-
-**YOUR JOB:** Find WHERE these specific entities exist as lists/databases on the web RIGHT NOW.
-
-**SEARCH FOR:**
 {{CONTEXT_RESEARCH_ITEMS}}
 
-**DELIVERABLES:**
-1. **starting_tables** - Lists with ACTUAL entity names (minimum 5-15 per table)
-2. **authoritative_sources** - Databases/directories containing these entities
-3. **tablewide_research** - 2-3 paragraph domain overview
-4. **discovery_patterns** - How to find entities
-5. **domain_specific_context** - Key facts and identifiers
+**PRIMARY GOAL:** Understand how entities in this domain are identified, catalogued, and found
 
----
-
-═══════════════════════════════════════════════════════════════
-## ⚠️ CRITICAL: COMPLETE ENUMERATION CHECK
-═══════════════════════════════════════════════════════════════
-
-**CHECK YOUR SEARCH TASK ABOVE:** Does it start with "COMPLETE ENUMERATION:"?
-
-### IF YES → COMPLETE ENUMERATION MODE
-
-**THIS IS MANDATORY:**
-1. Extract **ALL entities** (not 5 samples - EVERY SINGLE ONE)
-2. Set `is_complete_enumeration: true`
-3. Set `entity_count_estimate` to EXACT number (e.g., "54 citations")
-4. List ALL entities explicitly in `sample_entities` array
-5. Do NOT summarize or truncate - list every item with full details
-
-**Common cases:**
-- Document items: Extract ALL references/chapters/sections from the document
-- Geographic sets: List ALL countries/states/provinces
-- Official rosters: List ALL members/appointees
-- Finite collections: List ALL elements/planets/units
-
-**Where to find entities:**
-- If user pasted document text → Extract from CONVERSATION CONTEXT below
-- If document URL provided → Access the document via web search
-- If well-known set (countries, states) → Use knowledge or search for authoritative list
-
-### IF NO → NORMAL SAMPLING MODE
-
-Extract 5-15 sample entities from authoritative sources.
-Set `is_complete_enumeration: false`
-
----
+**YOUR DELIVERABLES:**
+1. **Tablewide research** - Domain overview with key facts and patterns
+2. **Discovery patterns** - Where/how entities are typically listed
+3. **Authoritative sources** - Databases, directories, rankings that contain entities
+4. **Starting tables** (with samples) - If you find existing lists, extract 5-15 sample entities
+5. **Identified tables** (optional) - If you find extractable tables with clear structure, note them for Step 0b extraction
 
 ═══════════════════════════════════════════════════════════════
-## 📚 USER CONTEXT
+## 📋 USER CONTEXT
 ═══════════════════════════════════════════════════════════════
 
-**Conversation:**
+**User's Request:** {{USER_REQUIREMENTS}}
+
+**Conversation History:**
 {{CONVERSATION_CONTEXT}}
 
----
-
 ═══════════════════════════════════════════════════════════════
-## 🔍 SEARCH METHODOLOGY
+## 🎯 RESEARCH FOCUS AREAS
 ═══════════════════════════════════════════════════════════════
 
-### Step 1: Determine What to Search
+### 1. Tablewide Research (Required)
 
-**Read your search task above. What SPECIFIC entities?**
-- Entity type? (companies, researchers, references, countries, etc.)
-- Characteristics? (AI companies, NIH-funded, from specific paper, in specific region)
-- Time period? (2025, 2024, historical)
-- Geography? (US, global, specific region)
+Provide 2-3 paragraph overview covering:
+- How entities are typically identified/catalogued in this domain
+- What authoritative sources exist (databases, directories, rankings)
+- Discovery challenges and recommended approaches
+- Domain-specific considerations
 
-### Step 2: Search for Lists/Databases
+### 2. Discovery Patterns (Required)
 
-**Use web search to find WHERE these entities are listed:**
+Identify the primary pattern:
+- **complete_list**: Finite, well-defined sets (countries, states, specific paper references)
+- **searchable_database**: Queryable databases (NIH RePORTER, USPTO, PubMed)
+- **aggregator**: Curated lists/rankings (Forbes, TechCrunch lists)
+- **distributed**: No central source, requires broad web search
 
-**Search queries to try:**
-- "[Entity type] list [year]" (e.g., "AI companies list 2025")
-- "[Database name] [entity type]" (e.g., "NIH RePORTER dementia grants")
-- "[Specific list] complete" (e.g., "Forbes AI 50 2025 complete list")
-- "site:[domain] [entity type]" (e.g., "site:arxiv.org 2510.13928")
+Provide challenges and recommendations for successful discovery.
 
-**For documents (PDFs, papers):**
-- Search for the document URL or ID
-- Access the full text
-- Extract the complete list (references, chapters, etc.)
+### 3. Authoritative Sources (Required)
 
-**What to look for:**
-- Curated lists (Forbes, rankings, directories)
+List databases/directories/APIs where entities can be found:
+- Name, URL, type (database/directory/list/api)
+- What it contains, coverage, access level
+- Update frequency
+
+### 4. Starting Tables (Required - Extract Samples)
+
+If you find existing lists/tables with entities:
+- Extract 5-15 ACTUAL sample entities with identifying details
+- Example: "Dr. Jane Smith - Stanford - Neural Networks for Medical Imaging"
+- NOT just "See Forbes list" - extract the actual names
+
+**Complete Enumeration Detection:**
+If user request indicates complete enumeration (e.g., "all references from paper X", "all countries in region Y"):
+- Set `is_complete_enumeration: true`
+- Extract ALL entities if possible (not just 5-15 samples)
+- If document text was pasted in conversation, extract from there
+- Set exact entity count (e.g., "54 references")
+
+### 5. Identified Tables (Optional - For Step 0b Extraction)
+
+If you find specific URLs with extractable table structure:
+- Note the URL, table name, estimated rows, expected columns
+- Set `extract_table: true` to trigger Step 0b (table extraction)
+- Use when: clear table structure, specific URL, need complete extraction
+- Skip when: just found a database/directory without specific table URL
+
+**When to identify tables for extraction:**
+- User explicitly requests data from specific URL/document
+- You found a table with clear structure (e.g., election results table, Forbes ranked list)
+- Complete enumeration needed and table accessible
+- User pasted document text but you need web access to specific table
+
+═══════════════════════════════════════════════════════════════
+## 💡 RESEARCH METHODOLOGY
+═══════════════════════════════════════════════════════════════
+
+### Step 1: Understand the Domain
+
+Read the research questions above. What domain is this?
+- Entity type (companies, researchers, references, locations, etc.)
+- Characteristics (AI companies, NIH-funded, from specific paper, etc.)
+- Geography, time period, constraints
+
+### Step 2: Find Where Entities Are Listed
+
+Search for:
+- "[Entity type] list [year]"
+- "[Database name] [entity type]"
+- "site:[domain] [entity type]"
+- Specific document URLs if user provided them
+
+Look for:
 - Government databases (NIH, USPTO, official registries)
+- Curated lists (Forbes, rankings, directories)
 - Official directories (faculty lists, member rosters)
-- Document content (references, sections, authors)
+- Academic sources (paper references, citations)
 
-### Step 3: Extract Entity Names
+### Step 3: Extract Sample Entities
 
-**CRITICAL: Extract ACTUAL entity names, not just URLs**
+**CRITICAL:** For starting_tables, extract REAL entity names with details
 
-**For each starting_table:**
-- Access the source (via web search if needed)
-- Extract real entity names with details
-- For COMPLETE ENUMERATION: Extract ALL entities
-- For normal mode: Extract 5-15 samples
-
-**Good entity extraction:**
-- "Dr. Jane Smith - Stanford - Neural Networks for Medical Imaging"
-- "Anthropic - $7.3B funding - AI safety company"
+✅ **Good extraction:**
+- "Dr. Jane Smith - Stanford - Neural Networks"
+- "Anthropic - $7.3B funding - AI safety"
 - "[1] Vaswani et al. - Attention Is All You Need - arXiv:1706.03762"
 
-**Bad entity extraction:**
-- "See Forbes list" ❌
-- "Various companies" ❌
-- "[URLs provided]" ❌
+❌ **Bad extraction:**
+- "See Forbes list" (no actual entities)
+- "Various companies" (vague)
+- Just URLs (need names)
 
----
+### Step 4: Identify Tables for Step 0b (Optional)
+
+If you found a specific table URL that needs complete extraction:
+- User specifically requested this URL
+- Clear table structure visible
+- Need more than 5-15 samples (need complete extraction)
+- Example: Election results table, ranked company list with details
+
+Add to `identified_tables` with extract_table=true
 
 ═══════════════════════════════════════════════════════════════
 ## 📤 OUTPUT FORMAT
 ═══════════════════════════════════════════════════════════════
 
+Return JSON matching this structure:
+
 ```json
 {
-  "starting_tables": [
-    {
-      "source_name": "Name of list/database",
-      "source_url": "https://...",
-      "entity_type": "What entities are these",
-      "entity_count_estimate": "50 entities" OR "~150 entities",
-      "is_complete_enumeration": true OR false,
-      "sample_entities": [
-        "Entity 1 with full details",
-        "Entity 2 with full details",
-        "Entity 3 with full details"
-        // ... 5-15 for normal, ALL for complete enumeration
-      ],
-      "completeness": "How complete this source is",
-      "update_frequency": "static|weekly|monthly|annual",
-      "discovery_notes": "How to use this source"
-    }
-  ],
+  "tablewide_research": "2-3 paragraph overview of domain, identification patterns, sources, challenges, recommendations",
+
   "authoritative_sources": [
     {
       "name": "Source name",
       "url": "https://...",
-      "type": "database|list|directory|index",
+      "type": "database|directory|list|api|index|aggregator",
       "description": "What it contains",
       "coverage": "How comprehensive",
       "access": "public|requires_auth|paid",
       "update_frequency": "real-time|daily|weekly|monthly|annual|static"
     }
   ],
-  "tablewide_research": "2-3 paragraph overview of domain",
+
+  "starting_tables": [
+    {
+      "source_name": "Name of list/table",
+      "source_url": "https://...",
+      "entity_type": "What entities are these",
+      "entity_count_estimate": "50 entities" or "~150 entities",
+      "is_complete_enumeration": false,
+      "sample_entities": [
+        "Entity 1 with full details",
+        "Entity 2 with full details",
+        "Entity 3 with full details",
+        "... (5-15 for normal, ALL for complete enumeration)"
+      ],
+      "completeness": "How complete this source is",
+      "update_frequency": "static|weekly|monthly|annual",
+      "discovery_notes": "How to use this source"
+    }
+  ],
+
   "discovery_patterns": {
     "primary_pattern": "complete_list|searchable_database|aggregator|distributed",
     "description": "How entities are found",
     "challenges": ["Challenge 1", "Challenge 2"],
     "recommendations": ["Rec 1", "Rec 2"]
   },
+
   "domain_specific_context": {
     "key_facts": ["Fact 1", "Fact 2"],
     "common_identifiers": ["ID type 1", "ID type 2"],
     "data_availability": "Assessment of findability"
-  }
+  },
+
+  "identified_tables": [
+    {
+      "url": "https://specific-table-url.com",
+      "table_name": "Descriptive name",
+      "estimated_rows": 50,
+      "columns": ["Column 1", "Column 2", "Column 3"],
+      "extract_table": true,
+      "target_rows": "only winners" or "School Committee only",
+      "extraction_priority": "high|medium|low",
+      "notes": "Optional notes about structure/pagination"
+    }
+  ]
 }
 ```
 
----
+### Field Requirements:
+
+**Required:**
+- `tablewide_research` - 2-3 paragraphs
+- `authoritative_sources` - At least 1 source
+- `starting_tables` - At least 1 table with 5+ sample entities
+- `discovery_patterns` - Primary pattern with recommendations
+- `domain_specific_context` - Key facts and identifiers
+
+**Optional:**
+- `identified_tables` - Only if you found specific extractable table URLs
+
+**Complete Enumeration:**
+- Set `is_complete_enumeration: true` in starting_tables
+- Provide ALL entities in sample_entities (not just 5-15)
+- Set exact count in entity_count_estimate
+
+**Identified Tables:**
+- Only include if: specific URL, clear table structure, extraction needed
+- Don't include if: just a database/directory without specific table URL
+- Set `extract_table: true` to trigger Step 0b
 
 ═══════════════════════════════════════════════════════════════
 ## 🎯 FINAL REMINDER
 ═══════════════════════════════════════════════════════════════
 
-**YOUR SEARCH TASK:** {{CONTEXT_RESEARCH_ITEMS}}
+**YOUR RESEARCH QUESTIONS:** {{CONTEXT_RESEARCH_ITEMS}}
 
 **CRITICAL REQUIREMENTS:**
-1. ✅ If "COMPLETE ENUMERATION:" → Extract ALL entities from CONVERSATION CONTEXT, set is_complete_enumeration=true, exact count
-2. ✅ Extract ACTUAL entity names (not just URLs)
-3. ✅ For complete enumeration, user should have pasted document text in conversation - extract from there
-4. ✅ Provide 5-15 samples for discovery mode, or ALL entities for complete enumeration
-5. ✅ Return valid JSON matching format above
+1. ✅ Focus on RESEARCH and PATTERNS (primary goal)
+2. ✅ Extract ACTUAL entity names in starting_tables (not just URLs)
+3. ✅ For complete enumeration: Extract ALL entities if user pasted document text
+4. ✅ For identified_tables: Only include specific URLs with extractable tables
+5. ✅ Provide at least 5-15 sample entities per starting_table
+6. ✅ Return valid JSON matching format above
+
+**What happens next:**
+- Your research → Used by column definition (Step 1)
+- Your starting_tables → Converted to sample_rows
+- Your identified_tables → Passed to table extraction (Step 0b)
 
 **Return your research as valid JSON.**

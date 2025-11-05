@@ -16,6 +16,8 @@ Extract rows from the table at: **{{TABLE_URL}}**
 
 **Search Configuration:** Your search is configured to prioritize the domain of this URL. Access the page and extract the table.
 
+**IMPORTANT:** If a target_rows filter is specified above, extract ONLY rows matching that specification. If no filter specified, extract ALL rows.
+
 ═══════════════════════════════════════════════════════════════
 ## 📋 EXTRACTION REQUIREMENTS
 ═══════════════════════════════════════════════════════════════
