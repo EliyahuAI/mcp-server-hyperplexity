@@ -51,32 +51,33 @@
 ## ⚡ DECISION LOGIC: Which Path?
 ═══════════════════════════════════════════════════════════════
 
-### Check in Priority Order:
+**YOU decide:** Can you provide all the rows the user wants without row discovery?
 
-**1. Do you have extracted_tables?**
-- If YES → **Path A: Complete Rows (JUMP START)**
-- These are complete table extractions from Step 0b
-- Use extracted_tables.rows directly as complete_rows
-- Skip row discovery
+### Indicators for Complete Rows Path (Check These):
 
-**2. Does starting_tables have is_complete_enumeration: true?**
-- Check if entity_count_estimate matches sample_entities length
-- Example: "54 entities" and 54 items in sample_entities
-- If YES → **Path A: Complete Rows (Complete Enumeration)**
-- Use starting_tables.sample_entities as complete_rows
-- Skip row discovery
+**Strong Indicators:**
+✅ Background research provides `extracted_tables` (Step 0b ran successfully)
+✅ Background research `starting_tables` has `is_complete_enumeration: true` with all entities
+✅ Conversation has pasted document text with complete entity list
+✅ Well-known finite set from your knowledge (countries, states, planets, elements, months, etc.)
+✅ User explicitly requested "all X" where X is a finite, enumerable set
+✅ Specific document references (e.g., "all citations from paper Y")
+✅ Official rosters/memberships (cabinet members, board members, UN member states)
 
-**3. Does conversation have pasted document text?**
-- Look for large text blocks with entity lists in CONVERSATION CONTEXT
-- If YES → **Path A: Complete Rows (Manual Extraction)**
-- Extract all entities from conversation text
-- Skip row discovery
+**Moderate Indicators:**
+⚠️ Starting table perfectly matches user request with rich data
+⚠️ Small, well-defined list (e.g., "Forbes AI 50" - exactly 50 companies)
+⚠️ You have strong knowledge of the complete set and can enumerate all items
 
-**4. None of the above?**
-- **Path B: Row Discovery (Normal Flow)**
-- Use starting_tables samples to design columns
-- Output subdomains and search_strategy
-- Trigger row discovery
+**When in Doubt:**
+- If you can confidently generate ALL the rows the user wants → Complete Rows Path
+- If you're unsure or missing data → Row Discovery Path (safer)
+- Complete rows can use: extracted_tables, starting_tables, conversation text, OR your model knowledge
+- Better to provide complete rows when possible (saves 60-120s and $0.05-0.15)
+
+**Decision:**
+- **Path A**: You have/can generate complete data → Output complete_rows
+- **Path B**: Need web search to find entities → Output subdomains + sample_rows
 
 ═══════════════════════════════════════════════════════════════
 ## 📚 INFORMATION PROVIDED
@@ -194,7 +195,11 @@ Provide 1-2 sentences of overall guidance about good rows. Not a requirement its
 ## 📊 PATH A: COMPLETE ROWS (Skip Row Discovery)
 ═══════════════════════════════════════════════════════════════
 
-**WHEN TO USE:** You have complete entity data available (extracted_tables, complete enumeration, or conversation text)
+**WHEN TO USE:** You have complete entity data available from ANY source:
+- extracted_tables (from Step 0b)
+- starting_tables (with complete enumeration)
+- Conversation text (user pasted document)
+- Your model knowledge (for well-known finite sets)
 
 ### Scenario 1: JUMP START (extracted_tables available)
 
@@ -272,6 +277,40 @@ Provide 1-2 sentences of overall guidance about good rows. Not a requirement its
 2. Parse into ID columns
 3. Use complete_enumeration mode
 
+### Scenario 4: Model Knowledge (well-known finite sets)
+
+**You have complete knowledge of the set**
+
+**Examples:**
+- Countries (all UN member states, countries in a region)
+- US states and capitals
+- Planets in solar system
+- Elements in periodic table
+- Months of the year
+- Official government positions (US cabinet, Senate committees)
+
+**How to Use:**
+1. Enumerate ALL entities from your knowledge
+2. Set source to "Model Knowledge (as of January 2025)"
+3. Use complete_enumeration mode
+4. Ensure list is exhaustive and accurate
+
+**Example:**
+```json
+{
+  "complete_rows": {
+    "skip_row_discovery": true,
+    "skip_rationale": "US states is a well-known finite set of 50 entities that can be enumerated from model knowledge",
+    "mode": "complete_enumeration",
+    "rows": [
+      {"id_values": {"State": "Alabama", "Capital": "Montgomery"}, "source": "Model Knowledge", "match_score": 1.0},
+      {"id_values": {"State": "Alaska", "Capital": "Juneau"}, "source": "Model Knowledge", "match_score": 1.0}
+      // ... all 50 states
+    ]
+  }
+}
+```
+
 **⚠️ CRITICAL - Output Priority:**
 When using complete_rows:
 1. Output complete_rows FIRST and COMPLETELY
@@ -282,8 +321,9 @@ When using complete_rows:
 **Requirements for complete_rows:**
 - ✅ MUST BE REAL (no made-up examples)
 - ✅ MUST BE ORDERED (logical order)
-- ✅ MUST BE EXHAUSTIVE (ALL entities)
+- ✅ MUST BE EXHAUSTIVE (ALL entities the user wants)
 - ✅ MUST BE ACCURATE (correct values)
+- ✅ Can come from: extracted_tables, starting_tables, conversation, OR model knowledge
 
 ═══════════════════════════════════════════════════════════════
 ## 📊 PATH B: ROW DISCOVERY (Normal Flow)
@@ -495,20 +535,20 @@ target_per_subdomain = total_target / subdomain_count
 - [ ] Requirements (at least 1 hard or soft)
 - [ ] Table name
 
-**CHECK DATA SOURCES (Priority Order):**
-- [ ] Do I have extracted_tables? → Use for JUMP START
-- [ ] Is starting_tables.is_complete_enumeration: true? → Use for complete enumeration
-- [ ] Does conversation have pasted document? → Extract manually
-- [ ] None of above? → Row discovery path
+**DECIDE PATH:**
+- [ ] Can I provide ALL rows without row discovery?
+- [ ] Check indicators: extracted_tables, complete enumeration, conversation text, model knowledge
+- [ ] When in doubt → Row Discovery Path (safer)
 
 **IF COMPLETE ROWS PATH:**
-- [ ] Output complete_rows with ALL entities
+- [ ] Output complete_rows with ALL entities (from any source)
 - [ ] Output search_strategy with requirements (NO subdomains)
 - [ ] Prioritize rows output if token limited
+- [ ] Mark source appropriately (extracted table, starting table, conversation, or "Model Knowledge")
 
 **IF ROW DISCOVERY PATH:**
 - [ ] Use starting_tables to design discoverable columns
-- [ ] Output subdomains (2-10) with search strategy
+- [ ] Output search_strategy with requirements AND subdomains (2-10)
 - [ ] Output sample_rows from starting_tables
 - [ ] Design for discoverability (not too narrow)
 
