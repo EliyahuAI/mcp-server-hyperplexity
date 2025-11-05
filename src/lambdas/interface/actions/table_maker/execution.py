@@ -889,19 +889,21 @@ async def execute_full_table_generation(
                         )
 
                         # Save extraction result to S3
-                        extraction_key = f"{s3_key_prefix}/table_extraction_result.json"
-                        await s3_manager.save_to_s3(
-                            bucket_name='perplexity-validation-data',
-                            key=extraction_key,
-                            data=table_extraction_result
+                        _save_to_s3(
+                            storage_manager, email, session_id, conversation_id,
+                            'table_extraction_result.json', table_extraction_result
                         )
 
-                        # Track API call
-                        _add_api_call_to_runs(
-                            result,
-                            tool_name='table_extraction',
-                            enhanced_data=table_extraction_result.get('enhanced_data', {})
-                        )
+                        # Track API calls from table extraction
+                        # enhanced_data is a list of API call metadata from all extractions
+                        for enhanced_data_item in table_extraction_result.get('enhanced_data', []):
+                            _add_api_call_to_runs(
+                                session_id=session_id,
+                                run_key=run_key,
+                                api_response={'enhanced_data': enhanced_data_item},
+                                model=extraction_model,
+                                processing_time=table_extraction_result.get('processing_time', 0.0)
+                            )
                     else:
                         logger.warning(
                             f"[STEP 0b] Table extraction failed: {table_extraction_result.get('error')}"
