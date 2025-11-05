@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "required": ["table_name", "source_url", "extraction_complete", "rows_extracted", "rows"],
+  "properties": {
+    "table_name": {
+      "type": "string",
+      "description": "Name of the table being extracted"
+    },
+    "source_url": {
+      "type": "string",
+      "description": "URL where the table was found"
+    },
+    "extraction_complete": {
+      "type": "boolean",
+      "description": "Whether all rows were successfully extracted"
+    },
+    "rows_extracted": {
+      "type": "number",
+      "description": "Number of rows extracted"
+    },
+    "pagination_detected": {
+      "type": "boolean",
+      "description": "Whether pagination was detected (indicating possible incomplete extraction)"
+    },
+    "extraction_notes": {
+      "type": "string",
+      "description": "Any notes about the extraction (e.g., table structure issues, access problems)"
+    },
+    "rows": {
+      "type": "array",
+      "description": "Array of extracted rows, each row is an object with column names as keys",
+      "items": {
+        "type": "object",
+        "description": "A single row from the table with column names as keys and cell values as values",
+        "additionalProperties": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

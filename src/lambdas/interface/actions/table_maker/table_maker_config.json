@@ -34,6 +34,21 @@
     "_note_min_entities": "Each starting table must include at least this many actual sample entities (not just URLs)"
   },
 
+  "table_extraction": {
+    "_comment": "Step 0b - Sequential follow-up to background research. Extracts complete tables from identified URLs. Only runs if background research identifies tables with extract_table=true",
+
+    "model": "sonar",
+    "_note_model": "Recommended: sonar (fast extraction). Uses site-specific search via include_domains",
+    "max_tokens": 16000,
+    "_note_max_tokens": "Higher than background research to accommodate large tables with many rows",
+
+    "search_context_size": "high",
+    "_note_search_context": "High context ensures complete table extraction including paginated content",
+
+    "timeout": 120,
+    "_note_timeout": "Extraction timeout in seconds. Large tables may need more time to process"
+  },
+
   "column_definition": {
     "_comment": "Step 1 - Defines column specifications and search strategy using background research output as input",
     "model": "claude-sonnet-4-5",
@@ -198,8 +213,8 @@
     "internal_step_0_name": "background_research",
     "_note_step_0": "Background research runs as Step 0 (internal). User sees progress 0%->25% during this phase, then Step 1 starts at 25%",
     "_restructure_caching": "On restructure, background research is ALWAYS reused from cache (never re-run). Research is cached in conversation_state automatically.",
-    "estimated_duration_seconds": 280,
-    "_note_duration": "Increased from 240s to account for new background research phase (~30-60s)",
+    "estimated_duration_seconds": 300,
+    "_note_duration": "Increased from 240s to account for background research (~30-60s) and optional table extraction (~20-40s)",
     "enable_parallel_step2": false,
     "_note_parallel_step2_deprecated": "Deprecated - config_generation still runs in parallel with row discovery, but background_research must complete before column_definition"
   },
