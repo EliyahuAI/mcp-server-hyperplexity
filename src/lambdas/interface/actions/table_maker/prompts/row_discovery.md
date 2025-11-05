@@ -1,104 +1,52 @@
 # Row Discovery Task
 
 ═══════════════════════════════════════════════════════════════
-## 📋 PROMPT MAP - What You'll Find Below
+## 🔍 YOUR SEARCH TASK
 ═══════════════════════════════════════════════════════════════
 
-1. **YOUR CORE TASK**: Find {{TARGET_ROWS}} unique entities for subdomain "{{SUBDOMAIN_NAME}}"
-2. **AUTHORITATIVE SOURCE** (if found): The specific database/list to search first
-3. **REQUIREMENTS**: Hard (dealbreakers) and soft (preferences) criteria
-4. **ID FIELDS**: The identification columns you must populate
-5. **RESEARCH FIELDS**: Optional additional data to include if found
-6. **SCORING GUIDE**: How to score relevancy, reliability, and recency
-7. **OUTPUT FORMAT**: Exact JSON structure to return
-8. **FINAL REMINDER**: Core task repeated with key instructions
+Find entities within **{{SUBDOMAIN_NAME}}** matching:
+
+{{HARD_REQUIREMENTS}}
+
+{{AUTHORITATIVE_SOURCE}}
+
+{{PRIORITY_SEARCH_QUERIES}}
 
 ═══════════════════════════════════════════════════════════════
-## 🎯 YOUR CORE TASK
+## 📋 RESULTS SPECIFICATION
 ═══════════════════════════════════════════════════════════════
 
-**GOAL:** Find **{{TARGET_ROWS}} unique, real entities** for subdomain: **{{SUBDOMAIN_NAME}}**
+**TARGET:** Return {{TARGET_ROWS}} entities
 
-**DELIVERABLE:** JSON array of candidates with:
-- ID fields populated (required)
-- Research fields populated (if information readily available)
-- Scores for relevancy, reliability, recency
-- Source URLs and match rationale
+**IDENTIFY EACH ENTITY USING:**
+{{ID_COLUMNS}}
 
-**KEY RULES:**
-1. ✅ Only real entities - NEVER fabricate
-2. ✅ Use exact field names from ID fields list below
-3. ✅ Include entities even with moderate scores (we'll filter later)
-4. ✅ If you find < {{TARGET_ROWS}}, return what you found (don't invent more)
+{{EXAMPLE_ENTITIES}}
 
----
-
-{{DISCOVERED_LIST_INFO}}
+**FILTERING RULES:**
+- Search results must match ALL hard requirements above
+- If you see unrelated results (wrong geography, wrong time period, wrong domain), refine your queries
+- Only include REAL entities you actually found (never fabricate)
+- Include entities even with moderate scores (we filter later)
 
 ═══════════════════════════════════════════════════════════════
-## ⚙️ YOUR SPECIFIC ASSIGNMENT
+## 📋 ADDITIONAL CONTEXT
 ═══════════════════════════════════════════════════════════════
 
-**Subdomain:** {{SUBDOMAIN_NAME}}
+**About This Table:**
+- User's Original Request: {{USER_CONTEXT}}
+- Table Purpose: {{TABLE_PURPOSE}}
+- Background Research: {{TABLEWIDE_RESEARCH}}
 
 **Focus Area:** {{SUBDOMAIN_FOCUS}}
 
 **Note:** This subdomain is a suggested focus to organize parallel work. Include relevant entities outside this focus if you find them during searches.
 
----
-
-**Recommended Search Queries:**
-{{SEARCH_QUERIES}}
-
-**Search Strategy:**
-1. If an authoritative list URL is provided above → **START THERE FIRST**
-2. Use the example candidates to understand what types of entities to find
-3. Use aggregator sites that list many entities at once (e.g., NIH RePORTER, faculty directories, company databases)
-4. Only use general web search if authoritative sources are insufficient
-5. Do not fabricate - only include real entities you actually found
-
----
-
-═══════════════════════════════════════════════════════════════
-## ✔️ REQUIREMENTS - What Entities Must/Should Have
-═══════════════════════════════════════════════════════════════
-
-**Context About This Table:**
-- User's Original Request: {{USER_CONTEXT}}
-- Table Purpose: {{TABLE_PURPOSE}}
-- Background Research: {{TABLEWIDE_RESEARCH}}
-
-**Hard Requirements (Absolute - entity MUST meet ALL of these):**
-{{HARD_REQUIREMENTS}}
-
 **Soft Requirements (Preferences - better scores if met):**
 {{SOFT_REQUIREMENTS}}
 
-**Instructions:**
-- ❌ **Hard requirements are dealbreakers** - don't include entities that violate these
-- ✅ **Soft requirements improve scoring** but aren't required
-- Score entities higher when they meet more soft requirements
-- An entity meeting all hard requirements but few soft requirements should still be included (with moderate score)
-
----
-
-═══════════════════════════════════════════════════════════════
-## 🆔 ID FIELDS - Must Populate for Every Entity
-═══════════════════════════════════════════════════════════════
-
-For each entity you find, populate these ID fields with ACTUAL values from your search:
-
-{{ID_COLUMNS}}
-
-**Example:**
-```json
-{
-  "id_values": {
-    "Researcher Name": "Elizabeth Hillman",
-    "Institution": "Columbia University"
-  }
-}
-```
+**All Search Queries (if you need more options):**
+{{SEARCH_QUERIES}}
 
 ---
 
@@ -297,8 +245,8 @@ If you notice patterns about which domains provided poor results, provide feedba
 **GOAL:** Find **{{TARGET_ROWS}} unique, real entities** for: **{{SUBDOMAIN_NAME}}**
 
 **CRITICAL INSTRUCTIONS:**
-1. ✅ If authoritative list URL provided above → **SEARCH THERE FIRST**
-2. ✅ Use example candidates to understand what types of entities to find
+1. ✅ If authoritative source provided above → **SEARCH THERE FIRST**
+2. ✅ Use example entities to understand what types of entities to find
 3. ✅ Only include REAL entities you actually found (never fabricate)
 4. ✅ Use EXACT field names from ID fields list
 5. ✅ Include entities even with moderate scores (we filter later)

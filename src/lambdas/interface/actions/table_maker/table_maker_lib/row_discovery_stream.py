@@ -755,21 +755,34 @@ class RowDiscoveryStream:
                 if soft_requirements is None:
                     soft_requirements = self._format_requirements(soft_reqs)
 
-            # Format discovered list information if available
-            discovered_list_info = ''
+            # Format authoritative source (lean - for search section)
+            authoritative_source = ''
             has_url = subdomain.get('discovered_list_url') and subdomain['discovered_list_url'].strip()
-            has_candidates = subdomain.get('candidates') and len(subdomain['candidates']) > 0
+            if has_url:
+                authoritative_source = f"\n**Authoritative Source:** {subdomain['discovered_list_url']}\n"
 
+            # Format example entities (for results/filtering section)
+            example_entities = ''
+            has_candidates = subdomain.get('candidates') and len(subdomain['candidates']) > 0
+            if has_candidates:
+                candidates_list = ', '.join(subdomain['candidates'][:10])
+                example_entities = f"\n**Example Entities:** {candidates_list}\n"
+                example_entities += "These show the type of entities to find. Find ALL relevant entities, not just these examples.\n"
+
+            # Format priority search queries (top 3)
+            priority_queries = '\n**Search Suggestions:**\n'
+            priority_queries += '\n'.join(f'{i+1}. {q}' for i, q in enumerate(subdomain['search_queries'][:3]))
+
+            # Keep old DISCOVERED_LIST_INFO for backward compatibility with any code that uses it
+            discovered_list_info = ''
             if has_url or has_candidates:
                 discovered_list_info = "\n## ⚠️ AUTHORITATIVE SOURCE FOUND - START HERE\n\n"
-
                 if has_url:
                     discovered_list_info += f"**Authoritative List URL:** {subdomain['discovered_list_url']}\n\n"
                     discovered_list_info += f"**CRITICAL:** You MUST search this URL first to find entities. This is your primary data source.\n\n"
-
                 if has_candidates:
-                    candidates_list = '\n'.join(f'- {c}' for c in subdomain['candidates'][:10])
-                    discovered_list_info += f"**Example Entities to Look For:**\n{candidates_list}\n\n"
+                    candidates_list_bullet = '\n'.join(f'- {c}' for c in subdomain['candidates'][:10])
+                    discovered_list_info += f"**Example Entities to Look For:**\n{candidates_list_bullet}\n\n"
                     discovered_list_info += f"**INSTRUCTIONS:**\n"
                     discovered_list_info += f"1. Search the authoritative list above for entities similar to these examples\n"
                     discovered_list_info += f"2. These examples show the EXACT TYPE of entities you need\n"
@@ -791,7 +804,10 @@ class RowDiscoveryStream:
                 'TABLE_PURPOSE': search_strategy.get('table_purpose', search_strategy.get('description', '')),
                 'TABLEWIDE_RESEARCH': search_strategy.get('tablewide_research', ''),
                 'PREVIOUS_SEARCH_IMPROVEMENTS': improvements_text,
-                'DISCOVERED_LIST_INFO': discovered_list_info
+                'DISCOVERED_LIST_INFO': discovered_list_info,
+                'AUTHORITATIVE_SOURCE': authoritative_source,
+                'PRIORITY_SEARCH_QUERIES': priority_queries,
+                'EXAMPLE_ENTITIES': example_entities
             }
 
             # Try template first
