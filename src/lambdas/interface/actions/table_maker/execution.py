@@ -127,6 +127,7 @@ except ImportError:
 
 # Import LOCAL components (no modifications)
 from .table_maker_lib.background_research_handler import BackgroundResearchHandler
+from .table_maker_lib.table_extraction_handler import TableExtractionHandler
 from .table_maker_lib.column_definition_handler import ColumnDefinitionHandler
 from .table_maker_lib.row_discovery import RowDiscovery
 from .table_maker_lib.qc_reviewer import QCReviewer
@@ -717,6 +718,7 @@ async def execute_full_table_generation(
         schema_validator = SchemaValidator(schemas_dir)
 
         background_research_handler = BackgroundResearchHandler(ai_client, prompt_loader, schema_validator)
+        table_extraction_handler = TableExtractionHandler(ai_client, prompt_loader, schema_validator)
         column_handler = ColumnDefinitionHandler(ai_client, prompt_loader, schema_validator)
         row_discovery = RowDiscovery(ai_client, prompt_loader, schema_validator)
         qc_reviewer = QCReviewer(ai_client, prompt_loader, schema_validator)
@@ -836,6 +838,74 @@ async def execute_full_table_generation(
                 f"{tables_count} starting tables, "
                 f"time: {background_research_result.get('processing_time', 0):.2f}s"
             )
+
+        # ======================================================================
+        # STEP 0b: Table Extraction (Optional - Sequential after background research)
+        # ======================================================================
+        # Only runs if background research identified extractable tables
+        if background_research_result.get('success') and not cached_research:
+            identified_tables = background_research_result.get('identified_tables', [])
+            tables_to_extract = [t for t in identified_tables if t.get('extract_table')]
+
+            if tables_to_extract:
+                logger.info(f"[STEP 0b] Extracting {len(tables_to_extract)} identified tables")
+
+                # Get config for table extraction
+                extraction_config = config.get('table_extraction', {})
+                extraction_model = extraction_config.get('model', 'sonar')
+                extraction_max_tokens = extraction_config.get('max_tokens', 16000)
+                extraction_context_size = extraction_config.get('search_context_size', 'high')
+                extraction_timeout = extraction_config.get('timeout', 120)
+
+                try:
+                    table_extraction_result = await table_extraction_handler.extract_tables(
+                        identified_tables=tables_to_extract,
+                        conversation_context=conversation_state,
+                        model=extraction_model,
+                        max_tokens=extraction_max_tokens,
+                        search_context_size=extraction_context_size,
+                        timeout=extraction_timeout
+                    )
+
+                    if table_extraction_result.get('success'):
+                        extracted_tables = table_extraction_result.get('extracted_tables', [])
+                        total_rows = table_extraction_result.get('total_rows_extracted', 0)
+
+                        # Merge extracted tables into background_research_result
+                        background_research_result['extracted_tables'] = extracted_tables
+
+                        logger.info(
+                            f"[STEP 0b] Table extraction complete: "
+                            f"{len(extracted_tables)}/{len(tables_to_extract)} tables, "
+                            f"{total_rows} total rows, "
+                            f"time: {table_extraction_result.get('processing_time', 0):.2f}s"
+                        )
+
+                        # Save extraction result to S3
+                        extraction_key = f"{s3_key_prefix}/table_extraction_result.json"
+                        await s3_manager.save_to_s3(
+                            bucket_name='perplexity-validation-data',
+                            key=extraction_key,
+                            data=table_extraction_result
+                        )
+
+                        # Track API call
+                        _add_api_call_to_runs(
+                            result,
+                            tool_name='table_extraction',
+                            enhanced_data=table_extraction_result.get('enhanced_data', {})
+                        )
+                    else:
+                        logger.warning(
+                            f"[STEP 0b] Table extraction failed: {table_extraction_result.get('error')}"
+                        )
+                        # Continue anyway - extraction is optional
+
+                except Exception as e:
+                    logger.error(f"[STEP 0b] Table extraction error: {str(e)}", exc_info=True)
+                    # Continue anyway - extraction is optional
+            else:
+                logger.info("[STEP 0b] No tables identified for extraction, skipping")
 
         # No checkpoint needed - interview ensures document text is pasted upfront
         # Background research and column definition extract from conversation
