@@ -16,11 +16,11 @@
 ## 📋 YOUR DELIVERABLES
 ═══════════════════════════════════════════════════════════════
 
-1. **Tablewide research** - Domain overview (2-3 paragraphs)
+1. **Tablewide research** - Domain overview (2-3 paragraphs) for the topics you searched for.
 2. **Discovery patterns** - How entities are typically found
 3. **Authoritative sources** - Databases/directories containing entities
 4. **Starting tables** - Extract 5-15 sample entities from lists you find
-5. **Identified tables** (optional) - Tables that should be fully extracted by Step 0b
+5. **Identified tables** (optional) - Larger tables that should be fully extracted by an additional step (more than 15 entities)
 
 ═══════════════════════════════════════════════════════════════
 ## 📚 USER CONTEXT
@@ -34,14 +34,18 @@
 ═══════════════════════════════════════════════════════════════
 
 ### 1. Tablewide Research (Required)
+Synthesise your research into each of these search items:
+{{CONTEXT_RESEARCH_ITEMS}}
+
+- Be concise but comprehensive.
+
+### 2. Discovery Patterns (Required)
 
 Provide 2-3 paragraph overview covering:
 - How entities are typically identified/catalogued in this domain
 - What authoritative sources exist (databases, directories, rankings)
 - Discovery challenges and recommended approaches
 - Domain-specific considerations
-
-### 2. Discovery Patterns (Required)
 
 Identify the primary pattern:
 - **complete_list**: Finite, well-defined sets (countries, states, specific paper references)
@@ -68,7 +72,7 @@ If you find existing lists/tables with entities:
 **Complete Enumeration Detection:**
 If user request indicates complete enumeration (e.g., "all references from paper X", "all countries in region Y"):
 - Set `is_complete_enumeration: true`
-- Extract ALL entities if possible (not just 5-15 samples)
+- Extract ALL entities if possible
 - If document text was pasted in conversation, extract from there
 - Set exact entity count (e.g., "54 references")
 
@@ -77,22 +81,13 @@ If user request indicates complete enumeration (e.g., "all references from paper
 **When to set extract_table=true:**
 
 ✅ **Trigger table extraction if:**
-- You found a specific URL with a structured table (HTML table, list with clear columns)
+- You found a specific URL with a table (HTML table, list with clear columns) embedded
 - The table contains the entities the user wants (election results, company rankings, member rosters)
 - The table has multiple columns of data (not just names)
 - Extracting the complete table would satisfy the user's request
 - Examples: Election results table, Forbes ranked list, faculty directory table, reference list
+- The entries are too long to be captured in Starting Tables (usually more than 15 rows), and require a dedicated task.
 
-✅ **Also trigger if:**
-- User explicitly mentioned a specific document/URL to extract from
-- Complete enumeration needed but table requires web access (user can't paste it)
-- You found the authoritative source but can only see a preview (pagination, requires JS)
-
-❌ **Don't trigger if:**
-- Just found a database/directory without specific table URL (use as authoritative_source instead)
-- The source is searchable/queryable (not a static table)
-- Only found article/page text (not structured table)
-- Table structure unclear or no specific URL
 
 **What to provide:**
 - `url`: Specific URL where table exists
