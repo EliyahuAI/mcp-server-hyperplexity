@@ -1,7 +1,7 @@
 # Table Maker - Independent Row Discovery System
 
-**Version:** 2.5 (Background Research Phase + Enhanced Discoverability)
-**Last Updated:** October 31, 2025
+**Version:** 2.7 (Unified Rows Model + Table Extraction)
+**Last Updated:** November 5, 2025
 **Status:** Production Ready (Lambda Integrated)
 
 ---
@@ -36,10 +36,10 @@ The Table Maker system generates research tables by discovering entities through
 ### 30-Second Overview
 
 ```
-User Request → Interview → Background Research → Column Definition → Row Discovery → QC Review → CSV + Config
-                                (Step 0)              (Step 1)          (Step 2)       (Step 3)
-                           Find sources & tables   Use research      Merge samples
-                           Extract sample rows     Output samples    + discovered
+User Request → Interview → Background Research → Table Extraction → Column Definition → Row Discovery → QC Review → CSV + Config
+                                (Step 0)            (Step 0b)           (Step 1)          (Step 2)       (Step 3)
+                           Find sources        Extract tables     Generate rows     Merge initial
+                           Identify tables     (if needed)        Decide trigger    + discovered
 ```
 
 ### Running a Test
@@ -54,6 +54,66 @@ python test_local_e2e_sequential.py
 - Duration: 1-3 minutes
 - Cost: $0.05-0.15
 - Output: 8-15 validated companies in `output/local_tests/`
+
+---
+
+## What's New in Version 2.7
+
+### Unified Rows Model (MAJOR SIMPLIFICATION)
+**Problem:** Artificial split between `complete_rows` and `sample_rows` created confusion
+**Solution:** Column definition always generates `rows` (as many as possible), then decides if discovery needed
+
+**Key Changes:**
+- **Single `rows` field** - No more complete_rows vs sample_rows split
+- **Always populate data** - Fill both ID AND research columns when data available
+- **`trigger_row_discovery` boolean** - Simple yes/no decision
+- **Flexible combinations** - Can provide 30 rows AND trigger discovery for 20 more
+- **Smarter column definition** - Generates rows from extracted_tables, starting_tables, conversation, or model knowledge
+
+**Example Flow:**
+```
+Column Definition receives Forbes AI 50 table (50 companies with funding data)
+→ Generates 50 rows with: Company Name, Website, Funding, Description (populated)
+→ Still needs: Employee Count, Has Job Posting (empty)
+→ Sets trigger_row_discovery=true
+→ Provides discovery_guidance: "Have 50 rows with basic data. Need to populate Employee Count and Has Job Posting for all rows"
+→ Row Discovery: Validates existing 50 rows to fill missing columns
+→ Result: 50 rows with ALL columns populated
+```
+
+### Table Extraction (Step 0b) - Sequential After Background Research
+**New optional step for extracting complete tables from identified URLs**
+
+**When Triggered:**
+- Background research identifies specific table URLs with structure
+- User requests data from specific document/URL
+- Complete enumeration needed but requires web access
+
+**How It Works:**
+1. Step 0 outputs `identified_tables` with URLs and structure
+2. Step 0b extracts ALL rows from those tables
+3. Uses site-specific search (include_domains from URL)
+4. Results flow to column definition as `extracted_tables`
+5. Column definition uses for JUMP START (generate complete rows)
+
+**Benefits:**
+- Separates research (patterns/context) from extraction (complete data)
+- Site-specific search improves extraction accuracy
+- Handles pagination and structured tables
+- Optional: only runs when needed
+- Enables JUMP START with rich pre-populated data
+
+### Focused Search Instructions (All Prompts)
+**All prompts now lead with focused task in first 10-15 lines:**
+
+- **background_research.md** - Leads with "SEARCH FOR: [research questions]"
+- **row_discovery.md** - Leads with subdomain + requirements + source + queries
+- **column_definition.md** - Leads with data sources + unified rows task
+
+**Benefits:**
+- Fast models see task immediately
+- Reduces irrelevant searches
+- Clearer prompt structure
 
 ---
 
@@ -250,51 +310,60 @@ For obvious, exhaustive, well-defined lists that don't require web research.
 
 ## Architecture Overview
 
-### The 5-Step Pipeline (Step 0 Internal, Steps 2-3 Optional)
+### The Pipeline (Step 0/0b Internal, Step 2 Conditional)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ Step 0: Background Research (~30-60s) INTERNAL                  │
-│  • Find authoritative sources (databases, directories, lists)   │
-│  • Extract starting tables with ACTUAL sample entities          │
-│  • Document discovery patterns and domain context               │
+│  • Answer tablewide research questions                          │
+│  • Find authoritative sources (databases, directories)          │
+│  • Extract 5-15 sample entities in starting_tables              │
+│  • Identify extractable tables for Step 0b                      │
 │  • Model: sonar-pro (configurable)                              │
-│  • On restructure: ALWAYS cached and reused (skips this step)   │
+│  • On restructure: ALWAYS cached and reused                     │
+└─────────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 0b: Table Extraction (OPTIONAL, ~20-40s) SEQUENTIAL       │
+│  • Triggered if Step 0 identified extractable tables            │
+│  • Extracts ALL rows from table URLs                            │
+│  • Uses site-specific search (include_domains)                  │
+│  • Output: extracted_tables with complete data                  │
+│  • Model: sonar (fast extraction)                               │
 └─────────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ Step 1: Column Definition (~10-20s)                             │
-│  • Use background research to design table structure            │
-│  • Define columns (ID vs research columns)                      │
-│  • Create search strategy referencing starting tables           │
-│  • OPTIONAL: If rows obvious OR perfect starting table, skip:  │
-│    - complete_enumeration: Well-known finite lists              │
-│    - jump_start: Copy ALL rows from starting table (+ columns!)│
-│    - Saves ~70-135s, $0.065-0.185                              │
-│  • Otherwise: Extract 5-15 sample rows from starting tables     │
+│  • Design table structure using research                        │
+│  • Generate rows from ALL available sources:                    │
+│    - extracted_tables (Step 0b)                                 │
+│    - starting_tables (samples or complete enumeration)          │
+│    - Conversation (user pasted text)                            │
+│    - Model knowledge (well-known finite sets)                   │
+│  • Populate ALL columns with reliable data (ID + research)      │
+│  • Decide: trigger_row_discovery (true/false)                   │
 │  • Model: claude-sonnet-4-5 (no web search needed)              │
 └─────────────────────────────────────────────────────────────────┘
                             ↓
                    ┌────────┴────────┐
-                   │   complete_rows  │
-                   │    provided?     │
+                   │ trigger_row_     │
+                   │  discovery?      │
                    └────────┬────────┘
                             │
               ┌─────────────┴─────────────┐
-              │ YES                       │ NO
+              │ NO                        │ YES
               ↓                           ↓
      ┌────────────────────┐      ┌─────────────────────────────────────┐
-     │ SKIP Steps 2-3     │      │ Step 2: Row Discovery + Config Gen  │
+     │ SKIP Step 2        │      │ Step 2: Row Discovery + Config Gen  │
      │                    │      │  • Row Discovery (60-120s)          │
-     │ Mode 1: complete_  │      │  • Config Generation (20-40s)       │
-     │   enumeration      │      │  • 3-Level escalation               │
-     │ Mode 2: jump_start │      │  • Merge with sample rows            │
-     │   (w/ research_    │      └──────────┬──────────────────────────┘
-     │    values!)        │                 ↓
-     └────────┬───────────┘      ┌─────────────────────────────────────┐
-              │                  │ Step 3: Consolidation & QC Review   │
-              │                  │  • Deduplicate merged rows           │
-              │                  │  • Review each candidate             │
+     │ Use initial rows   │      │  • Uses discovery_guidance          │
+     │ (already complete) │      │  • 3-Level escalation               │
+     │                    │      │  • Merge initial + discovered rows   │
+     │ Saves 60-120s      │      └──────────┬──────────────────────────┘
+     └────────┬───────────┘                 ↓
+              │                  ┌─────────────────────────────────────┐
+              │                  │ Step 3: QC Review                   │
+              │                  │  • Review merged rows                │
               │                  │  • Autonomous recovery if 0 rows     │
               │                  └──────────┬──────────────────────────┘
               │                             │
@@ -303,27 +372,27 @@ For obvious, exhaustive, well-defined lists that don't require web research.
 ┌─────────────────────────────────────────────────────────────────┐
 │ Mutual Completion: Wait for Config + Generate CSV               │
 │  • Wait for config generation to finish                         │
-│  • Generate CSV with ID columns filled, other columns empty     │
+│  • Generate CSV with populated columns                          │
 │  • Ready for validation workflow                                │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Principles
 
-1. **Background Research First:** Find authoritative sources before designing table structure
-2. **Smart Skip Options (v2.6):**
-   - **Complete Enumeration:** Skip discovery for obvious, exhaustive lists
-   - **JUMP START:** When starting table perfectly matches, copy all rows with pre-filled columns
-3. **Design for Discoverability:** Table structure determines if rows can be found
-4. **Support Columns Strategy:** Break complex validations into discoverable steps
-5. **Research Caching:** Always reuse research on restructure (mandatory optimization)
-6. **Progressive Escalation:** Start with sonar-pro, escalate to claude-haiku, final claude-sonnet
-7. **Continuous Learning:** Search improvements feed back into subsequent rounds and subdomains
-8. **Sample + Discovered Rows:** Column definition provides samples, discovery finds more, merged for QC
-9. **Quality Over Quantity:** QC layer ensures relevance
-10. **No Row Limits:** Keep all quality rows (not arbitrarily capped)
-11. **Simple ID Columns:** Short, repeatable identifiers prevent discovery failures
-12. **Strategic Overshooting:** Target 30-50% more rows to ensure delivery after QC
+1. **Background Research First** (Step 0): Find authoritative sources before designing table structure
+2. **Table Extraction** (Step 0b): Extract complete tables from identified URLs when available
+3. **Unified Rows Model** (v2.7): Column definition always generates rows, decides if discovery needed
+4. **Populate All Columns**: Fill both ID AND research columns when data available (not just IDs)
+5. **Flexible Triggers**: Can provide 30 rows AND trigger discovery for 20 more (not either/or)
+6. **Design for Discoverability**: Table structure determines if rows can be found
+7. **Support Columns Strategy**: Break complex validations into discoverable steps
+8. **Research Caching**: Always reuse research on restructure (mandatory optimization)
+9. **Progressive Escalation**: Start with sonar-pro, escalate to claude-haiku if needed
+10. **Continuous Learning**: Search improvements feed back into subsequent rounds
+11. **Initial + Discovered Rows**: Column definition provides initial rows, discovery appends/merges
+12. **Quality Over Quantity**: QC layer ensures relevance
+13. **Simple ID Columns**: Short, repeatable identifiers (1-5 words)
+14. **Strategic Overshooting**: Target 30-50% more rows to ensure delivery after QC
 
 ---
 
@@ -467,30 +536,68 @@ The subdomain strategy works synergistically with the global counter:
 
 ## Components
 
-### 1. Column Definition Handler
-**File:** `table_maker/src/column_definition_handler.py`
+### 0b. Table Extraction Handler (NEW in v2.7)
+**File:** `table_maker_lib/table_extraction_handler.py`
 
-**Purpose:** Define table structure and search strategy
+**Purpose:** Extract complete tables from URLs identified by background research
 
 **Key Features:**
-- Generates columns (ID vs data columns)
-- Creates subdomains for parallel discovery
-- Uses web search for unknowns (via `context_web_research`)
-- Model: claude-haiku-4-5 (or sonar-pro if web search needed)
+- Sequential extraction (after Step 0, before Step 1)
+- Site-specific search (include_domains from URL)
+- Supports target_rows filter (e.g., "only winners")
+- Handles pagination detection
+- Model: sonar (fast, cost-effective)
+
+**Output:**
+```json
+{
+  "extracted_tables": [
+    {
+      "table_name": "Forbes AI 50 2024",
+      "source_url": "https://...",
+      "extraction_complete": true,
+      "rows_extracted": 50,
+      "rows": [
+        {"Company Name": "Anthropic", "Funding": "$7.3B", ...},
+        ...
+      ]
+    }
+  ]
+}
+```
+
+### 1. Column Definition Handler
+**File:** `table_maker_lib/column_definition_handler.py`
+
+**Purpose:** Design table and generate initial rows from available data
+
+**Key Features:**
+- Generates columns (ID vs research columns)
+- Generates rows from: extracted_tables, starting_tables, conversation, or model knowledge
+- Populates ALL columns with reliable data (not just ID columns)
+- Decides trigger_row_discovery (true/false)
+- Creates subdomains (only if triggering discovery)
+- Model: claude-sonnet-4-5 (no web search needed)
 
 **Output:**
 ```json
 {
   "columns": [...],
   "search_strategy": {
-    "subdomains": [
-      {
-        "name": "AI Research Companies",
-        "search_queries": ["top AI research labs 2024", ...],
-        "target_rows": 10
-      }
-    ]
-  }
+    "requirements": [...],
+    "subdomains": [...]  // Only if trigger_row_discovery=true
+  },
+  "table_name": "...",
+  "rows": [
+    {
+      "id_values": {"Company": "Anthropic"},
+      "research_values": {"Funding": "$7.3B"},  // Populated when available!
+      "populated_columns": ["Company", "Website", "Funding"],
+      "missing_columns": ["Employee Count", "Has Job Posting"]
+    }
+  ],
+  "trigger_row_discovery": true,
+  "discovery_guidance": "Have 30 rows with basic data. Need 20 more + populate missing columns"
 }
 ```
 
