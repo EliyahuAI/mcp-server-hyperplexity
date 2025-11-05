@@ -52,22 +52,24 @@ class ColumnDefinitionHandler:
             Dictionary with results:
             {
                 'success': bool,
-                'columns': List[Dict],  # Column definitions with validation strategies
-                'search_strategy': Dict,  # Search strategy (with subdomains for row discovery path)
+                'columns': List[Dict],  # Column definitions
+                'search_strategy': Dict,  # Requirements + subdomains (if trigger_row_discovery=true)
                 'table_name': str,
-                'sample_rows': List[Dict],  # Sample rows from starting tables (row discovery path)
-                'complete_rows': Optional[Dict],  # Complete rows (complete rows path)
+                'rows': List[Dict],  # Rows generated from available data (as many as possible)
+                'trigger_row_discovery': bool,  # Whether to run row discovery
+                'skip_rationale': Optional[str],  # Why skipping (if trigger_row_discovery=false)
+                'discovery_guidance': Optional[str],  # What discovery should do (if trigger_row_discovery=true)
                 'processing_time': float,
                 'error': Optional[str]
             }
-            Note: tablewide_research comes from background_research_result, not from this handler
         """
         result = {
             'success': False,
             'columns': [],
             'search_strategy': {},
             'table_name': '',
-            'sample_rows': [],
+            'rows': [],
+            'trigger_row_discovery': True,  # Default to true (safe)
             'processing_time': 0.0,
             'error': None
         }
@@ -287,19 +289,29 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             result['columns'] = ai_response.get('columns', [])
             result['search_strategy'] = search_strategy
             result['table_name'] = ai_response.get('table_name', '')
-            result['sample_rows'] = ai_response.get('sample_rows', [])
-            result['complete_rows'] = ai_response.get('complete_rows')  # For complete rows path
+            result['rows'] = ai_response.get('rows', [])
+            result['trigger_row_discovery'] = ai_response.get('trigger_row_discovery', True)
+            result['skip_rationale'] = ai_response.get('skip_rationale')
+            result['discovery_guidance'] = ai_response.get('discovery_guidance')
 
-            # Log sample rows if provided
-            if result['sample_rows']:
-                logger.info(f"Column definition provided {len(result['sample_rows'])} sample rows from starting tables")
+            # Log row generation
+            row_count = len(result['rows'])
+            trigger_discovery = result['trigger_row_discovery']
 
-            # Log complete rows if provided
-            if result.get('complete_rows'):
-                skip_discovery = result['complete_rows'].get('skip_row_discovery', False)
-                if skip_discovery:
-                    row_count = len(result['complete_rows'].get('rows', []))
-                    logger.info(f"Column definition provided complete_rows with {row_count} rows - row discovery will be skipped")
+            if trigger_discovery:
+                logger.info(
+                    f"Column definition generated {row_count} rows, "
+                    f"triggering row discovery to find/populate more"
+                )
+                if result.get('discovery_guidance'):
+                    logger.info(f"Discovery guidance: {result['discovery_guidance'][:100]}...")
+            else:
+                logger.info(
+                    f"Column definition generated {row_count} rows, "
+                    f"skipping row discovery (complete set)"
+                )
+                if result.get('skip_rationale'):
+                    logger.info(f"Skip rationale: {result['skip_rationale'][:100]}...")
 
             # Extract and format requirements for downstream use
             hard_reqs, soft_reqs = self._separate_requirements(requirements)

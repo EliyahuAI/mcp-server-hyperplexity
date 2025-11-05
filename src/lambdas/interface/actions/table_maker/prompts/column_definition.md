@@ -8,77 +8,102 @@
 
 **From Background Research (Step 0 + Step 0b):**
 
-1. **tablewide_research** - Domain overview with key facts and patterns (already researched for you)
-2. **starting_tables** - Sample entities (5-15) showing what's findable
-3. **extracted_tables** - Complete table extractions from Step 0b (if available)
-4. **authoritative_sources** - Databases, directories where entities exist
-5. **discovery_patterns** - How entities are typically found
+1. **tablewide_research** - Domain overview (already researched)
+2. **extracted_tables** - Complete tables from Step 0b (if available)
+3. **starting_tables** - Sample entities (5-15) or complete enumeration
+4. **authoritative_sources** - Databases/directories
+5. **discovery_patterns** - How entities are found
 
 **From Conversation:**
-- User's original request and requirements
-- Possibly pasted document text with complete entity list
-
-**Priority for Complete Rows:**
-1. **extracted_tables** (if exists) - Complete data already extracted by Step 0b
-2. **starting_tables.is_complete_enumeration=true** - Complete list in starting_tables
-3. **Conversation document text** - User pasted full list in conversation
-4. **Otherwise** - Use starting_tables samples and trigger row discovery
+- User's requirements
+- Possibly pasted document text
 
 ═══════════════════════════════════════════════════════════════
-## 🎯 YOUR TASK & OUTPUTS
+## 🎯 YOUR TASK
 ═══════════════════════════════════════════════════════════════
 
-**ALWAYS OUTPUT (Both Paths):**
-- ✅ Column definitions (ID + research columns)
-- ✅ Requirements (hard + soft, minimum 1) within search_strategy
-- ✅ Table name
+**Design the table and generate as many rows as you can from available data.**
 
-**NOTE:** tablewide_research comes from background research (input) and is NOT output by you.
+**ALWAYS OUTPUT:**
+1. **columns** (ID + research columns)
+2. **search_strategy** with requirements (hard + soft, minimum 1)
+3. **table_name**
+4. **rows** (generate ALL you can from: extracted_tables, starting_tables, conversation, or model knowledge)
+5. **trigger_row_discovery** (true/false - do we need row discovery to find/populate more?)
 
-**CONDITIONAL OUTPUT (Depends on Path):**
-
-**Path A: Complete Rows** (if extracted_tables OR complete enumeration detected)
-- ✅ complete_rows (all entities from extracted_tables or starting_tables or conversation)
-- ✅ search_strategy (with requirements only, NO subdomains needed)
-- ❌ NO sample_rows (have complete rows instead)
-
-**Path B: Row Discovery** (normal flow - need to discover rows)
-- ✅ search_strategy (with requirements AND subdomains)
-- ✅ sample_rows (5-15 from starting_tables)
-- ❌ NO complete_rows (will discover via row discovery)
+**CONDITIONAL OUTPUT:**
+- **subdomains** (in search_strategy) - ONLY if trigger_row_discovery=true
+- **skip_rationale** - REQUIRED if trigger_row_discovery=false
+- **discovery_guidance** - REQUIRED if trigger_row_discovery=true
 
 ═══════════════════════════════════════════════════════════════
-## ⚡ DECISION LOGIC: Which Path?
+## 📋 ROW GENERATION STRATEGY
 ═══════════════════════════════════════════════════════════════
 
-**YOU decide:** Can you provide all the rows the user wants without row discovery?
+**Generate rows from ANY available source:**
 
-### Indicators for Complete Rows Path (Check These):
+### Source 1: extracted_tables (Priority)
+If background_research has `extracted_tables`:
+- Parse ALL rows from extracted_tables
+- Map source columns to your defined columns
+- Populate ID columns + any research columns present in source
 
-**Strong Indicators:**
-✅ Background research provides `extracted_tables` (Step 0b ran successfully)
-✅ Background research `starting_tables` has `is_complete_enumeration: true` with all entities
-✅ Conversation has pasted document text with complete entity list
-✅ Well-known finite set from your knowledge (countries, states, planets, elements, months, etc.)
-✅ User explicitly requested "all X" where X is a finite, enumerable set
-✅ Specific document references (e.g., "all citations from paper Y")
-✅ Official rosters/memberships (cabinet members, board members, UN member states)
+### Source 2: starting_tables
+- If `is_complete_enumeration: true` → Parse ALL sample_entities
+- Otherwise → Parse 5-15 samples from sample_entities
+- Map entity strings to your ID columns
 
-**Moderate Indicators:**
-⚠️ Starting table perfectly matches user request with rich data
-⚠️ Small, well-defined list (e.g., "Forbes AI 50" - exactly 50 companies)
-⚠️ You have strong knowledge of the complete set and can enumerate all items
+### Source 3: Conversation
+- If user pasted document with entity list → Extract ALL
+- Parse into your column structure
 
-**When in Doubt:**
-- Can you enumerate the complete set yourself? → Try Complete Rows Path
-- Is the set well-defined and finite? → Try Complete Rows Path
-- Would row discovery find better/more data than you can generate? → Row Discovery Path
-- Complete rows saves 60-120s and $0.05-0.15 when done correctly
-- Row discovery can bring messy, irrelevant results if not well-scoped
+### Source 4: Model Knowledge
+- If well-known finite set (countries, states, etc.) → Enumerate ALL
+- Generate from your knowledge (accurate as of January 2025)
 
-**Decision:**
-- **Path A**: You can generate/assemble ALL the rows → Output complete_rows
-- **Path B**: Need web search to discover entities → Output subdomains + sample_rows
+**POPULATE ALL COLUMNS YOU CAN:**
+- Don't just fill ID columns - populate research columns too!
+- If extracted_tables has "Funding" and you defined "Funding" column → Include it
+- If you know the US state capitals → Include them
+- Mark populated_columns and missing_columns for each row
+
+═══════════════════════════════════════════════════════════════
+## ⚡ DECISION: Trigger Row Discovery?
+═══════════════════════════════════════════════════════════════
+
+**Set trigger_row_discovery based on:**
+
+### trigger_row_discovery = false (Skip Discovery)
+
+**When:**
+- You generated ALL rows the user wants
+- Most/all columns are populated with reliable data
+- Set is complete and finite
+
+**Examples:**
+- Generated 50 US states with capitals from knowledge → Complete
+- Extracted 54 paper references from conversation → Complete
+- Parsed 50 companies from extracted_tables with funding/description → Complete
+
+**Requirements:**
+- Provide skip_rationale explaining why discovery not needed
+- Do NOT output subdomains
+
+### trigger_row_discovery = true (Run Discovery)
+
+**When:**
+- Need more rows than you can generate
+- Many columns still empty (need validation/research)
+- Partial data available but not complete
+
+**Examples:**
+- Generated 30 companies from starting_tables, need 20 more → Discovery
+- Have 50 rows but only ID columns populated, need research columns → Discovery
+- Samples available but not complete set → Discovery
+
+**Requirements:**
+- Provide discovery_guidance (what discovery should focus on)
+- Output subdomains (2-10) in search_strategy
 
 ═══════════════════════════════════════════════════════════════
 ## 📚 INFORMATION PROVIDED
@@ -101,14 +126,13 @@
 
 **Your table design determines whether rows can be found.**
 
-**The Discovery Reality Check:**
-- Can I find entities matching these requirements via web search?
-- What information actually appears in search results? (Names, headlines, directories - NOT internal programs, proprietary data)
+- Can entities matching these requirements be found via web search?
+- What information appears in search results? (Names, headlines, directories - NOT internal data)
 - Am I making requirements too narrow? (Every hard requirement ELIMINATES rows)
 
 **Solution: Broad Discovery + Validation Filtering**
 - ❌ BAD: Hard requirement "Must have active AI/ML job posting" → 0 rows found
-- ✅ GOOD: Soft requirement "Prefers companies with AI teams" + Research column "Has Active Job Posting" → 50 discovered, 15 pass validation
+- ✅ GOOD: Soft requirement "Prefers companies with AI teams" + Research column "Has Active Job Posting"
 
 ### Principle 2: Support Columns Strategy
 
@@ -117,415 +141,202 @@
 **Example: Finding Email Addresses**
 - ❌ Direct: "Find researcher's email" → 30% success
 - ✅ Support Columns:
-  1. "Institution Email Pattern" (e.g., firstname.lastname@stanford.edu) → 90% success
-  2. "Email" (apply pattern to name) → 85% success
-
-**When to Use:**
-- Multi-step reasoning required
-- Pattern-based construction (emails, URLs)
-- Hierarchical information (department → program)
-- Conditional validation (IF has AI team THEN check for ethics program)
+  1. "Institution Email Pattern" (e.g., firstname.lastname@stanford.edu)
+  2. "Email" (apply pattern to name)
 
 ### Principle 3: ID vs Research Columns
 
 **ID Columns (Simple Identifiers):**
-- 1-5 words typically
-- Found in lists, directories, indexes
+- 1-5 words, found in lists/directories
 - NO synthesis or complex reasoning
 - Set `importance: "ID"` and `validation_strategy: ""`
-- Examples: ✅ Company Name, Paper Title, Date, URL  ❌ "Story Description", "Key Responsibilities"
+- Examples: ✅ Company Name, Paper Title  ❌ "Story Description"
 
 **Research Columns (Validated Data):**
 - Complex information requiring validation
-- Can be filtering criteria (Has Active Job Posting, Employee Count)
-- Set `importance: "RESEARCH"` and provide detailed `validation_strategy`
-- Examples: Job posting status, funding stage, program existence, detailed descriptions
+- Set `importance: "RESEARCH"` and provide `validation_strategy`
+- Examples: Funding stage, employee count, program existence
 
 ═══════════════════════════════════════════════════════════════
 ## ✔️ REQUIREMENTS SPECIFICATION (ALWAYS REQUIRED)
 ═══════════════════════════════════════════════════════════════
 
-**You must define at least ONE requirement (hard or soft, or both).**
+**You must define at least ONE requirement (hard or soft).**
 
 ### Hard Requirements (0-2 typical)
-
 Use for entity type, geography, or time period if truly essential.
 
 **Examples:**
-- "Must be a company" (entity type)
-- "Must be from 2024" (time-bound)
-- "Must be US-based" (if geography critical)
-
-**What NOT to make hard:**
-- Size/scale → Soft requirement + research column
-- Industry activities → Soft requirement + research column
-- Specific characteristics → Soft requirement + research column
+- "Must be a company"
+- "Must be from 2024"
+- "Must be US-based"
 
 ### Soft Requirements (Most should be soft)
-
-Use "Prefers" language. Most filtering should happen here or in research columns.
+Use "Prefers" language.
 
 **Examples:**
 - "Prefers midsized companies (100-500 employees)"
 - "Prefers companies with active job postings"
-- "Prefers biotech sector"
-
-### Converting to Research Columns
-
-Complex criteria → Research columns for validation:
-- "midsized" → Research column "Employee Count"
-- "actively hiring" → Research column "Has Active Job Postings"
-- "has GenAI program" → Research column "Has GenAI Program"
-
-### Self-Contained Requirements
-
-**Requirements must be comprehensive enough that someone can understand what rows are needed by ONLY reading the requirements, WITHOUT the user's original request.**
-
-Before finalizing:
-- [ ] Could someone understand what we need by only reading requirements?
-- [ ] Have I captured ALL key aspects?
-- [ ] Every user-mentioned criterion appears in requirements?
 
 ### Requirements Notes
+Provide 1-2 sentences of overall guidance.
 
-Provide 1-2 sentences of overall guidance about good rows. Not a requirement itself, but helps discovery.
-
-**Example:** "Looking for authoritative sources with detailed analysis. Company size matters less than innovation."
-
-═══════════════════════════════════════════════════════════════
-## 📊 PATH A: COMPLETE ROWS (Skip Row Discovery)
-═══════════════════════════════════════════════════════════════
-
-**YOUR ROLE:** You are the GENERATOR/ASSEMBLER of complete rows
-
-**You generate complete_rows by:**
-- Assembling from extracted_tables (Step 0b provided complete data)
-- Parsing from starting_tables (if is_complete_enumeration=true)
-- Extracting from conversation (user pasted document text)
-- Enumerating from your model knowledge (well-known finite sets)
-
-**You are NOT just copying** - you parse, map to your columns, and structure the output.
-
-### Scenario 1: JUMP START (extracted_tables available)
-
-**Step 0b extracted complete tables for you.**
-
-**Your Job: Assemble complete_rows from extracted data**
-1. Check background_research for `extracted_tables` field
-2. Parse extracted_tables[].rows into your column structure
-3. Map source columns to your defined ID/research columns
-4. Generate complete_rows with ALL rows from extracted_tables
-5. Include research_values if source had those columns
-
-**Example:**
-```json
-{
-  "complete_rows": {
-    "skip_row_discovery": true,
-    "skip_rationale": "JUMP START: Step 0b extracted complete table with 50 rows from Forbes AI 50 2024",
-    "mode": "jump_start",
-    "rows": [
-      // Copy from extracted_tables[0].rows
-      {
-        "id_values": {"Company Name": "Anthropic", "Website": "anthropic.com"},
-        "research_values": {"Description": "...", "Funding": "$7.3B"},
-        "source": "Forbes AI 50 2024",
-        "match_score": 0.95
-      }
-    ]
-  }
-}
-```
-
-### Scenario 2: Complete Enumeration (starting_tables)
-
-**Background research extracted ALL entities in starting_tables.sample_entities**
-
-**Your Job: Parse and structure the complete list**
-1. Check for `starting_tables[].is_complete_enumeration: true`
-2. Verify entity_count_estimate matches sample_entities.length
-3. Parse each entity string from sample_entities into ID columns
-4. Generate complete_rows with ALL parsed entities
-5. Use complete_enumeration mode
-
-**Example:**
-```json
-{
-  "complete_rows": {
-    "skip_row_discovery": true,
-    "skip_rationale": "Complete enumeration: Background research extracted all 54 references from paper",
-    "mode": "complete_enumeration",
-    "rows": [
-      {
-        "id_values": {"Reference": "[1] Vaswani et al.", "Title": "Attention Is All You Need"},
-        "source": "Paper references",
-        "match_score": 1.0
-      }
-    ]
-  }
-}
-```
-
-### Scenario 3: Manual Extraction (conversation text)
-
-**User pasted complete document in conversation**
-
-**Your Job: Extract and structure from conversation**
-1. Find the complete entity list in CONVERSATION CONTEXT
-2. Extract ALL entities from the pasted text
-3. Parse each entity into your defined ID columns
-4. Generate complete_rows with ALL extracted entities
-5. Use complete_enumeration mode
-
-### Scenario 4: Model Knowledge (well-known finite sets)
-
-**You have complete knowledge of the set**
-
-**Your Job: Generate complete rows from your knowledge**
-1. Identify that this is a well-known finite set you can enumerate
-2. Generate ALL entities from your model knowledge
-3. Structure into your defined ID columns (add research columns if you know them)
-4. Set source to "Model Knowledge (as of January 2025)"
-5. Use complete_enumeration mode
-
-**Examples of sets you can enumerate:**
-- Countries (all UN member states, countries in a region)
-- US states and capitals
-- Planets in solar system
-- Elements in periodic table
-- Months of the year
-- Official government positions (US cabinet, Senate committees)
-
-**Example:**
-```json
-{
-  "complete_rows": {
-    "skip_row_discovery": true,
-    "skip_rationale": "US states is a well-known finite set of 50 entities that can be enumerated from model knowledge",
-    "mode": "complete_enumeration",
-    "rows": [
-      {"id_values": {"State": "Alabama", "Capital": "Montgomery"}, "source": "Model Knowledge", "match_score": 1.0},
-      {"id_values": {"State": "Alaska", "Capital": "Juneau"}, "source": "Model Knowledge", "match_score": 1.0}
-      // ... all 50 states
-    ]
-  }
-}
-```
-
-**⚠️ CRITICAL - Output Priority:**
-When using complete_rows:
-1. Output complete_rows FIRST and COMPLETELY
-2. Keep columns/requirements sections minimal
-3. If token budget limited, prioritize rows over everything else
-4. Better to have complete rows with minimal columns than truncated rows
-
-**Requirements for complete_rows:**
-- ✅ MUST BE REAL (no made-up examples)
-- ✅ MUST BE ORDERED (logical order)
-- ✅ MUST BE EXHAUSTIVE (ALL entities the user wants)
-- ✅ MUST BE ACCURATE (correct values)
-- ✅ Can come from: extracted_tables, starting_tables, conversation, OR model knowledge
+**Example:** "Focus on well-known companies. Innovation matters more than size."
 
 ═══════════════════════════════════════════════════════════════
-## 📊 PATH B: ROW DISCOVERY (Normal Flow)
+## 📊 SUBDOMAINS (Only if trigger_row_discovery=true)
 ═══════════════════════════════════════════════════════════════
 
-**WHEN TO USE:** No complete data available - need to discover rows via web search
+**If you set trigger_row_discovery=true, provide 2-10 subdomains.**
 
-### Use Background Research
+### Subdomain Count
 
-**How to Use starting_tables:**
-1. Look at sample_entities to understand entity structure
-2. Design ID columns based on what appears in samples
-3. Use authoritative_sources for subdomain discovered_list_url
-4. Follow discovery_patterns recommendations
-
-**Example:**
-If starting_tables shows: "Dr. Jane Smith - Stanford - Neural Networks"
-→ ID columns: "Researcher Name", "Institution"
-→ Research columns: "Research Area"
-
-### Subdomains Strategy (2-10 subdomains)
-
-**Decision Matrix:**
-| User Wants | Topic Difficulty | Use Subdomains | Rationale |
-|------------|-----------------|----------------|-----------|
-| ≤20 rows | Common/Easy | 2-3 | Efficient, low overlap |
-| 21-50 rows | Moderate | 4-5 | Balanced coverage |
-| 51-100 rows | Challenging | 6-8 | Wide net needed |
-| 100+ rows | Very Niche | 8-10 | Maximum coverage |
-
-### Target Row Calculation
-
-**Formula:**
-```
-overshoot_factor = 1.3 to 1.5 (30-50% buffer for QC rejection)
-dedup_compensation = 1.0 + ((subdomain_count - 2) * 0.10)
-total_target = user_requested * overshoot_factor * dedup_compensation
-target_per_subdomain = total_target / subdomain_count
-```
-
-**Why Overshoot:** QC rejects 10-30%, deduplication removes overlaps. We want to DELIVER what we promised.
-
-### Subdomain Structure
-
-**Use background research starting tables to structure subdomains:**
-
-**If complete list exists:** Segment it
-- Example: "Countries A-E", "Countries F-M" (from UN member states list)
-- Example: "NIH Awardees A-D", "NIH Awardees E-H" (from NIH RePORTER)
-
-**If multiple partial lists:** One subdomain per list
-- Example: "Forbes AI 50 Companies", "Crunchbase AI Series B+"
-- Example: "LinkedIn GenAI Jobs - Top Tech", "Y Combinator AI Startups"
-
-**Last subdomain:** Catch-all
-- Example: "Other AI Companies (not in Forbes/Crunchbase lists above)"
+| User Wants | Subdomains | Rationale |
+|------------|-----------|-----------|
+| ≤20 rows | 2-3 | Efficient |
+| 21-50 rows | 4-5 | Balanced |
+| 51-100 rows | 6-8 | Wide net |
+| 100+ rows | 8-10 | Maximum coverage |
 
 ### Per-Subdomain Fields
 
 **Required:**
 - `name`: Concise subdomain name
-- `focus`: Detailed description of focus area
-- `search_queries`: 2-5 queries that find LISTS (not individuals)
-- `target_rows`: How many to find here
+- `focus`: Detailed description
+- `search_queries`: 2-5 queries that find LISTS
+- `target_rows`: How many to find
 
-**Optional (from background research):**
-- `discovered_list_url`: URL of authoritative list from authoritative_sources
+**Optional:**
+- `discovered_list_url`: URL from authoritative_sources
 - `candidates`: 3-10 sample entities from starting_tables
 
 **Search Queries Must Find LISTS:**
-- ❌ BAD: "AI researcher Stanford" → Returns individuals
-- ✅ GOOD: "Stanford AI faculty list" → Returns many at once
+- ❌ BAD: "AI researcher Stanford" → individuals
+- ✅ GOOD: "Stanford AI faculty list" → many at once
 
-### Domain Filtering (Optional)
+### Target Row Calculation
 
-**Include Domains (USE SPARINGLY):**
-- ONLY add if user EXPLICITLY requested specific sources
-- Example: User says "focusing on Crunchbase" → `["crunchbase.com"]`
-
-**Exclude Domains (Safe to Use):**
-- Default: `["youtube.com", "reddit.com"]`
-- Add more based on needs (news sites for technical queries, forums for factual queries)
-
-### Sample Rows
-
-**Extract 5-15 sample rows from starting_tables:**
-- Use ACTUAL entities from starting_tables.sample_entities
-- Fill ID column values only (research columns stay empty)
-- Set `match_score` based on fit (0.7-0.95 typical)
-- Set `source` to starting table name
-- Set `model_used` to "column_definition"
-
-**Example:**
-```json
-{
-  "sample_rows": [
-    {
-      "id_values": {"Company Name": "Anthropic", "Website": "anthropic.com"},
-      "source": "Forbes AI 50 2024",
-      "match_score": 0.95,
-      "model_used": "column_definition"
-    }
-  ]
-}
+```
+overshoot_factor = 1.3 to 1.5
+dedup_compensation = 1.0 + ((subdomain_count - 2) * 0.10)
+total_target = user_requested * overshoot_factor * dedup_compensation
+target_per_subdomain = total_target / subdomain_count
 ```
 
 ═══════════════════════════════════════════════════════════════
 ## 📤 OUTPUT FORMAT
 ═══════════════════════════════════════════════════════════════
 
-### Path A: Complete Rows Output
-
 ```json
 {
   "columns": [
     {
-      "name": "Column Name",
-      "description": "Description",
+      "name": "Company Name",
+      "description": "Name of the AI company",
       "format": "String",
       "importance": "ID",
       "validation_strategy": ""
-    }
-  ],
-  "search_strategy": {
-    "description": "Brief description",
-    "requirements": [
-      {"requirement": "Must be X", "type": "hard", "rationale": "Why"},
-      {"requirement": "Prefers Y", "type": "soft", "rationale": "Why"}
-    ],
-    "requirements_notes": "Overall guidance"
-  },
-  "table_name": "Table Name",
-  "complete_rows": {
-    "skip_row_discovery": true,
-    "skip_rationale": "Why skipping (JUMP START, complete enumeration, etc.)",
-    "mode": "jump_start" or "complete_enumeration",
-    "rows": [
-      {
-        "id_values": {"Col1": "val1", "Col2": "val2"},
-        "research_values": {"Col3": "val3"},
-        "source": "Source name",
-        "match_score": 0.95
-      }
-    ]
-  }
-}
-```
-
-### Path B: Row Discovery Output
-
-```json
-{
-  "columns": [
+    },
     {
-      "name": "Column Name",
-      "description": "Description",
+      "name": "Total Funding",
+      "description": "Total funding raised",
       "format": "String",
-      "importance": "ID",
-      "validation_strategy": ""
+      "importance": "RESEARCH",
+      "validation_strategy": "Check Crunchbase or company press releases for total funding amount"
     }
   ],
+
   "search_strategy": {
-    "description": "Search strategy description",
+    "description": "Find AI companies",
     "requirements": [
-      {"requirement": "Must be X", "type": "hard", "rationale": "Why"},
-      {"requirement": "Prefers Y", "type": "soft", "rationale": "Why"}
+      {"requirement": "Must be a company", "type": "hard", "rationale": "Entity type"},
+      {"requirement": "Prefers companies with AI teams", "type": "soft", "rationale": "Relevance"}
     ],
-    "requirements_notes": "Overall guidance",
+    "requirements_notes": "Focus on well-known companies first",
     "default_excluded_domains": ["youtube.com", "reddit.com"],
+
     "subdomains": [
       {
-        "name": "Subdomain Name",
-        "focus": "Focus description",
-        "discovered_list_url": "https://source.com",
-        "candidates": ["Entity 1", "Entity 2"],
-        "search_queries": ["query 1", "query 2"],
+        "name": "Forbes AI 50 Companies",
+        "focus": "Top AI companies from Forbes 2024",
+        "discovered_list_url": "https://forbes.com/ai50",
+        "candidates": ["Anthropic", "OpenAI", "Scale AI"],
+        "search_queries": ["Forbes AI 50 2024", "site:forbes.com AI 50"],
         "target_rows": 25
       }
     ]
   },
-  "table_name": "Table Name",
-  "sample_rows": [
+
+  "table_name": "AI Companies Analysis",
+
+  "rows": [
     {
-      "id_values": {"Col1": "val1", "Col2": "val2"},
-      "source": "Starting table name",
+      "id_values": {
+        "Company Name": "Anthropic",
+        "Website": "anthropic.com"
+      },
+      "research_values": {
+        "Total Funding": "$7.3B",
+        "Description": "AI safety and research company",
+        "Founded": "2021"
+      },
+      "source": "Forbes AI 50 2024 (from extracted_tables)",
+      "populated_columns": ["Company Name", "Website", "Total Funding", "Description", "Founded"],
+      "missing_columns": ["Employee Count", "Has Job Posting"],
       "match_score": 0.95,
       "model_used": "column_definition"
     }
-  ]
+  ],
+
+  "trigger_row_discovery": true,
+  "discovery_guidance": "Have 30 companies from Forbes with basic data. Need to: (1) Find 20 more companies, (2) Populate Employee Count and Has Job Posting for all rows"
 }
 ```
 
-### Column Naming Rules
+**OR if complete:**
 
-**Column Names:** Short, friendly, CSV-safe (no commas, parentheses, quotes)
-- ✅ "Far-Right US Coverage"
-- ❌ "Far-Right US Coverage (Breitbart, Daily Wire)"
+```json
+{
+  "columns": [...],
+  "search_strategy": {
+    "description": "...",
+    "requirements": [...]
+  },
+  "table_name": "US States and Capitals",
+  "rows": [
+    {
+      "id_values": {"State": "Alabama", "Capital": "Montgomery"},
+      "research_values": {"Population": "5.1M", "Region": "Southeast"},
+      "source": "Model Knowledge (as of January 2025)",
+      "populated_columns": ["State", "Capital", "Population", "Region"],
+      "missing_columns": [],
+      "match_score": 1.0,
+      "model_used": "column_definition"
+    }
+    // ... all 50 states
+  ],
+  "trigger_row_discovery": false,
+  "skip_rationale": "Generated complete set of all 50 US states with capitals, population, and regions from model knowledge. No discovery needed."
+}
+```
 
-**Details go in description field:**
-- Name: "Far-Right US Coverage"
-- Description: "How far-right US sources like Breitbart, Daily Wire report this story"
+### Key Points:
+
+**About rows field:**
+- Generate as many as you can from available sources
+- Populate ALL columns you have reliable data for (not just ID columns)
+- Can combine from multiple sources (extracted_tables + starting_tables + knowledge)
+- Mark populated_columns and missing_columns for each row
+
+**About trigger_row_discovery:**
+- false: You have ALL rows with sufficient data
+- true: Need discovery to find more rows OR populate missing columns
+- Provide appropriate rationale/guidance
+
+**About subdomains:**
+- ONLY include in search_strategy if trigger_row_discovery=true
+- Required: 2-10 subdomains with search queries
+- Use starting_tables and authoritative_sources to structure them
 
 ═══════════════════════════════════════════════════════════════
 ## 🎯 FINAL CHECKLIST
@@ -533,24 +344,26 @@ target_per_subdomain = total_target / subdomain_count
 
 **ALWAYS OUTPUT:**
 - [ ] Column definitions (ID + research columns)
-- [ ] Requirements (at least 1 hard or soft)
+- [ ] Requirements (at least 1) in search_strategy
 - [ ] Table name
+- [ ] Rows (as many as you can generate with as much data as you have)
+- [ ] trigger_row_discovery (true or false)
 
-**DECIDE PATH:**
-- [ ] Can I provide ALL rows without row discovery?
-- [ ] Check indicators: extracted_tables, complete enumeration, conversation text, model knowledge
-- [ ] When in doubt → Row Discovery Path (safer)
+**IF trigger_row_discovery = false:**
+- [ ] Provided skip_rationale
+- [ ] Generated ALL rows user wants
+- [ ] Most columns populated with reliable data
+- [ ] NO subdomains in search_strategy
 
-**IF COMPLETE ROWS PATH:**
-- [ ] Output complete_rows with ALL entities (from any source)
-- [ ] Output search_strategy with requirements (NO subdomains)
-- [ ] Prioritize rows output if token limited
-- [ ] Mark source appropriately (extracted table, starting table, conversation, or "Model Knowledge")
+**IF trigger_row_discovery = true:**
+- [ ] Provided discovery_guidance
+- [ ] Subdomains (2-10) in search_strategy
+- [ ] Rows serve as starting point (discovery will append/merge)
+- [ ] Clear what discovery needs to do
 
-**IF ROW DISCOVERY PATH:**
-- [ ] Use starting_tables to design discoverable columns
-- [ ] Output search_strategy with requirements AND subdomains (2-10)
-- [ ] Output sample_rows from starting_tables
-- [ ] Design for discoverability (not too narrow)
+**ALWAYS:**
+- [ ] Populate research_values for columns you have reliable data for
+- [ ] Mark populated_columns and missing_columns
+- [ ] Design for discoverability (if triggering discovery)
 
 **Return your response as valid JSON matching the format above.**
