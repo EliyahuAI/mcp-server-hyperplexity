@@ -86,8 +86,8 @@
         },
         "subdomains": {
           "type": "array",
-          "description": "2-10 subdomains for parallel row discovery with search queries and targets",
-          "minItems": 2,
+          "description": "1-10 subdomains for parallel row discovery with search queries and targets. Use 1 subdomain when targeting a single specific entity type. Use 2+ for broader discovery.",
+          "minItems": 1,
           "maxItems": 10,
           "items": {
             "type": "object",
