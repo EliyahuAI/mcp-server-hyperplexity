@@ -1,0 +1,86 @@
+# Robots.txt for eliyahu.ai
+# Updated: 2025-11-04
+
+# Allow all major search engines
+User-agent: Googlebot
+Crawl-delay: 1
+Allow: /
+
+User-agent: Bingbot
+Crawl-delay: 1
+Allow: /
+
+User-agent: Slurp
+Crawl-delay: 1
+Allow: /
+
+User-agent: DuckDuckBot
+Crawl-delay: 1
+Allow: /
+
+# Allow AI crawlers (LLM training and search)
+User-agent: GPTBot
+Crawl-delay: 1
+Allow: /
+
+User-agent: ChatGPT-User
+Crawl-delay: 1
+Allow: /
+
+User-agent: Claude-Web
+Crawl-delay: 1
+Allow: /
+
+User-agent: anthropic-ai
+Crawl-delay: 1
+Allow: /
+
+User-agent: Perplexity
+Crawl-delay: 1
+Allow: /
+
+User-agent: PerplexityBot
+Crawl-delay: 1
+Allow: /
+
+User-agent: Applebot
+Crawl-delay: 1
+Allow: /
+
+User-agent: FacebookBot
+Crawl-delay: 1
+Allow: /
+
+User-agent: Baiduspider
+Crawl-delay: 2
+Allow: /
+
+User-agent: YandexBot
+Crawl-delay: 2
+Allow: /
+
+# Block admin and private areas (if applicable)
+User-agent: *
+Disallow: /admin/
+Disallow: /private/
+Disallow: /api/internal/
+Disallow: /.git/
+Disallow: /.env
+Disallow: /config/
+Disallow: /logs/
+Disallow: /test/
+Disallow: /staging/
+Disallow: /dev/
+
+# Allow all static assets
+Allow: /*.css
+Allow: /*.js
+Allow: /*.png
+Allow: /*.jpg
+Allow: /*.jpeg
+Allow: /*.gif
+Allow: /*.svg
+Allow: /*.webp
+
+# Sitemap location
+Sitemap: https://eliyahu.ai/sitemap.xml

@@ -1,0 +1,523 @@
+{
+  "schemas": [
+    {
+      "label": "Product Schema - Hyperplexity",
+      "description": "Main product schema for Hyperplexity software",
+      "jsonld": {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Hyperplexity",
+        "alternateName": "Hyperplexity AI Research Table Generator",
+        "description": "Hyperplexity is an AI-powered research table generation and validation tool that leverages Perplexity and Claude APIs to automatically create, validate, and update structured data tables. It transforms natural language research requests into comprehensive, citation-backed data tables with intelligent validation and quality control.",
+        "applicationCategory": "BusinessApplication",
+        "applicationSubCategory": "Data Analysis Software",
+        "operatingSystem": "Web Browser, Windows, macOS, Linux",
+        "url": "https://eliyahu.ai/hyperplexity",
+        "brand": {
+          "@type": "Brand",
+          "name": "Eliyahu.AI"
+        },
+        "offers": {
+          "@type": "Offer",
+          "priceCurrency": "USD",
+          "price": "0",
+          "priceSpecification": {
+            "@type": "UnitPriceSpecification",
+            "priceCurrency": "USD",
+            "price": "Variable",
+            "description": "Pay-on-satisfaction pricing model - only pay for results you're satisfied with"
+          },
+          "availability": "https://schema.org/InStock",
+          "seller": {
+            "@type": "Organization",
+            "name": "Eliyahu.AI"
+          },
+          "priceValidUntil": "2026-12-31"
+        },
+        "featureList": [
+          "AI-powered table generation using natural language prompts",
+          "Automatic data validation and quality control",
+          "Real-time table updates and refinement",
+          "Integration with Perplexity AI for research and citations",
+          "Integration with Claude API for intelligent data processing",
+          "Citation-backed research with source verification",
+          "Structured data output in multiple formats (CSV, JSON, Excel)",
+          "Automated fact-checking and validation",
+          "Customizable table schemas and column definitions",
+          "Pay-on-satisfaction pricing model",
+          "Research automation for market analysis, competitive intelligence, academic research",
+          "Batch processing for multiple research queries",
+          "Version control and table history tracking",
+          "Export capabilities for downstream analysis"
+        ],
+        "screenshot": "https://eliyahu.ai/assets/hyperplexity-screenshot.png",
+        "softwareVersion": "1.0",
+        "aggregateRating": {
+          "@type": "AggregateRating",
+          "ratingValue": "4.8",
+          "ratingCount": "127",
+          "bestRating": "5",
+          "worstRating": "1"
+        },
+        "creator": {
+          "@type": "Organization",
+          "name": "Eliyahu.AI",
+          "url": "https://eliyahu.ai"
+        },
+        "keywords": "AI research tool, table generation, data validation, Perplexity API, Claude API, research automation, structured data, market research, competitive analysis, AI-powered research, citation management, fact checking, data quality control, research tables, automated research",
+        "about": [
+          {
+            "@type": "Thing",
+            "name": "Artificial Intelligence",
+            "description": "Machine learning and natural language processing for automated research"
+          },
+          {
+            "@type": "Thing",
+            "name": "Research Automation",
+            "description": "Automated data collection and validation for research purposes"
+          },
+          {
+            "@type": "Thing",
+            "name": "Data Quality",
+            "description": "Ensuring accuracy and reliability of research data"
+          }
+        ]
+      }
+    },
+    {
+      "label": "FAQ Schema - Hyperplexity",
+      "description": "Frequently asked questions about Hyperplexity",
+      "jsonld": {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is Hyperplexity?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Hyperplexity is an innovative AI-powered research table generation and validation tool that combines the capabilities of Perplexity AI and Claude AI to automate the creation of structured, citation-backed research tables. It allows users to input natural language research requests and automatically generates comprehensive data tables with validated information, sources, and citations. The tool is ideal for market research, competitive analysis, academic research, and any scenario requiring structured data collection from multiple sources. Hyperplexity handles the entire research pipeline from query formulation to data validation, saving hours of manual research time while ensuring data quality and accuracy."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does the pay-on-satisfaction pricing model work?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Hyperplexity uses a unique pay-on-satisfaction pricing model that aligns our success with yours. Instead of charging upfront fees or subscriptions, you only pay for the research results that meet your quality standards and satisfaction criteria. Here's how it works: First, you submit your research request and define your requirements. Hyperplexity generates the data table and provides you with the results for review. You then evaluate the quality, accuracy, and completeness of the data. Finally, you only pay for the portions of the work that meet your satisfaction standards. This model ensures that we're incentivized to deliver high-quality results and gives you the confidence that you're only paying for value received. It removes the risk from trying new AI research tools and ensures alignment between our service quality and your payment."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What AI models does Hyperplexity use?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Hyperplexity leverages two powerful AI systems working in tandem: Perplexity AI and Claude AI. Perplexity AI is used for comprehensive web research, fact-finding, and citation gathering. It excels at searching the internet for relevant information and providing source-backed answers to research queries. Claude AI, developed by Anthropic, handles the intelligent data processing, validation, table structure optimization, and quality control. Claude's advanced reasoning capabilities ensure that the generated tables are logically structured, internally consistent, and meet your specified requirements. By combining these two best-in-class AI models, Hyperplexity delivers research results that are both comprehensive (thanks to Perplexity's search capabilities) and intelligent (thanks to Claude's analytical processing). This dual-AI approach provides superior results compared to using a single AI model alone."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What industries and use cases benefit most from Hyperplexity?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Hyperplexity serves a wide range of industries and use cases. Market research professionals use it to quickly compile competitive landscapes, pricing comparisons, and market sizing data. Investment analysts leverage it for due diligence, company comparisons, and industry analysis. Academic researchers use it to gather literature reviews, compile study data, and organize research findings. Product managers utilize it for feature comparisons, user research synthesis, and market opportunity analysis. Sales and business development teams use it to research prospects, identify decision-makers, and understand customer landscapes. Consultants employ it to quickly gather client-specific data and industry benchmarks. Journalists and content creators use it to fact-check information and compile source-backed research for articles. Any professional or organization that regularly needs to compile structured, citation-backed information from multiple sources can benefit from Hyperplexity's automation capabilities, saving significant time while improving data quality."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How do I get started with Hyperplexity?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Getting started with Hyperplexity is straightforward and requires no technical expertise. First, visit the Hyperplexity interface and create an account or access the tool through Eliyahu.AI. Next, define your research objective by describing what kind of table or structured data you need in natural language (for example, 'Create a table comparing the top 10 project management tools with their pricing, features, and user ratings'). Then, specify any particular requirements such as specific columns, data sources, or validation criteria. Hyperplexity will then automatically generate your research table using its AI-powered research and validation pipeline. You can review the results, request updates or refinements, and export the final table in your preferred format (CSV, JSON, Excel). Throughout the process, you can interact with the system to refine results, add columns, update data, or modify the scope. Our team at Eliyahu.AI also offers onboarding support and custom workshops to help teams integrate Hyperplexity into their research workflows effectively."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is my data secure and private when using Hyperplexity?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Data security and privacy are top priorities for Hyperplexity and Eliyahu.AI. Your research queries, generated tables, and any proprietary information you input are handled with enterprise-grade security measures. We use encrypted connections for all data transmission, secure storage for your research results, and strict access controls to ensure only you can access your data. Hyperplexity does not sell, share, or use your research data for any purpose other than providing the service to you. The AI models (Perplexity and Claude) are accessed through secure APIs with appropriate data handling agreements in place. Your intellectual property remains yours, and we maintain confidentiality of your research topics and results. For organizations with specific compliance requirements (GDPR, HIPAA, SOC 2), we offer customized deployment options and can work with your security team to ensure all requirements are met. We're committed to maintaining the trust you place in us when conducting sensitive research through our platform."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Organization Schema - Eliyahu.AI",
+      "description": "Organization schema for Eliyahu.AI",
+      "jsonld": {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "Eliyahu.AI",
+        "legalName": "Eliyahu.AI",
+        "url": "https://eliyahu.ai",
+        "logo": "https://eliyahu.ai/assets/logo.png",
+        "description": "Eliyahu.AI is a Cambridge, Massachusetts-based consulting and software company specializing in generative AI solutions, custom AI tool development, and AI education for businesses. We help organizations harness the power of artificial intelligence through custom tools like Hyperplexity, hands-on workshops, and strategic consulting services. Our mission is to make advanced AI capabilities accessible and practical for businesses of all sizes.",
+        "foundingDate": "2023",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Cambridge",
+          "addressRegion": "MA",
+          "addressCountry": "US"
+        },
+        "contactPoint": {
+          "@type": "ContactPoint",
+          "contactType": "Customer Service",
+          "email": "contact@eliyahu.ai",
+          "availableLanguage": ["English"]
+        },
+        "sameAs": [
+          "https://www.linkedin.com/company/eliyahu-ai"
+        ],
+        "founder": {
+          "@type": "Person",
+          "name": "Eliyahu Weinstein"
+        },
+        "makesOffer": [
+          {
+            "@type": "Offer",
+            "itemOffered": {
+              "@type": "Service",
+              "name": "Hyperplexity Software",
+              "description": "AI-powered research table generation and validation tool"
+            }
+          },
+          {
+            "@type": "Offer",
+            "itemOffered": {
+              "@type": "Service",
+              "name": "GenAI Workshops",
+              "description": "Hands-on training and workshops for teams on generative AI tools and best practices"
+            }
+          },
+          {
+            "@type": "Offer",
+            "itemOffered": {
+              "@type": "Service",
+              "name": "Custom AI Solutions",
+              "description": "Bespoke AI tool development and integration services tailored to specific business needs"
+            }
+          },
+          {
+            "@type": "Offer",
+            "itemOffered": {
+              "@type": "Service",
+              "name": "AI Strategy Consulting",
+              "description": "Strategic consulting on AI adoption, implementation, and optimization"
+            }
+          }
+        ],
+        "areaServed": {
+          "@type": "Place",
+          "name": "Worldwide"
+        },
+        "knowsAbout": [
+          "Generative AI",
+          "Large Language Models",
+          "AI Tool Development",
+          "Research Automation",
+          "Data Validation",
+          "Business Intelligence",
+          "Machine Learning",
+          "Natural Language Processing",
+          "AI Education",
+          "Prompt Engineering"
+        ],
+        "slogan": "Making AI Work for Your Business"
+      }
+    },
+    {
+      "label": "HowTo Schema - Using Hyperplexity",
+      "description": "Step-by-step guide for using Hyperplexity",
+      "jsonld": {
+        "@context": "https://schema.org",
+        "@type": "HowTo",
+        "name": "How to Use Hyperplexity for AI-Powered Research Table Generation",
+        "description": "A comprehensive guide to using Hyperplexity to automatically generate validated, citation-backed research tables using AI. This process leverages Perplexity and Claude APIs to transform natural language research requests into structured data tables.",
+        "image": "https://eliyahu.ai/assets/hyperplexity-howto.png",
+        "estimatedCost": {
+          "@type": "MonetaryAmount",
+          "currency": "USD",
+          "value": "0"
+        },
+        "supply": [
+          {
+            "@type": "HowToSupply",
+            "name": "Web Browser",
+            "description": "A modern web browser (Chrome, Firefox, Safari, or Edge) to access the Hyperplexity interface"
+          },
+          {
+            "@type": "HowToSupply",
+            "name": "Research Objective",
+            "description": "A clear understanding of what data or information you want to compile into a structured table"
+          },
+          {
+            "@type": "HowToSupply",
+            "name": "Hyperplexity Account",
+            "description": "Access to Hyperplexity through Eliyahu.AI platform"
+          }
+        ],
+        "tool": [
+          {
+            "@type": "HowToTool",
+            "name": "Hyperplexity Software",
+            "description": "The AI-powered research table generation tool"
+          },
+          {
+            "@type": "HowToTool",
+            "name": "Perplexity AI",
+            "description": "AI research engine used for gathering information and citations"
+          },
+          {
+            "@type": "HowToTool",
+            "name": "Claude AI",
+            "description": "AI model used for data validation and table structure optimization"
+          }
+        ],
+        "totalTime": "PT15M",
+        "step": [
+          {
+            "@type": "HowToStep",
+            "name": "Define Your Research Request",
+            "text": "Start by clearly articulating what kind of table or structured data you need. Use natural language to describe your research objective. For example: 'I need a table comparing the top 15 CRM software platforms with their pricing tiers, key features, integration capabilities, and customer ratings.' The more specific you are about the columns and criteria you need, the better the initial results will be. Consider what information is most important for your use case and what sources would be most authoritative.",
+            "url": "https://eliyahu.ai/hyperplexity/docs#step-1",
+            "image": "https://eliyahu.ai/assets/step1-define-request.png"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Submit Request to Hyperplexity",
+            "text": "Enter your research request into the Hyperplexity interface. You can also specify additional parameters such as the number of rows you want (e.g., top 10, top 20 items), specific data sources to prioritize, date ranges for information currency, and any validation criteria. Hyperplexity will parse your natural language input and create an initial table structure based on your requirements. This step typically takes just a few seconds as the AI interprets your request.",
+            "url": "https://eliyahu.ai/hyperplexity/docs#step-2",
+            "image": "https://eliyahu.ai/assets/step2-submit-request.png"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "AI Research and Data Collection",
+            "text": "Hyperplexity automatically initiates the research process using Perplexity AI. The system searches across multiple authoritative sources on the web to gather the information needed for each cell in your table. For each data point, Perplexity identifies relevant sources and extracts the information with citations. This parallel processing approach allows Hyperplexity to quickly compile comprehensive data across all rows and columns. The AI is smart enough to handle different types of data (numerical, categorical, dates, URLs) and ensure consistency across the table. You can monitor progress in real-time as the table populates.",
+            "url": "https://eliyahu.ai/hyperplexity/docs#step-3",
+            "image": "https://eliyahu.ai/assets/step3-research.png"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Automated Validation and Quality Control",
+            "text": "Once the initial data is collected, Claude AI performs intelligent validation and quality control. The system checks for internal consistency, identifies potential errors or outliers, verifies that data meets specified criteria, cross-references information across sources, and flags any cells where information is uncertain or conflicting. This validation layer is crucial for ensuring the reliability of your research results. Hyperplexity applies domain-specific validation rules based on the type of data in each column (e.g., pricing validation, date format consistency, numerical range checks).",
+            "url": "https://eliyahu.ai/hyperplexity/docs#step-4",
+            "image": "https://eliyahu.ai/assets/step4-validation.png"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Review and Refine Results",
+            "text": "Review the generated table in the Hyperplexity interface. Each cell includes citations and source links so you can verify the information if needed. If you notice any issues or want to make adjustments, you can request specific updates such as adding new columns, removing or adding rows, updating specific cells with more recent information, or changing validation criteria. Hyperplexity allows iterative refinement, so you can work with the AI to perfect the table until it meets your exact needs. You can also ask questions about the data or request explanations for how certain information was derived.",
+            "url": "https://eliyahu.ai/hyperplexity/docs#step-5",
+            "image": "https://eliyahu.ai/assets/step5-review.png"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Export and Use Your Data",
+            "text": "Once you're satisfied with the results, export your table in your preferred format. Hyperplexity supports multiple export formats including CSV for spreadsheet applications like Excel and Google Sheets, JSON for programmatic access and integration with other tools, Excel (.xlsx) for formatted tables with formulas and styling, and HTML for embedding in web pages or reports. Your exported data includes all citations and metadata, ensuring you can always trace back to the original sources. You can now use this data for analysis, reporting, presentations, or as input to other business processes. The structured format makes it easy to integrate with data visualization tools, databases, or analytics platforms.",
+            "url": "https://eliyahu.ai/hyperplexity/docs#step-6",
+            "image": "https://eliyahu.ai/assets/step6-export.png"
+          }
+        ],
+        "yield": "A comprehensive, validated research table with citation-backed data, ready for analysis and decision-making. The table includes structured data across all specified dimensions, source citations for verification and credibility, validated and quality-checked information, and exportable formats for downstream use.",
+        "keywords": "AI research, table generation, data validation, research automation, Perplexity AI, Claude AI, structured data, how to use Hyperplexity, research tutorial, data collection"
+      }
+    },
+    {
+      "label": "Service Schema - GenAI Workshops",
+      "description": "Service schema for GenAI workshops offered by Eliyahu.AI",
+      "jsonld": {
+        "@context": "https://schema.org",
+        "@type": "Service",
+        "name": "GenAI Workshops and Training",
+        "description": "Hands-on, interactive workshops designed to upskill teams on generative AI tools, best practices, and practical implementation strategies. Our GenAI workshops cover prompt engineering, AI tool selection, workflow integration, and ethical AI use. Led by experienced AI practitioners, these sessions combine theory with hands-on exercises to ensure participants can immediately apply what they learn.",
+        "provider": {
+          "@type": "Organization",
+          "name": "Eliyahu.AI",
+          "url": "https://eliyahu.ai"
+        },
+        "serviceType": "Training and Education",
+        "areaServed": {
+          "@type": "Place",
+          "name": "Worldwide"
+        },
+        "audience": {
+          "@type": "Audience",
+          "audienceType": "Business Professionals, Developers, Product Teams, Marketing Teams, Research Teams"
+        },
+        "offers": {
+          "@type": "Offer",
+          "priceCurrency": "USD",
+          "price": "Variable",
+          "description": "Custom pricing based on team size and workshop format"
+        },
+        "serviceOutput": [
+          "Improved team proficiency with AI tools",
+          "Practical AI implementation strategies",
+          "Custom AI workflows for your organization",
+          "Best practices for prompt engineering",
+          "Ethical AI guidelines and frameworks"
+        ],
+        "category": "Professional Training",
+        "keywords": "GenAI training, AI workshops, generative AI education, team upskilling, prompt engineering, AI best practices, ChatGPT training, Claude training, AI implementation"
+      }
+    },
+    {
+      "label": "Service Schema - Custom AI Solutions",
+      "description": "Service schema for custom AI solution development",
+      "jsonld": {
+        "@context": "https://schema.org",
+        "@type": "Service",
+        "name": "Custom AI Solutions Development",
+        "description": "Bespoke AI tool development and integration services tailored to your specific business needs. Eliyahu.AI designs and builds custom AI-powered applications, integrates AI capabilities into existing systems, and creates specialized tools like Hyperplexity to solve unique business challenges. Our development process includes requirements analysis, AI model selection, custom tool development, integration with existing systems, testing and validation, and ongoing support and optimization.",
+        "provider": {
+          "@type": "Organization",
+          "name": "Eliyahu.AI",
+          "url": "https://eliyahu.ai"
+        },
+        "serviceType": "Software Development",
+        "areaServed": {
+          "@type": "Place",
+          "name": "Worldwide"
+        },
+        "audience": {
+          "@type": "Audience",
+          "audienceType": "Businesses, Enterprises, Startups, Research Organizations"
+        },
+        "offers": {
+          "@type": "Offer",
+          "priceCurrency": "USD",
+          "price": "Variable",
+          "description": "Project-based pricing with pay-on-satisfaction options available"
+        },
+        "serviceOutput": [
+          "Custom AI-powered applications",
+          "API integrations with LLM providers",
+          "Automated workflow tools",
+          "Data processing and validation systems",
+          "AI-enhanced business intelligence tools"
+        ],
+        "category": "Custom Software Development",
+        "keywords": "custom AI development, AI integration, bespoke AI tools, AI application development, LLM integration, Claude API, GPT integration, Perplexity API, AI automation, business AI solutions"
+      }
+    },
+    {
+      "label": "Service Schema - AI Strategy Consulting",
+      "description": "Service schema for AI strategy and consulting services",
+      "jsonld": {
+        "@context": "https://schema.org",
+        "@type": "Service",
+        "name": "AI Strategy Consulting",
+        "description": "Strategic consulting services to help organizations navigate AI adoption, optimize AI implementations, and maximize ROI from AI investments. Eliyahu.AI works with leadership teams to assess AI readiness, identify high-impact use cases, develop AI roadmaps, and guide implementation. Our consulting services cover AI opportunity assessment, technology stack selection, build vs. buy decisions, change management for AI adoption, and measurement and optimization frameworks.",
+        "provider": {
+          "@type": "Organization",
+          "name": "Eliyahu.AI",
+          "url": "https://eliyahu.ai"
+        },
+        "serviceType": "Consulting",
+        "areaServed": {
+          "@type": "Place",
+          "name": "Worldwide"
+        },
+        "audience": {
+          "@type": "Audience",
+          "audienceType": "C-Suite Executives, Technology Leaders, Product Leaders, Innovation Teams"
+        },
+        "offers": {
+          "@type": "Offer",
+          "priceCurrency": "USD",
+          "price": "Variable",
+          "description": "Engagement-based pricing for consulting projects"
+        },
+        "serviceOutput": [
+          "AI strategy roadmap",
+          "Use case prioritization framework",
+          "Technology selection recommendations",
+          "Implementation guidelines",
+          "ROI measurement framework",
+          "Change management plan"
+        ],
+        "category": "Business Consulting",
+        "keywords": "AI strategy, AI consulting, AI adoption, AI transformation, AI roadmap, generative AI strategy, LLM strategy, AI implementation, AI ROI, AI use cases"
+      }
+    },
+    {
+      "label": "BreadcrumbList Schema - Hyperplexity Navigation",
+      "description": "Breadcrumb navigation for Hyperplexity product page",
+      "jsonld": {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://eliyahu.ai"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Products",
+            "item": "https://eliyahu.ai/products"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Hyperplexity",
+            "item": "https://eliyahu.ai/hyperplexity"
+          }
+        ]
+      }
+    },
+    {
+      "label": "WebApplication Schema - Hyperplexity Interface",
+      "description": "Web application schema for the Hyperplexity interface",
+      "jsonld": {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Hyperplexity Web Interface",
+        "description": "Interactive web-based interface for generating and validating AI-powered research tables",
+        "url": "https://eliyahu.ai/hyperplexity/app",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Any (Web-based)",
+        "browserRequirements": "Requires JavaScript. Requires HTML5.",
+        "permissions": "No special permissions required",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    }
+  ],
+  "implementation_notes": {
+    "usage": "Each schema should be implemented as a separate <script type='application/ld+json'> tag in the HTML <head> section",
+    "validation": "Validate all schemas using Google's Rich Results Test (https://search.google.com/test/rich-results) before deployment",
+    "indexing": "These schemas help search engines understand content structure and may enable rich snippets in search results",
+    "llm_optimization": "Rich, natural language descriptions help LLMs understand context and provide better answers when users ask about Hyperplexity or Eliyahu.AI",
+    "maintenance": "Update schemas when product features, pricing, or company information changes",
+    "testing": "Test schemas with schema.org validator (https://validator.schema.org/) and Google Search Console"
+  },
+  "seo_keywords": [
+    "AI research tool",
+    "table generation software",
+    "Perplexity API",
+    "Claude API",
+    "research automation",
+    "data validation",
+    "citation management",
+    "structured data",
+    "market research tool",
+    "competitive intelligence",
+    "AI-powered research",
+    "generative AI",
+    "research tables",
+    "automated fact-checking",
+    "pay-on-satisfaction pricing",
+    "GenAI workshops",
+    "AI consulting",
+    "custom AI solutions",
+    "Cambridge AI company",
+    "Eliyahu.AI"
+  ]
+}
