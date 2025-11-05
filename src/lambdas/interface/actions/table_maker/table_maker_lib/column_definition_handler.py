@@ -88,44 +88,38 @@ class ColumnDefinitionHandler:
                 formatted_research = self._format_research_for_prompt(background_research_result)
                 logger.info("[RESEARCH] Injected background research into prompt")
 
-                # Check if complete enumeration was found (may need more tokens for output)
+                # Check if large entity count (may need more tokens to output all rows)
                 starting_tables = background_research_result.get('starting_tables', [])
-                is_complete_enumeration = any(
-                    table.get('is_complete_enumeration', False)
-                    for table in starting_tables
-                )
+                extracted_tables = background_research_result.get('extracted_tables', [])
 
-                if is_complete_enumeration:
-                    # Count entities - check both extracted and expected count
-                    total_entities_extracted = sum(
-                        len(table.get('sample_entities', []))
-                        for table in starting_tables
-                        if table.get('is_complete_enumeration', False)
+                # Count total entities across all sources
+                import re
+                total_entities = 0
+
+                # Count from starting_tables
+                for table in starting_tables:
+                    # Try entity_count_estimate first
+                    count_str = table.get('entity_count_estimate', '')
+                    numbers = re.findall(r'\d+', count_str)
+                    if numbers:
+                        total_entities += int(numbers[0])
+                    else:
+                        # Fallback to sample_entities length
+                        total_entities += len(table.get('sample_entities', []))
+
+                # Count from extracted_tables
+                for table in extracted_tables:
+                    total_entities += table.get('rows_extracted', 0)
+
+                # Boost max_tokens if outputting many rows (>20 entities)
+                if total_entities > 20:
+                    original_max_tokens = max_tokens
+                    max_tokens = min(max_tokens * 3, 24000)  # Triple tokens, cap at 24k
+                    logger.info(
+                        f"[LARGE ENTITY COUNT] Detected {total_entities} total entities - "
+                        f"increasing max_tokens from {original_max_tokens} to {max_tokens} "
+                        f"to output all rows"
                     )
-
-                    # Also check entity_count_estimate to see expected total
-                    import re
-                    total_entities_expected = 0
-                    for table in starting_tables:
-                        if table.get('is_complete_enumeration', False):
-                            count_str = table.get('entity_count_estimate', '')
-                            numbers = re.findall(r'\d+', count_str)
-                            if numbers:
-                                total_entities_expected = max(total_entities_expected, int(numbers[0]))
-
-                    # Use the larger number (expected or extracted)
-                    total_entities = max(total_entities_extracted, total_entities_expected)
-
-                    # Boost max_tokens for complete enumeration (always boost if flag is set)
-                    if total_entities > 10 or is_complete_enumeration:  # Lower threshold or always boost
-                        original_max_tokens = max_tokens
-                        max_tokens = min(max_tokens * 3, 24000)  # Triple tokens, cap at 24k
-                        logger.info(
-                            f"[COMPLETE ENUMERATION] Detected {total_entities_extracted} extracted, "
-                            f"{total_entities_expected} expected - "
-                            f"increasing max_tokens from {original_max_tokens} to {max_tokens} "
-                            f"to output complete_rows"
-                        )
             else:
                 formatted_research = "(No background research available)"
                 logger.warning("[RESEARCH] No background research provided - column definition may struggle")

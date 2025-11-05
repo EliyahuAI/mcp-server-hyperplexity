@@ -18,9 +18,9 @@
     "_comment": "Step 0 - ALWAYS runs before column definition. Finds authoritative sources and starting tables to guide column design. On restructure, cached research is ALWAYS reused (never re-run)",
 
     "model": "sonar-pro",
-    "_note_model": "Recommended: sonar-pro (fast, cost-effective), claude-sonnet-4-5 (highest quality). For complete enumeration, user should paste document text in interview.",
+    "_note_model": "Recommended: sonar-pro (fast, cost-effective), claude-sonnet-4-5 (highest quality).",
     "max_tokens": 8000,
-    "_note_max_tokens": "Auto-tripled to 24000 when COMPLETE ENUMERATION signal detected (large entity lists need more output space)",
+    "_note_max_tokens": "Background research only outputs 15 sample entities max, so 8000 tokens is sufficient. Token boost for large entity counts happens in column_definition instead.",
 
     "_web_search_params_info": "Web search parameters differ by model family:",
     "search_context_size": "high",
@@ -50,11 +50,11 @@
   },
 
   "column_definition": {
-    "_comment": "Step 1 - Defines column specifications and search strategy using background research output as input",
+    "_comment": "Step 1 - Defines column specifications and search strategy using background research output as input. Generates initial rows from available data.",
     "model": "claude-sonnet-4-5",
     "_note_model": "Recommended: claude-sonnet-4-5 (receives formatted research, no web search needed)",
     "max_tokens": 8000,
-    "_note_max_tokens": "Auto-tripled to 24000 when complete_enumeration detected with >20 entities (needs space to output all entities in complete_rows)",
+    "_note_max_tokens": "Auto-tripled to 24000 when total entity count >20 (needs space to output all rows). Counts entities from starting_tables + extracted_tables.",
     "show_preview_table": false,
     "include_subdomains": true,
     "subdomain_count_min": 2,

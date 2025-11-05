@@ -246,7 +246,9 @@ class AIAPIClient:
         sorted_exclude = sorted(exclude_domains) if exclude_domains else []
 
         # Include all parameters that affect API behavior in cache key
-        cache_input = f"{normalized_prompt}:{model}:{schema_str}:{context}:{max_web_searches}:{soft_schema}:{sorted_include}:{sorted_exclude}"
+        # NOTE: soft_schema is excluded because it only affects HOW the schema is enforced (via API vs prompt),
+        # not the actual response content. Including it would cause duplicate API calls and debug files.
+        cache_input = f"{normalized_prompt}:{model}:{schema_str}:{context}:{max_web_searches}:{sorted_include}:{sorted_exclude}"
         cache_key = hashlib.md5(cache_input.encode()).hexdigest()
 
         # Log cache key components for debugging

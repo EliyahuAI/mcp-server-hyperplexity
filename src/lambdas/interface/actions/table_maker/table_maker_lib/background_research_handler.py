@@ -89,22 +89,9 @@ class BackgroundResearchHandler:
             conversation_history = self._format_conversation_history(conversation_context)
             user_requirements = self._extract_user_requirements(conversation_context)
 
-            # Check if complete enumeration is requested (needs more tokens)
-            is_complete_enumeration = False
-            if context_research_items:
-                is_complete_enumeration = any(
-                    item.startswith('COMPLETE ENUMERATION:')
-                    for item in context_research_items
-                )
-
-            # Boost max_tokens for complete enumeration cases (need room for full lists)
-            if is_complete_enumeration:
-                original_max_tokens = max_tokens
-                max_tokens = min(max_tokens * 3, 24000)  # Triple tokens, cap at 24k
-                logger.info(
-                    f"[COMPLETE ENUMERATION] Detected - increasing max_tokens from "
-                    f"{original_max_tokens} to {max_tokens} to accommodate full entity list"
-                )
+            # Note: Token boost for complete enumeration removed - background research only outputs
+            # 15 sample entities max. Column definition handles outputting complete rows and gets
+            # token boost based on entity count.
 
             # Format context research items if provided
             research_items_text = ""
