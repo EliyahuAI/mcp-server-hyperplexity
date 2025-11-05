@@ -81,6 +81,7 @@ class TableExtractionHandler:
 
             extracted_tables = []
             total_rows = 0
+            all_enhanced_data = []  # Track API metadata from all calls
 
             # Extract each table sequentially
             for idx, table_meta in enumerate(identified_tables):
@@ -104,6 +105,10 @@ class TableExtractionHandler:
                         extracted_tables.append(extracted_data)
                         total_rows += rows_count
 
+                        # Track enhanced_data from this extraction
+                        if 'enhanced_data' in extraction_result:
+                            all_enhanced_data.append(extraction_result['enhanced_data'])
+
                         logger.info(
                             f"  [SUCCESS] Extracted {rows_count} rows from {table_name} "
                             f"(complete: {extracted_data.get('extraction_complete', False)})"
@@ -123,7 +128,8 @@ class TableExtractionHandler:
                 'extracted_tables': extracted_tables,
                 'tables_extracted': len(extracted_tables),
                 'total_rows_extracted': total_rows,
-                'processing_time': time.time() - start_time
+                'processing_time': time.time() - start_time,
+                'enhanced_data': all_enhanced_data  # API metadata from all extractions
             })
 
             if len(extracted_tables) == 0:
@@ -254,10 +260,14 @@ class TableExtractionHandler:
                 result['error'] = f"Response missing fields: {', '.join(missing_fields)}"
                 return result
 
+            # Extract enhanced_data for API call tracking
+            enhanced_data = api_response.get('enhanced_data', {})
+
             # Success
             result.update({
                 'success': True,
-                'data': structured_response
+                'data': structured_response,
+                'enhanced_data': enhanced_data
             })
 
             return result

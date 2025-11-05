@@ -4,30 +4,31 @@
 ## 🔍 YOUR RESEARCH TASK
 ═══════════════════════════════════════════════════════════════
 
-Research the domain to answer these questions:
+Answer these research questions:
 
 {{CONTEXT_RESEARCH_ITEMS}}
 
-**PRIMARY GOAL:** Understand how entities in this domain are identified, catalogued, and found
-
-**YOUR DELIVERABLES:**
-1. **Tablewide research** - Domain overview with key facts and patterns
-2. **Discovery patterns** - Where/how entities are typically listed
-3. **Authoritative sources** - Databases, directories, rankings that contain entities
-4. **Starting tables** (with samples) - If you find existing lists, extract 5-15 sample entities
-5. **Identified tables** (optional) - If you find extractable tables with clear structure, note them for Step 0b extraction
+**For:** {{USER_REQUIREMENTS}}
 
 ═══════════════════════════════════════════════════════════════
-## 📋 USER CONTEXT
+## 📋 YOUR DELIVERABLES
 ═══════════════════════════════════════════════════════════════
 
-**User's Request:** {{USER_REQUIREMENTS}}
+1. **Tablewide research** - Domain overview (2-3 paragraphs)
+2. **Discovery patterns** - How entities are typically found
+3. **Authoritative sources** - Databases/directories containing entities
+4. **Starting tables** - Extract 5-15 sample entities from lists you find
+5. **Identified tables** (optional) - Note extractable tables for Step 0b
+
+═══════════════════════════════════════════════════════════════
+## 📚 USER CONTEXT
+═══════════════════════════════════════════════════════════════
 
 **Conversation History:**
 {{CONVERSATION_CONTEXT}}
 
 ═══════════════════════════════════════════════════════════════
-## 🎯 RESEARCH FOCUS AREAS
+## 🎯 DETAILED GUIDANCE
 ═══════════════════════════════════════════════════════════════
 
 ### 1. Tablewide Research (Required)

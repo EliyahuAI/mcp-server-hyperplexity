@@ -53,21 +53,21 @@ class ColumnDefinitionHandler:
             {
                 'success': bool,
                 'columns': List[Dict],  # Column definitions with validation strategies
-                'search_strategy': Dict,  # Search strategy with subdomains
+                'search_strategy': Dict,  # Search strategy (with subdomains for row discovery path)
                 'table_name': str,
-                'tablewide_research': str,
-                'sample_rows': List[Dict],  # NEW: Sample rows from starting tables
-                'processing_time': float,  # Seconds
+                'sample_rows': List[Dict],  # Sample rows from starting tables (row discovery path)
+                'complete_rows': Optional[Dict],  # Complete rows (complete rows path)
+                'processing_time': float,
                 'error': Optional[str]
             }
+            Note: tablewide_research comes from background_research_result, not from this handler
         """
         result = {
             'success': False,
             'columns': [],
             'search_strategy': {},
             'table_name': '',
-            'tablewide_research': '',
-            'sample_rows': [],  # NEW
+            'sample_rows': [],
             'processing_time': 0.0,
             'error': None
         }
@@ -287,9 +287,8 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             result['columns'] = ai_response.get('columns', [])
             result['search_strategy'] = search_strategy
             result['table_name'] = ai_response.get('table_name', '')
-            result['tablewide_research'] = ai_response.get('tablewide_research', '')
             result['sample_rows'] = ai_response.get('sample_rows', [])
-            result['complete_rows'] = ai_response.get('complete_rows')  # NEW - for complete enumeration
+            result['complete_rows'] = ai_response.get('complete_rows')  # For complete rows path
 
             # Log sample rows if provided
             if result['sample_rows']:
@@ -302,7 +301,7 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
                     row_count = len(result['complete_rows'].get('rows', []))
                     logger.info(f"Column definition provided complete_rows with {row_count} rows - row discovery will be skipped")
 
-            # Extract and format requirements for downstream use (Phase 1, Items 2 and 4)
+            # Extract and format requirements for downstream use
             hard_reqs, soft_reqs = self._separate_requirements(requirements)
             result['formatted_hard_requirements'] = self._format_requirements_for_prompt(hard_reqs)
             result['formatted_soft_requirements'] = self._format_requirements_for_prompt(soft_reqs)
@@ -322,9 +321,8 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             if user_request and result['search_strategy']:
                 result['search_strategy']['user_context'] = user_request
                 result['search_strategy']['table_purpose'] = result['search_strategy'].get('description', '')
-                result['search_strategy']['tablewide_research'] = result.get('tablewide_research', '')
 
-                # Add formatted requirements to search_strategy (Phase 1, Item 2)
+                # Add formatted requirements to search_strategy
                 result['search_strategy']['formatted_hard_requirements'] = result['formatted_hard_requirements']
                 result['search_strategy']['formatted_soft_requirements'] = result['formatted_soft_requirements']
 
@@ -719,16 +717,46 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
                 output.append(f"- {source.get('description')}")
                 output.append("")
 
-        # Starting Tables (CRITICAL)
+        # Extracted Tables (from Step 0b - PRIORITY for JUMP START)
+        extracted = research_result.get('extracted_tables', [])
+        if extracted:
+            output.append("\n### Extracted Tables (Complete Data from Step 0b)\n")
+            output.append("**PRIORITY: Use these for JUMP START mode (complete_rows)**\n")
+            for table in extracted:
+                output.append(f"\n**{table.get('table_name')}**")
+                output.append(f"- Source: {table.get('source_url')}")
+                output.append(f"- Rows Extracted: {table.get('rows_extracted')}")
+                output.append(f"- Extraction Complete: {table.get('extraction_complete')}")
+
+                # Show first few rows as preview
+                rows = table.get('rows', [])
+                if rows and len(rows) > 0:
+                    output.append(f"\n**Preview (first 3 rows):**")
+                    for i, row in enumerate(rows[:3]):
+                        output.append(f"  Row {i+1}: {row}")
+                    if len(rows) > 3:
+                        output.append(f"  ... and {len(rows) - 3} more rows")
+
+                output.append("\n**Use complete_rows mode and copy ALL rows from this table.**")
+                output.append("")
+
+        # Starting Tables (CRITICAL - for samples or complete enumeration)
         tables = research_result.get('starting_tables', [])
         if tables:
-            output.append("\n### Starting Tables (Use These for Subdomains)\n")
+            output.append("\n### Starting Tables (Sample Entities)\n")
+            if not extracted:
+                output.append("**Use these for row discovery or complete enumeration (if is_complete_enumeration=true)**\n")
             for table in tables:
                 output.append(f"\n**{table.get('source_name')}**")
                 output.append(f"- Source: {table.get('source_url')}")
                 output.append(f"- Entity Type: {table.get('entity_type')}")
                 output.append(f"- Count: {table.get('entity_count_estimate')}")
-                output.append(f"\nSample Entities (extract as sample_rows):")
+
+                # Note if complete enumeration
+                if table.get('is_complete_enumeration'):
+                    output.append(f"- **Complete Enumeration: YES** (all entities extracted)")
+
+                output.append(f"\nSample Entities (extract as sample_rows or complete_rows if enumeration):")
                 for entity in table.get('sample_entities', []):
                     output.append(f"  - {entity}")
                 output.append("")

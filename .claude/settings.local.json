@@ -39,7 +39,9 @@
       "Bash(aws apigatewayv2 get-apis:*)",
       "Bash(git log:*)",
       "Bash(/tmp/debug_files/miller_qc.txt)",
-      "Bash(/tmp/debug_files/miller_qc_full.txt)"
+      "Bash(/tmp/debug_files/miller_qc_full.txt)",
+      "WebFetch(domain:eliyahu.ai)",
+      "WebFetch(domain:hyperplexity.ai)"
     ],
     "deny": []
   }
