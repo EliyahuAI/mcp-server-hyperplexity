@@ -86,33 +86,39 @@ List databases/directories/APIs where entities can be found:
 
 ### 5. Identified Tables (Optional - Trigger Step 0b Extraction)
 
-**SIZE-BASED DECISION:** Use identified_tables for large tables (>15 rows) or multiple tables
+**SIZE-BASED DECISION:** Use identified_tables for large datasets (>15 entities) or multiple sources
+
+**NOTE: "Table" means any page/article/document with entity information (not just HTML tables)**
 
 **When to set extract_table=true:**
 
-✅ **Trigger if table has >15 rows:**
-- You found a table with 20+ entities → Too large for inline extraction
-- Put in `identified_tables` instead of `starting_tables`
-- Examples: Forbes AI 50 (50 rows), Election results (20+ candidates), Faculty directory (30+ people)
+✅ **Trigger if source has >15 entities:**
+- Article/page with 20+ candidates/companies/people → Too large for inline extraction
+- Examples:
+  - Election results article with 20 candidates
+  - Forbes AI 50 list article (50 companies)
+  - Faculty directory page (30+ professors)
+  - News article covering 25+ entities
+- Extract 5-15 samples for starting_tables, add URL to identified_tables
 
-✅ **Trigger if multiple tables:**
-- Found 3 different tables to extract → Use identified_tables for all 3
-- Each table gets its own entry with extract_table=true
+✅ **Trigger if multiple sources:**
+- Found 3 different articles/pages to extract from → Use identified_tables for all
+- Each source gets its own entry with extract_table=true
 
 ✅ **Trigger if user explicitly requested specific URL:**
 - User said "extract from this document" with URL
 - Even if small, use identified_tables to ensure complete extraction
 
 ❌ **Don't trigger if:**
-- Table ≤15 rows → Extract inline in starting_tables instead
-- Just a database/directory without specific table URL
-- Searchable/queryable source (not static table)
+- Source has ≤15 entities → Extract ALL inline in starting_tables
+- Just a database/directory without specific page URL
+- Searchable/queryable source (not static content)
 
 **What to provide:**
-- `url`: Specific URL where table exists
+- `url`: URL of the page/article/document (doesn't need to be HTML table)
 - `table_name`: Descriptive name
-- `estimated_rows`: How many rows (must be >15 for size-based triggering)
-- `columns`: Column names visible in table
+- `estimated_rows`: How many entities at this URL
+- `columns`: Expected data fields (from your research, not literal table columns)
 - `extract_table: true`
 - `target_rows`: Optional filter (e.g., "only winners", "School Committee only")
 - `extraction_priority`: "high" if user requested, "medium" otherwise

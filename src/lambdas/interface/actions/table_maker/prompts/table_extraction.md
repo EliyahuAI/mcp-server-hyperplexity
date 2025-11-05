@@ -4,7 +4,7 @@
 ## 🔍 YOUR EXTRACTION TASK
 ═══════════════════════════════════════════════════════════════
 
-Extract rows from the table at: **{{TABLE_URL}}**
+Extract data from: **{{TABLE_URL}}**
 
 **Table Name:** {{TABLE_NAME}}
 
@@ -14,25 +14,37 @@ Extract rows from the table at: **{{TABLE_URL}}**
 
 {{TARGET_ROWS_INSTRUCTION}}
 
-**Search Configuration:** Your search is configured to prioritize the domain of this URL. Access the page and extract the table.
+**Search Configuration:** Your search is configured to prioritize the domain of this URL.
 
-**IMPORTANT:** If a target_rows filter is specified above, extract ONLY rows matching that specification. If no filter specified, extract ALL rows.
+**CRITICAL - Extract from ANY format:**
+- HTML table → Extract rows directly
+- Article text → Build structured rows from prose
+- List format → Parse into structured rows
+- Multiple paragraphs → Extract entities and their attributes
+- Don't require pre-existing table structure - BUILD the table from available information
+- Never fabricate - only use information present at the URL
 
 ═══════════════════════════════════════════════════════════════
 ## 📋 EXTRACTION REQUIREMENTS
 ═══════════════════════════════════════════════════════════════
 
 **CRITICAL:**
-- Preserve exact values as they appear in the source
-- If the table has pagination/multiple pages, note this in extraction_notes
-- If column names differ from expected, use the actual column names from the source
-- Return empty array if table is not accessible or doesn't exist
-- Follow the row extraction guidance above (extract all or up to target)
+- Extract information from whatever format is available (table, article, list, paragraphs)
+- Build structured rows from the source content
+- Use expected column names (or actual column names if structured table exists)
+- Only include information actually present at the URL (never fabricate)
+- If pagination detected, note this in extraction_notes
+- Return empty array ONLY if URL is inaccessible or contains no relevant information
 
 **Quality Standards:**
-- Maintain data accuracy - copy values exactly as shown
-- Preserve all columns present in the table (not just expected ones)
-- Note any issues (missing data, formatting problems, access restrictions)
+- Maintain data accuracy - only use information from the source
+- Build complete rows with all available columns
+- If some columns have no data for certain rows, leave those fields empty
+- Note any issues (missing data, incomplete information, access restrictions)
+
+**Example - Extracting from Article Text:**
+If article says "Marc McGovern won with 2,372 votes. He's an incumbent focused on housing..."
+→ Build row: {"Winner Name": "Marc McGovern", "Incumbent Status": "Yes", "Campaign Platform": "Housing policy", "Vote Count": "2,372"}
 
 ═══════════════════════════════════════════════════════════════
 ## 📤 OUTPUT FORMAT
