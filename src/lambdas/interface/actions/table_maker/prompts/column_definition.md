@@ -32,9 +32,9 @@
 5. **trigger_row_discovery** (true/false - do we need row discovery to find/populate more?)
 
 **CONDITIONAL OUTPUT:**
-- **subdomains** (in search_strategy) - ONLY if trigger_row_discovery=true
-- **skip_rationale** - REQUIRED if trigger_row_discovery=false
-- **discovery_guidance** - REQUIRED if trigger_row_discovery=true
+- **subdomains** (in search_strategy) - MANDATORY if trigger_row_discovery=true, FORBIDDEN if false
+- **skip_rationale** - MANDATORY if trigger_row_discovery=false, FORBIDDEN if true
+- **discovery_guidance** - MANDATORY if trigger_row_discovery=true, FORBIDDEN if false
 
 ═══════════════════════════════════════════════════════════════
 ## 📋 ROW GENERATION STRATEGY
@@ -93,15 +93,38 @@ If background_research has `extracted_tables`:
 
 **When:**
 - Need more rows than you can generate
-- User will not be content with what you have 
-
+- User will not be content with what you have
+- Some columns still empty across all rows
 
 **Examples:**
 - Generated 30 companies from starting_tables, user specified 50, need 20 more → Discovery
+- Have 9 City Council winners, user wants all election winners (School Committee too) → Discovery
 
-**Requirements:**
-- Provide discovery_guidance (what discovery should focus on)
-- Output subdomains (2-10) in search_strategy
+**MANDATORY Requirements:**
+- ✅ Provide discovery_guidance (what discovery should focus on)
+- ✅ Output subdomains (2-10) in search_strategy - **THIS IS REQUIRED, NOT OPTIONAL**
+
+**Example for your current case:**
+```json
+{
+  "trigger_row_discovery": true,
+  "discovery_guidance": "Have 9 City Council winners. Need School Committee winners (6 seats) to complete all election winners.",
+  "search_strategy": {
+    "requirements": [...],
+    "subdomains": [
+      {
+        "name": "School Committee Winners",
+        "focus": "6 elected School Committee members from November 2025 Cambridge election",
+        "search_queries": [
+          "Cambridge School Committee election results November 2025",
+          "Cambridge MA School Committee winners November 2025"
+        ],
+        "target_rows": 6
+      }
+    ]
+  }
+}
+```
 
 ═══════════════════════════════════════════════════════════════
 ## 📚 INFORMATION PROVIDED
@@ -235,24 +258,11 @@ target_per_subdomain = total_target / subdomain_count
 ## 📤 OUTPUT FORMAT
 ═══════════════════════════════════════════════════════════════
 
+### Example: trigger_row_discovery = true (WITH SUBDOMAINS - REQUIRED!)
+
 ```json
 {
-  "columns": [
-    {
-      "name": "Company Name",
-      "description": "Name of the AI company",
-      "format": "String",
-      "importance": "ID",
-      "validation_strategy": ""
-    },
-    {
-      "name": "Total Funding",
-      "description": "Total funding raised",
-      "format": "String",
-      "importance": "RESEARCH",
-      "validation_strategy": "Check Crunchbase or company press releases for total funding amount"
-    }
-  ],
+  "columns": [...],
 
   "search_strategy": {
     "description": "Find AI companies",
@@ -271,6 +281,12 @@ target_per_subdomain = total_target / subdomain_count
         "candidates": ["Anthropic", "OpenAI", "Scale AI"],
         "search_queries": ["Forbes AI 50 2024", "site:forbes.com AI 50"],
         "target_rows": 25
+      },
+      {
+        "name": "Y Combinator AI Startups",
+        "focus": "AI startups from Y Combinator portfolio",
+        "search_queries": ["Y Combinator AI companies", "YC AI startups 2024"],
+        "target_rows": 15
       }
     ]
   },
@@ -279,17 +295,10 @@ target_per_subdomain = total_target / subdomain_count
 
   "rows": [
     {
-      "id_values": {
-        "Company Name": "Anthropic",
-        "Website": "anthropic.com"
-      },
-      "research_values": {
-        "Total Funding": "$7.3B",
-        "Description": "AI safety and research company",
-        "Founded": "2021"
-      },
-      "source": "Forbes AI 50 2024 (from extracted_tables)",
-      "populated_columns": ["Company Name", "Website", "Total Funding", "Description", "Founded"],
+      "id_values": {"Company Name": "Anthropic"},
+      "research_values": {"Total Funding": "$7.3B"},
+      "source": "Forbes AI 50 2024",
+      "populated_columns": ["Company Name", "Total Funding"],
       "missing_columns": ["Employee Count", "Has Job Posting"],
       "match_score": 0.95,
       "model_used": "column_definition"
@@ -297,9 +306,11 @@ target_per_subdomain = total_target / subdomain_count
   ],
 
   "trigger_row_discovery": true,
-  "discovery_guidance": "Have 30 companies from Forbes with basic data. Need to: (1) Find 20 more companies, (2) Populate Employee Count and Has Job Posting for all rows"
+  "discovery_guidance": "Have 30 companies from Forbes. Need to: (1) Find 20 more companies from Y Combinator and other sources, (2) Populate Employee Count and Has Job Posting columns"
 }
 ```
+
+**CRITICAL:** When trigger_row_discovery=true, you MUST include subdomains array (2-10 subdomains). Omitting subdomains will cause execution failure!
 
 **OR if complete:**
 
@@ -364,10 +375,13 @@ target_per_subdomain = total_target / subdomain_count
 - [ ] NO subdomains in search_strategy
 
 **IF trigger_row_discovery = true:**
-- [ ] Provided discovery_guidance
-- [ ] Subdomains (2-10) in search_strategy
+- [ ] Provided discovery_guidance (what's still needed)
+- [ ] **MANDATORY: Subdomains (2-10) in search_strategy** - YOU WILL GET AN ERROR IF MISSING
+- [ ] Each subdomain has: name, focus, search_queries (2-5), target_rows
 - [ ] Rows serve as starting point (discovery will append/merge)
 - [ ] Clear what discovery needs to do
+
+**CRITICAL:** trigger_row_discovery=true WITHOUT subdomains will cause execution failure!
 
 **ALWAYS:**
 - [ ] Populate research_values for columns you have reliable data for
