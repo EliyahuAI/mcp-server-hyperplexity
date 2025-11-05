@@ -42,8 +42,8 @@
     "max_tokens": 16000,
     "_note_max_tokens": "Higher than background research to accommodate large tables with many rows",
 
-    "search_context_size": "high",
-    "_note_search_context": "High context ensures complete table extraction including paginated content",
+    "search_context_size": "low",
+    "_note_search_context": "Low context focuses on the specific page URL, not broad domain search. Changed from 'high' to 'low' to prevent pulling in unrelated pages from same domain.",
 
     "timeout": 120,
     "_note_timeout": "Extraction timeout in seconds. Large tables may need more time to process"

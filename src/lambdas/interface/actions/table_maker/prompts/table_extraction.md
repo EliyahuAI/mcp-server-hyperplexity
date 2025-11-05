@@ -4,47 +4,83 @@
 ## 🔍 YOUR EXTRACTION TASK
 ═══════════════════════════════════════════════════════════════
 
-Extract data from: **{{TABLE_URL}}**
+**BUILD a structured table from information at:** {{TABLE_URL}}
 
 **Table Name:** {{TABLE_NAME}}
 
-**Expected Structure:**
-- Estimated rows: {{ESTIMATED_ROWS}}
-- Expected columns: {{EXPECTED_COLUMNS}}
+**Target Structure:**
+- Estimated entities: {{ESTIMATED_ROWS}}
+- Columns to populate: {{EXPECTED_COLUMNS}}
 
 {{TARGET_ROWS_INSTRUCTION}}
 
-**Search Configuration:** Your search is configured to prioritize the domain of this URL.
+**Your Job: BUILD the table from whatever information is available**
 
-**CRITICAL - Extract from ANY format:**
-- HTML table → Extract rows directly
-- Article text → Build structured rows from prose
-- List format → Parse into structured rows
-- Multiple paragraphs → Extract entities and their attributes
-- Don't require pre-existing table structure - BUILD the table from available information
-- Never fabricate - only use information present at the URL
+**FOCUS ON THIS SPECIFIC PAGE:** {{TABLE_URL}}
+
+Search is configured with low context to focus on this exact page. Do not pull from other pages.
+
+The page may have:
+- ✅ Article text mentioning entities → Extract and structure into rows
+- ✅ Paragraphs describing entities → Parse into table format
+- ✅ Bullet lists → Convert to structured rows
+- ✅ HTML table → Extract directly
+- ✅ Mixed content → Compile all entity information
+
+**CRITICAL:**
+- You are BUILDING a table, not just copying one
+- Extract information from prose, articles, lists, any format on THIS PAGE
+- Structure the extracted information into rows with expected columns
+- Return empty ONLY if: URL inaccessible OR page contains no relevant entities
+- "No table found" is NOT acceptable - if page has entity information, build rows from it!
+- Search focuses on the specific URL provided, not the whole domain
 
 ═══════════════════════════════════════════════════════════════
 ## 📋 EXTRACTION REQUIREMENTS
 ═══════════════════════════════════════════════════════════════
 
-**CRITICAL:**
-- Extract information from whatever format is available (table, article, list, paragraphs)
-- Build structured rows from the source content
-- Use expected column names (or actual column names if structured table exists)
-- Only include information actually present at the URL (never fabricate)
-- If pagination detected, note this in extraction_notes
-- Return empty array ONLY if URL is inaccessible or contains no relevant information
+**YOUR PRIMARY TASK: Build structured rows from prose/article content**
+
+Most sources won't have HTML tables - you'll build the table from article text, paragraphs, and prose descriptions.
+
+**How to Build Rows:**
+
+1. **Read the page content** - Article text, paragraphs, lists
+2. **Find entity mentions** - Look for the entities (candidates, companies, people, etc.)
+3. **Extract attributes** - For each entity, find the data points (name, position, details)
+4. **Structure into rows** - Build row objects with expected column names as keys
+5. **Fill all columns possible** - Include all data you find, leave unknown columns empty
+
+**Example - Election Article:**
+```
+Article text: "Marc McGovern was the top vote-getter with 2,372 votes. The incumbent
+focused his campaign on affordable housing and bike safety, appealing to progressive
+voters. Ayah Al-Zubi, a newcomer and democratic socialist, also won a seat..."
+
+Build rows:
+[
+  {
+    "Winner Name": "Marc McGovern",
+    "Incumbent Status": "Incumbent",
+    "Campaign Platform": "Affordable housing, bike safety",
+    "Vote Count": "2,372",
+    "Demographic Appeal": "Progressive voters"
+  },
+  {
+    "Winner Name": "Ayah Al-Zubi",
+    "Incumbent Status": "Newcomer",
+    "Campaign Platform": "Democratic socialist platform",
+    "Vote Count": "",  // Not mentioned
+    "Demographic Appeal": ""  // Details not in this excerpt
+  }
+]
+```
 
 **Quality Standards:**
-- Maintain data accuracy - only use information from the source
-- Build complete rows with all available columns
-- If some columns have no data for certain rows, leave those fields empty
-- Note any issues (missing data, incomplete information, access restrictions)
-
-**Example - Extracting from Article Text:**
-If article says "Marc McGovern won with 2,372 votes. He's an incumbent focused on housing..."
-→ Build row: {"Winner Name": "Marc McGovern", "Incumbent Status": "Yes", "Campaign Platform": "Housing policy", "Vote Count": "2,372"}
+- Only use information actually present in the source (never fabricate)
+- If some columns have no data, leave those fields empty ("")
+- Build as many complete rows as you can find entities for
+- "No table found" means "URL inaccessible", NOT "no HTML table visible"
 
 ═══════════════════════════════════════════════════════════════
 ## 📤 OUTPUT FORMAT
