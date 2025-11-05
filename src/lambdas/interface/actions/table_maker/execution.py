@@ -975,9 +975,10 @@ async def execute_full_table_generation(
             logger.info(f"[EXECUTION] Step 1 complete: {len(columns)} columns, table: {table_name}")
 
             # Add tablewide_research to conversation_state for config generation
-            conversation_state['tablewide_research'] = column_result.get('tablewide_research', '')
+            # tablewide_research comes from background research (Step 0), not column definition
+            conversation_state['tablewide_research'] = background_research_result.get('tablewide_research', '')
             if conversation_state.get('tablewide_research'):
-                logger.info(f"[EXECUTION] Stored tablewide_research in conversation_state for config generation")
+                logger.info(f"[EXECUTION] Stored tablewide_research from background research in conversation_state for config generation")
 
             # Create minimal CSV with column headers for config generation
             import csv
@@ -1400,7 +1401,7 @@ async def execute_full_table_generation(
                     user_context=conversation_state.get('user_request', ''),
                     table_name=table_name,
                     table_purpose=search_strategy.get('table_purpose', ''),
-                    tablewide_research=search_strategy.get('tablewide_research', ''),
+                    tablewide_research=conversation_state.get('tablewide_research', ''),
                     model=qc_model,
                     max_tokens=qc_max_tokens,
                     min_qc_score=min_qc_score,
@@ -1647,8 +1648,7 @@ async def execute_full_table_generation(
                     updated_column_result = {
                         'columns': columns,
                         'search_strategy': search_strategy,
-                        'table_name': table_name,
-                        'tablewide_research': column_result.get('tablewide_research', '')
+                        'table_name': table_name
                     }
                     _save_to_s3(
                         storage_manager, email, session_id, conversation_id,

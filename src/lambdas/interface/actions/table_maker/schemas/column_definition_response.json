@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["columns", "search_strategy", "table_name", "tablewide_research"],
+  "required": ["columns", "table_name"],
   "properties": {
     "columns": {
       "type": "array",
@@ -35,7 +35,8 @@
     },
     "search_strategy": {
       "type": "object",
-      "required": ["description", "requirements", "subdomains"],
+      "description": "Search strategy with requirements (always required) and subdomains (required only for row discovery path, not needed for complete_rows path)",
+      "required": ["description", "requirements"],
       "properties": {
         "description": {
           "type": "string",
@@ -151,10 +152,6 @@
     "table_name": {
       "type": "string",
       "description": "Concise name for the table"
-    },
-    "tablewide_research": {
-      "type": "string",
-      "description": "Overall research context and objectives for this table"
     },
     "sample_rows": {
       "type": "array",

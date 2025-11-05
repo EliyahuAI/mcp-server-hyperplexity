@@ -30,18 +30,20 @@
 
 **ALWAYS OUTPUT (Both Paths):**
 - ✅ Column definitions (ID + research columns)
-- ✅ Requirements (hard + soft, minimum 1)
+- ✅ Requirements (hard + soft, minimum 1) within search_strategy
 - ✅ Table name
+
+**NOTE:** tablewide_research comes from background research (input) and is NOT output by you.
 
 **CONDITIONAL OUTPUT (Depends on Path):**
 
 **Path A: Complete Rows** (if extracted_tables OR complete enumeration detected)
 - ✅ complete_rows (all entities from extracted_tables or starting_tables or conversation)
-- ❌ NO subdomains/search_strategy (row discovery skipped)
+- ✅ search_strategy (with requirements only, NO subdomains needed)
 - ❌ NO sample_rows (have complete rows instead)
 
 **Path B: Row Discovery** (normal flow - need to discover rows)
-- ✅ Subdomains (2-10) with search strategy
+- ✅ search_strategy (with requirements AND subdomains)
 - ✅ sample_rows (5-15 from starting_tables)
 - ❌ NO complete_rows (will discover via row discovery)
 
@@ -501,7 +503,7 @@ target_per_subdomain = total_target / subdomain_count
 
 **IF COMPLETE ROWS PATH:**
 - [ ] Output complete_rows with ALL entities
-- [ ] Skip subdomains/search_strategy
+- [ ] Output search_strategy with requirements (NO subdomains)
 - [ ] Prioritize rows output if token limited
 
 **IF ROW DISCOVERY PATH:**
