@@ -93,13 +93,11 @@ If background_research has `extracted_tables`:
 
 **When:**
 - Need more rows than you can generate
-- Many columns still empty (need validation/research)
-- Partial data available but not complete
+- User will not be content with what you have 
+
 
 **Examples:**
-- Generated 30 companies from starting_tables, need 20 more → Discovery
-- Have 50 rows but only ID columns populated, need research columns → Discovery
-- Samples available but not complete set → Discovery
+- Generated 30 companies from starting_tables, user specified 50, need 20 more → Discovery
 
 **Requirements:**
 - Provide discovery_guidance (what discovery should focus on)
@@ -122,15 +120,24 @@ If background_research has `extracted_tables`:
 ## 💡 DESIGN PRINCIPLES (ALWAYS APPLY)
 ═══════════════════════════════════════════════════════════════
 
+### Principle 0: Build Around Existing Tables
+
+**If you were provided sourced tables - start with these columns.**
+
+- This will allow you to jumpstart the rows
+- Provides an already thought through way to structure the data
+- Intersect multiple tables if provided. 
+
 ### Principle 1: Design for Discoverability
 
 **Your table design determines whether rows can be found.**
 
-- Can entities matching these requirements be found via web search?
-- What information appears in search results? (Names, headlines, directories - NOT internal data)
-- Am I making requirements too narrow? (Every hard requirement ELIMINATES rows)
+- Can entities matching these requirements be found via simple web search?
+- What information appears in search results? (Names, headlines, directories) 
+
 
 **Solution: Broad Discovery + Validation Filtering**
+- Am I making requirements too narrow? (Every hard requirement ELIMINATES rows) and harder to search.
 - ❌ BAD: Hard requirement "Must have active AI/ML job posting" → 0 rows found
 - ✅ GOOD: Soft requirement "Prefers companies with AI teams" + Research column "Has Active Job Posting"
 
@@ -150,7 +157,8 @@ If background_research has `extracted_tables`:
 - 1-5 words, found in lists/directories
 - NO synthesis or complex reasoning
 - Set `importance: "ID"` and `validation_strategy: ""`
-- Examples: ✅ Company Name, Paper Title  ❌ "Story Description"
+- Examples: ✅ Company Name, Paper Title, Headline,  ❌ "Story Description"
+- Should uniquely define the entity in the row without further columns
 
 **Research Columns (Validated Data):**
 - Complex information requiring validation
