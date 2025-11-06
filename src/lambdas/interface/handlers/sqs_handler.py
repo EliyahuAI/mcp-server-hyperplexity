@@ -76,6 +76,16 @@ def handle(event, context):
                     **message_body
                 }
 
+            # Handle reference check requests
+            elif request_type == 'reference_check':
+                logger.info(f"Processing reference check request for session {message_body.get('session_id')}")
+                # Pass the entire message body for reference check
+                background_event = {
+                    "background_processing": True,
+                    "request_type": "reference_check",
+                    **message_body
+                }
+
             else:
                 # Handle regular validation requests
                 background_event = {
