@@ -12840,7 +12840,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 showMessage(`${cardId}-messages`, summaryText, 'success');
             }
 
-            // Store data in global state for preview
+            // Store data in global state
             if (data.csv_s3_key) globalState.csvS3Key = data.csv_s3_key;
             if (data.config_s3_key) globalState.configS3Key = data.config_s3_key;
             if (data.session_id) {
@@ -12848,21 +12848,40 @@ Please provide any additional context, or simply proceed to generate your initia
                 localStorage.setItem('sessionId', data.session_id);
             }
 
-            // Mark files as ready (similar to table_maker)
+            // Mark files as ready for validation
             globalState.configValidated = true;
             globalState.configStored = true;
             globalState.excelFileUploaded = true;
 
-            // Create preview card immediately (like table_maker does)
-            globalState.activePreviewCard = null;
-            createPreviewCard();
+            // Show next steps message
+            const message = `
+                <div style="margin-top: 1rem;">
+                    <p><strong>Claims extracted successfully!</strong></p>
+                    <p>Your table has been created with ${data.summary.total_claims} claims.</p>
+                    <p>Click "Run Validation" below to verify each claim against its reference.</p>
+                </div>
+            `;
 
-            // Hide the progress indicator after preview card is created
-            setTimeout(() => {
-                if (cardId) {
-                    completeThinkingInCard(cardId, 'Complete!', 800);
-                }
-            }, 500);
+            const messageDiv = document.getElementById(`${cardId}-messages`);
+            if (messageDiv) {
+                messageDiv.innerHTML = message;
+            }
+
+            // Add "Run Validation" button to card
+            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+            if (buttonsContainer) {
+                buttonsContainer.innerHTML = '';
+                const buttonRow = createButtonRow([{
+                    text: 'Run Validation',
+                    class: 'primary',
+                    callback: () => {
+                        // Trigger preview/validation
+                        createPreviewCard();
+                    }
+                }]);
+                buttonsContainer.appendChild(buttonRow);
+                buttonsContainer.style.display = 'block';
+            }
         }
 
         // Handle reference check error
