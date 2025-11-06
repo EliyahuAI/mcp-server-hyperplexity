@@ -38,18 +38,18 @@
     "_comment": "Step 0b - Sequential follow-up to background research. Extracts complete tables from identified URLs. Only runs if background research identifies tables with extract_table=true",
 
     "model": "claude-haiku-4-5",
-    "max_web_searches": 3,
-    "_note_max_web_searches": "FOR ANTHROPIC MODELS ONLY (claude-*). Number of web searches Claude can perform (if model=claude-sonnet-4-5)",
+    "max_web_searches": 10,
+    "_note_max_web_searches": "FOR ANTHROPIC MODELS ONLY (claude-*). Increased to 10 to support pagination - allows extracting from up to 10 pages in a single call",
 
-    "_note_model": "Recommended: sonar (fast extraction). Uses site-specific search via include_domains",
+    "_note_model": "Uses Claude Haiku with web search for pagination support. Can visit multiple pages (page1, page2, etc.) to extract complete tables",
     "max_tokens": 16000,
-    "_note_max_tokens": "Higher than background research to accommodate large tables with many rows",
+    "_note_max_tokens": "Higher than background research to accommodate large tables with many rows across multiple pages",
 
     "search_context_size": "low",
     "_note_search_context": "Low context focuses on the specific page URL, not broad domain search. Changed from 'high' to 'low' to prevent pulling in unrelated pages from same domain.",
 
     "timeout": 120,
-    "_note_timeout": "Extraction timeout in seconds. Large tables may need more time to process"
+    "_note_timeout": "Extraction timeout in seconds. Large tables with pagination may need more time to process"
   },
 
   "column_definition": {

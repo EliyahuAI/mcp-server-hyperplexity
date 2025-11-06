@@ -30,13 +30,29 @@ The page may have:
 - ✅ HTML table → Extract directly
 - ✅ Mixed content → Compile all entity information
 - ✅ Subpages that you may need to navigate to get all information
+- ✅ Pagination (multiple pages) → Extract from ALL pages in one go
 
 **CRITICAL:**
 - You are BUILDING a table, not just copying one
-- Extract information from prose, articles, lists, any format 
+- Extract information from prose, articles, lists, any format
 - Structure the extracted information into rows with expected columns
 - Return empty ONLY if: URL inaccessible and search contains no relevant entities
 - "No table found" is NOT acceptable - if page has entity information, build rows from it!
+
+**PAGINATION HANDLING:**
+If the URL has pagination (e.g., `/page/1/`, `?page=1`, `/p1`):
+1. **Detect the pattern** - Identify how pagination works in the URL
+2. **Estimate page count** - Based on "Showing X of Y results" or similar indicators
+3. **Use web searches** - Visit page 1, page 2, page 3, etc. in your searches
+4. **Combine all results** - Merge rows from all pages into a single response
+5. **Set pagination_detected: true** - So we know you handled multiple pages
+
+**Example:**
+- URL: `https://example.com/results?page=1`
+- Estimated entities: 50
+- Action: Search `https://example.com/results?page=1`, `?page=2`, `?page=3` etc.
+- Combine all rows into one response
+- Report total rows extracted across all pages
 
 ═══════════════════════════════════════════════════════════════
 ## 📋 EXTRACTION REQUIREMENTS
@@ -116,17 +132,19 @@ Return JSON matching this structure:
 
 **Field Descriptions:**
 - `table_name`: Name of the table (use provided name)
-- `source_url`: URL of the source (use provided URL)
-- `extraction_complete`: true if all rows extracted, false if partial/paginated
-- `rows_extracted`: Exact count of rows in the array
-- `pagination_detected`: true if table has pagination and more rows might exist
-- `extraction_notes`: Notes about extraction quality, issues, or special circumstances
+- `source_url`: URL of the source (use provided URL - the first page)
+- `extraction_complete`: true if all rows extracted, false if partial/incomplete
+- `rows_extracted`: Exact count of rows in the array (across ALL pages if paginated)
+- `pagination_detected`: true if you detected and extracted from multiple pages
+- `extraction_notes`: Notes about extraction - mention how many pages extracted if paginated
 - `rows`: Array of objects, each object represents one row with column names as keys
 
 **Requirements:**
 - ✅ Use actual column names from the source table
-- ✅ Include ALL rows accessible at the URL
-- ✅ Set `extraction_complete: false` if you detect pagination or can't access all rows
+- ✅ Include ALL rows from ALL pages if pagination exists
+- ✅ If paginated, use web searches to visit multiple pages and combine results
+- ✅ Set `pagination_detected: true` if you extracted from multiple pages
+- ✅ Set `extraction_complete: false` only if you couldn't access all pages/rows
 - ✅ If table not found or inaccessible, return `rows: []` and explain in `extraction_notes`
 - ✅ Return valid JSON matching the schema above
 
