@@ -688,6 +688,18 @@ async def _compile_results(
         csv_s3_key = store_result.get('s3_key')
         logger.info(f"[COMPILATION] CSV saved to S3: {csv_s3_key}")
 
+        # Update session_info.json with table path (so get_excel_file can find it)
+        try:
+            session_info = storage_manager.load_session_info(email, session_id)
+            session_info['table_path'] = csv_s3_key
+            session_info['table_name'] = f"reference_check_{conversation_id}"
+            session_info['session_id'] = session_id
+            session_info['email'] = email
+            storage_manager.save_session_info(email, session_id, session_info)
+            logger.info(f"[COMPILATION] Updated session_info.json with table_path: {csv_s3_key}")
+        except Exception as session_info_error:
+            logger.warning(f"[COMPILATION] Failed to update session_info.json: {session_info_error}")
+
         # Copy static validation config from local file to session
         try:
             config_path = Path(__file__).parent / 'reference_check_validation_config.json'
