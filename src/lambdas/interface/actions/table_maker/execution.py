@@ -904,7 +904,8 @@ async def execute_full_table_generation(
                                 run_key=run_key,
                                 api_response={'enhanced_data': enhanced_data_item},
                                 model=extraction_model,
-                                processing_time=table_extraction_result.get('processing_time', 0.0)
+                                processing_time=table_extraction_result.get('processing_time', 0.0),
+                                call_type='table_extraction'
                             )
                     else:
                         logger.warning(
