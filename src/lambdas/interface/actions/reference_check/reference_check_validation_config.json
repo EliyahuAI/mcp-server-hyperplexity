@@ -1,30 +1,29 @@
 {
-  "general_notes": "This table contains extracted claims with citations that have been validated. The ID columns (Claim ID, Statement, Context, Reference) are already filled with the extracted claims. The RESEARCH columns (Support Level, Confidence, Validation Notes) should be populated through validation to verify how well each reference supports its claim.",
-  "default_model": "claude-haiku-4-5",
+  "general_notes": "This table contains extracted claims with citations that need validation. The ID columns (Claim ID, Statement, Context, Reference) are already populated from extraction. The RESEARCH columns (Support Level, Confidence, Validation Notes) must be validated by accessing the cited references using web search to verify how well each reference supports its corresponding claim. Use a single comprehensive search to validate all three research columns together for efficiency.",
+  "default_model": "sonar-pro",
   "default_search_context_size": "high",
-  "anthropic_max_web_searches_default": 3,
+  "anthropic_max_web_searches_default": 0,
   "qc_settings": {
-    "enable_qc": false,
+    "enable_qc": true,
     "model": "claude-sonnet-4-5",
-    "max_tokens_default": 4000,
-    "tokens_per_validated_column_default": 2000,
+    "max_tokens_default": 8000,
+    "tokens_per_validated_column_default": 3000,
     "anthropic_max_web_searches": 1
   },
   "search_groups": [
     {
       "group_id": 0,
       "group_name": "Claim Identifiers",
-      "description": "Claim identifiers and extracted text used for context - already populated",
-      "model": "claude-haiku-4-5",
+      "description": "Claim identifiers and extracted text - already populated, used for context only",
+      "model": "sonar",
       "search_context": "low"
     },
     {
       "group_id": 1,
       "group_name": "Reference Validation",
-      "description": "Validation of how well the reference supports the claim using web search to access cited sources",
-      "model": "claude-haiku-4-5",
-      "search_context": "high",
-      "anthropic_max_web_searches": 3
+      "description": "Comprehensive validation of all research columns in a single pass - access the reference, assess support level, determine confidence, and provide detailed notes",
+      "model": "sonar-pro",
+      "search_context": "high"
     }
   ],
   "validation_targets": [
@@ -32,14 +31,14 @@
       "column": "Claim ID",
       "description": "Unique identifier for each claim",
       "importance": "ID",
-      "format": "String (e.g., claim_1, claim_2)",
+      "format": "String (e.g., claim_001, claim_002)",
       "examples": [
-        "claim_1",
-        "claim_2",
-        "claim_3"
+        "claim_001",
+        "claim_002",
+        "claim_003"
       ],
       "search_group": 0,
-      "notes": "Auto-generated identifier for tracking claims"
+      "notes": "Auto-generated identifier for tracking claims. No validation needed."
     },
     {
       "column": "Statement",
@@ -49,10 +48,10 @@
       "examples": [
         "The Earth's average temperature has increased by 1.1°C since pre-industrial times",
         "Python was first released in 1991",
-        "The human brain contains approximately 86 billion neurons"
+        "Large language models can hallucinate facts in 15-20% of responses"
       ],
       "search_group": 0,
-      "notes": "The claim that needs to be verified against the provided reference"
+      "notes": "The claim that needs to be verified against the provided reference. No validation needed - used as context."
     },
     {
       "column": "Context",
@@ -60,12 +59,12 @@
       "importance": "ID",
       "format": "String (surrounding text or context)",
       "examples": [
-        "According to the IPCC report...",
-        "In the Python documentation...",
-        "Studies have shown that..."
+        "According to the IPCC report, climate data shows significant warming trends.",
+        "In the Python documentation and historical records.",
+        "Recent research has examined the accuracy of AI models."
       ],
       "search_group": 0,
-      "notes": "Provides context for understanding the claim's intended meaning"
+      "notes": "Provides context for understanding the claim's intended meaning. No validation needed - used as context."
     },
     {
       "column": "Reference",
@@ -75,16 +74,17 @@
       "examples": [
         "https://www.ipcc.ch/report/ar6/wg1/",
         "Python.org official documentation",
-        "Herculano-Houzel, S. (2009). The human brain in numbers. Frontiers in Human Neuroscience, 3, 31"
+        "Chen, L. et al. (2024). Measuring Factual Accuracy in Large Language Models. arXiv:2401.12345",
+        "[1] Johnson, A. (2023). Understanding AI Hallucinations. Nature AI, 5(2), 123-145"
       ],
       "search_group": 0,
-      "notes": "The source that should support the claim - may be a URL, academic citation, or source description"
+      "notes": "The source that should support the claim. May be a URL, academic citation, or source description. No validation needed - used as context for finding the source."
     },
     {
       "column": "Support Level",
-      "description": "Assessment of how well the reference supports the claim",
+      "description": "Assessment of how well the reference supports the claim - validate by accessing the reference and comparing its content to the claim",
       "importance": "RESEARCH",
-      "format": "String (strongly_supported, supported, partially_supported, unclear, contradicted, or inaccessible)",
+      "format": "String (one of: strongly_supported, supported, partially_supported, unclear, contradicted, inaccessible)",
       "examples": [
         "strongly_supported",
         "supported",
@@ -94,42 +94,44 @@
         "inaccessible"
       ],
       "search_group": 1,
-      "notes": "Validate by accessing the reference and comparing to the claim. Return one of: strongly_supported (claim matches reference exactly), supported (claim is backed by reference with minor differences), partially_supported (reference supports some but not all of claim), unclear (reference is ambiguous or unclear), contradicted (reference contradicts the claim), inaccessible (reference cannot be accessed or found)"
+      "notes": "CRITICAL: Access the reference using web search. Search strategies: (1) If URL provided, try to access directly. (2) If DOI/arXiv, search for 'doi:XXX' or 'arxiv:XXX'. (3) If academic citation, search for author names + year + title. (4) If general source, search for source name + relevant keywords. Then compare reference content to claim and assess: strongly_supported (reference explicitly confirms claim with exact or near-exact match), supported (reference generally agrees with claim's main point), partially_supported (reference supports some aspects but not all), unclear (reference is ambiguous, insufficient detail, or doesn't directly address the claim), contradicted (reference explicitly disagrees with the claim), inaccessible (cannot find or access the reference after reasonable search attempts)."
     },
     {
       "column": "Confidence",
-      "description": "Confidence score for the support level assessment",
+      "description": "Confidence score (0.0-1.0) for the support level assessment based on reference accessibility, clarity, and authority",
       "importance": "RESEARCH",
-      "format": "Decimal (0.0 to 1.0)",
+      "format": "Decimal (0.0 to 1.0, formatted to 2 decimal places)",
       "examples": [
         "0.95",
-        "0.80",
-        "0.65",
-        "0.40"
+        "0.85",
+        "0.70",
+        "0.50",
+        "0.30"
       ],
       "search_group": 1,
-      "notes": "0.0-1.0 scale indicating confidence in the support level assessment. Higher values indicate greater certainty about the assessment."
+      "notes": "Assess confidence based on: (1) Reference accessibility - could you access and read the reference? (0.9-1.0 for direct access, 0.6-0.8 for partial/indirect access, 0.0-0.5 for inaccessible). (2) Reference clarity - does it directly address the claim? (0.9-1.0 for explicit statements, 0.7-0.8 for clear implications, 0.4-0.6 for ambiguous). (3) Source authority - is it a credible source? (0.9-1.0 for peer-reviewed/official sources, 0.7-0.8 for reputable news/industry sources, 0.5-0.6 for general sources). Combine these factors for final score. Format as decimal: 0.95, 0.80, etc."
     },
     {
       "column": "Validation Notes",
-      "description": "Detailed explanation of the validation findings",
+      "description": "Detailed explanation of validation findings including what the reference says, key points of agreement/disagreement, and source assessment",
       "importance": "RESEARCH",
-      "format": "String (concise explanation with key details)",
+      "format": "String (concise but comprehensive explanation)",
       "examples": [
-        "Reference directly states the claim with exact temperature value. Source is authoritative (IPCC AR6).",
-        "Reference confirms Python was released in 1991 by Guido van Rossum. Official documentation source.",
-        "Reference provides different estimate (85 billion) but within margin of error. Peer-reviewed neuroscience paper.",
-        "Reference URL returns 404 error. Unable to verify claim."
+        "Reference directly states the claim with exact temperature value of 1.1°C above pre-industrial levels (IPCC AR6 WG1 Report, Chapter 2). Source is highly authoritative (official IPCC assessment). Strong match.",
+        "Reference confirms Python was created by Guido van Rossum and first released in February 1991 (Python.org official history page). Official documentation source with exact date match.",
+        "Reference provides estimate of 12-23% hallucination rate depending on model and task, with average of 17.5% (Chen et al., 2024, arXiv preprint). The 15-20% claim falls within this range. Peer-reviewed preprint, credible methodology.",
+        "Reference URL returns 404 error. Searched for author 'Johnson, A. (2023) AI Hallucinations' but could not locate in Nature AI archives or Google Scholar. Cannot verify claim.",
+        "Reference discusses AI accuracy but focuses on translation tasks, not general factual claims. Does not address hallucination rates directly. Partially relevant but insufficient to support specific claim."
       ],
       "search_group": 1,
-      "notes": "Provide: (1) What the reference says about the claim, (2) Key differences if any, (3) Source reliability assessment. Keep concise but informative."
+      "notes": "Provide comprehensive validation notes including: (1) What the reference actually says - quote or paraphrase relevant sections. (2) Comparison to claim - explain how reference content relates to the claim (exact match, close match, partial match, mismatch, or not addressed). (3) Key differences if any - note discrepancies in numbers, dates, scope, or interpretation. (4) Source assessment - evaluate source type (peer-reviewed, official documentation, news, blog, etc.) and reliability. (5) Access notes if relevant - mention if reference was hard to access, behind paywall, or unavailable. Keep concise but informative - aim for 2-4 sentences covering the key points."
     }
   ],
   "storage_metadata": {
     "version": 1,
     "source": "static_template",
     "config_id": "reference_check_validation_config_v1",
-    "description": "Static validation configuration for reference checking. Used to validate claims against their provided citations. The ID columns are populated during extraction, and the RESEARCH columns are filled during validation.",
+    "description": "Static validation configuration for reference checking. Uses single comprehensive search group with sonar-pro (high context) to validate all research columns together. QC enabled with claude-sonnet-4-5 for quality review. The ID columns are populated during extraction, and all RESEARCH columns are validated in one pass for efficiency.",
     "created_at": "2025-01-06T00:00:00.000000",
     "creation_method": "static_template",
     "metadata_version": "2.0"
