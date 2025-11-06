@@ -1,0 +1,137 @@
+{
+  "general_notes": "This table contains extracted claims with citations that have been validated. The ID columns (Claim ID, Statement, Context, Reference) are already filled with the extracted claims. The RESEARCH columns (Support Level, Confidence, Validation Notes) should be populated through validation to verify how well each reference supports its claim.",
+  "default_model": "claude-haiku-4-5",
+  "default_search_context_size": "high",
+  "anthropic_max_web_searches_default": 3,
+  "qc_settings": {
+    "enable_qc": false,
+    "model": "claude-sonnet-4-5",
+    "max_tokens_default": 4000,
+    "tokens_per_validated_column_default": 2000,
+    "anthropic_max_web_searches": 1
+  },
+  "search_groups": [
+    {
+      "group_id": 0,
+      "group_name": "Claim Identifiers",
+      "description": "Claim identifiers and extracted text used for context - already populated",
+      "model": "claude-haiku-4-5",
+      "search_context": "low"
+    },
+    {
+      "group_id": 1,
+      "group_name": "Reference Validation",
+      "description": "Validation of how well the reference supports the claim using web search to access cited sources",
+      "model": "claude-haiku-4-5",
+      "search_context": "high",
+      "anthropic_max_web_searches": 3
+    }
+  ],
+  "validation_targets": [
+    {
+      "column": "Claim ID",
+      "description": "Unique identifier for each claim",
+      "importance": "ID",
+      "format": "String (e.g., claim_1, claim_2)",
+      "examples": [
+        "claim_1",
+        "claim_2",
+        "claim_3"
+      ],
+      "search_group": 0,
+      "notes": "Auto-generated identifier for tracking claims"
+    },
+    {
+      "column": "Statement",
+      "description": "The factual claim being made",
+      "importance": "ID",
+      "format": "String (complete sentence or claim)",
+      "examples": [
+        "The Earth's average temperature has increased by 1.1°C since pre-industrial times",
+        "Python was first released in 1991",
+        "The human brain contains approximately 86 billion neurons"
+      ],
+      "search_group": 0,
+      "notes": "The claim that needs to be verified against the provided reference"
+    },
+    {
+      "column": "Context",
+      "description": "Additional context surrounding the claim from the original text",
+      "importance": "ID",
+      "format": "String (surrounding text or context)",
+      "examples": [
+        "According to the IPCC report...",
+        "In the Python documentation...",
+        "Studies have shown that..."
+      ],
+      "search_group": 0,
+      "notes": "Provides context for understanding the claim's intended meaning"
+    },
+    {
+      "column": "Reference",
+      "description": "The citation or source provided to support the claim",
+      "importance": "ID",
+      "format": "String (URL, citation, or source description)",
+      "examples": [
+        "https://www.ipcc.ch/report/ar6/wg1/",
+        "Python.org official documentation",
+        "Herculano-Houzel, S. (2009). The human brain in numbers. Frontiers in Human Neuroscience, 3, 31"
+      ],
+      "search_group": 0,
+      "notes": "The source that should support the claim - may be a URL, academic citation, or source description"
+    },
+    {
+      "column": "Support Level",
+      "description": "Assessment of how well the reference supports the claim",
+      "importance": "RESEARCH",
+      "format": "String (strongly_supported, supported, partially_supported, unclear, contradicted, or inaccessible)",
+      "examples": [
+        "strongly_supported",
+        "supported",
+        "partially_supported",
+        "unclear",
+        "contradicted",
+        "inaccessible"
+      ],
+      "search_group": 1,
+      "notes": "Validate by accessing the reference and comparing to the claim. Return one of: strongly_supported (claim matches reference exactly), supported (claim is backed by reference with minor differences), partially_supported (reference supports some but not all of claim), unclear (reference is ambiguous or unclear), contradicted (reference contradicts the claim), inaccessible (reference cannot be accessed or found)"
+    },
+    {
+      "column": "Confidence",
+      "description": "Confidence score for the support level assessment",
+      "importance": "RESEARCH",
+      "format": "Decimal (0.0 to 1.0)",
+      "examples": [
+        "0.95",
+        "0.80",
+        "0.65",
+        "0.40"
+      ],
+      "search_group": 1,
+      "notes": "0.0-1.0 scale indicating confidence in the support level assessment. Higher values indicate greater certainty about the assessment."
+    },
+    {
+      "column": "Validation Notes",
+      "description": "Detailed explanation of the validation findings",
+      "importance": "RESEARCH",
+      "format": "String (concise explanation with key details)",
+      "examples": [
+        "Reference directly states the claim with exact temperature value. Source is authoritative (IPCC AR6).",
+        "Reference confirms Python was released in 1991 by Guido van Rossum. Official documentation source.",
+        "Reference provides different estimate (85 billion) but within margin of error. Peer-reviewed neuroscience paper.",
+        "Reference URL returns 404 error. Unable to verify claim."
+      ],
+      "search_group": 1,
+      "notes": "Provide: (1) What the reference says about the claim, (2) Key differences if any, (3) Source reliability assessment. Keep concise but informative."
+    }
+  ],
+  "storage_metadata": {
+    "version": 1,
+    "source": "static_template",
+    "config_id": "reference_check_validation_config_v1",
+    "description": "Static validation configuration for reference checking. Used to validate claims against their provided citations. The ID columns are populated during extraction, and the RESEARCH columns are filled during validation.",
+    "created_at": "2025-01-06T00:00:00.000000",
+    "creation_method": "static_template",
+    "metadata_version": "2.0"
+  }
+}

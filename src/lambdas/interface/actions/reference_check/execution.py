@@ -631,6 +631,7 @@ async def _compile_results(
 ) -> Dict[str, Any]:
     """
     Compile validation results into CSV and generate summary.
+    Save to session results folder (like table_maker) and copy static validation config.
 
     Args:
         validation_results: List of validation results
@@ -645,6 +646,7 @@ async def _compile_results(
             'success': bool,
             'csv_s3_key': str,
             'csv_filename': str,
+            'config_s3_key': str,
             'summary': Dict,
             'error': str (if failed)
         }
@@ -669,25 +671,60 @@ async def _compile_results(
         # Get summary statistics
         summary = get_summary_stats(validation_results, config)
 
-        # Save CSV to S3
+        # Save CSV to session results folder (like table_maker does)
+        # Use results/ path structure for consistency with table_maker
+        domain = email.split('@')[1] if '@' in email else 'unknown'
+        email_prefix = email.split('@')[0] if '@' in email else email
         csv_filename = f"reference_check_{conversation_id}.csv"
-        csv_s3_key = _save_to_s3(
-            storage_manager=storage_manager,
-            email=email,
-            session_id=session_id,
-            conversation_id=conversation_id,
-            file_name=csv_filename,
-            data=csv_content,
-            content_type='text/csv'
+        csv_s3_key = f"results/{domain}/{email_prefix}/{session_id}/{csv_filename}"
+
+        storage_manager.s3_client.put_object(
+            Bucket=storage_manager.bucket_name,
+            Key=csv_s3_key,
+            Body=csv_content,
+            ContentType='text/csv'
         )
 
         logger.info(f"[COMPILATION] CSV saved to S3: {csv_s3_key}")
+
+        # Copy static validation config from local file to session
+        try:
+            config_path = Path(__file__).parent / 'reference_check_validation_config.json'
+            with open(config_path, 'r') as f:
+                validation_config = json.load(f)
+
+            # Update config metadata for this session
+            if 'storage_metadata' not in validation_config:
+                validation_config['storage_metadata'] = {}
+            validation_config['storage_metadata']['session_id'] = session_id
+            validation_config['storage_metadata']['email'] = email
+            validation_config['storage_metadata']['copied_at'] = datetime.now().isoformat()
+            validation_config['storage_metadata']['source'] = 'reference_check_static_template'
+
+            # Save config to session results folder
+            config_filename = f"reference_check_validation_config.json"
+            config_s3_key = f"results/{domain}/{email_prefix}/{session_id}/{config_filename}"
+
+            storage_manager.s3_client.put_object(
+                Bucket=storage_manager.bucket_name,
+                Key=config_s3_key,
+                Body=json.dumps(validation_config, indent=2),
+                ContentType='application/json'
+            )
+
+            logger.info(f"[COMPILATION] Validation config copied to S3: {config_s3_key}")
+
+        except Exception as config_error:
+            logger.warning(f"[COMPILATION] Failed to copy validation config: {config_error}")
+            config_s3_key = None
+
         logger.info(f"[COMPILATION] Summary: {summary}")
 
         return {
             'success': True,
             'csv_s3_key': csv_s3_key,
             'csv_filename': csv_filename,
+            'config_s3_key': config_s3_key,
             'summary': summary
         }
 
@@ -924,10 +961,13 @@ async def execute_reference_check(
         result['success'] = True
         result['csv_s3_key'] = compilation_result.get('csv_s3_key')
         result['csv_filename'] = compilation_result.get('csv_filename')
+        result['config_s3_key'] = compilation_result.get('config_s3_key')
         result['summary'] = compilation_result.get('summary')
+        result['session_id'] = session_id  # Include session_id in response
 
         # Update conversation state
         conversation_state['csv_s3_key'] = result['csv_s3_key']
+        conversation_state['config_s3_key'] = result['config_s3_key']
         conversation_state['summary'] = result['summary']
         conversation_state['status'] = 'complete'
         conversation_state['completed_at'] = datetime.now().isoformat()
@@ -944,7 +984,7 @@ async def execute_reference_check(
             phase='complete'
         )
 
-        # Send completion message with results
+        # Send completion message with results (like table_maker does)
         if websocket_client:
             websocket_client.send_to_session(session_id, {
                 'type': 'reference_check_complete',
@@ -952,6 +992,8 @@ async def execute_reference_check(
                 'status': 'complete',
                 'csv_s3_key': result['csv_s3_key'],
                 'csv_filename': result['csv_filename'],
+                'config_s3_key': result['config_s3_key'],
+                'session_id': session_id,
                 'summary': result['summary']
             })
 

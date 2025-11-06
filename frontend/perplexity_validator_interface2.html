@@ -2565,6 +2565,31 @@
                 }
             }
 
+            // ============================================
+            // PAGE TYPE DETECTION
+            // ============================================
+            function detectPageType() {
+                // Check URL for reference-check parameter
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.get('mode') === 'reference-check' || urlParams.get('page') === 'reference-check') {
+                    return 'reference-check';
+                }
+
+                // Check page title
+                const pageTitle = document.title.toLowerCase();
+                if (pageTitle.includes('reference') && pageTitle.includes('check')) {
+                    return 'reference-check';
+                }
+
+                // Check for URL path
+                if (window.location.pathname.includes('reference-check')) {
+                    return 'reference-check';
+                }
+
+                // Default mode
+                return 'default';
+            }
+
             // Make testing functions available globally for console use
             window.testingUtils = {
                 forceNewUser: () => {
@@ -6908,23 +6933,23 @@
 
             function handleEmailValidated(cardId) {
                 localStorage.setItem('validatedEmail', globalState.email);
-                
+
                 // Update card UI with error checking
                 const formEl = document.getElementById(`${cardId}-form`);
                 const successEl = document.getElementById(`${cardId}-success`);
-                
+
                 if (formEl) {
                     formEl.style.display = 'none';
                 } else {
                     console.error(`Form element ${cardId}-form not found`);
                 }
-                
+
                 if (successEl) {
                     successEl.style.display = 'block';
                 } else {
                     console.error(`Success element ${cardId}-success not found`);
                 }
-                
+
                 // Update status badge
                 const card = document.getElementById(cardId);
                 if (card) {
@@ -6936,18 +6961,25 @@
                 } else {
                     console.error(`Card element ${cardId} not found`);
                 }
-                
+
                 // Hide the validate email button
                 const buttonsContainer = document.getElementById(`${cardId}-buttons`);
                 if (buttonsContainer) {
                     buttonsContainer.style.display = 'none';
                 }
 
-                // Create next card - show demo option for new users
+                // Check page type to determine next card
+                const pageType = detectPageType();
+
                 setTimeout(() => {
-                    if (globalState.isNewUser) {
+                    if (pageType === 'reference-check') {
+                        // Reference check mode - go straight to reference check card
+                        proceedWithReferenceCheck(cardId);
+                    } else if (globalState.isNewUser) {
+                        // Default mode - show demo option for new users
                         createUploadOrDemoCard();
                     } else {
+                        // Default mode - show upload card for returning users
                         createUploadCard();
                     }
                 }, 500);
@@ -12800,15 +12832,37 @@ Please provide any additional context, or simply proceed to generate your initia
             completeThinkingInCard(cardId, 'Reference check complete');
 
             // Show summary message
-            if (data.total_claims !== undefined) {
-                const summary = `Checked ${data.total_claims} claim${data.total_claims !== 1 ? 's' : ''} with ${data.total_citations || 0} citation${(data.total_citations || 0) !== 1 ? 's' : ''}`;
-                showMessage(`${cardId}-messages`, summary, 'success');
+            if (data.summary) {
+                const summary = data.summary;
+                const total = summary.total_claims || 0;
+                const supportedCount = (summary.strongly_supported || 0) + (summary.supported || 0);
+                const summaryText = `Analyzed ${total} claim${total !== 1 ? 's' : ''} - ${supportedCount} supported`;
+                showMessage(`${cardId}-messages`, summaryText, 'success');
             }
 
-            // Auto-trigger preview/results display
-            // TODO: This will be implemented when we have the results display card
-            // For now, just complete the card
-            console.log('Reference check complete:', data);
+            // Store data in global state for preview
+            if (data.csv_s3_key) globalState.csvS3Key = data.csv_s3_key;
+            if (data.config_s3_key) globalState.configS3Key = data.config_s3_key;
+            if (data.session_id) {
+                globalState.sessionId = data.session_id;
+                localStorage.setItem('sessionId', data.session_id);
+            }
+
+            // Mark files as ready (similar to table_maker)
+            globalState.configValidated = true;
+            globalState.configStored = true;
+            globalState.excelFileUploaded = true;
+
+            // Create preview card immediately (like table_maker does)
+            globalState.activePreviewCard = null;
+            createPreviewCard();
+
+            // Hide the progress indicator after preview card is created
+            setTimeout(() => {
+                if (cardId) {
+                    completeThinkingInCard(cardId, 'Complete!', 800);
+                }
+            }, 500);
         }
 
         // Handle reference check error

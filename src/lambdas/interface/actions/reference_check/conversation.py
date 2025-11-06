@@ -108,6 +108,13 @@ async def handle_reference_check_start_async(request_data: Dict[str, Any], conte
                 }
             }
 
+        # Generate session ID if not provided (like table_maker does)
+        if not session_id:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            random_hex = uuid.uuid4().hex[:8]
+            session_id = f"session_{timestamp}_{random_hex}"
+            logger.info(f"[REFERENCE_CHECK] Generated new session ID: {session_id}")
+
         # Validate email and get/create session
         try:
             session_info = validate_email_and_get_session_data(email, session_id)
