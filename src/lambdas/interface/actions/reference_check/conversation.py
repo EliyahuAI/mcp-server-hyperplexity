@@ -14,11 +14,10 @@ import re
 
 # Import shared services
 from interface_lambda.core.sqs_service import _send_sqs_message
-import os
-from interface_lambda.services.user_service import validate_email_and_get_session_data
-from interface_lambda.services.dynamodb_service import create_run_record, update_run_status
-from interface_lambda.services.websocket_client import WebSocketClient
-from interface_lambda.services.s3_service import UnifiedS3Manager
+from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+from dynamodb_schemas import create_run_record, update_run_status
+from user_validation import validate_email_and_get_session_data
+from websocket_client import WebSocketClient
 
 # Logger
 import logging

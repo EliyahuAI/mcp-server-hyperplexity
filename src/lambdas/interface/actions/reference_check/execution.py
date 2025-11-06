@@ -77,7 +77,7 @@ from dynamodb_schemas import update_run_status
 
 # WebSocket client for real-time updates
 try:
-    from interface_lambda.services.websocket_client import WebSocketClient
+    from websocket_client import WebSocketClient
     websocket_client = WebSocketClient()
 except ImportError:
     websocket_client = None
