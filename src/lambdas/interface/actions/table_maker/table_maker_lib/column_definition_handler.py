@@ -329,7 +329,8 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             enhanced_data = api_response.get('enhanced_data', {})
             result['enhanced_data'] = enhanced_data
             result['call_description'] = "Creating Columns"
-            result['model_used'] = actual_model
+            # Extract actual model from enhanced_data or fall back to requested model
+            result['model_used'] = enhanced_data.get('model_used', model) if enhanced_data else model
 
             # Include cost information from enhanced_data
             if enhanced_data:
