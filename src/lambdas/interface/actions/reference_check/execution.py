@@ -671,20 +671,21 @@ async def _compile_results(
         # Get summary statistics
         summary = get_summary_stats(validation_results, config)
 
-        # Save CSV to session results folder (like table_maker does)
-        # Use results/ path structure for consistency with table_maker
-        domain = email.split('@')[1] if '@' in email else 'unknown'
-        email_prefix = email.split('@')[0] if '@' in email else email
-        csv_filename = f"reference_check_{conversation_id}.csv"
-        csv_s3_key = f"results/{domain}/{email_prefix}/{session_id}/{csv_filename}"
+        # Save CSV using store_excel_file (handles CSV too) with _input suffix
+        # This is what the preview/validation system expects
+        csv_filename = f"reference_check_{conversation_id}_input.csv"
 
-        storage_manager.s3_client.put_object(
-            Bucket=storage_manager.bucket_name,
-            Key=csv_s3_key,
-            Body=csv_content,
-            ContentType='text/csv'
+        store_result = storage_manager.store_excel_file(
+            email=email,
+            session_id=session_id,
+            file_content=csv_content.encode('utf-8'),
+            filename=csv_filename
         )
 
+        if not store_result.get('success'):
+            raise Exception(f"Failed to store CSV file: {store_result.get('error')}")
+
+        csv_s3_key = store_result.get('s3_key')
         logger.info(f"[COMPILATION] CSV saved to S3: {csv_s3_key}")
 
         # Copy static validation config from local file to session
