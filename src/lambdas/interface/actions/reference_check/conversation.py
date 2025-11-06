@@ -15,6 +15,7 @@ import re
 # Import shared services
 from interface_lambda.core.sqs_service import _send_sqs_message
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+from interface_lambda.utils.helpers import create_response
 from dynamodb_schemas import create_run_record, update_run_status
 from websocket_client import WebSocketClient
 
@@ -98,14 +99,11 @@ async def handle_reference_check_start_async(request_data: Dict[str, Any], conte
 
         # Validate required fields
         if not email or not submitted_text:
-            return {
-                'statusCode': 400,
-                'body': {
-                    'status': 'error',
-                    'error': 'missing_fields',
-                    'message': 'Email and submitted_text are required'
-                }
-            }
+            return create_response(400, {
+                'success': False,
+                'error': 'missing_fields',
+                'message': 'Email and submitted_text are required'
+            })
 
         # Generate session ID if not provided (like table_maker does)
         if not session_id:
@@ -131,15 +129,12 @@ async def handle_reference_check_start_async(request_data: Dict[str, Any], conte
                 f"~{size_details['estimated_tokens']} tokens"
             )
 
-            return {
-                'statusCode': 400,
-                'body': {
-                    'status': 'error',
-                    'error': 'text_too_large',
-                    'message': error_message,
-                    'details': size_details
-                }
-            }
+            return create_response(400, {
+                'success': False,
+                'error': 'text_too_large',
+                'message': error_message,
+                'details': size_details
+            })
 
         # Text size is valid, proceed with processing
         logger.info(
@@ -182,41 +177,32 @@ async def handle_reference_check_start_async(request_data: Dict[str, Any], conte
             )
         except Exception as e:
             logger.error(f"Failed to queue reference check: {str(e)}")
-            return {
-                'statusCode': 500,
-                'body': {
-                    'status': 'error',
-                    'error': 'queue_failed',
-                    'message': 'Failed to start reference check. Please try again.'
-                }
-            }
+            return create_response(500, {
+                'success': False,
+                'error': 'queue_failed',
+                'message': 'Failed to start reference check. Please try again.'
+            })
 
         # Return immediate success response
-        return {
-            'statusCode': 200,
-            'body': {
-                'success': True,
-                'status': 'processing',
-                'conversation_id': conversation_id,
-                'session_id': session_id,
-                'message': 'Reference check started. Results will be sent via WebSocket.',
-                'text_stats': {
-                    'word_count': size_details['word_count'],
-                    'estimated_tokens': size_details['estimated_tokens']
-                }
+        return create_response(200, {
+            'success': True,
+            'status': 'processing',
+            'conversation_id': conversation_id,
+            'session_id': session_id,
+            'message': 'Reference check started. Results will be sent via WebSocket.',
+            'text_stats': {
+                'word_count': size_details['word_count'],
+                'estimated_tokens': size_details['estimated_tokens']
             }
-        }
+        })
 
     except Exception as e:
         logger.error(f"Error in handle_reference_check_start_async: {str(e)}", exc_info=True)
-        return {
-            'statusCode': 500,
-            'body': {
-                'status': 'error',
-                'error': 'internal_error',
-                'message': 'An unexpected error occurred'
-            }
-        }
+        return create_response(500, {
+            'success': False,
+            'error': 'internal_error',
+            'message': f'An unexpected error occurred: {str(e)}'
+        })
 
 
 async def handle_reference_check_start(request_data: Dict[str, Any], context: Any) -> Dict[str, Any]:
