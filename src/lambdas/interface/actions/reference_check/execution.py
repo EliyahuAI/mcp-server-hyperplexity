@@ -671,9 +671,9 @@ async def _compile_results(
         # Get summary statistics
         summary = get_summary_stats(validation_results, config)
 
-        # Save CSV using store_excel_file (handles CSV too) with _input suffix
-        # This is what the preview/validation system expects
-        csv_filename = f"reference_check_{conversation_id}_input.csv"
+        # Save CSV using store_excel_file (handles CSV too)
+        # Note: store_excel_file automatically adds _input suffix
+        csv_filename = f"reference_check_{conversation_id}.csv"
 
         store_result = storage_manager.store_excel_file(
             email=email,
