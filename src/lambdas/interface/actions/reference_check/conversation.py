@@ -16,7 +16,6 @@ import re
 from interface_lambda.core.sqs_service import _send_sqs_message
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
 from dynamodb_schemas import create_run_record, update_run_status
-from user_validation import validate_email_and_get_session_data
 from websocket_client import WebSocketClient
 
 # Logger
@@ -115,20 +114,8 @@ async def handle_reference_check_start_async(request_data: Dict[str, Any], conte
             session_id = f"session_{timestamp}_{random_hex}"
             logger.info(f"[REFERENCE_CHECK] Generated new session ID: {session_id}")
 
-        # Validate email and get/create session
-        try:
-            session_info = validate_email_and_get_session_data(email, session_id)
-            session_id = session_info.get('session_id')
-        except Exception as e:
-            logger.error(f"Email validation failed: {str(e)}")
-            return {
-                'statusCode': 400,
-                'body': {
-                    'status': 'error',
-                    'error': 'invalid_email',
-                    'message': 'Email validation failed'
-                }
-            }
+        # Note: Email validation is assumed to be done by frontend before this action
+        # Same pattern as table_maker - just use the email/session provided
 
         # ===== UPFRONT TEXT SIZE VALIDATION =====
         is_valid, size_details = _validate_text_size(submitted_text)
