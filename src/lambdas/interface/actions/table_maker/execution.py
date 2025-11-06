@@ -862,6 +862,7 @@ async def execute_full_table_generation(
                 extraction_model = extraction_config.get('model', 'sonar')
                 extraction_max_tokens = extraction_config.get('max_tokens', 16000)
                 extraction_context_size = extraction_config.get('search_context_size', 'high')
+                extraction_max_web_searches = extraction_config.get('max_web_searches', 3)
                 extraction_timeout = extraction_config.get('timeout', 120)
 
                 try:
@@ -871,6 +872,7 @@ async def execute_full_table_generation(
                         model=extraction_model,
                         max_tokens=extraction_max_tokens,
                         search_context_size=extraction_context_size,
+                        max_web_searches=extraction_max_web_searches,
                         timeout=extraction_timeout
                     )
 

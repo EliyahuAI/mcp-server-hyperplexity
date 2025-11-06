@@ -39,6 +39,7 @@ class TableExtractionHandler:
         model: str = "sonar",
         max_tokens: int = 16000,
         search_context_size: str = "high",
+        max_web_searches: int = 3,
         timeout: int = 120
     ) -> Dict[str, Any]:
         """
@@ -52,6 +53,7 @@ class TableExtractionHandler:
             model: AI model to use (default: sonar for Perplexity)
             max_tokens: Maximum tokens for AI response
             search_context_size: Search context size for Perplexity (low/medium/high)
+            max_web_searches: Maximum web searches for Claude models
             timeout: Timeout in seconds
 
         Returns:
@@ -96,6 +98,7 @@ class TableExtractionHandler:
                         model=model,
                         max_tokens=max_tokens,
                         search_context_size=search_context_size,
+                        max_web_searches=max_web_searches,
                         timeout=timeout
                     )
 
@@ -154,6 +157,7 @@ class TableExtractionHandler:
         model: str,
         max_tokens: int,
         search_context_size: str,
+        max_web_searches: int,
         timeout: int
     ) -> Dict[str, Any]:
         """
@@ -164,6 +168,7 @@ class TableExtractionHandler:
             model: AI model to use
             max_tokens: Maximum tokens
             search_context_size: Search context size
+            max_web_searches: Maximum web searches for Claude models
             timeout: Timeout in seconds
 
         Returns:
@@ -224,8 +229,9 @@ class TableExtractionHandler:
                 schema=schema,
                 model=model,
                 max_tokens=max_tokens,
-                use_cache=False,  # Don't cache extractions (data may change)
+                use_cache=True,  # Enable caching for cost savings
                 search_context_size=search_context_size,
+                max_web_searches=max_web_searches,
                 include_domains=[domain],  # Prioritize the source domain
                 debug_name=f"table_extraction_{table_name.replace(' ', '_')}"
             )
