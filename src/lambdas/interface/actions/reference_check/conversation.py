@@ -92,9 +92,9 @@ async def handle_reference_check_start_async(request_data: Dict[str, Any], conte
     """
     try:
         # Extract required fields
-        email = request_data.get('email', '').strip().lower()
-        session_id = request_data.get('session_id', '').strip()
-        submitted_text = request_data.get('submitted_text', '').strip()
+        email = (request_data.get('email') or '').strip().lower()
+        session_id = (request_data.get('session_id') or '').strip()
+        submitted_text = (request_data.get('submitted_text') or '').strip()
 
         # Validate required fields
         if not email or not submitted_text:
