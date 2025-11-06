@@ -1262,6 +1262,11 @@ def handle_main_processing(event, context):
             logger.info("Detected table conversation request, forwarding to table maker handler")
             return handle_table_conversation(event, context)
 
+        # Check if this is a reference check request
+        if event.get('request_type') == 'reference_check':
+            logger.info("Detected reference check request, forwarding to reference check handler")
+            return handle_reference_check(event, context)
+
         # Check if this is a table finalization request (preview generation or accept and validate)
         if event.get('request_type') == 'table_finalization':
             logger.info("Detected table finalization request, forwarding to table finalization handler")
@@ -6440,4 +6445,44 @@ def handle_table_finalization(event, context):
         return {
             'statusCode': 500,
             'body': {'error': f'Table finalization processing failed: {str(e)}'}
+        }
+
+def handle_reference_check(event, context):
+    """
+    Handle reference check requests from SQS.
+    Routes to the reference check conversation handler.
+    """
+    import asyncio
+    from interface_lambda.actions.reference_check.conversation import (
+        handle_reference_check_start
+    )
+
+    try:
+        action = event.get('action')
+        session_id = event.get('session_id')
+        conversation_id = event.get('conversation_id')
+
+        logger.info(f"[REFERENCE_CHECK] Processing {action} for session {session_id}, conversation {conversation_id}")
+
+        # Route based on action
+        if action == 'startReferenceCheck':
+            # Call the async handler using asyncio.run
+            result = asyncio.run(handle_reference_check_start(event, context))
+        else:
+            logger.error(f"Unknown reference check action: {action}")
+            return {
+                'statusCode': 400,
+                'body': {'error': f'Unknown action: {action}'}
+            }
+
+        logger.info(f"[REFERENCE_CHECK] Completed {action} for conversation {conversation_id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"[REFERENCE_CHECK] Error processing reference check: {e}")
+        import traceback
+        logger.error(f"[REFERENCE_CHECK] Traceback: {traceback.format_exc()}")
+        return {
+            'statusCode': 500,
+            'body': {'error': f'Reference check processing failed: {str(e)}'}
         }

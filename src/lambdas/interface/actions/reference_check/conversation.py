@@ -13,7 +13,8 @@ from typing import Dict, Any, Tuple
 import re
 
 # Import shared services
-from interface_lambda.services.sqs_service import send_table_conversation_request
+from interface_lambda.core.sqs_service import _send_sqs_message
+import os
 from interface_lambda.services.user_service import validate_email_and_get_session_data
 from interface_lambda.services.dynamodb_service import create_run_record, update_run_status
 from interface_lambda.services.websocket_client import WebSocketClient
@@ -166,18 +167,29 @@ async def handle_reference_check_start_async(request_data: Dict[str, Any], conte
 
         # Prepare message for SQS
         conversation_request = {
+            'request_type': 'reference_check',  # Important: Different from table_conversation
             'action': 'startReferenceCheck',
             'email': email,
             'session_id': session_id,
             'conversation_id': conversation_id,
             'submitted_text': submitted_text,
             'text_stats': size_details,
-            'timestamp': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'deployment_environment': os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod')
         }
 
         # Send to SQS queue
         try:
-            message_id = send_table_conversation_request(conversation_request)
+            # Get queue URL
+            queue_url = os.environ.get('SQS_STANDARD_QUEUE_URL')
+            if not queue_url:
+                raise Exception("SQS_STANDARD_QUEUE_URL not configured")
+
+            # Clean out None values
+            message_body_cleaned = {k: v for k, v in conversation_request.items() if v is not None}
+
+            # Send to SQS
+            message_id = _send_sqs_message(queue_url, message_body_cleaned)
             logger.info(
                 f"Reference check queued: {conversation_id}, "
                 f"SQS message: {message_id}"
