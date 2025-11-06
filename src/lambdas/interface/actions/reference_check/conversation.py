@@ -13,7 +13,7 @@ from typing import Dict, Any, Tuple
 import re
 
 # Import shared services
-from interface_lambda.core.sqs_service import _send_sqs_message
+from interface_lambda.core.sqs_service import _send_sqs_message, STANDARD_QUEUE_URL
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
 from interface_lambda.utils.helpers import create_response
 from dynamodb_schemas import create_run_record, update_run_status
@@ -161,16 +161,15 @@ async def handle_reference_check_start_async(request_data: Dict[str, Any], conte
 
         # Send to SQS queue
         try:
-            # Get queue URL
-            queue_url = os.environ.get('SQS_STANDARD_QUEUE_URL')
-            if not queue_url:
-                raise Exception("SQS_STANDARD_QUEUE_URL not configured")
+            # Check queue URL is configured
+            if not STANDARD_QUEUE_URL:
+                raise Exception("STANDARD_QUEUE_URL not configured")
 
             # Clean out None values
             message_body_cleaned = {k: v for k, v in conversation_request.items() if v is not None}
 
             # Send to SQS
-            message_id = _send_sqs_message(queue_url, message_body_cleaned)
+            message_id = _send_sqs_message(STANDARD_QUEUE_URL, message_body_cleaned)
             logger.info(
                 f"Reference check queued: {conversation_id}, "
                 f"SQS message: {message_id}"
