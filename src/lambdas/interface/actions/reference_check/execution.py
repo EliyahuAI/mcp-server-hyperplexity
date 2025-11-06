@@ -77,7 +77,7 @@ from dynamodb_schemas import update_run_status
 
 # WebSocket client for real-time updates
 try:
-    from websocket_client import WebSocketClient
+    from interface_lambda.services.websocket_client import WebSocketClient
     websocket_client = WebSocketClient()
 except ImportError:
     websocket_client = None
@@ -986,6 +986,10 @@ async def execute_reference_check(
 
         # Send completion message with results (like table_maker does)
         if websocket_client:
+            # Flatten summary for frontend compatibility
+            summary = result['summary']
+            breakdown = summary.get('support_level_breakdown', {})
+
             websocket_client.send_to_session(session_id, {
                 'type': 'reference_check_complete',
                 'conversation_id': conversation_id,
@@ -994,7 +998,16 @@ async def execute_reference_check(
                 'csv_filename': result['csv_filename'],
                 'config_s3_key': result['config_s3_key'],
                 'session_id': session_id,
-                'summary': result['summary']
+                'summary': {
+                    **summary,
+                    # Flatten support level counts for frontend
+                    'strongly_supported': breakdown.get('strongly_supported', 0),
+                    'supported': breakdown.get('supported', 0),
+                    'partially_supported': breakdown.get('partially_supported', 0),
+                    'unclear': breakdown.get('unclear', 0),
+                    'contradicted': breakdown.get('contradicted', 0),
+                    'inaccessible': breakdown.get('inaccessible', 0)
+                }
             })
 
         # Update runs database

@@ -197,7 +197,8 @@ async def handle_reference_check_start_async(request_data: Dict[str, Any], conte
         return {
             'statusCode': 200,
             'body': {
-                'status': 'queued',
+                'success': True,
+                'status': 'processing',
                 'conversation_id': conversation_id,
                 'session_id': session_id,
                 'message': 'Reference check started. Results will be sent via WebSocket.',
