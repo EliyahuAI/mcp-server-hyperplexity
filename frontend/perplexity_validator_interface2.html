@@ -5774,6 +5774,22 @@
                     return; // Warning handled by dedicated function
                 }
 
+                // Handle Reference Check updates
+                if (data.type === 'reference_check_progress') {
+                    handleReferenceCheckProgress(data);
+                    return;
+                }
+
+                if (data.type === 'reference_check_complete') {
+                    handleReferenceCheckComplete(data);
+                    return;
+                }
+
+                if (data.type === 'reference_check_error') {
+                    handleReferenceCheckError(data);
+                    return;
+                }
+
                 // General error handler - handles all error message types
                 if (data.type === 'error' || data.type === 'validation_failed' || data.type === 'preview_failed' ||
                     data.type === 'config_generation_failed' || data.status === 'FAILED' || data.status === 'ERROR') {
@@ -6971,6 +6987,14 @@
                             }
                         },
                         {
+                            text: '🔍 Check References',
+                            icon: '',
+                            variant: 'quaternary',
+                            callback: async function() {
+                                proceedWithReferenceCheck(cardId);
+                            }
+                        },
+                        {
                             text: '🎯 Try a Demo Table',
                             icon: '',
                             variant: 'tertiary',
@@ -6991,6 +7015,16 @@
                 // Create table maker card
                 setTimeout(() => {
                     createTableMakerCard();
+                }, 500);
+            }
+
+            function proceedWithReferenceCheck(cardId) {
+                // Show completion state
+                showFinalCardState(cardId, 'Starting reference check...', 'success');
+
+                // Create reference check card
+                setTimeout(() => {
+                    createReferenceCheckCard();
                 }, 500);
             }
 
@@ -11743,6 +11777,13 @@ Please provide any additional context, or simply proceed to generate your initia
             confirmationResponse: null  // Stores pre-generated confirmation to skip AI round-trip
         };
 
+        // Global state for reference check
+        const referenceCheckState = {
+            cardId: null,
+            conversationId: null,
+            submittedText: null
+        };
+
         // Create table maker card
         function createTableMakerCard() {
             const cardId = generateCardId();
@@ -12572,6 +12613,226 @@ Please provide any additional context, or simply proceed to generate your initia
             } catch (error) {
                 console.error('Error downloading table:', error);
                 alert('Failed to download table: ' + error.message);
+            }
+        }
+
+        // ============================================
+        // REFERENCE CHECK FUNCTIONS
+        // ============================================
+
+        // Create reference check card
+        function createReferenceCheckCard() {
+            const cardId = generateCardId();
+            referenceCheckState.cardId = cardId;
+
+            const content = `
+                <div id="${cardId}-messages"></div>
+                <div id="${cardId}-input-container">
+                    <textarea id="${cardId}-input" class="reference-check-textarea"
+                        placeholder="Paste AI output or literature with citations to verify...\n\nExample: According to Smith et al. (2024), transformer models achieve 95% accuracy on benchmark tasks [1]. The study found that attention mechanisms significantly improve performance [2].\n\n[1] https://arxiv.org/abs/2024.12345\n[2] https://www.nature.com/articles/s41586-024-00001"
+                        maxlength="96000"
+                        rows="12"
+                        style="width: 100%; resize: vertical; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace; font-size: 13px; line-height: 1.5;"></textarea>
+                </div>
+            `;
+
+            const card = createCard({
+                id: cardId,
+                icon: '🔍',
+                title: 'Reference Check',
+                subtitle: 'Verify AI output or literature with citations',
+                content,
+                buttons: [
+                    {
+                        text: 'Check References',
+                        variant: 'primary',
+                        width: 'full',
+                        callback: async (e) => {
+                            const button = e.target.closest('button');
+                            markButtonSelected(button, 'Analyzing...');
+                            await startReferenceCheck(cardId);
+                        }
+                    }
+                ]
+            });
+
+            return card;
+        }
+
+        // Start reference check
+        async function startReferenceCheck(cardId) {
+            const input = document.getElementById(`${cardId}-input`);
+            const submittedText = input.value.trim();
+
+            // Validate not empty
+            if (!submittedText) {
+                showMessage(`${cardId}-messages`, 'Please enter text with citations to verify', 'error');
+                return;
+            }
+
+            // Store submitted text
+            referenceCheckState.submittedText = submittedText;
+
+            // Collapse textarea to preview mode (first 3 lines with ellipsis)
+            const lines = submittedText.split('\n');
+            const previewLines = lines.slice(0, 3).join('\n');
+            const hasMore = lines.length > 3;
+
+            input.value = previewLines + (hasMore ? '\n...' : '');
+            input.rows = 3;
+            input.disabled = true;
+            input.style.cursor = 'default';
+
+            // Show thinking indicator
+            showThinkingInCard(cardId, 'Extracting claims and checking references...', true);
+
+            // Register WebSocket handler
+            registerCardHandler(cardId, ['reference_check_progress', 'reference_check_complete', 'reference_check_error'], (data) => {
+                if (data.type === 'reference_check_progress') {
+                    handleReferenceCheckProgress(data, cardId);
+                } else if (data.type === 'reference_check_complete') {
+                    handleReferenceCheckComplete(data, cardId);
+                } else if (data.type === 'reference_check_error') {
+                    handleReferenceCheckError(data, cardId);
+                }
+            });
+
+            // Send API request
+            try {
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'startReferenceCheck',
+                        email: globalState.email,
+                        session_id: globalState.sessionId || null,
+                        text: submittedText
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.status === 'processing') {
+                    // Request queued successfully
+                    referenceCheckState.conversationId = data.conversation_id;
+
+                    // Store session_id if backend generated one
+                    if (data.session_id && !globalState.sessionId) {
+                        globalState.sessionId = data.session_id;
+                        localStorage.setItem('sessionId', data.session_id);
+                    }
+
+                    // Connect to WebSocket session
+                    connectToSession(globalState.sessionId);
+                } else if (data.error === 'text_too_large') {
+                    // Handle text too large error
+                    completeThinkingInCard(cardId, 'Text too large');
+                    showMessage(`${cardId}-messages`,
+                        `Text is too large (${data.char_count} characters). Maximum allowed is ${data.max_chars} characters (approximately ${data.max_words} words).`,
+                        'error');
+
+                    // Re-enable textarea
+                    input.value = submittedText;
+                    input.rows = 12;
+                    input.disabled = false;
+                    input.style.cursor = 'text';
+                } else {
+                    completeThinkingInCard(cardId, 'Failed to start');
+                    showMessage(`${cardId}-messages`,
+                        'Failed to start reference check: ' + (data.error || data.message || 'Unknown error'),
+                        'error');
+
+                    // Re-enable textarea
+                    input.value = submittedText;
+                    input.rows = 12;
+                    input.disabled = false;
+                    input.style.cursor = 'text';
+                }
+            } catch (error) {
+                console.error('Error starting reference check:', error);
+                completeThinkingInCard(cardId, 'Error');
+                showMessage(`${cardId}-messages`,
+                    'Failed to start reference check. Please try again.',
+                    'error');
+
+                // Re-enable textarea
+                input.value = submittedText;
+                input.rows = 12;
+                input.disabled = false;
+                input.style.cursor = 'text';
+            }
+        }
+
+        // Handle reference check progress updates
+        function handleReferenceCheckProgress(data, cardId) {
+            // Use cardId from referenceCheckState if not provided
+            if (!cardId) {
+                cardId = referenceCheckState.cardId;
+            }
+            if (!cardId) return;
+
+            // Update progress bar
+            if (data.progress !== undefined) {
+                const message = data.message || data.status || 'Processing...';
+                updateThinkingProgress(cardId, data.progress, message);
+            }
+
+            // Show claims found if available
+            if (data.claims_found !== undefined) {
+                updateThinkingInCard(cardId, `Found ${data.claims_found} claims to validate...`);
+            }
+
+            // Show validation progress if available
+            if (data.claims_validated !== undefined && data.total_claims !== undefined) {
+                updateThinkingInCard(cardId, `Validated ${data.claims_validated} of ${data.total_claims} claims...`);
+            }
+        }
+
+        // Handle reference check complete
+        function handleReferenceCheckComplete(data, cardId) {
+            // Use cardId from referenceCheckState if not provided
+            if (!cardId) {
+                cardId = referenceCheckState.cardId;
+            }
+            if (!cardId) return;
+
+            // Complete thinking indicator
+            completeThinkingInCard(cardId, 'Reference check complete');
+
+            // Show summary message
+            if (data.total_claims !== undefined) {
+                const summary = `Checked ${data.total_claims} claim${data.total_claims !== 1 ? 's' : ''} with ${data.total_citations || 0} citation${(data.total_citations || 0) !== 1 ? 's' : ''}`;
+                showMessage(`${cardId}-messages`, summary, 'success');
+            }
+
+            // Auto-trigger preview/results display
+            // TODO: This will be implemented when we have the results display card
+            // For now, just complete the card
+            console.log('Reference check complete:', data);
+        }
+
+        // Handle reference check error
+        function handleReferenceCheckError(data, cardId) {
+            // Use cardId from referenceCheckState if not provided
+            if (!cardId) {
+                cardId = referenceCheckState.cardId;
+            }
+            if (!cardId) return;
+
+            // Complete thinking with error
+            completeThinkingInCard(cardId, 'Reference check failed');
+
+            // Show error message
+            const errorMessage = data.error || data.message || 'An error occurred during reference checking';
+            showMessage(`${cardId}-messages`, `Error: ${errorMessage}`, 'error');
+
+            // Re-enable textarea if input container exists
+            const input = document.getElementById(`${cardId}-input`);
+            if (input && referenceCheckState.submittedText) {
+                input.value = referenceCheckState.submittedText;
+                input.rows = 12;
+                input.disabled = false;
+                input.style.cursor = 'text';
             }
         }
 

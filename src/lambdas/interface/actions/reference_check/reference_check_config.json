@@ -1,0 +1,45 @@
+{
+    "text_limits": {
+        "max_tokens": 32000,
+        "max_words": 24000,
+        "tokens_per_word": 1.33,
+        "error_message": "Text is too large to process. Please limit to {max_words} words or less."
+    },
+    "extraction": {
+        "model": "claude-sonnet-4-5",
+        "max_tokens": 16000,
+        "temperature": 0.3,
+        "min_claims": 1,
+        "max_claims": 50,
+        "timeout_seconds": 120
+    },
+    "validation": {
+        "model": "claude-haiku-4-5",
+        "max_tokens": 8000,
+        "temperature": 0.2,
+        "max_parallel_validations": 5,
+        "timeout_seconds": 60,
+        "max_web_searches": 3
+    },
+    "support_levels": [
+        "strongly_supported",
+        "supported",
+        "partially_supported",
+        "unclear",
+        "contradicted",
+        "inaccessible"
+    ],
+    "output": {
+        "csv_columns": [
+            "Claim ID",
+            "Statement",
+            "Context",
+            "Reference",
+            "Reference Description",
+            "What Reference Says",
+            "Support Level",
+            "Confidence",
+            "Validation Notes"
+        ]
+    }
+}
