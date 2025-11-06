@@ -78,7 +78,52 @@
         "[1] Johnson, A. (2023). Understanding AI Hallucinations. Nature AI, 5(2), 123-145"
       ],
       "search_group": 0,
-      "notes": "The source that should support the claim. May be a URL, academic citation, or source description. No validation needed - used as context for finding the source."
+      "notes": "The source that should support the claim. May be a URL, academic citation, or source description. Can be null if claim is unreferenced (fact-check mode). No validation needed - used as context for finding the source."
+    },
+    {
+      "column": "Reference Description",
+      "description": "Brief description of what the reference source is (e.g., peer-reviewed paper, official documentation, news article)",
+      "importance": "RESEARCH",
+      "format": "String (brief source description)",
+      "examples": [
+        "IPCC AR6 Working Group 1 Report - official climate assessment",
+        "Python.org official documentation - language history page",
+        "arXiv preprint by Chen et al. (2024) on LLM factual accuracy",
+        "Nature AI peer-reviewed journal article",
+        "N/A - no reference provided, fact-checked via general web search"
+      ],
+      "search_group": 1,
+      "notes": "Briefly describe the source type and authority. For referenced claims, identify the source (journal, documentation, news, etc.). For unreferenced claims (fact-check mode), state 'N/A - fact-checked via web search' or similar."
+    },
+    {
+      "column": "What Reference Says",
+      "description": "Summary of what the reference (or web search results for unreferenced claims) says about the topic",
+      "importance": "RESEARCH",
+      "format": "String (concise summary of relevant content)",
+      "examples": [
+        "The report states global surface temperature increased by 1.1°C from 1850-1900 to 2011-2020 (high confidence).",
+        "Documentation confirms Python was first released in February 1991 by Guido van Rossum.",
+        "Study measured hallucination rates of 12-23% across 5 LLMs, averaging 17.5%.",
+        "Multiple authoritative sources (NASA, NOAA, IPCC) confirm warming trend with slight variations in exact figures."
+      ],
+      "search_group": 1,
+      "notes": "For referenced claims: Quote or paraphrase what the specific reference says about the claim. For unreferenced claims (fact-check mode): Summarize what authoritative sources say about the statement based on web search. Include key facts, numbers, or findings. Keep focused on content relevant to the claim."
+    },
+    {
+      "column": "Qualified Fact",
+      "description": "The fact as stated by the reference (and other authoritative sources), written in the same format and style as the original claim. Use this when the reference supports the claim but with different numbers, dates, or qualifications.",
+      "importance": "RESEARCH",
+      "format": "String (reformulated claim matching reference evidence, or 'N/A' if claim matches exactly or is contradicted)",
+      "examples": [
+        "The Earth's average temperature has increased by 1.09°C (±0.13°C) since pre-industrial times",
+        "Python was first released in February 1991",
+        "Large language models can hallucinate facts in 12-23% of responses depending on model and task",
+        "N/A - claim matches reference exactly",
+        "N/A - claim is contradicted by reference",
+        "N/A - reference is inaccessible"
+      ],
+      "search_group": 1,
+      "notes": "IMPORTANT: Write the qualified fact in the SAME format and style as the original claim (Statement column), but with corrections/qualifications based on what the reference actually says. Use this when: (1) Numbers differ slightly (claim says '1.1°C', reference says '1.09°C'), (2) Dates are more specific (claim says '1991', reference says 'February 1991'), (3) Claim needs qualification (claim says 'AI hallucinates 15-20%', reference shows 'range of 12-23% depending on model'). Return 'N/A' when: (1) Claim matches reference exactly (no correction needed), (2) Claim is contradicted (not a correction, it's wrong), (3) Reference is inaccessible (no data to qualify), (4) Support level is 'unclear' (insufficient information to qualify). For unreferenced claims (fact-check mode): Provide the fact as stated by authoritative sources found via web search."
     },
     {
       "column": "Support Level",

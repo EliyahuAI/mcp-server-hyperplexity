@@ -55,6 +55,7 @@ class ResultCompiler:
                 result.get('reference', ''),
                 result.get('reference_description', ''),
                 result.get('reference_says', ''),
+                result.get('qualified_fact', 'N/A'),
                 result.get('support_level', ''),
                 f"{result.get('confidence', 0):.2f}",
                 result.get('validation_notes', '')

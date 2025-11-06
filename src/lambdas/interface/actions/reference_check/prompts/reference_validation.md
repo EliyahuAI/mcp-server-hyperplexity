@@ -98,6 +98,35 @@ Rate your confidence in the assessment (0.0 to 1.0):
 - Prioritize: academic sources, government data, reputable news, fact-checking sites
 - Avoid: opinion blogs, social media, unverified sources
 
+## QUALIFIED FACT FIELD
+
+**Purpose**: Restate the claim in its original format and style, but with the precise facts as stated by the reference or authoritative sources.
+
+**When to provide a qualified fact**:
+- Numbers differ slightly: Claim says "1.1°C", reference says "1.09°C ± 0.13°C"
+- More precision available: Claim says "1991", reference says "February 1991"
+- Range vs point estimate: Claim says "15-20%", reference shows "12-23% depending on model"
+- Qualification needed: Claim is general, reference has important caveats
+
+**When to return "N/A"**:
+- Claim matches reference exactly (no qualification needed)
+- Claim is contradicted (use contradicted support_level instead)
+- Reference is inaccessible (no data to qualify)
+- Support level is 'unclear' (insufficient information)
+- For unreferenced claims: If fact-check confirms as stated, return "N/A"; if sources provide different details, provide qualified version
+
+**Format**: Write in the SAME sentence structure and style as the original claim, just with updated facts.
+
+**Examples**:
+- Original: "AI models hallucinate in 15-20% of responses"
+- Qualified: "AI models hallucinate in 12-23% of responses depending on model and task complexity"
+
+- Original: "Python was released in 1991"
+- Qualified: "Python was first released in February 1991"
+
+- Original: "Temperature increased by 1.1°C"
+- Qualified: "Temperature increased by 1.09°C (±0.13°C)"
+
 ## OUTPUT FORMAT
 
 Return a JSON object with this structure:
@@ -110,9 +139,10 @@ Return a JSON object with this structure:
   "reference": "[2]",
   "reference_description": "arXiv preprint by Chen et al. (2024) measuring factual accuracy in LLMs",
   "reference_says": "The study tested 1,000 responses from 5 major LLMs and found hallucination rates ranging from 12% to 23% depending on the model and task complexity, with an average of 17.5%.",
-  "support_level": "strongly_supported",
-  "confidence": 0.95,
-  "validation_notes": "The reference directly supports the claim with specific measurements. The 15-20% range aligns with the study's 17.5% average finding, which falls within the stated range.",
+  "qualified_fact": "AI models can hallucinate facts in 12-23% of responses depending on the model and task complexity",
+  "support_level": "supported",
+  "confidence": 0.90,
+  "validation_notes": "The reference supports the claim with a broader range. The 15-20% stated in the claim falls within the 12-23% range found in the study, though the reference shows more variation by model type.",
   "accessible": true,
   "sources_consulted": [
     "https://arxiv.org/abs/2401.12345",

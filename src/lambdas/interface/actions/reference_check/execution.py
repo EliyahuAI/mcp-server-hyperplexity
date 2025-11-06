@@ -693,6 +693,14 @@ async def _compile_results(
             with open(config_path, 'r') as f:
                 validation_config = json.load(f)
 
+            # Load conversation state to get submitted text
+            conversation_state = _load_conversation_state(storage_manager, email, session_id, conversation_id)
+            submitted_text = conversation_state.get('submitted_text', '')
+
+            # Append submitted text to general_notes
+            original_notes = validation_config.get('general_notes', '')
+            validation_config['general_notes'] = f"{original_notes}\n\n--- ORIGINAL TEXT PROVIDED BY USER ---\n\n{submitted_text}"
+
             # Update config metadata for this session
             if 'storage_metadata' not in validation_config:
                 validation_config['storage_metadata'] = {}

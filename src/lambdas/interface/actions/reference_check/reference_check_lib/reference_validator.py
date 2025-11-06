@@ -61,6 +61,10 @@ class ReferenceValidator:
                 "reference": {"type": ["string", "null"]},
                 "reference_description": {"type": "string"},
                 "reference_says": {"type": "string"},
+                "qualified_fact": {
+                    "type": "string",
+                    "description": "The fact as stated by the reference, written in same format as claim, or 'N/A' if claim matches exactly"
+                },
                 "support_level": {
                     "type": "string",
                     "enum": [
