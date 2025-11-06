@@ -28,7 +28,7 @@
     "max_web_searches": 5,
     "_note_max_web_searches": "FOR ANTHROPIC MODELS ONLY (claude-*). Number of web searches Claude can perform (if model=claude-sonnet-4-5)",
 
-    "min_starting_tables": 2,
+    "min_starting_tables": 0,
     "_note_min_tables": "Minimum number of starting tables with sample entities required before proceeding to column definition",
     "min_sample_entities_per_table": 5,
     "_note_min_entities": "Each starting table must include at least this many actual sample entities (not just URLs)"
@@ -37,7 +37,10 @@
   "table_extraction": {
     "_comment": "Step 0b - Sequential follow-up to background research. Extracts complete tables from identified URLs. Only runs if background research identifies tables with extract_table=true",
 
-    "model": "sonar",
+    "model": "claude-haiku-4-5",
+    "max_web_searches": 3,
+    "_note_max_web_searches": "FOR ANTHROPIC MODELS ONLY (claude-*). Number of web searches Claude can perform (if model=claude-sonnet-4-5)",
+
     "_note_model": "Recommended: sonar (fast extraction). Uses site-specific search via include_domains",
     "max_tokens": 16000,
     "_note_max_tokens": "Higher than background research to accommodate large tables with many rows",

@@ -21,7 +21,7 @@
 Your search is configured to focus on this exact URL:
 - search_context_size: low (focused, not broad)
 - Domain filter: Set to this page's domain
-- **Search for information AT THIS URL** - not related pages from same domain
+
 
 The page may have:
 - ✅ Article text mentioning entities → Extract and structure into rows
@@ -29,14 +29,14 @@ The page may have:
 - ✅ Bullet lists → Convert to structured rows
 - ✅ HTML table → Extract directly
 - ✅ Mixed content → Compile all entity information
+- ✅ Subpages that you may need to navigate to get all information
 
 **CRITICAL:**
 - You are BUILDING a table, not just copying one
-- Extract information from prose, articles, lists, any format on THIS PAGE
+- Extract information from prose, articles, lists, any format 
 - Structure the extracted information into rows with expected columns
-- Return empty ONLY if: URL inaccessible OR page contains no relevant entities
+- Return empty ONLY if: URL inaccessible and search contains no relevant entities
 - "No table found" is NOT acceptable - if page has entity information, build rows from it!
-- Search focuses on the specific URL provided, not the whole domain
 
 ═══════════════════════════════════════════════════════════════
 ## 📋 EXTRACTION REQUIREMENTS
