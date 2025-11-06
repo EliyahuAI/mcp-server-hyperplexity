@@ -854,6 +854,58 @@ async def execute_full_table_generation(
             identified_tables = background_research_result.get('identified_tables', [])
             tables_to_extract = [t for t in identified_tables if t.get('extract_table')]
 
+            # Validate table URLs against citations to prevent hallucinated URLs
+            if tables_to_extract:
+                # Extract citations from background research
+                enhanced_data = background_research_result.get('enhanced_data', {})
+                citations = enhanced_data.get('citations', []) if enhanced_data else []
+
+                if citations:
+                    # Create set of citation URLs for fast lookup (normalized)
+                    from urllib.parse import urlparse
+                    import re
+
+                    def normalize_url(url):
+                        """Normalize URL for comparison (remove protocol, www, trailing /)."""
+                        if not url:
+                            return ''
+                        normalized = url.lower()
+                        normalized = re.sub(r'^https?://', '', normalized)
+                        normalized = re.sub(r'^www\.', '', normalized)
+                        normalized = re.sub(r'/$', '', normalized)
+                        return normalized
+
+                    citation_urls = {normalize_url(c.get('url', '')) for c in citations if c.get('url')}
+
+                    # Filter tables to only those with URLs in citations
+                    validated_tables = []
+                    filtered_tables = []
+
+                    for table in tables_to_extract:
+                        table_url = table.get('url', '')
+                        normalized_table_url = normalize_url(table_url)
+
+                        # Check if table URL is in citations (exact match after normalization)
+                        if normalized_table_url in citation_urls:
+                            validated_tables.append(table)
+                        else:
+                            filtered_tables.append(table)
+                            logger.warning(
+                                f"[TABLE_URL_VALIDATION] Filtered table '{table.get('table_name')}' - "
+                                f"URL not in citations: {table_url}"
+                            )
+
+                    # Update tables_to_extract to only validated tables
+                    tables_to_extract = validated_tables
+
+                    if filtered_tables:
+                        logger.info(
+                            f"[TABLE_URL_VALIDATION] Filtered {len(filtered_tables)}/{len(validated_tables) + len(filtered_tables)} tables. "
+                            f"Proceeding with {len(validated_tables)} validated tables."
+                        )
+                else:
+                    logger.warning("[TABLE_URL_VALIDATION] No citations available - skipping URL validation")
+
             if tables_to_extract:
                 logger.info(f"[STEP 0b] Extracting {len(tables_to_extract)} identified tables")
 

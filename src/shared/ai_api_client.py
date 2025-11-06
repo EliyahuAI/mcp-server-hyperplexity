@@ -2698,6 +2698,11 @@ class AIAPIClient:
         """Extract citations from Claude's web search response."""
         citations = []
         try:
+            # Handle non-dict responses gracefully
+            if not isinstance(response, dict):
+                logger.debug(f"[CITATION_EXTRACT] Response is not a dict (type: {type(response).__name__}), skipping extraction")
+                return []
+
             # Look for web_search_tool_result blocks (new format)
             for content_item in response.get('content', []):
                 if content_item.get('type') == 'web_search_tool_result':
@@ -2770,6 +2775,11 @@ class AIAPIClient:
         """Extract citations from Perplexity's search_results response."""
         citations = []
         try:
+            # Handle non-dict responses gracefully
+            if not isinstance(response, dict):
+                logger.debug(f"[CITATION_EXTRACT] Response is not a dict (type: {type(response).__name__}), skipping extraction")
+                return []
+
             # Extract from search_results array (contains snippets/quotes)
             search_results = response.get('search_results', [])
             for result in search_results:
