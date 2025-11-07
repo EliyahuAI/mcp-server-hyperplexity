@@ -12716,15 +12716,27 @@ Please provide any additional context, or simply proceed to generate your initia
             // Store submitted text
             referenceCheckState.submittedText = submittedText;
 
-            // Collapse textarea to preview mode (first 3 lines with ellipsis)
-            const lines = submittedText.split('\n');
-            const previewLines = lines.slice(0, 3).join('\n');
-            const hasMore = lines.length > 3;
-
-            input.value = previewLines + (hasMore ? '\n...' : '');
-            input.rows = 3;
-            input.disabled = true;
-            input.style.cursor = 'default';
+            // Replace textarea with markdown-rendered preview
+            const inputContainer = document.getElementById(`${cardId}-input-container`);
+            if (inputContainer) {
+                const previewDiv = document.createElement('div');
+                previewDiv.className = 'submitted-text-preview';
+                previewDiv.style.cssText = `
+                    max-height: 200px;
+                    overflow-y: auto;
+                    background: #F9FAFB;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 12px;
+                    padding: 1rem;
+                    margin-bottom: 1rem;
+                    font-size: var(--font-size-small);
+                    line-height: 1.6;
+                    color: var(--text-color);
+                `;
+                previewDiv.innerHTML = renderMarkdown(submittedText);
+                inputContainer.innerHTML = '';
+                inputContainer.appendChild(previewDiv);
+            }
 
             // Show thinking indicator
             showThinkingInCard(cardId, 'Extracting claims and checking references...', true);
