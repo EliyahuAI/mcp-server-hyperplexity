@@ -803,11 +803,11 @@ async def _compile_results(
             else:
                 submitted_text = conversation_state.get('submitted_text', '')
 
-            # Append submitted text and reference list to general_notes
-            original_notes = validation_config.get('general_notes', '')
-
                 # Build reference list section
                 reference_map = conversation_state.get('reference_map', {})
+
+            # Append submitted text and reference list to general_notes
+            original_notes = validation_config.get('general_notes', '')
             if reference_map:
                 ref_list_text = "\n\n--- EXTRACTED REFERENCES ---\n\n"
                 for ref_id in sorted(reference_map.keys(), key=lambda x: int(re.search(r'\d+', x).group())):
