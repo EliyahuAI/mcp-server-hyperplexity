@@ -123,6 +123,28 @@ The text may include a "--- PARSED REFERENCES ---" or "--- REFERENCES DETECTED -
 - If text has numbered citations like [1], [2]: You MUST provide complete `reference_list`
 - If text has no numbered citations: Unreferenced claims, omit `reference_list`
 
+## SOURCE TYPE DETECTION
+
+Based on the format, style, and content, identify the likely source of this text:
+
+**AI Assistant Outputs**:
+- Perplexity: Markdown formatting, [1](url) citations, concise summaries
+- ChatGPT: Conversational, bullet points, [1]: url citations, "Here's what" language
+- Claude: Thoughtful analysis, markdown, structured responses
+- Grok: X.ai references, casual tone
+
+**Academic Sources**:
+- Research Paper: Abstract, Methods, Results sections, author-year citations, formal language
+- Review Article: Comprehensive citations, "et al." usage, journal formatting
+- Preprint: arXiv references, draft formatting
+
+**Other Sources**:
+- News Article: Journalistic style, quotes, AP/Reuters citations
+- Blog Post: Casual tone, hyperlinks, personal voice
+- Documentation: Technical language, code examples, version numbers
+
+Make your best guess based on clues in the text.
+
 ## OUTPUT FORMAT
 
 Return a JSON object with this structure:
@@ -130,6 +152,8 @@ Return a JSON object with this structure:
 ```json
 {
   "is_suitable": true,
+  "source_type_guess": "Perplexity",
+  "source_confidence": 0.9,
   "total_claims": 5,
   "claims_with_references": 3,
   "claims_without_references": 2,

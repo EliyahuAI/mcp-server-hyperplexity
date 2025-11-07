@@ -60,6 +60,16 @@ class ClaimExtractor:
                     "type": "boolean",
                     "description": "Whether the text is suitable for reference checking"
                 },
+                "source_type_guess": {
+                    "type": "string",
+                    "description": "AI's guess at the source type (e.g., Perplexity, ChatGPT, Academic Paper, etc.)"
+                },
+                "source_confidence": {
+                    "type": "number",
+                    "description": "Confidence in source type guess (0.0-1.0)",
+                    "minimum": 0,
+                    "maximum": 1
+                },
                 "reason": {
                     "type": "string",
                     "description": "Why text is unsuitable (if is_suitable=false)"

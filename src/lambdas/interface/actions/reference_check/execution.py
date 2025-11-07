@@ -750,8 +750,12 @@ async def _compile_results(
             session_info['reference_check'][conversation_id] = {
                 'conversation_id': conversation_id,
                 'created_at': datetime.now().isoformat(),
-                'source_type': source_guess,
-                'reference_path': path_type,
+                'source_detection': {
+                    'python_guess': source_guess,
+                    'ai_guess': ai_source_guess,
+                    'ai_confidence': ai_source_confidence,
+                    'reference_path': path_type
+                },
                 'total_claims': len(claims),
                 'claims_with_references': summary.get('claims_with_references', 0),
                 'claims_without_references': summary.get('claims_without_references', 0),
@@ -1017,6 +1021,11 @@ async def execute_reference_check(
 
         claims = extraction_result.get('claims', [])
         logger.info(f"[EXECUTION] Step 0 complete: {len(claims)} claims extracted")
+
+        # Log source type guesses for comparison
+        ai_source_guess = extraction_result.get('source_type_guess', 'Unknown')
+        ai_source_confidence = extraction_result.get('source_confidence', 0.0)
+        logger.info(f"[EXECUTION] Source detection - Python: '{source_guess}', AI: '{ai_source_guess}' (confidence: {ai_source_confidence:.2f})")
 
         # Determine final reference map
         ai_reference_list = extraction_result.get('reference_list')
