@@ -932,6 +932,7 @@ async def _compile_results(
             'success': True,
             'csv_s3_key': csv_s3_key,
             'csv_filename': csv_filename,
+            'table_name': table_name,  # Include table name for frontend
             'config_s3_key': config_s3_key,
             'summary': summary
         }
@@ -1236,6 +1237,7 @@ async def execute_reference_check(
         result['success'] = True
         result['csv_s3_key'] = compilation_result.get('csv_s3_key')
         result['csv_filename'] = compilation_result.get('csv_filename')
+        result['table_name'] = compilation_result.get('table_name')
         result['config_s3_key'] = compilation_result.get('config_s3_key')
         result['summary'] = compilation_result.get('summary')
         result['session_id'] = session_id  # Include session_id in response
@@ -1268,6 +1270,7 @@ async def execute_reference_check(
                 'status': 'complete',
                 'csv_s3_key': result['csv_s3_key'],
                 'csv_filename': result['csv_filename'],
+                'table_name': result.get('table_name', 'Reference Check'),
                 'config_s3_key': result['config_s3_key'],
                 'session_id': session_id,
                 'summary': result['summary'],
