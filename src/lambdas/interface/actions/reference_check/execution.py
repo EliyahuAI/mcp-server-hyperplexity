@@ -753,6 +753,7 @@ async def _compile_results(
         # Update session_info.json with reference check activity
         try:
             session_info = storage_manager.load_session_info(email, session_id)
+            logger.info(f"[COMPILATION] Loaded session_info, updating with reference check data")
 
             # Add reference_check tracking section
             if 'reference_check' not in session_info:
@@ -783,10 +784,13 @@ async def _compile_results(
             session_info['session_id'] = session_id
             session_info['email'] = email
 
-            storage_manager.save_session_info(email, session_id, session_info)
-            logger.info(f"[COMPILATION] Updated session_info.json with reference check tracking")
+            save_success = storage_manager.save_session_info(email, session_id, session_info)
+            if save_success:
+                logger.info(f"[COMPILATION] Updated session_info.json with reference check tracking")
+            else:
+                logger.error(f"[COMPILATION] Failed to save session_info.json (returned False)")
         except Exception as session_info_error:
-            logger.warning(f"[COMPILATION] Failed to update session_info.json: {session_info_error}")
+            logger.error(f"[COMPILATION] Exception updating session_info.json: {session_info_error}", exc_info=True)
 
         # Copy static validation config from local file to session
         try:

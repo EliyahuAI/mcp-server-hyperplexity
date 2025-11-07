@@ -654,17 +654,18 @@ class ReferenceParser:
 
         return text
 
-    def resolve_citations(self, citation_text: str, reference_map: Dict[str, str]) -> str:
+    def resolve_citations(self, citation_text: str, reference_map: Dict[str, str], format_as_hyperlink: bool = True) -> str:
         """
-        Resolve numbered citations to actual references.
+        Resolve numbered citations to actual references with Excel hyperlinks.
 
         Args:
             citation_text: Text with citations like "[1][2][3]"
             reference_map: Dict mapping ref_id to full citation
+            format_as_hyperlink: If True, format URLs as Excel HYPERLINK formulas
 
         Returns:
             Resolved references with Excel newlines between them
-            Example: "https://example.com\nhttps://another.com\nSmith et al. (2024)..."
+            Example: "[1] =HYPERLINK(\"https://...\", \"https://...\")\n[2] Smith et al. (2024)..."
         """
         if not citation_text or not reference_map:
             return citation_text
@@ -689,7 +690,17 @@ class ReferenceParser:
         for num in sorted(ref_nums, key=int):
             ref_id = f"[{num}]"
             if ref_id in reference_map:
-                resolved_refs.append(reference_map[ref_id])
+                citation = reference_map[ref_id]
+
+                # Keep the number prefix
+                # Format as Excel hyperlink if it's a URL
+                if format_as_hyperlink and re.match(r'https?://', citation):
+                    # Excel HYPERLINK formula: =HYPERLINK("url", "display_text")
+                    formatted = f'{ref_id} =HYPERLINK("{citation}", "{citation}")'
+                else:
+                    formatted = f"{ref_id} {citation}"
+
+                resolved_refs.append(formatted)
                 logger.info(f"[REF PARSER] Resolved {ref_id} to citation")
             else:
                 # Keep original if not found
