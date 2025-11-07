@@ -668,7 +668,7 @@ async def _compile_results(
                     'reference': claim.get('reference', ''),
                     'reference_description': '',  # Empty - to be filled during validation
                     'reference_says': '',  # Empty
-                    'qualified_fact': '',  # Empty
+                    'qualified_fact': claim.get('statement', ''),  # Pre-populate with original claim
                     'support_level': '',  # Empty
                     'confidence': '',  # Empty
                     'validation_notes': ''  # Empty
