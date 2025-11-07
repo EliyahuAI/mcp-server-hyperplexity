@@ -67,6 +67,7 @@ import json
 import asyncio
 import csv
 import io
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -750,49 +751,7 @@ async def _compile_results(
         except Exception as e:
             logger.warning(f"[COMPILATION] Failed to save source text: {e}")
 
-        # Update session_info.json with reference check activity
-        try:
-            session_info = storage_manager.load_session_info(email, session_id)
-            logger.info(f"[COMPILATION] Loaded session_info, updating with reference check data")
-
-            # Add reference_check tracking section
-            if 'reference_check' not in session_info:
-                session_info['reference_check'] = {}
-
-            session_info['reference_check'][conversation_id] = {
-                'conversation_id': conversation_id,
-                'created_at': datetime.now().isoformat(),
-                'source_detection': {
-                    'python_guess': source_guess,
-                    'ai_guess': ai_source_guess,
-                    'ai_confidence': ai_source_confidence,
-                    'reference_path': path_type
-                },
-                'total_claims': len(claims),
-                'claims_with_references': summary.get('claims_with_references', 0),
-                'claims_without_references': summary.get('claims_without_references', 0),
-                'references_extracted': len(final_reference_map),
-                'csv_s3_key': csv_s3_key,
-                'config_s3_key': config_s3_key,
-                'source_text_s3_key': source_text_key,
-                'status': 'complete'
-            }
-
-            # Also update table_path for compatibility
-            session_info['table_path'] = csv_s3_key
-            session_info['table_name'] = f"reference_check_{conversation_id}"
-            session_info['session_id'] = session_id
-            session_info['email'] = email
-
-            save_success = storage_manager.save_session_info(email, session_id, session_info)
-            if save_success:
-                logger.info(f"[COMPILATION] Updated session_info.json with reference check tracking")
-            else:
-                logger.error(f"[COMPILATION] Failed to save session_info.json (returned False)")
-        except Exception as session_info_error:
-            logger.error(f"[COMPILATION] Exception updating session_info.json: {session_info_error}", exc_info=True)
-
-        # Copy static validation config from local file to session
+        # Copy static validation config from local file to session (BEFORE session_info update)
         try:
             config_path = Path(__file__).parent / 'reference_check_validation_config.json'
             with open(config_path, 'r') as f:
@@ -847,8 +806,50 @@ async def _compile_results(
                 raise Exception(f"Failed to store config: {config_store_result.get('error')}")
 
         except Exception as config_error:
-            logger.warning(f"[COMPILATION] Failed to copy validation config: {config_error}")
+            logger.error(f"[COMPILATION] Exception copying validation config: {config_error}", exc_info=True)
             config_s3_key = None
+
+        # Update session_info.json with reference check activity (AFTER config is saved)
+        try:
+            session_info = storage_manager.load_session_info(email, session_id)
+            logger.info(f"[COMPILATION] Loaded session_info, updating with reference check data")
+
+            # Add reference_check tracking section
+            if 'reference_check' not in session_info:
+                session_info['reference_check'] = {}
+
+            session_info['reference_check'][conversation_id] = {
+                'conversation_id': conversation_id,
+                'created_at': datetime.now().isoformat(),
+                'source_detection': {
+                    'python_guess': source_guess if source_guess else 'Unknown',
+                    'ai_guess': ai_source_guess if ai_source_guess else 'Unknown',
+                    'ai_confidence': ai_source_confidence if ai_source_confidence else 0.0,
+                    'reference_path': path_type if path_type else 'unknown'
+                },
+                'total_claims': len(claims) if claims else 0,
+                'claims_with_references': summary.get('claims_with_references', 0),
+                'claims_without_references': summary.get('claims_without_references', 0),
+                'references_extracted': len(final_reference_map) if final_reference_map else 0,
+                'csv_s3_key': csv_s3_key,
+                'config_s3_key': config_s3_key,
+                'source_text_s3_key': source_text_key,
+                'status': 'complete'
+            }
+
+            # Also update table_path for compatibility
+            session_info['table_path'] = csv_s3_key
+            session_info['table_name'] = f"reference_check_{conversation_id}"
+            session_info['session_id'] = session_id
+            session_info['email'] = email
+
+            save_success = storage_manager.save_session_info(email, session_id, session_info)
+            if save_success:
+                logger.info(f"[COMPILATION] Updated session_info.json with reference check tracking")
+            else:
+                logger.error(f"[COMPILATION] Failed to save session_info.json (returned False)")
+        except Exception as session_info_error:
+            logger.error(f"[COMPILATION] Exception updating session_info.json: {session_info_error}", exc_info=True)
 
         logger.info(f"[COMPILATION] Summary: {summary}")
 
