@@ -154,15 +154,31 @@ class ClaimExtractor:
                                 "properties": {
                                     "start_char": {
                                         "type": "integer",
-                                        "description": "Character index where claim starts"
+                                        "description": "Character index where claim starts (from document start)"
                                     },
                                     "end_char": {
                                         "type": "integer",
-                                        "description": "Character index where claim ends"
+                                        "description": "Character index where claim ends (from document start)"
                                     },
                                     "paragraph_index": {
                                         "type": "integer",
                                         "description": "Which paragraph (0-indexed)"
+                                    },
+                                    "sentence_index": {
+                                        "type": "integer",
+                                        "description": "Which sentence within paragraph (0-indexed, optional)"
+                                    },
+                                    "word_start": {
+                                        "type": "integer",
+                                        "description": "Starting word index from document start (optional)"
+                                    },
+                                    "word_end": {
+                                        "type": "integer",
+                                        "description": "Ending word index from document start (optional)"
+                                    },
+                                    "section_name": {
+                                        "type": "string",
+                                        "description": "Section name from markdown headings or labels, prefer last 2 levels (e.g., 'Methods > Data Collection')"
                                     }
                                 }
                             }
