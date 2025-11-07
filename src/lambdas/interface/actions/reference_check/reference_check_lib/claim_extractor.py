@@ -82,31 +82,74 @@ class ClaimExtractor:
                 },
                 "claims": {
                     "type": "array",
+                    "description": "List of extracted claims",
                     "items": {
                         "type": "object",
                         "required": ["claim_id", "statement", "context"],
                         "properties": {
-                            "claim_id": {"type": "string"},
-                            "statement": {"type": "string"},
-                            "context": {"type": "string"},
-                            "reference": {"type": ["string", "null"]},
+                            "claim_id": {
+                                "type": "string",
+                                "description": "Unique identifier for the claim (e.g., claim_001)"
+                            },
+                            "statement": {
+                                "type": "string",
+                                "description": "The actual claim being made (1-3 sentences max)"
+                            },
+                            "context": {
+                                "type": "string",
+                                "description": "Surrounding text that provides context (1-2 sentences)"
+                            },
+                            "reference": {
+                                "type": ["string", "null"],
+                                "description": "Citation/reference linked to this claim (e.g., [1], [2][3], or null if none)"
+                            },
                             "reference_details": {
                                 "type": ["object", "null"],
+                                "description": "Parsed information about the reference (if identifiable)",
                                 "properties": {
-                                    "authors": {"type": "array", "items": {"type": "string"}},
-                                    "year": {"type": "string"},
-                                    "title": {"type": "string"},
-                                    "doi": {"type": ["string", "null"]},
-                                    "url": {"type": ["string", "null"]},
-                                    "source": {"type": "string"}
+                                    "authors": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                        "description": "List of author names"
+                                    },
+                                    "year": {
+                                        "type": "string",
+                                        "description": "Publication year"
+                                    },
+                                    "title": {
+                                        "type": "string",
+                                        "description": "Paper/article title"
+                                    },
+                                    "doi": {
+                                        "type": ["string", "null"],
+                                        "description": "DOI identifier (if present)"
+                                    },
+                                    "url": {
+                                        "type": ["string", "null"],
+                                        "description": "URL or arXiv ID (if present)"
+                                    },
+                                    "source": {
+                                        "type": "string",
+                                        "description": "Publication venue (journal, conference, etc.)"
+                                    }
                                 }
                             },
                             "text_location": {
                                 "type": "object",
+                                "description": "Location of claim in original text",
                                 "properties": {
-                                    "start_char": {"type": "integer"},
-                                    "end_char": {"type": "integer"},
-                                    "paragraph_index": {"type": "integer"}
+                                    "start_char": {
+                                        "type": "integer",
+                                        "description": "Character index where claim starts"
+                                    },
+                                    "end_char": {
+                                        "type": "integer",
+                                        "description": "Character index where claim ends"
+                                    },
+                                    "paragraph_index": {
+                                        "type": "integer",
+                                        "description": "Which paragraph (0-indexed)"
+                                    }
                                 }
                             }
                         }
@@ -114,11 +157,19 @@ class ClaimExtractor:
                 },
                 "reference_list": {
                     "type": "array",
+                    "description": "OPTIONAL - Complete reference list (only include if: Path B parsed refs are wrong/unusable, OR Path C numbered citations exist but no refs found)",
                     "items": {
                         "type": "object",
+                        "required": ["ref_id", "full_citation"],
                         "properties": {
-                            "ref_id": {"type": "string"},
-                            "full_citation": {"type": "string"}
+                            "ref_id": {
+                                "type": "string",
+                                "description": "Reference identifier (e.g., [1], [2])"
+                            },
+                            "full_citation": {
+                                "type": "string",
+                                "description": "Complete citation text"
+                            }
                         }
                     }
                 }
