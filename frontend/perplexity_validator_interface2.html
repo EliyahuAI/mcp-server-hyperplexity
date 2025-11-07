@@ -12817,9 +12817,15 @@ Please provide any additional context, or simply proceed to generate your initia
                 const data = await response.json();
 
                 if (response.ok && data.success && data.status === 'processing') {
-                    // Store PDF ID for tracking
+                    // Store PDF ID and session ID
                     referenceCheckState.pdfId = data.pdf_id;
                     referenceCheckState.pdfFilename = file.name;
+
+                    // Store session_id if backend generated one
+                    if (data.session_id && !globalState.sessionId) {
+                        globalState.sessionId = data.session_id;
+                        localStorage.setItem('sessionId', data.session_id);
+                    }
 
                     // Hide the form and show green checkmark success state
                     const formEl = document.getElementById(`${cardId}-form`);
@@ -12915,30 +12921,19 @@ Please provide any additional context, or simply proceed to generate your initia
             // Store submitted text
             referenceCheckState.submittedText = submittedText;
 
-            // Replace textarea with markdown-rendered preview
-            const inputContainer = document.getElementById(`${cardId}-input-container`);
-            if (inputContainer) {
-                const previewDiv = document.createElement('div');
-                previewDiv.className = 'submitted-text-preview';
-                previewDiv.style.cssText = `
-                    max-height: 200px;
-                    overflow-y: auto;
-                    background: #F9FAFB;
-                    border: 1px solid #E5E7EB;
-                    border-radius: 12px;
-                    padding: 1rem;
-                    margin-bottom: 1rem;
-                    font-size: var(--font-size-small);
-                    line-height: 1.6;
-                    color: var(--text-color);
-                `;
-                previewDiv.innerHTML = renderMarkdown(submittedText);
-                inputContainer.innerHTML = '';
-                inputContainer.appendChild(previewDiv);
-            }
+            // Hide the form and buttons, show green checkmark
+            const formEl = document.getElementById(`${cardId}-form`);
+            const successEl = document.getElementById(`${cardId}-success`);
+            const successTextEl = document.getElementById(`${cardId}-success-text`);
+            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
 
-            // Show thinking indicator
-            showThinkingInCard(cardId, 'Extracting claims and checking references...', true);
+            if (formEl) formEl.style.display = 'none';
+            if (buttonsContainer) buttonsContainer.style.display = 'none';
+
+            if (successEl && successTextEl) {
+                successTextEl.textContent = 'Text submitted. Extracting claims and checking references...';
+                successEl.style.display = 'block';
+            }
 
             // Register WebSocket handler
             registerCardHandler(cardId, ['reference_check_progress', 'reference_check_complete', 'reference_check_error'], (data) => {

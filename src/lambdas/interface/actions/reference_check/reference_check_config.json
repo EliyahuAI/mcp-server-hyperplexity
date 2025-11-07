@@ -1,7 +1,7 @@
 {
     "text_limits": {
-        "max_tokens": 32000,
-        "max_words": 24000,
+        "max_tokens": 60000,
+        "max_words": 45000,
         "tokens_per_word": 1.33,
         "error_message": "Text is too large to process. Please limit to {max_words} words or less."
     },

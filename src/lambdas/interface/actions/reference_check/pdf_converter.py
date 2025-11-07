@@ -74,12 +74,14 @@ def handle_pdf_multipart(files: Dict[str, Any], form_data: Dict[str, str], conte
                 'message': 'Email address is required'
             })
 
+        # Generate session ID if not provided (same as text submission)
         if not session_id:
-            return create_response(400, {
-                'success': False,
-                'error': 'missing_session',
-                'message': 'Session ID is required'
-            })
+            from datetime import datetime
+            import uuid
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            random_hex = uuid.uuid4().hex[:8]
+            session_id = f"session_{timestamp}_{random_hex}"
+            logger.info(f"[PDF_UPLOAD] Generated new session ID: {session_id}")
 
         if not pdf_file:
             logger.error("[PDF_UPLOAD] No PDF file in upload")
@@ -125,18 +127,18 @@ def handle_pdf_multipart(files: Dict[str, Any], form_data: Dict[str, str], conte
         # Generate PDF ID
         pdf_id = f"pdf_{uuid.uuid4().hex[:12]}"
 
-        # Upload PDF to S3
+        # Upload PDF to S3 (results folder for easy access with results)
         storage_manager = UnifiedS3Manager()
         domain = email.split('@')[1] if '@' in email else 'unknown'
         email_prefix = email.split('@')[0] if '@' in email else email
 
-        # Store in session folder
-        s3_key = f"results/{domain}/{email_prefix}/{session_id}/pdfs/{pdf_id}_{filename}"
+        # Store original PDF in results folder (not pdfs subfolder)
+        pdf_s3_key = f"results/{domain}/{email_prefix}/{session_id}/{pdf_id}_{filename}"
 
         try:
             storage_manager.s3_client.put_object(
                 Bucket=storage_manager.bucket_name,
-                Key=s3_key,
+                Key=pdf_s3_key,
                 Body=pdf_content,
                 ContentType='application/pdf',
                 Metadata={
@@ -147,7 +149,7 @@ def handle_pdf_multipart(files: Dict[str, Any], form_data: Dict[str, str], conte
                     'uploaded_at': datetime.now(timezone.utc).isoformat()
                 }
             )
-            logger.info(f"[PDF_UPLOAD] Uploaded to S3: {s3_key}")
+            logger.info(f"[PDF_UPLOAD] Uploaded PDF to S3: {pdf_s3_key}")
         except Exception as e:
             logger.error(f"[PDF_UPLOAD] S3 upload failed: {str(e)}")
             return create_response(500, {
@@ -163,7 +165,7 @@ def handle_pdf_multipart(files: Dict[str, Any], form_data: Dict[str, str], conte
             'email': email,
             'session_id': session_id,
             'pdf_id': pdf_id,
-            's3_key': s3_key,
+            's3_key': pdf_s3_key,
             'filename': filename,
             'file_size': file_size,
             'created_at': datetime.now(timezone.utc).isoformat(),
@@ -190,6 +192,7 @@ def handle_pdf_multipart(files: Dict[str, Any], form_data: Dict[str, str], conte
             'success': True,
             'status': 'processing',
             'pdf_id': pdf_id,
+            'session_id': session_id,
             'filename': filename,
             'file_size': file_size,
             'message': f'{filename} uploaded successfully. Converting to markdown...'
@@ -278,11 +281,38 @@ async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any) -> D
 
             logger.info(f"[PDF_CONVERT] Successfully converted {page_count} pages ({len(markdown_text)} chars)")
 
-            # Save markdown to S3
+            # Load config for text limits
+            import json
+            from pathlib import Path
+            config_path = Path(__file__).parent / 'reference_check_config.json'
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+
+            # Validate markdown size using config limits
+            max_tokens = config['text_limits']['max_tokens']
+            max_words = config['text_limits']['max_words']
+            tokens_per_word = config['text_limits']['tokens_per_word']
+
+            word_count = len(markdown_text.split())
+            estimated_tokens = int(word_count * tokens_per_word)
+
+            if word_count > max_words or estimated_tokens > max_tokens:
+                logger.warning(f"[PDF_CONVERT] Markdown too large: {word_count} words, ~{estimated_tokens} tokens (max: {max_words} words, {max_tokens} tokens)")
+                websocket_client.send_to_session(session_id, {
+                    'type': 'pdf_conversion_error',
+                    'pdf_id': pdf_id,
+                    'error': 'file_too_large',
+                    'message': f'PDF converted to {word_count} words (max {max_words}). Please use a smaller PDF.'
+                })
+                return {'status': 'error', 'error': 'file_too_large', 'word_count': word_count}
+
+            logger.info(f"[PDF_CONVERT] Size validation passed: {word_count} words, ~{estimated_tokens} tokens")
+
+            # Save markdown to S3 (results folder, not pdfs subfolder)
             domain = email.split('@')[1] if '@' in email else 'unknown'
             email_prefix = email.split('@')[0] if '@' in email else email
             markdown_filename = f"{pdf_id}_markdown.txt"
-            markdown_s3_key = f"results/{domain}/{email_prefix}/{session_id}/pdfs/{markdown_filename}"
+            markdown_s3_key = f"results/{domain}/{email_prefix}/{session_id}/{markdown_filename}"
 
             try:
                 storage_manager.s3_client.put_object(
