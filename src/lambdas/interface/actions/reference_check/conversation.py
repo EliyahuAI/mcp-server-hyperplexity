@@ -290,8 +290,10 @@ async def handle_reference_check_start(request_data: Dict[str, Any], context: An
         })
 
         # Import and trigger execution pipeline
+        logger.info(f"[REFERENCE CHECK] About to call execute_reference_check")
         from .execution import execute_reference_check
 
+        logger.info(f"[REFERENCE CHECK] Calling execute_reference_check with email={email}, session={session_id}, conv={conversation_id}")
         result = await execute_reference_check(
             email=email,
             session_id=session_id,
@@ -299,7 +301,7 @@ async def handle_reference_check_start(request_data: Dict[str, Any], context: An
             run_key=run_key
         )
 
-        logger.info(f"[REFERENCE CHECK COMPLETE] conversation_id={conversation_id}, status={result.get('status')}")
+        logger.info(f"[REFERENCE CHECK COMPLETE] conversation_id={conversation_id}, status={result.get('status')}, success={result.get('success')}")
 
         return result
 
