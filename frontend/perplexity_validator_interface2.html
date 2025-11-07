@@ -12895,9 +12895,21 @@ Please provide any additional context, or simply proceed to generate your initia
             if (formEl) formEl.style.display = 'none';
             if (successEl) successEl.style.display = 'block';
             if (successText) {
-                successText.innerHTML = `
-                    A table has been created with ${data.summary.total_claims} claims (${data.summary.claims_with_references} with references, ${data.summary.claims_without_references} without). Starting preview of the first 3 claims/rows...
-                `;
+                // Format claim summary concisely
+                const total = data.summary.total_claims;
+                const withRefs = data.summary.claims_with_references;
+                const withoutRefs = data.summary.claims_without_references;
+
+                let claimSummary;
+                if (withoutRefs === 0) {
+                    claimSummary = `${total} claim${total !== 1 ? 's' : ''} (all referenced)`;
+                } else if (withRefs === 0) {
+                    claimSummary = `${total} claim${total !== 1 ? 's' : ''} (none referenced)`;
+                } else {
+                    claimSummary = `${total} claim${total !== 1 ? 's' : ''} (${withRefs} referenced, ${withoutRefs} not)`;
+                }
+
+                successText.innerHTML = `${claimSummary}. Starting preview of the first 3 claims/rows...`;
             }
 
             // Update status badge
