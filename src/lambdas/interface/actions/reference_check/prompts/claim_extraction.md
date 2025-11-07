@@ -166,6 +166,17 @@ Based on the format, style, and content, identify the likely source of this text
 
 Make your best guess based on clues in the text.
 
+## TABLE NAMING
+
+Provide a concise, descriptive name for this reference check table based on the content.
+
+**Guidelines**:
+- 2-5 words max
+- Describes the topic or claims being checked
+- Examples: "Tylenol Autism Claims", "Climate Change Data", "AI Hallucination Studies"
+- Use title case
+- No special characters or punctuation
+
 ## OUTPUT FORMAT
 
 Return a JSON object with this structure:
@@ -173,6 +184,7 @@ Return a JSON object with this structure:
 ```json
 {
   "is_suitable": true,
+  "table_name": "Tylenol Autism Claims",
   "source_type_guess": "Perplexity",
   "source_confidence": 0.9,
   "total_claims": 5,

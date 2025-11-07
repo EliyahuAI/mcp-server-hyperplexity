@@ -54,11 +54,15 @@ class ClaimExtractor:
         """Get default JSON schema for claim extraction."""
         return {
             "type": "object",
-            "required": ["is_suitable", "total_claims", "claims_with_references", "claims_without_references", "claims"],
+            "required": ["is_suitable", "table_name", "total_claims", "claims_with_references", "claims_without_references", "claims"],
             "properties": {
                 "is_suitable": {
                     "type": "boolean",
                     "description": "Whether the text is suitable for reference checking"
+                },
+                "table_name": {
+                    "type": "string",
+                    "description": "Concise descriptive name for this reference check table (2-5 words)"
                 },
                 "source_type_guess": {
                     "type": "string",
