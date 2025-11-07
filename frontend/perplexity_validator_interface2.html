@@ -12658,24 +12658,35 @@ Please provide any additional context, or simply proceed to generate your initia
             referenceCheckState.cardId = cardId;
 
             const content = `
-                <div id="${cardId}-messages"></div>
-                <div id="${cardId}-input-container">
-                    <textarea id="${cardId}-input" class="reference-check-textarea"
-                        placeholder="Paste AI output or literature with citations to verify..."
-                        maxlength="96000"
-                        rows="12"
-                        style="width: 100%; resize: vertical; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 0.75rem; font-family: var(--font-family); font-size: var(--font-size-base); line-height: 1.5; color: var(--text-color); box-shadow: inset 0 1px 2px rgba(0,0,0,0.04); transition: var(--transition);"></textarea>
-                    <style>
-                        .reference-check-textarea:focus {
-                            outline: none;
-                            background: #FFFFFF;
-                            border-color: var(--primary-color);
-                            box-shadow: inset 0 1px 2px rgba(0,0,0,0.05), 0 0 0 3px rgba(76, 175, 80, 0.2);
-                        }
-                        .reference-check-textarea::placeholder {
-                            color: #9CA3AF;
-                        }
-                    </style>
+                <div id="${cardId}-form">
+                    <div id="${cardId}-input-container">
+                        <textarea id="${cardId}-input" class="reference-check-textarea"
+                            placeholder="Paste AI output or literature with citations to verify..."
+                            maxlength="96000"
+                            rows="12"
+                            style="width: 100%; resize: vertical; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 0.75rem; font-family: var(--font-family); font-size: var(--font-size-base); line-height: 1.5; color: var(--text-color); box-shadow: inset 0 1px 2px rgba(0,0,0,0.04); transition: var(--transition);"></textarea>
+                        <style>
+                            .reference-check-textarea:hover {
+                                border-color: #D1D5DB;
+                            }
+                            .reference-check-textarea:focus {
+                                outline: none;
+                                background: #FFFFFF;
+                                border-color: var(--primary-color);
+                                box-shadow: inset 0 1px 2px rgba(0,0,0,0.05), 0 0 0 3px rgba(76, 175, 80, 0.2);
+                            }
+                            .reference-check-textarea::placeholder {
+                                color: #9CA3AF;
+                            }
+                        </style>
+                    </div>
+                    <div id="${cardId}-messages"></div>
+                </div>
+                <div id="${cardId}-success" style="display: none;">
+                    <div class="message message-success">
+                        <span class="message-icon">✓</span>
+                        <div id="${cardId}-success-text"></div>
+                    </div>
                 </div>
             `;
 
@@ -12876,26 +12887,38 @@ Please provide any additional context, or simply proceed to generate your initia
             globalState.configStored = true;
             globalState.excelFileUploaded = true;
 
-            // Show success message
-            const messageDiv = document.getElementById(`${cardId}-messages`);
-            if (messageDiv) {
-                const successHtml = `
-                    <div class="message message-success" style="margin-top: 1rem;">
-                        <span class="message-icon">[SUCCESS]</span>
-                        <div>
-                            <strong>Claims extracted successfully!</strong><br>
-                            Your table has been created with ${data.summary.total_claims} claims
-                            (${data.summary.claims_with_references} with references, ${data.summary.claims_without_references} without).
-                            <br><br>
-                            Preparing preview...
-                        </div>
-                    </div>
+            // Hide form and show success state (like email validation)
+            const formEl = document.getElementById(`${cardId}-form`);
+            const successEl = document.getElementById(`${cardId}-success`);
+            const successText = document.getElementById(`${cardId}-success-text`);
+
+            if (formEl) formEl.style.display = 'none';
+            if (successEl) successEl.style.display = 'block';
+            if (successText) {
+                successText.innerHTML = `
+                    A table has been created with ${data.summary.total_claims} claims
+                    (${data.summary.claims_with_references} with references, ${data.summary.claims_without_references} without).
+                    <br><br>
+                    Starting preview of the first 3 claims/rows...
                 `;
-                messageDiv.innerHTML = successHtml;
+            }
+
+            // Update status badge
+            const card = document.getElementById(cardId);
+            if (card) {
+                const statusBadge = card.querySelector('.status-badge');
+                if (statusBadge) {
+                    statusBadge.className = 'status-badge completed';
+                    statusBadge.innerHTML = '<span>Complete</span>';
+                }
             }
 
             // Complete thinking indicator
             completeThinkingInCard(cardId, 'Extraction complete!');
+
+            // Hide buttons
+            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+            if (buttonsContainer) buttonsContainer.style.display = 'none';
 
             // Auto-trigger preview (like table_maker does)
             setTimeout(() => {
