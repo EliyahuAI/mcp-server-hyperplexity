@@ -308,18 +308,62 @@ async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any) -> D
                 })
                 return {'status': 'error', 'error': 's3_save_failed'}
 
-            # Send success via WebSocket (with S3 key, not full markdown)
-            websocket_client.send_to_session(session_id, {
-                'type': 'pdf_conversion_complete',
-                'pdf_id': pdf_id,
-                'status': 'complete',
-                'filename': filename,
-                'page_count': page_count,
-                'markdown_s3_key': markdown_s3_key,
-                'message': f'Successfully converted {page_count} pages'
-            })
+            # Automatically start reference check with the markdown text
+            logger.info(f"[PDF_CONVERT] Starting reference check with converted markdown")
 
-            return {'status': 'success', 'pdf_id': pdf_id, 'page_count': page_count, 'markdown_s3_key': markdown_s3_key}
+            # Import reference check handler
+            from interface_lambda.actions.reference_check.conversation import handle_reference_check_start
+            import uuid
+
+            # Generate conversation ID for reference check
+            conversation_id = f"refcheck_{uuid.uuid4().hex[:12]}"
+
+            # Queue reference check to SQS
+            from interface_lambda.core.sqs_service import _send_sqs_message, STANDARD_QUEUE_URL
+            import os
+
+            reference_check_request = {
+                'request_type': 'reference_check',
+                'action': 'startReferenceCheck',
+                'email': email,
+                'session_id': session_id,
+                'conversation_id': conversation_id,
+                'submitted_text': markdown_text,
+                'pdf_source': {
+                    'pdf_id': pdf_id,
+                    'filename': filename,
+                    'page_count': page_count
+                },
+                'created_at': datetime.now(timezone.utc).isoformat(),
+                'deployment_environment': os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod')
+            }
+
+            try:
+                message_id = _send_sqs_message(STANDARD_QUEUE_URL, reference_check_request)
+                logger.info(f"[PDF_CONVERT] Queued reference check: {conversation_id}, SQS message: {message_id}")
+
+                # Send completion notification via WebSocket
+                websocket_client.send_to_session(session_id, {
+                    'type': 'pdf_conversion_complete',
+                    'pdf_id': pdf_id,
+                    'status': 'complete',
+                    'filename': filename,
+                    'page_count': page_count,
+                    'conversation_id': conversation_id,
+                    'message': f'Successfully converted {page_count} pages. Starting reference check...'
+                })
+
+                return {'status': 'success', 'pdf_id': pdf_id, 'page_count': page_count, 'conversation_id': conversation_id}
+
+            except Exception as e:
+                logger.error(f"[PDF_CONVERT] Failed to queue reference check: {str(e)}")
+                websocket_client.send_to_session(session_id, {
+                    'type': 'pdf_conversion_error',
+                    'pdf_id': pdf_id,
+                    'error': 'reference_check_failed',
+                    'message': 'PDF converted but failed to start reference check'
+                })
+                return {'status': 'error', 'error': 'reference_check_failed'}
 
         except Exception as e:
             logger.error(f"[PDF_CONVERT] Conversion failed: {str(e)}", exc_info=True)

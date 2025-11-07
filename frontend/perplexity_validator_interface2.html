@@ -12819,27 +12819,29 @@ Please provide any additional context, or simply proceed to generate your initia
                 if (response.ok && data.success && data.status === 'processing') {
                     // Store PDF ID for tracking
                     referenceCheckState.pdfId = data.pdf_id;
+                    referenceCheckState.pdfFilename = file.name;
 
-                    // Replace input UI with success box and progress indicator
-                    inputContainer.innerHTML = `
-                        <div style="background: #F0FDF4; border: 1px solid #86EFAC; border-radius: 12px; padding: 1rem; margin-bottom: 1rem;">
-                            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                                <span style="color: var(--primary-color); font-size: 1.25rem;">[SUCCESS]</span>
-                                <span style="font-weight: 500; color: #166534;">${file.name} successfully uploaded</span>
-                            </div>
-                            <div id="${cardId}-pdf-progress" style="color: #6B7280; font-size: var(--font-size-small);">
-                                Reading PDF...
-                            </div>
-                        </div>
-                    `;
+                    // Hide the form and show green checkmark success state
+                    const formEl = document.getElementById(`${cardId}-form`);
+                    const successEl = document.getElementById(`${cardId}-success`);
+                    const successTextEl = document.getElementById(`${cardId}-success-text`);
+                    const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+
+                    if (formEl) formEl.style.display = 'none';
+                    if (buttonsContainer) buttonsContainer.style.display = 'none';
+
+                    if (successEl && successTextEl) {
+                        successTextEl.textContent = `${file.name} successfully uploaded. Reading PDF...`;
+                        successEl.style.display = 'block';
+                    }
 
                     // Connect to WebSocket to receive conversion result
                     connectToSession(globalState.sessionId);
 
                     // Register WebSocket handler for PDF conversion
-                    const handlerId = `pdf_conversion_${data.pdf_id}`;
-                    registerMessageHandler(handlerId, (message) => {
-                        handlePdfConversionMessage(cardId, message, file.name);
+                    unregisterCardHandler(cardId);
+                    registerCardHandler(cardId, ['pdf_conversion_progress', 'pdf_conversion_complete', 'pdf_conversion_error'], (wsData) => {
+                        handlePdfConversionMessage(cardId, wsData, file.name);
                     });
 
                 } else {
