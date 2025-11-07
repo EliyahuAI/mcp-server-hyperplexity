@@ -97,19 +97,32 @@ If reference format is unclear or incomplete, extract what you can.
 ## TEXT LOCATION MAPPING
 
 For each claim, record its location in the original text with the following fields:
-- **start_char**: Character index where claim starts (required)
-- **end_char**: Character index where claim ends (required)
-- **paragraph_index**: Which paragraph, 0-indexed (required)
-- **sentence_index**: Which sentence within the paragraph, 0-indexed (if identifiable)
-- **word_start**: Starting word index in the text (if identifiable)
-- **word_end**: Ending word index in the text (if identifiable)
+
+**CRITICAL**: All indices are **0-based** and character positions are **from the beginning of the entire document** (position 0 = first character).
+
+- **start_char**: Character index where claim starts, from document start (required)
+- **end_char**: Character index where claim ends, from document start (required)
+- **paragraph_index**: Which paragraph (0 = first paragraph) (required)
+- **sentence_index**: Which sentence within the paragraph (0 = first sentence) (if identifiable)
+- **word_start**: Starting word index from document start (if identifiable)
+- **word_end**: Ending word index from document start (if identifiable)
 - **section_name**: Name of the section (e.g., "Introduction", "Methods") if text has clear sections
 
-This data will be formatted as a human-readable pipe-delimited string in the final CSV output.
-Example format: "Section: Introduction | Para: 2 | Sentence: 3 | Words: 45-67 | Chars: 234-456"
-Or if no section: "Para: 2 | Sentence: 3 | Words: 45-67 | Chars: 234-456"
+**Character counting example**:
+```
+"Hello world. This is a test."
+ ^            ^
+ 0            13 (start_char for "This")
+```
 
-IMPORTANT: Always provide at minimum start_char, end_char, and paragraph_index. Additional fields are helpful but optional.
+This data will be formatted as a human-readable pipe-delimited string in the final CSV output.
+
+**Example formats**:
+- With section: `"Section: Introduction | Para: 2 | Sentence: 3 | Words: 45-67 | Chars: 234-456"`
+- Without section: `"Para: 2 | Sentence: 3 | Words: 45-67 | Chars: 234-456"`
+- Minimal: `"Para: 2 | Chars: 234-456"`
+
+IMPORTANT: Always provide at minimum **start_char**, **end_char**, and **paragraph_index**. Additional fields are helpful but optional.
 
 ## REFERENCE LIST HANDLING
 
