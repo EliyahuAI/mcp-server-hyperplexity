@@ -12858,95 +12858,46 @@ Please provide any additional context, or simply proceed to generate your initia
         }
 
         // Handle PDF conversion WebSocket messages
-        async function handlePdfConversionMessage(cardId, message, filename) {
-            const inputContainer = document.getElementById(`${cardId}-input-container`);
-            const progressDiv = document.getElementById(`${cardId}-pdf-progress`);
-            const messagesDiv = document.getElementById(`${cardId}-messages`);
+        function handlePdfConversionMessage(cardId, message, filename) {
+            const successTextEl = document.getElementById(`${cardId}-success-text`);
 
             console.log('[PDF_CONVERSION] Received message:', message.type);
 
             if (message.type === 'pdf_conversion_progress') {
-                // Update progress indicator
-                if (progressDiv) {
-                    progressDiv.textContent = message.message || 'Converting PDF...';
+                // Update progress in success text
+                if (successTextEl) {
+                    successTextEl.textContent = message.message || 'Converting PDF...';
                 }
             }
             else if (message.type === 'pdf_conversion_complete') {
-                // Fetch markdown from S3
-                if (progressDiv) {
-                    progressDiv.textContent = 'Fetching converted text...';
+                // PDF converted and reference check started automatically
+                if (successTextEl) {
+                    successTextEl.textContent = `${filename} successfully uploaded. Extracting claims and checking references...`;
                 }
 
-                try {
-                    const response = await fetch(`${API_BASE}/validate`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: 'fetchPdfMarkdown',
-                            markdown_s3_key: message.markdown_s3_key
-                        })
-                    });
+                // Store conversation ID for reference check tracking
+                referenceCheckState.conversationId = message.conversation_id;
 
-                    const data = await response.json();
-
-                    if (response.ok && data.success && data.markdown_text) {
-                        // Replace success box with textarea containing markdown
-                        inputContainer.innerHTML = `
-                            <textarea id="${cardId}-input" class="reference-check-textarea"
-                                placeholder="Paste AI output or literature with citations to verify..."
-                                maxlength="96000"
-                                rows="12"
-                                style="width: 100%; resize: vertical; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 0.75rem; font-family: var(--font-family); font-size: var(--font-size-base); line-height: 1.5; color: var(--text-color); box-shadow: inset 0 1px 2px rgba(0,0,0,0.04); transition: var(--transition);"></textarea>
-                        `;
-
-                        // Populate with markdown text
-                        const textarea = document.getElementById(`${cardId}-input`);
-                        if (textarea) {
-                            textarea.value = data.markdown_text;
-                        }
-
-                        // Show success message
-                        showMessage(messagesDiv.id,
-                            `[SUCCESS] Converted ${message.page_count} pages from ${filename}`,
-                            'success'
-                        );
-                    } else {
-                        throw new Error(data.message || 'Failed to fetch markdown');
+                // Unregister PDF conversion handler, now listen for reference check progress
+                unregisterCardHandler(cardId);
+                registerCardHandler(cardId, ['reference_check_progress', 'reference_check_complete', 'reference_check_error'], (wsData) => {
+                    if (wsData.type === 'reference_check_progress') {
+                        handleReferenceCheckProgress(wsData, cardId);
+                    } else if (wsData.type === 'reference_check_complete') {
+                        handleReferenceCheckComplete(wsData, cardId);
+                    } else if (wsData.type === 'reference_check_error') {
+                        handleReferenceCheckError(wsData, cardId);
                     }
-
-                } catch (error) {
-                    console.error('[PDF_FETCH] Error:', error);
-
-                    if (progressDiv) {
-                        progressDiv.innerHTML = `<span style="color: #EF4444;">[ERROR] Failed to fetch converted text</span>`;
-                    }
-
-                    showMessage(messagesDiv.id,
-                        `Error fetching converted PDF: ${error.message}`,
-                        'error'
-                    );
-                }
-
-                // Clean up WebSocket handler
-                if (referenceCheckState.pdfId) {
-                    unregisterMessageHandler(`pdf_conversion_${referenceCheckState.pdfId}`);
-                }
+                });
             }
             else if (message.type === 'pdf_conversion_error') {
-                // Show error
-                if (progressDiv) {
-                    progressDiv.innerHTML = `<span style="color: #EF4444;">[ERROR] ${message.message}</span>`;
+                // Show error in success box
+                if (successTextEl) {
+                    successTextEl.innerHTML = `<span style="color: #EF4444;">Error: ${message.message}</span>`;
                 }
-
-                showMessage(messagesDiv.id,
-                    `Error converting PDF: ${message.message}`,
-                    'error'
-                );
 
                 // Clean up WebSocket handler
-                if (referenceCheckState.pdfId) {
-                    unregisterMessageHandler(`pdf_conversion_${referenceCheckState.pdfId}`);
-                }
+                unregisterCardHandler(cardId);
             }
         }
 
