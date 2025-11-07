@@ -631,7 +631,13 @@ async def _compile_results(
     email: str,
     storage_manager: UnifiedS3Manager,
     config: Dict,
-    claims: List[Dict[str, Any]] = None
+    claims: List[Dict[str, Any]] = None,
+    submitted_text: str = None,
+    source_guess: str = None,
+    ai_source_guess: str = None,
+    ai_source_confidence: float = None,
+    path_type: str = None,
+    final_reference_map: Dict[str, str] = None
 ) -> Dict[str, Any]:
     """
     Generate CSV with claims (ID columns filled, RESEARCH columns empty).
@@ -693,8 +699,8 @@ async def _compile_results(
         if not validation_results and claims:
             summary = {
                 'total_claims': len(claims),
-                'claims_with_references': sum(1 for c in claims if c.get('reference')),
-                'claims_without_references': sum(1 for c in claims if not c.get('reference'))
+                'claims_with_references': sum(1 for c in claims if c.get('reference') not in [None, '', []]),
+                'claims_without_references': sum(1 for c in claims if c.get('reference') in [None, '', []])
             }
         else:
             summary = get_summary_stats(validation_results, config)
@@ -715,6 +721,11 @@ async def _compile_results(
 
         csv_s3_key = store_result.get('s3_key')
         logger.info(f"[COMPILATION] CSV saved to S3: {csv_s3_key}")
+
+        # Define session_path for subsequent operations
+        domain = email.split('@')[1] if '@' in email else 'unknown'
+        email_prefix = email.split('@')[0] if '@' in email else email
+        session_path = f"results/{domain}/{email_prefix}/{session_id}/"
 
         # Save full source text to results folder
         source_text_filename = f"reference_check_{conversation_id}_source.txt"
@@ -785,13 +796,18 @@ async def _compile_results(
 
             # Load conversation state to get submitted text
             conversation_state = _load_conversation_state(storage_manager, email, session_id, conversation_id)
-            submitted_text = conversation_state.get('submitted_text', '')
+            if not conversation_state:
+                logger.error(f"[COMPILATION] Failed to load conversation state for {conversation_id}")
+                submitted_text = ""
+                reference_map = {}
+            else:
+                submitted_text = conversation_state.get('submitted_text', '')
 
             # Append submitted text and reference list to general_notes
             original_notes = validation_config.get('general_notes', '')
 
-            # Build reference list section
-            reference_map = conversation_state.get('reference_map', {})
+                # Build reference list section
+                reference_map = conversation_state.get('reference_map', {})
             if reference_map:
                 ref_list_text = "\n\n--- EXTRACTED REFERENCES ---\n\n"
                 for ref_id in sorted(reference_map.keys(), key=lambda x: int(re.search(r'\d+', x).group())):
@@ -1120,7 +1136,13 @@ async def execute_reference_check(
             email=email,
             storage_manager=storage_manager,
             config=config,
-            claims=claims  # Pass claims for CSV generation
+            claims=claims,  # Pass claims for CSV generation
+            submitted_text=submitted_text,
+            source_guess=source_guess,
+            ai_source_guess=ai_source_guess,
+            ai_source_confidence=ai_source_confidence,
+            path_type=path_type,
+            final_reference_map=final_reference_map
         )
 
         if not compilation_result.get('success'):

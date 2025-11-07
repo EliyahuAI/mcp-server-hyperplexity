@@ -371,16 +371,23 @@ def _load_conversation_state(storage_manager: UnifiedS3Manager, email: str, sess
         conversation_id: Conversation ID
 
     Returns:
-        State dict
+        State dict or None if not found
     """
     s3_key = f"reference_checks/{email}/{session_id}/{conversation_id}/conversation_state.json"
 
-    response = storage_manager.s3_client.get_object(
-        Bucket=storage_manager.bucket_name,
-        Key=s3_key
-    )
+    try:
+        response = storage_manager.s3_client.get_object(
+            Bucket=storage_manager.bucket_name,
+            Key=s3_key
+        )
 
-    state = json.loads(response['Body'].read())
-    logger.info(f"Loaded conversation state from S3: {s3_key}")
+        state = json.loads(response['Body'].read())
+        logger.info(f"Loaded conversation state from S3: {s3_key}")
+        return state
 
-    return state
+    except storage_manager.s3_client.exceptions.NoSuchKey:
+        logger.error(f"Conversation state not found: {s3_key}")
+        return None
+    except Exception as e:
+        logger.error(f"Error loading conversation state from {s3_key}: {e}", exc_info=True)
+        return None

@@ -91,8 +91,8 @@ class ResultCompiler:
         confidences = [r.get('confidence', 0) for r in validation_results]
         avg_confidence = sum(confidences) / len(confidences) if confidences else 0
 
-        # Count by reference type
-        with_references = sum(1 for r in validation_results if r.get('reference'))
+        # Count by reference type (consistent with execution.py)
+        with_references = sum(1 for r in validation_results if r.get('reference') not in [None, '', []])
         without_references = total_claims - with_references
 
         summary = {

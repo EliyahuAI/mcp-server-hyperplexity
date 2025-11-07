@@ -214,8 +214,7 @@ class ReferenceValidator:
                 'reference': claim.get('reference'),
                 'reference_description': 'Exception during validation',
                 'reference_says': str(e),
-                'support_level': 'unclear',
-                'confidence': 0.0,
+                'support_level': 'Unclear',
                 'validation_notes': f'Exception: {str(e)}',
                 'accessible': False,
                 'error': str(e)
