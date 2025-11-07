@@ -692,23 +692,24 @@ class ReferenceParser:
             if ref_id in reference_map:
                 citation = reference_map[ref_id]
 
-                # Keep the number prefix
-                # Format as Excel hyperlink if it's a URL
+                # Format as Excel hyperlink with number as display text
                 if format_as_hyperlink and re.match(r'https?://', citation):
-                    # Excel HYPERLINK formula: =HYPERLINK("url", "display_text")
-                    formatted = f'{ref_id} =HYPERLINK("{citation}", "{citation}")'
+                    # Excel HYPERLINK formula: =HYPERLINK("url", "[1]")
+                    # The number becomes the clickable link
+                    formatted = f'=HYPERLINK("{citation}", "{ref_id}")'
                 else:
-                    formatted = f"{ref_id} {citation}"
+                    # Non-URL citation: keep as text
+                    formatted = f"{ref_id}"
 
                 resolved_refs.append(formatted)
-                logger.info(f"[REF PARSER] Resolved {ref_id} to citation")
+                logger.info(f"[REF PARSER] Resolved {ref_id} to hyperlink")
             else:
                 # Keep original if not found
                 resolved_refs.append(ref_id)
                 logger.warning(f"[REF PARSER] Could not resolve {ref_id}, keeping as-is")
 
-        # Join with Excel newlines (\n for within-cell line breaks)
-        return '\n'.join(resolved_refs) if resolved_refs else citation_text
+        # Join with comma and space (not newlines)
+        return ', '.join(resolved_refs) if resolved_refs else citation_text
 
     def guess_source_type(self, text: str, reference_map: Dict[str, str], content_type: str, path_type: str) -> str:
         """
