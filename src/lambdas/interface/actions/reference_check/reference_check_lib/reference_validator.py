@@ -158,7 +158,6 @@ class ReferenceValidator:
                 schema=self.schema,
                 model=model,
                 max_tokens=max_tokens,
-                temperature=temperature,
                 use_cache=True,
                 max_web_searches=max_web_searches,  # Enable web search for validation
                 debug_name=f"reference_check_validation_{claim_id}"

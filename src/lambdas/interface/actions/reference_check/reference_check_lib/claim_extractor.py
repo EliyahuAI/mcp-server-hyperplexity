@@ -162,7 +162,6 @@ class ClaimExtractor:
                 schema=self.schema,
                 model=model,
                 max_tokens=max_tokens,
-                temperature=temperature,
                 use_cache=True,
                 max_web_searches=0,  # No web search for extraction
                 debug_name="reference_check_claim_extraction"
