@@ -716,15 +716,60 @@ async def _compile_results(
         csv_s3_key = store_result.get('s3_key')
         logger.info(f"[COMPILATION] CSV saved to S3: {csv_s3_key}")
 
-        # Update session_info.json with table path (so get_excel_file can find it)
+        # Save full source text to results folder
+        source_text_filename = f"reference_check_{conversation_id}_source.txt"
+        source_text_key = f"{session_path}{source_text_filename}"
+
+        try:
+            storage_manager.s3_client.put_object(
+                Bucket=storage_manager.bucket_name,
+                Key=source_text_key,
+                Body=submitted_text.encode('utf-8'),
+                ContentType='text/plain',
+                Metadata={
+                    'conversation_id': conversation_id,
+                    'session_id': session_id,
+                    'email': email,
+                    'source_type': source_guess,
+                    'reference_path': path_type,
+                    'total_claims': str(len(claims))
+                }
+            )
+            logger.info(f"[COMPILATION] Saved source text to S3: {source_text_key}")
+        except Exception as e:
+            logger.warning(f"[COMPILATION] Failed to save source text: {e}")
+
+        # Update session_info.json with reference check activity
         try:
             session_info = storage_manager.load_session_info(email, session_id)
+
+            # Add reference_check tracking section
+            if 'reference_check' not in session_info:
+                session_info['reference_check'] = {}
+
+            session_info['reference_check'][conversation_id] = {
+                'conversation_id': conversation_id,
+                'created_at': datetime.now().isoformat(),
+                'source_type': source_guess,
+                'reference_path': path_type,
+                'total_claims': len(claims),
+                'claims_with_references': summary.get('claims_with_references', 0),
+                'claims_without_references': summary.get('claims_without_references', 0),
+                'references_extracted': len(final_reference_map),
+                'csv_s3_key': csv_s3_key,
+                'config_s3_key': config_s3_key,
+                'source_text_s3_key': source_text_key,
+                'status': 'complete'
+            }
+
+            # Also update table_path for compatibility
             session_info['table_path'] = csv_s3_key
             session_info['table_name'] = f"reference_check_{conversation_id}"
             session_info['session_id'] = session_id
             session_info['email'] = email
+
             storage_manager.save_session_info(email, session_id, session_info)
-            logger.info(f"[COMPILATION] Updated session_info.json with table_path: {csv_s3_key}")
+            logger.info(f"[COMPILATION] Updated session_info.json with reference check tracking")
         except Exception as session_info_error:
             logger.warning(f"[COMPILATION] Failed to update session_info.json: {session_info_error}")
 
