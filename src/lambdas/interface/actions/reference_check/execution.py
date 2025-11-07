@@ -906,12 +906,26 @@ async def execute_reference_check(
                 logger.warning(f"[EXECUTION] Failed to update run status: {e}")
 
         # ======================================================================
-        # STEP 0: Extract Claims
+        # STEP 0: Pre-parse References and Extract Claims
         # ======================================================================
-        logger.info("[EXECUTION] Step 0/2: Extract Claims")
+        logger.info("[EXECUTION] Step 0a: Pre-parse references from text")
+
+        # Parse references BEFORE sending to AI
+        from .reference_check_lib.reference_parser import ReferenceParser
+        parser = ReferenceParser()
+
+        parsed_reference_map = parser.extract_reference_list(submitted_text)
+        path_type, confidence = parser.detect_reference_format(submitted_text, parsed_reference_map)
+
+        logger.info(f"[EXECUTION] Reference detection: path={path_type}, confidence={confidence:.2f}")
+
+        # Build enriched text with reference instructions
+        enriched_text = parser.build_enriched_text(submitted_text, parsed_reference_map, path_type)
+
+        logger.info("[EXECUTION] Step 0b: Extract Claims")
 
         extraction_result = await _extract_claims(
-            submitted_text=submitted_text,
+            submitted_text=enriched_text,  # Send enriched text, not original
             conversation_id=conversation_id,
             session_id=session_id,
             config=config
@@ -954,13 +968,33 @@ async def execute_reference_check(
         claims = extraction_result.get('claims', [])
         logger.info(f"[EXECUTION] Step 0 complete: {len(claims)} claims extracted")
 
-        # Parse and resolve numbered references to actual citations
-        logger.info(f"[EXECUTION] Resolving numbered references to actual citations")
-        claims, reference_map = parse_and_resolve_references(submitted_text, claims)
-        logger.info(f"[EXECUTION] Resolved {len(reference_map)} references")
+        # Determine final reference map
+        ai_reference_list = extraction_result.get('reference_list')
 
-        # Store reference map for later use in config
-        conversation_state['reference_map'] = reference_map
+        if path_type == "inline_links":
+            # Path A: Use Python-parsed refs (AI not allowed to override)
+            final_reference_map = parsed_reference_map
+            logger.info(f"[EXECUTION] Path A: Using inline references as-is ({len(final_reference_map)} refs)")
+        elif ai_reference_list:
+            # Path B/C: AI provided complete override
+            final_reference_map = {r['ref_id']: r['full_citation'] for r in ai_reference_list}
+            logger.info(f"[EXECUTION] Path {path_type}: Using AI reference override ({len(final_reference_map)} refs)")
+        else:
+            # Path B/C: Use Python-parsed refs
+            final_reference_map = parsed_reference_map
+            logger.info(f"[EXECUTION] Path {path_type}: Using Python-parsed references ({len(final_reference_map)} refs)")
+
+        # Resolve numbered citations in claims to actual references
+        logger.info(f"[EXECUTION] Resolving citations in claims")
+        for claim in claims:
+            citation = claim.get('reference')
+            if citation and final_reference_map:
+                resolved = parser.resolve_citations(citation, final_reference_map)
+                claim['reference'] = resolved
+
+        # Store reference map for config
+        conversation_state['reference_map'] = final_reference_map
+        conversation_state['reference_path'] = path_type
         _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
 
         # Check if no claims were extracted

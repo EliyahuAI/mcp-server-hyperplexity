@@ -103,6 +103,26 @@ For each claim, record its location in the original text:
 
 This allows highlighting claims in the original text later.
 
+## REFERENCE LIST HANDLING
+
+The text may include a "--- PARSED REFERENCES ---" or "--- REFERENCES DETECTED ---" section at the end.
+
+**If you see "--- REFERENCES DETECTED ---"** (Path A: Inline links):
+- References are already inline with URLs in the text
+- Use them exactly as they appear
+- Do NOT include `reference_list` in your output
+
+**If you see "--- PARSED REFERENCES ---"** (Path B: Parsed section):
+- Python has extracted a reference list for you
+- Use these references when linking claims to citations
+- Only include `reference_list` in output if the parsed references are wrong or unusable
+- If you include `reference_list`, it must be a COMPLETE replacement (all references, not just corrections)
+
+**If you see "--- NOTICE: No reference list detected ---"** (Path C: Not found):
+- Python found no reference section
+- If text has numbered citations like [1], [2]: You MUST provide complete `reference_list`
+- If text has no numbered citations: Unreferenced claims, omit `reference_list`
+
 ## OUTPUT FORMAT
 
 Return a JSON object with this structure:
@@ -155,9 +175,14 @@ Return a JSON object with this structure:
       "ref_id": "[2]",
       "full_citation": "Chen, L. et al. (2024). Measuring Factual Accuracy. arXiv:2401.12345"
     }
-  ]
+  ]  // OPTIONAL - Only include if: (Path B) parsed refs are wrong/unusable, OR (Path C) numbered citations exist but no refs found
 }
 ```
+
+**Important**: The `reference_list` field is optional and context-dependent:
+- **Path A (inline links)**: Never include reference_list
+- **Path B (parsed refs)**: Only if complete replacement needed
+- **Path C (not found)**: Only if numbered citations exist in text
 
 ## SPECIAL CASES
 
