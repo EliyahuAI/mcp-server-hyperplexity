@@ -6727,12 +6727,6 @@
             function renderMarkdown(text) {
                 if (!text) return '';
 
-                // Pre-process: Convert Excel HYPERLINK formulas to HTML links
-                // Pattern: =HYPERLINK("url", "[1]")
-                text = text.replace(/=HYPERLINK\("([^"]+)",\s*"(\[[^\]]+\])"\)/g, (match, url, display) => {
-                    return `<a href="${url}" target="_blank" style="color: var(--primary-color); text-decoration: underline;">${display}</a>`;
-                });
-
                 marked.setOptions({
                     breaks: true,
                     gfm: true,
