@@ -5572,12 +5572,23 @@
                 if (!card) return;
 
                 const claimsToShow = claims.slice(0, 10);
-                const claimsListHtml = claimsToShow.map(claim => {
+                const claimsListHtml = claimsToShow.map((claim, index) => {
+                    // Extract just reference numbers (e.g., [1][2][3] → "1,2,3")
                     const refs = claim.reference || 'None';
+                    let refNumbers = 'None';
+                    if (refs !== 'None') {
+                        const matches = refs.match(/\[(\d+)\]/g);
+                        if (matches) {
+                            refNumbers = matches.map(m => m.replace(/[\[\]]/g, '')).join(',');
+                        }
+                    }
+
+                    // Simple number instead of claim_001
+                    const claimNum = index + 1;
                     const statementPreview = claim.statement.length > 100
                         ? claim.statement.substring(0, 100) + '...'
                         : claim.statement;
-                    return `<strong>${claim.claim_id}</strong>: ${statementPreview} <span style="color: #666;">[Refs: ${refs}]</span>`;
+                    return `<strong>${claimNum}.</strong> ${statementPreview} <span style="color: #666;">[${refNumbers}]</span>`;
                 }).join('<br>');
 
                 const moreText = claims.length > 10 ? `<br><em>+${claims.length - 10} more claims</em>` : '';
