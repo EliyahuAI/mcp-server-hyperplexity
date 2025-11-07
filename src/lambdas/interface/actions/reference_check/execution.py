@@ -85,6 +85,7 @@ from .conversation import _load_conversation_state, _save_conversation_state
 from .reference_check_lib.claim_extractor import extract_claims
 from .reference_check_lib.reference_validator import validate_claim
 from .reference_check_lib.result_compiler import compile_results_to_csv, get_summary_stats
+from .reference_check_lib.reference_parser import parse_and_resolve_references
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -737,9 +738,19 @@ async def _compile_results(
             conversation_state = _load_conversation_state(storage_manager, email, session_id, conversation_id)
             submitted_text = conversation_state.get('submitted_text', '')
 
-            # Append submitted text to general_notes
+            # Append submitted text and reference list to general_notes
             original_notes = validation_config.get('general_notes', '')
-            validation_config['general_notes'] = f"{original_notes}\n\n--- ORIGINAL TEXT PROVIDED BY USER ---\n\n{submitted_text}"
+
+            # Build reference list section
+            reference_map = conversation_state.get('reference_map', {})
+            if reference_map:
+                ref_list_text = "\n\n--- EXTRACTED REFERENCES ---\n\n"
+                for ref_id in sorted(reference_map.keys(), key=lambda x: int(re.search(r'\d+', x).group())):
+                    ref_list_text += f"{ref_id} {reference_map[ref_id]}\n"
+            else:
+                ref_list_text = ""
+
+            validation_config['general_notes'] = f"{original_notes}\n\n--- ORIGINAL TEXT PROVIDED BY USER ---\n\n{submitted_text}{ref_list_text}"
 
             # Update config metadata for this session
             if 'storage_metadata' not in validation_config:
@@ -942,6 +953,15 @@ async def execute_reference_check(
 
         claims = extraction_result.get('claims', [])
         logger.info(f"[EXECUTION] Step 0 complete: {len(claims)} claims extracted")
+
+        # Parse and resolve numbered references to actual citations
+        logger.info(f"[EXECUTION] Resolving numbered references to actual citations")
+        claims, reference_map = parse_and_resolve_references(submitted_text, claims)
+        logger.info(f"[EXECUTION] Resolved {len(reference_map)} references")
+
+        # Store reference map for later use in config
+        conversation_state['reference_map'] = reference_map
+        _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
 
         # Check if no claims were extracted
         if len(claims) == 0:
