@@ -6466,8 +6466,16 @@ def handle_reference_check(event, context):
 
         # Route based on action
         if action == 'startReferenceCheck':
-            # Call the async handler using asyncio.run
-            result = asyncio.run(handle_reference_check_start(event, context))
+            # Call the async handler - check for existing event loop first
+            try:
+                loop = asyncio.get_running_loop()
+                # Running loop exists, create task
+                import asyncio
+                result = asyncio.create_task(handle_reference_check_start(event, context))
+                result = asyncio.get_event_loop().run_until_complete(result)
+            except RuntimeError:
+                # No running loop, use asyncio.run
+                result = asyncio.run(handle_reference_check_start(event, context))
         else:
             logger.error(f"Unknown reference check action: {action}")
             return {

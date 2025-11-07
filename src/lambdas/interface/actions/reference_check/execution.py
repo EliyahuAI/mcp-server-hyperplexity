@@ -75,15 +75,6 @@ from typing import Dict, Any, Optional, List
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
 from dynamodb_schemas import update_run_status
 
-# WebSocket client for real-time updates
-try:
-    from websocket_client import WebSocketClient
-    websocket_client = WebSocketClient()
-except ImportError:
-    websocket_client = None
-    logger = logging.getLogger()
-    logger.warning("WebSocket client not available")
-
 # AI API client
 from ai_api_client import AIAPIClient
 
@@ -97,6 +88,16 @@ from .reference_check_lib.result_compiler import compile_results_to_csv, get_sum
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+
+def _get_websocket_client():
+    """Get WebSocket client instance, handling errors gracefully."""
+    try:
+        from websocket_client import WebSocketClient
+        return WebSocketClient()
+    except Exception as e:
+        logger.warning(f"WebSocket client not available: {e}")
+        return None
 
 
 def send_execution_progress(
@@ -137,7 +138,7 @@ def send_execution_progress(
             **kwargs
         }
 
-        websocket_client.send_to_session(session_id, message)
+        ws_client.send_to_session(session_id, message)
         logger.info(
             f"[EXECUTION] Progress {progress_percent}% (Step {current_step}/{total_steps}, {phase}): {status}"
         )
@@ -722,6 +723,10 @@ async def _compile_results(
             validation_config['storage_metadata']['copied_at'] = datetime.now().isoformat()
             validation_config['storage_metadata']['source'] = 'reference_check_static_template'
 
+            # Extract domain and email_prefix for S3 path construction
+            domain = email.split('@')[1] if '@' in email else 'unknown'
+            email_prefix = email.split('@')[0] if '@' in email else email
+
             # Save config to session results folder
             config_filename = f"reference_check_validation_config.json"
             config_s3_key = f"results/{domain}/{email_prefix}/{session_id}/{config_filename}"
@@ -876,8 +881,26 @@ async def execute_reference_check(
         )
 
         if not extraction_result.get('success'):
-            result['error'] = f"Claim extraction failed: {extraction_result.get('error')}"
-            logger.error(f"[EXECUTION] {result['error']}")
+            # Check if text was unsuitable (not an error, just wrong type of content)
+            if extraction_result.get('unsuitable'):
+                result['error'] = extraction_result.get('reason', 'Text is not suitable for reference checking')
+                result['suggestion'] = extraction_result.get('suggestion', '')
+                logger.warning(f"[EXECUTION] Text unsuitable: {result['error']}")
+
+                # Send more helpful WebSocket message
+                ws_client = _get_websocket_client()
+                if ws_client:
+                    ws_client.send_to_session(session_id, {
+                        'type': 'reference_check_unsuitable',
+                        'conversation_id': conversation_id,
+                        'status': 'unsuitable',
+                        'reason': result['error'],
+                        'suggestion': result['suggestion'],
+                        'message': f"{result['error']}. {result['suggestion']}"
+                    })
+            else:
+                result['error'] = f"Claim extraction failed: {extraction_result.get('error')}"
+                logger.error(f"[EXECUTION] {result['error']}")
 
             # Update run status to failed
             if run_key:
@@ -893,6 +916,33 @@ async def execute_reference_check(
 
         claims = extraction_result.get('claims', [])
         logger.info(f"[EXECUTION] Step 0 complete: {len(claims)} claims extracted")
+
+        # Check if no claims were extracted
+        if len(claims) == 0:
+            result['error'] = 'No verifiable claims found in the submitted text'
+            logger.warning(f"[EXECUTION] {result['error']}")
+
+            # Update run status to failed
+            if run_key:
+                update_run_status(
+                    session_id=session_id,
+                    run_key=run_key,
+                    status='FAILED',
+                    verbose_status='No verifiable claims found in text',
+                    percent_complete=0
+                )
+
+            # Send error via WebSocket
+            ws_client = _get_websocket_client()
+        if ws_client:
+                ws_client.send_to_session(session_id, {
+                    'type': 'reference_check_error',
+                    'conversation_id': conversation_id,
+                    'status': 'error',
+                    'message': 'No verifiable claims found in your text. Please submit text containing factual claims with citations.'
+                })
+
+            return result
 
         # Track API call
         if run_key and extraction_result.get('enhanced_data'):
@@ -1006,12 +1056,13 @@ async def execute_reference_check(
         )
 
         # Send completion message with results (like table_maker does)
-        if websocket_client:
+        ws_client = _get_websocket_client()
+        if ws_client:
             # Flatten summary for frontend compatibility
             summary = result['summary']
             breakdown = summary.get('support_level_breakdown', {})
 
-            websocket_client.send_to_session(session_id, {
+            ws_client.send_to_session(session_id, {
                 'type': 'reference_check_complete',
                 'conversation_id': conversation_id,
                 'status': 'complete',
@@ -1065,8 +1116,9 @@ async def execute_reference_check(
                 logger.warning(f"[EXECUTION] Failed to update run status: {e2}")
 
         # Send error via WebSocket
-        if websocket_client:
-            websocket_client.send_to_session(session_id, {
+        ws_client = _get_websocket_client()
+        if ws_client:
+            ws_client.send_to_session(session_id, {
                 'type': 'reference_check_error',
                 'conversation_id': conversation_id,
                 'status': 'error',
