@@ -699,7 +699,39 @@ class ReferenceParser:
         # Join with Excel newlines (\n for within-cell line breaks)
         return '\n'.join(resolved_refs) if resolved_refs else citation_text
 
-    def build_enriched_text(self, text: str, reference_map: Dict[str, str], path_type: str) -> str:
+    def guess_source_type(self, text: str, reference_map: Dict[str, str], content_type: str, path_type: str) -> str:
+        """
+        Guess the source of the text based on format clues.
+
+        Returns:
+            Source type: "Perplexity", "ChatGPT", "Claude", "Grok", "Academic Paper", "Unknown"
+        """
+        # Check for AI assistant signatures
+        if "perplexity" in text.lower() or re.search(r'\[\d+\]\(https?://[^\)]+\)', text):
+            return "Perplexity"
+        elif "chatgpt" in text.lower() or re.search(r'\[\d+\]:\s*https?://', text):
+            return "ChatGPT"
+        elif "claude" in text.lower() or "anthropic" in text.lower():
+            return "Claude"
+        elif "grok" in text.lower() or "x.ai" in text.lower():
+            return "Grok"
+
+        # Check for academic paper indicators
+        if content_type == "academic_paper":
+            # Check citation style
+            has_author_year = any(re.search(r'et al\.|[A-Z][a-z]+,\s+[A-Z]\.', ref) for ref in reference_map.values())
+            if has_author_year:
+                return "Academic Paper (author-year)"
+            else:
+                return "Academic Paper"
+
+        # Check for AI response with inline citations
+        if path_type == "inline_links":
+            return "AI Assistant Output"
+
+        return "Unknown"
+
+    def build_enriched_text(self, text: str, reference_map: Dict[str, str], path_type: str, source_guess: str = None) -> str:
         """
         Build enriched text with reference information for AI.
 
@@ -707,15 +739,18 @@ class ReferenceParser:
             text: Original text
             reference_map: Parsed references
             path_type: Detection path (inline_links, needs_parsing, not_found)
+            source_guess: Guessed source type (optional)
 
         Returns:
             Enriched text with reference instructions
         """
+        source_info = f" (Detected source: {source_guess})" if source_guess else ""
+
         if path_type == "inline_links":
             # Path A: References already inline with URLs
             notice = f"""
 
---- REFERENCES DETECTED ({len(reference_map)} found) ---
+--- REFERENCES DETECTED ({len(reference_map)} found){source_info} ---
 References are already inline with URLs. Use these exactly as provided in the text.
 Do NOT include reference_list in your output.
 """
@@ -726,7 +761,7 @@ Do NOT include reference_list in your output.
             ref_list = "\n".join([f"{ref_id} {citation}" for ref_id, citation in sorted(reference_map.items(), key=lambda x: int(re.search(r'\d+', x[0]).group()))])
             notice = f"""
 
---- PARSED REFERENCES ({len(reference_map)} found) ---
+--- PARSED REFERENCES ({len(reference_map)} found){source_info} ---
 {ref_list}
 
 Use these references when extracting claims. Only include reference_list in output if these are wrong or unusable.
@@ -736,9 +771,9 @@ If providing reference_list, it must be a COMPLETE replacement (not partial corr
 
         else:
             # Path C: No references found
-            notice = """
+            notice = f"""
 
---- NOTICE: No reference list detected ---
+--- NOTICE: No reference list detected{source_info} ---
 If numbered citations like [1], [2] exist in the text, you MUST provide reference_list with all numbered references.
 If no numbered citations exist, this text has unreferenced claims - do not include reference_list.
 """

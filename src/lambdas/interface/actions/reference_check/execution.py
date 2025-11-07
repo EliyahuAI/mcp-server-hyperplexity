@@ -919,8 +919,13 @@ async def execute_reference_check(
 
         logger.info(f"[EXECUTION] Reference detection: path={path_type}, confidence={confidence:.2f}")
 
+        # Guess source type for better context
+        content_type = parser.detect_content_type(submitted_text)
+        source_guess = parser.guess_source_type(submitted_text, parsed_reference_map, content_type, path_type)
+        logger.info(f"[EXECUTION] Source guess: {source_guess}")
+
         # Build enriched text with reference instructions
-        enriched_text = parser.build_enriched_text(submitted_text, parsed_reference_map, path_type)
+        enriched_text = parser.build_enriched_text(submitted_text, parsed_reference_map, path_type, source_guess)
 
         logger.info("[EXECUTION] Step 0b: Extract Claims")
 
