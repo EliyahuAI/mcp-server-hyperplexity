@@ -54,6 +54,7 @@ class ResultCompiler:
                 result.get('context', ''),
                 result.get('text_location', ''),
                 result.get('reference', ''),
+                result.get('criticality', ''),
                 result.get('reference_description', ''),
                 result.get('reference_says', ''),
                 result.get('qualified_fact', result.get('statement', '')),

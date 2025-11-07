@@ -83,15 +83,30 @@
       "column": "Reference",
       "description": "The citation or source provided to support the claim",
       "importance": "ID",
-      "format": "String (URL, citation, or source description)",
+      "format": "String (short citation format: [#] FirstAuthor et al. (Year) or [#] domain.com)",
       "examples": [
-        "https://www.ipcc.ch/report/ar6/wg1/",
-        "Python.org official documentation",
-        "Chen, L. et al. (2024). Measuring Factual Accuracy in Large Language Models. arXiv:2401.12345",
-        "[1] Johnson, A. (2023). Understanding AI Hallucinations. Nature AI, 5(2), 123-145"
+        "[1] Smith et al. (2023)",
+        "[2] Johnson (2024)",
+        "[3] publichealth.jhu.edu",
+        "[1] Smith et al. (2023), [2] Johnson (2024)"
       ],
       "search_group": 0,
-      "notes": "The source that should support the claim. May be a URL, academic citation, or source description. Can be null if claim is unreferenced (fact-check mode). No validation needed - used as context for finding the source."
+      "notes": "The source reference(s) supporting the claim, in short citation format showing reference number and first author/year or domain. Multiple references are comma-separated. Can be null if claim is unreferenced (fact-check mode). No validation needed - used as context for finding the source."
+    },
+    {
+      "column": "Claim Criticality",
+      "description": "How critical is this claim to the document's central thesis? If false, how much damage does it do?",
+      "importance": "ID",
+      "format": "String (format: {level} - {level_name}: {brief reason})",
+      "examples": [
+        "1 - Critical: Central thesis claim about vaccine effectiveness",
+        "2 - Major: Key supporting evidence from primary study",
+        "3 - Supporting: Additional corroborating data point",
+        "4 - Minor: Peripheral historical context",
+        "5 - Context: Background information on methodology"
+      ],
+      "search_group": 0,
+      "notes": "Criticality assessment on 1-5 scale (1=Critical, 5=Context) indicating how central this claim is to the document's main argument. Level 1 (Critical) means the entire thesis depends on this claim; if false, the conclusion collapses. Level 5 (Context) means background information with no impact on the central thesis. Format must include numeric level, level name, and brief reason. No validation needed - extracted during claim identification."
     },
     {
       "column": "Reference Description",

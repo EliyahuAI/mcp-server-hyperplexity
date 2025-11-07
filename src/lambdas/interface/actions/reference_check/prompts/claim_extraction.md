@@ -13,6 +13,7 @@ For each claim, extract:
 2. **Context**: Surrounding text that provides context (1-2 sentences)
 3. **Reference**: Any citation/reference linked to this claim (if present)
 4. **Reference Details**: Parsed information about the reference (if identifiable)
+5. **Claim Criticality**: How critical is this claim to the document's central thesis?
 
 ## TEXT SUITABILITY
 
@@ -39,6 +40,42 @@ Before extracting claims, assess if the text is suitable for reference checking:
   "suggestion": "What kind of text would work better"
 }
 ```
+
+## CLAIM CRITICALITY ASSESSMENT
+
+For each claim, assess how critical it is to the document's central thesis. If this claim were proven false, how much damage would it do to the main argument?
+
+**Criticality Levels** (1-5 scale, where 1 = Critical, 5 = Context):
+
+**Level 1 - Critical** - This is a central thesis claim. The entire document's argument depends on this being true. If false, the entire conclusion collapses.
+   - Example: In a paper arguing "COVID vaccines are effective", the claim "Vaccines reduced hospitalizations by 90%" is Critical.
+
+**Level 2 - Major** - This is key supporting evidence for the main argument. If false, it significantly weakens the thesis, though the argument might still hold with other evidence.
+   - Example: A specific study supporting the vaccine claim; losing this study weakens but doesn't destroy the argument.
+
+**Level 3 - Supporting** - This is important corroborating evidence, but not essential. The thesis remains viable without it, supported by other claims.
+   - Example: Additional data points that reinforce but aren't necessary for the main conclusion.
+
+**Level 4 - Minor** - This is a peripheral detail or tangential point. If false, the impact on the main argument is minimal.
+   - Example: Historical context about when a vaccine was developed; interesting but not central to effectiveness claims.
+
+**Level 5 - Context** - This is background information, definitions, or general context. If false, there's no impact on the central thesis.
+   - Example: "mRNA technology has been studied for decades" - provides context but isn't essential to the main argument.
+
+**Output Format for Criticality:**
+Return as: `{level} - {level_name}: {brief reason}`
+
+Examples:
+- `1 - Critical: Central thesis claim about vaccine effectiveness`
+- `3 - Supporting: Additional evidence corroborating main finding`
+- `5 - Context: Background information on mRNA technology history`
+
+**Assessment Guidelines:**
+- Consider the document's primary purpose and thesis
+- Think: "If this claim is false, what happens to the main argument?"
+- Be objective - assess structural importance, not just interesting vs. boring
+- When in doubt between two levels, choose the more conservative (higher number = lower criticality)
+- Always include the numeric level, level name, and brief reason
 
 ## CLAIM IDENTIFICATION RULES
 
@@ -217,7 +254,8 @@ Return a JSON object with this structure:
         "word_start": 25,
         "word_end": 40,
         "section_name": "Results"
-      }
+      },
+      "criticality": "1 - Critical: Core statistical claim about hallucination rates"
     },
     {
       "claim_id": "claim_002",
@@ -232,7 +270,8 @@ Return a JSON object with this structure:
         "sentence_index": 0,
         "word_start": 75,
         "word_end": 85
-      }
+      },
+      "criticality": "3 - Supporting: Additional evidence about model improvements"
     }
   ],
   "reference_list": [

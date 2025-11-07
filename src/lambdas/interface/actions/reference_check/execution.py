@@ -718,6 +718,7 @@ async def _compile_results(
                     'context': claim.get('context', ''),
                     'text_location': _format_text_location(claim.get('text_location')),
                     'reference': claim.get('reference', ''),
+                    'criticality': claim.get('criticality', ''),
                     'reference_description': '',  # Empty - to be filled during validation
                     'reference_says': '',  # Empty
                     'qualified_fact': claim.get('statement', ''),  # Pre-populate with original claim

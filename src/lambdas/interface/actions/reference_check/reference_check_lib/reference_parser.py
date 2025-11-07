@@ -654,18 +654,74 @@ class ReferenceParser:
 
         return text
 
+    def _extract_short_citation(self, full_citation: str) -> str:
+        """
+        Extract a short citation format: first author + year.
+
+        Examples:
+            "Smith, J. et al. (2023). Title..." -> "Smith et al. (2023)"
+            "Johnson, A. (2024). Title..." -> "Johnson (2024)"
+            "https://domain.com/path" -> "domain.com"
+            "Author1, A., Author2, B. (2023). Title..." -> "Author1 et al. (2023)"
+
+        Args:
+            full_citation: Full citation text
+
+        Returns:
+            Short citation string
+        """
+        # Try to extract author-year pattern
+        # Pattern 1: "LastName, FirstInit. et al. (YEAR)"
+        match = re.match(r'^([A-Z][a-z]+)(?:,\s+[A-Z]\.?)?\s+et al\.\s*\((\d{4})\)', full_citation)
+        if match:
+            return f"{match.group(1)} et al. ({match.group(2)})"
+
+        # Pattern 2: "LastName, FirstInit. (YEAR)"
+        match = re.match(r'^([A-Z][a-z]+)(?:,\s+[A-Z]\.?)?\s*\((\d{4})\)', full_citation)
+        if match:
+            return f"{match.group(1)} ({match.group(2)})"
+
+        # Pattern 3: Multiple authors - extract first and add et al.
+        # "Author1, A., Author2, B., Author3, C. (YEAR)"
+        match = re.match(r'^([A-Z][a-z]+)(?:,\s+[A-Z]\.?)?(?:,\s+[A-Z][a-z]+(?:,\s+[A-Z]\.?)?)+\s*\((\d{4})\)', full_citation)
+        if match:
+            return f"{match.group(1)} et al. ({match.group(2)})"
+
+        # Pattern 4: Find year anywhere in citation and extract first word
+        year_match = re.search(r'\((\d{4})\)', full_citation)
+        if year_match:
+            # Get first word before comma or parenthesis
+            first_word_match = re.match(r'^([A-Z][a-z]+)', full_citation)
+            if first_word_match:
+                # Check if there are multiple authors (comma after first author)
+                if re.match(r'^[A-Z][a-z]+,\s+[A-Z]\.?,\s+[A-Z][a-z]+', full_citation):
+                    return f"{first_word_match.group(1)} et al. ({year_match.group(1)})"
+                else:
+                    return f"{first_word_match.group(1)} ({year_match.group(1)})"
+
+        # Pattern 5: URL - extract domain
+        if re.match(r'https?://', full_citation):
+            domain_match = re.search(r'https?://(?:www\.)?([^/]+)', full_citation)
+            if domain_match:
+                return domain_match.group(1)
+
+        # Fallback: truncate to first 30 chars
+        if len(full_citation) > 30:
+            return full_citation[:27] + "..."
+        return full_citation
+
     def resolve_citations(self, citation_text: str, reference_map: Dict[str, str], format_as_hyperlink: bool = False) -> str:
         """
-        Resolve numbered citations to actual references with Excel hyperlinks.
+        Resolve numbered citations to short reference format.
 
         Args:
             citation_text: Text with citations like "[1][2][3]"
             reference_map: Dict mapping ref_id to full citation
-            format_as_hyperlink: If True, format URLs as Excel HYPERLINK formulas
+            format_as_hyperlink: If True, format URLs as Excel HYPERLINK formulas (deprecated)
 
         Returns:
-            Resolved references with Excel newlines between them
-            Example: "[1] =HYPERLINK(\"https://...\", \"https://...\")\n[2] Smith et al. (2024)..."
+            Resolved references in short format
+            Example: "[1] Smith et al. (2023), [2] Johnson (2024)"
         """
         if not citation_text or not reference_map:
             return citation_text
@@ -685,24 +741,19 @@ class ReferenceParser:
             elif match[1]:  # Single: [1]
                 ref_nums.add(match[1])
 
-        # Resolve each number to its full citation
+        # Resolve each number to short citation format
         resolved_refs = []
 
         for num in sorted(ref_nums, key=int):
             ref_id = f"[{num}]"
             if ref_id in reference_map:
-                citation = reference_map[ref_id]
+                full_citation = reference_map[ref_id]
 
-                # Clean up URL: remove https:// prefix for cleaner display
-                if re.match(r'https?://', citation):
-                    clean_citation = re.sub(r'^https?://', '', citation)
-                else:
-                    clean_citation = citation
-
-                # Format as "[1] domain.com/path" or "[1] citation text"
-                formatted = f"{ref_id} {clean_citation}"
+                # Extract short citation: "[1] Smith et al. (2023)" or "[1] domain.com"
+                short_citation = self._extract_short_citation(full_citation)
+                formatted = f"{ref_id} {short_citation}"
                 resolved_refs.append(formatted)
-                logger.info(f"[REF PARSER] Resolved {ref_id}")
+                logger.info(f"[REF PARSER] Resolved {ref_id} -> {short_citation}")
             else:
                 # Keep original if not found
                 resolved_refs.append(ref_id)
