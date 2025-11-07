@@ -708,9 +708,8 @@ class ReferenceParser:
                 resolved_refs.append(ref_id)
                 logger.warning(f"[REF PARSER] Could not resolve {ref_id}, keeping as-is")
 
-        # Join with Excel line breaks (CHAR(10)) - each reference on its own line
-        # Use actual newline character which Excel interprets as CHAR(10)
-        return '\n'.join(resolved_refs) if resolved_refs else citation_text
+        # Join with comma-space (works in preview and Excel without special formatting)
+        return ', '.join(resolved_refs) if resolved_refs else citation_text
 
     def guess_source_type(self, text: str, reference_map: Dict[str, str], content_type: str, path_type: str) -> str:
         """
