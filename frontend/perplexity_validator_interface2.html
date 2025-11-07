@@ -12701,17 +12701,11 @@ Please provide any additional context, or simply proceed to generate your initia
             referenceCheckState.cardId = cardId;
 
             const content = `
+                <input type="file" id="${cardId}-pdf-input" accept=".pdf" style="display: none;">
                 <div id="${cardId}-form">
                     <div id="${cardId}-input-container">
-                        <div style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
-                            <input type="file" id="${cardId}-pdf-input" accept=".pdf" style="display: none;">
-                            <button id="${cardId}-pdf-upload-btn" class="btn-secondary" style="padding: 0.5rem 1rem; font-size: var(--font-size-small);">
-                                Upload PDF
-                            </button>
-                            <span id="${cardId}-pdf-status" style="font-size: var(--font-size-small); color: #6B7280;"></span>
-                        </div>
                         <textarea id="${cardId}-input" class="reference-check-textarea"
-                            placeholder="Paste AI output or literature with citations to verify... or upload a PDF above"
+                            placeholder="Paste AI output or literature with citations to verify..."
                             maxlength="96000"
                             rows="12"
                             style="width: 100%; resize: vertical; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 0.75rem; font-family: var(--font-family); font-size: var(--font-size-base); line-height: 1.5; color: var(--text-color); box-shadow: inset 0 1px 2px rgba(0,0,0,0.04); transition: var(--transition);"></textarea>
@@ -12748,9 +12742,19 @@ Please provide any additional context, or simply proceed to generate your initia
                 content,
                 buttons: [
                     {
+                        text: 'Upload PDF',
+                        icon: '📄',
+                        variant: 'secondary',
+                        callback: async (e) => {
+                            const pdfInput = document.getElementById(`${cardId}-pdf-input`);
+                            if (pdfInput) {
+                                pdfInput.click();
+                            }
+                        }
+                    },
+                    {
                         text: 'Check References',
                         variant: 'primary',
-                        width: 'full',
                         callback: async (e) => {
                             const button = e.target.closest('button');
                             markButtonSelected(button, 'Analyzing...');
@@ -12760,24 +12764,17 @@ Please provide any additional context, or simply proceed to generate your initia
                 ]
             });
 
-            // Setup PDF upload handlers
+            // Setup PDF upload handler
             setTimeout(() => {
                 const pdfInput = document.getElementById(`${cardId}-pdf-input`);
-                const pdfUploadBtn = document.getElementById(`${cardId}-pdf-upload-btn`);
-                const pdfStatus = document.getElementById(`${cardId}-pdf-status`);
-
-                if (pdfUploadBtn && pdfInput) {
-                    // Clicking button opens file picker
-                    pdfUploadBtn.addEventListener('click', () => {
-                        pdfInput.click();
-                    });
-
-                    // Handle file selection
+                if (pdfInput) {
                     pdfInput.addEventListener('change', async (e) => {
                         const file = e.target.files[0];
                         if (file) {
                             await handlePdfUpload(cardId, file);
                         }
+                        // Reset input so same file can be selected again
+                        e.target.value = '';
                     });
                 }
             }, 100);
@@ -12859,7 +12856,7 @@ Please provide any additional context, or simply proceed to generate your initia
         }
 
         // Handle PDF conversion WebSocket messages
-        function handlePdfConversionMessage(cardId, message, filename) {
+        async function handlePdfConversionMessage(cardId, message, filename) {
             const inputContainer = document.getElementById(`${cardId}-input-container`);
             const progressDiv = document.getElementById(`${cardId}-pdf-progress`);
             const messagesDiv = document.getElementById(`${cardId}-messages`);
@@ -12873,26 +12870,60 @@ Please provide any additional context, or simply proceed to generate your initia
                 }
             }
             else if (message.type === 'pdf_conversion_complete') {
-                // Replace success box with textarea containing markdown
-                inputContainer.innerHTML = `
-                    <textarea id="${cardId}-input" class="reference-check-textarea"
-                        placeholder="Paste AI output or literature with citations to verify... or upload a PDF above"
-                        maxlength="96000"
-                        rows="12"
-                        style="width: 100%; resize: vertical; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 0.75rem; font-family: var(--font-family); font-size: var(--font-size-base); line-height: 1.5; color: var(--text-color); box-shadow: inset 0 1px 2px rgba(0,0,0,0.04); transition: var(--transition);"></textarea>
-                `;
-
-                // Populate with markdown text
-                const textarea = document.getElementById(`${cardId}-input`);
-                if (textarea && message.markdown_text) {
-                    textarea.value = message.markdown_text;
+                // Fetch markdown from S3
+                if (progressDiv) {
+                    progressDiv.textContent = 'Fetching converted text...';
                 }
 
-                // Show success message
-                showMessage(messagesDiv.id,
-                    `[SUCCESS] Converted ${message.page_count} pages from ${filename}`,
-                    'success'
-                );
+                try {
+                    const response = await fetch(`${API_BASE}/validate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'fetchPdfMarkdown',
+                            markdown_s3_key: message.markdown_s3_key
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok && data.success && data.markdown_text) {
+                        // Replace success box with textarea containing markdown
+                        inputContainer.innerHTML = `
+                            <textarea id="${cardId}-input" class="reference-check-textarea"
+                                placeholder="Paste AI output or literature with citations to verify..."
+                                maxlength="96000"
+                                rows="12"
+                                style="width: 100%; resize: vertical; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 0.75rem; font-family: var(--font-family); font-size: var(--font-size-base); line-height: 1.5; color: var(--text-color); box-shadow: inset 0 1px 2px rgba(0,0,0,0.04); transition: var(--transition);"></textarea>
+                        `;
+
+                        // Populate with markdown text
+                        const textarea = document.getElementById(`${cardId}-input`);
+                        if (textarea) {
+                            textarea.value = data.markdown_text;
+                        }
+
+                        // Show success message
+                        showMessage(messagesDiv.id,
+                            `[SUCCESS] Converted ${message.page_count} pages from ${filename}`,
+                            'success'
+                        );
+                    } else {
+                        throw new Error(data.message || 'Failed to fetch markdown');
+                    }
+
+                } catch (error) {
+                    console.error('[PDF_FETCH] Error:', error);
+
+                    if (progressDiv) {
+                        progressDiv.innerHTML = `<span style="color: #EF4444;">[ERROR] Failed to fetch converted text</span>`;
+                    }
+
+                    showMessage(messagesDiv.id,
+                        `Error fetching converted PDF: ${error.message}`,
+                        'error'
+                    );
+                }
 
                 // Clean up WebSocket handler
                 if (referenceCheckState.pdfId) {

@@ -12,10 +12,12 @@ from .conversation import (
     handle_reference_check_start_async,
     # handle_reference_check_continue_async,  # Future: iterative refinement
 )
+from .pdf_converter import fetch_pdf_markdown
 
 # Action routing dictionary
 REFERENCE_CHECK_ACTIONS: Dict[str, Callable] = {
     'startReferenceCheck': handle_reference_check_start_async,
+    'fetchPdfMarkdown': fetch_pdf_markdown,
     # 'continueReferenceCheck': handle_reference_check_continue_async,  # Future
     # 'getReferenceCheckResults': handle_reference_check_results,  # Future
 }

@@ -193,7 +193,7 @@ def handle(event, context):
             elif action in ['startTableConversation', 'continueTableConversation', 'generateTablePreview', 'acceptTableAndValidate', 'getTableDownloadUrl']:
                 route_table_maker_action = lazy_import('interface_lambda.actions.table_maker', 'route_table_maker_action')
                 return route_table_maker_action(action, request_data, context)
-            elif action in ['startReferenceCheck']:
+            elif action in ['startReferenceCheck', 'fetchPdfMarkdown']:
                 route_reference_check_action = lazy_import('interface_lambda.actions.reference_check', 'route_reference_check_action')
                 return route_reference_check_action(action, request_data, context)
             else:

@@ -278,18 +278,48 @@ async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any) -> D
 
             logger.info(f"[PDF_CONVERT] Successfully converted {page_count} pages ({len(markdown_text)} chars)")
 
-            # Send success via WebSocket
+            # Save markdown to S3
+            domain = email.split('@')[1] if '@' in email else 'unknown'
+            email_prefix = email.split('@')[0] if '@' in email else email
+            markdown_filename = f"{pdf_id}_markdown.txt"
+            markdown_s3_key = f"results/{domain}/{email_prefix}/{session_id}/pdfs/{markdown_filename}"
+
+            try:
+                storage_manager.s3_client.put_object(
+                    Bucket=storage_manager.bucket_name,
+                    Key=markdown_s3_key,
+                    Body=markdown_text.encode('utf-8'),
+                    ContentType='text/plain; charset=utf-8',
+                    Metadata={
+                        'original_pdf': filename,
+                        'pdf_id': pdf_id,
+                        'page_count': str(page_count),
+                        'converted_at': datetime.now(timezone.utc).isoformat()
+                    }
+                )
+                logger.info(f"[PDF_CONVERT] Saved markdown to S3: {markdown_s3_key}")
+            except Exception as e:
+                logger.error(f"[PDF_CONVERT] Failed to save markdown to S3: {str(e)}")
+                websocket_client.send_to_session(session_id, {
+                    'type': 'pdf_conversion_error',
+                    'pdf_id': pdf_id,
+                    'error': 's3_save_failed',
+                    'message': 'Failed to save converted markdown'
+                })
+                return {'status': 'error', 'error': 's3_save_failed'}
+
+            # Send success via WebSocket (with S3 key, not full markdown)
             websocket_client.send_to_session(session_id, {
                 'type': 'pdf_conversion_complete',
                 'pdf_id': pdf_id,
                 'status': 'complete',
                 'filename': filename,
                 'page_count': page_count,
-                'markdown_text': markdown_text,
+                'markdown_s3_key': markdown_s3_key,
                 'message': f'Successfully converted {page_count} pages'
             })
 
-            return {'status': 'success', 'pdf_id': pdf_id, 'page_count': page_count}
+            return {'status': 'success', 'pdf_id': pdf_id, 'page_count': page_count, 'markdown_s3_key': markdown_s3_key}
 
         except Exception as e:
             logger.error(f"[PDF_CONVERT] Conversion failed: {str(e)}", exc_info=True)
@@ -320,3 +350,57 @@ async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any) -> D
         except:
             pass
         return {'status': 'error', 'error': 'unexpected_error'}
+
+
+def fetch_pdf_markdown(request_data: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """
+    Fetch converted markdown from S3 (synchronous handler).
+
+    Args:
+        request_data: Request with markdown_s3_key
+
+    Returns:
+        Response dict with markdown_text
+    """
+    try:
+        markdown_s3_key = request_data.get('markdown_s3_key')
+
+        if not markdown_s3_key:
+            return create_response(400, {
+                'success': False,
+                'error': 'missing_key',
+                'message': 'markdown_s3_key is required'
+            })
+
+        logger.info(f"[PDF_FETCH] Fetching markdown from S3: {markdown_s3_key}")
+
+        # Download markdown from S3
+        storage_manager = UnifiedS3Manager()
+        try:
+            response = storage_manager.s3_client.get_object(
+                Bucket=storage_manager.bucket_name,
+                Key=markdown_s3_key
+            )
+            markdown_text = response['Body'].read().decode('utf-8')
+            logger.info(f"[PDF_FETCH] Retrieved markdown ({len(markdown_text)} chars)")
+
+            return create_response(200, {
+                'success': True,
+                'markdown_text': markdown_text
+            })
+
+        except Exception as e:
+            logger.error(f"[PDF_FETCH] S3 download failed: {str(e)}")
+            return create_response(500, {
+                'success': False,
+                'error': 'download_failed',
+                'message': 'Failed to download markdown from storage'
+            })
+
+    except Exception as e:
+        logger.error(f"[PDF_FETCH] Unexpected error: {str(e)}", exc_info=True)
+        return create_response(500, {
+            'success': False,
+            'error': 'unexpected_error',
+            'message': f'An unexpected error occurred: {str(e)}'
+        })
