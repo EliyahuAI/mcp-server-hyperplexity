@@ -934,7 +934,7 @@ async def execute_reference_check(
 
             # Send error via WebSocket
             ws_client = _get_websocket_client()
-        if ws_client:
+            if ws_client:
                 ws_client.send_to_session(session_id, {
                     'type': 'reference_check_error',
                     'conversation_id': conversation_id,
