@@ -749,9 +749,16 @@ async def _compile_results(
         else:
             summary = get_summary_stats(validation_results, config)
 
+        # Get table name from extraction result (or use default)
+        table_name = conversation_state.get('extraction_result', {}).get('table_name', 'reference_check')
+        # Sanitize table name for filename
+        safe_table_name = re.sub(r'[^\w\s-]', '', table_name).strip().replace(' ', '_')
+        if not safe_table_name:
+            safe_table_name = 'reference_check'
+
         # Save CSV using store_excel_file (handles CSV too)
         # Note: store_excel_file automatically adds _input suffix
-        csv_filename = f"reference_check_{conversation_id}.csv"
+        csv_filename = f"{safe_table_name}_{conversation_id}.csv"
 
         store_result = storage_manager.store_excel_file(
             email=email,
