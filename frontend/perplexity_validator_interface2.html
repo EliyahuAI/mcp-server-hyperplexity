@@ -12785,10 +12785,9 @@ Please provide any additional context, or simply proceed to generate your initia
             return card;
         }
 
-        // Handle PDF upload and conversion to markdown
+        // Handle PDF upload (async with WebSocket)
         async function handlePdfUpload(cardId, file) {
-            const pdfStatus = document.getElementById(`${cardId}-pdf-status`);
-            const textarea = document.getElementById(`${cardId}-input`);
+            const inputContainer = document.getElementById(`${cardId}-input-container`);
             const messagesDiv = document.getElementById(`${cardId}-messages`);
 
             try {
@@ -12798,18 +12797,21 @@ Please provide any additional context, or simply proceed to generate your initia
                     return;
                 }
 
-                // Show uploading status
-                if (pdfStatus) {
-                    pdfStatus.textContent = 'Converting PDF...';
-                    pdfStatus.style.color = '#6B7280';
+                // Validate file size (10MB max)
+                const maxSize = 10 * 1024 * 1024;
+                if (file.size > maxSize) {
+                    showMessage(messagesDiv.id, `PDF file too large. Maximum size is ${maxSize / 1024 / 1024}MB`, 'error');
+                    return;
                 }
 
-                // Create FormData for upload (following Excel upload pattern)
+                // Create FormData for upload (lightweight - uploads to S3 and queues to SQS)
                 const formData = new FormData();
                 formData.append('pdf_file', file);
                 formData.append('action', 'convertPdfToMarkdown');
+                formData.append('email', globalState.email);
+                formData.append('session_id', globalState.sessionId);
 
-                // Upload and convert
+                // Upload PDF
                 const response = await fetch(`${API_BASE}/upload`, {
                     method: 'POST',
                     body: formData
@@ -12817,38 +12819,101 @@ Please provide any additional context, or simply proceed to generate your initia
 
                 const data = await response.json();
 
-                if (response.ok && data.success && data.markdown_text) {
-                    // Populate textarea with markdown
-                    if (textarea) {
-                        textarea.value = data.markdown_text;
-                    }
+                if (response.ok && data.success && data.status === 'processing') {
+                    // Store PDF ID for tracking
+                    referenceCheckState.pdfId = data.pdf_id;
 
-                    // Show success status
-                    if (pdfStatus) {
-                        pdfStatus.textContent = `[SUCCESS] Converted ${data.page_count} pages from ${file.name}`;
-                        pdfStatus.style.color = 'var(--primary-color)';
-                    }
+                    // Replace input UI with success box and progress indicator
+                    inputContainer.innerHTML = `
+                        <div style="background: #F0FDF4; border: 1px solid #86EFAC; border-radius: 12px; padding: 1rem; margin-bottom: 1rem;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                <span style="color: var(--primary-color); font-size: 1.25rem;">[SUCCESS]</span>
+                                <span style="font-weight: 500; color: #166534;">${file.name} successfully uploaded</span>
+                            </div>
+                            <div id="${cardId}-pdf-progress" style="color: #6B7280; font-size: var(--font-size-small);">
+                                Reading PDF...
+                            </div>
+                        </div>
+                    `;
 
-                    showMessage(messagesDiv.id,
-                        `PDF converted successfully (${data.page_count} pages)`,
-                        'success'
-                    );
+                    // Connect to WebSocket to receive conversion result
+                    connectToSession(globalState.sessionId);
+
+                    // Register WebSocket handler for PDF conversion
+                    const handlerId = `pdf_conversion_${data.pdf_id}`;
+                    registerMessageHandler(handlerId, (message) => {
+                        handlePdfConversionMessage(cardId, message, file.name);
+                    });
+
                 } else {
-                    throw new Error(data.message || 'Failed to convert PDF');
+                    throw new Error(data.message || 'Failed to upload PDF');
                 }
 
             } catch (error) {
                 console.error('[PDF_UPLOAD] Error:', error);
+                showMessage(messagesDiv.id,
+                    `Error uploading PDF: ${error.message}`,
+                    'error'
+                );
+            }
+        }
 
-                if (pdfStatus) {
-                    pdfStatus.textContent = '[ERROR] Conversion failed';
-                    pdfStatus.style.color = '#EF4444';
+        // Handle PDF conversion WebSocket messages
+        function handlePdfConversionMessage(cardId, message, filename) {
+            const inputContainer = document.getElementById(`${cardId}-input-container`);
+            const progressDiv = document.getElementById(`${cardId}-pdf-progress`);
+            const messagesDiv = document.getElementById(`${cardId}-messages`);
+
+            console.log('[PDF_CONVERSION] Received message:', message.type);
+
+            if (message.type === 'pdf_conversion_progress') {
+                // Update progress indicator
+                if (progressDiv) {
+                    progressDiv.textContent = message.message || 'Converting PDF...';
+                }
+            }
+            else if (message.type === 'pdf_conversion_complete') {
+                // Replace success box with textarea containing markdown
+                inputContainer.innerHTML = `
+                    <textarea id="${cardId}-input" class="reference-check-textarea"
+                        placeholder="Paste AI output or literature with citations to verify... or upload a PDF above"
+                        maxlength="96000"
+                        rows="12"
+                        style="width: 100%; resize: vertical; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 0.75rem; font-family: var(--font-family); font-size: var(--font-size-base); line-height: 1.5; color: var(--text-color); box-shadow: inset 0 1px 2px rgba(0,0,0,0.04); transition: var(--transition);"></textarea>
+                `;
+
+                // Populate with markdown text
+                const textarea = document.getElementById(`${cardId}-input`);
+                if (textarea && message.markdown_text) {
+                    textarea.value = message.markdown_text;
+                }
+
+                // Show success message
+                showMessage(messagesDiv.id,
+                    `[SUCCESS] Converted ${message.page_count} pages from ${filename}`,
+                    'success'
+                );
+
+                // Clean up WebSocket handler
+                if (referenceCheckState.pdfId) {
+                    unregisterMessageHandler(`pdf_conversion_${referenceCheckState.pdfId}`);
+                }
+            }
+            else if (message.type === 'pdf_conversion_error') {
+                // Show error
+                if (progressDiv) {
+                    progressDiv.innerHTML = `<span style="color: #EF4444;">[ERROR] ${message.message}</span>`;
                 }
 
                 showMessage(messagesDiv.id,
-                    `Error converting PDF: ${error.message}`,
+                    `Error converting PDF: ${message.message}`,
                     'error'
                 );
+
+                // Clean up WebSocket handler
+                if (referenceCheckState.pdfId) {
+                    unregisterMessageHandler(`pdf_conversion_${referenceCheckState.pdfId}`);
+                }
             }
         }
 

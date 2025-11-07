@@ -1267,6 +1267,11 @@ def handle_main_processing(event, context):
             logger.info("Detected reference check request, forwarding to reference check handler")
             return handle_reference_check(event, context)
 
+        # Check if this is a PDF conversion request
+        if event.get('request_type') == 'pdf_conversion':
+            logger.info("Detected PDF conversion request, forwarding to PDF conversion handler")
+            return handle_pdf_conversion(event, context)
+
         # Check if this is a table finalization request (preview generation or accept and validate)
         if event.get('request_type') == 'table_finalization':
             logger.info("Detected table finalization request, forwarding to table finalization handler")
@@ -6493,4 +6498,44 @@ def handle_reference_check(event, context):
         return {
             'statusCode': 500,
             'body': {'error': f'Reference check processing failed: {str(e)}'}
+        }
+
+
+def handle_pdf_conversion(event, context):
+    """
+    Handle PDF conversion requests from SQS.
+    Routes to the PDF conversion handler.
+    """
+    import asyncio
+    from interface_lambda.actions.reference_check.pdf_converter import (
+        handle_pdf_conversion as convert_pdf
+    )
+
+    try:
+        session_id = event.get('session_id')
+        pdf_id = event.get('pdf_id')
+        filename = event.get('filename')
+
+        logger.info(f"[PDF_CONVERSION] Processing conversion for session {session_id}, pdf_id {pdf_id}, file: {filename}")
+
+        # Call the async handler
+        try:
+            loop = asyncio.get_running_loop()
+            # Running loop exists, create task
+            result = asyncio.create_task(convert_pdf(event, context))
+            result = asyncio.get_event_loop().run_until_complete(result)
+        except RuntimeError:
+            # No running loop, use asyncio.run
+            result = asyncio.run(convert_pdf(event, context))
+
+        logger.info(f"[PDF_CONVERSION] Completed conversion for pdf_id {pdf_id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"[PDF_CONVERSION] Error processing PDF conversion: {e}")
+        import traceback
+        logger.error(f"[PDF_CONVERSION] Traceback: {traceback.format_exc()}")
+        return {
+            'statusCode': 500,
+            'body': {'error': f'PDF conversion failed: {str(e)}'}
         }

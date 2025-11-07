@@ -86,6 +86,16 @@ def handle(event, context):
                     **message_body
                 }
 
+            # Handle PDF conversion requests
+            elif request_type == 'pdf_conversion':
+                logger.info(f"Processing PDF conversion request for session {message_body.get('session_id')}, pdf_id: {message_body.get('pdf_id')}")
+                # Pass the entire message body for PDF conversion
+                background_event = {
+                    "background_processing": True,
+                    "request_type": "pdf_conversion",
+                    **message_body
+                }
+
             else:
                 # Handle regular validation requests
                 background_event = {
