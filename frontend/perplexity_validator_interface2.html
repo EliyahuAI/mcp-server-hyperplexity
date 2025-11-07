@@ -6726,7 +6726,13 @@
             // Markdown rendering wrapper
             function renderMarkdown(text) {
                 if (!text) return '';
-                
+
+                // Pre-process: Convert Excel HYPERLINK formulas to HTML links
+                // Pattern: =HYPERLINK("url", "[1]")
+                text = text.replace(/=HYPERLINK\("([^"]+)",\s*"(\[[^\]]+\])"\)/g, (match, url, display) => {
+                    return `<a href="${url}" target="_blank" style="color: var(--primary-color); text-decoration: underline;">${display}</a>`;
+                });
+
                 marked.setOptions({
                     breaks: true,
                     gfm: true,
@@ -6736,7 +6742,7 @@
                 });
 
                 let html = marked.parse(text);
-                
+
                 // Handle Unicode escapes
                 html = html.replace(/\\u([0-9a-fA-F]{4})/g, (match, hexCode) => {
                     return String.fromCharCode(parseInt(hexCode, 16));
