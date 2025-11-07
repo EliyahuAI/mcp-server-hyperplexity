@@ -670,7 +670,6 @@ async def _compile_results(
                     'reference_says': '',  # Empty
                     'qualified_fact': claim.get('statement', ''),  # Pre-populate with original claim
                     'support_level': '',  # Empty
-                    'confidence': '',  # Empty
                     'validation_notes': ''  # Empty
                 })
             csv_content = compile_results_to_csv(csv_rows, config)

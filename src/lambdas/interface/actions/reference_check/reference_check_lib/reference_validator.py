@@ -53,7 +53,7 @@ class ReferenceValidator:
         """Get default JSON schema for reference validation."""
         return {
             "type": "object",
-            "required": ["claim_id", "statement", "support_level", "confidence", "accessible"],
+            "required": ["claim_id", "statement", "support_level", "accessible"],
             "properties": {
                 "claim_id": {"type": "string"},
                 "statement": {"type": "string"},
@@ -73,13 +73,9 @@ class ReferenceValidator:
                         "Partial",
                         "Unclear",
                         "Contradicted",
-                        "Inaccessible"
+                        "Inaccessible",
+                        "Mixed"
                     ]
-                },
-                "confidence": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 1
                 },
                 "validation_notes": {"type": "string"},
                 "accessible": {"type": "boolean"},

@@ -48,16 +48,6 @@ class ResultCompiler:
 
         # Write data rows
         for result in validation_results:
-            # Handle confidence - could be empty string, number, or missing
-            confidence_val = result.get('confidence', '')
-            if confidence_val == '' or confidence_val is None:
-                confidence_str = ''
-            else:
-                try:
-                    confidence_str = f"{float(confidence_val):.2f}"
-                except (ValueError, TypeError):
-                    confidence_str = str(confidence_val)
-
             row = [
                 result.get('claim_id', ''),
                 result.get('statement', ''),
@@ -65,9 +55,8 @@ class ResultCompiler:
                 result.get('reference', ''),
                 result.get('reference_description', ''),
                 result.get('reference_says', ''),
-                result.get('qualified_fact', 'N/A'),
+                result.get('qualified_fact', result.get('statement', '')),
                 result.get('support_level', ''),
-                confidence_str,
                 result.get('validation_notes', '')
             ]
             writer.writerow(row)

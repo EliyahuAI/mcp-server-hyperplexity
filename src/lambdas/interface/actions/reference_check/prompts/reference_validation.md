@@ -76,15 +76,12 @@ When multiple references are cited (e.g., [1][2][3] or [Smith 2024; Jones 2023])
 - Reference Description: List all sources accessed (e.g., "3 sources: JAMA study, ACOG statement, Nature review")
 - What Reference Says: Synthesize key points from all sources
 
-## CONFIDENCE SCORING
+## MIXED SUPPORT LEVEL
 
-Rate your confidence in the assessment (0.0 to 1.0):
-
-- **0.9-1.0**: Very high confidence - Clear, unambiguous evidence
-- **0.7-0.89**: High confidence - Strong evidence with minor uncertainties
-- **0.5-0.69**: Moderate confidence - Mixed evidence or some ambiguity
-- **0.3-0.49**: Low confidence - Limited evidence or conflicting signals
-- **0.0-0.29**: Very low confidence - Highly uncertain or no clear evidence
+When multiple references are cited and they disagree:
+- Use support level: **Mixed**
+- In validation notes, specify which sources support vs contradict
+- Example: "Mixed (Confirmed by JAMA study [1], Contradicted by editorial [3])"
 
 ## SEARCH STRATEGY
 
@@ -169,7 +166,6 @@ Return a JSON object with this structure:
   "reference_says": "The study tested 1,000 responses from 5 major LLMs and found hallucination rates ranging from 12% to 23% depending on the model and task complexity, with an average of 17.5%.",
   "qualified_fact": "(Range Expanded) AI models can hallucinate facts in 12-23% of responses depending on the model and task complexity",
   "support_level": "Supported",
-  "confidence": 0.90,
   "validation_notes": "The reference supports the claim with a broader range. The 15-20% stated in the claim falls within the 12-23% range found in the study, though the reference shows more variation by model type.",
   "accessible": true,
   "sources_consulted": [

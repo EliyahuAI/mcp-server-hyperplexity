@@ -118,41 +118,30 @@
         "(More Precise) The Earth's average temperature has increased by 1.09°C (±0.13°C) since pre-industrial times",
         "(Qualified) Python was first released in February 1991",
         "(Range Expanded) Large language models can hallucinate facts in 12-23% of responses depending on model and task",
+        "(Corrected) The data shows a 1.5°C increase, not 1.1°C as claimed",
+        "(Margin Added) Python was released in 1991 (February 20, 1991 specifically)",
+        "(Context Added) Large language models can hallucinate facts in 15-20% of responses in open-ended generation tasks, but rates vary significantly by task type",
         "There is no conclusive scientific evidence that Tylenol causes autism in children or when used during pregnancy"
       ],
       "search_group": 1,
-      "notes": "IMPORTANT: If claim matches reference exactly, return the EXACT text from Statement unchanged (no prefix). If reference provides more precise details, add a brief (1-2 word) parenthetical prefix describing the change, then the updated claim text. Prefix examples: (More Precise), (Qualified), (Range Expanded), (Date Added), (Margin Added), (Context Added), (Corrected), (Updated). Only modify when reference provides MORE PRECISE details: (1) Numbers differ → (More Precise) 1.09°C ±0.13°C, (2) Dates more specific → (Qualified) February 1991, (3) Range differs → (Range Expanded) 12-23% depending on model. NEVER return 'N/A'. If contradicted/inaccessible/unclear, return claim unchanged (no prefix). Goal: Always have usable claim text that shows what the reference actually says."
+      "notes": "CRITICAL PREFIX GUIDANCE - Use descriptive prefixes to show what changed:\n\nWHEN CLAIM MATCHES: No prefix, return Statement text exactly as written.\n\nMINOR REFINEMENTS (claim is essentially correct):\n• (More Precise) - Exact numbers with margin of error added\n• (Qualified) - Additional context or specificity\n• (Range Expanded) - Broader range\n• (Range Narrowed) - More specific range\n• (Date Added) - More specific date/time\n• (Date Corrected) - Different date\n• (Margin Added) - Uncertainty/error margin specified\n• (Context Added) - Important context or conditions\n• (Updated) - More recent information\n\nMAJOR CORRECTIONS (claim needs significant correction):\n• (Actually) - Claim is misleading, reference shows different reality\n• (Opposite) - Reference directly contradicts the claim\n• (Corrected) - Factual error in claim\n• (Reversed) - Causation or direction is opposite\n• (Overstated) - Claim exaggerates what reference says\n• (Understated) - Claim minimizes what reference shows\n• (Incomplete) - Claim missing critical qualifications\n• (Misleading) - Claim technically true but misleading without context\n\nOTHER USEFUL PREFIXES:\n• (Clarified) - Ambiguous claim made specific\n• (Simplified) - Complex claim made clearer\n• (Specified) - General claim made more specific\n• (Generalized) - Overly specific claim broadened\n\nFeel free to create other appropriate 1-3 word prefixes that clearly describe the change. The prefix should immediately tell the reader what type of modification was made. NEVER return 'N/A' - always return usable claim text."
     },
     {
       "column": "Support Level",
-      "description": "Assessment of how well the reference supports the claim - validate by accessing the reference and comparing its content to the claim",
+      "description": "Assessment of how well the reference(s) support the claim - validate by accessing the reference and comparing its content to the claim",
       "importance": "RESEARCH",
-      "format": "String (one of: Confirmed, Supported, Partial, Unclear, Contradicted, Inaccessible)",
+      "format": "String (one of: Confirmed, Supported, Partial, Unclear, Contradicted, Inaccessible, Mixed)",
       "examples": [
         "Confirmed",
         "Supported",
         "Partial",
         "Unclear",
         "Contradicted",
-        "Inaccessible"
+        "Inaccessible",
+        "Mixed (Confirmed by [1][2], Contradicted by [3])"
       ],
       "search_group": 1,
-      "notes": "CRITICAL: Access the reference using web search. If multiple references listed (e.g., [1][2][3]), access all cited sources and synthesize findings. Search strategies: (1) If URL provided, try to access directly. (2) If DOI/arXiv, search for 'doi:XXX' or 'arxiv:XXX'. (3) If academic citation, search for author names + year + title. (4) If numbered refs like [1], check if reference list provided at end of text. (5) If general source, search for source name + relevant keywords. Then compare reference content to claim and assess: Confirmed (reference explicitly confirms claim with exact match), Supported (reference generally agrees with claim), Partial (reference supports some aspects but not all), Unclear (reference is ambiguous or doesn't directly address claim), Contradicted (reference explicitly disagrees), Inaccessible (cannot find or access after reasonable attempts)."
-    },
-    {
-      "column": "Confidence",
-      "description": "Confidence score (0.0-1.0) for the support level assessment based on reference accessibility, clarity, and authority",
-      "importance": "RESEARCH",
-      "format": "Decimal (0.0 to 1.0, formatted to 2 decimal places)",
-      "examples": [
-        "0.95",
-        "0.85",
-        "0.70",
-        "0.50",
-        "0.30"
-      ],
-      "search_group": 1,
-      "notes": "Assess confidence based on: (1) Reference accessibility - could you access and read the reference? (0.9-1.0 for direct access, 0.6-0.8 for partial/indirect access, 0.0-0.5 for inaccessible). (2) Reference clarity - does it directly address the claim? (0.9-1.0 for explicit statements, 0.7-0.8 for clear implications, 0.4-0.6 for ambiguous). (3) Source authority - is it a credible source? (0.9-1.0 for peer-reviewed/official sources, 0.7-0.8 for reputable news/industry sources, 0.5-0.6 for general sources). Combine these factors for final score. Format as decimal: 0.95, 0.80, etc."
+      "notes": "CRITICAL: Access the reference using web search. If multiple references listed (e.g., [1][2][3]), access all cited sources and synthesize findings. Search strategies: (1) If URL provided, try to access directly. (2) If DOI/arXiv, search for 'doi:XXX' or 'arxiv:XXX'. (3) If academic citation, search for author names + year + title. (4) If numbered refs like [1], check if reference list provided at end of text. (5) If general source, search for source name + relevant keywords. HANDLING MULTIPLE REFERENCES: When multiple references are cited, evaluate each source independently, then synthesize overall support level. Use 'Mixed' status to indicate conflicting sources - specify which references support/contradict (e.g., 'Mixed (Confirmed by [1][2], Contradicted by [3])'). Otherwise, synthesize to a single dominant level based on weight of evidence. Then compare reference content to claim and assess: Confirmed (reference explicitly confirms claim with exact match), Supported (reference generally agrees with claim), Partial (reference supports some aspects but not all), Unclear (reference is ambiguous or doesn't directly address claim), Contradicted (reference explicitly disagrees), Inaccessible (cannot find or access after reasonable attempts), Mixed (multiple references with conflicting assessments)."
     },
     {
       "column": "Validation Notes",
