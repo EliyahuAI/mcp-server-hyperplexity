@@ -825,22 +825,22 @@ async def _compile_results(
             validation_config['storage_metadata']['copied_at'] = datetime.now().isoformat()
             validation_config['storage_metadata']['source'] = 'reference_check_static_template'
 
-            # Extract domain and email_prefix for S3 path construction
-            domain = email.split('@')[1] if '@' in email else 'unknown'
-            email_prefix = email.split('@')[0] if '@' in email else email
-
-            # Save config to session results folder
-            config_filename = f"reference_check_validation_config.json"
-            config_s3_key = f"results/{domain}/{email_prefix}/{session_id}/{config_filename}"
-
-            storage_manager.s3_client.put_object(
-                Bucket=storage_manager.bucket_name,
-                Key=config_s3_key,
-                Body=json.dumps(validation_config, indent=2),
-                ContentType='application/json'
+            # Save config using store_config_file (proper naming for preview)
+            config_store_result = storage_manager.store_config_file(
+                email=email,
+                session_id=session_id,
+                config_data=validation_config,
+                version=1,
+                source='reference_check',
+                description='Reference check validation config with source text',
+                original_name='reference_check_validation_config'
             )
 
-            logger.info(f"[COMPILATION] Validation config copied to S3: {config_s3_key}")
+            if config_store_result.get('success'):
+                config_s3_key = config_store_result.get('s3_key')
+                logger.info(f"[COMPILATION] Validation config saved to S3: {config_s3_key}")
+            else:
+                raise Exception(f"Failed to store config: {config_store_result.get('error')}")
 
         except Exception as config_error:
             logger.warning(f"[COMPILATION] Failed to copy validation config: {config_error}")
