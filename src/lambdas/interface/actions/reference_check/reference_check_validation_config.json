@@ -70,14 +70,14 @@
       "column": "Text Location",
       "description": "Location of the claim in the original text",
       "importance": "ID",
-      "format": "String (pipe-delimited format: Section: X | Para: Y | Sentence: Z | Words: A-B | Chars: C-D)",
+      "format": "String (semicolon-delimited format: Section: X; Para: Y; Sentence: Z; Words: A-B; Chars: C-D)",
       "examples": [
-        "Section: Introduction | Para: 2 | Sentence: 3 | Words: 45-67 | Chars: 234-456",
-        "Para: 2 | Sentence: 3 | Words: 45-67 | Chars: 234-456",
-        "Para: 1 | Sentence: 1 | Words: 1-15 | Chars: 0-89"
+        "Section: Introduction; Para: 2; Sentence: 3; Words: 45-67; Chars: 234-456",
+        "Para: 2; Sentence: 3; Words: 45-67; Chars: 234-456",
+        "Para: 1; Sentence: 1; Words: 1-15; Chars: 0-89"
       ],
       "search_group": 0,
-      "notes": "Human-readable location of the claim in the original text. Uses pipe delimiter (not commas) for clarity. Section name is optional. No validation needed - used for reference only."
+      "notes": "Human-readable location of the claim in the original text. Uses semicolon delimiter (not pipe or comma - semicolon is safe for markdown and CSV). Character positions from document start (0-indexed). Section name is optional. Paragraph, sentence, and word indices are 0-based. No validation needed - used for reference only to locate claim in original text."
     },
     {
       "column": "Reference",
