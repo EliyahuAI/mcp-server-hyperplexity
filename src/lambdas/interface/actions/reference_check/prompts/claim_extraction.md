@@ -106,7 +106,12 @@ For each claim, record its location in the original text with the following fiel
 - **sentence_index**: Which sentence within the paragraph (0 = first sentence) (if identifiable)
 - **word_start**: Starting word index from document start (if identifiable)
 - **word_end**: Ending word index from document start (if identifiable)
-- **section_name**: Name of the section (e.g., "Introduction", "Methods") if text has clear sections
+- **section_name**: Name of the section **ONLY if clearly labeled** (optional but helpful)
+  - Use markdown headings: `## Section Name` or `### Subsection`
+  - Use explicitly labeled sections: "Introduction:", "Methods:", "Conclusion:"
+  - **Prefer the last 2 subsection levels** for specificity (e.g., "Methods > Data Collection" not just "Methods")
+  - If no clear sections, omit this field
+  - Examples: "Introduction > Background", "Results > Primary Findings", "Discussion"
 
 **Character counting example**:
 ```
