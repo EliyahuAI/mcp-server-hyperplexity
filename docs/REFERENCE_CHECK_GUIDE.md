@@ -1,8 +1,8 @@
 # ✅ Reference Check App - FINAL Implementation
 
 **Branch**: `reference-check-app`
-**Date**: 2025-11-06
-**Status**: 100% Complete - Validation Flow Integrated
+**Date**: 2025-11-07
+**Status**: 100% Complete - Validation Flow + PDF Upload Integrated
 
 ---
 
@@ -10,14 +10,15 @@
 
 The Reference Check app works like **table_maker with validation**:
 
-1. **User submits text** with claims and citations
-2. **Claims extracted** by SONNET 4.5
-3. **Table generated** with:
+1. **User submits text** with claims and citations (paste text OR upload PDF)
+2. **PDF conversion** (optional): Lightweight markdown conversion using pymupdf4llm
+3. **Claims extracted** by SONNET 4.5
+4. **Table generated** with:
    - **ID columns populated**: Claim ID, Statement, Context, Reference
    - **RESEARCH columns empty**: Support Level, Confidence, Validation Notes
-4. **Static validation config copied** to session
-5. **Preview auto-triggered** (like table_maker)
-6. **User runs validation** to fill RESEARCH columns
+5. **Static validation config copied** to session
+6. **Preview auto-triggered** (like table_maker)
+7. **User runs validation** to fill RESEARCH columns
 
 ---
 
@@ -57,11 +58,13 @@ Page detection checks mode:
   - reference-check → Reference Check card directly
 ```
 
-### Step 2: Submit Text
+### Step 2: Submit Text (Two Options)
+
+**Option A: Paste Text**
 ```
 Reference Check Card
   ↓
-User pastes text with citations
+User pastes text with citations into textarea
   ↓
 [Optional] Frontend validates length (96K chars max)
   ↓
@@ -70,6 +73,25 @@ Backend validates size (32K tokens max)
 [If too large] Error returned immediately
   ↓
 [If valid] Processing starts
+```
+
+**Option B: Upload PDF**
+```
+Reference Check Card
+  ↓
+User clicks "Upload PDF" button
+  ↓
+User selects PDF file
+  ↓
+PDF uploaded via multipart form data (synchronous)
+  ↓
+Backend converts PDF to markdown using pymupdf4llm
+  ↓
+Markdown text populates textarea
+  ↓
+User can edit/review before submitting
+  ↓
+User clicks "Check References" to process
 ```
 
 ### Step 3: Claim Extraction
@@ -152,6 +174,42 @@ User downloads completed table
 
 ### Frontend Components
 
+**PDF Upload** (frontend line ~12706-12853):
+```javascript
+// Upload button and file input
+<div style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+    <input type="file" id="${cardId}-pdf-input" accept=".pdf" style="display: none;">
+    <button id="${cardId}-pdf-upload-btn" class="btn-secondary">
+        Upload PDF
+    </button>
+    <span id="${cardId}-pdf-status"></span>
+</div>
+
+// Handle PDF upload
+async function handlePdfUpload(cardId, file) {
+    // Create FormData (following Excel upload pattern)
+    const formData = new FormData();
+    formData.append('pdf_file', file);
+    formData.append('action', 'convertPdfToMarkdown');
+
+    // Upload and convert (synchronous)
+    const response = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        body: formData
+    });
+
+    const data = await response.json();
+
+    if (data.success && data.markdown_text) {
+        // Populate textarea with markdown
+        textarea.value = data.markdown_text;
+
+        // Show success status
+        pdfStatus.textContent = `[SUCCESS] Converted ${data.page_count} pages`;
+    }
+}
+```
+
 **Page Detection** (frontend line ~2568):
 ```javascript
 function detectPageType() {
@@ -227,6 +285,49 @@ function handleReferenceCheckComplete(data) {
 ```
 
 ### Backend Components
+
+**PDF Conversion** (pdf_converter.py):
+```python
+def handle_pdf_multipart(files: Dict[str, Any], form_data: Dict[str, str], context: Any):
+    """
+    Convert PDF file to markdown text (synchronous multipart handler).
+    Follows Excel upload pattern - lightweight and returns immediately.
+    """
+    # Extract PDF file from files dict
+    pdf_file = files.get('pdf_file')
+    pdf_content = pdf_file.get('content', b'')
+
+    # Write to temporary file (required by pymupdf4llm)
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_pdf:
+        temp_pdf.write(pdf_content)
+        temp_pdf_path = temp_pdf.name
+
+    try:
+        # Convert PDF to markdown using pymupdf4llm
+        markdown_text = pymupdf4llm.to_markdown(temp_pdf_path)
+
+        # Get page count
+        doc = fitz.open(temp_pdf_path)
+        page_count = len(doc)
+        doc.close()
+
+        # Return markdown text
+        return create_response(200, {
+            'success': True,
+            'markdown_text': markdown_text,
+            'page_count': page_count
+        })
+    finally:
+        os.unlink(temp_pdf_path)
+```
+
+**HTTP Handler Routing** (http_handler.py line ~71):
+```python
+# Check for PDF conversion action
+if form_data.get('action') == 'convertPdfToMarkdown':
+    pdf_converter = lazy_import('interface_lambda.actions.reference_check', 'pdf_converter')
+    return pdf_converter.handle_pdf_multipart(files, form_data, context)
+```
 
 **Session Generation** (conversation.py line ~111):
 ```python
@@ -383,8 +484,17 @@ User downloads completed table
 - [ ] Verify shows Get Started card
 - [ ] Verify "Check References" button works
 
-### Test 3: Full Validation Flow
-- [ ] Submit text with citations
+### Test 3: PDF Upload Flow
+- [ ] Click "Upload PDF" button
+- [ ] Select a PDF file with citations
+- [ ] Verify "Converting PDF..." status appears
+- [ ] Verify markdown text populates textarea
+- [ ] Verify page count shown in success message
+- [ ] Verify textarea is editable after conversion
+- [ ] Submit converted text for reference checking
+
+### Test 4: Full Validation Flow
+- [ ] Submit text with citations (paste or PDF)
 - [ ] Verify claims extracted
 - [ ] Verify CSV created with ID columns filled
 - [ ] Verify config copied to session
@@ -394,13 +504,13 @@ User downloads completed table
 - [ ] Verify RESEARCH columns filled
 - [ ] Download and verify final CSV
 
-### Test 4: Text Size Limits
+### Test 5: Text Size Limits
 - [ ] Submit text > 24K words
 - [ ] Verify immediate error response
 - [ ] Verify no session created
 - [ ] Verify no cost incurred
 
-### Test 5: Session Tracking
+### Test 6: Session Tracking
 - [ ] Check S3 for session folder structure
 - [ ] Verify CSV saved to results/{domain}/{email_prefix}/{session_id}/
 - [ ] Verify config saved to same location
@@ -409,6 +519,11 @@ User downloads completed table
 ---
 
 ## 💰 Cost Breakdown
+
+**PDF Conversion** (optional):
+- Local processing using pymupdf4llm
+- No API calls, no cost
+- ~1-5 seconds per document
 
 **Claim Extraction** (once):
 - SONNET 4.5, no web search
@@ -433,10 +548,16 @@ User downloads completed table
 ```
 
 This deploys:
-- Updated frontend with page detection
+- Updated frontend with page detection and PDF upload
 - Updated conversation.py with session generation
 - Updated execution.py with config copying
 - New static validation config
+- PDF converter module (pdf_converter.py)
+- New dependency: pymupdf4llm>=0.0.5
+
+**Dependencies Added:**
+- `pymupdf4llm>=0.0.5` - LLM-optimized PDF to markdown conversion
+- Uses existing `PyMuPDF>=1.24.0` for PDF processing
 
 ---
 
@@ -457,6 +578,8 @@ This deploys:
 5. **Page Detection**: Direct access for power users
 6. **Static Config**: No AI config generation needed
 7. **Pre-filled Tables**: Users see extracted data immediately
+8. **PDF Support**: Lightweight markdown conversion with pymupdf4llm
+9. **Flexible Input**: Paste text OR upload PDF - user's choice
 
 ---
 
