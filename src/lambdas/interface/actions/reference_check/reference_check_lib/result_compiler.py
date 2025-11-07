@@ -39,9 +39,9 @@ class ResultCompiler:
         """
         logger.info(f"[COMPILE] Compiling {len(validation_results)} validation results to CSV")
 
-        # Create CSV in memory
+        # Create CSV in memory with explicit settings for Excel
         output = io.StringIO()
-        writer = csv.writer(output)
+        writer = csv.writer(output, lineterminator='\n', quoting=csv.QUOTE_MINIMAL)
 
         # Write header
         writer.writerow(self.csv_columns)
