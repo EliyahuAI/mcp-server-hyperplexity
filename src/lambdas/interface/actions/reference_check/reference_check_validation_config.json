@@ -113,15 +113,15 @@
       "column": "Qualified Fact",
       "description": "The fact as stated by the reference (and other authoritative sources), written in the same format and style as the original claim. Use this when the reference supports the claim but with different numbers, dates, or qualifications.",
       "importance": "RESEARCH",
-      "format": "String (claim text with precise details from reference, unchanged if already accurate)",
+      "format": "String (claim text, with optional (Change Type) prefix if modified)",
       "examples": [
-        "The Earth's average temperature has increased by 1.09°C (±0.13°C) since pre-industrial times",
-        "Python was first released in February 1991",
-        "Large language models can hallucinate facts in 12-23% of responses depending on model and task",
+        "(More Precise) The Earth's average temperature has increased by 1.09°C (±0.13°C) since pre-industrial times",
+        "(Qualified) Python was first released in February 1991",
+        "(Range Expanded) Large language models can hallucinate facts in 12-23% of responses depending on model and task",
         "There is no conclusive scientific evidence that Tylenol causes autism in children or when used during pregnancy"
       ],
       "search_group": 1,
-      "notes": "IMPORTANT: Always return the claim text. If the reference confirms the claim as stated, return the EXACT text from the Statement column unchanged. Only modify when the reference provides more precise details: (1) Numbers differ (claim '1.1°C' → qualified '1.09°C ±0.13°C'), (2) Dates more specific (claim '1991' → qualified 'February 1991'), (3) Range differs (claim '15-20%' → qualified '12-23% depending on model'). NEVER return 'N/A' - if claim matches reference exactly, return the claim unchanged. If contradicted, still return the claim (contradiction noted in Support Level). If inaccessible, return claim unchanged. The goal is to always have usable claim text in this column."
+      "notes": "IMPORTANT: If claim matches reference exactly, return the EXACT text from Statement unchanged (no prefix). If reference provides more precise details, add a brief (1-2 word) parenthetical prefix describing the change, then the updated claim text. Prefix examples: (More Precise), (Qualified), (Range Expanded), (Date Added), (Margin Added), (Context Added), (Corrected), (Updated). Only modify when reference provides MORE PRECISE details: (1) Numbers differ → (More Precise) 1.09°C ±0.13°C, (2) Dates more specific → (Qualified) February 1991, (3) Range differs → (Range Expanded) 12-23% depending on model. NEVER return 'N/A'. If contradicted/inaccessible/unclear, return claim unchanged (no prefix). Goal: Always have usable claim text that shows what the reference actually says."
     },
     {
       "column": "Support Level",

@@ -128,19 +128,32 @@ Rate your confidence in the assessment (0.0 to 1.0):
 
 **When to modify**:
 - Only modify if reference provides MORE PRECISE details than the claim
-- Keep same sentence structure and style, just update the specific details
+- Add a brief (1-2 word) parenthetical prefix describing the change
+- Then provide the updated claim text
+- Keep same sentence structure and style, just update specific details
 
-**NEVER return "N/A"** - Always return usable claim text (either unchanged or with precise details)
+**Prefix Options**:
+- (More Precise) - Exact numbers with margin of error
+- (Qualified) - Additional context or specificity
+- (Range Expanded) - Broader or different range
+- (Date Added) - More specific date/time
+- (Corrected) - Factual correction
+- (Updated) - Current information differs
+
+**NEVER return "N/A"** - Always return usable claim text (either unchanged or with prefix + precise details)
 
 **Examples**:
 - Original: "AI models hallucinate in 15-20% of responses"
-- Qualified: "AI models hallucinate in 12-23% of responses depending on model and task complexity"
+- Qualified: "(Range Expanded) AI models hallucinate in 12-23% of responses depending on model and task complexity"
 
 - Original: "Python was released in 1991"
-- Qualified: "Python was first released in February 1991"
+- Qualified: "(Qualified) Python was first released in February 1991"
 
 - Original: "Temperature increased by 1.1°C"
-- Qualified: "Temperature increased by 1.09°C (±0.13°C)"
+- Qualified: "(More Precise) Temperature increased by 1.09°C (±0.13°C)"
+
+- Original: "The claim is correct as stated"
+- Qualified: "The claim is correct as stated" (NO prefix - unchanged)
 
 ## OUTPUT FORMAT
 
@@ -154,7 +167,7 @@ Return a JSON object with this structure:
   "reference": "[2]",
   "reference_description": "arXiv preprint by Chen et al. (2024) measuring factual accuracy in LLMs",
   "reference_says": "The study tested 1,000 responses from 5 major LLMs and found hallucination rates ranging from 12% to 23% depending on the model and task complexity, with an average of 17.5%.",
-  "qualified_fact": "AI models can hallucinate facts in 12-23% of responses depending on the model and task complexity",
+  "qualified_fact": "(Range Expanded) AI models can hallucinate facts in 12-23% of responses depending on the model and task complexity",
   "support_level": "Supported",
   "confidence": 0.90,
   "validation_notes": "The reference supports the claim with a broader range. The 15-20% stated in the claim falls within the 12-23% range found in the study, though the reference shows more variation by model type.",
