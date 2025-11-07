@@ -654,7 +654,7 @@ class ReferenceParser:
 
         return text
 
-    def resolve_citations(self, citation_text: str, reference_map: Dict[str, str], format_as_hyperlink: bool = True) -> str:
+    def resolve_citations(self, citation_text: str, reference_map: Dict[str, str], format_as_hyperlink: bool = False) -> str:
         """
         Resolve numbered citations to actual references with Excel hyperlinks.
 
@@ -686,41 +686,25 @@ class ReferenceParser:
                 ref_nums.add(match[1])
 
         # Resolve each number to its full citation
-        url_refs = []
-        text_refs = []
+        resolved_refs = []
 
         for num in sorted(ref_nums, key=int):
             ref_id = f"[{num}]"
             if ref_id in reference_map:
                 citation = reference_map[ref_id]
 
-                # Check if it's a URL
-                if format_as_hyperlink and re.match(r'https?://', citation):
-                    # Excel HYPERLINK formula: =HYPERLINK("url", "[1]")
-                    # The number becomes the clickable link
-                    url_refs.append(f'=HYPERLINK("{citation}", "{ref_id}")')
-                    logger.info(f"[REF PARSER] Resolved {ref_id} to hyperlink")
-                else:
-                    # Non-URL citation: format as "[1] Author (Year)..."
-                    text_refs.append(f"{ref_id} {citation}")
-                    logger.info(f"[REF PARSER] Resolved {ref_id} to text citation")
+                # Just show the URL or citation on its own line
+                # Excel will auto-detect URLs as clickable
+                # Markdown will render URLs as clickable
+                resolved_refs.append(citation)
+                logger.info(f"[REF PARSER] Resolved {ref_id} to {citation[:80]}...")
             else:
                 # Keep original if not found
-                text_refs.append(ref_id)
+                resolved_refs.append(ref_id)
                 logger.warning(f"[REF PARSER] Could not resolve {ref_id}, keeping as-is")
 
-        # Join based on type
-        # URLs: comma-separated (compact, clickable)
-        # Non-URLs: newline-separated (readable, with full citation)
-        if url_refs and not text_refs:
-            return ', '.join(url_refs)
-        elif text_refs and not url_refs:
-            return '\n'.join(text_refs)
-        elif url_refs and text_refs:
-            # Mixed: URLs comma-separated, then newline, then text refs newline-separated
-            return ', '.join(url_refs) + '\n' + '\n'.join(text_refs)
-        else:
-            return citation_text
+        # Join with newlines - each reference on its own line
+        return '\n'.join(resolved_refs) if resolved_refs else citation_text
 
     def guess_source_type(self, text: str, reference_map: Dict[str, str], content_type: str, path_type: str) -> str:
         """
