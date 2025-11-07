@@ -680,7 +680,8 @@ async def _compile_results(
     ai_source_guess: str = None,
     ai_source_confidence: float = None,
     path_type: str = None,
-    final_reference_map: Dict[str, str] = None
+    final_reference_map: Dict[str, str] = None,
+    conversation_state: Dict[str, Any] = None
 ) -> Dict[str, Any]:
     """
     Generate CSV with claims (ID columns filled, RESEARCH columns empty).
@@ -1223,7 +1224,8 @@ async def execute_reference_check(
             ai_source_guess=ai_source_guess,
             ai_source_confidence=ai_source_confidence,
             path_type=path_type,
-            final_reference_map=final_reference_map
+            final_reference_map=final_reference_map,
+            conversation_state=conversation_state  # Pass conversation_state
         )
 
         if not compilation_result.get('success'):
