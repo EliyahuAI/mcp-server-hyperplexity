@@ -12909,7 +12909,8 @@ Please provide any additional context, or simply proceed to generate your initia
                     claimSummary = `${total} claim${total !== 1 ? 's' : ''} (${withRefs} referenced, ${withoutRefs} not)`;
                 }
 
-                successText.innerHTML = `${claimSummary}. Starting preview of the first 3 claims/rows...`;
+                const previewCount = Math.min(total, 3);
+                successText.innerHTML = `${claimSummary}. Starting preview of the first ${previewCount} claim${previewCount !== 1 ? 's' : ''}/row${previewCount !== 1 ? 's' : ''}...`;
             }
 
             // Update status badge
