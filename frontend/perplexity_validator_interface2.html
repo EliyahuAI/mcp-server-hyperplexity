@@ -12661,10 +12661,21 @@ Please provide any additional context, or simply proceed to generate your initia
                 <div id="${cardId}-messages"></div>
                 <div id="${cardId}-input-container">
                     <textarea id="${cardId}-input" class="reference-check-textarea"
-                        placeholder="Paste AI output or literature with citations to verify...\n\nExample: According to Smith et al. (2024), transformer models achieve 95% accuracy on benchmark tasks [1]. The study found that attention mechanisms significantly improve performance [2].\n\n[1] https://arxiv.org/abs/2024.12345\n[2] https://www.nature.com/articles/s41586-024-00001"
+                        placeholder="Paste AI output or literature with citations to verify..."
                         maxlength="96000"
                         rows="12"
-                        style="width: 100%; resize: vertical; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace; font-size: 13px; line-height: 1.5;"></textarea>
+                        style="width: 100%; resize: vertical; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 0.75rem; font-family: var(--font-family); font-size: var(--font-size-base); line-height: 1.5; color: var(--text-color); box-shadow: inset 0 1px 2px rgba(0,0,0,0.04); transition: var(--transition);"></textarea>
+                    <style>
+                        .reference-check-textarea:focus {
+                            outline: none;
+                            background: #FFFFFF;
+                            border-color: #10B981;
+                            box-shadow: inset 0 1px 2px rgba(0,0,0,0.05), 0 0 0 3px rgba(16,185,129,0.2);
+                        }
+                        .reference-check-textarea::placeholder {
+                            color: #9CA3AF;
+                        }
+                    </style>
                 </div>
             `;
 

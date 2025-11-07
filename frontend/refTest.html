@@ -2,107 +2,95 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Reference Check UI Variants</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- Tailwind CDN (for quick demo) -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>Modern Textarea Comparison</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background-color: #f3f4f6;
+      color: #111827;
+      margin: 0;
+      padding: 2rem;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+
+    .grid {
+      display: grid;
+      gap: 2rem;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    }
+
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+
+    .card h2 {
+      font-size: 1.2rem;
+      margin-bottom: 0.75rem;
+    }
+
+    textarea {
+      width: 100%;
+      height: 180px;
+      padding: 0.75rem;
+      font-size: 0.95rem;
+      resize: vertical;
+      transition: all 0.2s ease;
+    }
+
+    /* Original textarea style */
+    .original textarea {
+      border: 1px solid #ccc;
+      background: #fff;
+      border-radius: 4px;
+    }
+
+    /* Modern textarea style */
+    .modern textarea {
+      background: #F9FAFB;
+      border: 1px solid #E5E7EB;
+      border-radius: 12px;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.5;
+      color: #111827;
+      box-shadow: inset 0 1px 2px rgba(0,0,0,0.04);
+    }
+
+    .modern textarea:focus {
+      outline: none;
+      background: #FFFFFF;
+      border-color: #10B981;
+      box-shadow:
+        inset 0 1px 2px rgba(0,0,0,0.05),
+        0 0 0 3px rgba(16,185,129,0.2);
+    }
+
+    .modern textarea::placeholder {
+      color: #9CA3AF;
+    }
+  </style>
 </head>
-<body class="bg-slate-100 min-h-screen antialiased">
-  <div class="max-w-5xl mx-auto py-10 space-y-10">
+<body>
+  <h1>Modern Textarea Comparison</h1>
 
-    <!-- Variant 1: Minimal Card / Glassy -->
-    <section>
-      <h1 class="text-xl font-semibold text-slate-800 mb-3">
-        Variant 1 — Minimal “Card” Redesign
-      </h1>
-      <div class="max-w-3xl p-6 mx-auto bg-white/80 backdrop-blur-md rounded-2xl shadow-lg border border-slate-100">
-        <div class="flex items-center gap-3 mb-4">
-          <div class="p-2 bg-emerald-100 rounded-full">
-            <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M21 21l-4.35-4.35m2.6-5.65a8 8 0 11-16 0 8 8 0 0116 0z" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="text-xl font-semibold text-slate-800">Reference Check</h2>
-            <p class="text-sm text-slate-500">
-              Verify AI output or literature with citations
-            </p>
-          </div>
-        </div>
+  <div class="grid">
+    <div class="card original">
+      <h2>Original Style</h2>
+      <textarea placeholder="Paste AI output or literature with citations to verify..."></textarea>
+    </div>
 
-        <textarea
-          placeholder="Paste AI output or literature with citations to verify..."
-          class="w-full h-48 p-4 text-slate-800 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 focus:outline-none transition"
-        ></textarea>
-
-        <button
-          class="w-full mt-4 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-xl shadow-md transition active:scale-[0.98]"
-        >
-          Check References
-        </button>
-      </div>
-    </section>
-
-    <!-- Variant 2: Notion / Neutral -->
-    <section>
-      <h1 class="text-xl font-semibold text-slate-800 mb-3">
-        Variant 2 — Neutral “Notion-like” Tool
-      </h1>
-      <div class="max-w-3xl p-8 mx-auto bg-neutral-50 border border-neutral-200 rounded-2xl shadow-sm">
-        <h2 class="text-2xl font-semibold text-neutral-900 mb-1">Reference Check</h2>
-        <p class="text-sm text-neutral-500 mb-6">
-          Verify AI-generated text and academic sources.
-        </p>
-
-        <textarea
-          placeholder="Paste text with citations..."
-          class="w-full h-56 p-4 font-mono text-neutral-800 bg-white border border-neutral-300 rounded-lg resize-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 focus:outline-none transition"
-        ></textarea>
-
-        <button
-          class="w-full mt-5 py-3 bg-neutral-900 text-white font-medium rounded-lg hover:bg-neutral-800 active:scale-[0.98] transition"
-        >
-          Check References
-        </button>
-      </div>
-    </section>
-
-    <!-- Variant 3: Dark / Futuristic AI -->
-    <section>
-      <h1 class="text-xl font-semibold text-slate-800 mb-3">
-        Variant 3 — Futuristic “AI Assistant” Look
-      </h1>
-      <div
-        class="max-w-3xl p-6 mx-auto bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl shadow-2xl text-white border border-slate-700"
-      >
-        <div class="flex items-center gap-3 mb-4">
-          <div class="p-2 bg-emerald-500/20 rounded-full">
-            <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M21 21l-4.35-4.35m2.6-5.65a8 8 0 11-16 0 8 8 0 0116 0z" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="text-xl font-semibold">Reference Check</h2>
-            <p class="text-sm text-slate-400">
-              AI verification assistant for your citations
-            </p>
-          </div>
-        </div>
-
-        <textarea
-          placeholder="Paste AI text or research excerpts with citations..."
-          class="w-full h-48 p-4 bg-slate-900/70 text-slate-100 border border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 focus:outline-none transition"
-        ></textarea>
-
-        <button
-          class="w-full mt-4 py-3 bg-emerald-500 hover:bg-emerald-600 text-slate-900 font-semibold rounded-xl shadow-lg flex items-center justify-center gap-2 transition active:scale-[0.98]"
-        >
-          <span>🔍</span>
-          <span>Check References</span>
-        </button>
-      </div>
-    </section>
-
+    <div class="card modern">
+      <h2>Modernized Style</h2>
+      <textarea placeholder="Paste AI output or literature with citations to verify..."></textarea>
+    </div>
   </div>
 </body>
 </html>
