@@ -629,19 +629,21 @@ async def _compile_results(
     conversation_id: str,
     email: str,
     storage_manager: UnifiedS3Manager,
-    config: Dict
+    config: Dict,
+    claims: List[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
-    Compile validation results into CSV and generate summary.
-    Save to session results folder (like table_maker) and copy static validation config.
+    Generate CSV with claims (ID columns filled, RESEARCH columns empty).
+    Save to session results folder and copy static validation config.
 
     Args:
-        validation_results: List of validation results
+        validation_results: List of validation results (empty during extraction phase)
         session_id: Session identifier
         conversation_id: Conversation identifier
         email: User email
         storage_manager: S3 manager instance
         config: Configuration dict
+        claims: List of claims from extraction (used when validation_results is empty)
 
     Returns:
         {
@@ -654,24 +656,48 @@ async def _compile_results(
         }
     """
     try:
-        logger.info(f"[COMPILATION] Compiling {len(validation_results)} validation results")
+        # If validation_results is empty, generate CSV from claims (ID columns only)
+        if not validation_results and claims:
+            logger.info(f"[COMPILATION] Generating CSV from {len(claims)} extracted claims (ID columns only)")
+            csv_rows = []
+            for claim in claims:
+                csv_rows.append({
+                    'claim_id': claim.get('claim_id', ''),
+                    'statement': claim.get('statement', ''),
+                    'context': claim.get('context', ''),
+                    'reference': claim.get('reference', ''),
+                    'reference_description': '',  # Empty - to be filled during validation
+                    'reference_says': '',  # Empty
+                    'qualified_fact': '',  # Empty
+                    'support_level': '',  # Empty
+                    'confidence': '',  # Empty
+                    'validation_notes': ''  # Empty
+                })
+            csv_content = compile_results_to_csv(csv_rows, config)
+        else:
+            logger.info(f"[COMPILATION] Compiling {len(validation_results)} validation results")
+            csv_content = compile_results_to_csv(validation_results, config)
 
         # Send progress update
         send_execution_progress(
             session_id=session_id,
             conversation_id=conversation_id,
-            current_step=2,
-            total_steps=2,
-            status='Compiling results into CSV...',
+            current_step=1,
+            total_steps=1,
+            status='Generating table with extracted claims...',
             progress_percent=85,
             phase='compilation'
         )
 
-        # Use result compiler module to generate CSV
-        csv_content = compile_results_to_csv(validation_results, config)
-
-        # Get summary statistics
-        summary = get_summary_stats(validation_results, config)
+        # Generate summary from claims (not validation results yet)
+        if not validation_results and claims:
+            summary = {
+                'total_claims': len(claims),
+                'claims_with_references': sum(1 for c in claims if c.get('reference')),
+                'claims_without_references': sum(1 for c in claims if not c.get('reference'))
+            }
+        else:
+            summary = get_summary_stats(validation_results, config)
 
         # Save CSV using store_excel_file (handles CSV too)
         # Note: store_excel_file automatically adds _input suffix
@@ -970,56 +996,19 @@ async def execute_reference_check(
         _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
 
         # ======================================================================
-        # STEP 1: Validate Claims
+        # STEP 1: Generate CSV with ID Columns Only (No Validation Yet)
         # ======================================================================
-        logger.info(f"[EXECUTION] Step 1/2: Validate {len(claims)} Claims")
+        logger.info("[EXECUTION] Step 1/1: Generate CSV with extracted claims")
 
-        validation_results = await _validate_claims(
-            claims=claims,
-            session_id=session_id,
-            conversation_id=conversation_id,
-            config=config
-        )
-
-        logger.info(f"[EXECUTION] Step 1 complete: {len(validation_results)} claims validated")
-
-        # Track API calls for each validation
-        if run_key:
-            for validation_result in validation_results:
-                if validation_result.get('success') and validation_result.get('enhanced_data'):
-                    _add_api_call_to_runs(
-                        session_id=session_id,
-                        run_key=run_key,
-                        api_response=validation_result,
-                        model=validation_result.get('model_used', 'claude-haiku-4-5'),
-                        processing_time=validation_result.get('processing_time', 0.0),
-                        call_type='reference_validation',
-                        status='IN_PROGRESS',
-                        verbose_status=f'Validated claim {validation_result.get("claim_id")}'
-                    )
-
-        # Save validation results to S3
-        _save_to_s3(
-            storage_manager, email, session_id, conversation_id,
-            'validation_results.json', validation_results
-        )
-
-        # Update conversation state
-        conversation_state['validation_results'] = validation_results
-        _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
-
-        # ======================================================================
-        # STEP 2: Compile Results
-        # ======================================================================
-        logger.info("[EXECUTION] Step 2/2: Compile Results")
-
+        # Create CSV with ID columns populated, RESEARCH columns empty
         compilation_result = await _compile_results(
-            validation_results=validation_results,
+            validation_results=[],  # Empty - no validation done yet
             session_id=session_id,
             conversation_id=conversation_id,
             email=email,
             storage_manager=storage_manager,
-            config=config
+            config=config,
+            claims=claims  # Pass claims for CSV generation
         )
 
         if not compilation_result.get('success'):
@@ -1049,20 +1038,16 @@ async def execute_reference_check(
         send_execution_progress(
             session_id=session_id,
             conversation_id=conversation_id,
-            current_step=2,
-            total_steps=2,
-            status='Reference check complete!',
+            current_step=1,
+            total_steps=1,
+            status='Claim extraction complete!',
             progress_percent=100,
             phase='complete'
         )
 
-        # Send completion message with results (like table_maker does)
+        # Send completion message (like table_maker does)
         ws_client = _get_websocket_client()
         if ws_client:
-            # Flatten summary for frontend compatibility
-            summary = result['summary']
-            breakdown = summary.get('support_level_breakdown', {})
-
             ws_client.send_to_session(session_id, {
                 'type': 'reference_check_complete',
                 'conversation_id': conversation_id,
@@ -1071,16 +1056,7 @@ async def execute_reference_check(
                 'csv_filename': result['csv_filename'],
                 'config_s3_key': result['config_s3_key'],
                 'session_id': session_id,
-                'summary': {
-                    **summary,
-                    # Flatten support level counts for frontend
-                    'strongly_supported': breakdown.get('strongly_supported', 0),
-                    'supported': breakdown.get('supported', 0),
-                    'partially_supported': breakdown.get('partially_supported', 0),
-                    'unclear': breakdown.get('unclear', 0),
-                    'contradicted': breakdown.get('contradicted', 0),
-                    'inaccessible': breakdown.get('inaccessible', 0)
-                }
+                'summary': result['summary']
             })
 
         # Update runs database
