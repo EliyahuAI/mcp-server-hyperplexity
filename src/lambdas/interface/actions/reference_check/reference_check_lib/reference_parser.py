@@ -693,11 +693,12 @@ class ReferenceParser:
             if ref_id in reference_map:
                 citation = reference_map[ref_id]
 
-                # Just show the URL or citation on its own line
-                # Excel will auto-detect URLs as clickable
-                # Markdown will render URLs as clickable
-                resolved_refs.append(citation)
-                logger.info(f"[REF PARSER] Resolved {ref_id} to {citation[:80]}...")
+                # Format as "[1] url" or "[1] citation text"
+                # Excel auto-detects and makes URLs clickable
+                # Markdown auto-linkifies URLs
+                formatted = f"{ref_id} {citation}"
+                resolved_refs.append(formatted)
+                logger.info(f"[REF PARSER] Resolved {ref_id}")
             else:
                 # Keep original if not found
                 resolved_refs.append(ref_id)
