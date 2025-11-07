@@ -144,6 +144,85 @@ class ReferenceParser:
         logger.info(f"[REF PARSER] TOTAL: Extracted {len(all_references)} unique references")
         return all_references
 
+    def _extract_author_year_citations(self, section: str) -> Dict[str, str]:
+        """
+        Extract author-year format citations (academic papers without numbers).
+        Assigns sequential numbers [1], [2], [3]...
+
+        Looks for patterns like:
+        - Author, A. (Year). Title...
+        - Author et al. Title. Journal...
+        - Multiple authors. (Year). Title...
+        """
+        references = {}
+
+        # Split into lines and group into citations
+        # Academic refs start with Author name and may span multiple lines
+        lines = section.split('\n')
+
+        ref_num = 1
+        current_citation = []
+
+        for i, line in enumerate(lines):
+            line_stripped = line.strip()
+
+            # Check if previous line ended mid-sentence (no period, continuation)
+            prev_line_incomplete = (
+                current_citation and
+                len(current_citation) > 0 and
+                current_citation[-1] and
+                not current_citation[-1].rstrip().endswith(('.', ')', '!', '?', '"'))
+            )
+
+            # Check if this starts a new citation
+            # Must start with Author name pattern AND previous citation is complete
+            starts_citation = (
+                len(line_stripped) > 15 and
+                line_stripped[0].isupper() and
+                not prev_line_incomplete and  # Previous line must be complete
+                (re.match(r'^[A-Z][a-z]+[a-z\s,]+[A-Z]', line_stripped) or  # Author Name, Initial
+                 re.match(r'^[A-Z][a-z]+\s+et al\.', line_stripped) or       # Author et al.
+                 re.match(r'^[A-Z][a-z]+,\s+[A-Z]\.', line_stripped))  # Author, A.
+            )
+
+            if starts_citation:
+                # Save previous citation if exists and it looks complete
+                if current_citation:
+                    citation_text = ' '.join(current_citation)
+                    if len(citation_text) > 50:  # Minimum length check
+                        ref_id = f"[{ref_num}]"
+                        references[ref_id] = citation_text
+                        logger.info(f"[REF PARSER] Author-year {ref_id}: {citation_text[:80]}...")
+                        ref_num += 1
+
+                # Start new citation
+                current_citation = [line_stripped]
+            elif line_stripped:
+                # Continue current citation or start first one
+                if current_citation:
+                    current_citation.append(line_stripped)
+                elif len(line_stripped) > 15:  # Start first citation if substantial
+                    current_citation = [line_stripped]
+            elif not line_stripped and current_citation:
+                # Empty line - might be end of citation, but only save if we've accumulated enough
+                if len(' '.join(current_citation)) > 100:
+                    citation_text = ' '.join(current_citation)
+                    ref_id = f"[{ref_num}]"
+                    references[ref_id] = citation_text
+                    logger.info(f"[REF PARSER] Author-year {ref_id}: {citation_text[:80]}...")
+                    ref_num += 1
+                    current_citation = []
+
+        # Don't forget last citation
+        if current_citation:
+            citation_text = ' '.join(current_citation)
+            if len(citation_text) > 50:
+                ref_id = f"[{ref_num}]"
+                references[ref_id] = citation_text
+                logger.info(f"[REF PARSER] Author-year {ref_id}: {citation_text[:80]}...")
+
+        return references
+
     def _extract_from_sections(self, text: str) -> Dict[str, str]:
         """Extract references from explicit section headers."""
         references = {}
@@ -151,11 +230,13 @@ class ReferenceParser:
         # Look for References/Bibliography/Citations/Sources/Works Cited sections
         # Enhanced patterns to be more aggressive with various formats
         section_patterns = [
-            # Standard headers with colon
-            r'(?:^|\n)(References?)[\s:]+\n(.*?)(?=\n\n[A-Z][a-z]+:|\n\n#{1,6}\s|\Z)',
-            r'(?:^|\n)(Bibliography)[\s:]+\n(.*?)(?=\n\n[A-Z][a-z]+:|\n\n#{1,6}\s|\Z)',
-            r'(?:^|\n)(Citations?)[\s:]+\n(.*?)(?=\n\n[A-Z][a-z]+:|\n\n#{1,6}\s|\Z)',
-            r'(?:^|\n)(Sources?)[\s:]+\n(.*?)(?=\n\n[A-Z][a-z]+:|\n\n#{1,6}\s|\Z)',
+            # Standard headers with colon or newline (very permissive end boundary)
+            r'(?:^|\n)(REFERENCES?)[\s:]*\n(.*?)(?=\n\n[A-Z\d]+\s+[A-Z]|\Z)',
+            r'(?:^|\n)(References?)[\s:]*\n(.*?)(?=\n\n[A-Z\d]+\s+[A-Z]|\Z)',
+            r'(?:^|\n)(BIBLIOGRAPHY)[\s:]*\n(.*?)(?=\n\n[A-Z\d]+\s+[A-Z]|\Z)',
+            r'(?:^|\n)(Bibliography)[\s:]*\n(.*?)(?=\n\n[A-Z\d]+\s+[A-Z]|\Z)',
+            r'(?:^|\n)(Citations?)[\s:]*\n(.*?)(?=\n\n[A-Z\d]+\s+[A-Z]|\Z)',
+            r'(?:^|\n)(Sources?)[\s:]*\n(.*?)(?=\n\n[A-Z\d]+\s+[A-Z]|\Z)',
             r'(?:^|\n)(Works Cited)[\s:]+\n(.*?)(?=\n\n[A-Z][a-z]+:|\n\n#{1,6}\s|\Z)',
             r'(?:^|\n)(Further Reading)[\s:]+\n(.*?)(?=\n\n[A-Z][a-z]+:|\n\n#{1,6}\s|\Z)',
             r'(?:^|\n)(Literature Cited)[\s:]+\n(.*?)(?=\n\n[A-Z][a-z]+:|\n\n#{1,6}\s|\Z)',
@@ -177,6 +258,12 @@ class ReferenceParser:
                 ref_section = match.group(2)
                 logger.info(f"[REF PARSER] Found '{section_name}' section: {len(ref_section)} chars")
                 refs = self._parse_reference_section(ref_section)
+
+                # If no numbered refs found, try author-year format
+                if len(refs) == 0:
+                    logger.info(f"[REF PARSER] No numbered refs, trying author-year format")
+                    refs = self._extract_author_year_citations(ref_section)
+
                 references.update(refs)
                 if refs:  # If we found refs, don't try other patterns
                     break
