@@ -96,12 +96,20 @@ If reference format is unclear or incomplete, extract what you can.
 
 ## TEXT LOCATION MAPPING
 
-For each claim, record its location in the original text:
-- **start_char**: Character index where claim starts
-- **end_char**: Character index where claim ends
-- **paragraph_index**: Which paragraph (0-indexed)
+For each claim, record its location in the original text with the following fields:
+- **start_char**: Character index where claim starts (required)
+- **end_char**: Character index where claim ends (required)
+- **paragraph_index**: Which paragraph, 0-indexed (required)
+- **sentence_index**: Which sentence within the paragraph, 0-indexed (if identifiable)
+- **word_start**: Starting word index in the text (if identifiable)
+- **word_end**: Ending word index in the text (if identifiable)
+- **section_name**: Name of the section (e.g., "Introduction", "Methods") if text has clear sections
 
-This allows highlighting claims in the original text later.
+This data will be formatted as a human-readable pipe-delimited string in the final CSV output.
+Example format: "Section: Introduction | Para: 2 | Sentence: 3 | Words: 45-67 | Chars: 234-456"
+Or if no section: "Para: 2 | Sentence: 3 | Words: 45-67 | Chars: 234-456"
+
+IMPORTANT: Always provide at minimum start_char, end_char, and paragraph_index. Additional fields are helpful but optional.
 
 ## REFERENCE LIST HANDLING
 
@@ -174,7 +182,11 @@ Return a JSON object with this structure:
       "text_location": {
         "start_char": 125,
         "end_char": 195,
-        "paragraph_index": 2
+        "paragraph_index": 2,
+        "sentence_index": 1,
+        "word_start": 25,
+        "word_end": 40,
+        "section_name": "Results"
       }
     },
     {
@@ -186,7 +198,10 @@ Return a JSON object with this structure:
       "text_location": {
         "start_char": 380,
         "end_char": 435,
-        "paragraph_index": 4
+        "paragraph_index": 4,
+        "sentence_index": 0,
+        "word_start": 75,
+        "word_end": 85
       }
     }
   ],

@@ -167,6 +167,7 @@ class ReferenceValidator:
                     'claim_id': claim_id,
                     'statement': claim.get('statement', ''),
                     'context': claim.get('context', ''),
+                    'text_location': claim.get('text_location', ''),
                     'reference': claim.get('reference'),
                     'reference_description': 'Error during validation',
                     'reference_says': error_msg,
@@ -191,9 +192,10 @@ class ReferenceValidator:
                 logger.error(f"[VALIDATE] Unexpected response structure for {claim_id}")
                 structured_data = raw_response
 
-            # Add processing metadata
+            # Add processing metadata and ensure text_location is included
             validation_result = {
                 **structured_data,
+                'text_location': claim.get('text_location', ''),  # Pass through from claim
                 'api_response': response,  # For metrics tracking
                 'processing_time': response.get('processing_time', 0)
             }
@@ -211,6 +213,7 @@ class ReferenceValidator:
                 'claim_id': claim_id,
                 'statement': claim.get('statement', ''),
                 'context': claim.get('context', ''),
+                'text_location': claim.get('text_location', ''),
                 'reference': claim.get('reference'),
                 'reference_description': 'Exception during validation',
                 'reference_says': str(e),

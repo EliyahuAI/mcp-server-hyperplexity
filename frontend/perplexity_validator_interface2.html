@@ -5567,6 +5567,38 @@
                 }
             }
 
+            function showClaimsInfoBox(cardId, claims) {
+                const card = document.getElementById(cardId);
+                if (!card) return;
+
+                const claimsToShow = claims.slice(0, 10);
+                const claimsListHtml = claimsToShow.map(claim => {
+                    const refs = claim.reference || 'None';
+                    const statementPreview = claim.statement.length > 100
+                        ? claim.statement.substring(0, 100) + '...'
+                        : claim.statement;
+                    return `<strong>${claim.claim_id}</strong>: ${statementPreview} <span style="color: #666;">[Refs: ${refs}]</span>`;
+                }).join('<br>');
+
+                const moreText = claims.length > 10 ? `<br><em>+${claims.length - 10} more claims</em>` : '';
+
+                const boxHtml = `
+                    <div class="message claims-info-box" style="margin-bottom: 1rem; background-color: #fff3e0; color: #e65100; border: 1px solid #ffb74d;">
+                        <span class="message-icon">📝</span>
+                        <div><strong>Extracted Claims</strong> (first ${claimsToShow.length}):<br>${claimsListHtml}${moreText}</div>
+                    </div>
+                `;
+
+                // Find form element and insert before success div
+                const formEl = document.getElementById(`${cardId}-form`);
+                const successEl = document.getElementById(`${cardId}-success`);
+                if (formEl && successEl) {
+                    successEl.insertAdjacentHTML('beforebegin', boxHtml);
+                } else if (formEl) {
+                    formEl.insertAdjacentHTML('afterend', boxHtml);
+                }
+            }
+
             function updateRowsBoxWithApproved(conversationId, approvedRows, totalApproved, qcSummary, totalDiscovered) {
                 // Find the discovered rows box in the most recent card
                 if (cardHandlers.size === 0) return;
@@ -12877,6 +12909,11 @@ Please provide any additional context, or simply proceed to generate your initia
             globalState.configValidated = true;
             globalState.configStored = true;
             globalState.excelFileUploaded = true;
+
+            // Show claims info box (like table_maker's discovered rows)
+            if (data.claims && data.claims.length > 0) {
+                showClaimsInfoBox(cardId, data.claims);
+            }
 
             // Keep form visible but show success state below it
             const successEl = document.getElementById(`${cardId}-success`);

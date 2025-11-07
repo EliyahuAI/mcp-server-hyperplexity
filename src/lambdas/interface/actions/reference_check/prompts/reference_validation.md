@@ -109,33 +109,43 @@ When multiple references are cited and they disagree:
 
 **Purpose**: Restate the claim in its original format and style, but with the precise facts as stated by the reference or authoritative sources.
 
-**When to provide a qualified fact**:
-- Numbers differ slightly: Claim says "1.1°C", reference says "1.09°C ± 0.13°C"
-- More precision available: Claim says "1991", reference says "February 1991"
-- Range vs point estimate: Claim says "15-20%", reference shows "12-23% depending on model"
-- Qualification needed: Claim is general, reference has important caveats
+**CRITICAL RULE - PREFIX REQUIREMENT**:
+**IF YOU MODIFY THE CLAIM TEXT IN ANY WAY, YOU MUST ADD A PREFIX. NO EXCEPTIONS.**
+- No prefix = claim is UNCHANGED (matches reference exactly)
+- Prefix present = claim has been MODIFIED to reflect reference's precise facts
+- This is NOT optional - it is REQUIRED for any modification
 
-**When to return the claim unchanged**:
+**When to return the claim unchanged (NO PREFIX)**:
 - Claim matches reference exactly → return exact Statement text
 - Reference confirms as stated → return exact Statement text
-- Claim is contradicted → return exact Statement text (contradiction in Support Level)
+- Claim is contradicted → return exact Statement text (contradiction noted in Support Level)
 - Reference is inaccessible → return exact Statement text
 - Support level is 'Unclear' → return exact Statement text
 - For unreferenced claims: If fact-check confirms as stated, return claim unchanged
 
-**When to modify**:
-- Only modify if reference provides MORE PRECISE details than the claim
-- Add a brief (1-2 word) parenthetical prefix describing the change
-- Then provide the updated claim text
-- Keep same sentence structure and style, just update specific details
+**When to modify (PREFIX REQUIRED)**:
+- Numbers differ slightly: Claim says "1.1°C", reference says "1.09°C ± 0.13°C" → MUST use prefix
+- More precision available: Claim says "1991", reference says "February 1991" → MUST use prefix
+- Range vs point estimate: Claim says "15-20%", reference shows "12-23% depending on model" → MUST use prefix
+- Qualification needed: Claim is general, reference has important caveats → MUST use prefix
+- ANY modification to claim text → MUST use prefix
 
-**Prefix Options**:
-- (More Precise) - Exact numbers with margin of error
+**Prefix Options** (REQUIRED when modifying):
+- (More Precise) - Exact numbers with margin of error added
 - (Qualified) - Additional context or specificity
 - (Range Expanded) - Broader or different range
+- (Range Narrowed) - More specific range
 - (Date Added) - More specific date/time
+- (Date Corrected) - Different date
+- (Margin Added) - Uncertainty/error margin specified
+- (Context Added) - Important context or conditions
 - (Corrected) - Factual correction
 - (Updated) - Current information differs
+- (Actually) - Claim is misleading, reference shows different reality
+- (Opposite) - Reference directly contradicts
+- (Clarified) - Ambiguous claim made specific
+- (Specified) - General claim made more specific
+- Or create your own 1-3 word prefix that clearly describes the type of change
 
 **NEVER return "N/A"** - Always return usable claim text (either unchanged or with prefix + precise details)
 

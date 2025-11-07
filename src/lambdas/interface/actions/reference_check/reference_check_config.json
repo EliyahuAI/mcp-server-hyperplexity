@@ -34,6 +34,7 @@
             "Claim ID",
             "Statement",
             "Context",
+            "Text Location",
             "Reference",
             "Reference Description",
             "What Reference Says",

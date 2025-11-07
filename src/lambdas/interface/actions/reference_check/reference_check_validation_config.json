@@ -67,6 +67,19 @@
       "notes": "Provides context for understanding the claim's intended meaning. No validation needed - used as context."
     },
     {
+      "column": "Text Location",
+      "description": "Location of the claim in the original text",
+      "importance": "ID",
+      "format": "String (pipe-delimited format: Section: X | Para: Y | Sentence: Z | Words: A-B | Chars: C-D)",
+      "examples": [
+        "Section: Introduction | Para: 2 | Sentence: 3 | Words: 45-67 | Chars: 234-456",
+        "Para: 2 | Sentence: 3 | Words: 45-67 | Chars: 234-456",
+        "Para: 1 | Sentence: 1 | Words: 1-15 | Chars: 0-89"
+      ],
+      "search_group": 0,
+      "notes": "Human-readable location of the claim in the original text. Uses pipe delimiter (not commas) for clarity. Section name is optional. No validation needed - used for reference only."
+    },
+    {
       "column": "Reference",
       "description": "The citation or source provided to support the claim",
       "importance": "ID",
@@ -124,7 +137,7 @@
         "There is no conclusive scientific evidence that Tylenol causes autism in children or when used during pregnancy"
       ],
       "search_group": 1,
-      "notes": "CRITICAL PREFIX GUIDANCE - Use descriptive prefixes to show what changed:\n\nWHEN CLAIM MATCHES: No prefix, return Statement text exactly as written.\n\nMINOR REFINEMENTS (claim is essentially correct):\n• (More Precise) - Exact numbers with margin of error added\n• (Qualified) - Additional context or specificity\n• (Range Expanded) - Broader range\n• (Range Narrowed) - More specific range\n• (Date Added) - More specific date/time\n• (Date Corrected) - Different date\n• (Margin Added) - Uncertainty/error margin specified\n• (Context Added) - Important context or conditions\n• (Updated) - More recent information\n\nMAJOR CORRECTIONS (claim needs significant correction):\n• (Actually) - Claim is misleading, reference shows different reality\n• (Opposite) - Reference directly contradicts the claim\n• (Corrected) - Factual error in claim\n• (Reversed) - Causation or direction is opposite\n• (Overstated) - Claim exaggerates what reference says\n• (Understated) - Claim minimizes what reference shows\n• (Incomplete) - Claim missing critical qualifications\n• (Misleading) - Claim technically true but misleading without context\n\nOTHER USEFUL PREFIXES:\n• (Clarified) - Ambiguous claim made specific\n• (Simplified) - Complex claim made clearer\n• (Specified) - General claim made more specific\n• (Generalized) - Overly specific claim broadened\n\nFeel free to create other appropriate 1-3 word prefixes that clearly describe the change. The prefix should immediately tell the reader what type of modification was made. NEVER return 'N/A' - always return usable claim text."
+      "notes": "CRITICAL PREFIX GUIDANCE - REQUIRED WHEN MODIFIED:\n\nWHEN CLAIM MATCHES: No prefix, return Statement text exactly as written.\n\nWHEN CLAIM IS MODIFIED: You MUST include a descriptive prefix. NO EXCEPTIONS. Use these prefix types:\n\nMINOR REFINEMENTS (claim is essentially correct):\n• (More Precise) - Exact numbers with margin of error added\n• (Qualified) - Additional context or specificity\n• (Range Expanded) - Broader range\n• (Range Narrowed) - More specific range\n• (Date Added) - More specific date/time\n• (Date Corrected) - Different date\n• (Margin Added) - Uncertainty/error margin specified\n• (Context Added) - Important context or conditions\n• (Updated) - More recent information\n\nMAJOR CORRECTIONS (claim needs significant correction):\n• (Actually) - Claim is misleading, reference shows different reality\n• (Opposite) - Reference directly contradicts the claim\n• (Corrected) - Factual error in claim\n• (Reversed) - Causation or direction is opposite\n• (Overstated) - Claim exaggerates what reference says\n• (Understated) - Claim minimizes what reference shows\n• (Incomplete) - Claim missing critical qualifications\n• (Misleading) - Claim technically true but misleading without context\n\nOTHER USEFUL PREFIXES:\n• (Clarified) - Ambiguous claim made specific\n• (Simplified) - Complex claim made clearer\n• (Specified) - General claim made more specific\n• (Generalized) - Overly specific claim broadened\n\nFeel free to create other appropriate 1-3 word prefixes that clearly describe the change. The prefix should immediately tell the reader what type of modification was made. CRITICAL: If you modify the claim text in ANY way, you MUST add a prefix. No prefix = unchanged claim only. NEVER return 'N/A' - always return usable claim text."
     },
     {
       "column": "Support Level",

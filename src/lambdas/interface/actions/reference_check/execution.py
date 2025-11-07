@@ -92,6 +92,48 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
+def _format_text_location(text_location: Optional[Dict[str, Any]]) -> str:
+    """
+    Format text location data into human-readable pipe-delimited string.
+
+    Args:
+        text_location: Dict with keys like start_char, end_char, paragraph_index,
+                      section_name, sentence_index, word_start, word_end
+
+    Returns:
+        Formatted string like "Section: Introduction | Para: 2 | Sentence: 3 | Words: 45-67 | Chars: 234-456"
+        or "Para: 2 | Sentence: 3 | Words: 45-67 | Chars: 234-456" if no section
+    """
+    if not text_location:
+        return ''
+
+    parts = []
+
+    # Add section if available
+    if text_location.get('section_name'):
+        parts.append(f"Section: {text_location['section_name']}")
+
+    # Add paragraph index (convert from 0-indexed to 1-indexed for readability)
+    if 'paragraph_index' in text_location:
+        para_num = text_location['paragraph_index'] + 1
+        parts.append(f"Para: {para_num}")
+
+    # Add sentence index if available
+    if 'sentence_index' in text_location:
+        sent_num = text_location['sentence_index'] + 1
+        parts.append(f"Sentence: {sent_num}")
+
+    # Add word range if available
+    if 'word_start' in text_location and 'word_end' in text_location:
+        parts.append(f"Words: {text_location['word_start']}-{text_location['word_end']}")
+
+    # Add character range (always include if start_char and end_char exist)
+    if 'start_char' in text_location and 'end_char' in text_location:
+        parts.append(f"Chars: {text_location['start_char']}-{text_location['end_char']}")
+
+    return ' | '.join(parts)
+
+
 def _get_websocket_client():
     """Get WebSocket client instance, handling errors gracefully."""
     try:
@@ -673,6 +715,7 @@ async def _compile_results(
                     'claim_id': claim.get('claim_id', ''),
                     'statement': claim.get('statement', ''),
                     'context': claim.get('context', ''),
+                    'text_location': _format_text_location(claim.get('text_location')),
                     'reference': claim.get('reference', ''),
                     'reference_description': '',  # Empty - to be filled during validation
                     'reference_says': '',  # Empty
@@ -1220,7 +1263,8 @@ async def execute_reference_check(
                 'csv_filename': result['csv_filename'],
                 'config_s3_key': result['config_s3_key'],
                 'session_id': session_id,
-                'summary': result['summary']
+                'summary': result['summary'],
+                'claims': [{'claim_id': c['claim_id'], 'statement': c['statement'], 'reference': c.get('reference', 'None')} for c in claims[:10]]
             })
 
         # Update runs database
