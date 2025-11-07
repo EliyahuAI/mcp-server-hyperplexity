@@ -156,6 +156,38 @@ class ReferenceParser:
         """
         references = {}
 
+        # Strategy 1: Try simple blank-line splitting first (Nature HTML format)
+        # Each citation is on its own line or paragraph
+        citation_blocks = re.split(r'\n\s*\n', section)
+        simple_refs = {}
+        ref_num = 1
+
+        for block in citation_blocks:
+            block = block.strip()
+            # Skip if too short or starts with "References"
+            if len(block) < 30 or block.lower().startswith('reference'):
+                continue
+
+            # Check if looks like a citation
+            has_year = bool(re.search(r'\(\d{4}[a-z]?\)|\b\d{4}[a-z]?\b', block))
+            starts_with_author = bool(re.match(r'^[A-Z][a-z]+[,\s]|^[A-Z][a-z]+\s+et al\.', block))
+            has_citation_markers = bool(re.search(r'pp\.|Vol\.|doi:|https?://|arXiv', block, re.IGNORECASE))
+
+            # Accept if has author start AND (year OR citation markers)
+            if block[0].isupper() and starts_with_author and (has_year or has_citation_markers):
+                ref_id = f"[{ref_num}]"
+                simple_refs[ref_id] = block
+                logger.info(f"[REF PARSER] Simple author-year {ref_id}: {block[:80]}...")
+                ref_num += 1
+
+        # If simple splitting worked well (got 3+ refs), use it
+        if len(simple_refs) >= 3:
+            logger.info(f"[REF PARSER] Author-year simple: Extracted {len(simple_refs)} single-line citations")
+            return simple_refs
+
+        # Strategy 2: More complex line-by-line parsing for multi-line citations (PDF format)
+        logger.info(f"[REF PARSER] Author-year complex: Trying multi-line citation parsing")
+
         # Split into lines and group into citations
         # Academic refs start with Author name and may span multiple lines
         lines = section.split('\n')
@@ -228,15 +260,15 @@ class ReferenceParser:
         references = {}
 
         # Look for References/Bibliography/Citations/Sources/Works Cited sections
-        # Enhanced patterns to be more aggressive with various formats
+        # Enhanced patterns - grab everything until next major section or end
         section_patterns = [
-            # Standard headers with colon or newline (very permissive end boundary)
-            r'(?:^|\n)(REFERENCES?)[\s:]*\n(.*?)(?=\n\n[A-Z\d]+\s+[A-Z]|\Z)',
-            r'(?:^|\n)(References?)[\s:]*\n(.*?)(?=\n\n[A-Z\d]+\s+[A-Z]|\Z)',
-            r'(?:^|\n)(BIBLIOGRAPHY)[\s:]*\n(.*?)(?=\n\n[A-Z\d]+\s+[A-Z]|\Z)',
-            r'(?:^|\n)(Bibliography)[\s:]*\n(.*?)(?=\n\n[A-Z\d]+\s+[A-Z]|\Z)',
-            r'(?:^|\n)(Citations?)[\s:]*\n(.*?)(?=\n\n[A-Z\d]+\s+[A-Z]|\Z)',
-            r'(?:^|\n)(Sources?)[\s:]*\n(.*?)(?=\n\n[A-Z\d]+\s+[A-Z]|\Z)',
+            # Greedy - take everything after References until obvious section break
+            r'(?:^|\n)(REFERENCES?)[\s:]*\n(.*?)(?=\n\n(?:Acknowledgements?|Funding|Author|Appendix|Supplementary|Data Availability|Code Availability|Ethics|Competing|Download)|\Z)',
+            r'(?:^|\n)(References?)[\s:]*\n(.*?)(?=\n\n(?:Acknowledgements?|Funding|Author|Appendix|Supplementary|Data Availability|Code Availability|Ethics|Competing|Download)|\Z)',
+            r'(?:^|\n)(BIBLIOGRAPHY)[\s:]*\n(.*?)(?=\n\n(?:Acknowledgements?|Funding|Author|Appendix)|\Z)',
+            r'(?:^|\n)(Bibliography)[\s:]*\n(.*?)(?=\n\n(?:Acknowledgements?|Funding|Author|Appendix)|\Z)',
+            r'(?:^|\n)(Citations?)[\s:]*\n(.*?)(?=\n\n(?:Acknowledgements?|Funding|Author)|\Z)',
+            r'(?:^|\n)(Sources?)[\s:]*\n(.*?)(?=\n\n(?:Acknowledgements?|Funding)|\Z)',
             r'(?:^|\n)(Works Cited)[\s:]+\n(.*?)(?=\n\n[A-Z][a-z]+:|\n\n#{1,6}\s|\Z)',
             r'(?:^|\n)(Further Reading)[\s:]+\n(.*?)(?=\n\n[A-Z][a-z]+:|\n\n#{1,6}\s|\Z)',
             r'(?:^|\n)(Literature Cited)[\s:]+\n(.*?)(?=\n\n[A-Z][a-z]+:|\n\n#{1,6}\s|\Z)',
