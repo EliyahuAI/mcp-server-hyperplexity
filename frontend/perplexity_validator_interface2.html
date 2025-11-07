@@ -12887,12 +12887,10 @@ Please provide any additional context, or simply proceed to generate your initia
             globalState.configStored = true;
             globalState.excelFileUploaded = true;
 
-            // Hide form and show success state (like email validation)
-            const formEl = document.getElementById(`${cardId}-form`);
+            // Keep form visible but show success state below it
             const successEl = document.getElementById(`${cardId}-success`);
             const successText = document.getElementById(`${cardId}-success-text`);
 
-            if (formEl) formEl.style.display = 'none';
             if (successEl) successEl.style.display = 'block';
             if (successText) {
                 // Format claim summary concisely
