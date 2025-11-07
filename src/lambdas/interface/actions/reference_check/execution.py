@@ -751,11 +751,36 @@ async def _compile_results(
         except Exception as e:
             logger.warning(f"[COMPILATION] Failed to save source text: {e}")
 
-        # Copy static validation config from local file to session (BEFORE session_info update)
+        # Copy static validation config from S3 base location or local file
+        config_s3_key = None
         try:
-            config_path = Path(__file__).parent / 'reference_check_validation_config.json'
-            with open(config_path, 'r') as f:
-                validation_config = json.load(f)
+            # Try to load from S3 base config location first
+            base_config_key = 'configs/reference_check_validation_config.json'
+            try:
+                response = storage_manager.s3_client.get_object(
+                    Bucket=storage_manager.bucket_name,
+                    Key=base_config_key
+                )
+                validation_config = json.loads(response['Body'].read())
+                logger.info(f"[COMPILATION] Loaded base config from S3: {base_config_key}")
+            except storage_manager.s3_client.exceptions.NoSuchKey:
+                # Fallback to local file
+                config_path = Path(__file__).parent / 'reference_check_validation_config.json'
+                with open(config_path, 'r') as f:
+                    validation_config = json.load(f)
+                logger.info(f"[COMPILATION] Loaded config from local file (S3 base not found)")
+
+                # Save to S3 base location for future use
+                try:
+                    storage_manager.s3_client.put_object(
+                        Bucket=storage_manager.bucket_name,
+                        Key=base_config_key,
+                        Body=json.dumps(validation_config, indent=2),
+                        ContentType='application/json'
+                    )
+                    logger.info(f"[COMPILATION] Saved base config to S3: {base_config_key}")
+                except Exception as save_error:
+                    logger.warning(f"[COMPILATION] Could not save base config to S3: {save_error}")
 
             # Load conversation state to get submitted text
             conversation_state = _load_conversation_state(storage_manager, email, session_id, conversation_id)
