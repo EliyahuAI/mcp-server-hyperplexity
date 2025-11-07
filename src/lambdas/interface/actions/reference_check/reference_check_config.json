@@ -22,12 +22,12 @@
         "max_web_searches": 3
     },
     "support_levels": [
-        "strongly_supported",
-        "supported",
-        "partially_supported",
-        "unclear",
-        "contradicted",
-        "inaccessible"
+        "Confirmed",
+        "Supported",
+        "Partial",
+        "Unclear",
+        "Contradicted",
+        "Inaccessible"
     ],
     "output": {
         "csv_columns": [

@@ -68,12 +68,12 @@ class ReferenceValidator:
                 "support_level": {
                     "type": "string",
                     "enum": [
-                        "strongly_supported",
-                        "supported",
-                        "partially_supported",
-                        "unclear",
-                        "contradicted",
-                        "inaccessible"
+                        "Confirmed",
+                        "Supported",
+                        "Partial",
+                        "Unclear",
+                        "Contradicted",
+                        "Inaccessible"
                     ]
                 },
                 "confidence": {

@@ -171,7 +171,11 @@ If there's a "References" or "Bibliography" section at the end, extract it as `r
 If a reference is mentioned but not clearly linked to a specific claim, include it in `reference_list` but don't assign it to any claim.
 
 ### Multiple References per Claim
-If a claim cites multiple references (e.g., "[1,2,3]"), create a single claim with all references listed.
+If a claim cites multiple references (e.g., "[1][2][3]" or "[1,2,3]"):
+- Create a single claim entry
+- List all references together in the reference field: "[1][2][3]"
+- Note in extraction that multiple sources are cited
+- Validator will access all cited sources and synthesize findings
 
 ### No References Found
 If no references exist but there are factual claims, proceed with extraction. These will be fact-checked using general web search.

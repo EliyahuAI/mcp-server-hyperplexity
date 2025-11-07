@@ -113,33 +113,31 @@
       "column": "Qualified Fact",
       "description": "The fact as stated by the reference (and other authoritative sources), written in the same format and style as the original claim. Use this when the reference supports the claim but with different numbers, dates, or qualifications.",
       "importance": "RESEARCH",
-      "format": "String (reformulated claim matching reference evidence, or 'N/A' if claim matches exactly or is contradicted)",
+      "format": "String (claim text with precise details from reference, unchanged if already accurate)",
       "examples": [
         "The Earth's average temperature has increased by 1.09°C (±0.13°C) since pre-industrial times",
         "Python was first released in February 1991",
         "Large language models can hallucinate facts in 12-23% of responses depending on model and task",
-        "N/A - claim matches reference exactly",
-        "N/A - claim is contradicted by reference",
-        "N/A - reference is inaccessible"
+        "There is no conclusive scientific evidence that Tylenol causes autism in children or when used during pregnancy"
       ],
       "search_group": 1,
-      "notes": "IMPORTANT: Write the qualified fact in the SAME format and style as the original claim (Statement column), but with corrections/qualifications based on what the reference actually says. Use this when: (1) Numbers differ slightly (claim says '1.1°C', reference says '1.09°C'), (2) Dates are more specific (claim says '1991', reference says 'February 1991'), (3) Claim needs qualification (claim says 'AI hallucinates 15-20%', reference shows 'range of 12-23% depending on model'). Return 'N/A' when: (1) Claim matches reference exactly (no correction needed), (2) Claim is contradicted (not a correction, it's wrong), (3) Reference is inaccessible (no data to qualify), (4) Support level is 'unclear' (insufficient information to qualify). For unreferenced claims (fact-check mode): Provide the fact as stated by authoritative sources found via web search."
+      "notes": "IMPORTANT: Always return the claim text. If the reference confirms the claim as stated, return the EXACT text from the Statement column unchanged. Only modify when the reference provides more precise details: (1) Numbers differ (claim '1.1°C' → qualified '1.09°C ±0.13°C'), (2) Dates more specific (claim '1991' → qualified 'February 1991'), (3) Range differs (claim '15-20%' → qualified '12-23% depending on model'). NEVER return 'N/A' - if claim matches reference exactly, return the claim unchanged. If contradicted, still return the claim (contradiction noted in Support Level). If inaccessible, return claim unchanged. The goal is to always have usable claim text in this column."
     },
     {
       "column": "Support Level",
       "description": "Assessment of how well the reference supports the claim - validate by accessing the reference and comparing its content to the claim",
       "importance": "RESEARCH",
-      "format": "String (one of: strongly_supported, supported, partially_supported, unclear, contradicted, inaccessible)",
+      "format": "String (one of: Confirmed, Supported, Partial, Unclear, Contradicted, Inaccessible)",
       "examples": [
-        "strongly_supported",
-        "supported",
-        "partially_supported",
-        "unclear",
-        "contradicted",
-        "inaccessible"
+        "Confirmed",
+        "Supported",
+        "Partial",
+        "Unclear",
+        "Contradicted",
+        "Inaccessible"
       ],
       "search_group": 1,
-      "notes": "CRITICAL: Access the reference using web search. Search strategies: (1) If URL provided, try to access directly. (2) If DOI/arXiv, search for 'doi:XXX' or 'arxiv:XXX'. (3) If academic citation, search for author names + year + title. (4) If general source, search for source name + relevant keywords. Then compare reference content to claim and assess: strongly_supported (reference explicitly confirms claim with exact or near-exact match), supported (reference generally agrees with claim's main point), partially_supported (reference supports some aspects but not all), unclear (reference is ambiguous, insufficient detail, or doesn't directly address the claim), contradicted (reference explicitly disagrees with the claim), inaccessible (cannot find or access the reference after reasonable search attempts)."
+      "notes": "CRITICAL: Access the reference using web search. If multiple references listed (e.g., [1][2][3]), access all cited sources and synthesize findings. Search strategies: (1) If URL provided, try to access directly. (2) If DOI/arXiv, search for 'doi:XXX' or 'arxiv:XXX'. (3) If academic citation, search for author names + year + title. (4) If numbered refs like [1], check if reference list provided at end of text. (5) If general source, search for source name + relevant keywords. Then compare reference content to claim and assess: Confirmed (reference explicitly confirms claim with exact match), Supported (reference generally agrees with claim), Partial (reference supports some aspects but not all), Unclear (reference is ambiguous or doesn't directly address claim), Contradicted (reference explicitly disagrees), Inaccessible (cannot find or access after reasonable attempts)."
     },
     {
       "column": "Confidence",
