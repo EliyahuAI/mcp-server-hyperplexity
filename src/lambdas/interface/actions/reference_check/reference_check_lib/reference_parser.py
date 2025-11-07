@@ -18,6 +18,31 @@ class ReferenceParser:
     def __init__(self):
         pass
 
+    def detect_content_type(self, text: str) -> str:
+        """Detect if content is AI-generated response or academic paper."""
+        ai_indicators = 0
+        academic_indicators = 0
+
+        # AI response indicators
+        if re.search(r"I'll|I've|Let me|Here's what|Based on|According to my", text, re.IGNORECASE):
+            ai_indicators += 2
+        if re.search(r"\*\*.*?\*\*", text):  # Bold markdown
+            ai_indicators += 1
+        if re.search(r"^###?\s+", text, re.MULTILINE):  # Markdown headings
+            ai_indicators += 1
+
+        # Academic paper indicators
+        if re.search(r"Abstract|Introduction|Methods|Results|Discussion|Conclusion", text):
+            academic_indicators += 2
+        if re.search(r"et al\.|doi:|PMID:", text):
+            academic_indicators += 2
+
+        if ai_indicators > academic_indicators + 1:
+            return "ai_response"
+        elif academic_indicators > ai_indicators + 1:
+            return "academic_paper"
+        return "mixed"
+
     def detect_reference_format(self, text: str, reference_map: Dict[str, str]) -> Tuple[str, float]:
         """
         Detect reference format to determine processing path.
@@ -27,13 +52,26 @@ class ReferenceParser:
             path_type: "inline_links" | "needs_parsing" | "not_found"
             confidence: 0.0-1.0 quality score
         """
-        # Check for numbered citations with inline URLs (AI output pattern)
-        # Pattern: [1] followed by URL anywhere in the reference
-        inline_pattern = r'\[(\d+)\]\s*(?:.*?)https?://[^\s<>]+'
-        inline_matches = re.findall(inline_pattern, text, re.MULTILINE)
+        content_type = self.detect_content_type(text)
+        logger.info(f"[REF PARSER] Content type: {content_type}")
 
-        if len(inline_matches) >= 3:
-            logger.info(f"[REF PARSER] Path A: Inline links detected ({len(inline_matches)} refs with URLs)")
+        # AI-specific patterns
+        # Perplexity: [1](https://url)
+        perplexity_pattern = r'\[(\d+)\]\(https?://[^\)]+\)'
+        perplexity_matches = re.findall(perplexity_pattern, text)
+
+        # ChatGPT/Claude: [1] at end with URL below or [Source][1]
+        inline_url_pattern = r'\[(\d+)\]\s*https?://[^\s<>\)]+'
+        inline_matches = re.findall(inline_url_pattern, text)
+
+        # End reference block: [1]: https://
+        end_ref_pattern = r'\[(\d+)\][:]\s*https?://[^\s<>]+'
+        end_ref_matches = re.findall(end_ref_pattern, text)
+
+        total_inline = len(perplexity_matches) + len(inline_matches) + len(end_ref_matches)
+
+        if total_inline >= 3:
+            logger.info(f"[REF PARSER] Path A: Inline links ({total_inline} refs, type: {content_type})")
             return "inline_links", 1.0
 
         # Check for clean reference section with URLs/DOIs
@@ -239,35 +277,43 @@ class ReferenceParser:
 
         # Multiple patterns to handle various formats
         patterns = [
+            # Perplexity format: [1](https://url) - markdown link
+            (r'\[(\d+)\]\((https?://[^\)]+)\)', lambda m: (m.group(1), m.group(2))),
+            # ChatGPT end format: [1]: https://url with optional title
+            (r'\[(\d+)\]:\s*(https?://[^\s<>]+)(?:\s+"([^"]+)")?', lambda m: (m.group(1), f"{m.group(2)} {m.group(3) if m.group(3) else ''}".strip())),
             # [1] followed by URL (possibly with text in between, up to 300 chars)
-            r'\[(\d+)\]\s*(?:.{0,300}?)(https?://[^\s<>)\]]+)',
+            (r'\[(\d+)\]\s*(?:.{0,300}?)(https?://[^\s<>)\]]+)', lambda m: (m.group(1), m.group(2))),
             # [1] followed by DOI
-            r'\[(\d+)\]\s*(?:.{0,200}?)(doi:[\d.]+/[^\s]+)',
+            (r'\[(\d+)\]\s*(?:.{0,200}?)(doi:[\d.]+/[^\s]+)', lambda m: (m.group(1), m.group(2))),
             # [1] followed by arXiv
-            r'\[(\d+)\]\s*(?:.{0,200}?)(arxiv:[\d.]+)',
+            (r'\[(\d+)\]\s*(?:.{0,200}?)(arxiv:[\d.]+)', lambda m: (m.group(1), m.group(2))),
             # (1) format with URL
-            r'\((\d+)\)\s*(?:.{0,300}?)(https?://[^\s<>)\]]+)',
+            (r'\((\d+)\)\s*(?:.{0,300}?)(https?://[^\s<>)\]]+)', lambda m: (m.group(1), m.group(2))),
             # Numbered format with URL: 1. URL
-            r'(?:^|\n)(\d+)\.\s+(?:.{0,300}?)(https?://[^\s<>)\]]+)',
+            (r'(?:^|\n)(\d+)\.\s+(?:.{0,300}?)(https?://[^\s<>)\]]+)', lambda m: (m.group(1), m.group(2))),
         ]
 
-        for pattern in patterns:
+        for pattern, extractor in patterns:
             matches = re.finditer(pattern, text, re.IGNORECASE | re.DOTALL)
             for match in matches:
-                ref_num = match.group(1)
-                url = match.group(2)
+                ref_num, citation = extractor(match)
                 ref_id = f"[{ref_num}]"
 
-                # Extract more context around the URL (up to 300 chars before URL)
-                start_pos = max(0, match.start() - 300)
-                end_pos = min(len(text), match.end() + 150)
-                context = text[start_pos:end_pos]
-
-                # Try to extract full citation from context
-                full_citation = self._extract_full_citation_from_context(ref_num, context)
+                # For Perplexity format [1](url), the citation is just the URL
+                # For others, try to get more context
+                if '(' not in pattern or ')' not in pattern:
+                    # Not Perplexity format, try to get more context
+                    start_pos = max(0, match.start() - 300)
+                    end_pos = min(len(text), match.end() + 150)
+                    context = text[start_pos:end_pos]
+                    full_citation = self._extract_full_citation_from_context(ref_num, context)
+                else:
+                    # Perplexity format - just use the URL
+                    full_citation = citation
 
                 if ref_id not in references:  # Don't override better extractions
                     references[ref_id] = full_citation
+                    logger.info(f"[REF PARSER] URL pair: {ref_id} → {full_citation[:80]}...")
 
         return references
 
