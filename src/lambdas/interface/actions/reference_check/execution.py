@@ -123,7 +123,8 @@ def send_execution_progress(
         phase: Current phase (extraction, validation, compilation)
         **kwargs: Additional fields to include in message
     """
-    if not websocket_client or not session_id:
+    ws_client = _get_websocket_client()
+    if not ws_client or not session_id:
         return
 
     try:
