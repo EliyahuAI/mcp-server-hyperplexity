@@ -68,6 +68,11 @@ def handle(event, context):
                     event.get('body', ''), content_type, event.get('isBase64Encoded', False)
                 )
 
+                # Check for PDF conversion action
+                if form_data.get('action') == 'convertPdfToMarkdown':
+                    pdf_converter = lazy_import('interface_lambda.actions.reference_check', 'pdf_converter')
+                    return pdf_converter.handle_pdf_multipart(files, form_data, context)
+
                 # If generation_mode is present, route to config generation
                 if 'generation_mode' in form_data:
                     generate_config_unified = lazy_import('interface_lambda.actions', 'generate_config_unified')

@@ -13,7 +13,6 @@ from .conversation import (
     # handle_reference_check_continue_async,  # Future: iterative refinement
 )
 
-
 # Action routing dictionary
 REFERENCE_CHECK_ACTIONS: Dict[str, Callable] = {
     'startReferenceCheck': handle_reference_check_start_async,

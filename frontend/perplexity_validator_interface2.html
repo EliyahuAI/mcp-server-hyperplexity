@@ -12703,8 +12703,15 @@ Please provide any additional context, or simply proceed to generate your initia
             const content = `
                 <div id="${cardId}-form">
                     <div id="${cardId}-input-container">
+                        <div style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="file" id="${cardId}-pdf-input" accept=".pdf" style="display: none;">
+                            <button id="${cardId}-pdf-upload-btn" class="btn-secondary" style="padding: 0.5rem 1rem; font-size: var(--font-size-small);">
+                                Upload PDF
+                            </button>
+                            <span id="${cardId}-pdf-status" style="font-size: var(--font-size-small); color: #6B7280;"></span>
+                        </div>
                         <textarea id="${cardId}-input" class="reference-check-textarea"
-                            placeholder="Paste AI output or literature with citations to verify..."
+                            placeholder="Paste AI output or literature with citations to verify... or upload a PDF above"
                             maxlength="96000"
                             rows="12"
                             style="width: 100%; resize: vertical; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 0.75rem; font-family: var(--font-family); font-size: var(--font-size-base); line-height: 1.5; color: var(--text-color); box-shadow: inset 0 1px 2px rgba(0,0,0,0.04); transition: var(--transition);"></textarea>
@@ -12753,7 +12760,96 @@ Please provide any additional context, or simply proceed to generate your initia
                 ]
             });
 
+            // Setup PDF upload handlers
+            setTimeout(() => {
+                const pdfInput = document.getElementById(`${cardId}-pdf-input`);
+                const pdfUploadBtn = document.getElementById(`${cardId}-pdf-upload-btn`);
+                const pdfStatus = document.getElementById(`${cardId}-pdf-status`);
+
+                if (pdfUploadBtn && pdfInput) {
+                    // Clicking button opens file picker
+                    pdfUploadBtn.addEventListener('click', () => {
+                        pdfInput.click();
+                    });
+
+                    // Handle file selection
+                    pdfInput.addEventListener('change', async (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            await handlePdfUpload(cardId, file);
+                        }
+                    });
+                }
+            }, 100);
+
             return card;
+        }
+
+        // Handle PDF upload and conversion to markdown
+        async function handlePdfUpload(cardId, file) {
+            const pdfStatus = document.getElementById(`${cardId}-pdf-status`);
+            const textarea = document.getElementById(`${cardId}-input`);
+            const messagesDiv = document.getElementById(`${cardId}-messages`);
+
+            try {
+                // Validate file type
+                if (!file.name.toLowerCase().endsWith('.pdf')) {
+                    showMessage(messagesDiv.id, 'Please select a PDF file', 'error');
+                    return;
+                }
+
+                // Show uploading status
+                if (pdfStatus) {
+                    pdfStatus.textContent = 'Converting PDF...';
+                    pdfStatus.style.color = '#6B7280';
+                }
+
+                // Create FormData for upload (following Excel upload pattern)
+                const formData = new FormData();
+                formData.append('pdf_file', file);
+                formData.append('action', 'convertPdfToMarkdown');
+
+                // Upload and convert
+                const response = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success && data.markdown_text) {
+                    // Populate textarea with markdown
+                    if (textarea) {
+                        textarea.value = data.markdown_text;
+                    }
+
+                    // Show success status
+                    if (pdfStatus) {
+                        pdfStatus.textContent = `[SUCCESS] Converted ${data.page_count} pages from ${file.name}`;
+                        pdfStatus.style.color = 'var(--primary-color)';
+                    }
+
+                    showMessage(messagesDiv.id,
+                        `PDF converted successfully (${data.page_count} pages)`,
+                        'success'
+                    );
+                } else {
+                    throw new Error(data.message || 'Failed to convert PDF');
+                }
+
+            } catch (error) {
+                console.error('[PDF_UPLOAD] Error:', error);
+
+                if (pdfStatus) {
+                    pdfStatus.textContent = '[ERROR] Conversion failed';
+                    pdfStatus.style.color = '#EF4444';
+                }
+
+                showMessage(messagesDiv.id,
+                    `Error converting PDF: ${error.message}`,
+                    'error'
+                );
+            }
         }
 
         // Start reference check
