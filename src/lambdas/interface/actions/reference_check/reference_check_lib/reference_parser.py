@@ -693,10 +693,14 @@ class ReferenceParser:
             if ref_id in reference_map:
                 citation = reference_map[ref_id]
 
-                # Format as "[1] url" or "[1] citation text"
-                # Excel auto-detects and makes URLs clickable
-                # Markdown auto-linkifies URLs
-                formatted = f"{ref_id} {citation}"
+                # Clean up URL: remove https:// prefix for cleaner display
+                if re.match(r'https?://', citation):
+                    clean_citation = re.sub(r'^https?://', '', citation)
+                else:
+                    clean_citation = citation
+
+                # Format as "[1] domain.com/path" or "[1] citation text"
+                formatted = f"{ref_id} {clean_citation}"
                 resolved_refs.append(formatted)
                 logger.info(f"[REF PARSER] Resolved {ref_id}")
             else:
