@@ -12863,16 +12863,7 @@ Please provide any additional context, or simply proceed to generate your initia
             if (!cardId) return;
 
             // Complete thinking indicator
-            completeThinkingInCard(cardId, 'Reference check complete');
-
-            // Show summary message
-            if (data.summary) {
-                const summary = data.summary;
-                const total = summary.total_claims || 0;
-                const supportedCount = (summary.strongly_supported || 0) + (summary.supported || 0);
-                const summaryText = `Analyzed ${total} claim${total !== 1 ? 's' : ''} - ${supportedCount} supported`;
-                showMessage(`${cardId}-messages`, summaryText, 'success');
-            }
+            completeThinkingInCard(cardId, 'Extraction complete');
 
             // Store data in global state (like table_maker does)
             if (data.csv_s3_key) globalState.csvS3Key = data.csv_s3_key;
