@@ -290,23 +290,25 @@ async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any) -> D
 
             # Validate markdown size using config limits
             max_tokens = config['text_limits']['max_tokens']
-            max_words = config['text_limits']['max_words']
             tokens_per_word = config['text_limits']['tokens_per_word']
+
+            # Calculate max words from tokens (3 words = 4 tokens)
+            max_words = int(max_tokens / tokens_per_word)
 
             word_count = len(markdown_text.split())
             estimated_tokens = int(word_count * tokens_per_word)
 
-            if word_count > max_words or estimated_tokens > max_tokens:
-                logger.warning(f"[PDF_CONVERT] Markdown too large: {word_count} words, ~{estimated_tokens} tokens (max: {max_words} words, {max_tokens} tokens)")
+            if estimated_tokens > max_tokens:
+                logger.warning(f"[PDF_CONVERT] Markdown too large: {word_count} words, ~{estimated_tokens} tokens (max: {max_tokens} tokens)")
                 websocket_client.send_to_session(session_id, {
                     'type': 'pdf_conversion_error',
                     'pdf_id': pdf_id,
                     'error': 'file_too_large',
-                    'message': f'PDF converted to {word_count} words (max {max_words}). Please use a smaller PDF.'
+                    'message': f'PDF converted to ~{estimated_tokens} tokens (max {max_tokens}). Please use a smaller PDF.'
                 })
-                return {'status': 'error', 'error': 'file_too_large', 'word_count': word_count}
+                return {'status': 'error', 'error': 'file_too_large', 'estimated_tokens': estimated_tokens}
 
-            logger.info(f"[PDF_CONVERT] Size validation passed: {word_count} words, ~{estimated_tokens} tokens")
+            logger.info(f"[PDF_CONVERT] Size validation passed: {word_count} words, ~{estimated_tokens} tokens (max {max_tokens})")
 
             # Save markdown to S3 (results folder, not pdfs subfolder)
             domain = email.split('@')[1] if '@' in email else 'unknown'

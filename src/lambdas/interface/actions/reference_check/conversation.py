@@ -36,19 +36,21 @@ def _validate_text_size(text: str) -> Tuple[bool, Dict[str, Any]]:
     Validate that submitted text is within token limits.
 
     Uses conservative estimate: 1.33 tokens per word (4 tokens per 3 words)
-    Max: 32,000 tokens (~24,000 words)
+    Max tokens specified in config, max words calculated.
 
     Args:
         text: The submitted text to validate
 
     Returns:
         Tuple of (is_valid, details_dict)
-        details_dict contains: word_count, estimated_tokens, max_words, max_tokens
+        details_dict contains: word_count, estimated_tokens, max_tokens
     """
     # Get limits from config
     max_tokens = CONFIG['text_limits']['max_tokens']
-    max_words = CONFIG['text_limits']['max_words']
     tokens_per_word = CONFIG['text_limits']['tokens_per_word']
+
+    # Calculate max words from tokens (3 words = 4 tokens)
+    max_words = int(max_tokens / tokens_per_word)
 
     # Count words (simple whitespace split)
     word_count = len(text.split())
@@ -56,14 +58,14 @@ def _validate_text_size(text: str) -> Tuple[bool, Dict[str, Any]]:
     # Estimate tokens
     estimated_tokens = int(word_count * tokens_per_word)
 
-    # Check if within limits
-    is_valid = word_count <= max_words and estimated_tokens <= max_tokens
+    # Check if within limits (token-based validation)
+    is_valid = estimated_tokens <= max_tokens
 
     details = {
         'word_count': word_count,
         'estimated_tokens': estimated_tokens,
-        'max_words': max_words,
         'max_tokens': max_tokens,
+        'max_words': max_words,
         'is_valid': is_valid
     }
 

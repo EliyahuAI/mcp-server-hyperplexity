@@ -1,9 +1,8 @@
 {
     "text_limits": {
         "max_tokens": 60000,
-        "max_words": 45000,
         "tokens_per_word": 1.33,
-        "error_message": "Text is too large to process. Please limit to {max_words} words or less."
+        "error_message": "Text is too large to process. Please limit to approximately {max_words} words."
     },
     "extraction": {
         "model": "claude-sonnet-4-5",
