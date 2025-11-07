@@ -163,6 +163,11 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
                 # Field not in validation results - show N/A
                 display_value = "N/A"
             
+            # Special handling for Reference column - convert newlines to <br>
+            if field_name == 'Reference' and '\n' in str(display_value):
+                # Convert newlines to <br> for markdown rendering
+                display_value = str(display_value).replace('\n', '<br>')
+
             # Truncate long values, but preserve URLs as clickable links
             if len(str(display_value)) > 29:
                 # Check if the value contains a URL
