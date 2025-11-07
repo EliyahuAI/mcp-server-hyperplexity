@@ -115,12 +115,12 @@ For each claim, record its location in the original text with the following fiel
  0            13 (start_char for "This")
 ```
 
-This data will be formatted as a human-readable pipe-delimited string in the final CSV output.
+This data will be formatted as a human-readable semicolon-delimited string in the final CSV output.
 
 **Example formats**:
-- With section: `"Section: Introduction | Para: 2 | Sentence: 3 | Words: 45-67 | Chars: 234-456"`
-- Without section: `"Para: 2 | Sentence: 3 | Words: 45-67 | Chars: 234-456"`
-- Minimal: `"Para: 2 | Chars: 234-456"`
+- With section: `"Section: Introduction; Para: 2; Sentence: 3; Words: 45-67; Chars: 234-456"`
+- Without section: `"Para: 2; Sentence: 3; Words: 45-67; Chars: 234-456"`
+- Minimal: `"Para: 2; Chars: 234-456"`
 
 IMPORTANT: Always provide at minimum **start_char**, **end_char**, and **paragraph_index**. Additional fields are helpful but optional.
 
