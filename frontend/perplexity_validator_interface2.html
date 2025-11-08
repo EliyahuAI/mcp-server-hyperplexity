@@ -12806,7 +12806,12 @@ Please provide any additional context, or simply proceed to generate your initia
                 formData.append('pdf_file', file);
                 formData.append('action', 'convertPdfToMarkdown');
                 formData.append('email', globalState.email);
-                formData.append('session_id', globalState.sessionId);
+                // Only append session_id if it exists and is not null/undefined
+                if (globalState.sessionId) {
+                    formData.append('session_id', globalState.sessionId);
+                } else {
+                    formData.append('session_id', '');  // Empty string triggers generation on backend
+                }
 
                 // Upload PDF
                 const response = await fetch(`${API_BASE}/upload`, {
