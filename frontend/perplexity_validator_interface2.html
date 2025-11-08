@@ -12917,19 +12917,12 @@ Please provide any additional context, or simply proceed to generate your initia
             // Store submitted text
             referenceCheckState.submittedText = submittedText;
 
-            // Hide the form and buttons, show green checkmark
-            const formEl = document.getElementById(`${cardId}-form`);
-            const successEl = document.getElementById(`${cardId}-success`);
-            const successTextEl = document.getElementById(`${cardId}-success-text`);
+            // Hide buttons
             const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-
-            if (formEl) formEl.style.display = 'none';
             if (buttonsContainer) buttonsContainer.style.display = 'none';
 
-            if (successEl && successTextEl) {
-                successTextEl.textContent = 'Text submitted. Extracting claims and checking references...';
-                successEl.style.display = 'block';
-            }
+            // Show thinking indicator with progress (like table maker)
+            showThinkingInCard(cardId, 'Text submitted. Extracting claims and checking references...', true);
 
             // Register WebSocket handler
             registerCardHandler(cardId, ['reference_check_progress', 'reference_check_complete', 'reference_check_error'], (data) => {
