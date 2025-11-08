@@ -12919,7 +12919,7 @@ Please provide any additional context, or simply proceed to generate your initia
             }
             else if (message.type === 'pdf_conversion_complete') {
                 // PDF converted and claim extraction started automatically
-                updateThinkingInCard(cardId, `${filename} converted. Extracting claims from text...`);
+                updateThinkingInCard(cardId, `${filename} converted. Extracting claims from text (this may take a minute)...`);
 
                 // Store conversation ID for reference check tracking
                 referenceCheckState.conversationId = message.conversation_id;
@@ -12960,7 +12960,7 @@ Please provide any additional context, or simply proceed to generate your initia
             referenceCheckState.submittedText = submittedText;
 
             // Update thinking indicator (already shown by callback as "Submitting text...")
-            updateThinkingInCard(cardId, 'Text submitted. Extracting claims from text...');
+            updateThinkingInCard(cardId, 'Text submitted. Extracting claims from text (this may take a minute)...');
 
             // Register WebSocket handler
             registerCardHandler(cardId, ['reference_check_progress', 'reference_check_complete', 'reference_check_error'], (data) => {
