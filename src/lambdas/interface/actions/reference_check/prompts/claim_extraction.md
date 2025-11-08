@@ -289,17 +289,24 @@ Provide a concise, descriptive name for this reference check table based on the 
   - Use them as provided
   - Do NOT include `reference_list` in your output
 
-**STEP 2: MAP CITATIONS TO YOUR NUMBERED REFERENCES**
+**STEP 2: MAP CITATIONS TO NUMBERED REFERENCES**
 - Find each citation in the text: `(Firth et al., 2019)`, `(Satici et al., 2023)`, etc.
 - Match them to your numbered references: `(Firth et al., 2019)` → `[1]`
 - In claim `reference` fields: Use ONLY the number: `[1]`, NOT `(Firth et al., 2019)`
 
+**BACKUP MAPPING RULE** (if provided references lack numbers):
+- If the provided reference list contains URLs/citations WITHOUT numbered format like [1], [2]:
+  - Use the provided references directly in claim `reference` fields
+  - Example: If provided ref is just "https://example.com/paper", use that in claim reference field
+  - This is rare but can happen with inline citations
+
 **OATH REMINDER**:
-Remember your oath above! If provided parsed references exist and are usable:
-- Trust them - they are sufficient
-- Do NOT create your own reference_list
-- Use the provided numbers [1], [2] directly in claims
-- Convert author-year citations to the provided numbers
+Remember your oath above! If provided parsed references exist:
+- Trust them - they are sufficient to identify citations
+- Do NOT create your own reference_list (waste of effort!)
+- If refs have numbers [1], [2]: Use those numbers in claims
+- If refs don't have numbers: Use the provided refs directly in claims
+- Convert author-year citations to the provided reference format (numbered or direct)
 
 **OUTPUT STRUCTURE** (reference_list comes FIRST before claims):
 
