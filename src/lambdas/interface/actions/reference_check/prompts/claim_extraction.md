@@ -97,27 +97,38 @@ Examples:
 
 ## REFERENCE FORMATS TO RECOGNIZE
 
-Look for these citation patterns:
+Look for these citation patterns in the text:
 
 **Numbered citations:**
 - `[1]`, `[2]`, `(1)`, `(2)`
 - Reference list typically at end: "[1] Author, A. (2024). Title..."
+- **In claim `reference` field**: Use just the number: `[1]`, `[2]`, etc.
 
 **Author-date citations:**
 - `[Smith et al., 2024]`
 - `(Johnson, 2023)`
 - `Smith and Jones (2024)`
+- **In claim `reference` field**: Convert to numbered format: `[1]`, `[2]`, etc. (not the author-year text)
+- Provide mapping in `reference_list`
 
 **Superscript citations:**
 - `fact¹`, `statement²`
+- **In claim `reference` field**: Convert to `[1]`, `[2]`, etc.
 
 **Inline references:**
 - "According to Smith (2024)..."
 - "A recent Nature study found..."
+- **In claim `reference` field**: Convert to `[1]`, `[2]`, etc. if you can identify the source
 
 **DOI/URL references:**
 - `doi:10.1234/example`
 - `https://arxiv.org/abs/2401.12345`
+- **In claim `reference` field**: Store the DOI/URL directly OR assign a number and include in `reference_list`
+
+**CRITICAL**: In the claim's `reference` field, ALWAYS use the simplest format:
+- Numbered refs: Just the number(s): `[1]`, `[2][3]`, etc.
+- The system will automatically convert `[1]` → `[1] FirstAuthor et al. (Year)` later
+- Do NOT pre-format with author/year in the claim reference field
 
 ## REFERENCE DETAILS TO EXTRACT
 
@@ -322,10 +333,16 @@ If a claim cites multiple references (e.g., "[1][2][3]" or "[1,2,3]"):
 ### Author-Year Citations (Academic Papers)
 If the text uses author-year format like `(Smith et al., 2023)` instead of numbered citations:
 - Extract the full reference list from the end of the document (usually under "References" or "Bibliography")
-- Convert to numbered format: `[1]`, `[2]`, etc.
-- In your `reference_list`, preserve the original citation format from the reference section
-- In claim `reference` fields, use the corresponding numbers: `[1]`, `[2]`, etc.
-- Example: If text says "(Firth et al., 2019)", and the reference section has "Firth, J. et al. (2019). Title...", assign it `[1]` and include full citation in `reference_list`
+- Assign sequential numbers: `[1]`, `[2]`, etc.
+- **In claim `reference` fields**: Use ONLY the reference number (e.g., `[1]`, `[2]`)
+  - The system will later convert this to short format like `[1] Smith et al. (2023)`
+  - Do NOT include author names or years in the claim reference field
+  - Just the number: `[1]` not `[1] Smith et al. (2023)`
+- **In `reference_list`**: Include full citations from the reference section
+  - These are used as the source for later short-form conversion
+- Example: If text says "(Firth et al., 2019)":
+  - In claim: `"reference": "[1]"`
+  - In reference_list: `{"ref_id": "[1]", "full_citation": "Firth, J. et al. (2019). The online brain: how the internet may be changing our cognition. World psychiatry, 18(2):119–129."}`
 
 ### No References Found
 If no references exist but there are factual claims, proceed with extraction. These will be fact-checked using general web search.
