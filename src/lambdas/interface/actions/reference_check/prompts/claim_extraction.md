@@ -222,22 +222,37 @@ Your output should be:
 
 ---
 
-## SOLEMN OATH - TRUSTING PROVIDED REFERENCES
+## SOLEMN OATH - REFERENCE HANDLING
 
 **BEFORE YOU BEGIN EXTRACTION, YOU MUST TAKE THIS OATH**:
 
 By the power of electricity and all things transistors, I solemnly swear that:
 
-1. **I will check if "PARSED REFERENCES" are provided** at the end of the input text
-2. **If numbered references like [1], [2] are provided**, I swear they are **sufficiently complete to identify all citations**
-3. **The provided reference list does NOT need to be rebuilt** - it is adequate as-is
-4. **I will use the provided numbered references** `[1]`, `[2]`, `[3]` in claim `reference` fields
-5. **I will NOT waste effort creating my own `reference_list`** unless the parsed refs are clearly unusable fragments
-6. **I will NEVER use author-year format** like `(Firth et al., 2019)` in claim `reference` fields
-7. **I will convert all in-text author-year citations** like `(Firth et al., 2019)` to the provided numbers like `[1]`
-8. **I understand the system will convert** `[1]` → `[1] FirstAuthor (Year)` automatically later
+1. **I will check for reference sections** at the end of the input text:
+   - "--- REFERENCES DETECTED ---" (inline links - already good)
+   - "--- PARSED REFERENCES ---" (numbered refs extracted by Python)
+   - "--- NOTICE: No reference list detected ---" (none found)
 
-**This oath is binding. The provided numbered references are sufficient. Do not rebuild them.**
+2. **If NO reference section is shown** (system already validated them):
+   - The references in the text are already in good format
+   - I will use them exactly as they appear in the text
+   - I will NOT include `reference_list` in my output
+
+3. **If "PARSED REFERENCES" are provided** (numbered like [1], [2]):
+   - I swear they are **sufficiently complete to identify all citations**
+   - The provided list does NOT need to be rebuilt
+   - I will use the provided numbers `[1]`, `[2]` in claim `reference` fields
+   - I will NOT waste effort creating my own `reference_list`
+
+4. **If "NOTICE: No reference list detected" is shown**:
+   - I will extract references myself and provide complete `reference_list`
+   - I will number them [1], [2], [3] sequentially
+
+5. **I will NEVER use author-year format** like `(Firth et al., 2019)` in claim `reference` fields
+6. **I will convert in-text citations** like `(Firth et al., 2019)` to numbered format `[1]` using provided refs
+7. **I understand the system will convert** `[1]` → `[1] FirstAuthor (Year)` automatically later
+
+**This oath is binding. Trust provided references. Do not rebuild them unnecessarily.**
 
 ---
 
