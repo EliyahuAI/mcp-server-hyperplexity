@@ -13072,9 +13072,6 @@ Please provide any additional context, or simply proceed to generate your initia
             }
             if (!cardId) return;
 
-            // Complete thinking indicator
-            completeThinkingInCard(cardId, 'Extraction complete');
-
             // Store data in global state (like table_maker does)
             if (data.csv_s3_key) globalState.csvS3Key = data.csv_s3_key;
             if (data.config_s3_key) globalState.configS3Key = data.config_s3_key;
@@ -13088,56 +13085,33 @@ Please provide any additional context, or simply proceed to generate your initia
             globalState.configStored = true;
             globalState.excelFileUploaded = true;
 
-            // Show claims info box (like table_maker's discovered rows)
-            if (data.claims && data.claims.length > 0) {
-                showClaimsInfoBox(cardId, data.claims);
+            // Update progress indicator with completion message
+            const total = data.summary.total_claims;
+            const withRefs = data.summary.claims_with_references;
+            const withoutRefs = data.summary.claims_without_references;
+
+            let claimSummary;
+            if (withoutRefs === 0) {
+                claimSummary = `${total} claim${total !== 1 ? 's' : ''} (all referenced)`;
+            } else if (withRefs === 0) {
+                claimSummary = `${total} claim${total !== 1 ? 's' : ''} (none referenced)`;
+            } else {
+                claimSummary = `${total} claim${total !== 1 ? 's' : ''} (${withRefs} referenced, ${withoutRefs} not)`;
             }
 
-            // Keep form visible but show success state below it
-            const successEl = document.getElementById(`${cardId}-success`);
-            const successText = document.getElementById(`${cardId}-success-text`);
+            // Update thinking indicator to show extraction complete with summary
+            updateThinkingInCard(cardId, `Extraction complete! Found ${claimSummary}. Opening preview...`);
 
-            if (successEl) successEl.style.display = 'block';
-            if (successText) {
-                // Format claim summary concisely
-                const total = data.summary.total_claims;
-                const withRefs = data.summary.claims_with_references;
-                const withoutRefs = data.summary.claims_without_references;
-
-                let claimSummary;
-                if (withoutRefs === 0) {
-                    claimSummary = `${total} claim${total !== 1 ? 's' : ''} (all referenced)`;
-                } else if (withRefs === 0) {
-                    claimSummary = `${total} claim${total !== 1 ? 's' : ''} (none referenced)`;
-                } else {
-                    claimSummary = `${total} claim${total !== 1 ? 's' : ''} (${withRefs} referenced, ${withoutRefs} not)`;
-                }
-
-                const previewCount = Math.min(total, 3);
-                successText.innerHTML = `${claimSummary}. Starting preview of the first ${previewCount} claim${previewCount !== 1 ? 's' : ''}/row${previewCount !== 1 ? 's' : ''}...`;
-            }
-
-            // Update status badge
-            const card = document.getElementById(cardId);
-            if (card) {
-                const statusBadge = card.querySelector('.status-badge');
-                if (statusBadge) {
-                    statusBadge.className = 'status-badge completed';
-                    statusBadge.innerHTML = '<span>Complete</span>';
-                }
-            }
-
-            // Complete thinking indicator
-            completeThinkingInCard(cardId, 'Extraction complete!');
-
-            // Hide buttons
-            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-            if (buttonsContainer) buttonsContainer.style.display = 'none';
-
-            // Auto-trigger preview (like table_maker does)
+            // Auto-trigger preview after brief delay (indicator stays visible until preview opens)
             setTimeout(() => {
-                globalState.activePreviewCard = null;
-                createPreviewCard();
+                // Complete thinking indicator just before preview
+                completeThinkingInCard(cardId, 'Opening preview...');
+
+                // Open preview card
+                setTimeout(() => {
+                    globalState.activePreviewCard = null;
+                    createPreviewCard();
+                }, 500);
             }, 1000);
         }
 
