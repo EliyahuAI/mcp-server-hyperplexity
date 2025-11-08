@@ -76,8 +76,8 @@ def handle_pdf_multipart(files: Dict[str, Any], form_data: Dict[str, str], conte
                 'message': 'Email address is required'
             })
 
-        # Generate session ID if not provided (same as text submission)
-        if not session_id:
+        # Generate session ID if not provided or is 'null' string (same as text submission)
+        if not session_id or session_id == 'null':
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             random_hex = uuid.uuid4().hex[:8]
             session_id = f"session_{timestamp}_{random_hex}"
