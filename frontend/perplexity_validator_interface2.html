@@ -12832,19 +12832,12 @@ Please provide any additional context, or simply proceed to generate your initia
                         localStorage.setItem('sessionId', data.session_id);
                     }
 
-                    // Hide the form and show green checkmark success state
-                    const formEl = document.getElementById(`${cardId}-form`);
-                    const successEl = document.getElementById(`${cardId}-success`);
-                    const successTextEl = document.getElementById(`${cardId}-success-text`);
+                    // Hide buttons
                     const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-
-                    if (formEl) formEl.style.display = 'none';
                     if (buttonsContainer) buttonsContainer.style.display = 'none';
 
-                    if (successEl && successTextEl) {
-                        successTextEl.textContent = `${file.name} successfully uploaded. Reading PDF...`;
-                        successEl.style.display = 'block';
-                    }
+                    // Show thinking indicator with progress (like table maker)
+                    showThinkingInCard(cardId, `${file.name} successfully uploaded. Reading PDF...`, true);
 
                     // Connect to WebSocket to receive conversion result
                     connectToSession(globalState.sessionId);
@@ -12870,21 +12863,21 @@ Please provide any additional context, or simply proceed to generate your initia
 
         // Handle PDF conversion WebSocket messages
         function handlePdfConversionMessage(cardId, message, filename) {
-            const successTextEl = document.getElementById(`${cardId}-success-text`);
-
             console.log('[PDF_CONVERSION] Received message:', message.type);
 
             if (message.type === 'pdf_conversion_progress') {
-                // Update progress in success text
-                if (successTextEl) {
-                    successTextEl.textContent = message.message || 'Converting PDF...';
+                // Update progress indicator (like table maker)
+                const progressMsg = message.message || 'Converting PDF...';
+                updateThinkingInCard(cardId, progressMsg);
+
+                // Update progress bar if percentage provided
+                if (message.progress !== undefined) {
+                    updateThinkingProgress(cardId, message.progress, progressMsg);
                 }
             }
             else if (message.type === 'pdf_conversion_complete') {
                 // PDF converted and reference check started automatically
-                if (successTextEl) {
-                    successTextEl.textContent = `${filename} successfully uploaded. Extracting claims and checking references...`;
-                }
+                updateThinkingInCard(cardId, `${filename} converted. Extracting claims and checking references...`);
 
                 // Store conversation ID for reference check tracking
                 referenceCheckState.conversationId = message.conversation_id;
@@ -12902,10 +12895,8 @@ Please provide any additional context, or simply proceed to generate your initia
                 });
             }
             else if (message.type === 'pdf_conversion_error') {
-                // Show error in success box
-                if (successTextEl) {
-                    successTextEl.innerHTML = `<span style="color: #EF4444;">Error: ${message.message}</span>`;
-                }
+                // Show error
+                completeThinkingInCard(cardId, `Error: ${message.message}`);
 
                 // Clean up WebSocket handler
                 unregisterCardHandler(cardId);
