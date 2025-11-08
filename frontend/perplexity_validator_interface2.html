@@ -12745,9 +12745,11 @@ Please provide any additional context, or simply proceed to generate your initia
                         text: 'Submit Text',
                         variant: 'primary',
                         callback: async (e) => {
-                            // Hide buttons immediately
+                            // Hide buttons and form immediately
                             const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                            const formEl = document.getElementById(`${cardId}-form`);
                             if (buttonsContainer) buttonsContainer.style.display = 'none';
+                            if (formEl) formEl.style.display = 'none';
 
                             await startReferenceCheck(cardId);
                         }
@@ -12757,9 +12759,11 @@ Please provide any additional context, or simply proceed to generate your initia
                         icon: '📄',
                         variant: 'secondary',
                         callback: async (e) => {
-                            // Hide buttons immediately
+                            // Hide buttons and form immediately
                             const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                            const formEl = document.getElementById(`${cardId}-form`);
                             if (buttonsContainer) buttonsContainer.style.display = 'none';
+                            if (formEl) formEl.style.display = 'none';
 
                             const pdfInput = document.getElementById(`${cardId}-pdf-input`);
                             if (pdfInput) {
