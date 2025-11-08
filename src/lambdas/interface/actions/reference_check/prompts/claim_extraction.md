@@ -176,15 +176,24 @@ The text may include a "--- PARSED REFERENCES ---" or "--- REFERENCES DETECTED -
 - Do NOT include `reference_list` in your output
 
 **If you see "--- PARSED REFERENCES ---"** (Path B: Parsed section):
-- Python has extracted a reference list for you
-- Use these references when linking claims to citations
-- Only include `reference_list` in output if the parsed references are wrong or unusable
+- Python has attempted to extract a reference list
+- **CRITICAL**: Check if the parsed references are actually usable:
+  - Are they complete citations (not fragments)?
+  - Do they match the citation style in the text (e.g., if text uses `(Author, Year)`, parsed refs should have author-year format)?
+  - Are they properly numbered/formatted?
+- **If parsed references are UNUSABLE** (fragments, wrong format, or don't match citations in text):
+  - You MUST provide your own `reference_list`
+  - Extract references from the text yourself or from a reference section if present
+  - Format them consistently and number them [1], [2], etc.
+  - Ensure your numbered refs match the citations in claims
+- **If parsed references are USABLE**: Use them as-is, don't include `reference_list`
 - If you include `reference_list`, it must be a COMPLETE replacement (all references, not just corrections)
 
 **If you see "--- NOTICE: No reference list detected ---"** (Path C: Not found):
 - Python found no reference section
 - If text has numbered citations like [1], [2]: You MUST provide complete `reference_list`
-- If text has no numbered citations: Unreferenced claims, omit `reference_list`
+- If text has author-year citations like (Smith, 2023): Extract and convert to numbered format [1], [2], etc.
+- If text has no citations: Unreferenced claims, omit `reference_list`
 
 ## SOURCE TYPE DETECTION
 
@@ -309,6 +318,14 @@ If a claim cites multiple references (e.g., "[1][2][3]" or "[1,2,3]"):
 - List all references together in the reference field: "[1][2][3]"
 - Note in extraction that multiple sources are cited
 - Validator will access all cited sources and synthesize findings
+
+### Author-Year Citations (Academic Papers)
+If the text uses author-year format like `(Smith et al., 2023)` instead of numbered citations:
+- Extract the full reference list from the end of the document (usually under "References" or "Bibliography")
+- Convert to numbered format: `[1]`, `[2]`, etc.
+- In your `reference_list`, preserve the original citation format from the reference section
+- In claim `reference` fields, use the corresponding numbers: `[1]`, `[2]`, etc.
+- Example: If text says "(Firth et al., 2019)", and the reference section has "Firth, J. et al. (2019). Title...", assign it `[1]` and include full citation in `reference_list`
 
 ### No References Found
 If no references exist but there are factual claims, proceed with extraction. These will be fact-checked using general web search.
