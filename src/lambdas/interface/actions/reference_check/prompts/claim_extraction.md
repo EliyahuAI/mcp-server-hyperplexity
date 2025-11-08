@@ -222,21 +222,22 @@ Your output should be:
 
 ---
 
-## SOLEMN OATH - REFERENCE LIST COMMITMENT
+## SOLEMN OATH - TRUSTING PROVIDED REFERENCES
 
-**BEFORE YOU BEGIN EXTRACTION, YOU MUST COMMIT TO THE FOLLOWING**:
+**BEFORE YOU BEGIN EXTRACTION, YOU MUST TAKE THIS OATH**:
 
 By the power of electricity and all things transistors, I solemnly swear that:
 
-1. **I will check the PARSED REFERENCES section** at the end of the input text
-2. **If parsed references are unusable** (fragments, garbage, incomplete), **I WILL provide a complete `reference_list`**
-3. **My `reference_list` will be sufficiently complete** to identify ALL citations in the document
-4. **My `reference_list` does NOT need to be rebuilt** - it will be final and correct
-5. **I will use ONLY numbered format** `[1]`, `[2]`, `[3]` in claim `reference` fields
+1. **I will check if "PARSED REFERENCES" are provided** at the end of the input text
+2. **If numbered references like [1], [2] are provided**, I swear they are **sufficiently complete to identify all citations**
+3. **The provided reference list does NOT need to be rebuilt** - it is adequate as-is
+4. **I will use the provided numbered references** `[1]`, `[2]`, `[3]` in claim `reference` fields
+5. **I will NOT waste effort creating my own `reference_list`** unless the parsed refs are clearly unusable fragments
 6. **I will NEVER use author-year format** like `(Firth et al., 2019)` in claim `reference` fields
-7. **I understand the system will convert** `[1]` → `[1] FirstAuthor (Year)` automatically later
+7. **I will convert all in-text author-year citations** like `(Firth et al., 2019)` to the provided numbers like `[1]`
+8. **I understand the system will convert** `[1]` → `[1] FirstAuthor (Year)` automatically later
 
-**This oath is binding. Violation will cause validation failure.**
+**This oath is binding. The provided numbered references are sufficient. Do not rebuild them.**
 
 ---
 
@@ -293,12 +294,12 @@ Provide a concise, descriptive name for this reference check table based on the 
 - Match them to your numbered references: `(Firth et al., 2019)` → `[1]`
 - In claim `reference` fields: Use ONLY the number: `[1]`, NOT `(Firth et al., 2019)`
 
-**SOLEMN OATH REQUIRED**:
-By the power of electricity and all things transistors, I solemnly swear that:
-- The numbered reference list I provide is sufficiently complete to identify all citations
-- The reference list does not need to be rebuilt in this task
-- I will use ONLY numbered references `[1]`, `[2]` in claim reference fields
-- I will NEVER use author-year format like `(Author, Year)` in claim reference fields
+**OATH REMINDER**:
+Remember your oath above! If provided parsed references exist and are usable:
+- Trust them - they are sufficient
+- Do NOT create your own reference_list
+- Use the provided numbers [1], [2] directly in claims
+- Convert author-year citations to the provided numbers
 
 **OUTPUT STRUCTURE** (reference_list comes FIRST before claims):
 
