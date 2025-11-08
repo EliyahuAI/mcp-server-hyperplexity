@@ -12876,8 +12876,8 @@ Please provide any additional context, or simply proceed to generate your initia
                 }
             }
             else if (message.type === 'pdf_conversion_complete') {
-                // PDF converted and reference check started automatically
-                updateThinkingInCard(cardId, `${filename} converted. Extracting claims and checking references...`);
+                // PDF converted and claim extraction started automatically
+                updateThinkingInCard(cardId, `${filename} converted. Extracting claims from text...`);
 
                 // Store conversation ID for reference check tracking
                 referenceCheckState.conversationId = message.conversation_id;
@@ -12922,7 +12922,7 @@ Please provide any additional context, or simply proceed to generate your initia
             if (buttonsContainer) buttonsContainer.style.display = 'none';
 
             // Show thinking indicator with progress (like table maker)
-            showThinkingInCard(cardId, 'Text submitted. Extracting claims and checking references...', true);
+            showThinkingInCard(cardId, 'Text submitted. Extracting claims from text...', true);
 
             // Register WebSocket handler
             registerCardHandler(cardId, ['reference_check_progress', 'reference_check_complete', 'reference_check_error'], (data) => {
