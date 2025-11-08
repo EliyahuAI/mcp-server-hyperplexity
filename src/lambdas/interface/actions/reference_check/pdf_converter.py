@@ -9,8 +9,10 @@ Handles PDF file uploads and conversion using the SQS + WebSocket pattern:
 import tempfile
 import os
 import uuid
+import json
 from datetime import datetime, timezone
 from typing import Dict, Any
+from pathlib import Path
 import logging
 
 # Use pymupdf4llm for LLM-optimized markdown conversion
@@ -76,8 +78,6 @@ def handle_pdf_multipart(files: Dict[str, Any], form_data: Dict[str, str], conte
 
         # Generate session ID if not provided (same as text submission)
         if not session_id:
-            from datetime import datetime
-            import uuid
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             random_hex = uuid.uuid4().hex[:8]
             session_id = f"session_{timestamp}_{random_hex}"
@@ -282,8 +282,6 @@ async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any) -> D
             logger.info(f"[PDF_CONVERT] Successfully converted {page_count} pages ({len(markdown_text)} chars)")
 
             # Load config for text limits
-            import json
-            from pathlib import Path
             config_path = Path(__file__).parent / 'reference_check_config.json'
             with open(config_path, 'r') as f:
                 config = json.load(f)
@@ -343,16 +341,11 @@ async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any) -> D
             # Automatically start reference check with the markdown text
             logger.info(f"[PDF_CONVERT] Starting reference check with converted markdown")
 
-            # Import reference check handler
-            from interface_lambda.actions.reference_check.conversation import handle_reference_check_start
-            import uuid
-
             # Generate conversation ID for reference check
             conversation_id = f"refcheck_{uuid.uuid4().hex[:12]}"
 
             # Queue reference check to SQS
             from interface_lambda.core.sqs_service import _send_sqs_message, STANDARD_QUEUE_URL
-            import os
 
             reference_check_request = {
                 'request_type': 'reference_check',
