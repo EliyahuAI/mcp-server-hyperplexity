@@ -12742,23 +12742,29 @@ Please provide any additional context, or simply proceed to generate your initia
                 content,
                 buttons: [
                     {
-                        text: 'Upload PDF',
+                        text: 'Submit Text',
+                        variant: 'primary',
+                        callback: async (e) => {
+                            // Hide buttons immediately
+                            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                            if (buttonsContainer) buttonsContainer.style.display = 'none';
+
+                            await startReferenceCheck(cardId);
+                        }
+                    },
+                    {
+                        text: 'or Upload PDF',
                         icon: '📄',
                         variant: 'secondary',
                         callback: async (e) => {
+                            // Hide buttons immediately
+                            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                            if (buttonsContainer) buttonsContainer.style.display = 'none';
+
                             const pdfInput = document.getElementById(`${cardId}-pdf-input`);
                             if (pdfInput) {
                                 pdfInput.click();
                             }
-                        }
-                    },
-                    {
-                        text: 'Submit Text',
-                        variant: 'primary',
-                        callback: async (e) => {
-                            const button = e.target.closest('button');
-                            markButtonSelected(button, 'Analyzing...');
-                            await startReferenceCheck(cardId);
                         }
                     }
                 ]
@@ -12832,11 +12838,7 @@ Please provide any additional context, or simply proceed to generate your initia
                         localStorage.setItem('sessionId', data.session_id);
                     }
 
-                    // Hide buttons
-                    const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-                    if (buttonsContainer) buttonsContainer.style.display = 'none';
-
-                    // Show thinking indicator with progress (like table maker)
+                    // Show thinking indicator with progress (buttons already hidden by callback)
                     showThinkingInCard(cardId, `${file.name} successfully uploaded. Reading PDF...`, true);
 
                     // Connect to WebSocket to receive conversion result
@@ -12917,11 +12919,7 @@ Please provide any additional context, or simply proceed to generate your initia
             // Store submitted text
             referenceCheckState.submittedText = submittedText;
 
-            // Hide buttons
-            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-            if (buttonsContainer) buttonsContainer.style.display = 'none';
-
-            // Show thinking indicator with progress (like table maker)
+            // Show thinking indicator with progress (buttons already hidden by callback)
             showThinkingInCard(cardId, 'Text submitted. Extracting claims from text...', true);
 
             // Register WebSocket handler
