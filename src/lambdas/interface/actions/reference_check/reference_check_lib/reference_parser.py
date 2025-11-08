@@ -144,6 +144,68 @@ class ReferenceParser:
         logger.info(f"[REF PARSER] TOTAL: Extracted {len(all_references)} unique references")
         return all_references
 
+    def check_reference_quality(self, reference_map: Dict[str, str]) -> Tuple[bool, str]:
+        """
+        Check if parsed references look reasonable or are garbage/fragments.
+
+        Returns:
+            Tuple of (is_good, reason)
+            - is_good: True if references look usable, False if they're fragments/garbage
+            - reason: Explanation of why they're bad (if is_good=False)
+        """
+        if not reference_map or len(reference_map) == 0:
+            return True, ""  # Empty is fine - handled separately
+
+        # Check for common signs of bad extraction
+        bad_signs = []
+        total_refs = len(reference_map)
+
+        # Count how many look like fragments
+        fragment_count = 0
+        for ref_id, citation in reference_map.items():
+            # Too short (likely fragment)
+            if len(citation.strip()) < 20:
+                fragment_count += 1
+                continue
+
+            # Starts with lowercase or punctuation (likely fragment)
+            if citation.strip() and citation.strip()[0].islower():
+                fragment_count += 1
+                continue
+
+            # Just numbers/punctuation (like ":853-861, 2015")
+            if re.match(r'^[:\d\s,\-\.]+$', citation.strip()):
+                fragment_count += 1
+                continue
+
+            # Looks like random text fragments (no author, year, or URL)
+            has_author_pattern = bool(re.match(r'^[A-Z][a-z]+', citation))
+            has_year = bool(re.search(r'\b\d{4}\b', citation))
+            has_url = bool(re.search(r'https?://|doi:|arxiv', citation, re.IGNORECASE))
+            has_journal = bool(re.search(r'\b(journal|conference|proceedings|arxiv|preprint)\b', citation, re.IGNORECASE))
+
+            if not any([has_author_pattern, has_url, has_journal]) and not has_year:
+                fragment_count += 1
+
+        # If >50% look like fragments, it's bad
+        fragment_ratio = fragment_count / total_refs if total_refs > 0 else 0
+        if fragment_ratio > 0.5:
+            bad_signs.append(f"{fragment_count}/{total_refs} refs are fragments or garbage")
+
+        # Check for duplicate/similar refs (sign of bad parsing)
+        unique_citations = set(reference_map.values())
+        if len(unique_citations) < len(reference_map) * 0.8:
+            bad_signs.append(f"Many duplicate refs ({len(unique_citations)} unique / {total_refs} total)")
+
+        # If we found problems, return False
+        if bad_signs:
+            reason = "; ".join(bad_signs)
+            logger.warning(f"[REF PARSER] Quality check FAILED: {reason}")
+            return False, reason
+
+        logger.info(f"[REF PARSER] Quality check PASSED: {total_refs} refs look good")
+        return True, ""
+
     def _extract_author_year_citations(self, section: str) -> Dict[str, str]:
         """
         Extract author-year format citations (academic papers without numbers).
@@ -821,8 +883,31 @@ Do NOT include reference_list in your output.
 
         elif path_type == "needs_parsing":
             # Path B: Parsed reference section
-            ref_list = "\n".join([f"{ref_id} {citation}" for ref_id, citation in sorted(reference_map.items(), key=lambda x: int(re.search(r'\d+', x[0]).group()))])
-            notice = f"""
+            # Run quality check on parsed references
+            is_good, failure_reason = self.check_reference_quality(reference_map)
+
+            if not is_good:
+                # Quality check failed - demand AI extraction
+                logger.warning(f"[REF PARSER] Parsed references failed quality check: {failure_reason}")
+                notice = f"""
+
+--- PARSED REFERENCES FAILED QUALITY CHECK ({len(reference_map)} found){source_info} ---
+Automated parsing was NOT successful. The extracted references are fragments/garbage.
+Reason: {failure_reason}
+
+**AI SEGMENTATION REQUIRED**:
+You MUST extract the complete reference list yourself from the References/Bibliography section.
+Do NOT trust the parsed references shown below - they are unusable.
+Provide your own complete `reference_list` with all references numbered [1], [2], [3], etc.
+
+Unusable parsed refs (for reference only):
+{chr(10).join([f"{ref_id} {citation}" for ref_id, citation in sorted(reference_map.items(), key=lambda x: int(re.search(r'\d+', x[0]).group()))])[:500]}...
+"""
+                return text + notice
+            else:
+                # Quality check passed - references are good
+                ref_list = "\n".join([f"{ref_id} {citation}" for ref_id, citation in sorted(reference_map.items(), key=lambda x: int(re.search(r'\d+', x[0]).group()))])
+                notice = f"""
 
 --- PARSED REFERENCES ({len(reference_map)} found){source_info} ---
 {ref_list}
@@ -830,7 +915,7 @@ Do NOT include reference_list in your output.
 Use these references when extracting claims. Only include reference_list in output if these are wrong or unusable.
 If providing reference_list, it must be a COMPLETE replacement (not partial corrections).
 """
-            return text + notice
+                return text + notice
 
         else:
             # Path C: No references found

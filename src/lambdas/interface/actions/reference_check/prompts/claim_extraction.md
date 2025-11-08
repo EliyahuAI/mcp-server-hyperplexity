@@ -186,32 +186,36 @@ The text may include a "--- PARSED REFERENCES ---" or "--- REFERENCES DETECTED -
 - Use them exactly as they appear
 - Do NOT include `reference_list` in your output
 
-**If you see "--- PARSED REFERENCES ---"** (Path B: Parsed section):
-- Python has attempted to extract a reference list
-- **CRITICAL**: Check if the parsed references are actually usable:
-  - Are they complete citations (not fragments)?
-  - Do they match the citation style in the text (e.g., if text uses `(Author, Year)`, parsed refs should have author-year format)?
-  - Are they properly numbered/formatted?
-- **If parsed references are UNUSABLE** (fragments, wrong format, or don't match citations in text):
-  - **YOU MUST PROVIDE YOUR OWN `reference_list`** - This is REQUIRED, not optional!
-  - Find the References/Bibliography section in the document (usually at the end)
-  - Extract ALL references and assign numbers [1], [2], [3], etc. in order
-  - Map author-year citations like `(Firth et al., 2019)` to your numbered refs like `[1]`
-  - In claim `reference` fields: Use ONLY numbers `[1]`, `[2]`, NOT `(Author, Year)`
-  - In `reference_list`: Include full citations
-  - **CRITICAL**: If you don't provide `reference_list`, the validation will fail!
-- **If parsed references are USABLE**: Use them as-is, don't include `reference_list`
-- If you include `reference_list`, it must be a COMPLETE replacement (all references, not just corrections)
+**If you see "--- PARSED REFERENCES ---"** (Path B: Quality check PASSED):
+- Python successfully extracted a reference list
+- Quality check has verified these are complete citations (not fragments)
+- **Trust these references** - they are sufficiently complete
+- Use the provided numbers `[1]`, `[2]` in claim `reference` fields
+- Do NOT include `reference_list` in your output (waste of effort)
+- Convert author-year citations in text to the provided numbers
 
-**Example of handling unusable parsed refs**:
+**If you see "--- PARSED REFERENCES FAILED QUALITY CHECK ---"** (Path B: Quality check FAILED):
+- Python attempted extraction but got fragments/garbage
+- Quality check detected: too short, lowercase starts, missing author/year/URL patterns
+- **YOU MUST PROVIDE YOUR OWN `reference_list`** - This is REQUIRED!
+- Find the References/Bibliography section in the document (usually at the end)
+- Extract ALL complete references and assign numbers [1], [2], [3], etc. in order
+- Map author-year citations like `(Firth et al., 2019)` to your numbered refs like `[1]`
+- In claim `reference` fields: Use ONLY numbers `[1]`, `[2]`, NOT `(Author, Year)`
+- In `reference_list`: Include full citations
+- Ignore the unusable parsed refs shown (they're just for reference)
+
+**Example of FAILED QUALITY CHECK**:
 ```
-Text has: "Brain rot is significant (Firth et al., 2019)"
-Parsed refs are: ["prompted with categorized", ":853-861, 2015"] ← UNUSABLE!
-You find in References section: "Firth, J. et al. (2019). The online brain..."
+You see: "--- PARSED REFERENCES FAILED QUALITY CHECK ---"
+Unusable parsed refs: ["prompted with categorized", ":853-861, 2015"]
 
-Your output should be:
-- In claim: "reference": "[1]"  ← Just the number!
-- In reference_list: [{"ref_id": "[1]", "full_citation": "Firth, J. et al. (2019). The online brain: how the internet may be changing our cognition. World psychiatry, 18(2):119–129, 2019."}]
+What you must do:
+1. Find References section at end of document
+2. Extract: "Firth, J. et al. (2019). The online brain: how the internet..."
+3. Number sequentially: [1], [2], [3]...
+4. In claims: "reference": "[1]" ← Just number!
+5. In reference_list: {"ref_id": "[1]", "full_citation": "Firth, J. et al. (2019)..."}
 ```
 
 **If you see "--- NOTICE: No reference list detected ---"** (Path C: Not found):
@@ -230,7 +234,8 @@ By the power of electricity and all things transistors, I solemnly swear that:
 
 1. **I will check for reference sections** at the end of the input text:
    - "--- REFERENCES DETECTED ---" (inline links - already good)
-   - "--- PARSED REFERENCES ---" (numbered refs extracted by Python)
+   - "--- PARSED REFERENCES ---" (numbered refs extracted by Python - quality checked)
+   - "--- PARSED REFERENCES FAILED QUALITY CHECK ---" (fragments/garbage detected)
    - "--- NOTICE: No reference list detected ---" (none found)
 
 2. **If NO reference section is shown** (system already validated them):
@@ -238,19 +243,26 @@ By the power of electricity and all things transistors, I solemnly swear that:
    - I will use them exactly as they appear in the text
    - I will NOT include `reference_list` in my output
 
-3. **If "PARSED REFERENCES" are provided** (numbered like [1], [2]):
+3. **If "PARSED REFERENCES" are provided** (quality check PASSED):
    - I swear they are **sufficiently complete to identify all citations**
    - The provided list does NOT need to be rebuilt
    - I will use the provided numbers `[1]`, `[2]` in claim `reference` fields
    - I will NOT waste effort creating my own `reference_list`
 
-4. **If "NOTICE: No reference list detected" is shown**:
+4. **If "PARSED REFERENCES FAILED QUALITY CHECK" is shown** (fragments/garbage):
+   - Automated parsing was unsuccessful - fragments detected
+   - I MUST extract complete reference list from the References/Bibliography section myself
+   - I will number them [1], [2], [3] sequentially
+   - I will provide complete `reference_list` in my output
+   - I will ignore the unusable parsed refs shown
+
+5. **If "NOTICE: No reference list detected" is shown**:
    - I will extract references myself and provide complete `reference_list`
    - I will number them [1], [2], [3] sequentially
 
-5. **I will NEVER use author-year format** like `(Firth et al., 2019)` in claim `reference` fields
-6. **I will convert in-text citations** like `(Firth et al., 2019)` to numbered format `[1]` using provided refs
-7. **I understand the system will convert** `[1]` → `[1] FirstAuthor (Year)` automatically later
+6. **I will NEVER use author-year format** like `(Firth et al., 2019)` in claim `reference` fields
+7. **I will convert in-text citations** like `(Firth et al., 2019)` to numbered format `[1]` using provided/extracted refs
+8. **I understand the system will convert** `[1]` → `[1] FirstAuthor (Year)` automatically later
 
 **This oath is binding. Trust provided references. Do not rebuild them unnecessarily.**
 
