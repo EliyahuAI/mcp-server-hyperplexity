@@ -12751,6 +12751,9 @@ Please provide any additional context, or simply proceed to generate your initia
                             if (buttonsContainer) buttonsContainer.style.display = 'none';
                             if (formEl) formEl.style.display = 'none';
 
+                            // Show progress indicator immediately
+                            showThinkingInCard(cardId, 'Submitting text...', true);
+
                             await startReferenceCheck(cardId);
                         }
                     },
@@ -12764,6 +12767,12 @@ Please provide any additional context, or simply proceed to generate your initia
                             const formEl = document.getElementById(`${cardId}-form`);
                             if (buttonsContainer) buttonsContainer.style.display = 'none';
                             if (formEl) formEl.style.display = 'none';
+
+                            // Show progress indicator immediately
+                            showThinkingInCard(cardId, 'Waiting for file selection...', true);
+
+                            // Store flag that we're waiting for file
+                            referenceCheckState.awaitingPdfSelection = true;
 
                             const pdfInput = document.getElementById(`${cardId}-pdf-input`);
                             if (pdfInput) {
@@ -12781,6 +12790,8 @@ Please provide any additional context, or simply proceed to generate your initia
                     pdfInput.addEventListener('change', async (e) => {
                         const file = e.target.files[0];
                         if (file) {
+                            // Clear awaiting flag
+                            referenceCheckState.awaitingPdfSelection = false;
                             await handlePdfUpload(cardId, file);
                         }
                         // Reset input so same file can be selected again
@@ -12794,12 +12805,15 @@ Please provide any additional context, or simply proceed to generate your initia
 
         // Handle PDF upload (async with WebSocket)
         async function handlePdfUpload(cardId, file) {
-            const inputContainer = document.getElementById(`${cardId}-input-container`);
             const messagesDiv = document.getElementById(`${cardId}-messages`);
 
             try {
+                // Update progress indicator immediately
+                updateThinkingInCard(cardId, `Uploading ${file.name}...`);
+
                 // Validate file type
                 if (!file.name.toLowerCase().endsWith('.pdf')) {
+                    completeThinkingInCard(cardId, 'Invalid file type');
                     showMessage(messagesDiv.id, 'Please select a PDF file', 'error');
                     return;
                 }
@@ -12807,6 +12821,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 // Validate file size (10MB max)
                 const maxSize = 10 * 1024 * 1024;
                 if (file.size > maxSize) {
+                    completeThinkingInCard(cardId, 'File too large');
                     showMessage(messagesDiv.id, `PDF file too large. Maximum size is ${maxSize / 1024 / 1024}MB`, 'error');
                     return;
                 }
@@ -12860,12 +12875,33 @@ Please provide any additional context, or simply proceed to generate your initia
 
             } catch (error) {
                 console.error('[PDF_UPLOAD] Error:', error);
+                completeThinkingInCard(cardId, 'Upload failed');
                 showMessage(messagesDiv.id,
                     `Error uploading PDF: ${error.message}`,
                     'error'
                 );
             }
         }
+
+        // Handle file picker cancel for PDF upload
+        document.addEventListener('focus', () => {
+            if (referenceCheckState.awaitingPdfSelection) {
+                // User may have cancelled file picker - check after a short delay
+                setTimeout(() => {
+                    if (referenceCheckState.awaitingPdfSelection) {
+                        // File picker was cancelled (no file selected)
+                        const cardId = referenceCheckState.cardId;
+                        referenceCheckState.awaitingPdfSelection = false;
+
+                        // Show cancelled message and recreate the card
+                        completeThinkingInCard(cardId, 'File selection cancelled');
+                        setTimeout(() => {
+                            createReferenceCheckCard();
+                        }, 1000);
+                    }
+                }, 500);
+            }
+        }, true);
 
         // Handle PDF conversion WebSocket messages
         function handlePdfConversionMessage(cardId, message, filename) {
@@ -12923,8 +12959,8 @@ Please provide any additional context, or simply proceed to generate your initia
             // Store submitted text
             referenceCheckState.submittedText = submittedText;
 
-            // Show thinking indicator with progress (buttons already hidden by callback)
-            showThinkingInCard(cardId, 'Text submitted. Extracting claims from text...', true);
+            // Update thinking indicator (already shown by callback as "Submitting text...")
+            updateThinkingInCard(cardId, 'Text submitted. Extracting claims from text...');
 
             // Register WebSocket handler
             registerCardHandler(cardId, ['reference_check_progress', 'reference_check_complete', 'reference_check_error'], (data) => {
