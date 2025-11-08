@@ -13085,6 +13085,11 @@ Please provide any additional context, or simply proceed to generate your initia
             globalState.configStored = true;
             globalState.excelFileUploaded = true;
 
+            // Show claims info box (orange ID box with extracted claims)
+            if (data.claims && data.claims.length > 0) {
+                showClaimsInfoBox(cardId, data.claims);
+            }
+
             // Update progress indicator with completion message
             const total = data.summary.total_claims;
             const withRefs = data.summary.claims_with_references;
