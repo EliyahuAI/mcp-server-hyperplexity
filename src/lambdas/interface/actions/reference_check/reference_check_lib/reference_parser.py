@@ -889,6 +889,12 @@ Do NOT include reference_list in your output.
             if not is_good:
                 # Quality check failed - demand AI extraction
                 logger.warning(f"[REF PARSER] Parsed references failed quality check: {failure_reason}")
+
+                # Build sample of unusable refs (can't use chr() in f-string)
+                newline = "\n"
+                sorted_refs = sorted(reference_map.items(), key=lambda x: int(re.search(r'\d+', x[0]).group()))
+                ref_sample = newline.join([f"{ref_id} {citation}" for ref_id, citation in sorted_refs])[:500]
+
                 notice = f"""
 
 --- PARSED REFERENCES FAILED QUALITY CHECK ({len(reference_map)} found){source_info} ---
@@ -901,7 +907,7 @@ Do NOT trust the parsed references shown below - they are unusable.
 Provide your own complete `reference_list` with all references numbered [1], [2], [3], etc.
 
 Unusable parsed refs (for reference only):
-{chr(10).join([f"{ref_id} {citation}" for ref_id, citation in sorted(reference_map.items(), key=lambda x: int(re.search(r'\d+', x[0]).group()))])[:500]}...
+{ref_sample}...
 """
                 return text + notice
             else:
