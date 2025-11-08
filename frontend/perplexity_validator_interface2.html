@@ -13100,19 +13100,18 @@ Please provide any additional context, or simply proceed to generate your initia
             }
 
             // Update thinking indicator to show extraction complete with summary
-            updateThinkingInCard(cardId, `Extraction complete! Found ${claimSummary}. Opening preview...`);
+            updateThinkingInCard(cardId, `Extraction complete! Found ${claimSummary}.`);
 
-            // Auto-trigger preview after brief delay (indicator stays visible until preview opens)
+            // Complete thinking indicator immediately
             setTimeout(() => {
-                // Complete thinking indicator just before preview
-                completeThinkingInCard(cardId, 'Opening preview...');
+                completeThinkingInCard(cardId, `Extraction complete! Found ${claimSummary}.`);
 
-                // Open preview card
+                // Wait 1 second, then open preview
                 setTimeout(() => {
                     globalState.activePreviewCard = null;
                     createPreviewCard();
-                }, 500);
-            }, 1000);
+                }, 1000);
+            }, 300);
         }
 
         // Handle reference check error
