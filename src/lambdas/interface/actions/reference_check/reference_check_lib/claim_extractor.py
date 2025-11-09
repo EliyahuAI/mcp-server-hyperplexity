@@ -99,11 +99,15 @@ class ClaimExtractor:
                     "description": "List of extracted claims",
                     "items": {
                         "type": "object",
-                        "required": ["claim_id", "statement", "context"],
+                        "required": ["claim_id", "statement", "context", "criticality", "claim_order"],
                         "properties": {
                             "claim_id": {
                                 "type": "string",
                                 "description": "Unique identifier for the claim (e.g., claim_001)"
+                            },
+                            "claim_order": {
+                                "type": "integer",
+                                "description": "REQUIRED: Sequential order as claim appears in original document (1, 2, 3, etc.). This preserves document position before criticality sorting."
                             },
                             "statement": {
                                 "type": "string",
@@ -113,9 +117,17 @@ class ClaimExtractor:
                                 "type": "string",
                                 "description": "Surrounding text that provides context (1-2 sentences)"
                             },
+                            "criticality": {
+                                "type": "string",
+                                "description": "REQUIRED: Criticality assessment in format '{level} - {level_name}: {brief reason}' where level is 1-5 (1=Critical, 5=Context). Example: '1 - Critical: Core thesis claim'"
+                            },
                             "reference": {
                                 "type": ["string", "null"],
-                                "description": "Citation/reference linked to this claim (e.g., [1], [2][3], or null if none)"
+                                "description": "Citation/reference NUMBERS ONLY (e.g., [1], [2][3], or null if none). DO NOT include author names or years - just the number."
+                            },
+                            "supporting_data": {
+                                "type": ["string", "null"],
+                                "description": "OPTIONAL: When claim is supported by original measurements/data from THIS paper, provide the ACTUAL data explicitly with numbers, sample sizes, metrics, and table/figure references. Example: 'Model achieved 92% accuracy on benchmark dataset (n=10,000 samples, Table 2, Results section)' or 'Survey results: 78% of 500 participants reported daily social media use averaging 3.2 hours (Figure 1, Methods section)'"
                             },
                             "reference_details": {
                                 "type": ["object", "null"],

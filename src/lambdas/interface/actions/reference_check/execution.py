@@ -14,8 +14,9 @@ Step 0 (Extraction):
     "conversation_id": str,
     "current_step": 0,
     "total_steps": 2,
-    "status": "Extracting claims from text...",
-    "progress_percent": 10,
+    "status": "Extracting claims and references. This takes a minute...",
+    "progress_percent": 50,
+    "progress": 50,
     "phase": "extraction"
 }
 
@@ -134,6 +135,55 @@ def _format_text_location(text_location: Optional[Dict[str, Any]]) -> str:
     return ' | '.join(parts)
 
 
+def _expand_reference_to_full_format(citation_text: str, reference_map: Dict[str, str]) -> str:
+    """
+    Expand numbered citations to full format: "[1] Full Citation, [2] Full Citation"
+
+    Args:
+        citation_text: Text with citations like "[1]", "[2][3]", or "[1,2,3]"
+        reference_map: Dict mapping ref_id to full citation
+
+    Returns:
+        Comma-separated full references with brackets
+        Example: "[1][2]" -> "[1] Smith et al. (2023). Title..., [2] Johnson (2024). Title..."
+    """
+    if not citation_text or not reference_map:
+        return citation_text
+
+    # Find all citation numbers in the text
+    # Matches: [1], [2], [3] or [1,2,3] or [1][2][3]
+    citation_pattern = r'\[(\d+(?:,\s*\d+)*)\]|\[(\d+)\]'
+    matches = re.findall(citation_pattern, citation_text)
+
+    # Extract all unique numbers
+    ref_nums = set()
+    for match in matches:
+        # match is a tuple: (comma_separated, single)
+        if match[0]:  # Comma-separated: [1,2,3]
+            nums = re.findall(r'\d+', match[0])
+            ref_nums.update(nums)
+        elif match[1]:  # Single: [1]
+            ref_nums.add(match[1])
+
+    # Build full citation list
+    full_citations = []
+    for num in sorted(ref_nums, key=int):
+        ref_id = f"[{num}]"
+        if ref_id in reference_map:
+            full_citation = reference_map[ref_id]
+            # Format as "[1] Full Citation"
+            formatted = f"{ref_id} {full_citation}"
+            full_citations.append(formatted)
+            logger.info(f"[COMPILATION] Expanded {ref_id} to full citation")
+        else:
+            # Keep original if not found
+            full_citations.append(ref_id)
+            logger.warning(f"[COMPILATION] Could not expand {ref_id}, keeping as-is")
+
+    # Join with comma-space for inline display
+    return ', '.join(full_citations) if full_citations else citation_text
+
+
 def _get_websocket_client():
     """Get WebSocket client instance, handling errors gracefully."""
     try:
@@ -179,6 +229,7 @@ def send_execution_progress(
             'total_steps': total_steps,
             'status': status,
             'progress_percent': progress_percent,
+            'progress': progress_percent,  # Frontend expects 'progress' field
             'phase': phase,
             **kwargs
         }
@@ -429,8 +480,8 @@ async def _extract_claims(
             conversation_id=conversation_id,
             current_step=0,
             total_steps=2,
-            status='Analyzing text and extracting claims...',
-            progress_percent=20,
+            status='Extracting claims and references. This takes a minute...',
+            progress_percent=50,
             phase='extraction'
         )
 
@@ -712,12 +763,21 @@ async def _compile_results(
             logger.info(f"[COMPILATION] Generating CSV from {len(claims)} extracted claims (ID columns only)")
             csv_rows = []
             for claim in claims:
+                # Expand reference from "[1]" to "1, Full Citation"
+                ref_citation = claim.get('reference', '')
+                if ref_citation and final_reference_map:
+                    expanded_ref = _expand_reference_to_full_format(ref_citation, final_reference_map)
+                else:
+                    expanded_ref = ref_citation
+
                 csv_rows.append({
                     'claim_id': claim.get('claim_id', ''),
+                    'claim_order': claim.get('claim_order', ''),
                     'statement': claim.get('statement', ''),
                     'context': claim.get('context', ''),
                     'text_location': _format_text_location(claim.get('text_location')),
-                    'reference': claim.get('reference', ''),
+                    'reference': expanded_ref,
+                    'supporting_data': claim.get('supporting_data', ''),
                     'criticality': claim.get('criticality', ''),
                     'reference_description': '',  # Empty - to be filled during validation
                     'reference_says': '',  # Empty
@@ -1142,13 +1202,9 @@ async def execute_reference_check(
             final_reference_map = parsed_reference_map
             logger.info(f"[EXECUTION] Path {path_type}: Using Python-parsed references ({len(final_reference_map)} refs)")
 
-        # Resolve numbered citations in claims to actual references
-        logger.info(f"[EXECUTION] Resolving citations in claims")
-        for claim in claims:
-            citation = claim.get('reference')
-            if citation and final_reference_map:
-                resolved = parser.resolve_citations(citation, final_reference_map)
-                claim['reference'] = resolved
+        # Keep claims with just numbered citations like [1], [2]
+        # Full references will be expanded in CSV generation
+        logger.info(f"[EXECUTION] Claims extracted with {len(claims)} numbered citations")
 
         # Store reference map for config
         conversation_state['reference_map'] = final_reference_map

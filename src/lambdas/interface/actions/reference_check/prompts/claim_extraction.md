@@ -95,6 +95,46 @@ Examples:
 - ❌ Methodological descriptions: "We used Python for analysis"
 - ❌ Trivial statements: "AI is a rapidly growing field"
 
+## ORIGINAL RESULTS vs EXTERNAL REFERENCES
+
+When extracting claims, distinguish between two types of support:
+
+### External References (use `reference` field)
+Claims supported by external sources (other papers, studies, reports):
+- Use the `reference` field with citation numbers: `[1]`, `[2]`, etc.
+- These cite OTHER people's work or external sources
+- Examples:
+  - "According to Smith et al., LLMs hallucinate 15% of the time" → `reference: "[1]"`
+  - "Previous research shows..." → `reference: "[2]"`
+
+### Original Results (use `supporting_data` field)
+Claims supported by original findings/data from THIS paper being analyzed:
+- Use the `supporting_data` field (optional)
+- **CRITICAL**: Provide the ACTUAL measurement/data explicitly, not just a reference to where it is
+- Include specific numbers, sample sizes, percentages, metrics, table/figure references
+- Format: `"Explicit measurement/data description (Table/Figure X, Section name)"`
+- These describe the paper's OWN findings, experiments, or data
+- Examples:
+  - "Our model achieved 95% accuracy on the test set" → `supporting_data: "Model achieved 95% accuracy on test dataset (n=5,000 samples, Table 2, Results section)"`
+  - "We surveyed 500 participants about social media usage" → `supporting_data: "Survey results: 78% of 500 participants reported daily social media use averaging 3.2 hours (Figure 1, Methods section)"`
+  - "The experiment showed a 30% improvement" → `supporting_data: "Experimental measurements: 30% improvement in performance over baseline (p<0.05, n=100 trials, Table 3, Results section)"`
+  - "Participants rated the interface highly" → `supporting_data: "User ratings: Mean score 4.2/5.0 from 250 participants (SD=0.8, Figure 4, User Study section)"`
+
+**What to include**:
+- ✅ Specific numbers and measurements
+- ✅ Sample sizes (n=X)
+- ✅ Statistical values (mean, SD, p-values, percentages)
+- ✅ Table/Figure references where data appears
+- ✅ Section name
+- ❌ DON'T just say "Results section shows..." without the actual data
+- ❌ DON'T just reference location without stating the measurement
+
+**When to use which**:
+- If claim cites another paper/source → use `reference` field with `[1]`, `[2]`
+- If claim describes original results from this paper → use `supporting_data` with explicit measurements
+- If claim has both external citation AND original results → include both fields
+- If claim has neither → both fields are `null`
+
 ## REFERENCE FORMATS TO RECOGNIZE
 
 Look for these citation patterns in the text:
@@ -125,10 +165,13 @@ Look for these citation patterns in the text:
 - `https://arxiv.org/abs/2401.12345`
 - **In claim `reference` field**: Store the DOI/URL directly OR assign a number and include in `reference_list`
 
-**CRITICAL**: In the claim's `reference` field, ALWAYS use the simplest format:
-- Numbered refs: Just the number(s): `[1]`, `[2][3]`, etc.
-- The system will automatically convert `[1]` → `[1] FirstAuthor et al. (Year)` later
-- Do NOT pre-format with author/year in the claim reference field
+**CRITICAL**: In the claim's `reference` field, ALWAYS use ONLY the reference NUMBER:
+- Numbered refs: ONLY the number(s): `[1]`, `[2][3]`, etc.
+- DO NOT include author names: ❌ `[1] Smith et al.` is WRONG
+- DO NOT include years: ❌ `[1] (2023)` is WRONG
+- DO NOT include any text after the number: ❌ `[1] Smith et al. (2023)` is WRONG
+- ONLY the bracketed number: ✅ `[1]` is CORRECT
+- The system will expand `[1]` to full citation later during CSV generation
 
 ## REFERENCE DETAILS TO EXTRACT
 
@@ -305,6 +348,27 @@ Provide a concise, descriptive name for this reference check table based on the 
 
 **CRITICAL INSTRUCTIONS - READ CAREFULLY**:
 
+**CLAIM ORDERING REQUIREMENTS**:
+
+**1. Assign claim_order (document position)**:
+- BEFORE sorting, assign each claim a sequential `claim_order` number based on its position in the original document
+- First claim in document: `claim_order: 1`
+- Second claim in document: `claim_order: 2`
+- And so on...
+- This preserves the original document sequence regardless of sorting
+
+**2. Sort claims by criticality (output order)**:
+- **MANDATORY**: After assigning claim_order, sort the claims array by criticality level (most critical first)
+- Output order: Level 1 (Critical) → Level 2 (Major) → Level 3 (Supporting) → Level 4 (Minor) → Level 5 (Context)
+- Within the same criticality level, maintain document order (use claim_order as tiebreaker)
+- This ensures the most important claims are validated first
+
+**Example**:
+- Document has claims appearing in order: A (criticality 3), B (criticality 1), C (criticality 2)
+- Assign: A gets claim_order=1, B gets claim_order=2, C gets claim_order=3
+- Then sort by criticality: Output order is B (crit 1, order 2), C (crit 2, order 3), A (crit 3, order 1)
+- Users can see B was the 2nd claim in the document but is now first due to being most critical
+
 **STEP 1: BUILD YOUR REFERENCE LIST FIRST**
 - Look at the "PARSED REFERENCES" section at the end of the input text
 - If the parsed references are fragments/garbage/unusable (like "prompted with categorized" or ":853-861, 2015"):
@@ -359,9 +423,12 @@ Remember your oath above! If provided parsed references exist:
   "claims": [
     {
       "claim_id": "claim_001",
+      "claim_order": 2,
       "statement": "AI models can hallucinate facts in 15-20% of responses",
       "context": "Recent research has examined the accuracy of large language models. AI models can hallucinate facts in 15-20% of responses. This has implications for real-world deployment.",
+      "criticality": "1 - Critical: Core statistical claim about hallucination rates",
       "reference": "[2]",
+      "supporting_data": null,
       "reference_details": {
         "authors": ["Chen, L.", "Wang, X."],
         "year": "2024",
@@ -378,14 +445,16 @@ Remember your oath above! If provided parsed references exist:
         "word_start": 25,
         "word_end": 40,
         "section_name": "Results"
-      },
-      "criticality": "1 - Critical: Core statistical claim about hallucination rates"
+      }
     },
     {
       "claim_id": "claim_002",
+      "claim_order": 5,
       "statement": "Newer models show improvement in factual accuracy",
       "context": "However, newer models show improvement in factual accuracy. The latest GPT-4 Turbo reduces hallucinations compared to earlier versions.",
+      "criticality": "3 - Supporting: Additional evidence about model improvements",
       "reference": null,
+      "supporting_data": null,
       "reference_details": null,
       "text_location": {
         "start_char": 380,
@@ -394,8 +463,26 @@ Remember your oath above! If provided parsed references exist:
         "sentence_index": 0,
         "word_start": 75,
         "word_end": 85
-      },
-      "criticality": "3 - Supporting: Additional evidence about model improvements"
+      }
+    },
+    {
+      "claim_id": "claim_003",
+      "claim_order": 8,
+      "statement": "Our fine-tuned model achieved 92% accuracy on the benchmark dataset",
+      "context": "We fine-tuned the base model on domain-specific data. Our fine-tuned model achieved 92% accuracy on the benchmark dataset. This represents a 15% improvement over the baseline.",
+      "criticality": "1 - Critical: Primary experimental result of this study",
+      "reference": null,
+      "supporting_data": "Fine-tuned model achieved 92% accuracy on benchmark dataset (n=10,000 test samples, 15% improvement over 77% baseline, p<0.001, Table 2, Results section)",
+      "reference_details": null,
+      "text_location": {
+        "start_char": 890,
+        "end_char": 960,
+        "paragraph_index": 12,
+        "sentence_index": 1,
+        "word_start": 180,
+        "word_end": 195,
+        "section_name": "Experimental Results"
+      }
     }
   ]
 }

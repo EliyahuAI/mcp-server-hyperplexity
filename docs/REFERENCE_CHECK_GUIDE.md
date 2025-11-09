@@ -96,6 +96,8 @@ User clicks "Check References" to process
 
 ### Step 3: Claim Extraction
 ```
+Progress indicator shows: "Extracting claims and references. This takes a minute..." (50%)
+  ↓
 SONNET 4.5 extracts:
   - Discrete claims
   - Context for each claim
