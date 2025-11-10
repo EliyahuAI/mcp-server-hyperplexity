@@ -129,37 +129,6 @@ class ClaimExtractor:
                                 "type": ["string", "null"],
                                 "description": "OPTIONAL: When claim is supported by original measurements/data from THIS paper, provide the ACTUAL data explicitly with numbers, sample sizes, metrics, and table/figure references. Example: 'Model achieved 92% accuracy on benchmark dataset (n=10,000 samples, Table 2, Results section)' or 'Survey results: 78% of 500 participants reported daily social media use averaging 3.2 hours (Figure 1, Methods section)'"
                             },
-                            "reference_details": {
-                                "type": ["object", "null"],
-                                "description": "Parsed information about the reference (if identifiable)",
-                                "properties": {
-                                    "authors": {
-                                        "type": "array",
-                                        "items": {"type": "string"},
-                                        "description": "List of author names"
-                                    },
-                                    "year": {
-                                        "type": "string",
-                                        "description": "Publication year"
-                                    },
-                                    "title": {
-                                        "type": "string",
-                                        "description": "Paper/article title"
-                                    },
-                                    "doi": {
-                                        "type": ["string", "null"],
-                                        "description": "DOI identifier (if present)"
-                                    },
-                                    "url": {
-                                        "type": ["string", "null"],
-                                        "description": "URL or arXiv ID (if present)"
-                                    },
-                                    "source": {
-                                        "type": "string",
-                                        "description": "Publication venue (journal, conference, etc.)"
-                                    }
-                                }
-                            },
                             "text_location": {
                                 "type": "object",
                                 "description": "Location of claim in original text",

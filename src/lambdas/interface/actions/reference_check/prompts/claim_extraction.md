@@ -173,17 +173,13 @@ Look for these citation patterns in the text:
 - ONLY the bracketed number: ✅ `[1]` is CORRECT
 - The system will expand `[1]` to full citation later during CSV generation
 
-## REFERENCE DETAILS TO EXTRACT
+## REFERENCE HANDLING - SIMPLIFIED
 
-When a reference is found, try to extract:
-- **authors**: List of author names (if identifiable)
-- **year**: Publication year
-- **title**: Paper/article title (if present)
-- **doi**: DOI identifier (if present)
-- **url**: URL or arXiv ID (if present)
-- **source**: Publication venue (journal, conference, etc.)
+Since references have been pre-confirmed by the system, you do NOT need to extract reference details.
 
-If reference format is unclear or incomplete, extract what you can.
+Simply:
+- Use the reference number `[1]`, `[2]`, etc. in the claim's `reference` field
+- Do NOT include `reference_details` in your output (not needed - references already confirmed)
 
 ## TEXT LOCATION MAPPING
 
@@ -302,16 +298,30 @@ Provide a concise, descriptive name for this reference check table based on the 
 - This preserves the original document sequence regardless of sorting
 
 **2. Sort claims by criticality (output order)**:
-- **MANDATORY**: After assigning claim_order, sort the claims array by criticality level (most critical first)
+- **MANDATORY - THIS IS CRITICAL**: After assigning claim_order, you MUST sort the claims array by criticality level
+- **DO NOT return claims in document order!** They must be re-ordered by criticality!
 - Output order: Level 1 (Critical) → Level 2 (Major) → Level 3 (Supporting) → Level 4 (Minor) → Level 5 (Context)
 - Within the same criticality level, maintain document order (use claim_order as tiebreaker)
 - This ensures the most important claims are validated first
 
-**Example**:
-- Document has claims appearing in order: A (criticality 3), B (criticality 1), C (criticality 2)
-- Assign: A gets claim_order=1, B gets claim_order=2, C gets claim_order=3
-- Then sort by criticality: Output order is B (crit 1, order 2), C (crit 2, order 3), A (crit 3, order 1)
-- Users can see B was the 2nd claim in the document but is now first due to being most critical
+**Example of CORRECT sorting**:
+```
+Document order:
+- Claim A appears first (claim_order=1, criticality="3 - Supporting")
+- Claim B appears second (claim_order=2, criticality="1 - Critical")
+- Claim C appears third (claim_order=3, criticality="2 - Major")
+
+WRONG output (document order):
+claims: [A, B, C]  ← This is WRONG! Don't do this!
+
+CORRECT output (sorted by criticality):
+claims: [B, C, A]  ← This is CORRECT!
+- B comes first (criticality 1, even though it was 2nd in document)
+- C comes second (criticality 2)
+- A comes last (criticality 3, even though it was 1st in document)
+```
+
+The claim_order field preserves where each claim originally appeared, but the array order must be by criticality!
 
 **EXTRACTION STEPS**:
 
@@ -351,59 +361,43 @@ Provide a concise, descriptive name for this reference check table based on the 
       "criticality": "1 - Critical: Core statistical claim about hallucination rates",
       "reference": "[2]",
       "supporting_data": null,
-      "reference_details": {
-        "authors": ["Chen, L.", "Wang, X."],
-        "year": "2024",
-        "title": "Measuring Factual Accuracy in Large Language Models",
-        "doi": null,
-        "url": "arXiv:2401.12345",
-        "source": "arXiv preprint"
-      },
       "text_location": {
         "start_char": 125,
         "end_char": 195,
         "paragraph_index": 2,
         "sentence_index": 1,
-        "word_start": 25,
-        "word_end": 40,
         "section_name": "Results"
       }
     },
     {
       "claim_id": "claim_002",
-      "claim_order": 5,
-      "statement": "Newer models show improvement in factual accuracy",
-      "context": "However, newer models show improvement in factual accuracy. The latest GPT-4 Turbo reduces hallucinations compared to earlier versions.",
-      "criticality": "3 - Supporting: Additional evidence about model improvements",
-      "reference": null,
-      "supporting_data": null,
-      "reference_details": null,
-      "text_location": {
-        "start_char": 380,
-        "end_char": 435,
-        "paragraph_index": 4,
-        "sentence_index": 0,
-        "word_start": 75,
-        "word_end": 85
-      }
-    },
-    {
-      "claim_id": "claim_003",
       "claim_order": 8,
       "statement": "Our fine-tuned model achieved 92% accuracy on the benchmark dataset",
       "context": "We fine-tuned the base model on domain-specific data. Our fine-tuned model achieved 92% accuracy on the benchmark dataset. This represents a 15% improvement over the baseline.",
       "criticality": "1 - Critical: Primary experimental result of this study",
       "reference": null,
       "supporting_data": "Fine-tuned model achieved 92% accuracy on benchmark dataset (n=10,000 test samples, 15% improvement over 77% baseline, p<0.001, Table 2, Results section)",
-      "reference_details": null,
       "text_location": {
         "start_char": 890,
         "end_char": 960,
         "paragraph_index": 12,
         "sentence_index": 1,
-        "word_start": 180,
-        "word_end": 195,
         "section_name": "Experimental Results"
+      }
+    },
+    {
+      "claim_id": "claim_003",
+      "claim_order": 5,
+      "statement": "Newer models show improvement in factual accuracy",
+      "context": "However, newer models show improvement in factual accuracy. The latest GPT-4 Turbo reduces hallucinations compared to earlier versions.",
+      "criticality": "3 - Supporting: Additional evidence about model improvements",
+      "reference": null,
+      "supporting_data": null,
+      "text_location": {
+        "start_char": 380,
+        "end_char": 435,
+        "paragraph_index": 4,
+        "sentence_index": 0
       }
     }
   ]
@@ -411,10 +405,11 @@ Provide a concise, descriptive name for this reference check table based on the 
 ```
 
 **Important notes**:
-- **References are pre-confirmed**: Do NOT include `reference_list` in your output
+- **MUST SORT BY CRITICALITY**: Claims array must be sorted by criticality level (1→2→3→4→5), NOT document order
+- **claim_order preserves position**: Use claim_order field to track where claim appeared in document
+- **References are pre-confirmed**: Do NOT include `reference_list` or `reference_details` in your output
 - **Use numbers only**: In claim `reference` fields, use only `[1]`, `[2]`, etc.
 - **Criticality is required**: Must assess every claim with 1-5 scale
-- **claim_order is required**: Must preserve document position for every claim
 - **supporting_data is optional**: Include when claim has original measurements from this paper
 
 ## SPECIAL CASES
@@ -462,6 +457,27 @@ If no confirmed references are provided, the text has unreferenced claims. Set `
 
 ---
 
+## FINAL REMINDERS BEFORE YOU RESPOND
+
+**CRITICAL - READ THIS BEFORE GENERATING OUTPUT**:
+
+1. **SORT THE CLAIMS ARRAY BY CRITICALITY** - Do NOT return in document order!
+   - First: All Level 1 (Critical) claims
+   - Second: All Level 2 (Major) claims
+   - Third: All Level 3 (Supporting) claims
+   - Fourth: All Level 4 (Minor) claims
+   - Fifth: All Level 5 (Context) claims
+
+2. **DO NOT INCLUDE reference_details** - References are already confirmed, no need to extract details
+
+3. **USE claim_order TO TRACK DOCUMENT POSITION** - This field shows where the claim originally appeared
+
+4. **REFERENCE FIELD: NUMBERS ONLY** - Use `[1]`, `[2]`, not `[1] Author (2023)`
+
+---
+
 ## YOUR RESPONSE
 
 Analyze the text above and return your extraction in valid JSON format following the schema described above.
+
+**Remember: SORT the claims array by criticality level (1, 2, 3, 4, 5) before returning!**
