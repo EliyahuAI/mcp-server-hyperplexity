@@ -236,12 +236,13 @@ async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any) -> D
         # Initialize WebSocket client
         websocket_client = WebSocketClient()
 
-        # Send progress update
+        # Send initial progress update
         websocket_client.send_to_session(session_id, {
             'type': 'pdf_conversion_progress',
             'pdf_id': pdf_id,
-            'status': 'converting',
-            'message': f'Reading {filename}...'
+            'status': 'downloading',
+            'progress': 10,
+            'message': f'Downloading {filename}...'
         })
 
         # Download PDF from S3
@@ -269,17 +270,35 @@ async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any) -> D
             temp_pdf_path = temp_pdf.name
 
         try:
-            # Convert PDF to markdown using pymupdf4llm
-            logger.info(f"[PDF_CONVERT] Converting {filename} to markdown")
-
-            markdown_text = pymupdf4llm.to_markdown(temp_pdf_path)
-
-            # Get page count
+            # Get page count first to show in progress message
             doc = fitz.open(temp_pdf_path)
             page_count = len(doc)
             doc.close()
 
+            # Send conversion start progress
+            websocket_client.send_to_session(session_id, {
+                'type': 'pdf_conversion_progress',
+                'pdf_id': pdf_id,
+                'status': 'converting',
+                'progress': 20,
+                'message': f'Converting {page_count} pages to text. This may take up to 2 minutes for large PDFs...'
+            })
+
+            # Convert PDF to markdown using pymupdf4llm
+            logger.info(f"[PDF_CONVERT] Converting {filename} to markdown ({page_count} pages)")
+
+            markdown_text = pymupdf4llm.to_markdown(temp_pdf_path)
+
             logger.info(f"[PDF_CONVERT] Successfully converted {page_count} pages ({len(markdown_text)} chars)")
+
+            # Send conversion complete progress
+            websocket_client.send_to_session(session_id, {
+                'type': 'pdf_conversion_progress',
+                'pdf_id': pdf_id,
+                'status': 'validating',
+                'progress': 80,
+                'message': f'Conversion complete. Validating text size...'
+            })
 
             # Load config for text limits
             config_path = Path(__file__).parent / 'reference_check_config.json'
