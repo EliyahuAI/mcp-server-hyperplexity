@@ -41,6 +41,19 @@
       "notes": "Auto-generated identifier for tracking claims. No validation needed."
     },
     {
+      "column": "Claim Order",
+      "description": "Sequential order as claim appears in original document",
+      "importance": "ID",
+      "format": "Integer (1, 2, 3, etc.)",
+      "examples": [
+        "1",
+        "2",
+        "15"
+      ],
+      "search_group": 0,
+      "notes": "Preserves the claim's position in the original document before criticality sorting. No validation needed."
+    },
+    {
       "column": "Statement",
       "description": "The factual claim being made",
       "importance": "ID",
@@ -83,15 +96,27 @@
       "column": "Reference",
       "description": "The citation or source provided to support the claim",
       "importance": "ID",
-      "format": "String (short citation format: [#] FirstAuthor et al. (Year) or [#] domain.com)",
+      "format": "String (full citation format: [#] Complete citation text)",
       "examples": [
-        "[1] Smith et al. (2023)",
-        "[2] Johnson (2024)",
-        "[3] publichealth.jhu.edu",
-        "[1] Smith et al. (2023), [2] Johnson (2024)"
+        "[1] Smith, J. et al. (2023). Understanding AI hallucinations. Nature, 5(2), 123-145.",
+        "[2] Johnson, A. (2024). Machine learning basics. arXiv:2401.12345",
+        "[1] Firth et al. (2019). The online brain..., [2] Satici et al. (2023). Doomscrolling scale..."
       ],
       "search_group": 0,
-      "notes": "The source reference(s) supporting the claim, in short citation format showing reference number and first author/year or domain. Multiple references are comma-separated. Can be null if claim is unreferenced (fact-check mode). No validation needed - used as context for finding the source."
+      "notes": "Full citation(s) supporting the claim, expanded from reference numbers. Multiple references are comma-separated. Can be null if claim is unreferenced (fact-check mode). No validation needed - used as context for accessing the source."
+    },
+    {
+      "column": "Supporting Data",
+      "description": "Explicit measurements or data from THIS paper's original results (not external references)",
+      "importance": "ID",
+      "format": "String (explicit measurements with sample sizes, statistics, table/figure references, section name)",
+      "examples": [
+        "Model achieved 92% accuracy on benchmark dataset (n=10,000 samples, 15% improvement over baseline, Table 2, Results section)",
+        "Survey results: 78% of 500 participants reported daily usage averaging 3.2 hours (SD=1.1, Figure 1, Methods section)",
+        "Experimental measurements showed 30% improvement (p<0.05, n=100 trials, Table 3)"
+      ],
+      "search_group": 0,
+      "notes": "Contains the paper's own experimental results, measurements, or survey data that support this claim. Only populated when claim describes original findings from THIS paper (not citations to other papers). No validation needed - informational only."
     },
     {
       "column": "Claim Criticality",
