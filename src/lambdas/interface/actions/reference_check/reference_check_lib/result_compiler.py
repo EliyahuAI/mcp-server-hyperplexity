@@ -50,10 +50,12 @@ class ResultCompiler:
         for result in validation_results:
             row = [
                 result.get('claim_id', ''),
+                result.get('claim_order', ''),
                 result.get('statement', ''),
                 result.get('context', ''),
                 result.get('text_location', ''),
                 result.get('reference', ''),
+                result.get('supporting_data', ''),
                 result.get('criticality', ''),
                 result.get('reference_description', ''),
                 result.get('reference_says', ''),

@@ -38,10 +38,12 @@
     "output": {
         "csv_columns": [
             "Claim ID",
+            "Claim Order",
             "Statement",
             "Context",
             "Text Location",
             "Reference",
+            "Supporting Data",
             "Claim Criticality",
             "Reference Description",
             "What Reference Says",
