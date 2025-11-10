@@ -14,7 +14,7 @@ Step 0 (Extraction):
     "conversation_id": str,
     "current_step": 0,
     "total_steps": 2,
-    "status": "Extracting claims and references. This takes a minute...",
+    "status": "Extracting claims from text. This takes a minute...",
     "progress_percent": 50,
     "progress": 50,
     "phase": "extraction"
@@ -480,7 +480,7 @@ async def _extract_claims(
             conversation_id=conversation_id,
             current_step=0,
             total_steps=2,
-            status='Extracting claims and references. This takes a minute...',
+            status='Extracting claims from text. This takes a minute...',
             progress_percent=50,
             phase='extraction'
         )

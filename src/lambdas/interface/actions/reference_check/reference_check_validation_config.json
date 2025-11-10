@@ -1,5 +1,5 @@
 {
-  "general_notes": "This table contains extracted claims with citations that need validation. The ID columns (Claim ID, Statement, Context, Reference) are already populated from extraction. The RESEARCH columns (Support Level, Confidence, Validation Notes) must be validated by accessing the cited references using web search to verify how well each reference supports its corresponding claim. Use a single comprehensive search to validate all three research columns together for efficiency.",
+  "general_notes": "This table contains extracted claims that need validation. The ID columns are pre-populated from extraction. The RESEARCH columns must be validated using the following logic:\n\n**VALIDATION LOGIC**:\n1. **If Reference is provided** (external citation):\n   - Access the cited reference via web search\n   - Verify how well it supports the claim\n   - Do NOT use the paper itself as validation source\n\n2. **If Supporting Data is provided** (paper's own results):\n   - Evaluate whether the stated measurements/data actually support the claim\n   - Check if other data in the original text (see below) corroborates or contradicts\n   - Do NOT use the paper's own assertions as proof - check if measurements logically support the claim\n   - If claim needs external validation, use web search to check acceptance of the statement (excluding this paper)\n\n3. **If neither Reference nor Supporting Data**:\n   - Use web search to assess how accepted/verified this statement is\n   - Search for authoritative sources on the topic\n   - EXCLUDE this paper from validation sources (cannot self-reference)\n\n**CRITICAL**: The paper being analyzed cannot validate its own claims. Supporting Data shows what the paper claims - you must evaluate if those measurements actually support the claim or if external verification is needed.",
   "default_model": "sonar-pro",
   "default_search_context_size": "high",
   "anthropic_max_web_searches_default": 0,
@@ -124,43 +124,44 @@
       "importance": "ID",
       "format": "String (format: {level} - {level_name}: {brief reason})",
       "examples": [
-        "1 - Critical: Central thesis claim about vaccine effectiveness",
-        "2 - Major: Key supporting evidence from primary study",
+        "5 - Critical: Central thesis claim about vaccine effectiveness",
+        "4 - Major: Key supporting evidence from primary study",
         "3 - Supporting: Additional corroborating data point",
-        "4 - Minor: Peripheral historical context",
-        "5 - Context: Background information on methodology"
+        "2 - Minor: Peripheral historical context",
+        "1 - Minimal: Background information on methodology"
       ],
       "search_group": 0,
-      "notes": "Criticality assessment on 1-5 scale (1=Critical, 5=Context) indicating how central this claim is to the document's main argument. Level 1 (Critical) means the entire thesis depends on this claim; if false, the conclusion collapses. Level 5 (Context) means background information with no impact on the central thesis. Format must include numeric level, level name, and brief reason. No validation needed - extracted during claim identification."
+      "notes": "Criticality assessment on 1-5 scale (5=Critical, 1=Minimal) indicating how central this claim is to the document's main argument. Level 5 (Critical) means the entire thesis depends on this claim; if false, the conclusion collapses. Level 1 (Minimal) means background information with no impact on the central thesis. Format must include numeric level, level name, and brief reason. No validation needed - extracted during claim identification."
     },
     {
       "column": "Reference Description",
-      "description": "Brief description of what the reference source is (e.g., peer-reviewed paper, official documentation, news article)",
+      "description": "Brief description of validation sources used (external references, supporting data assessment, or web search)",
       "importance": "RESEARCH",
       "format": "String (brief source description)",
       "examples": [
-        "IPCC AR6 Working Group 1 Report - official climate assessment",
-        "Python.org official documentation - language history page",
-        "arXiv preprint by Chen et al. (2024) on LLM factual accuracy",
-        "Nature AI peer-reviewed journal article",
-        "N/A - no reference provided, fact-checked via general web search"
+        "External ref: IPCC AR6 Report - peer-reviewed climate assessment",
+        "External ref: arXiv preprint by Chen et al. (2024) on LLM accuracy",
+        "Supporting data: Evaluated paper's stated measurements against claim",
+        "Supporting data + Web search: Checked if 92% accuracy claim is reasonable for this task type",
+        "Web search: Assessed general acceptance of statement (paper excluded from validation)"
       ],
       "search_group": 1,
-      "notes": "Briefly describe the source type and authority. For referenced claims, identify the source (journal, documentation, news, etc.). For unreferenced claims (fact-check mode), state 'N/A - fact-checked via web search' or similar."
+      "notes": "Describe validation approach:\n- If Reference provided: Identify the external source (journal, documentation, etc.)\n- If Supporting Data provided: State that you evaluated the paper's measurements\n- If neither: State 'Web search' validation\nCRITICAL: Do NOT use the paper itself as a validation source. Supporting Data is what the paper CLAIMS - you must assess if it's reasonable/supported."
     },
     {
       "column": "What Reference Says",
-      "description": "Summary of what the reference (or web search results for unreferenced claims) says about the topic",
+      "description": "Summary of validation findings - what sources say or how supporting data relates to the claim",
       "importance": "RESEARCH",
-      "format": "String (concise summary of relevant content)",
+      "format": "String (concise summary of validation findings)",
       "examples": [
-        "The report states global surface temperature increased by 1.1°C from 1850-1900 to 2011-2020 (high confidence).",
-        "Documentation confirms Python was first released in February 1991 by Guido van Rossum.",
-        "Study measured hallucination rates of 12-23% across 5 LLMs, averaging 17.5%.",
-        "Multiple authoritative sources (NASA, NOAA, IPCC) confirm warming trend with slight variations in exact figures."
+        "External ref: Report states temperature increased by 1.1°C from 1850-1900 to 2011-2020 (high confidence).",
+        "Supporting data analysis: Paper's measurements show 92% accuracy (n=10,000) which logically supports the 92% claim. Other papers report 85-95% for similar tasks.",
+        "Supporting data only: Paper states 76% agreement with human labels based on 3 graduate students evaluating random samples.",
+        "Web search: Multiple authoritative sources (NASA, NOAA, IPCC) confirm warming trend. Paper excluded from validation.",
+        "External ref + Supporting data: Citation confirms method; paper's own data (Table 2) shows stated results."
       ],
       "search_group": 1,
-      "notes": "For referenced claims: Quote or paraphrase what the specific reference says about the claim. For unreferenced claims (fact-check mode): Summarize what authoritative sources say about the statement based on web search. Include key facts, numbers, or findings. Keep focused on content relevant to the claim."
+      "notes": "Validation approach varies by claim type:\n\n**With External Reference**: Quote/paraphrase what the cited source says. Access the reference via web search.\n\n**With Supporting Data (paper's own results)**: Analyze if the stated measurements logically support the claim. Check if other data in original text (see general_notes below) corroborates. If external validation needed, use web search but EXCLUDE this paper.\n\n**With Neither**: Use web search to find authoritative sources. EXCLUDE the paper being analyzed from validation.\n\n**CRITICAL**: The paper cannot validate its own claims. Supporting Data shows what it CLAIMS - assess if reasonable/supported externally."
     },
     {
       "column": "Qualified Fact",
@@ -181,7 +182,7 @@
     },
     {
       "column": "Support Level",
-      "description": "Assessment of how well the reference(s) support the claim - validate by accessing the reference and comparing its content to the claim",
+      "description": "Assessment of how well the claim is supported based on validation sources",
       "importance": "RESEARCH",
       "format": "String (one of: Confirmed, Supported, Partial, Unclear, Contradicted, Inaccessible, Mixed)",
       "examples": [
@@ -194,22 +195,22 @@
         "Mixed (Confirmed by [1][2], Contradicted by [3])"
       ],
       "search_group": 1,
-      "notes": "CRITICAL: Access the reference using web search. If multiple references listed (e.g., [1][2][3]), access all cited sources and synthesize findings. Search strategies: (1) If URL provided, try to access directly. (2) If DOI/arXiv, search for 'doi:XXX' or 'arxiv:XXX'. (3) If academic citation, search for author names + year + title. (4) If numbered refs like [1], check if reference list provided at end of text. (5) If general source, search for source name + relevant keywords. HANDLING MULTIPLE REFERENCES: When multiple references are cited, evaluate each source independently, then synthesize overall support level. Use 'Mixed' status to indicate conflicting sources - specify which references support/contradict (e.g., 'Mixed (Confirmed by [1][2], Contradicted by [3])'). Otherwise, synthesize to a single dominant level based on weight of evidence. Then compare reference content to claim and assess: Confirmed (reference explicitly confirms claim with exact match), Supported (reference generally agrees with claim), Partial (reference supports some aspects but not all), Unclear (reference is ambiguous or doesn't directly address claim), Contradicted (reference explicitly disagrees), Inaccessible (cannot find or access after reasonable attempts), Mixed (multiple references with conflicting assessments)."
+      "notes": "**VALIDATION LOGIC BY CLAIM TYPE**:\n\n**1. External Reference Provided**:\n- Access the reference via web search\n- Compare reference content to claim\n- Levels: Confirmed (exact match), Supported (general agreement), Partial (some aspects), Unclear (ambiguous), Contradicted (disagrees), Inaccessible (can't access)\n- If multiple refs: Synthesize or use Mixed if conflicting\n\n**2. Supporting Data Provided (paper's own results)**:\n- Analyze if stated measurements logically support the claim\n- Check other data in original text for corroboration/contradiction\n- If claim needs external validation: Use web search (EXCLUDE this paper) to check if the statement is accepted/reasonable\n- Example: Claim says '92% accuracy', Supporting Data says 'n=10,000, Table 2' → Check if 92% is reasonable for this task via external sources\n- Do NOT simply accept paper's assertion - assess credibility\n\n**3. Neither Reference nor Supporting Data**:\n- Use web search to assess acceptance of statement\n- EXCLUDE the paper being analyzed from validation sources\n- Base on external authoritative sources only\n\n**CRITICAL**: Paper cannot self-validate. Supporting Data is a claim by the paper - treat critically."
     },
     {
       "column": "Validation Notes",
-      "description": "Detailed explanation of validation findings including what the reference says, key points of agreement/disagreement, and source assessment",
+      "description": "Detailed explanation of validation findings based on external sources, supporting data analysis, or web search",
       "importance": "RESEARCH",
       "format": "String (concise but comprehensive explanation)",
       "examples": [
-        "Reference directly states the claim with exact temperature value of 1.1°C above pre-industrial levels (IPCC AR6 WG1 Report, Chapter 2). Source is highly authoritative (official IPCC assessment). Strong match.",
-        "Reference confirms Python was created by Guido van Rossum and first released in February 1991 (Python.org official history page). Official documentation source with exact date match.",
-        "Reference provides estimate of 12-23% hallucination rate depending on model and task, with average of 17.5% (Chen et al., 2024, arXiv preprint). The 15-20% claim falls within this range. Peer-reviewed preprint, credible methodology.",
-        "Reference URL returns 404 error. Searched for author 'Johnson, A. (2023) AI Hallucinations' but could not locate in Nature AI archives or Google Scholar. Cannot verify claim.",
-        "Reference discusses AI accuracy but focuses on translation tasks, not general factual claims. Does not address hallucination rates directly. Partially relevant but insufficient to support specific claim."
+        "External ref [1]: IPCC AR6 directly states 1.1°C increase (Chapter 2). Highly authoritative official assessment. Exact match.",
+        "Supporting data: Paper claims 92% accuracy with n=10,000 samples (Table 2). Web search shows similar benchmarks report 85-95% for this task type, making 92% reasonable and within expected range.",
+        "Supporting data only: Paper states 76% agreement between GPT labels and 3 graduate students. Sample size is small but methodology is standard. Claim is internally consistent with stated measurement.",
+        "Web search (paper excluded): Multiple authoritative sources (NASA, NOAA, IPCC) confirm warming trend. Paper not used as validation source.",
+        "External ref [2] + Supporting data: Citation confirms dropout regularization method. Paper's Table 3 shows 15% improvement as stated. Both sources align."
       ],
       "search_group": 1,
-      "notes": "Provide comprehensive validation notes including: (1) What the reference actually says - quote or paraphrase relevant sections. (2) Comparison to claim - explain how reference content relates to the claim (exact match, close match, partial match, mismatch, or not addressed). (3) Key differences if any - note discrepancies in numbers, dates, scope, or interpretation. (4) Source assessment - evaluate source type (peer-reviewed, official documentation, news, blog, etc.) and reliability. (5) Access notes if relevant - mention if reference was hard to access, behind paywall, or unavailable. Keep concise but informative - aim for 2-4 sentences covering the key points."
+      "notes": "**VALIDATION APPROACH BY TYPE**:\n\n**External Reference**: (1) Access reference via web search. (2) Quote/paraphrase what it says. (3) Compare to claim. (4) Assess source credibility. (5) Note discrepancies if any.\n\n**Supporting Data (paper's own results)**: (1) Analyze if measurements logically support claim. (2) Check original text for corroboration. (3) If needed, use web search to verify if claim is reasonable (EXCLUDE this paper). (4) Assess if sample sizes/methods are sound. (5) Note if claim matches stated data.\n\n**Neither**: (1) Use web search for authoritative sources. (2) EXCLUDE the paper being analyzed. (3) Assess acceptance of statement. (4) Note source types used.\n\n**CRITICAL**: Paper cannot self-validate. Supporting Data shows what paper CLAIMS - you must critically assess if reasonable, not simply accept it."
     }
   ],
   "storage_metadata": {

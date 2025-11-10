@@ -45,30 +45,30 @@ Before extracting claims, assess if the text is suitable for reference checking:
 
 For each claim, assess how critical it is to the document's central thesis. If this claim were proven false, how much damage would it do to the main argument?
 
-**Criticality Levels** (1-5 scale, where 1 = Critical, 5 = Context):
+**Criticality Levels** (1-5 scale, where 5 = Critical, 1 = Minimal):
 
-**Level 1 - Critical** - This is a central thesis claim. The entire document's argument depends on this being true. If false, the entire conclusion collapses.
+**Level 5 - Critical** - This is a central thesis claim. The entire document's argument depends on this being true. If false, the entire conclusion collapses.
    - Example: In a paper arguing "COVID vaccines are effective", the claim "Vaccines reduced hospitalizations by 90%" is Critical.
 
-**Level 2 - Major** - This is key supporting evidence for the main argument. If false, it significantly weakens the thesis, though the argument might still hold with other evidence.
+**Level 4 - Major** - This is key supporting evidence for the main argument. If false, it significantly weakens the thesis, though the argument might still hold with other evidence.
    - Example: A specific study supporting the vaccine claim; losing this study weakens but doesn't destroy the argument.
 
 **Level 3 - Supporting** - This is important corroborating evidence, but not essential. The thesis remains viable without it, supported by other claims.
    - Example: Additional data points that reinforce but aren't necessary for the main conclusion.
 
-**Level 4 - Minor** - This is a peripheral detail or tangential point. If false, the impact on the main argument is minimal.
+**Level 2 - Minor** - This is a peripheral detail or tangential point. If false, the impact on the main argument is minimal.
    - Example: Historical context about when a vaccine was developed; interesting but not central to effectiveness claims.
 
-**Level 5 - Context** - This is background information, definitions, or general context. If false, there's no impact on the central thesis.
+**Level 1 - Minimal** - This is background information, definitions, or general context. If false, there's no impact on the central thesis.
    - Example: "mRNA technology has been studied for decades" - provides context but isn't essential to the main argument.
 
 **Output Format for Criticality:**
 Return as: `{level} - {level_name}: {brief reason}`
 
 Examples:
-- `1 - Critical: Central thesis claim about vaccine effectiveness`
+- `5 - Critical: Central thesis claim about vaccine effectiveness`
 - `3 - Supporting: Additional evidence corroborating main finding`
-- `5 - Context: Background information on mRNA technology history`
+- `1 - Minimal: Background information on mRNA technology history`
 
 **Assessment Guidelines:**
 - Consider the document's primary purpose and thesis
@@ -313,40 +313,15 @@ Provide a concise, descriptive name for this reference check table based on the 
 
 **CRITICAL INSTRUCTIONS - READ CAREFULLY**:
 
-**CLAIM ORDERING REQUIREMENTS**:
+**CLAIM ORDERING**:
 
-**1. Assign claim_order (document position)**:
-- BEFORE sorting, assign each claim a sequential `claim_order` number based on its position in the original document
+**Assign claim_order (document position)**:
+- Assign each claim a sequential `claim_order` number based on its position in the original document
 - First claim in document: `claim_order: 1`
 - Second claim in document: `claim_order: 2`
 - And so on...
-- This preserves the original document sequence regardless of sorting
-
-**2. Sort claims by criticality (output order)**:
-- **MANDATORY - THIS IS CRITICAL**: After assigning claim_order, you MUST sort the claims array by criticality level
-- **DO NOT return claims in document order!** They must be re-ordered by criticality!
-- Output order: Level 1 (Critical) → Level 2 (Major) → Level 3 (Supporting) → Level 4 (Minor) → Level 5 (Context)
-- Within the same criticality level, maintain document order (use claim_order as tiebreaker)
-- This ensures the most important claims are validated first
-
-**Example of CORRECT sorting**:
-```
-Document order:
-- Claim A appears first (claim_order=1, criticality="3 - Supporting")
-- Claim B appears second (claim_order=2, criticality="1 - Critical")
-- Claim C appears third (claim_order=3, criticality="2 - Major")
-
-WRONG output (document order):
-claims: [A, B, C]  ← This is WRONG! Don't do this!
-
-CORRECT output (sorted by criticality):
-claims: [B, C, A]  ← This is CORRECT!
-- B comes first (criticality 1, even though it was 2nd in document)
-- C comes second (criticality 2)
-- A comes last (criticality 3, even though it was 1st in document)
-```
-
-The claim_order field preserves where each claim originally appeared, but the array order must be by criticality!
+- Extract claims in document order (no sorting needed)
+- The claim_order field helps users track where each claim appeared
 
 **EXTRACTION STEPS**:
 
@@ -361,9 +336,9 @@ The claim_order field preserves where each claim originally appeared, but the ar
 - In claim `reference` fields: Use ONLY the number: `[1]`, NOT `(Firth et al., 2019)`
 
 **STEP 3: EXTRACT CLAIMS**
-- Extract discrete, verifiable claims from the text
-- Assign criticality (1-5 scale)
-- Assign claim_order (document position)
+- Extract discrete, verifiable claims from the text in document order
+- Assign criticality (1-5 scale, where 5=Critical, 1=Minimal)
+- Assign claim_order (sequential document position: 1, 2, 3...)
 - Link to confirmed references using numbers only
 
 **OUTPUT STRUCTURE**:
@@ -380,10 +355,10 @@ The claim_order field preserves where each claim originally appeared, but the ar
   "claims": [
     {
       "claim_id": "claim_001",
-      "claim_order": 2,
+      "claim_order": 1,
       "statement": "AI models can hallucinate facts in 15-20% of responses",
       "context": "Recent research has examined the accuracy of large language models. AI models can hallucinate facts in 15-20% of responses. This has implications for real-world deployment.",
-      "criticality": "1 - Critical: Core statistical claim about hallucination rates",
+      "criticality": "5 - Critical: Core statistical claim about hallucination rates",
       "reference": "[2]",
       "supporting_data": null,
       "text_location": {
@@ -396,23 +371,7 @@ The claim_order field preserves where each claim originally appeared, but the ar
     },
     {
       "claim_id": "claim_002",
-      "claim_order": 8,
-      "statement": "Our fine-tuned model achieved 92% accuracy on the benchmark dataset",
-      "context": "We fine-tuned the base model on domain-specific data. Our fine-tuned model achieved 92% accuracy on the benchmark dataset. This represents a 15% improvement over the baseline.",
-      "criticality": "1 - Critical: Primary experimental result of this study",
-      "reference": null,
-      "supporting_data": "Fine-tuned model achieved 92% accuracy on benchmark dataset (n=10,000 test samples, 15% improvement over 77% baseline, p<0.001, Table 2, Results section)",
-      "text_location": {
-        "start_char": 890,
-        "end_char": 960,
-        "paragraph_index": 12,
-        "sentence_index": 1,
-        "section_name": "Experimental Results"
-      }
-    },
-    {
-      "claim_id": "claim_003",
-      "claim_order": 5,
+      "claim_order": 2,
       "statement": "Newer models show improvement in factual accuracy",
       "context": "However, newer models show improvement in factual accuracy. The latest GPT-4 Turbo reduces hallucinations compared to earlier versions.",
       "criticality": "3 - Supporting: Additional evidence about model improvements",
@@ -424,17 +383,33 @@ The claim_order field preserves where each claim originally appeared, but the ar
         "paragraph_index": 4,
         "sentence_index": 0
       }
+    },
+    {
+      "claim_id": "claim_003",
+      "claim_order": 3,
+      "statement": "Our fine-tuned model achieved 92% accuracy on the benchmark dataset",
+      "context": "We fine-tuned the base model on domain-specific data. Our fine-tuned model achieved 92% accuracy on the benchmark dataset. This represents a 15% improvement over the baseline.",
+      "criticality": "5 - Critical: Primary experimental result of this study",
+      "reference": null,
+      "supporting_data": "Fine-tuned model achieved 92% accuracy on benchmark dataset (n=10,000 test samples, 15% improvement over 77% baseline, p<0.001, Table 2, Results section)",
+      "text_location": {
+        "start_char": 890,
+        "end_char": 960,
+        "paragraph_index": 12,
+        "sentence_index": 1,
+        "section_name": "Experimental Results"
+      }
     }
   ]
 }
 ```
 
 **Important notes**:
-- **MUST SORT BY CRITICALITY**: Claims array must be sorted by criticality level (1→2→3→4→5), NOT document order
-- **claim_order preserves position**: Use claim_order field to track where claim appeared in document
+- **Extract in document order**: Return claims as they appear in the text (no sorting)
+- **claim_order tracks position**: Assign sequential numbers (1, 2, 3...) based on document appearance
+- **Criticality scale**: 5=Critical (thesis depends on it), 1=Minimal (background context)
 - **References are pre-confirmed**: Do NOT include `reference_list` or `reference_details` in your output
 - **Use numbers only**: In claim `reference` fields, use only `[1]`, `[2]`, etc.
-- **Criticality is required**: Must assess every claim with 1-5 scale
 - **supporting_data is optional**: Include when claim has original measurements from this paper
 
 ## SPECIAL CASES
@@ -486,23 +461,18 @@ If no confirmed references are provided, the text has unreferenced claims. Set `
 
 **CRITICAL - READ THIS BEFORE GENERATING OUTPUT**:
 
-1. **SORT THE CLAIMS ARRAY BY CRITICALITY** - Do NOT return in document order!
-   - First: All Level 1 (Critical) claims
-   - Second: All Level 2 (Major) claims
-   - Third: All Level 3 (Supporting) claims
-   - Fourth: All Level 4 (Minor) claims
-   - Fifth: All Level 5 (Context) claims
+1. **EXTRACT IN DOCUMENT ORDER** - Return claims as they appear in the text (1st claim → claim_order=1, 2nd → claim_order=2, etc.)
 
-2. **DO NOT INCLUDE reference_details** - References are already confirmed, no need to extract details
+2. **CRITICALITY SCALE** - 5=Critical (thesis depends on it), 1=Minimal (background info)
 
-3. **USE claim_order TO TRACK DOCUMENT POSITION** - This field shows where the claim originally appeared
+3. **DO NOT INCLUDE reference_details** - References are already confirmed, no need to extract details
 
 4. **REFERENCE FIELD: NUMBERS ONLY** - Use `[1]`, `[2]`, not `[1] Author (2023)`
+
+5. **PREFER MAIN TEXT** - If same claim appears in abstract and main text, use main text version
 
 ---
 
 ## YOUR RESPONSE
 
 Analyze the text above and return your extraction in valid JSON format following the schema described above.
-
-**Remember: SORT the claims array by criticality level (1, 2, 3, 4, 5) before returning!**

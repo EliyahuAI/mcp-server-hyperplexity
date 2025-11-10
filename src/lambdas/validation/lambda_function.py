@@ -4987,15 +4987,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             model_usage['total_tokens'] += total_tokens
                             model_usage['calls'] += 1
                             # REMOVED: Manual cost aggregation - handled by enhanced_data aggregation
-                            
+
                             if api_provider == 'perplexity':
-                                model_usage['prompt_tokens'] += usage.get('input_tokens', 0)  # ai_api_client normalizes to input_tokens
-                                model_usage['completion_tokens'] += usage.get('output_tokens', 0)  # ai_api_client normalizes to output_tokens
+                                # Use .get() to handle cases where model was initialized with 'unknown' provider
+                                model_usage['prompt_tokens'] = model_usage.get('prompt_tokens', 0) + usage.get('input_tokens', 0)  # ai_api_client normalizes to input_tokens
+                                model_usage['completion_tokens'] = model_usage.get('completion_tokens', 0) + usage.get('output_tokens', 0)  # ai_api_client normalizes to output_tokens
                             elif api_provider == 'anthropic':
-                                model_usage['input_tokens'] += usage.get('input_tokens', 0)
-                                model_usage['output_tokens'] += usage.get('output_tokens', 0)
-                                model_usage['cache_creation_tokens'] += usage.get('cache_creation_tokens', 0)
-                                model_usage['cache_read_tokens'] += usage.get('cache_read_tokens', 0)
+                                # Use .get() to handle cases where model was initialized with 'unknown' provider
+                                model_usage['input_tokens'] = model_usage.get('input_tokens', 0) + usage.get('input_tokens', 0)
+                                model_usage['output_tokens'] = model_usage.get('output_tokens', 0) + usage.get('output_tokens', 0)
+                                model_usage['cache_creation_tokens'] = model_usage.get('cache_creation_tokens', 0) + usage.get('cache_creation_tokens', 0)
+                                model_usage['cache_read_tokens'] = model_usage.get('cache_read_tokens', 0) + usage.get('cache_read_tokens', 0)
                 
                 # Remove the raw responses from the row result to avoid duplication
                 del row_result['_raw_responses']
