@@ -95,6 +95,31 @@ Examples:
 - ❌ Methodological descriptions: "We used Python for analysis"
 - ❌ Trivial statements: "AI is a rapidly growing field"
 
+### Abstract vs Main Text Priority
+
+**CRITICAL RULE**: When the same claim appears in both the abstract AND main text:
+- **Extract from main text ONLY** (skip the abstract version)
+- Main text usually has more context, details, and references
+- Abstract versions are often simplified summaries
+
+**When to extract from abstract**:
+- ✅ Claim is ONLY in abstract (not repeated in main text)
+- ✅ Abstract provides unique synthesis not stated elsewhere
+
+**Example**:
+```
+Abstract: "Our model achieved 92% accuracy"
+Results section: "Our model achieved 92% accuracy on the benchmark dataset (n=10,000, Table 2)"
+
+→ Extract the Results section version (has details + table reference)
+→ Skip the abstract version (less informative duplicate)
+```
+
+**How to identify abstract**:
+- Usually marked as "ABSTRACT" or "A BSTRACT" section
+- Typically appears near the beginning of the document
+- After abstract, the main text begins (Introduction, Methods, Results, etc.)
+
 ## ORIGINAL RESULTS vs EXTERNAL REFERENCES
 
 When extracting claims, distinguish between two types of support:
