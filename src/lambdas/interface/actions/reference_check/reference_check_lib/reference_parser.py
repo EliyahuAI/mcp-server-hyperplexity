@@ -858,80 +858,47 @@ class ReferenceParser:
 
     def build_enriched_text(self, text: str, reference_map: Dict[str, str], path_type: str, source_guess: str = None) -> str:
         """
-        Build enriched text with reference information for AI.
+        Build enriched text with confirmed reference information for claim extraction.
 
         Args:
             text: Original text
-            reference_map: Parsed references
+            reference_map: Confirmed references (from Python + AI extraction pipeline)
             path_type: Detection path (inline_links, needs_parsing, not_found)
             source_guess: Guessed source type (optional)
 
         Returns:
-            Enriched text with reference instructions
+            Enriched text with confirmed references appended
         """
         source_info = f" (Detected source: {source_guess})" if source_guess else ""
 
-        if path_type == "inline_links":
-            # Path A: References already inline with URLs
+        if not reference_map:
+            # No references found
             notice = f"""
 
---- REFERENCES DETECTED ({len(reference_map)} found){source_info} ---
-References are already inline with URLs. Use these exactly as provided in the text.
-Do NOT include reference_list in your output.
+--- NOTICE: No references detected{source_info} ---
+This text has unreferenced claims. Set reference: null for claims without citations.
 """
             return text + notice
 
-        elif path_type == "needs_parsing":
-            # Path B: Parsed reference section
-            # Run quality check on parsed references
-            is_good, failure_reason = self.check_reference_quality(reference_map)
+        # Build reference list
+        ref_list = "\n".join([
+            f"{ref_id} {citation}"
+            for ref_id, citation in sorted(
+                reference_map.items(),
+                key=lambda x: int(re.search(r'\d+', x[0]).group()) if re.search(r'\d+', x[0]) else 0
+            )
+        ])
 
-            if not is_good:
-                # Quality check failed - demand AI extraction
-                logger.warning(f"[REF PARSER] Parsed references failed quality check: {failure_reason}")
+        notice = f"""
 
-                # Build sample of unusable refs (can't use chr() in f-string)
-                newline = "\n"
-                sorted_refs = sorted(reference_map.items(), key=lambda x: int(re.search(r'\d+', x[0]).group()))
-                ref_sample = newline.join([f"{ref_id} {citation}" for ref_id, citation in sorted_refs])[:500]
-
-                notice = f"""
-
---- PARSED REFERENCES FAILED QUALITY CHECK ({len(reference_map)} found){source_info} ---
-Automated parsing was NOT successful. The extracted references are fragments/garbage.
-Reason: {failure_reason}
-
-**AI SEGMENTATION REQUIRED**:
-You MUST extract the complete reference list yourself from the References/Bibliography section.
-Do NOT trust the parsed references shown below - they are unusable.
-Provide your own complete `reference_list` with all references numbered [1], [2], [3], etc.
-
-Unusable parsed refs (for reference only):
-{ref_sample}...
-"""
-                return text + notice
-            else:
-                # Quality check passed - references are good
-                ref_list = "\n".join([f"{ref_id} {citation}" for ref_id, citation in sorted(reference_map.items(), key=lambda x: int(re.search(r'\d+', x[0]).group()))])
-                notice = f"""
-
---- PARSED REFERENCES ({len(reference_map)} found){source_info} ---
+--- CONFIRMED REFERENCES ({len(reference_map)} found){source_info} ---
 {ref_list}
 
-Use these references when extracting claims. Only include reference_list in output if these are wrong or unusable.
-If providing reference_list, it must be a COMPLETE replacement (not partial corrections).
+These references have been confirmed through Python parsing + AI verification.
+Use these reference numbers in claim citations: [1], [2], [3], etc.
+Do NOT include reference_list in your output.
 """
-                return text + notice
-
-        else:
-            # Path C: No references found
-            notice = f"""
-
---- NOTICE: No reference list detected{source_info} ---
-If numbered citations like [1], [2] exist in the text, you MUST provide reference_list with all numbered references.
-If no numbered citations exist, this text has unreferenced claims - do not include reference_list.
-"""
-            return text + notice
+        return text + notice
 
     def parse_and_resolve(self, text: str, claims: List[Dict], ai_reference_list: List[Dict] = None) -> Tuple[List[Dict], Dict[str, str]]:
         """

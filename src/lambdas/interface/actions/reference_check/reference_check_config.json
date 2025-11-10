@@ -4,6 +4,13 @@
         "tokens_per_word": 1.33,
         "error_message": "Text is too large to process. Please limit to approximately {max_words} words."
     },
+    "reference_extraction": {
+        "model": "claude-haiku-4-5",
+        "max_tokens": 4096,
+        "temperature": 0.2,
+        "timeout_seconds": 60,
+        "enabled": true
+    },
     "extraction": {
         "model": "claude-sonnet-4-5",
         "max_tokens": 16000,

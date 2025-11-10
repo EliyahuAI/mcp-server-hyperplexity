@@ -196,24 +196,6 @@ class ClaimExtractor:
                             }
                         }
                     }
-                },
-                "reference_list": {
-                    "type": "array",
-                    "description": "OPTIONAL - Complete reference list (only include if: Path B parsed refs are wrong/unusable, OR Path C numbered citations exist but no refs found)",
-                    "items": {
-                        "type": "object",
-                        "required": ["ref_id", "full_citation"],
-                        "properties": {
-                            "ref_id": {
-                                "type": "string",
-                                "description": "Reference identifier (e.g., [1], [2])"
-                            },
-                            "full_citation": {
-                                "type": "string",
-                                "description": "Complete citation text"
-                            }
-                        }
-                    }
                 }
             }
         }

@@ -222,92 +222,36 @@ IMPORTANT: Always provide at minimum **start_char**, **end_char**, and **paragra
 
 ## REFERENCE LIST HANDLING
 
-The text may include a "--- PARSED REFERENCES ---" or "--- REFERENCES DETECTED ---" section at the end.
+The text will include a "--- CONFIRMED REFERENCES ---" section at the end showing all verified references.
 
-**If you see "--- REFERENCES DETECTED ---"** (Path A: Inline links):
-- References are already inline with URLs in the text
-- Use them exactly as they appear
-- Do NOT include `reference_list` in your output
+**These references have been confirmed** through a two-stage process:
+1. Python parsing attempted to extract references
+2. AI (claude-haiku-4-5) confirmed/extracted complete references where needed
 
-**If you see "--- PARSED REFERENCES ---"** (Path B: Quality check PASSED):
-- Python successfully extracted a reference list
-- Quality check has verified these are complete citations (not fragments)
-- **Trust these references** - they are sufficiently complete
-- Use the provided numbers `[1]`, `[2]` in claim `reference` fields
-- Do NOT include `reference_list` in your output (waste of effort)
-- Convert author-year citations in text to the provided numbers
+**Your job**:
+- Use the provided confirmed references in claim `reference` fields
+- Use ONLY the reference numbers: `[1]`, `[2]`, etc.
+- Do NOT include `reference_list` in your output (already confirmed upstream)
+- Convert any author-year citations in the text to the provided reference numbers
 
-**If you see "--- PARSED REFERENCES FAILED QUALITY CHECK ---"** (Path B: Quality check FAILED):
-- Python attempted extraction but got fragments/garbage
-- Quality check detected: too short, lowercase starts, missing author/year/URL patterns
-- **YOU MUST PROVIDE YOUR OWN `reference_list`** - This is REQUIRED!
-- Find the References/Bibliography section in the document (usually at the end)
-- Extract ALL complete references and assign numbers [1], [2], [3], etc. in order
-- Map author-year citations like `(Firth et al., 2019)` to your numbered refs like `[1]`
-- In claim `reference` fields: Use ONLY numbers `[1]`, `[2]`, NOT `(Author, Year)`
-- In `reference_list`: Include full citations
-- Ignore the unusable parsed refs shown (they're just for reference)
-
-**Example of FAILED QUALITY CHECK**:
+**Example**:
 ```
-You see: "--- PARSED REFERENCES FAILED QUALITY CHECK ---"
-Unusable parsed refs: ["prompted with categorized", ":853-861, 2015"]
+Text says: "According to Firth et al. (2019), internet usage affects cognition"
 
-What you must do:
-1. Find References section at end of document
-2. Extract: "Firth, J. et al. (2019). The online brain: how the internet..."
-3. Number sequentially: [1], [2], [3]...
-4. In claims: "reference": "[1]" ← Just number!
-5. In reference_list: {"ref_id": "[1]", "full_citation": "Firth, J. et al. (2019)..."}
+--- CONFIRMED REFERENCES ---
+[1] Firth, J. et al. (2019). The online brain: how the internet may be changing our cognition...
+[2] Smith, A. (2024). Digital literacy in the modern age...
+
+Your claim extraction:
+{
+  "claim_id": "claim_001",
+  "statement": "Internet usage affects cognition",
+  "reference": "[1]",  ← Just the number!
+  ...
+}
 ```
 
-**If you see "--- NOTICE: No reference list detected ---"** (Path C: Not found):
-- Python found no reference section
-- If text has numbered citations like [1], [2]: You MUST provide complete `reference_list`
-- If text has author-year citations like (Smith, 2023): Extract and convert to numbered format [1], [2], etc.
-- If text has no citations: Unreferenced claims, omit `reference_list`
-
----
-
-## SOLEMN OATH - REFERENCE HANDLING
-
-**BEFORE YOU BEGIN EXTRACTION, YOU MUST TAKE THIS OATH**:
-
-By the power of electricity and all things transistors, I solemnly swear that:
-
-1. **I will check for reference sections** at the end of the input text:
-   - "--- REFERENCES DETECTED ---" (inline links - already good)
-   - "--- PARSED REFERENCES ---" (numbered refs extracted by Python - quality checked)
-   - "--- PARSED REFERENCES FAILED QUALITY CHECK ---" (fragments/garbage detected)
-   - "--- NOTICE: No reference list detected ---" (none found)
-
-2. **If NO reference section is shown** (system already validated them):
-   - The references in the text are already in good format
-   - I will use them exactly as they appear in the text
-   - I will NOT include `reference_list` in my output
-
-3. **If "PARSED REFERENCES" are provided** (quality check PASSED):
-   - I swear they are **sufficiently complete to identify all citations**
-   - The provided list does NOT need to be rebuilt
-   - I will use the provided numbers `[1]`, `[2]` in claim `reference` fields
-   - I will NOT waste effort creating my own `reference_list`
-
-4. **If "PARSED REFERENCES FAILED QUALITY CHECK" is shown** (fragments/garbage):
-   - Automated parsing was unsuccessful - fragments detected
-   - I MUST extract complete reference list from the References/Bibliography section myself
-   - I will number them [1], [2], [3] sequentially
-   - I will provide complete `reference_list` in my output
-   - I will ignore the unusable parsed refs shown
-
-5. **If "NOTICE: No reference list detected" is shown**:
-   - I will extract references myself and provide complete `reference_list`
-   - I will number them [1], [2], [3] sequentially
-
-6. **I will NEVER use author-year format** like `(Firth et al., 2019)` in claim `reference` fields
-7. **I will convert in-text citations** like `(Firth et al., 2019)` to numbered format `[1]` using provided/extracted refs
-8. **I understand the system will convert** `[1]` → `[1] FirstAuthor (Year)` automatically later
-
-**This oath is binding. Trust provided references. Do not rebuild them unnecessarily.**
+**If no references are provided**, the text has unreferenced claims - set `reference: null` for those claims.
 
 ---
 
@@ -369,37 +313,25 @@ Provide a concise, descriptive name for this reference check table based on the 
 - Then sort by criticality: Output order is B (crit 1, order 2), C (crit 2, order 3), A (crit 3, order 1)
 - Users can see B was the 2nd claim in the document but is now first due to being most critical
 
-**STEP 1: BUILD YOUR REFERENCE LIST FIRST**
-- Look at the "PARSED REFERENCES" section at the end of the input text
-- If the parsed references are fragments/garbage/unusable (like "prompted with categorized" or ":853-861, 2015"):
-  - Find the References/Bibliography section in the document
-  - Extract ALL complete references from that section
-  - Number them sequentially: [1], [2], [3], etc.
-  - Create your `reference_list` with all references
-- If the parsed references are usable and complete:
-  - Use them as provided
-  - Do NOT include `reference_list` in your output
+**EXTRACTION STEPS**:
 
-**STEP 2: MAP CITATIONS TO NUMBERED REFERENCES**
-- Find each citation in the text: `(Firth et al., 2019)`, `(Satici et al., 2023)`, etc.
-- Match them to your numbered references: `(Firth et al., 2019)` → `[1]`
+**STEP 1: REVIEW CONFIRMED REFERENCES**
+- Check the "--- CONFIRMED REFERENCES ---" section at the end of the input text
+- These references have already been verified by the system
+- Use the provided reference numbers `[1]`, `[2]`, etc. exactly as shown
+
+**STEP 2: MAP CITATIONS TO REFERENCE NUMBERS**
+- Find each citation in the text: `(Firth et al., 2019)`, `[1]`, `(Satici et al., 2023)`, etc.
+- Match them to the confirmed reference numbers
 - In claim `reference` fields: Use ONLY the number: `[1]`, NOT `(Firth et al., 2019)`
 
-**BACKUP MAPPING RULE** (if provided references lack numbers):
-- If the provided reference list contains URLs/citations WITHOUT numbered format like [1], [2]:
-  - Use the provided references directly in claim `reference` fields
-  - Example: If provided ref is just "https://example.com/paper", use that in claim reference field
-  - This is rare but can happen with inline citations
+**STEP 3: EXTRACT CLAIMS**
+- Extract discrete, verifiable claims from the text
+- Assign criticality (1-5 scale)
+- Assign claim_order (document position)
+- Link to confirmed references using numbers only
 
-**OATH REMINDER**:
-Remember your oath above! If provided parsed references exist:
-- Trust them - they are sufficient to identify citations
-- Do NOT create your own reference_list (waste of effort!)
-- If refs have numbers [1], [2]: Use those numbers in claims
-- If refs don't have numbers: Use the provided refs directly in claims
-- Convert author-year citations to the provided reference format (numbered or direct)
-
-**OUTPUT STRUCTURE** (reference_list comes FIRST before claims):
+**OUTPUT STRUCTURE**:
 
 ```json
 {
@@ -407,19 +339,9 @@ Remember your oath above! If provided parsed references exist:
   "table_name": "Tylenol Autism Claims",
   "source_type_guess": "Perplexity",
   "source_confidence": 0.9,
-  "total_claims": 5,
-  "claims_with_references": 3,
-  "claims_without_references": 2,
-  "reference_list": [
-    {
-      "ref_id": "[1]",
-      "full_citation": "Johnson, A. (2023). Understanding AI Hallucinations. Nature AI, 5(2), 123-145."
-    },
-    {
-      "ref_id": "[2]",
-      "full_citation": "Chen, L. et al. (2024). Measuring Factual Accuracy. arXiv:2401.12345"
-    }
-  ],
+  "total_claims": 3,
+  "claims_with_references": 2,
+  "claims_without_references": 1,
   "claims": [
     {
       "claim_id": "claim_001",
@@ -488,48 +410,33 @@ Remember your oath above! If provided parsed references exist:
 }
 ```
 
-**Important notes about `reference_list`**:
-- **Order in output**: `reference_list` comes FIRST in JSON, right after metadata, before `claims` array
-- **Path A (inline links)**: Never include reference_list (omit field entirely)
-- **Path B (parsed refs)**: REQUIRED if parsed refs are unusable/fragments - you must provide complete replacement
-- **Path C (not found)**: REQUIRED if numbered or author-year citations exist in text
-- **Remember your oath**: Your reference_list must be sufficiently complete and final - it will NOT be rebuilt
-- **Quality check**: Each ref should have author, year, title, and source identifiable in full_citation
+**Important notes**:
+- **References are pre-confirmed**: Do NOT include `reference_list` in your output
+- **Use numbers only**: In claim `reference` fields, use only `[1]`, `[2]`, etc.
+- **Criticality is required**: Must assess every claim with 1-5 scale
+- **claim_order is required**: Must preserve document position for every claim
+- **supporting_data is optional**: Include when claim has original measurements from this paper
 
 ## SPECIAL CASES
 
 ### Mixed Content
 If some claims have references and others don't, extract all of them. Mark reference as `null` for uncited claims.
 
-### Reference List at End
-If there's a "References" or "Bibliography" section at the end, extract it as `reference_list` and link claims to specific references.
-
-### Unclear References
-If a reference is mentioned but not clearly linked to a specific claim, include it in `reference_list` but don't assign it to any claim.
-
 ### Multiple References per Claim
 If a claim cites multiple references (e.g., "[1][2][3]" or "[1,2,3]"):
 - Create a single claim entry
 - List all references together in the reference field: "[1][2][3]"
-- Note in extraction that multiple sources are cited
-- Validator will access all cited sources and synthesize findings
+- The validator will access all cited sources and synthesize findings
 
 ### Author-Year Citations (Academic Papers)
-If the text uses author-year format like `(Smith et al., 2023)` instead of numbered citations:
-- Extract the full reference list from the end of the document (usually under "References" or "Bibliography")
-- Assign sequential numbers: `[1]`, `[2]`, etc.
+If the text uses author-year format like `(Smith et al., 2023)`:
+- Match them to the confirmed references provided
 - **In claim `reference` fields**: Use ONLY the reference number (e.g., `[1]`, `[2]`)
-  - The system will later convert this to short format like `[1] Smith et al. (2023)`
-  - Do NOT include author names or years in the claim reference field
-  - Just the number: `[1]` not `[1] Smith et al. (2023)`
-- **In `reference_list`**: Include full citations from the reference section
-  - These are used as the source for later short-form conversion
-- Example: If text says "(Firth et al., 2019)":
+- Example: If text says "(Firth et al., 2019)" and confirmed refs show "[1] Firth, J. et al. (2019)...":
   - In claim: `"reference": "[1]"`
-  - In reference_list: `{"ref_id": "[1]", "full_citation": "Firth, J. et al. (2019). The online brain: how the internet may be changing our cognition. World psychiatry, 18(2):119–129."}`
 
 ### No References Found
-If no references exist but there are factual claims, proceed with extraction. These will be fact-checked using general web search.
+If no confirmed references are provided, the text has unreferenced claims. Set `reference: null` for claims without citations.
 
 ## QUALITY GUIDELINES
 

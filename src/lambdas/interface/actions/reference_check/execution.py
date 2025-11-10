@@ -1136,8 +1136,120 @@ async def execute_reference_check(
         source_guess = parser.guess_source_type(submitted_text, parsed_reference_map, content_type, path_type)
         logger.info(f"[EXECUTION] Source guess: {source_guess}")
 
-        # Build enriched text with reference instructions
-        enriched_text = parser.build_enriched_text(submitted_text, parsed_reference_map, path_type, source_guess)
+        # ======================================================================
+        # STEP 0a-2: AI Reference Extraction (when Python parsing needs confirmation)
+        # ======================================================================
+        confirmed_reference_map = parsed_reference_map
+
+        # Check if AI reference extraction is needed
+        ref_extraction_config = config.get('reference_extraction', {})
+        ref_extraction_enabled = ref_extraction_config.get('enabled', True)
+
+        if ref_extraction_enabled and path_type == "needs_parsing":
+            # Run quality check on Python-parsed refs
+            is_good, failure_reason = parser.check_reference_quality(parsed_reference_map)
+
+            if not is_good:
+                # Python parsing failed - use AI to extract references
+                logger.info(f"[EXECUTION] Python refs failed quality check: {failure_reason}")
+                logger.info(f"[EXECUTION] Calling AI reference extractor (haiku-4-5) to extract references")
+
+                # Send progress update
+                send_execution_progress(
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    current_step=0,
+                    total_steps=2,
+                    status='Extracting references from document...',
+                    progress_percent=30,
+                    phase='reference_extraction'
+                )
+
+                from .reference_check_lib.reference_extractor import extract_references
+                ref_extraction_result = await extract_references(
+                    text=submitted_text,
+                    config=config,
+                    parsed_refs=parsed_reference_map  # Pass for context
+                )
+
+                if ref_extraction_result.get('success') and ref_extraction_result.get('references'):
+                    # Use AI-extracted references
+                    confirmed_reference_map = {
+                        r['ref_id']: r['full_citation']
+                        for r in ref_extraction_result['references']
+                    }
+                    logger.info(f"[EXECUTION] AI extracted {len(confirmed_reference_map)} references successfully")
+
+                    # Track API call for reference extraction
+                    if run_key and ref_extraction_result.get('api_response'):
+                        _add_api_call_to_runs(
+                            session_id=session_id,
+                            run_key=run_key,
+                            api_response=ref_extraction_result['api_response'],
+                            model=ref_extraction_config.get('model', 'claude-haiku-4-5'),
+                            processing_time=ref_extraction_result.get('processing_time', 0.0),
+                            call_type='reference_extraction',
+                            status='IN_PROGRESS',
+                            verbose_status=f'Extracted {len(confirmed_reference_map)} references',
+                            percent_complete=30
+                        )
+                else:
+                    # AI extraction failed - fall back to Python refs
+                    logger.warning(f"[EXECUTION] AI reference extraction failed, using Python refs as fallback")
+                    confirmed_reference_map = parsed_reference_map
+            else:
+                # Python refs passed quality check - use them
+                logger.info(f"[EXECUTION] Python refs passed quality check, using them directly")
+                confirmed_reference_map = parsed_reference_map
+        elif ref_extraction_enabled and path_type == "not_found":
+            # No refs found by Python - try AI extraction
+            logger.info(f"[EXECUTION] No references found by Python, trying AI extraction")
+
+            # Send progress update
+            send_execution_progress(
+                session_id=session_id,
+                conversation_id=conversation_id,
+                current_step=0,
+                total_steps=2,
+                status='Extracting references from document...',
+                progress_percent=30,
+                phase='reference_extraction'
+            )
+
+            from .reference_check_lib.reference_extractor import extract_references
+            ref_extraction_result = await extract_references(
+                text=submitted_text,
+                config=config,
+                parsed_refs=None
+            )
+
+            if ref_extraction_result.get('success') and ref_extraction_result.get('references'):
+                confirmed_reference_map = {
+                    r['ref_id']: r['full_citation']
+                    for r in ref_extraction_result['references']
+                }
+                logger.info(f"[EXECUTION] AI extracted {len(confirmed_reference_map)} references from document")
+
+                # Track API call
+                if run_key and ref_extraction_result.get('api_response'):
+                    _add_api_call_to_runs(
+                        session_id=session_id,
+                        run_key=run_key,
+                        api_response=ref_extraction_result['api_response'],
+                        model=ref_extraction_config.get('model', 'claude-haiku-4-5'),
+                        processing_time=ref_extraction_result.get('processing_time', 0.0),
+                        call_type='reference_extraction',
+                        status='IN_PROGRESS',
+                        verbose_status=f'Extracted {len(confirmed_reference_map)} references',
+                        percent_complete=30
+                    )
+            else:
+                # No refs found
+                logger.info(f"[EXECUTION] No references found by AI either")
+                confirmed_reference_map = {}
+
+        # Build enriched text with confirmed references
+        enriched_text = parser.build_enriched_text(submitted_text, confirmed_reference_map, path_type, source_guess)
 
         logger.info("[EXECUTION] Step 0b: Extract Claims")
 
@@ -1190,21 +1302,9 @@ async def execute_reference_check(
         ai_source_confidence = extraction_result.get('source_confidence', 0.0)
         logger.info(f"[EXECUTION] Source detection - Python: '{source_guess}', AI: '{ai_source_guess}' (confidence: {ai_source_confidence:.2f})")
 
-        # Determine final reference map
-        ai_reference_list = extraction_result.get('reference_list')
-
-        if path_type == "inline_links":
-            # Path A: Use Python-parsed refs (AI not allowed to override)
-            final_reference_map = parsed_reference_map
-            logger.info(f"[EXECUTION] Path A: Using inline references as-is ({len(final_reference_map)} refs)")
-        elif ai_reference_list:
-            # Path B/C: AI provided complete override
-            final_reference_map = {r['ref_id']: r['full_citation'] for r in ai_reference_list}
-            logger.info(f"[EXECUTION] Path {path_type}: Using AI reference override ({len(final_reference_map)} refs)")
-        else:
-            # Path B/C: Use Python-parsed refs
-            final_reference_map = parsed_reference_map
-            logger.info(f"[EXECUTION] Path {path_type}: Using Python-parsed references ({len(final_reference_map)} refs)")
+        # Use confirmed reference map (already determined in Step 0a-2)
+        final_reference_map = confirmed_reference_map
+        logger.info(f"[EXECUTION] Using confirmed reference map with {len(final_reference_map)} references")
 
         # Keep claims with just numbered citations like [1], [2]
         # Full references will be expanded in CSV generation
