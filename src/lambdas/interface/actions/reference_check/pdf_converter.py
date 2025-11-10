@@ -285,9 +285,15 @@ async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any) -> D
             })
 
             # Convert PDF to markdown using pymupdf4llm
+            # Use faster conversion for reference checking (no images, simpler formatting)
             logger.info(f"[PDF_CONVERT] Converting {filename} to markdown ({page_count} pages)")
 
-            markdown_text = pymupdf4llm.to_markdown(temp_pdf_path)
+            markdown_text = pymupdf4llm.to_markdown(
+                temp_pdf_path,
+                page_chunks=False,  # Don't split into chunks, faster
+                write_images=False,  # Skip images for reference checking, much faster
+                dpi=72  # Lower DPI for any image processing, faster
+            )
 
             logger.info(f"[PDF_CONVERT] Successfully converted {page_count} pages ({len(markdown_text)} chars)")
 
