@@ -241,7 +241,7 @@ async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any) -> D
             'type': 'pdf_conversion_progress',
             'pdf_id': pdf_id,
             'status': 'downloading',
-            'progress': 10,
+            'progress': 5,
             'message': f'Downloading {filename}...'
         })
 
@@ -280,7 +280,7 @@ async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any) -> D
                 'type': 'pdf_conversion_progress',
                 'pdf_id': pdf_id,
                 'status': 'converting',
-                'progress': 20,
+                'progress': 10,
                 'message': f'Converting {page_count} pages to text. This may take up to 2 minutes for large PDFs...'
             })
 
@@ -296,7 +296,7 @@ async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any) -> D
                 'type': 'pdf_conversion_progress',
                 'pdf_id': pdf_id,
                 'status': 'validating',
-                'progress': 80,
+                'progress': 15,
                 'message': f'Conversion complete. Validating text size...'
             })
 
