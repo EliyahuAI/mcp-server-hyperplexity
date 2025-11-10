@@ -41,15 +41,23 @@ class ReferenceExtractor:
         """Get JSON schema for reference extraction."""
         return {
             "type": "object",
-            "required": ["total_references", "references"],
+            "required": ["python_refs_acceptable", "total_references", "references"],
             "properties": {
+                "python_refs_acceptable": {
+                    "type": "boolean",
+                    "description": "True if Python-parsed references are complete and acceptable (no need to regenerate). False if you need to extract your own."
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Brief reason for your decision (why Python refs are acceptable OR why you needed to extract your own)"
+                },
                 "total_references": {
                     "type": "integer",
-                    "description": "Total number of references extracted"
+                    "description": "Total number of references (either confirmed Python refs OR newly extracted refs)"
                 },
                 "references": {
                     "type": "array",
-                    "description": "List of extracted references",
+                    "description": "List of references (either Python refs confirmed as-is OR newly extracted refs)",
                     "items": {
                         "type": "object",
                         "required": ["ref_id", "full_citation"],

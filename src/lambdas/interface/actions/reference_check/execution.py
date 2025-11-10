@@ -1173,15 +1173,24 @@ async def execute_reference_check(
                 )
 
                 if ref_extraction_result.get('success') and ref_extraction_result.get('references'):
-                    # Use AI-extracted references
+                    # Use AI-confirmed or AI-extracted references
                     confirmed_reference_map = {
                         r['ref_id']: r['full_citation']
                         for r in ref_extraction_result['references']
                     }
-                    logger.info(f"[EXECUTION] AI extracted {len(confirmed_reference_map)} references successfully")
+                    python_refs_ok = ref_extraction_result.get('python_refs_acceptable', False)
+                    reason = ref_extraction_result.get('reason', 'No reason provided')
+
+                    if python_refs_ok:
+                        logger.info(f"[EXECUTION] AI confirmed Python refs are acceptable: {reason}")
+                        logger.info(f"[EXECUTION] Using {len(confirmed_reference_map)} confirmed Python references")
+                    else:
+                        logger.info(f"[EXECUTION] AI rejected Python refs: {reason}")
+                        logger.info(f"[EXECUTION] AI extracted {len(confirmed_reference_map)} new references from document")
 
                     # Track API call for reference extraction
                     if run_key and ref_extraction_result.get('api_response'):
+                        status_msg = f"Confirmed {len(confirmed_reference_map)} refs" if python_refs_ok else f"Extracted {len(confirmed_reference_map)} refs"
                         _add_api_call_to_runs(
                             session_id=session_id,
                             run_key=run_key,
@@ -1190,7 +1199,7 @@ async def execute_reference_check(
                             processing_time=ref_extraction_result.get('processing_time', 0.0),
                             call_type='reference_extraction',
                             status='IN_PROGRESS',
-                            verbose_status=f'Extracted {len(confirmed_reference_map)} references',
+                            verbose_status=status_msg,
                             percent_complete=30
                         )
                 else:
@@ -1228,7 +1237,9 @@ async def execute_reference_check(
                     r['ref_id']: r['full_citation']
                     for r in ref_extraction_result['references']
                 }
+                reason = ref_extraction_result.get('reason', 'Extracted from document')
                 logger.info(f"[EXECUTION] AI extracted {len(confirmed_reference_map)} references from document")
+                logger.info(f"[EXECUTION] Reason: {reason}")
 
                 # Track API call
                 if run_key and ref_extraction_result.get('api_response'):
