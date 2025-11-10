@@ -534,6 +534,10 @@ async def _extract_claims(
             'total_claims': total_claims,
             'claims_with_references': extraction_result.get('claims_with_references', 0),
             'claims_without_references': extraction_result.get('claims_without_references', 0),
+            'source_type_guess': extraction_result.get('source_type_guess', 'Unknown'),
+            'source_confidence': extraction_result.get('source_confidence', 0.0),
+            'reference_list': extraction_result.get('reference_list'),
+            'table_name': extraction_result.get('table_name', 'reference_check'),
             'processing_time': processing_time,
             'model_used': model,
             'enhanced_data': enhanced_data
