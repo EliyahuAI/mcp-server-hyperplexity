@@ -12762,14 +12762,14 @@ Please provide any additional context, or simply proceed to generate your initia
                         icon: '📄',
                         variant: 'secondary',
                         callback: async (e) => {
-                            // Hide buttons and form immediately
+                            // Hide buttons and form
                             const buttonsContainer = document.getElementById(`${cardId}-buttons`);
                             const formEl = document.getElementById(`${cardId}-form`);
                             if (buttonsContainer) buttonsContainer.style.display = 'none';
                             if (formEl) formEl.style.display = 'none';
 
-                            // Show progress indicator immediately
-                            showThinkingInCard(cardId, 'Waiting for file selection...', true);
+                            // Show progress indicator while waiting for file selection
+                            showThinkingInCard(cardId, 'Select a PDF file to upload...', true);
 
                             // Store flag that we're waiting for file
                             referenceCheckState.awaitingPdfSelection = true;
@@ -12790,9 +12790,12 @@ Please provide any additional context, or simply proceed to generate your initia
                     pdfInput.addEventListener('change', async (e) => {
                         const file = e.target.files[0];
                         if (file) {
-                            // Clear awaiting flag and update message immediately
+                            // Clear awaiting flag
                             referenceCheckState.awaitingPdfSelection = false;
+
+                            // Update progress message now that file is selected
                             updateThinkingInCard(cardId, 'Uploading PDF...');
+
                             await handlePdfUpload(cardId, file);
                         }
                         // Reset input so same file can be selected again
@@ -12809,9 +12812,6 @@ Please provide any additional context, or simply proceed to generate your initia
             const messagesDiv = document.getElementById(`${cardId}-messages`);
 
             try {
-                // Update progress indicator immediately
-                updateThinkingInCard(cardId, `Uploading ${file.name}...`);
-
                 // Validate file type
                 if (!file.name.toLowerCase().endsWith('.pdf')) {
                     completeThinkingInCard(cardId, 'Invalid file type');
@@ -12894,11 +12894,8 @@ Please provide any additional context, or simply proceed to generate your initia
                         const cardId = referenceCheckState.cardId;
                         referenceCheckState.awaitingPdfSelection = false;
 
-                        // Show cancelled message and recreate the card
-                        completeThinkingInCard(cardId, 'File selection cancelled');
-                        setTimeout(() => {
-                            createReferenceCheckCard();
-                        }, 1000);
+                        // Recreate the card to restore buttons
+                        createReferenceCheckCard();
                     }
                 }, 500);
             }

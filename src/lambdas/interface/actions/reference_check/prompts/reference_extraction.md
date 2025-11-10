@@ -78,7 +78,7 @@ Johnson, A. (2024). Machine Learning...
 ```
 → Assign sequential numbers [1], [2], [3] in order
 
-### Step 3: Extract Complete Citations
+### Step 3: Extract Complete Citations 
 
 **What makes a complete citation**:
 - ✅ Has author name(s) OR organization
@@ -88,7 +88,7 @@ Johnson, A. (2024). Machine Learning...
 
 **Examples of complete citations**:
 ```
-[1] Firth, J. et al. (2019). The online brain: how the internet may be changing our cognition. World psychiatry, 18(2):119–129.
+[1] Firth, K. et al. (2019). The online brain: how the internet may be changing our cognition. World psychiatry, 18(2):119–129.
 [2] Oxford University Press. Brain rot named Oxford Word of the Year 2024. https://corp.oup.com/news/brain-rot-2024/, 2024.
 [3] Qi, X., Zeng, Y., et al. (2023). Fine-tuning aligned language models. arXiv preprint arXiv:2310.03693.
 ```

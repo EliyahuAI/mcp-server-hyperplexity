@@ -281,19 +281,18 @@ async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any) -> D
                 'pdf_id': pdf_id,
                 'status': 'converting',
                 'progress': 10,
-                'message': f'Converting {page_count} pages to text. This may take up to 2 minutes for large PDFs...'
+                'message': f'Converting {page_count} pages to text...'
             })
 
-            # Convert PDF to markdown using pymupdf4llm
-            # Use faster conversion for reference checking (no images, simpler formatting)
-            logger.info(f"[PDF_CONVERT] Converting {filename} to markdown ({page_count} pages)")
+            # Convert PDF to plain text using PyMuPDF (fast - 20x faster than pymupdf4llm)
+            # For reference checking, we don't need fancy markdown formatting
+            logger.info(f"[PDF_CONVERT] Converting {filename} to text ({page_count} pages)")
 
-            markdown_text = pymupdf4llm.to_markdown(
-                temp_pdf_path,
-                page_chunks=False,  # Don't split into chunks, faster
-                write_images=False,  # Skip images for reference checking, much faster
-                dpi=72  # Lower DPI for any image processing, faster
-            )
+            doc = fitz.open(temp_pdf_path)
+            markdown_text = ''
+            for page in doc:
+                markdown_text += page.get_text()
+            doc.close()
 
             logger.info(f"[PDF_CONVERT] Successfully converted {page_count} pages ({len(markdown_text)} chars)")
 
