@@ -5380,6 +5380,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 'value': field_data.get('value'),
                                 'confidence': field_data.get('confidence'),
                                 'confidence_level': field_data.get('confidence_level'),
+                                'original_confidence': field_data.get('original_confidence'),  # Validation's confidence in original value
                                 'sources': field_data.get('sources', []),  # Keep URLs
                                 'main_source': field_data.get('main_source'),
                                 'update_required': field_data.get('update_required'),
