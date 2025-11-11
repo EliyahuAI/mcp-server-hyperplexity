@@ -27,6 +27,10 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
     
     # Get confidence emoji mapping
     def get_confidence_emoji(confidence_level):
+        # Handle null/None/blank values
+        if confidence_level is None or str(confidence_level).strip() in ('', 'null', 'None', '-'):
+            return '⭕'  # Hollow red circle for blank
+
         confidence_map = {
             'HIGH': '🟢',
             'MEDIUM': '🟡',
@@ -34,7 +38,7 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
             'ID': '🔵',  # Blue circle for ID fields
             'UNKNOWN': '❓'
         }
-        return confidence_map.get(confidence_level, '❓')
+        return confidence_map.get(str(confidence_level).upper(), '❓')
     
     # Load config to get field information and ordering
     field_config_map = {}
@@ -99,7 +103,7 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
     table_lines = []
     
     # Add legend as a separate sentence before the table
-    legend = "**Confidence Legend:** 🔵 ID/Skipped • 🟢 High • 🟡 Medium • 🔴 Low\n\n"
+    legend = "**Confidence Legend:** 🔵 ID/Skipped • 🟢 High • 🟡 Medium • 🔴 Low • ⭕ Blank\n\n"
     
     # Create header row - no search group column
     header = "| Field"
