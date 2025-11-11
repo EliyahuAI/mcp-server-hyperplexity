@@ -90,7 +90,9 @@ Assign confidence levels to both original and updated values:
 
 - **LOW**: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value it is low confidence.
 
-- **None**: For blank values that should remain blank (no confidence assignment needed). If the original value is blank, and you have nothing to add, provide a null confidence.
+- **None/null**:
+  - For `confidence`: Use when a field should remain blank (you have nothing to add)
+  - For `original_confidence`: **ALWAYS use null when the original value was blank/empty**, regardless of whether you're now adding content. The original had no content, so it gets no confidence rating.
 
 ---
 
@@ -122,6 +124,7 @@ Optional fields:
 
 - **Do not use quotation marks around your responses** (except in JSON structure itself)
 - **Assess both confidences**: Rate the quality of your updated answer (confidence) AND the quality of the original value (original_confidence) using the same confidence rubric
+- **CRITICAL - Blank original values**: If the original value was blank/empty, set `original_confidence` to `null`. You are assessing what WAS there originally, not what you're adding. Even if you're providing excellent new content with HIGH confidence, the original blank gets `null` confidence.
 - **Only update if significantly better**: Only provide a different validated value if you can improve significantly on the original value
 - **NEVER replace with lower confidence**: If you are more confident in the original value, why would you update it with a value that you are less confident in?
 - **Use exact column names**: Include the exact column name in each object - exactly as defined in the FIELD DETAILS above
