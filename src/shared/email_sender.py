@@ -883,22 +883,35 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
     # Format confidence distribution with Original -> Updated format
     confidence_html = ""
     total_validations = sum(confidence_distribution.values())
-    for level in ["HIGH", "MEDIUM", "LOW"]:
+    for level in ["HIGH", "MEDIUM", "LOW", "NULL"]:
         count = confidence_distribution.get(level, 0)
         if count > 0 or total_validations > 0:  # Show even if 0 for completeness
             percentage = (count / total_validations * 100) if total_validations > 0 else 0
-            emoji = "🟢" if level == "HIGH" else "🟡" if level == "MEDIUM" else "🔴"
-            
+
+            # Display label (use "Blank" for NULL)
+            display_level = "Blank" if level == "NULL" else level
+            emoji = "🟢" if level == "HIGH" else "🟡" if level == "MEDIUM" else "🔴" if level == "LOW" else "⚪"
+
             # Show Original -> Updated format when original data is available
             if original_confidence_distribution:
                 original_count = original_confidence_distribution.get(level, 0)
                 original_total = sum(original_confidence_distribution.values())
                 original_percentage = (original_count / original_total * 100) if original_total > 0 else 0
-                confidence_html += f"<li>{emoji} <b>{level}:</b> {original_percentage:.1f}% (Original) -> {percentage:.1f}% (Updated)</li>"
+                confidence_html += f"<li>{emoji} <b>{display_level}:</b> {original_percentage:.1f}% (Original) -> {percentage:.1f}% (Updated)</li>"
             else:
-                # Show updated results when no original data available 
-                confidence_html += f"<li>{emoji} <b>{level}:</b> {percentage:.1f}% (Updated)</li>"
-    
+                # Show updated results when no original data available
+                confidence_html += f"<li>{emoji} <b>{display_level}:</b> {percentage:.1f}% (Updated)</li>"
+
+    # Add %Populated summary when original data is available
+    if original_confidence_distribution:
+        original_total = sum(original_confidence_distribution.values())
+        updated_total = sum(confidence_distribution.values())
+        original_populated = original_total - original_confidence_distribution.get('NULL', 0)
+        updated_populated = updated_total - confidence_distribution.get('NULL', 0)
+        original_populated_pct = (original_populated / original_total * 100) if original_total > 0 else 0
+        updated_populated_pct = (updated_populated / updated_total * 100) if updated_total > 0 else 0
+        confidence_html += f"<li><b>Populated:</b> {original_populated_pct:.0f}% (Original) -> {updated_populated_pct:.0f}% (Updated)</li>"
+
     if not confidence_html:
         confidence_html = "<li>No confidence data available</li>"
     

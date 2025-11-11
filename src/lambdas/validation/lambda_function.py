@@ -4631,7 +4631,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Keep quote and reasoning for backward compatibility (map to explanation)
                     row_results[target.column]['quote'] = parsed_result[6] if len(parsed_result) > 6 else ''
                     row_results[target.column]['reasoning'] = parsed_result[6] if len(parsed_result) > 6 else ''  # Map to explanation for backward compat
-                    
+
+                    # ENFORCE: Blank original values must have null confidence (don't rely on AI)
+                    original_value = row.get(target.column, '')
+                    if original_value is None or str(original_value).strip() == '':
+                        # Original was blank - enforce null confidence regardless of what AI said
+                        row_results[target.column]['original_confidence'] = None
+                        logger.debug(f"[CONFIDENCE_ENFORCE] {target.column}: Original blank, enforcing null original_confidence")
+
                     processed_count += 1
                     
                 else:

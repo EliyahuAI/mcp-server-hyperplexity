@@ -187,11 +187,11 @@ def calculate_confidence_distribution(validation_results, qc_results):
         qc_results: Optional dictionary of QC results keyed by row hash
 
     Returns:
-        Tuple of (original_str, updated_str) with percentage distributions
-        e.g., ("L: 15%, M: 45%, H: 40%", "L: 5%, M: 35%, H: 60%")
+        Tuple of (original_str, updated_str, original_dict, updated_dict) with percentage distributions
+        e.g., ("L: 15%, M: 45%, H: 40%, Null: 0%", "L: 5%, M: 35%, H: 60%, Null: 0%", {...}, {...})
     """
-    original_counts = {'LOW': 0, 'MEDIUM': 0, 'HIGH': 0}
-    updated_counts = {'LOW': 0, 'MEDIUM': 0, 'HIGH': 0}
+    original_counts = {'LOW': 0, 'MEDIUM': 0, 'HIGH': 0, 'NULL': 0}
+    updated_counts = {'LOW': 0, 'MEDIUM': 0, 'HIGH': 0, 'NULL': 0}
     total_fields = 0
 
     for row_key, row_results in validation_results.items():
@@ -217,26 +217,52 @@ def calculate_confidence_distribution(validation_results, qc_results):
                 original_conf = field_data.get('original_confidence')
                 updated_conf = field_data.get('confidence_level')
 
-            # Count confidences (handling various confidence formats)
-            if original_conf:
+            # Count confidences (handling null/blank as NULL)
+            if original_conf is None or str(original_conf).strip() in ('', '-', 'null', 'None'):
+                original_counts['NULL'] += 1
+            else:
                 original_conf_upper = str(original_conf).strip().upper()
                 if original_conf_upper in original_counts:
                     original_counts[original_conf_upper] += 1
 
-            if updated_conf:
+            if updated_conf is None or str(updated_conf).strip() in ('', '-', 'null', 'None'):
+                updated_counts['NULL'] += 1
+            else:
                 updated_conf_upper = str(updated_conf).strip().upper()
                 if updated_conf_upper in updated_counts:
                     updated_counts[updated_conf_upper] += 1
 
     # Format as percentages (handle division by zero)
     if total_fields > 0:
-        original_str = f"L: {original_counts['LOW']/total_fields*100:.0f}%, M: {original_counts['MEDIUM']/total_fields*100:.0f}%, H: {original_counts['HIGH']/total_fields*100:.0f}%"
-        updated_str = f"L: {updated_counts['LOW']/total_fields*100:.0f}%, M: {updated_counts['MEDIUM']/total_fields*100:.0f}%, H: {updated_counts['HIGH']/total_fields*100:.0f}%"
-    else:
-        original_str = "L: 0%, M: 0%, H: 0%"
-        updated_str = "L: 0%, M: 0%, H: 0%"
+        original_str = f"L: {original_counts['LOW']/total_fields*100:.0f}%, M: {original_counts['MEDIUM']/total_fields*100:.0f}%, H: {original_counts['HIGH']/total_fields*100:.0f}%, Blank: {original_counts['NULL']/total_fields*100:.0f}%"
+        updated_str = f"L: {updated_counts['LOW']/total_fields*100:.0f}%, M: {updated_counts['MEDIUM']/total_fields*100:.0f}%, H: {updated_counts['HIGH']/total_fields*100:.0f}%, Blank: {updated_counts['NULL']/total_fields*100:.0f}%"
 
-    return original_str, updated_str
+        # Create dict format for detailed stats
+        original_dict = {
+            'HIGH': original_counts['HIGH'],
+            'MEDIUM': original_counts['MEDIUM'],
+            'LOW': original_counts['LOW'],
+            'NULL': original_counts['NULL'],
+            'total': total_fields,
+            'populated': total_fields - original_counts['NULL'],
+            'populated_percent': (total_fields - original_counts['NULL']) / total_fields * 100 if total_fields > 0 else 0
+        }
+        updated_dict = {
+            'HIGH': updated_counts['HIGH'],
+            'MEDIUM': updated_counts['MEDIUM'],
+            'LOW': updated_counts['LOW'],
+            'NULL': updated_counts['NULL'],
+            'total': total_fields,
+            'populated': total_fields - updated_counts['NULL'],
+            'populated_percent': (total_fields - updated_counts['NULL']) / total_fields * 100 if total_fields > 0 else 0
+        }
+    else:
+        original_str = "L: 0%, M: 0%, H: 0%, Blank: 0%"
+        updated_str = "L: 0%, M: 0%, H: 0%, Blank: 0%"
+        original_dict = {'HIGH': 0, 'MEDIUM': 0, 'LOW': 0, 'NULL': 0, 'total': 0, 'populated': 0, 'populated_percent': 0}
+        updated_dict = {'HIGH': 0, 'MEDIUM': 0, 'LOW': 0, 'NULL': 0, 'total': 0, 'populated': 0, 'populated_percent': 0}
+
+    return original_str, updated_str, original_dict, updated_dict
 
 def create_validation_record_sheet(workbook, header_format, validation_results, qc_results,
                                    session_id, config_s3_key, rows_data, headers,
@@ -269,7 +295,8 @@ def create_validation_record_sheet(workbook, header_format, validation_results, 
     # Define headers
     record_headers = [
         'Run_Number', 'Run_Time', 'Session_ID', 'Configuration_ID',
-        'Run_Key', 'Rows', 'Columns', 'Original_Confidences', 'Updated_Confidences'
+        'Run_Key', 'Rows', 'Columns', 'Original_Confidences', 'Updated_Confidences',
+        'Original_Populated_%', 'Updated_Populated_%'
     ]
 
     # Write headers
@@ -278,7 +305,7 @@ def create_validation_record_sheet(workbook, header_format, validation_results, 
         validation_record_sheet.set_column(col_idx, col_idx, 20)
 
     # Calculate confidence distributions
-    original_conf_str, updated_conf_str = calculate_confidence_distribution(
+    original_conf_str, updated_conf_str, original_conf_dict, updated_conf_dict = calculate_confidence_distribution(
         validation_results, qc_results
     )
 
@@ -329,6 +356,8 @@ def create_validation_record_sheet(workbook, header_format, validation_results, 
     validation_record_sheet.write(row_idx, 6, total_columns)
     validation_record_sheet.write(row_idx, 7, original_conf_str)
     validation_record_sheet.write(row_idx, 8, updated_conf_str)
+    validation_record_sheet.write(row_idx, 9, f"{original_conf_dict['populated_percent']:.0f}%")  # Original Populated %
+    validation_record_sheet.write(row_idx, 10, f"{updated_conf_dict['populated_percent']:.0f}%")  # Updated Populated %
     row_idx += 1
 
     # Write ALL historical records, incrementing run numbers if we overwrote run 1
