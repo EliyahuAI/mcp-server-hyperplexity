@@ -122,18 +122,24 @@ Backend generates:
 Saves to: results/{domain}/{email_prefix}/{session_id}/reference_check_{conversation_id}.csv
 ```
 
-### Step 5: Config Copy
+### Step 5: Config Copy & Dynamic QC
 ```
-Static validation config copied from:
+Static validation config loaded from:
   src/lambdas/interface/actions/reference_check/reference_check_validation_config.json
 
-Saved to:
-  results/{domain}/{email_prefix}/{session_id}/reference_check_validation_config.json
+Dynamic QC Decision:
+  - Check if ANY claims have Supporting Data
+  - If YES: Set enable_qc = true (paper's own results need critical assessment)
+  - If NO: Keep enable_qc = false (external references can be directly verified)
 
 Config updated with:
   - session_id
   - email
   - timestamp
+  - qc_dynamically_enabled (true/false)
+
+Saved to:
+  results/{domain}/{email_prefix}/{session_id}/reference_check_validation_config.json
 ```
 
 ### Step 6: Auto-Preview
@@ -341,7 +347,7 @@ if not session_id:
     logger.info(f"[REFERENCE_CHECK] Generated new session ID: {session_id}")
 ```
 
-**CSV & Config Save** (execution.py line ~672):
+**CSV & Config Save** (execution.py line ~870):
 ```python
 # Save CSV to session results folder (like table_maker does)
 domain = email.split('@')[1] if '@' in email else 'unknown'
@@ -356,7 +362,7 @@ storage_manager.s3_client.put_object(
     ContentType='text/csv'
 )
 
-# Copy static validation config
+# Load static validation config from local file only (no S3 caching)
 config_path = Path(__file__).parent / 'reference_check_validation_config.json'
 with open(config_path, 'r') as f:
     validation_config = json.load(f)
@@ -578,10 +584,11 @@ This deploys:
 3. **Session Tracking**: Full S3/DynamoDB integration
 4. **Cost Optimization**: Only validate when user approves
 5. **Page Detection**: Direct access for power users
-6. **Static Config**: No AI config generation needed
+6. **Static Config**: Always loads from deployed local file (no S3 caching)
 7. **Pre-filled Tables**: Users see extracted data immediately
 8. **PDF Support**: Lightweight markdown conversion with pymupdf4llm
 9. **Flexible Input**: Paste text OR upload PDF - user's choice
+10. **Dynamic QC**: Automatically enables QC when claims have Supporting Data (paper's own results need critical assessment)
 
 ---
 

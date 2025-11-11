@@ -4,11 +4,11 @@
   "default_search_context_size": "high",
   "anthropic_max_web_searches_default": 0,
   "qc_settings": {
-    "enable_qc": true,
-    "model": "claude-sonnet-4-5",
+    "enable_qc": false,
+    "model": "claude-opus-4-1",
     "max_tokens_default": 8000,
     "tokens_per_validated_column_default": 3000,
-    "anthropic_max_web_searches": 1
+    "anthropic_max_web_searches": 0
   },
   "search_groups": [
     {
@@ -135,18 +135,18 @@
     },
     {
       "column": "Reference Description",
-      "description": "Brief description of validation sources used (external references, supporting data assessment, or web search)",
+      "description": "What the cited references and validation sources say about the claim/topic",
       "importance": "RESEARCH",
-      "format": "String (brief source description)",
+      "format": "String (summary of what sources say about this claim)",
       "examples": [
-        "External ref: IPCC AR6 Report - peer-reviewed climate assessment",
-        "External ref: arXiv preprint by Chen et al. (2024) on LLM accuracy",
-        "Supporting data: Evaluated paper's stated measurements against claim",
-        "Supporting data + Web search: Checked if 92% accuracy claim is reasonable for this task type",
-        "Web search: Assessed general acceptance of statement (paper excluded from validation)"
+        "IPCC AR6 Report states global temperature increased 1.1°C since pre-industrial baseline with high confidence",
+        "Chen et al. (2024) reports 15-20% hallucination rates in LLMs for open-ended generation tasks",
+        "Paper's Table 2 shows 92% accuracy with n=10,000 samples; external benchmarks confirm 85-95% is typical for this task",
+        "NASA and NOAA climate data confirm accelerating warming trend since 1980s; paper's own data corroborates",
+        "Multiple sources (WHO, FDA, peer-reviewed studies) find no causal link between Tylenol and autism"
       ],
       "search_group": 1,
-      "notes": "Describe validation approach:\n- If Reference provided: Identify the external source (journal, documentation, etc.)\n- If Supporting Data provided: State that you evaluated the paper's measurements\n- If neither: State 'Web search' validation\nCRITICAL: Do NOT use the paper itself as a validation source. Supporting Data is what the paper CLAIMS - you must assess if it's reasonable/supported."
+      "notes": "Focus on WHAT the sources SAY about the claim, not just identifying what the sources are. Provide substantive content:\n\n- If Reference provided: Quote/paraphrase what the cited reference says about this claim\n- If Supporting Data provided: Describe what the paper's measurements show AND what external validation reveals\n- If neither: Summarize what authoritative sources say about this statement\n\nCRITICAL: This field should contain the actual findings/statements from sources, not just 'I used web search' or 'This is from IPCC'. Tell us what those sources SAY."
     },
     {
       "column": "What Reference Says",
@@ -182,20 +182,20 @@
     },
     {
       "column": "Support Level",
-      "description": "Assessment of how well the claim is supported based on validation sources",
+      "description": "Numeric assessment (1-5) of how well the claim is supported, with higher numbers indicating stronger support",
       "importance": "RESEARCH",
-      "format": "String (one of: Confirmed, Supported, Partial, Unclear, Contradicted, Inaccessible, Mixed)",
+      "format": "Integer (1-5) followed by label: 5 (Confirmed), 4 (Supported), 3 (Partial), 2 (Unclear), 1 (Contradicted), or 0 (Inaccessible)",
       "examples": [
-        "Confirmed",
-        "Supported",
-        "Partial",
-        "Unclear",
-        "Contradicted",
-        "Inaccessible",
-        "Mixed (Confirmed by [1][2], Contradicted by [3])"
+        "5 (Confirmed)",
+        "4 (Supported)",
+        "3 (Partial)",
+        "2 (Unclear)",
+        "1 (Contradicted)",
+        "0 (Inaccessible)",
+        "Mixed: 5 for [1][2], 1 for [3]"
       ],
       "search_group": 1,
-      "notes": "**VALIDATION LOGIC BY CLAIM TYPE**:\n\n**1. External Reference Provided**:\n- Access the reference via web search\n- Compare reference content to claim\n- Levels: Confirmed (exact match), Supported (general agreement), Partial (some aspects), Unclear (ambiguous), Contradicted (disagrees), Inaccessible (can't access)\n- If multiple refs: Synthesize or use Mixed if conflicting\n\n**2. Supporting Data Provided (paper's own results)**:\n- Analyze if stated measurements logically support the claim\n- Check other data in original text for corroboration/contradiction\n- If claim needs external validation: Use web search (EXCLUDE this paper) to check if the statement is accepted/reasonable\n- Example: Claim says '92% accuracy', Supporting Data says 'n=10,000, Table 2' → Check if 92% is reasonable for this task via external sources\n- Do NOT simply accept paper's assertion - assess credibility\n\n**3. Neither Reference nor Supporting Data**:\n- Use web search to assess acceptance of statement\n- EXCLUDE the paper being analyzed from validation sources\n- Base on external authoritative sources only\n\n**CRITICAL**: Paper cannot self-validate. Supporting Data is a claim by the paper - treat critically."
+      "notes": "**SUPPORT LEVEL SCALE (higher = better support)**:\n\n**5 (Confirmed)**: Reference explicitly states this exact claim with high confidence. Exact match.\n**4 (Supported)**: Reference strongly agrees with claim in general terms. No contradictions.\n**3 (Partial)**: Reference supports some aspects but not others, or supports with qualifications.\n**2 (Unclear)**: Reference is ambiguous, inconclusive, or insufficient to validate claim.\n**1 (Contradicted)**: Reference disagrees with or contradicts the claim.\n**0 (Inaccessible)**: Cannot access the reference to validate.\n**Mixed**: Use when multiple references conflict (specify which refs get which scores).\n\n**VALIDATION LOGIC BY CLAIM TYPE**:\n\n**1. External Reference Provided**:\n- Access the reference via web search\n- Compare reference content to claim\n- Assign score based on alignment quality\n- If multiple refs: Synthesize score or use Mixed if conflicting\n\n**2. Supporting Data Provided (paper's own results)**:\n- Analyze if stated measurements logically support the claim\n- Check other data in original text for corroboration/contradiction\n- If claim needs external validation: Use web search (EXCLUDE this paper) to check if the statement is accepted/reasonable\n- Example: Claim says '92% accuracy', Supporting Data says 'n=10,000, Table 2' → Check if 92% is reasonable for this task via external sources\n- Do NOT simply accept paper's assertion - assess credibility\n- Assign score based on how well measurements support the claim\n\n**3. Neither Reference nor Supporting Data**:\n- Use web search to assess acceptance of statement\n- EXCLUDE the paper being analyzed from validation sources\n- Base score on external authoritative sources only\n\n**CRITICAL**: Paper cannot self-validate. Supporting Data is a claim by the paper - treat critically."
     },
     {
       "column": "Validation Notes",

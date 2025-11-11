@@ -867,36 +867,14 @@ async def _compile_results(
         except Exception as e:
             logger.warning(f"[COMPILATION] Failed to save source text: {e}")
 
-        # Copy static validation config from S3 base location or local file
+        # Load static validation config from local file only
         config_s3_key = None
         try:
-            # Try to load from S3 base config location first
-            base_config_key = 'configs/reference_check_validation_config.json'
-            try:
-                response = storage_manager.s3_client.get_object(
-                    Bucket=storage_manager.bucket_name,
-                    Key=base_config_key
-                )
-                validation_config = json.loads(response['Body'].read())
-                logger.info(f"[COMPILATION] Loaded base config from S3: {base_config_key}")
-            except storage_manager.s3_client.exceptions.NoSuchKey:
-                # Fallback to local file
-                config_path = Path(__file__).parent / 'reference_check_validation_config.json'
-                with open(config_path, 'r') as f:
-                    validation_config = json.load(f)
-                logger.info(f"[COMPILATION] Loaded config from local file (S3 base not found)")
-
-                # Save to S3 base location for future use
-                try:
-                    storage_manager.s3_client.put_object(
-                        Bucket=storage_manager.bucket_name,
-                        Key=base_config_key,
-                        Body=json.dumps(validation_config, indent=2),
-                        ContentType='application/json'
-                    )
-                    logger.info(f"[COMPILATION] Saved base config to S3: {base_config_key}")
-                except Exception as save_error:
-                    logger.warning(f"[COMPILATION] Could not save base config to S3: {save_error}")
+            # Load from local file (no S3 caching)
+            config_path = Path(__file__).parent / 'reference_check_validation_config.json'
+            with open(config_path, 'r') as f:
+                validation_config = json.load(f)
+            logger.info(f"[COMPILATION] Loaded config from local file: {config_path}")
 
             # Load conversation state to get submitted text
             conversation_state = _load_conversation_state(storage_manager, email, session_id, conversation_id)
@@ -921,6 +899,23 @@ async def _compile_results(
 
             validation_config['general_notes'] = f"{original_notes}\n\n--- ORIGINAL TEXT PROVIDED BY USER ---\n\n{submitted_text}{ref_list_text}"
 
+            # Dynamically enable QC if any claims have Supporting Data
+            has_supporting_data = False
+            if claims:
+                for claim in claims:
+                    supporting_data = claim.get('supporting_data', '')
+                    if supporting_data and str(supporting_data).strip():
+                        has_supporting_data = True
+                        break
+
+            if has_supporting_data:
+                logger.info(f"[COMPILATION] Found claims with Supporting Data - enabling QC for critical assessment")
+                if 'qc_settings' not in validation_config:
+                    validation_config['qc_settings'] = {}
+                validation_config['qc_settings']['enable_qc'] = True
+            else:
+                logger.info(f"[COMPILATION] No Supporting Data found - QC remains at default setting")
+
             # Update config metadata for this session
             if 'storage_metadata' not in validation_config:
                 validation_config['storage_metadata'] = {}
@@ -928,6 +923,7 @@ async def _compile_results(
             validation_config['storage_metadata']['email'] = email
             validation_config['storage_metadata']['copied_at'] = datetime.now().isoformat()
             validation_config['storage_metadata']['source'] = 'reference_check_static_template'
+            validation_config['storage_metadata']['qc_dynamically_enabled'] = has_supporting_data
 
             # Save config using store_config_file (proper naming for preview)
             config_store_result = storage_manager.store_config_file(
