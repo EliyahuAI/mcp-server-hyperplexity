@@ -9,6 +9,18 @@
 
 This document explains how null/blank confidence values work throughout the validation system, including the critical distinction between "absence of evidence" and "evidence of absence."
 
+### The Core Principle
+
+**Null confidence is a special form of LOW confidence reserved exclusively for blank cells.**
+
+This design choice allows us to:
+- **Track missing information separately** from errors/low-quality data
+- **Distinguish "no data" from "bad data"** in statistics and reporting
+- **Prevent degradation** from real content to blank (except when removing false data)
+- **Measure completeness** via Populated % metrics
+
+In essence: **Blank = NULL = "We have nothing" ≠ LOW = "We have something unreliable"**
+
 ---
 
 ## Core Concepts
