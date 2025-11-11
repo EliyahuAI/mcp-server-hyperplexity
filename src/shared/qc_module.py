@@ -708,12 +708,18 @@ class QCModule:
                 # Debug QC API response
                 logger.info(f"QC API structured extraction successful: found {len(qc_results)} QC responses (comprehensive)")
 
-                # ENFORCE: If validation had null original_confidence, QC must preserve it
-                # Don't rely on AI to follow prompt correctly
+                # ENFORCE: Blank cells must have null confidence (don't rely on AI)
                 for qc_result in qc_results:
                     column = qc_result.get('column', '')
                     if column:
-                        # Find corresponding validation result
+                        # ENFORCE 1: If QC answer is blank, force confidence to null
+                        qc_answer = qc_result.get('answer')
+                        if qc_answer is None or str(qc_answer).strip() == '':
+                            if qc_result.get('confidence') is not None:
+                                logger.info(f"[QC_NULL_ENFORCE] {column}: QC answer is blank, forcing confidence to null (was: {qc_result.get('confidence')})")
+                                qc_result['confidence'] = None
+
+                        # ENFORCE 2: If validation had null original_confidence, QC must preserve it
                         for group_results in all_group_results.values():
                             for validation_result in group_results:
                                 if validation_result.get('column') == column:
