@@ -70,20 +70,23 @@ class QCIntegrationManager:
         """
         if not self.enabled:
             # QC disabled - return all multiplex results as-is
+            # Note: When QC is disabled, original_confidence should be the validation's confidence
+            # (not the pre-validation original_confidence from the cell)
             merged_results = {}
             for group_name, group_results in all_group_results.items():
                 for result in group_results:
                     column = result.get('column', '')
                     if column:
+                        validation_confidence = result.get('confidence', '')
                         merged_results[column] = {
                             'updated_entry': result.get('answer', ''),
-                            'updated_confidence': result.get('confidence', ''),
-                            'original_confidence': result.get('original_confidence', ''),
+                            'updated_confidence': validation_confidence,
+                            'original_confidence': validation_confidence,  # Use validation confidence as original when no QC
                             'updated_reasoning': result.get('reasoning', ''),
                             'updated_sources': result.get('sources', []),
                             'qc_applied': False,
                             'qc_entry': result.get('answer', ''),
-                            'qc_confidence': result.get('confidence', ''),
+                            'qc_confidence': validation_confidence,
                             'qc_reasoning': '',
                             'qc_sources': [],
                             'all_sources': result.get('sources', []),
@@ -189,19 +192,22 @@ class QCIntegrationManager:
         """
         if not self.enabled:
             # QC disabled - return multiplex results as-is
+            # Note: When QC is disabled, original_confidence should be the validation's confidence
+            # (not the pre-validation original_confidence from the cell)
             merged_results = {}
             for result in multiplex_results:
                 column = result.get('column', '')
                 if column:
+                    validation_confidence = result.get('confidence', '')
                     merged_results[column] = {
                         'updated_entry': result.get('answer', ''),
-                        'updated_confidence': result.get('confidence', ''),
-                        'original_confidence': result.get('original_confidence', ''),
+                        'updated_confidence': validation_confidence,
+                        'original_confidence': validation_confidence,  # Use validation confidence as original when no QC
                         'updated_reasoning': result.get('reasoning', ''),
                         'updated_sources': result.get('sources', []),
                         'qc_applied': False,
                         'qc_entry': result.get('answer', ''),
-                        'qc_confidence': result.get('confidence', ''),
+                        'qc_confidence': validation_confidence,
                         'qc_reasoning': '',
                         'qc_sources': [],
                         'all_sources': result.get('sources', [])
