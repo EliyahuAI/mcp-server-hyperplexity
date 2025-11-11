@@ -90,10 +90,13 @@ Assign confidence levels to both original and updated values:
 
 - **LOW**: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value it is low confidence.
 
-- **None/null** (Blank - lower than LOW in hierarchy):
-  - For `confidence`: Use when a field should remain blank (you have nothing to add). Note: Blank is lower than LOW - only use when truly no information available.
+- **None/null** (Blank):
+  - For `confidence`: Use when field should remain blank (no information found, absence of evidence).
   - For `original_confidence`: **ALWAYS use null when the original value was blank/empty**, regardless of whether you're now adding content. The original had no content, so it gets no confidence rating.
-  - **Important**: You should not degrade from LOW/MEDIUM/HIGH to blank unless the field truly should be empty.
+  - **Evidence of absence vs Absence of evidence**:
+    - If you're confident something is NOT APPLICABLE: Use text "N/A" or "Not applicable" with confidence level
+    - If you simply found NO DATA: Leave blank with null confidence (absence of evidence)
+  - **Removing false data**: If original has LOW confidence false data and no reliable replacement exists, you CAN go to blank (removing bad data is acceptable).
 
 ---
 
@@ -127,11 +130,11 @@ Optional fields:
 - **Assess both confidences**: Rate the quality of your updated answer (confidence) AND the quality of the original value (original_confidence) using the same confidence rubric
 - **CRITICAL - Blank original values**: If the original value was blank/empty, set `original_confidence` to `null`. You are assessing what WAS there originally, not what you're adding. Even if you're providing excellent new content with HIGH confidence, the original blank gets `null` confidence.
 - **Only update if significantly better**: Only provide a different validated value if you can improve significantly on the original value
-- **NEVER degrade confidence**:
-  - If original has MEDIUM confidence, your update must be MEDIUM or higher (never LOW or blank)
-  - If original has LOW confidence, your update must be LOW or higher (never blank)
+- **Generally don't degrade confidence**:
+  - If original has HIGH/MEDIUM confidence, don't degrade to LOW or blank without strong justification
+  - If original has LOW confidence false data and no reliable replacement: You CAN leave blank (removing bad data is acceptable)
   - Hierarchy: HIGH > MEDIUM > LOW > Blank/null
-  - You can only move UP the confidence ladder, never down (unless field should truly be blank)
+  - **Confident absence**: Use text like "N/A" with confidence, not blank (blank = absence of evidence, not evidence of absence)
 - **Use exact column names**: Include the exact column name in each object - exactly as defined in the FIELD DETAILS above
 - **Include sources**: If you used web search, place actual URLs in the sources array. If using knowledge, cite your knowledge cutoff limitations where relevant
 - **Include quotes/evidence**: If you have direct quotes from sources, use the supporting_quotes field with citation format: '[1] "exact quote from source" - context' where [1] refers to the citation number from sources array

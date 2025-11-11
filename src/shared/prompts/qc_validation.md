@@ -123,10 +123,13 @@ Assign confidence levels using this rubric:
 
 - **LOW**: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value it is low confidence
 
-- **None/null** (Blank - lower than LOW for hierarchy enforcement):
-  - For `confidence`: Use when a field should remain blank (you have nothing to add)
+- **None/null** (Blank):
+  - For `confidence`: Use when field should remain blank (no information found, absence of evidence)
   - For `original_confidence`: **ALWAYS use null when the original value was blank/empty**, regardless of whether validator added content. The original had no content, so it gets no confidence rating. If validator passed through null, keep it null.
-  - **For hierarchy enforcement**: Blank/null is treated as lower than LOW. You cannot degrade from LOW/MEDIUM/HIGH to blank. You CAN upgrade from blank to any level.
+  - **Evidence of absence vs Absence of evidence**:
+    - Confident something is NOT APPLICABLE → Use text "N/A" with confidence, not blank
+    - Simply no data found → Blank with null confidence (absence of evidence)
+  - **Removing false data**: If original has LOW confidence false data, going to blank is acceptable
 
 ---
 
@@ -160,18 +163,21 @@ Assign confidence levels using this rubric:
 ### Core Principles
 
 * **CONFIDENCE HIERARCHY ENFORCEMENT:** original_confidence ≤ confidence
-  - You MUST ensure: Original Confidence ≤ QC Confidence (you cannot degrade confidence)
-  - **Hierarchy Scale:** HIGH > MEDIUM > LOW > Blank/null (null is treated as lower than LOW for enforcement)
+  - You MUST ensure: Original Confidence ≤ QC Confidence (generally cannot degrade confidence)
+  - **Hierarchy Scale:** HIGH > MEDIUM > LOW > Blank/null
   - **NULL HANDLING FOR ENFORCEMENT**:
     - If original was blank (null): QC can be any level (null ≤ anything)
-    - If original was LOW/MEDIUM/HIGH: QC cannot be blank (that's degrading)
-    - If validator proposed blank: QC must either keep it blank OR upgrade to LOW/MEDIUM/HIGH
+    - If original was HIGH/MEDIUM: QC cannot be blank or LOW (no degrading without strong reason)
+    - If original was LOW: QC can be blank ONLY if data is clearly false/harmful and no reliable alternative exists
   - **NULL PRESERVATION**: If original_confidence is null (blank original value), keep it null in your output - don't convert to "LOW"
-  - If this hierarchy is violated, you MUST adjust the confidence levels to maintain order
+  - **CONFIDENT ABSENCE**: If you're confident something should be absent/not applicable, use text like "N/A" or "Not applicable" with HIGH/MEDIUM confidence, NOT blank
+  - If hierarchy is violated, you MUST adjust confidence levels or explain in qc_reasoning
   - Examples:
-    - Original=MEDIUM, Updated=Blank → INVALID (degrading) → Raise Updated to MEDIUM or lower Original to LOW
-    - Original=null, Updated=HIGH → VALID (upgrading from blank)
-    - Original=HIGH, Updated=MEDIUM → INVALID → Adjust to maintain hierarchy
+    - Original=MEDIUM, Updated=Blank → INVALID (use "N/A" text with MEDIUM confidence if not applicable, or keep MEDIUM if just unverified)
+    - Original=LOW (false data), Updated=Blank → ACCEPTABLE (removing harmful false data when no replacement exists)
+    - Original=LOW, Updated="N/A" with HIGH → VALID (confident statement of non-applicability)
+    - Original=null, Updated=HIGH → VALID (adding reliable data)
+    - Original=HIGH, Updated=MEDIUM → INVALID → Must adjust to maintain hierarchy
 
 * **CRITICAL EQUAL CONFIDENCE RULE:**
   - When final answer equals original value (no meaningful change), original_confidence MUST equal confidence
