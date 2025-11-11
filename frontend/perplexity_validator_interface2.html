@@ -3693,14 +3693,18 @@
                 const downloadColor = 'tertiary';  // orange
                 const refineColor = 'secondary';   // purple
 
+                // Hide refine button for reference check (static config cannot be refined)
+                const refineButtonHtml = !globalState.isReferenceCheck ?
+                    `<button type="button" class="std-button ${refineColor}" data-action="refine-config">
+                        🔧 Refine Configuration
+                    </button>` : '';
+
                 const actionsHtml = `
                     <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
                         <button type="button" class="std-button ${downloadColor}" data-action="download-preview">
                             📥 Download Rich Preview
                         </button>
-                        <button type="button" class="std-button ${refineColor}" data-action="refine-config">
-                            🔧 Refine Configuration
-                        </button>
+                        ${refineButtonHtml}
                         ${revertButtonHtml}
                     </div>
                 `;
@@ -5567,9 +5571,12 @@
                 }
             }
 
-            function showClaimsInfoBox(cardId, claims) {
+            function showClaimsInfoBox(cardId, claims, totalCount = null) {
                 const card = document.getElementById(cardId);
                 if (!card) return;
+
+                // Use provided totalCount or fall back to claims.length
+                const total = totalCount || claims.length;
 
                 const claimsToShow = claims.slice(0, 10);
                 const claimsListHtml = claimsToShow.map((claim, index) => {
@@ -5591,12 +5598,13 @@
                     return `<strong>${claimNum}.</strong> ${statementPreview} <span style="color: #666;">[${refNumbers}]</span>`;
                 }).join('<br>');
 
-                const moreText = claims.length > 10 ? `<br><em>+${claims.length - 10} more claims</em>` : '';
+                const moreText = total > 10 ? `<br><em>+${total - 10} more claims</em>` : '';
+                const countText = total > 10 ? ` (first ${claimsToShow.length} of ${total})` : '';
 
                 const boxHtml = `
                     <div class="message claims-info-box" style="margin-bottom: 1rem; background-color: #fff3e0; color: #e65100; border: 1px solid #ffb74d;">
                         <span class="message-icon">📝</span>
-                        <div><strong>Extracted Claims</strong> (first ${claimsToShow.length}):<br>${claimsListHtml}${moreText}</div>
+                        <div><strong>Extracted Claims</strong>${countText}:<br>${claimsListHtml}${moreText}</div>
                     </div>
                 `;
 
@@ -6442,6 +6450,17 @@
                                     <span class="button-text">↩️ Revert to Previous</span>
                                 </button>` : '';
 
+                        // Hide refine button for reference check (static config cannot be refined)
+                        const refineMessageHtml = !globalState.isReferenceCheck ?
+                            `<div style="margin-bottom: 8px;">
+                                • If you want to change anything, refine the configuration and check out the preview
+                            </div>` : '';
+
+                        const refineButtonHtml = !globalState.isReferenceCheck ?
+                            `<button class="std-button ${refineColor}" id="${cardId}-refine-btn" style="flex: 1;">
+                                <span class="button-text">🔧 Refine Configuration</span>
+                            </button>` : '';
+
                         messagesContainer.innerHTML = `
                             <div class="message message-success" style="margin-bottom: 1rem;">
                                 <span class="message-icon">🎉</span>
@@ -6455,9 +6474,7 @@
                                     <div style="margin-bottom: 8px;">
                                         • Enable editing to see key citations and sources in cell comments when hovering.
                                     </div>
-                                    <div style="margin-bottom: 8px;">
-                                        • If you want to change anything, refine the configuration and check out the preview
-                                    </div>
+                                    ${refineMessageHtml}
                                     <div id="${cardId}-balance-info">
                                         ${balanceText}
                                     </div>
@@ -6467,9 +6484,7 @@
                                 <button class="std-button ${downloadColor}" id="${cardId}-download-btn" style="flex: 1;" disabled>
                                     <span class="button-text">📥 Preparing Download...</span>
                                 </button>
-                                <button class="std-button ${refineColor}" id="${cardId}-refine-btn" style="flex: 1;">
-                                    <span class="button-text">🔧 Refine Configuration</span>
-                                </button>
+                                ${refineButtonHtml}
                             </div>
                             <div style="display: flex; gap: 10px; margin-top: 0.5rem;">
                                 ${revertButtonHtml}
@@ -12745,6 +12760,20 @@ Please provide any additional context, or simply proceed to generate your initia
                         text: 'Submit Text',
                         variant: 'primary',
                         callback: async (e) => {
+                            const input = document.getElementById(`${cardId}-input`);
+                            const submittedText = input.value.trim();
+
+                            // Validate before hiding form
+                            if (!submittedText) {
+                                showMessage(`${cardId}-messages`, 'Please enter text with citations to verify', 'error');
+                                return;
+                            }
+
+                            if (submittedText.length < 50) {
+                                showMessage(`${cardId}-messages`, 'Submitted text must have at least 50 characters', 'error');
+                                return;
+                            }
+
                             // Hide buttons and form immediately
                             const buttonsContainer = document.getElementById(`${cardId}-buttons`);
                             const formEl = document.getElementById(`${cardId}-form`);
@@ -12948,13 +12977,7 @@ Please provide any additional context, or simply proceed to generate your initia
             const input = document.getElementById(`${cardId}-input`);
             const submittedText = input.value.trim();
 
-            // Validate not empty
-            if (!submittedText) {
-                showMessage(`${cardId}-messages`, 'Please enter text with citations to verify', 'error');
-                return;
-            }
-
-            // Store submitted text
+            // Store submitted text (validation already done in button callback)
             referenceCheckState.submittedText = submittedText;
 
             // Update thinking indicator (already shown by callback as "Submitting text...")
@@ -13083,9 +13106,12 @@ Please provide any additional context, or simply proceed to generate your initia
             globalState.configStored = true;
             globalState.excelFileUploaded = true;
 
+            // Mark as reference check session (config is static, cannot be refined)
+            globalState.isReferenceCheck = true;
+
             // Show claims info box (orange ID box with extracted claims)
             if (data.claims && data.claims.length > 0) {
-                showClaimsInfoBox(cardId, data.claims);
+                showClaimsInfoBox(cardId, data.claims, data.summary.total_claims);
             }
 
             // Update progress indicator with completion message
