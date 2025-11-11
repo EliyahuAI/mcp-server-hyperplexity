@@ -90,9 +90,10 @@ Assign confidence levels to both original and updated values:
 
 - **LOW**: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value it is low confidence.
 
-- **None/null**:
-  - For `confidence`: Use when a field should remain blank (you have nothing to add)
+- **None/null** (Blank - lower than LOW in hierarchy):
+  - For `confidence`: Use when a field should remain blank (you have nothing to add). Note: Blank is lower than LOW - only use when truly no information available.
   - For `original_confidence`: **ALWAYS use null when the original value was blank/empty**, regardless of whether you're now adding content. The original had no content, so it gets no confidence rating.
+  - **Important**: You should not degrade from LOW/MEDIUM/HIGH to blank unless the field truly should be empty.
 
 ---
 
@@ -126,7 +127,11 @@ Optional fields:
 - **Assess both confidences**: Rate the quality of your updated answer (confidence) AND the quality of the original value (original_confidence) using the same confidence rubric
 - **CRITICAL - Blank original values**: If the original value was blank/empty, set `original_confidence` to `null`. You are assessing what WAS there originally, not what you're adding. Even if you're providing excellent new content with HIGH confidence, the original blank gets `null` confidence.
 - **Only update if significantly better**: Only provide a different validated value if you can improve significantly on the original value
-- **NEVER replace with lower confidence**: If you are more confident in the original value, why would you update it with a value that you are less confident in?
+- **NEVER degrade confidence**:
+  - If original has MEDIUM confidence, your update must be MEDIUM or higher (never LOW or blank)
+  - If original has LOW confidence, your update must be LOW or higher (never blank)
+  - Hierarchy: HIGH > MEDIUM > LOW > Blank/null
+  - You can only move UP the confidence ladder, never down (unless field should truly be blank)
 - **Use exact column names**: Include the exact column name in each object - exactly as defined in the FIELD DETAILS above
 - **Include sources**: If you used web search, place actual URLs in the sources array. If using knowledge, cite your knowledge cutoff limitations where relevant
 - **Include quotes/evidence**: If you have direct quotes from sources, use the supporting_quotes field with citation format: '[1] "exact quote from source" - context' where [1] refers to the citation number from sources array
