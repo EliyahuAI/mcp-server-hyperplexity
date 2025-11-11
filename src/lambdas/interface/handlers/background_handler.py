@@ -1568,8 +1568,11 @@ def handle_main_processing(event, context):
 
                 # Update session_info.json with failure status and correct config version
                 try:
-                    config_version = config_data.get('storage_metadata', {}).get('version', 1)
-                    config_id = config_data.get('storage_metadata', {}).get('config_id')
+                    config_version = 1
+                    config_id = None
+                    if config_data and isinstance(config_data, dict):
+                        config_version = config_data.get('storage_metadata', {}).get('version', 1)
+                        config_id = config_data.get('storage_metadata', {}).get('config_id')
 
                     storage_manager.update_session_results(
                         email=email,
