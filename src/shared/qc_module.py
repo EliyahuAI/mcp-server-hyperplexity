@@ -986,23 +986,24 @@ class QCModule:
             qc_applied = qc_result is not None
 
             # Build merged result
+            # IMPORTANT: Preserve None/null values for confidences (don't default to empty string)
             merged_result = {
                 # Original multiplex data (this represents the "Updated Entry")
                 'updated_entry': multiplex_result.get('answer', ''),
                 'updated_confidence': multiplex_result.get('confidence', ''),
-                'original_confidence': multiplex_result.get('original_confidence', ''),
+                'original_confidence': multiplex_result.get('original_confidence'),  # Preserve None/null
                 'updated_reasoning': multiplex_result.get('reasoning', ''),
                 'updated_sources': multiplex_result.get('sources', []),
 
-                # QC data
+                # QC data (defaults will be overridden if QC was applied)
                 'qc_applied': qc_applied,
                 'qc_entry': '',
                 'qc_confidence': '',
                 'qc_reasoning': '',
                 'qc_sources': [],
                 'qc_citations': '',
-                'qc_original_confidence': '',  # QC-revised original confidence (for confidence_changed_original)
-                'qc_updated_confidence': '',   # QC-revised updated confidence (for confidence_changed_updated)
+                'qc_original_confidence': None,  # Default to None, not empty string
+                'qc_updated_confidence': None,   # Default to None, not empty string
 
                 # Aggregated sources
                 'all_sources': aggregated_citations.get(column, [])
@@ -1017,9 +1018,9 @@ class QCModule:
                 qc_entry = qc_result.get('answer', merged_result['updated_entry'])
                 qc_confidence = qc_result.get('confidence', merged_result['updated_confidence'])
 
-                # Extract QC-revised confidence levels (now always provided)
-                qc_original_confidence = qc_result.get('original_confidence', '')
-                qc_updated_confidence = qc_result.get('updated_confidence', '')
+                # Extract QC-revised confidence levels (preserve None/null, don't convert to empty string)
+                qc_original_confidence = qc_result.get('original_confidence')  # Can be None/null
+                qc_updated_confidence = qc_result.get('updated_confidence')    # Can be None/null
 
                 # Parse update_importance FIRST (format: "N - Explanation text")
                 update_importance_raw = qc_result.get('update_importance', '0')
@@ -1078,11 +1079,12 @@ class QCModule:
                     logger.info(f"[QC_CONFIDENCE_ENFORCEMENT] {column}: {enforcement_reason}, enforcing original_confidence == qc_confidence ({qc_confidence})")
                     qc_original_confidence = qc_confidence  # Override to match QC confidence
 
-                # Update confidence levels if QC provided revisions
-                if qc_original_confidence:
+                # Update confidence levels if QC provided revisions (check is not None, not truthiness)
+                # This preserves None/null values instead of skipping them
+                if qc_original_confidence is not None:
                     merged_result['qc_original_confidence'] = qc_original_confidence
                     merged_result['original_confidence'] = qc_original_confidence  # Update in place
-                if qc_updated_confidence:
+                if qc_updated_confidence is not None:
                     merged_result['qc_updated_confidence'] = qc_updated_confidence
                     merged_result['updated_confidence'] = qc_updated_confidence  # Update in place
 
