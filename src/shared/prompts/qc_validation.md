@@ -121,9 +121,11 @@ Assign confidence levels using this rubric:
 
 - **MEDIUM**: Good estimates, confident projections, or respectable but not definitive sources that are consistent with the guidance .provided.
 
-- **LOW**: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value- it is low confidence
+- **LOW**: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value it is low confidence
 
-- **None**: For blank values that should remain blank (no confidence assignment needed). If the orignal valie is blank, and you have nothing to add, provied a null confidence.
+- **None/null**:
+  - For `confidence`: Use when a field should remain blank (you have nothing to add)
+  - For `original_confidence`: **ALWAYS use null when the original value was blank/empty**, regardless of whether validator added content. The original had no content, so it gets no confidence rating. If validator passed through null, keep it null.
 
 ---
 
@@ -158,12 +160,14 @@ Assign confidence levels using this rubric:
 
 * **CONFIDENCE HIERARCHY ENFORCEMENT:** original_confidence ≤ confidence
   - You MUST ensure: Original Confidence ≤ QC Confidence
-  - If this hierarchy is violated, you MUST adjust the confidence levels to maintain this order
+  - **NULL HANDLING**: If original_confidence is null (blank original value), keep it null regardless of your QC confidence level. Null is not part of the hierarchy - it means "no original content to assess"
+  - If this hierarchy is violated (for non-null values), you MUST adjust the confidence levels to maintain this order
   - Example: If Original=HIGH, QC Confidence=MEDIUM, you MUST lower Original to MEDIUM or raise QC Confidence to HIGH. Generally lower confidences when you are not sure about the inconsistency.
 
 * **CRITICAL EQUAL CONFIDENCE RULE:**
   - When final answer equals original value (no meaningful change), original_confidence MUST equal confidence
   - When update_importance is 0 or 1, original_confidence MUST equal confidence
+  - **EXCEPTION**: If original value was blank (null original_confidence), keep it null even when confirming blank should stay blank
   - This is NON-NEGOTIABLE and takes precedence over other confidence considerations
 
 * **MANDATORY QC VALUE:** When any QC action is taken, the `answer` field is REQUIRED - it cannot be optional, and you must also explicitly state the confidence of of this entry, and your reviewed confidence of the Original entry.
