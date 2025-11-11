@@ -903,16 +903,6 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
                 # Show updated results when no original data available
                 confidence_html += f"<li>{emoji} <b>{display_level}:</b> {percentage:.1f}% (Updated)</li>"
 
-    # Add %Populated summary when original data is available
-    if original_confidence_distribution:
-        original_total = sum(original_confidence_distribution.values())
-        updated_total = sum(confidence_distribution.values())
-        original_populated = original_total - original_confidence_distribution.get('NULL', 0)
-        updated_populated = updated_total - confidence_distribution.get('NULL', 0)
-        original_populated_pct = (original_populated / original_total * 100) if original_total > 0 else 0
-        updated_populated_pct = (updated_populated / updated_total * 100) if updated_total > 0 else 0
-        confidence_html += f"<li><b>Populated:</b> {original_populated_pct:.0f}% (Original) -> {updated_populated_pct:.0f}% (Updated)</li>"
-
     if not confidence_html:
         confidence_html = "<li>No confidence data available</li>"
     
