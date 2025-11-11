@@ -102,7 +102,7 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
     # Create transposed table: fields as rows, data rows as columns
     table_lines = []
     
-    # Add legend as a separate sentence before the table
+    # Add legend as a separate sentence before the table (order: HIGH, MEDIUM, LOW, Blank)
     legend = "**Confidence Legend:** 🔵 ID/Skipped • 🟢 High • 🟡 Medium • 🔴 Low • ⭕ Blank\n\n"
     
     # Create header row - no search group column

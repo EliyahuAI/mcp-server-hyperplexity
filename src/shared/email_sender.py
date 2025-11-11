@@ -883,6 +883,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
     # Format confidence distribution with Original -> Updated format
     confidence_html = ""
     total_validations = sum(confidence_distribution.values())
+    # Display order: HIGH, MEDIUM, LOW, Blank (grouping negative outcomes together)
     for level in ["HIGH", "MEDIUM", "LOW", "NULL"]:
         count = confidence_distribution.get(level, 0)
         if count > 0 or total_validations > 0:  # Show even if 0 for completeness

@@ -2234,25 +2234,28 @@ def handle_main_processing(event, context):
                         
                         # Calculate summary data for potential email
                         all_fields = set()
-                        confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
-                        original_confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
-                        
+                        # Ordered dict to maintain display order: HIGH, MEDIUM, LOW, Blank
+                        confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "NULL": 0}
+                        original_confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "NULL": 0}
+
                         for row_data in real_results.values():
                             for field_name, field_data in row_data.items():
                                 if isinstance(field_data, dict):
                                     all_fields.add(field_name)
-                                    
-                                    # Count updated confidence levels
-                                    if 'confidence_level' in field_data:
-                                        conf_level = field_data.get('confidence_level', 'UNKNOWN')
-                                        if conf_level in confidence_counts:
-                                            confidence_counts[conf_level] += 1
-                                    
-                                    # Count original confidence levels
-                                    if 'original_confidence' in field_data:
-                                        original_conf = field_data.get('original_confidence')
-                                        if original_conf and str(original_conf).upper() in original_confidence_counts:
-                                            original_confidence_counts[str(original_conf).upper()] += 1
+
+                                    # Count updated confidence levels (null/blank counts as NULL)
+                                    conf_level = field_data.get('confidence_level', 'UNKNOWN')
+                                    if conf_level is None or str(conf_level).strip() in ('', '-', 'null', 'None'):
+                                        confidence_counts['NULL'] += 1
+                                    elif conf_level in confidence_counts:
+                                        confidence_counts[conf_level] += 1
+
+                                    # Count original confidence levels (null/blank counts as NULL)
+                                    original_conf = field_data.get('original_confidence')
+                                    if original_conf is None or str(original_conf).strip() in ('', '-', 'null', 'None'):
+                                        original_confidence_counts['NULL'] += 1
+                                    elif str(original_conf).upper() in original_confidence_counts:
+                                        original_confidence_counts[str(original_conf).upper()] += 1
                         
                         # Create enhanced Excel if available
                         enhanced_excel_content = None
@@ -4523,26 +4526,31 @@ def handle_main_processing(event, context):
                                 id_fields.add(target.get('column'))
                     
                     validated_fields = set()  # Only count fields that were actually validated
-                    confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
-                    original_confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
-                    
+                    # Ordered dict to maintain display order: HIGH, MEDIUM, LOW, Blank
+                    confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "NULL": 0}
+                    original_confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "NULL": 0}
+
                     for row_data in real_results.values():
                         for field_name, field_data in row_data.items():
                             if isinstance(field_data, dict):
                                 # Only count as validated if it's not an ID/IGNORED field
                                 if field_name not in id_fields:
                                     validated_fields.add(field_name)
-                                
-                                # Count updated confidence levels (only for validated fields)
-                                if 'confidence_level' in field_data and field_name not in id_fields:
-                                    conf_level = field_data.get('confidence_level', 'UNKNOWN')
-                                    if conf_level in confidence_counts:
+
+                                # Count updated confidence levels (only for validated fields, null/blank counts as NULL)
+                                if field_name not in id_fields:
+                                    conf_level = field_data.get('confidence_level')
+                                    if conf_level is None or str(conf_level).strip() in ('', '-', 'null', 'None'):
+                                        confidence_counts['NULL'] += 1
+                                    elif conf_level in confidence_counts:
                                         confidence_counts[conf_level] += 1
-                                
-                                # Count original confidence levels (only for validated fields)
-                                if 'original_confidence' in field_data and field_name not in id_fields:
+
+                                # Count original confidence levels (only for validated fields, null/blank counts as NULL)
+                                if field_name not in id_fields:
                                     original_conf = field_data.get('original_confidence')
-                                    if original_conf and str(original_conf).upper() in original_confidence_counts:
+                                    if original_conf is None or str(original_conf).strip() in ('', '-', 'null', 'None'):
+                                        original_confidence_counts['NULL'] += 1
+                                    elif str(original_conf).upper() in original_confidence_counts:
                                         original_confidence_counts[str(original_conf).upper()] += 1
                     
                     summary_data = {
