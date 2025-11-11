@@ -1357,14 +1357,21 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                             qc_original_confidence = str(field_qc_data.get('qc_original_confidence') or '')
                                             qc_updated_confidence = str(field_qc_data.get('qc_updated_confidence') or '')
 
-                                            # Final value logic: always use QC value when available (since QC is now comprehensive)
-                                            if qc_value and str(qc_value).strip():
-                                                # QC provided a replacement value
-                                                final_value = qc_value
-                                            else:
-                                                # QC only changed confidence, keep the updated value
-                                                final_value = str(field_data.get('value', ''))
-                                            logger.debug(f"[QC_EXCEL_EXTRACT_DEBUG] {field_name}: QC extracted - value='{qc_value}', confidence='{qc_confidence}'")
+                            # If QC was not applied, populate QC confidence columns with validation's confidences
+                            if not qc_applied:
+                                # Use validation's original_confidence (confidence in original cell value)
+                                qc_original_confidence = str(field_data.get('original_confidence') or '')
+                                # Use validation's updated confidence (confidence in validated value)
+                                qc_updated_confidence = str(field_data.get('confidence_level', field_data.get('confidence', '')))
+                            else:
+                                # QC was applied - final value logic: always use QC value when available (since QC is now comprehensive)
+                                if qc_value and str(qc_value).strip():
+                                    # QC provided a replacement value
+                                    final_value = qc_value
+                                else:
+                                    # QC only changed confidence, keep the updated value
+                                    final_value = str(field_data.get('value', ''))
+                                logger.debug(f"[QC_EXCEL_EXTRACT_DEBUG] {field_name}: QC extracted - value='{qc_value}', confidence='{qc_confidence}'")
 
                             # Use QC confidence format for QC Value when QC applied
                             # Skip coloring for IGNORED and ID columns
