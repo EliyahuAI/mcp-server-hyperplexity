@@ -890,7 +890,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
 
             # Display label (use "Blank" for NULL)
             display_level = "Blank" if level == "NULL" else level
-            emoji = "🟢" if level == "HIGH" else "🟡" if level == "MEDIUM" else "🔴" if level == "LOW" else "⚪"
+            emoji = "🟢" if level == "HIGH" else "🟡" if level == "MEDIUM" else "🔴" if level == "LOW" else "⭕"
 
             # Show Original -> Updated format when original data is available
             if original_confidence_distribution:
