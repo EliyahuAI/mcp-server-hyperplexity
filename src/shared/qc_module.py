@@ -271,7 +271,7 @@ class QCModule:
 
                 answer = result.get('answer', '')
                 confidence = result.get('confidence', '')
-                original_confidence = result.get('original_confidence', '')
+                original_confidence = result.get('original_confidence')  # Preserve None/null
                 reasoning = result.get('reasoning', '')
                 sources = result.get('sources', [])
                 citations = result.get('citations', [])  # Full structured citation data
@@ -342,7 +342,9 @@ class QCModule:
                 else:
                     field_output.append(f"### Original/Current Value: `{original_value}` (from previous validation)")
 
-                field_output.append(f"* **Original Confidence (Proposed):** {original_confidence}")
+                # Format original_confidence for display (show 'null' for None)
+                original_conf_display = 'null' if original_confidence is None else original_confidence
+                field_output.append(f"* **Original Confidence (Proposed):** {original_conf_display}")
 
                 # Add validation context from cell comments for the current value
                 if validation_history and column in validation_history:
@@ -705,6 +707,23 @@ class QCModule:
 
                 # Debug QC API response
                 logger.info(f"QC API structured extraction successful: found {len(qc_results)} QC responses (comprehensive)")
+
+                # ENFORCE: If validation had null original_confidence, QC must preserve it
+                # Don't rely on AI to follow prompt correctly
+                for qc_result in qc_results:
+                    column = qc_result.get('column', '')
+                    if column:
+                        # Find corresponding validation result
+                        for group_results in all_group_results.values():
+                            for validation_result in group_results:
+                                if validation_result.get('column') == column:
+                                    validation_original_conf = validation_result.get('original_confidence')
+                                    if validation_original_conf is None:
+                                        # Validation had null - enforce QC keeps it null
+                                        if qc_result.get('original_confidence') is not None:
+                                            logger.info(f"[QC_NULL_ENFORCE] {column}: Validation had null original_confidence, forcing QC to preserve null (was: {qc_result.get('original_confidence')})")
+                                            qc_result['original_confidence'] = None
+                                    break
 
                 # Update metrics - count actual modifications, not just QC responses
                 # With comprehensive QC, len(qc_results) equals all fields processed
