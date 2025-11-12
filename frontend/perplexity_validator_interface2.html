@@ -2569,20 +2569,20 @@
             // PAGE TYPE DETECTION
             // ============================================
             function detectPageType() {
-                // Check URL for reference-check parameter
+                // Check URL for chex parameter
                 const urlParams = new URLSearchParams(window.location.search);
-                if (urlParams.get('mode') === 'reference-check' || urlParams.get('page') === 'reference-check') {
+                if (urlParams.get('mode') === 'chex' || urlParams.get('page') === 'chex') {
                     return 'reference-check';
                 }
 
                 // Check page title
                 const pageTitle = document.title.toLowerCase();
-                if (pageTitle.includes('reference') && pageTitle.includes('check')) {
+                if (pageTitle.includes('chex')) {
                     return 'reference-check';
                 }
 
                 // Check for URL path
-                if (window.location.pathname.includes('reference-check')) {
+                if (window.location.pathname.includes('chex')) {
                     return 'reference-check';
                 }
 
