@@ -719,7 +719,14 @@ class QCModule:
                                 logger.info(f"[QC_NULL_ENFORCE] {column}: QC answer is blank, forcing confidence to null (was: {qc_result.get('confidence')})")
                                 qc_result['confidence'] = None
 
-                        # ENFORCE 2: If validation had null original_confidence, QC must preserve it
+                        # ENFORCE 2: Check original row data - if it was blank, force null original_confidence
+                        original_row_value = row.get(column) if row else None
+                        if original_row_value is None or str(original_row_value).strip() == '':
+                            if qc_result.get('original_confidence') is not None:
+                                logger.info(f"[QC_NULL_ENFORCE] {column}: Original row value was blank, forcing original_confidence to null (was: {qc_result.get('original_confidence')})")
+                                qc_result['original_confidence'] = None
+
+                        # ENFORCE 3: Double-check validation also had null (backup check)
                         for group_results in all_group_results.values():
                             for validation_result in group_results:
                                 if validation_result.get('column') == column:
