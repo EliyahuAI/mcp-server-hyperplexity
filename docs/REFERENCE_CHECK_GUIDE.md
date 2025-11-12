@@ -83,15 +83,27 @@ User clicks "Upload PDF" button
   ↓
 User selects PDF file
   ↓
-PDF uploaded via multipart form data (synchronous)
+[Frontend validates file size: 50MB max]
   ↓
-Backend converts PDF to markdown using pymupdf4llm
+[If too large] Error shown immediately (no upload)
   ↓
-Markdown text populates textarea
+[If valid] Frontend requests presigned URL (small JSON request)
   ↓
-User can edit/review before submitting
+Backend generates presigned S3 URL (returns in <1 second)
   ↓
-User clicks "Check References" to process
+Frontend uploads PDF directly to S3 (bypasses API Gateway/Lambda limits)
+  ↓
+Frontend confirms upload complete
+  ↓
+Backend queues conversion to SQS (returns immediately)
+  ↓
+Background processor converts PDF to text using PyMuPDF
+  ↓
+Conversion result sent via WebSocket
+  ↓
+Reference check auto-triggered with converted text
+  ↓
+Results delivered via WebSocket
 ```
 
 ### Step 3: Claim Extraction
@@ -294,39 +306,47 @@ function handleReferenceCheckComplete(data) {
 
 ### Backend Components
 
+**Presigned URL Upload** (presigned_upload.py - NEW):
+```python
+# Max file size: 50MB for both PDFs and Excel (no API Gateway/Lambda limits!)
+MAX_PDF_SIZE = 50 * 1024 * 1024
+MAX_EXCEL_SIZE = 50 * 1024 * 1024
+
+def request_presigned_url(request_data: Dict[str, Any], context: Any):
+    """
+    Generate presigned S3 URL for direct browser-to-S3 upload.
+
+    Flow:
+    1. Frontend sends small JSON request (file metadata only)
+    2. Backend generates presigned URL (valid for 5 minutes)
+    3. Frontend uploads file directly to S3 using presigned URL
+    4. Frontend confirms upload complete
+    5. Backend queues processing (PDF conversion or Excel analysis)
+
+    Advantages:
+    - No API Gateway 10MB payload limit
+    - No Lambda 6MB invocation limit
+    - Supports files up to 50MB (or more if needed)
+    - Faster uploads (direct to S3)
+    - Lower costs (no Lambda payload processing)
+    """
+
+def confirm_upload_complete(request_data: Dict[str, Any], context: Any):
+    """
+    Verify file in S3 and queue processing.
+
+    For PDFs: Queue to SQS for background conversion
+    For Excel: Confirm upload success (processing triggered separately)
+    """
+```
+
 **PDF Conversion** (pdf_converter.py):
 ```python
-def handle_pdf_multipart(files: Dict[str, Any], form_data: Dict[str, str], context: Any):
+async def handle_pdf_conversion(request_data: Dict[str, Any], context: Any):
     """
-    Convert PDF file to markdown text (synchronous multipart handler).
-    Follows Excel upload pattern - lightweight and returns immediately.
+    Background PDF conversion processor (triggered by SQS).
+    Downloads PDF from S3, converts to text, auto-triggers reference check.
     """
-    # Extract PDF file from files dict
-    pdf_file = files.get('pdf_file')
-    pdf_content = pdf_file.get('content', b'')
-
-    # Write to temporary file (required by pymupdf4llm)
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_pdf:
-        temp_pdf.write(pdf_content)
-        temp_pdf_path = temp_pdf.name
-
-    try:
-        # Convert PDF to markdown using pymupdf4llm
-        markdown_text = pymupdf4llm.to_markdown(temp_pdf_path)
-
-        # Get page count
-        doc = fitz.open(temp_pdf_path)
-        page_count = len(doc)
-        doc.close()
-
-        # Return markdown text
-        return create_response(200, {
-            'success': True,
-            'markdown_text': markdown_text,
-            'page_count': page_count
-        })
-    finally:
-        os.unlink(temp_pdf_path)
 ```
 
 **HTTP Handler Routing** (http_handler.py line ~71):
@@ -528,8 +548,13 @@ User downloads completed table
 
 ## 💰 Cost Breakdown
 
+**File Upload** (PDF or Excel):
+- Max file size: **50MB** (using S3 presigned URLs - no API Gateway/Lambda limits!)
+- Direct browser-to-S3 upload (fast, efficient)
+- No Lambda payload processing costs
+
 **PDF Conversion** (optional):
-- Local processing using pymupdf4llm
+- Background processing using PyMuPDF (fast text extraction)
 - No API calls, no cost
 - ~1-5 seconds per document
 

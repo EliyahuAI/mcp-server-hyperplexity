@@ -175,6 +175,12 @@ def handle(event, context):
             elif action == 'useConfigById':
                 use_config_by_id = lazy_import('interface_lambda.actions', 'use_config_by_id')
                 return use_config_by_id.handle_use_config_by_id(request_data, context)
+            elif action == 'requestPresignedUrl':
+                presigned_upload = lazy_import('interface_lambda.actions', 'presigned_upload')
+                return presigned_upload.request_presigned_url(request_data, context)
+            elif action == 'confirmUploadComplete':
+                presigned_upload = lazy_import('interface_lambda.actions', 'presigned_upload')
+                return presigned_upload.confirm_upload_complete(request_data, context)
             elif action == 'getAccountBalance':
                 account_balance = lazy_import('interface_lambda.actions', 'account_balance')
                 return account_balance.handle(request_data, context)

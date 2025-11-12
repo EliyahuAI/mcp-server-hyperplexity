@@ -32,8 +32,9 @@ from websocket_client import WebSocketClient
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Max file size: 10MB
-MAX_PDF_SIZE = 10 * 1024 * 1024
+# Max file size: 6MB (to account for multipart encoding overhead)
+# API Gateway has 10MB total payload limit; 6MB PDF + encoding = ~8MB
+MAX_PDF_SIZE = 6 * 1024 * 1024
 
 
 def handle_pdf_multipart(files: Dict[str, Any], form_data: Dict[str, str], context: Any) -> Dict[str, Any]:

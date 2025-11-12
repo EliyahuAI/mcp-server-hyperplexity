@@ -7381,51 +7381,118 @@
             }
 
             async function uploadExcelFile(cardId, file) {
-
-                const formData = new FormData();
-                formData.append('excel_file', file);
-                formData.append('email', globalState.email);
-                formData.append('action', 'processExcel');
-
-
                 try {
-                    const response = await fetch(`${API_BASE}/upload`, {
+                    // Validate file size (50MB max - no longer limited by API Gateway!)
+                    const maxSize = 50 * 1024 * 1024;
+                    if (file.size > maxSize) {
+                        throw new Error(`File too large. Maximum size is ${maxSize / 1024 / 1024}MB`);
+                    }
+
+                    // Step 1: Request presigned URL from backend
+                    const presignedResponse = await fetch(`${API_BASE}/validate`, {
                         method: 'POST',
-                        body: formData
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'requestPresignedUrl',
+                            file_type: 'excel',
+                            filename: file.name,
+                            file_size: file.size,
+                            email: globalState.email,
+                            session_id: globalState.sessionId || ''
+                        })
                     });
 
-                    const data = await response.json();
+                    const presignedData = await presignedResponse.json();
 
+                    if (!presignedResponse.ok || !presignedData.success) {
+                        throw new Error(presignedData.message || 'Failed to get upload URL');
+                    }
 
-                if (response.ok && data.success && data.session_id) {
+                    // Store upload info
+                    const uploadId = presignedData.upload_id;
+                    const s3Key = presignedData.s3_key;
+                    const sessionId = presignedData.session_id;
+
+                    // Store session_id if backend generated one
+                    if (sessionId && !globalState.sessionId) {
+                        globalState.sessionId = sessionId;
+                        localStorage.setItem('sessionId', sessionId);
+                    }
+
+                    showMessage(`${cardId}-messages`,
+                        `Uploading ${file.name} to secure storage...`,
+                        'info'
+                    );
+
+                    // Step 2: Upload file directly to S3 using presigned URL
+                    // IMPORTANT: Include metadata as x-amz-meta-* headers to match presigned URL params
+                    const uploadResponse = await fetch(presignedData.presigned_url, {
+                        method: 'PUT',
+                        body: file,
+                        headers: {
+                            'Content-Type': presignedData.content_type,  // Use content type from backend
+                            'x-amz-meta-upload_id': uploadId,
+                            'x-amz-meta-original_filename': file.name,
+                            'x-amz-meta-email': globalState.email,
+                            'x-amz-meta-session_id': sessionId,
+                            'x-amz-meta-file_type': 'excel',
+                            'x-amz-meta-file_size': file.size.toString(),
+                            'x-amz-meta-uploaded_at': new Date().toISOString()
+                        }
+                    });
+
+                    if (!uploadResponse.ok) {
+                        throw new Error(`Upload failed with status ${uploadResponse.status}`);
+                    }
+
+                    console.log('[EXCEL_UPLOAD] File uploaded to S3 successfully');
+
+                    // Step 3: Confirm upload complete (no processing yet - just confirmation)
+                    const confirmResponse = await fetch(`${API_BASE}/validate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'confirmUploadComplete',
+                            upload_id: uploadId,
+                            s3_key: s3Key,
+                            session_id: sessionId,
+                            file_type: 'excel',
+                            filename: file.name,
+                            email: globalState.email
+                        })
+                    });
+
+                    const confirmData = await confirmResponse.json();
+
+                    if (!confirmResponse.ok || !confirmData.success) {
+                        throw new Error(confirmData.message || 'Failed to confirm upload');
+                    }
+
+                    // Store file info in globalState for later processing
+                    globalState.excelFileUploaded = true;
+                    globalState.excelS3Key = s3Key;
+                    globalState.excelFilename = file.name;
+                    globalState.storagePath = confirmData.storage_path;
+
+                    // Store matching configs if found
+                    if (confirmData.matching_configs && confirmData.matching_configs.success && confirmData.matching_configs.matches) {
+                        globalState.matchingConfigs = confirmData.matching_configs;
+                    } else {
+                        globalState.matchingConfigs = null;
+                    }
+
                     // Show upload completion
                     showMessage(`${cardId}-messages`,
                         `File uploaded: ${file.name}`,
                         'success'
                     );
 
-                    globalState.sessionId = data.session_id;
-                    globalState.excelFileUploaded = true;
-                    globalState.storagePath = data.storage_path;
-                    localStorage.setItem('sessionId', globalState.sessionId);
-                    
-                    // Store matching configs if found
-
-                    if (data.matching_configs && data.matching_configs.success && data.matching_configs.matches) {
-                        globalState.matchingConfigs = data.matching_configs;
-                    } else {
-                        globalState.matchingConfigs = null;
-                    }
-                    
-                    
-                    // Show clean success state - Excel verification = table structure validation
-                    showFinalCardState(cardId, 
-                        `${file.name} uploaded and analyzed`, 
+                    // Show clean success state
+                    showFinalCardState(cardId,
+                        `${file.name} uploaded and analyzed`,
                         'success'
                     );
-                } else {
-                    throw new Error(data.error || 'Failed to upload Excel file');
-                }
+
                 } catch (error) {
                     throw error;
                 }
@@ -12848,60 +12915,109 @@ Please provide any additional context, or simply proceed to generate your initia
                     return;
                 }
 
-                // Validate file size (10MB max)
-                const maxSize = 10 * 1024 * 1024;
+                // Validate file size (50MB max - no longer limited by API Gateway!)
+                const maxSize = 50 * 1024 * 1024;
                 if (file.size > maxSize) {
                     completeThinkingInCard(cardId, 'File too large');
                     showMessage(messagesDiv.id, `PDF file too large. Maximum size is ${maxSize / 1024 / 1024}MB`, 'error');
                     return;
                 }
 
-                // Create FormData for upload (lightweight - uploads to S3 and queues to SQS)
-                const formData = new FormData();
-                formData.append('pdf_file', file);
-                formData.append('action', 'convertPdfToMarkdown');
-                formData.append('email', globalState.email);
-                // Only append session_id if it exists and is not null/undefined
-                if (globalState.sessionId) {
-                    formData.append('session_id', globalState.sessionId);
-                } else {
-                    formData.append('session_id', '');  // Empty string triggers generation on backend
-                }
+                // Show initial progress
+                showThinkingInCard(cardId, `Preparing to upload ${file.name}...`, true);
 
-                // Upload PDF
-                const response = await fetch(`${API_BASE}/upload`, {
+                // Step 1: Request presigned URL from backend
+                const presignedResponse = await fetch(`${API_BASE}/validate`, {
                     method: 'POST',
-                    body: formData
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'requestPresignedUrl',
+                        file_type: 'pdf',
+                        filename: file.name,
+                        file_size: file.size,
+                        email: globalState.email,
+                        session_id: globalState.sessionId || ''
+                    })
                 });
 
-                const data = await response.json();
+                const presignedData = await presignedResponse.json();
 
-                if (response.ok && data.success && data.status === 'processing') {
-                    // Store PDF ID and session ID
-                    referenceCheckState.pdfId = data.pdf_id;
-                    referenceCheckState.pdfFilename = file.name;
-
-                    // Store session_id if backend generated one
-                    if (data.session_id && !globalState.sessionId) {
-                        globalState.sessionId = data.session_id;
-                        localStorage.setItem('sessionId', data.session_id);
-                    }
-
-                    // Show thinking indicator with progress (buttons already hidden by callback)
-                    showThinkingInCard(cardId, `${file.name} successfully uploaded. Reading PDF...`, true);
-
-                    // Connect to WebSocket to receive conversion result
-                    connectToSession(globalState.sessionId);
-
-                    // Register WebSocket handler for PDF conversion
-                    unregisterCardHandler(cardId);
-                    registerCardHandler(cardId, ['pdf_conversion_progress', 'pdf_conversion_complete', 'pdf_conversion_error'], (wsData) => {
-                        handlePdfConversionMessage(cardId, wsData, file.name);
-                    });
-
-                } else {
-                    throw new Error(data.message || 'Failed to upload PDF');
+                if (!presignedResponse.ok || !presignedData.success) {
+                    throw new Error(presignedData.message || 'Failed to get upload URL');
                 }
+
+                // Store upload ID and session ID
+                const uploadId = presignedData.upload_id;
+                const s3Key = presignedData.s3_key;
+                const sessionId = presignedData.session_id;
+
+                // Store session_id if backend generated one
+                if (sessionId && !globalState.sessionId) {
+                    globalState.sessionId = sessionId;
+                    localStorage.setItem('sessionId', sessionId);
+                }
+
+                referenceCheckState.pdfId = uploadId;
+                referenceCheckState.pdfFilename = file.name;
+
+                // Update progress
+                showThinkingInCard(cardId, `Uploading ${file.name} to secure storage...`, true);
+
+                // Step 2: Upload file directly to S3 using presigned URL
+                // IMPORTANT: Include metadata as x-amz-meta-* headers to match presigned URL params
+                const uploadResponse = await fetch(presignedData.presigned_url, {
+                    method: 'PUT',
+                    body: file,
+                    headers: {
+                        'Content-Type': presignedData.content_type,  // Use content type from backend
+                        'x-amz-meta-upload_id': uploadId,
+                        'x-amz-meta-original_filename': file.name,
+                        'x-amz-meta-email': globalState.email,
+                        'x-amz-meta-session_id': sessionId,
+                        'x-amz-meta-file_type': 'pdf',
+                        'x-amz-meta-file_size': file.size.toString(),
+                        'x-amz-meta-uploaded_at': new Date().toISOString()
+                    }
+                });
+
+                if (!uploadResponse.ok) {
+                    throw new Error(`Upload failed with status ${uploadResponse.status}`);
+                }
+
+                console.log('[PDF_UPLOAD] File uploaded to S3 successfully');
+
+                // Step 3: Confirm upload complete and trigger processing
+                const confirmResponse = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'confirmUploadComplete',
+                        upload_id: uploadId,
+                        s3_key: s3Key,
+                        session_id: sessionId,
+                        file_type: 'pdf',
+                        filename: file.name,
+                        email: globalState.email
+                    })
+                });
+
+                const confirmData = await confirmResponse.json();
+
+                if (!confirmResponse.ok || !confirmData.success) {
+                    throw new Error(confirmData.message || 'Failed to confirm upload');
+                }
+
+                // Show progress indicator and wait for WebSocket updates
+                showThinkingInCard(cardId, `${file.name} uploaded successfully. Reading PDF...`, true);
+
+                // Connect to WebSocket to receive conversion result
+                connectToSession(sessionId);
+
+                // Register WebSocket handler for PDF conversion
+                unregisterCardHandler(cardId);
+                registerCardHandler(cardId, ['pdf_conversion_progress', 'pdf_conversion_complete', 'pdf_conversion_error'], (wsData) => {
+                    handlePdfConversionMessage(cardId, wsData, file.name);
+                });
 
             } catch (error) {
                 console.error('[PDF_UPLOAD] Error:', error);
