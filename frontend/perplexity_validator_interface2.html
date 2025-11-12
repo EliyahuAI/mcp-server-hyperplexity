@@ -2570,20 +2570,21 @@
             // PAGE TYPE DETECTION
             // ============================================
             function detectPageType() {
-                // Check URL for chex parameter
+                // Check URL for chex or reference-check parameter
                 const urlParams = new URLSearchParams(window.location.search);
-                if (urlParams.get('mode') === 'chex' || urlParams.get('page') === 'chex') {
+                if (urlParams.get('mode') === 'chex' || urlParams.get('page') === 'chex' ||
+                    urlParams.get('mode') === 'reference-check' || urlParams.get('page') === 'reference-check') {
                     return 'reference-check';
                 }
 
                 // Check page title
                 const pageTitle = document.title.toLowerCase();
-                if (pageTitle.includes('chex')) {
+                if (pageTitle.includes('chex') || (pageTitle.includes('reference') && pageTitle.includes('check'))) {
                     return 'reference-check';
                 }
 
-                // Check for URL path
-                if (window.location.pathname.includes('chex')) {
+                // Check for URL path (chex or reference-check)
+                if (window.location.pathname.includes('chex') || window.location.pathname.includes('reference-check')) {
                     return 'reference-check';
                 }
 
