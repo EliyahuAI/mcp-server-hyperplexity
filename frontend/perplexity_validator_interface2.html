@@ -2520,6 +2520,7 @@
                 isNewUser: true, // Track if user is new (no prior validation history) - ALWAYS TRUE FOR NOW
                 userAttemptedProcessing: false, // Track if user tried to process but was blocked by insufficient balance
                 pendingProcessingTrigger: null, // Store function to trigger processing when balance is sufficient
+                isReferenceCheck: false, // Track if current session is reference check mode (affects button display)
 
                 // Workflow state tracking
                 workflowPhase: 'initial', // initial, upload, config, preview, validating, completed
@@ -10913,6 +10914,7 @@ Please provide any additional context, or simply proceed to generate your initia
             try {
                 const state = {
                     timestamp: Date.now(),
+                    pageType: detectPageType(), // Save current page type to prevent cross-page restoration
                     scrollPosition: window.scrollY || 0,
                     globalState: {
                         ...globalState,
@@ -11203,6 +11205,15 @@ Please provide any additional context, or simply proceed to generate your initia
 
                     // Check if state is recent (within 1 hour)
                     if (Date.now() - state.timestamp > oneHour) {
+                        sessionStorage.removeItem('hyperplexity_app_state');
+                        return false;
+                    }
+
+                    // Check if page type has changed (don't restore state from different page types)
+                    const currentPageType = detectPageType();
+                    const savedPageType = state.pageType || 'default';
+                    if (currentPageType !== savedPageType) {
+                        console.log(`[STATE] Page type changed from ${savedPageType} to ${currentPageType}, clearing saved state`);
                         sessionStorage.removeItem('hyperplexity_app_state');
                         return false;
                     }
