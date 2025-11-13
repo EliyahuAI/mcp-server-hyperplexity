@@ -5,7 +5,7 @@
   "anthropic_max_web_searches_default": 0,
   "qc_settings": {
     "enable_qc": false,
-    "model": "claude-opus-4-1",
+    "model": "claude-sonnet-4-5",
     "max_tokens_default": 8000,
     "tokens_per_validated_column_default": 3000,
     "anthropic_max_web_searches": 0
