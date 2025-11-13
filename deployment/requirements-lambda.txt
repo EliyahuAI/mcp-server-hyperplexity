@@ -1,6 +1,6 @@
 # Use latest aioboto3 (15.4.0 released Oct 18, 2025) for modern boto3/botocore compatibility
-boto3>=1.40.0
-botocore>=1.40.0
+# NOTE: boto3 and botocore are provided by AWS Lambda runtime - DO NOT package them
+# Packaging boto3/botocore causes version conflicts with Lambda's built-in versions
 aioboto3>=15.4.0
 aiohttp>=3.8.0
 python-dateutil>=2.8.2

@@ -3,9 +3,9 @@
 # NO AI operations, NO heavy processing, NO report generation
 
 # Core AWS (aioboto3 needed for ai_api_client imports - table_maker → interview → ai_api_client)
-boto3>=1.40.0
-botocore>=1.40.0
-aioboto3>=15.4.0  # Latest (Oct 18, 2025) - compatible with boto3 1.40.x
+# NOTE: boto3 and botocore are provided by AWS Lambda runtime - DO NOT package them
+# Packaging boto3/botocore causes version conflicts with Lambda's built-in versions
+aioboto3>=15.4.0  # Latest (Oct 18, 2025) - uses Lambda's built-in boto3/botocore
 
 # File upload handling
 python-multipart>=0.0.5
