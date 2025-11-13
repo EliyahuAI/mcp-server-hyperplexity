@@ -6471,7 +6471,7 @@
                                         • Your validation has been completed successfully and emailed to you
                                     </div>
                                     <div style="margin-bottom: 8px;">
-                                        • Notice the Updated and Original sheets, color coded by confidence with green/yellow/red meaning high/medium/low confidence
+                                        • Notice the Updated and Original sheets, color coded by confidence: Green (High), Yellow (Medium), Red (Low), No Color (Null/Blank)
                                     </div>
                                     <div style="margin-bottom: 8px;">
                                         • Enable editing to see key citations and sources in cell comments when hovering.
@@ -7063,35 +7063,35 @@
                     content,
                     buttons: [
                         {
-                            text: '📁 Upload Your Own Table',
+                            text: '✨ Create Table from Prompt',
                             icon: '',
                             variant: 'primary',
-                            callback: async function() {
-                                proceedWithUpload(cardId);
-                            }
-                        },
-                        {
-                            text: '✨ Create New Table',
-                            icon: '',
-                            variant: 'secondary',
                             callback: async function() {
                                 proceedWithTableMaker(cardId);
                             }
                         },
                         {
-                            text: '🔍 Check References',
+                            text: '📁 Upload Your Own Table',
                             icon: '',
-                            variant: 'quaternary',
+                            variant: 'secondary',
                             callback: async function() {
-                                proceedWithReferenceCheck(cardId);
+                                proceedWithUpload(cardId);
                             }
                         },
                         {
-                            text: '🎯 Try a Demo Table',
+                            text: '🎯 Explore a Demo Table',
                             icon: '',
                             variant: 'tertiary',
                             callback: async function() {
                                 proceedWithDemo(cardId);
+                            }
+                        },
+                        {
+                            text: '🔍 Check Text References',
+                            icon: '',
+                            variant: 'quaternary',
+                            callback: async function() {
+                                proceedWithReferenceCheck(cardId);
                             }
                         }
                     ]
@@ -10441,7 +10441,7 @@ Please provide any additional context, or simply proceed to generate your initia
                                 • Your validation has been completed successfully and emailed to you
                             </div>
                             <div style="margin-bottom: 8px;">
-                                • Notice the Updated and Original sheets, color coded by confidence with green/yellow/red meaning high/medium/low confidence
+                                • Notice the Updated and Original sheets, color coded by confidence: Green (High), Yellow (Medium), Red (Low), No Color (Null/Blank)
                             </div>
                             <div style="margin-bottom: 8px;">
                                 • If you want to change anything, refine the configuration and check out the preview
