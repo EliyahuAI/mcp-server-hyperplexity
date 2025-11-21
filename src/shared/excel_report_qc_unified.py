@@ -218,14 +218,29 @@ def calculate_confidence_distribution(validation_results, qc_results):
                 updated_conf = field_data.get('confidence_level')
 
             # Count confidences (handling null/blank as NULL)
-            if original_conf is None or str(original_conf).strip() in ('', '-', 'null', 'None'):
+            # Special rule: blank-like values with LOW confidence are forced to NULL
+            original_value = field_data.get('original_value', '')
+
+            # Check if value looks blank-like (-, —, empty, n/a, etc)
+            blank_like_values = ('', '-', '—', '–', 'n/a', 'na', 'null', 'none')
+            is_blank_like = (original_value is None or
+                            str(original_value).strip().lower() in blank_like_values)
+
+            # Count original confidence
+            if original_conf is None or str(original_conf).strip().lower() in ('', 'null', 'none'):
+                # Truly null confidence
+                original_counts['NULL'] += 1
+            elif is_blank_like and str(original_conf).strip().upper() == 'LOW':
+                # Blank-like value with LOW confidence → force to NULL
+                # (not confident enough to assert it's intentionally N/A)
                 original_counts['NULL'] += 1
             else:
                 original_conf_upper = str(original_conf).strip().upper()
                 if original_conf_upper in original_counts:
                     original_counts[original_conf_upper] += 1
 
-            if updated_conf is None or str(updated_conf).strip() in ('', '-', 'null', 'None'):
+            # Count updated confidence (no special blank-like handling for updated values)
+            if updated_conf is None or str(updated_conf).strip().lower() in ('', 'null', 'none'):
                 updated_counts['NULL'] += 1
             else:
                 updated_conf_upper = str(updated_conf).strip().upper()
@@ -1078,7 +1093,16 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
 
                                 # Use bold format if value changed, regular format if not
                                 format_dict = original_confidence_formats_bold if value_changed else original_confidence_formats
-                                cell_format = get_confidence_format(original_confidence, format_dict)
+
+                                # Special rule: blank-like values with LOW confidence should be uncolored (forced to NULL)
+                                blank_like_values = ('', '-', '—', '–', 'n/a', 'na', 'null', 'none')
+                                is_blank_like = (original_value is None or
+                                                str(original_value).strip().lower() in blank_like_values)
+                                if is_blank_like and str(original_confidence).strip().upper() == 'LOW':
+                                    # Treat as null confidence (uncolored)
+                                    cell_format = None
+                                else:
+                                    cell_format = get_confidence_format(original_confidence, format_dict)
                             else:
                                 cell_format = None  # No coloring for IGNORED and ID columns
 

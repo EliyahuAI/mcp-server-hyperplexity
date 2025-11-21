@@ -920,6 +920,38 @@ def handle_async_completion_in_background_handler(event, context):
             # We need to wrap async results to match sync format for the common path
 
             if isinstance(async_validation_results, dict) and 'validation_results' in async_validation_results:
+                # EXTRACT QC DATA from embedded '_qc' fields
+                # For async requests, validation lambda embeds QC in each row's '_qc' field but doesn't extract it to top-level qc_results
+                # We need to extract it here for the Excel generation and display logic
+                extracted_qc_results = {}
+                qc_row_count = 0
+                for row_key, row_data in async_validation_results['validation_results'].items():
+                    if isinstance(row_data, dict) and '_qc' in row_data:
+                        extracted_qc_results[row_key] = row_data['_qc']
+                        qc_row_count += 1
+
+                logger.debug(f"[ASYNC_QC_EXTRACT] Extracted QC data from {qc_row_count} rows with embedded '_qc'")
+                if extracted_qc_results:
+                    sample_key = list(extracted_qc_results.keys())[0]
+                    sample_value = extracted_qc_results[sample_key]
+                    logger.debug(f"[ASYNC_QC_EXTRACT] Sample QC result - key: {sample_key}, fields: {list(sample_value.keys()) if isinstance(sample_value, dict) else 'Not a dict'}")
+                    # Show sample field data
+                    if isinstance(sample_value, dict) and sample_value:
+                        sample_field = list(sample_value.keys())[0]
+                        sample_field_data = sample_value[sample_field]
+                        logger.debug(f"[ASYNC_QC_EXTRACT] Sample field '{sample_field}' QC data keys: {list(sample_field_data.keys()) if isinstance(sample_field_data, dict) else 'Not a dict'}")
+
+                # Extract QC metrics from enhanced_metrics if available
+                extracted_qc_metrics = async_validation_results.get('qc_metrics', {})
+                if not extracted_qc_metrics and 'enhanced_metrics' in async_validation_results:
+                    # QC metrics might be embedded in enhanced_metrics
+                    enhanced_metrics = async_validation_results['enhanced_metrics']
+                    if 'aggregated_metrics' in enhanced_metrics:
+                        providers = enhanced_metrics['aggregated_metrics'].get('providers', {})
+                        if 'QC_Costs' in providers:
+                            extracted_qc_metrics = providers['QC_Costs'].get('qc_specific_metrics', {})
+                            logger.debug(f"[ASYNC_QC_EXTRACT] Extracted QC metrics from enhanced_metrics.QC_Costs")
+
                 # Wrap async results in sync format
                 # CRITICAL: In S3, enhanced_metrics is at top level, but sync expects it INSIDE metadata
                 metadata_with_enhanced = async_validation_results.get('metadata', {}).copy()
@@ -936,9 +968,9 @@ def handle_async_completion_in_background_handler(event, context):
                     'body': {
                         'data': {
                             'rows': async_validation_results['validation_results'],
-                            # CRITICAL: QC results and metrics must be in body.data to match sync format
-                            'qc_results': async_validation_results.get('qc_results', {}),
-                            'qc_metrics': async_validation_results.get('qc_metrics', {})
+                            # QC results extracted from embedded '_qc' fields (not from S3, since async lambda doesn't extract them)
+                            'qc_results': extracted_qc_results,
+                            'qc_metrics': extracted_qc_metrics
                         },
                         'token_usage': async_validation_results.get('token_usage', {}),
                         'metadata': metadata_with_enhanced
@@ -948,14 +980,15 @@ def handle_async_completion_in_background_handler(event, context):
                     'token_usage': async_validation_results.get('token_usage', {}),
                     'metadata': metadata_with_enhanced,
                     # Also preserve at top level for backward compatibility
-                    'qc_results': async_validation_results.get('qc_results', {}),
-                    'qc_metrics': async_validation_results.get('qc_metrics', {})
+                    'qc_results': extracted_qc_results,
+                    'qc_metrics': extracted_qc_metrics
                 }
                 logger.debug(f"[ASYNC_COMPLETION] Wrapped async results in sync format for common processing path")
-                if async_validation_results.get('qc_results'):
-                    logger.debug(f"[ASYNC_COMPLETION] QC results preserved: {len(async_validation_results['qc_results'])} rows")
-                if async_validation_results.get('qc_metrics'):
-                    logger.debug(f"[ASYNC_COMPLETION] QC metrics preserved: {async_validation_results['qc_metrics'].get('total_fields_reviewed', 0)} fields reviewed")
+                logger.debug(f"[ASYNC_COMPLETION] QC results extracted: {len(extracted_qc_results)} rows")
+                if extracted_qc_results:
+                    logger.debug(f"[ASYNC_COMPLETION] Sample QC row has {len(list(extracted_qc_results.values())[0])} fields")
+                if extracted_qc_metrics:
+                    logger.debug(f"[ASYNC_COMPLETION] QC metrics extracted: {extracted_qc_metrics.get('total_fields_reviewed', 0)} fields reviewed")
             else:
                 # Fallback if structure is unexpected
                 validation_results = async_validation_results
@@ -1621,6 +1654,14 @@ def handle_main_processing(event, context):
                                         if qc_confidence and str(qc_confidence).strip():
                                             real_results[validation_key][field_name]['confidence_level'] = qc_confidence
                                             logger.debug(f"[QC_MERGE] {field_name}: Using QC confidence: {qc_confidence}")
+
+                                        # Merge QC original confidence (can be None for null confidences)
+                                        # CRITICAL: Use 'in' check to detect if key exists, not truthiness check
+                                        # This ensures None (null) values are properly preserved
+                                        if 'qc_original_confidence' in field_qc_data:
+                                            qc_original_confidence = field_qc_data.get('qc_original_confidence')
+                                            real_results[validation_key][field_name]['original_confidence'] = qc_original_confidence
+                                            logger.debug(f"[QC_MERGE] {field_name}: Using QC original confidence: {qc_original_confidence}")
                 logger.debug(f"[EXCEL_DEBUG] validation_results keys: {list(validation_results.keys())}")
                 logger.debug(f"[EXCEL_DEBUG] real_results type: {type(real_results)}, keys: {list(real_results.keys()) if isinstance(real_results, dict) else 'N/A'}")
                 if isinstance(real_results, dict) and real_results:
@@ -3739,6 +3780,14 @@ def handle_main_processing(event, context):
                                     if qc_confidence and str(qc_confidence).strip():
                                         real_results[validation_key][field_name]['confidence_level'] = qc_confidence
                                         logger.debug(f"[QC_MERGE_FULL] {field_name}: Using QC confidence: {qc_confidence}")
+
+                                    # Merge QC original confidence (can be None for null confidences)
+                                    # CRITICAL: Use 'in' check to detect if key exists, not truthiness check
+                                    # This ensures None (null) values are properly preserved
+                                    if 'qc_original_confidence' in field_qc_data:
+                                        qc_original_confidence = field_qc_data.get('qc_original_confidence')
+                                        real_results[validation_key][field_name]['original_confidence'] = qc_original_confidence
+                                        logger.debug(f"[QC_MERGE_FULL] {field_name}: Using QC original confidence: {qc_original_confidence}")
             # Extract enhanced metrics from validation response
             enhanced_metrics = metadata.get('enhanced_metrics', {})
             # validation_metrics is nested inside enhanced_metrics

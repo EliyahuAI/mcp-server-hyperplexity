@@ -258,13 +258,13 @@ Provide the most relevant citation that supports the Updated or, if QCed, the QC
 
 **Key Citation Requirements - MANDATORY FOR ALL FIELDS:**
 * **Fields WITHOUT useful citations**: MUST still provide `qc_citations` and either:
-  - If consistent with your training knowledge, Reference general knowledge source with format "[KNOWLEDGE]  Key supporting fact (your model name, training date)
-  - If unverifiable and not consistent with your training knowledge, state "[UNVERIFIED] No authoritative source found: reasoning for uncertainty (requires verification)
+  - If consistent with your training knowledge, Reference general knowledge source with format "[KNOWLEDGE] Key supporting fact (model knowledge)"
+  - If unverifiable and not consistent with your training knowledge, state "[UNVERIFIED] No authoritative source found: reasoning for uncertainty (requires verification)"
 * **Fields requiring no QC changes**: MUST still provide `qc_citations` confirming the accuracy of existing values
 
 **Key Citation Examples:**
 * **Using existing or QC citation:** [QC 1] Amazon Q2 2025 Earnings Report - [including AWS]... "Net sales increased 13% to $167.7 billion ... confirming the market cap calculation" (https://ir.aboutamazon.com/2025_Earnings_Results)
-* **Using model knowledge:** [KNOWLEDGE] Amazon provides a range of services including AWS. (Claude 4 Sonnet, Training date: 2025-01-01)
+* **Using model knowledge:** [KNOWLEDGE] Amazon provides a range of services including AWS. (model knowledge)
 * **Unverifyable:** [UNVERIFIED] No authoritative source found: It is not clear that Amazon has a special local market in Uganda, leaving original value as is. (requires verification)
 
 ---
