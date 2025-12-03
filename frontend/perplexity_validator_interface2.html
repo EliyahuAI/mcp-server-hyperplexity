@@ -59,6 +59,72 @@
     }
     </script>
 
+    <!-- Google tag (gtag.js) for conversion tracking -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=AW-17742279889"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'AW-17742279889');
+
+        // Google Ads Conversion Tracking Functions
+        // Track which conversions have already fired to prevent duplicates
+        const firedConversions = {
+            emailValidation: new Set(),
+            preview: new Set()
+        };
+
+        function trackEmailValidationConversion(email) {
+            // Dedupe by email address - one conversion per email
+            if (firedConversions.emailValidation.has(email)) {
+                console.log('[Conversion] Email validation skipped (already tracked for this email)');
+                return;
+            }
+            firedConversions.emailValidation.add(email);
+
+            const txnId = `email_${email}`;
+            gtag('event', 'conversion', {
+                'send_to': 'AW-17742279889/nbrVCMq_pssbENHploxC',
+                'value': 1.0,
+                'currency': 'USD',
+                'transaction_id': txnId
+            });
+            console.log('[Conversion] Email validation tracked', `(txn: ${txnId})`);
+        }
+
+        function trackPreviewConversion(sessionId) {
+            // Dedupe by sessionId - only first preview per session
+            if (firedConversions.preview.has(sessionId)) {
+                console.log('[Conversion] Preview skipped (already tracked for this session)');
+                return;
+            }
+            firedConversions.preview.add(sessionId);
+
+            const txnId = sessionId;
+            gtag('event', 'conversion', {
+                'send_to': 'AW-17742279889/eee3CL_zpssbENHploxC',
+                'value': 1.0,
+                'currency': 'USD',
+                'transaction_id': txnId
+            });
+            console.log('[Conversion] Preview tracked', `(txn: ${txnId})`);
+        }
+
+        function trackFullValidationConversion(sessionId, value) {
+            // Each validation is unique - use sessionId + timestamp
+            const txnId = `${sessionId}_${Date.now()}`;
+            // Use nullish coalescing to allow 0 as a valid value
+            const conversionValue = value ?? 0;
+            gtag('event', 'conversion', {
+                'send_to': 'AW-17742279889/D7r0CMiFtcsbENHploxC',
+                'value': conversionValue,
+                'currency': 'USD',
+                'transaction_id': txnId
+            });
+            console.log('[Conversion] Full validation tracked', `value: $${conversionValue}`, `(txn: ${txnId})`);
+        }
+    </script>
+
     <!-- Markdown renderer -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
     
@@ -6994,6 +7060,9 @@
             function handleEmailValidated(cardId) {
                 localStorage.setItem('validatedEmail', globalState.email);
 
+                // Track email validation conversion
+                trackEmailValidationConversion(globalState.email);
+
                 // Update card UI with error checking
                 const formEl = document.getElementById(`${cardId}-form`);
                 const successEl = document.getElementById(`${cardId}-success`);
@@ -10084,7 +10153,9 @@ Please provide any additional context, or simply proceed to generate your initia
 
     
             async function startPreview(cardId) {
-                
+                // Track preview conversion
+                trackPreviewConversion(globalState.sessionId);
+
                 // Show thinking indicators
                 showThinkingInCard(cardId, 'Preparing preview...', true);
                 // Start dummy progress animation for preview
@@ -10313,6 +10384,9 @@ Please provide any additional context, or simply proceed to generate your initia
                     }, cardId);
                     return;
                 }
+
+                // Track full validation conversion (balance check passed)
+                trackFullValidationConversion(globalState.sessionId, effectiveCost);
 
                 // Show thinking indicators with contextual message
                 showThinkingInCard(cardId, 'Initializing validation process...', true);
