@@ -1728,7 +1728,7 @@ def initialize_user_tracking(email: str, validated_at: str = None) -> bool:
             
             # Processing parameters tracking (per-run values)
             'batch_size': 50,  # Default batch size
-            'estimated_time': 0.0,
+            'estimated_time': Decimal('0'),
             
             # API call tracking
             'total_api_calls_made': 0,
