@@ -69,7 +69,7 @@ class ColumnDefinitionHandler:
             'search_strategy': {},
             'table_name': '',
             'rows': [],
-            'trigger_row_discovery': True,  # Default to true (safe)
+            'trigger_row_discovery': True,  # Will be overridden by AI (should default to false if unsure)
             'processing_time': 0.0,
             'error': None
         }
@@ -242,6 +242,49 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
                 logger.error(f"Response format: {json.dumps(raw_response, indent=2)[:500]}")
                 raise
 
+            # Pre-validation fix: If AI set trigger_row_discovery=true but forgot subdomains,
+            # auto-generate a basic subdomain so row discovery can still run
+            trigger_row_discovery = ai_response.get('trigger_row_discovery', True)
+            search_strategy = ai_response.get('search_strategy', {})
+            subdomains = search_strategy.get('subdomains', [])
+            num_rows = len(ai_response.get('rows', []))
+            table_name = ai_response.get('table_name', 'Research Table')
+            discovery_guidance = ai_response.get('discovery_guidance', '')
+
+            if trigger_row_discovery and len(subdomains) == 0:
+                # Auto-generate a subdomain based on table context
+                description = search_strategy.get('description', table_name)
+
+                # Build search queries from description and table name
+                search_queries = [
+                    f"{description} list",
+                    f"{table_name} directory database"
+                ]
+
+                # Create a basic subdomain with clean name truncation
+                # Truncate table_name at word boundary if too long
+                if len(table_name) > 35:
+                    truncated_name = table_name[:35].rsplit(' ', 1)[0]  # Cut at last space before 35 chars
+                else:
+                    truncated_name = table_name
+
+                auto_subdomain = {
+                    "name": f"General {truncated_name}",
+                    "focus": discovery_guidance if discovery_guidance else f"Find entities for {description}",
+                    "search_queries": search_queries,
+                    "target_rows": max(15, num_rows)  # Target at least 15 or match existing rows
+                }
+
+                # Inject the auto-generated subdomain
+                search_strategy['subdomains'] = [auto_subdomain]
+                ai_response['search_strategy'] = search_strategy
+
+                logger.warning(
+                    f"[AUTO-FIX] AI set trigger_row_discovery=true but provided no subdomains. "
+                    f"Auto-generated subdomain: '{auto_subdomain['name']}' with {auto_subdomain['target_rows']} target rows. "
+                    f"Discovery guidance: {discovery_guidance[:100]}..."
+                )
+
             # Validate response against schema
             validation_result = self.schema_validator.validate_ai_response(
                 ai_response,
@@ -266,6 +309,42 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
                 raise ValueError(error_msg)
 
             logger.info(f"Requirements validation passed: {len(requirements)} requirements found")
+
+            # Validate trigger_row_discovery + subdomains consistency
+            trigger_row_discovery = ai_response.get('trigger_row_discovery', True)
+            subdomains = search_strategy.get('subdomains', [])
+            num_subdomains = len(subdomains)
+            discovery_guidance = ai_response.get('discovery_guidance')
+            skip_rationale = ai_response.get('skip_rationale')
+            num_rows = len(ai_response.get('rows', []))
+
+            if trigger_row_discovery:
+                # TRUE path validation
+                if num_subdomains == 0:
+                    error_msg = (
+                        f"🚨 COLUMN DEFINITION ERROR: trigger_row_discovery=true but no subdomains provided! "
+                        f"AI generated {num_rows} rows. "
+                        f"REQUIRED: Include 'subdomains' array (1-10 items) in search_strategy. "
+                        f"OR: Set trigger_row_discovery=false if the {num_rows} rows are sufficient. "
+                        f"Discovery guidance was: {discovery_guidance}"
+                    )
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                if not discovery_guidance:
+                    logger.warning("trigger_row_discovery=true but discovery_guidance is missing (should be required)")
+            else:
+                # FALSE path validation
+                if num_subdomains > 0:
+                    error_msg = (
+                        f"trigger_row_discovery=false but subdomains were provided ({num_subdomains} subdomains). "
+                        f"Subdomains should only be present when trigger_row_discovery=true."
+                    )
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                if not skip_rationale:
+                    logger.warning("trigger_row_discovery=false but skip_rationale is missing (should be required)")
+
+            logger.info(f"Trigger validation passed: trigger_row_discovery={trigger_row_discovery}, subdomains={num_subdomains}, rows={num_rows}")
 
             # Build successful result
             result['success'] = True
