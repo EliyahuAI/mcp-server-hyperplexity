@@ -149,7 +149,13 @@ table_maker/output/
 # Lambda config copies (duplicates of source)
 src/lambdas/interface/table_maker_config.json
 
-# Pitch materials - ignore large media files
+# Pitch materials - ignore large media and presentation files
 pitch/**/*.gif
 pitch/**/*.mp4
 pitch/**/*.zip
+pitch/**/*.pptx
+pitch/**/*.pdf
+pitch/**/*.xlsx
+
+# Frontend - ignore large font packages
+frontend/chex_add_generator/IBM_Plex_Sans.zip
