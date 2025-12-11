@@ -37,7 +37,9 @@ class AIAPIClient:
         "claude-opus-4-0",
         "claude-sonnet-4-5",
         "claude-sonnet-4-0",
+        "deepseek-r1",           # Cost-optimized fallback after Sonnet
         "sonar-pro",
+        "deepseek-v3",           # After Sonar Pro, before legacy models
         "claude-3-7-sonnet-latest",
         "claude-haiku-4-5",
         "sonar"
@@ -66,6 +68,15 @@ class AIAPIClient:
 
         # Use aioboto3 for async S3 operations (non-blocking event loop)
         self.s3_session = aioboto3.Session()
+
+        # Initialize Bedrock runtime client for us-east-1
+        try:
+            self.bedrock_client = boto3.client('bedrock-runtime', region_name='us-east-1')
+            logger.info("AI_API_CLIENT: Bedrock runtime client initialized (us-east-1)")
+        except Exception as e:
+            logger.warning(f"AI_API_CLIENT: Failed to initialize Bedrock client: {e}")
+            self.bedrock_client = None
+
         # Keep boto3 client for non-async operations (SSM parameter retrieval)
         self.anthropic_api_key = self._get_anthropic_api_key()
         self.perplexity_api_key = self._get_perplexity_api_key()
@@ -144,6 +155,13 @@ class AIAPIClient:
             model.startswith('anthropic.') or
             model.startswith('claude-')):
             return 'anthropic'
+
+        # Bedrock provider detection
+        if (model.startswith('bedrock.') or
+            model.startswith('deepseek-') or
+            model.startswith('deepseek.')):
+            return 'bedrock'
+
         return 'perplexity'
 
     def _enforce_provider_token_limit(self, model: str, requested_tokens: int) -> int:
@@ -211,7 +229,44 @@ class AIAPIClient:
         elif model.startswith('anthropic.'):
             return model.replace('anthropic.', '').replace('-v1:0', '')
         return model
-    
+
+    def _normalize_bedrock_model(self, model: str) -> str:
+        """
+        Normalize Bedrock model names to official model IDs.
+
+        Maps user-friendly names to official Bedrock model IDs.
+        Currently available in Bedrock: R1 and V3.1
+
+        Args:
+            model: User-provided model name
+
+        Returns:
+            Official Bedrock model ID
+        """
+        # Strip any bedrock. prefix
+        normalized = model.replace('bedrock.', '')
+
+        # Map simplified names to official model IDs (only R1 and V3.1 available in Bedrock)
+        model_id_map = {
+            'deepseek-r1': 'us.deepseek.r1-v1:0',  # Cross-region inference profile
+            'deepseek-v3': 'deepseek.deepseek-v3-1-base',  # V3.1 in Bedrock
+            'deepseek-v3.1': 'deepseek.deepseek-v3-1-base',  # V3.1 in Bedrock
+        }
+
+        # Check if it's a simplified name
+        for pattern, model_id in model_id_map.items():
+            if normalized.startswith(pattern):
+                logger.debug(f"Normalized Bedrock model '{model}' to '{model_id}'")
+                return model_id
+
+        # If already a full model ID (contains provider prefix), use as-is
+        if '.' in normalized and (':' in normalized or 'base' in normalized):
+            return normalized
+
+        # Default: assume it's a valid model ID
+        logger.warning(f"Unknown Bedrock model pattern '{model}', using as-is")
+        return normalized
+
     def _get_backup_models(self, primary_model: str, count: int = 2) -> List[str]:
         """Get the next N backup models based on hierarchy position."""
         try:
@@ -362,7 +417,120 @@ class AIAPIClient:
         except Exception as e:
             logger.error(f"ai_api_client._extract_token_usage: Unexpected error for model {model}: {e}")
             return self._get_empty_token_usage(model)
-    
+
+    def _extract_bedrock_token_usage(self, bedrock_response: Dict, model: str) -> Dict:
+        """
+        Extract token usage from Bedrock API response.
+
+        Bedrock returns token usage in 'usage' field with format:
+        {
+            "inputTokens": 123,
+            "outputTokens": 456,
+            "totalTokens": 579
+        }
+
+        Args:
+            bedrock_response: Raw Bedrock response
+            model: Model name for logging
+
+        Returns:
+            Normalized token usage dict matching our standard format
+        """
+        try:
+            usage = bedrock_response.get('usage', {})
+
+            if not isinstance(usage, dict):
+                logger.warning(f"Bedrock response missing or invalid usage data for {model}")
+                return {
+                    'api_provider': 'bedrock',
+                    'input_tokens': 0,
+                    'output_tokens': 0,
+                    'cache_creation_tokens': 0,
+                    'cache_read_tokens': 0,
+                    'total_tokens': 0,
+                    'model': model
+                }
+
+            # Bedrock uses camelCase, convert to our format
+            input_tokens = max(0, int(usage.get('inputTokens', 0)))
+            output_tokens = max(0, int(usage.get('outputTokens', 0)))
+            total_tokens = max(0, int(usage.get('totalTokens', input_tokens + output_tokens)))
+
+            return {
+                'api_provider': 'bedrock',
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
+                'cache_creation_tokens': 0,  # Bedrock doesn't support prompt caching
+                'cache_read_tokens': 0,
+                'total_tokens': total_tokens,
+                'model': model
+            }
+
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error parsing Bedrock token data for {model}: {e}")
+            return {
+                'api_provider': 'bedrock',
+                'input_tokens': 0,
+                'output_tokens': 0,
+                'cache_creation_tokens': 0,
+                'cache_read_tokens': 0,
+                'total_tokens': 0,
+                'model': model
+            }
+
+    def _normalize_bedrock_response(self, bedrock_response: Dict, soft_schema: bool = False) -> Dict:
+        """
+        Normalize Bedrock API response to Anthropic-style format.
+
+        Bedrock returns responses in model-native format. We convert to the
+        Anthropic Messages API format that our system expects.
+
+        Args:
+            bedrock_response: Raw response from Bedrock invoke_model
+            soft_schema: If True, extract JSON from text content
+
+        Returns:
+            Normalized response in Anthropic format
+        """
+        try:
+            # Bedrock DeepSeek response format (Anthropic Messages API compatible)
+            if 'content' in bedrock_response and 'usage' in bedrock_response:
+                normalized = bedrock_response.copy()
+
+                # If soft schema, extract and validate JSON from text content
+                if soft_schema:
+                    normalized = self._clean_anthropic_soft_schema_response(normalized, None)
+
+                return normalized
+
+            # Fallback: construct normalized response
+            logger.warning("Bedrock response not in expected format, attempting normalization")
+
+            content_text = bedrock_response.get('completion', '') or bedrock_response.get('text', '')
+
+            normalized = {
+                'id': bedrock_response.get('id', 'bedrock_msg'),
+                'type': 'message',
+                'role': 'assistant',
+                'content': [{'type': 'text', 'text': content_text}],
+                'stop_reason': bedrock_response.get('stop_reason', 'end_turn'),
+                'usage': bedrock_response.get('usage', {})
+            }
+
+            return normalized
+
+        except Exception as e:
+            logger.error(f"Failed to normalize Bedrock response: {e}")
+            # Return minimal valid structure
+            return {
+                'id': 'error',
+                'type': 'message',
+                'role': 'assistant',
+                'content': [{'type': 'text', 'text': str(bedrock_response)}],
+                'stop_reason': 'error',
+                'usage': {}
+            }
+
     def _get_empty_token_usage(self, model: str) -> Dict:
         """Return empty token usage structure with safe defaults."""
         try:
@@ -1994,6 +2162,21 @@ class AIAPIClient:
                     # Perplexity API call for structured output
                     result = await self._make_single_perplexity_structured_call(prompt, schema, current_model,
                                                                                use_cache, cache_key, call_start_time, search_context_size, debug_name, max_tokens or 8000, soft_schema, include_domains, exclude_domains)
+
+                elif api_provider == 'bedrock':
+                    # Bedrock API call for structured output
+                    if not self.bedrock_client:
+                        logger.warning(f"[SKIP] Bedrock client not initialized, skipping model {current_model}")
+                        continue
+
+                    # Normalize model to official Bedrock model ID
+                    current_model_normalized = self._normalize_bedrock_model(current_model)
+
+                    result = await self._make_single_bedrock_call(
+                        prompt, schema, current_model_normalized,
+                        use_cache, cache_key, call_start_time, max_tokens or 8000, soft_schema
+                    )
+
                 else:
                     logger.warning(f"[SKIP] Unknown provider for model {current_model}")
                     continue
@@ -3841,8 +4024,130 @@ class AIAPIClient:
                                       None, error=timeout_error, context="structured_call_timeout", debug_name=debug_name)
             raise timeout_error
         except Exception as e:
-            await self._save_debug_data('perplexity', model, debug_request, 
+            await self._save_debug_data('perplexity', model, debug_request,
                                       None, error=e, context="structured_call_exception", debug_name=debug_name)
+            raise
+
+    async def _make_single_bedrock_call(self, prompt: str, schema: Dict, model: str,
+                                       use_cache: bool, cache_key: str, start_time: datetime,
+                                       max_tokens: int = 8000, soft_schema: bool = False) -> Dict:
+        """
+        Make a single Bedrock API call for structured output.
+
+        Uses AWS Bedrock invoke_model API with DeepSeek models.
+        Similar pattern to _make_single_anthropic_call but adapted for boto3.
+
+        Args:
+            prompt: User prompt text
+            schema: JSON schema for structured output
+            model: Bedrock model ID (normalized)
+            use_cache: Whether to use S3 caching
+            cache_key: Cache key for S3
+            start_time: Call start time for metrics
+            max_tokens: Maximum tokens to generate
+            soft_schema: If True, requests JSON via prompt only (no API enforcement)
+
+        Returns:
+            Dict with response, token_usage, processing_time, is_cached, citations, enhanced_data
+        """
+        # Enforce provider token limits to prevent API errors
+        enforced_max_tokens = self._enforce_provider_token_limit(model, max_tokens)
+
+        # Build request body in Bedrock format
+        # Using Anthropic Messages API format for DeepSeek models
+        messages = [{"role": "user", "content": prompt}]
+
+        request_body = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "messages": messages,
+            "max_tokens": enforced_max_tokens,
+            "temperature": 0.1,
+        }
+
+        # Add structured output support if not soft schema
+        if not soft_schema and schema:
+            # Bedrock DeepSeek supports tool calling for structured output
+            # Convert schema to tool definition
+            tool_definition = {
+                "name": "structured_output",
+                "description": "Return structured data according to the schema",
+                "input_schema": schema
+            }
+            request_body["tools"] = [tool_definition]
+            request_body["tool_choice"] = {"type": "tool", "name": "structured_output"}
+            logger.debug(f"Using hard schema enforcement via Bedrock tools")
+        else:
+            # Soft schema: add JSON instructions to prompt
+            json_prompt = f"{prompt}\n\nReturn your answer as valid JSON matching this schema:\n{json.dumps(schema, indent=2)}"
+            request_body["messages"][0]["content"] = json_prompt
+            logger.info(f"[SOFT_SCHEMA] Using soft schema - JSON requested in prompt only")
+
+        debug_request = {
+            'model_id': model,
+            'body': request_body
+        }
+
+        try:
+            # Call Bedrock API using asyncio.to_thread for sync boto3 client
+            response = await asyncio.to_thread(
+                self.bedrock_client.invoke_model,
+                modelId=model,
+                body=json.dumps(request_body),
+                accept='application/json',
+                contentType='application/json'
+            )
+
+            processing_time = (datetime.now() - start_time).total_seconds()
+
+            # Parse response body
+            response_body = json.loads(response['body'].read())
+
+            # Convert to unified response format (Anthropic-style)
+            unified_response = self._normalize_bedrock_response(response_body, soft_schema)
+
+            # Check for stop reasons
+            stop_reason = unified_response.get('stop_reason')
+            if stop_reason == 'max_tokens':
+                error_msg = f"Model {model} hit max_tokens limit (stop_reason=max_tokens)"
+                logger.warning(f"[MAX_TOKENS] {error_msg}")
+
+                await self._save_debug_data('bedrock', model, debug_request,
+                                          unified_response, context="max_tokens_truncated", cache_key=cache_key)
+
+                raise Exception(f"[MAX_TOKENS] {error_msg}")
+
+            # Save debug data for successful call
+            await self._save_debug_data('bedrock', model, debug_request,
+                                      unified_response, context="single_call_success", cache_key=cache_key)
+
+            # Extract token usage from Bedrock response
+            token_usage = self._extract_bedrock_token_usage(response_body, model)
+
+            # Cache the response
+            if use_cache and cache_key:
+                await self._save_to_cache(cache_key, unified_response, token_usage, processing_time, model, 'bedrock')
+
+            # Generate enhanced metrics
+            try:
+                enhanced_data = self.get_enhanced_call_metrics(
+                    unified_response, model, processing_time, is_cached=False
+                )
+            except Exception as e:
+                logger.warning(f"Failed to generate enhanced metrics for Bedrock call: {e}")
+                enhanced_data = {}
+
+            return {
+                'response': unified_response,
+                'token_usage': token_usage,
+                'processing_time': processing_time,
+                'is_cached': False,
+                'citations': [],  # Bedrock doesn't provide citations like Perplexity
+                'enhanced_data': enhanced_data
+            }
+
+        except Exception as e:
+            await self._save_debug_data('bedrock', model, debug_request,
+                                      None, error=e, context="single_call_exception", cache_key=cache_key)
             raise
 
 # Global instance for easy import
