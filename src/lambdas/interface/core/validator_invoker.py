@@ -376,9 +376,19 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                     worksheet.title = "Data"
                     
                     # Write CSV data to Excel worksheet
+                    # Define illegal characters for Excel (control chars except tab, newline, CR)
+                    import re
+                    ILLEGAL_CHARS_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
+
+                    def sanitize_for_excel(value):
+                        """Remove illegal control characters from cell values."""
+                        if isinstance(value, str):
+                            return ILLEGAL_CHARS_RE.sub('', value)
+                        return value
+
                     for row_idx, csv_row in enumerate(csv_rows, 1):
                         for col_idx, cell_value in enumerate(csv_row, 1):
-                            worksheet.cell(row=row_idx, column=col_idx, value=cell_value)
+                            worksheet.cell(row=row_idx, column=col_idx, value=sanitize_for_excel(cell_value))
                     
                     # Save Excel workbook to bytes
                     excel_buffer = io.BytesIO()

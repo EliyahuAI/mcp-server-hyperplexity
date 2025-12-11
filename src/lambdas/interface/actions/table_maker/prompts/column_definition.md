@@ -3,6 +3,42 @@
 {{RESTRUCTURING_SECTION}}
 
 ═══════════════════════════════════════════════════════════════
+## 🚨 CRITICAL DECISION: Read This FIRST
+═══════════════════════════════════════════════════════════════
+
+**BEFORE you do ANYTHING, answer these 3 questions:**
+
+1. **Did I generate rows that match what the user asked for?**
+   - User asked for "top 5 LLMs" → I generated 5 LLMs? → YES
+   - User asked for "AI companies" → I have 0 rows? → NO
+
+2. **Are the critical columns populated with data?**
+   - Hallucination Rate, Citation Accuracy populated? → YES
+   - Only minor columns like "Sample Size" empty? → Still YES
+   - Most research columns completely empty? → NO
+
+3. **Would the user say "this is what I wanted" if they saw this now?**
+   - I have what they requested with good data? → YES
+   - Missing significant data or quantity? → NO
+
+**DECISION RULE:**
+```
+IF all 3 answers are YES:
+  → trigger_row_discovery = FALSE
+  → Provide skip_rationale
+  → DO NOT include subdomains (will cause error)
+
+IF any answer is NO:
+  → trigger_row_discovery = TRUE
+  → Provide discovery_guidance
+  → MUST include subdomains array (1-10 items) in search_strategy
+```
+
+**⚠️ SCHEMA ENFORCEMENT:** The JSON schema will REJECT your response if you set trigger_row_discovery=true without subdomains!
+
+**When in doubt, choose FALSE - it's safer!**
+
+═══════════════════════════════════════════════════════════════
 ## 📊 DATA SOURCES AVAILABLE
 ═══════════════════════════════════════════════════════════════
 
@@ -35,6 +71,16 @@
 - **subdomains** (in search_strategy) - MANDATORY if trigger_row_discovery=true, FORBIDDEN if false
 - **skip_rationale** - MANDATORY if trigger_row_discovery=false, FORBIDDEN if true
 - **discovery_guidance** - MANDATORY if trigger_row_discovery=true, FORBIDDEN if false
+
+**🚨 CRITICAL VALIDATION RULE:**
+```
+IF trigger_row_discovery = true AND subdomains is missing/empty
+    → EXECUTION ERROR (system will reject your response)
+
+IF trigger_row_discovery = false AND subdomains is present
+    → EXECUTION ERROR (system will reject your response)
+```
+**Default to false if unsure - it's the safer path**
 
 ═══════════════════════════════════════════════════════════════
 ## 📋 ROW GENERATION STRATEGY
@@ -76,14 +122,24 @@ If background_research has `extracted_tables`:
 ### trigger_row_discovery = false (Skip Discovery)
 
 **When:**
-- You generated ALL rows the user wants
-- Most/all columns are populated with reliable data
+- You generated ALL rows the user wants (exact count or sufficient set)
+- Critical columns are populated with reliable data (minor columns can be empty)
 - Set is complete and finite
+- User would be satisfied with what you've provided
 
 **Examples:**
 - Generated 50 US states with capitals from knowledge → Complete
 - Extracted 54 paper references from conversation → Complete
 - Parsed 50 companies from extracted_tables with funding/description → Complete
+- **User asks for "top 5 LLMs", you provided 5 complete rows with key metrics → Complete (even if 1-2 minor columns empty)**
+
+**"Good Enough" Threshold:**
+- Have you met the user's quantity expectation? (they asked for 5, you have 5)
+- Are the ID columns + most important research columns populated? (core metrics present)
+- Are empty columns truly critical or just nice-to-have? (Sample Size vs Hallucination Rate)
+- Would the user say "this is what I wanted" if they saw it now?
+
+**If YES to all → Set trigger_row_discovery=false**
 
 **Requirements:**
 - Provide skip_rationale explaining why discovery not needed
@@ -92,17 +148,35 @@ If background_research has `extracted_tables`:
 ### trigger_row_discovery = true (Run Discovery)
 
 **When:**
-- Need more rows than you can generate
-- User will not be content with what you have
-- Some columns still empty across all rows
+- Need MORE rows than you can generate (quantity gap)
+- User explicitly requested "all X" and you only have samples
+- Critical columns are EMPTY across most/all rows and need web search to populate
+- User will NOT be content with what you have
 
 **Examples:**
 - Generated 30 companies from starting_tables, user specified 50, need 20 more → Discovery
 - Have 9 City Council winners, user wants all election winners (School Committee too) → Discovery
+- User asks "find AI companies hiring", you have 0 rows → Discovery
 
-**MANDATORY Requirements:**
-- ✅ Provide discovery_guidance (what discovery should focus on)
-- ✅ Output subdomains (2-10) in search_strategy - **THIS IS REQUIRED, NOT OPTIONAL**
+**Counter-Examples (DO NOT trigger discovery):**
+- Generated 5 complete rows, user asked for "top 5" → Skip (have exactly what user wants)
+- Generated 50 papers with titles/authors, 1 minor column empty → Skip (core data complete)
+- Generated all 50 US states, want to add population data → Skip (can validate later)
+
+**🚨 CRITICAL REQUIREMENT - READ CAREFULLY:**
+
+**IF YOU SET trigger_row_discovery=true, YOU MUST:**
+1. ✅ Include `subdomains` array (2-10 subdomains) in search_strategy object
+2. ✅ Provide discovery_guidance explaining what discovery should do
+3. ✅ Each subdomain MUST have: name, focus, search_queries (2-5), target_rows
+
+**FAILURE TO INCLUDE SUBDOMAINS WILL CAUSE EXECUTION ERROR!**
+
+**The system will reject your response if:**
+- trigger_row_discovery=true AND subdomains is missing → ERROR
+- trigger_row_discovery=true AND subdomains is empty array → ERROR
+
+**If you're unsure whether you have enough rows, default to trigger_row_discovery=false (safer path)**
 
 **Example for your current case:**
 ```json
@@ -376,12 +450,24 @@ target_per_subdomain = total_target / subdomain_count
 
 **IF trigger_row_discovery = true:**
 - [ ] Provided discovery_guidance (what's still needed)
-- [ ] **MANDATORY: Subdomains (2-10) in search_strategy** - YOU WILL GET AN ERROR IF MISSING
+- [ ] **MANDATORY: Subdomains (2-10) in search_strategy.subdomains** - EXECUTION WILL FAIL IF MISSING
 - [ ] Each subdomain has: name, focus, search_queries (2-5), target_rows
 - [ ] Rows serve as starting point (discovery will append/merge)
 - [ ] Clear what discovery needs to do
+- [ ] Confirmed you don't have "good enough" rows already (if you do, use false instead)
 
-**CRITICAL:** trigger_row_discovery=true WITHOUT subdomains will cause execution failure!
+**🚨 EXECUTION ERROR CHECK:**
+```python
+# System validation (execution.py:1212-1216):
+if trigger_row_discovery == true AND len(subdomains) == 0:
+    raise Error("trigger_row_discovery=true but no subdomains provided")
+```
+
+**Before setting trigger_row_discovery=true, ask yourself:**
+- Do I already have all the rows the user wants? → If YES, set to false
+- Are critical columns mostly populated? → If YES, set to false
+- Would the user be satisfied with what I have? → If YES, set to false
+- **Only set to true if you genuinely need web search to find more rows**
 
 **ALWAYS:**
 - [ ] Populate research_values for columns you have reliable data for

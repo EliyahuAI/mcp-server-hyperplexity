@@ -2186,6 +2186,107 @@ class AIAPIClient:
                         logger.warning(f"[SOFT_SCHEMA_FALLBACK] Hard schema also failed: {str(fallback_error)}")
                         last_error = fallback_error
 
+                # If max_tokens was hit, retry same model with increased tokens
+                if "[MAX_TOKENS]" in error_msg:
+                    # Extract the current limit from the error message
+                    import re
+                    limit_match = re.search(r'limit=(\d+)', error_msg)
+                    current_limit = int(limit_match.group(1)) if limit_match else (max_tokens or 8000)
+
+                    # Double the tokens, up to 128K (Anthropic's max for most models)
+                    new_max_tokens = min(current_limit * 2, 128000)
+
+                    # Only retry if we can actually increase tokens
+                    if new_max_tokens > current_limit:
+                        logger.warning(f"[MAX_TOKENS_RETRY] Retrying {current_model} with increased max_tokens: {current_limit} -> {new_max_tokens}")
+                        try:
+                            if api_provider == 'anthropic':
+                                headers = {
+                                    'Content-Type': 'application/json',
+                                    'X-API-Key': self.anthropic_api_key,
+                                    'anthropic-version': '2023-06-01'
+                                }
+
+                                # Use the new increased max_tokens
+                                enforced_max_tokens = self._enforce_provider_token_limit(current_model, new_max_tokens)
+
+                                # Build the request based on soft_schema mode
+                                if soft_schema:
+                                    retry_data = {
+                                        "model": current_model_normalized,
+                                        "max_tokens": enforced_max_tokens,
+                                        "temperature": 0.1,
+                                        "messages": [
+                                            {"role": "user", "content": f"{prompt}\n\nIMPORTANT: Return your response as valid JSON only, without any markdown code fences or additional text."}
+                                        ]
+                                    }
+                                else:
+                                    # Build tools for hard schema
+                                    tools = []
+                                    if max_web_searches > 0:
+                                        tools.append({
+                                            "type": "web_search_20250305",
+                                            "name": "web_search",
+                                            "max_uses": max_web_searches
+                                        })
+                                    tools.append({
+                                        "name": tool_name,
+                                        "description": f"Provide structured response using {tool_name}.",
+                                        "input_schema": schema
+                                    })
+
+                                    tool_choice = {"type": "auto"} if max_web_searches > 0 else {"type": "tool", "name": tool_name}
+
+                                    retry_data = {
+                                        "model": current_model_normalized,
+                                        "max_tokens": enforced_max_tokens,
+                                        "temperature": 0.1,
+                                        "messages": [{"role": "user", "content": prompt}],
+                                        "tools": tools,
+                                        "tool_choice": tool_choice
+                                    }
+
+                                # Generate new cache key for increased tokens call
+                                retry_cache_key = self._get_cache_key(prompt, current_model_normalized, schema,
+                                                                     f"{context}_max_tokens_{enforced_max_tokens}",
+                                                                     max_web_searches, soft_schema, include_domains, exclude_domains) if use_cache else None
+
+                                result = await self._make_single_anthropic_call(
+                                    "https://api.anthropic.com/v1/messages",
+                                    headers, retry_data, current_model_normalized,
+                                    use_cache, retry_cache_key, call_start_time, max_web_searches,
+                                    soft_schema, schema if soft_schema else None
+                                )
+
+                                if result:
+                                    result['model_used'] = current_model
+                                    result['used_backup_model'] = model_index > 0
+                                    result['max_tokens_retry'] = True
+                                    result['retry_max_tokens'] = enforced_max_tokens
+
+                                    # Normalize response format
+                                    claude_response = result['response']
+                                    structured_data = self.extract_structured_response(claude_response, tool_name)
+                                    validation_results = structured_data.get('validation_results', structured_data)
+                                    result['response'] = {
+                                        'choices': [{
+                                            'message': {
+                                                'role': 'assistant',
+                                                'content': json.dumps(validation_results)
+                                            }
+                                        }]
+                                    }
+                                    result['citations'] = self.extract_citations_from_response(claude_response)
+
+                                    logger.info(f"[MAX_TOKENS_RETRY] Successfully completed with {enforced_max_tokens} max_tokens")
+                                    return result
+
+                        except Exception as retry_error:
+                            logger.warning(f"[MAX_TOKENS_RETRY] Retry with increased tokens also failed: {str(retry_error)}")
+                            last_error = retry_error
+                    else:
+                        logger.warning(f"[MAX_TOKENS_RETRY] Cannot increase tokens further (already at {current_limit})")
+
                 # If this is a 529 overload, try next model. For other errors, continue trying too.
                 if "overloaded" in error_msg and "529" in error_msg:
                     logger.debug(f"[OVERLOAD] Model {current_model} overloaded, trying next model")
@@ -2960,6 +3061,25 @@ class AIAPIClient:
 
                             # Raise an exception that will trigger model fallback
                             raise Exception(f"[REFUSAL] {error_msg} (stop_reason=refusal)")
+
+                        # Check for max_tokens truncation - response was cut off
+                        if stop_reason == 'max_tokens':
+                            output_tokens = response_json.get('usage', {}).get('output_tokens', 0)
+                            requested_max = data.get('max_tokens', 0)
+                            error_msg = f"Model {normalized_model} hit max_tokens limit ({output_tokens} tokens generated, limit was {requested_max})"
+                            logger.warning(f"[MAX_TOKENS] {error_msg}. Response was truncated.")
+
+                            # Log partial output info
+                            if 'content' in response_json:
+                                content_preview = str(response_json['content'])[:200]
+                                logger.warning(f"[MAX_TOKENS] Partial output before truncation: {content_preview}...")
+
+                            # Save debug data for max_tokens
+                            await self._save_debug_data('anthropic', normalized_model, debug_request,
+                                                      response_json, context="max_tokens_truncated", cache_key=cache_key)
+
+                            # Raise an exception that will trigger retry with more tokens
+                            raise Exception(f"[MAX_TOKENS] {error_msg} (stop_reason=max_tokens, output={output_tokens}, limit={requested_max})")
 
                         # If soft schema, clean the text response and convert to unified format
                         if soft_schema:
