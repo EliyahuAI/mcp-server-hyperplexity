@@ -2,6 +2,10 @@
 # NOTE: boto3 and botocore are provided by AWS Lambda runtime - DO NOT package them
 # Packaging boto3/botocore causes version conflicts with Lambda's built-in versions
 aioboto3>=15.4.0  # Latest version supports modern botocore
+
+# Google Vertex AI for DeepSeek models (ultra-low cost provider)
+google-cloud-aiplatform>=1.72.0
+
 python-multipart>=0.0.5
 openpyxl>=3.0.0
 typing-extensions>=4.0.0
