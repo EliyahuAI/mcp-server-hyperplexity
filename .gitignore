@@ -148,3 +148,8 @@ table_maker/output/
 
 # Lambda config copies (duplicates of source)
 src/lambdas/interface/table_maker_config.json
+
+# Pitch materials - ignore large media files
+pitch/**/*.gif
+pitch/**/*.mp4
+pitch/**/*.zip

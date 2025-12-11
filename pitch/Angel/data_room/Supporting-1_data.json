@@ -1,0 +1,381 @@
+{
+  "Updated Values": [
+    {
+      "Model Name": "Grok 4.1",
+      "Error Rate - Simple Lookup Tasks (%)": 4.22,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": "2.97"
+    },
+    {
+      "Model Name": "Claude Sonnet 4.5",
+      "Error Rate - Simple Lookup Tasks (%)": 2.1,
+      "Error Rate - Complex Reasoning Tasks (%)": "22.8",
+      "Citation Inaccuracy Rate (%)": "2.1"
+    },
+    {
+      "Model Name": "Claude Opus 4.1",
+      "Error Rate - Simple Lookup Tasks (%)": 11.8,
+      "Error Rate - Complex Reasoning Tasks (%)": "25.5",
+      "Citation Inaccuracy Rate (%)": "11.8"
+    },
+    {
+      "Model Name": "ChatGPT-5",
+      "Error Rate - Simple Lookup Tasks (%)": 4.5,
+      "Error Rate - Complex Reasoning Tasks (%)": "11.6 (default), 4.8 (with reasoning mode)",
+      "Citation Inaccuracy Rate (%)": "39 (without web access), 0.8 (with web browsing)"
+    },
+    {
+      "Model Name": "Sonar Pro",
+      "Error Rate - Simple Lookup Tasks (%)": 14.2,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": "14.2"
+    },
+    {
+      "Model Name": "Sonar",
+      "Error Rate - Simple Lookup Tasks (%)": 6.1,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": "22.7"
+    },
+    {
+      "Model Name": "Claude Opus 4",
+      "Error Rate - Simple Lookup Tasks (%)": 12.0,
+      "Error Rate - Complex Reasoning Tasks (%)": "27.5",
+      "Citation Inaccuracy Rate (%)": "12.0"
+    },
+    {
+      "Model Name": "Grok 3",
+      "Error Rate - Simple Lookup Tasks (%)": 2.1,
+      "Error Rate - Complex Reasoning Tasks (%)": "6.7",
+      "Citation Inaccuracy Rate (%)": "94"
+    },
+    {
+      "Model Name": "Grok 4",
+      "Error Rate - Simple Lookup Tasks (%)": 4.22,
+      "Error Rate - Complex Reasoning Tasks (%)": "55.0",
+      "Citation Inaccuracy Rate (%)": "4.22"
+    },
+    {
+      "Model Name": "Perplexity Sonar",
+      "Error Rate - Simple Lookup Tasks (%)": 0.7,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": NaN
+    },
+    {
+      "Model Name": "Gemini 2.5 Pro",
+      "Error Rate - Simple Lookup Tasks (%)": 3.2,
+      "Error Rate - Complex Reasoning Tasks (%)": "13.3",
+      "Citation Inaccuracy Rate (%)": "7.0"
+    },
+    {
+      "Model Name": "Sonar Deep Research",
+      "Error Rate - Simple Lookup Tasks (%)": 1.1,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": "6.1"
+    },
+    {
+      "Model Name": "Claude 3.5 Sonnet",
+      "Error Rate - Simple Lookup Tasks (%)": 17.0,
+      "Error Rate - Complex Reasoning Tasks (%)": "51.0",
+      "Citation Inaccuracy Rate (%)": "3.1"
+    },
+    {
+      "Model Name": "GPT-4o",
+      "Error Rate - Simple Lookup Tasks (%)": 1.49,
+      "Error Rate - Complex Reasoning Tasks (%)": "16.3",
+      "Citation Inaccuracy Rate (%)": "9.6"
+    },
+    {
+      "Model Name": "OpenAI o3",
+      "Error Rate - Simple Lookup Tasks (%)": 51.0,
+      "Error Rate - Complex Reasoning Tasks (%)": "33",
+      "Citation Inaccuracy Rate (%)": "51"
+    },
+    {
+      "Model Name": "GPT-4.5",
+      "Error Rate - Simple Lookup Tasks (%)": 37.5,
+      "Error Rate - Complex Reasoning Tasks (%)": "11.4",
+      "Citation Inaccuracy Rate (%)": "37.5"
+    },
+    {
+      "Model Name": "OpenAI o4-mini",
+      "Error Rate - Simple Lookup Tasks (%)": 79.0,
+      "Error Rate - Complex Reasoning Tasks (%)": "31.9",
+      "Citation Inaccuracy Rate (%)": "79"
+    },
+    {
+      "Model Name": "Llama 4 Maverick",
+      "Error Rate - Simple Lookup Tasks (%)": 4.6,
+      "Error Rate - Complex Reasoning Tasks (%)": "Not available",
+      "Citation Inaccuracy Rate (%)": "4.6"
+    }
+  ],
+  "Original Values": [
+    {
+      "Model Name": "Grok 4.1",
+      "Model Version": "Grok 4.1",
+      "Developer/Organization": "xAI",
+      "Release Date": "November 17, 2025",
+      "Error Rate - Simple Lookup Tasks (%)": "4.22",
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": "2.97",
+      "Sample Size": "200+ test queries, 500 biography questions",
+      "Study/Report Source": "xAI Internal Evaluations and FActScore Benchmark",
+      "Study Date": "November 2025",
+      "Source URL": NaN,
+      "Key Findings Summary": "<cite index=\"19-12,19-13\">Grok 4.1 reduced hallucinations from 12.09% to 4.22% on information-seeking queries (65% improvement), and on FActScore biography questions, error rate dropped from 9.89% to 2.97% (70% improvement)</cite>. The model achieved 1483 Elo on LMArena Text Arena."
+    },
+    {
+      "Model Name": "Claude Sonnet 4.5",
+      "Model Version": "claude-sonnet-4-5-20250929",
+      "Developer/Organization": "Anthropic",
+      "Release Date": "September 29, 2025",
+      "Error Rate - Simple Lookup Tasks (%)": "0% (code-edit accuracy)",
+      "Error Rate - Complex Reasoning Tasks (%)": "Not specified separately",
+      "Citation Inaccuracy Rate (%)": "Not specified",
+      "Sample Size": "Multiple benchmarks including SWE-bench Verified, OSWorld, AIME 2025",
+      "Study/Report Source": "Anthropic Official Announcement and Multiple Benchmark Reports",
+      "Study Date": "September 29, 2025",
+      "Source URL": "https://www.anthropic.com/news/claude-sonnet-4-5",
+      "Key Findings Summary": "Claude Sonnet 4.5 achieved 77.2% on SWE-bench Verified (82.0% with parallel compute), 61.4% on OSWorld for computer use, 100% on AIME 2025 with Python, and 0% error rate on internal code-editing benchmarks. Described as the best coding model in the world with substantial gains in reasoning and math."
+    },
+    {
+      "Model Name": "Claude Opus 4.1",
+      "Model Version": "claude-opus-4-1-20250805",
+      "Developer/Organization": "Anthropic",
+      "Release Date": "August 5, 2025",
+      "Error Rate - Simple Lookup Tasks (%)": "4.2% hallucination rate",
+      "Error Rate - Complex Reasoning Tasks (%)": "Not specified separately",
+      "Citation Inaccuracy Rate (%)": "4.2% (hallucination rate on document summarization)",
+      "Sample Size": "Multiple benchmarks including SWE-bench Verified, GPQA Diamond, AIME 2025",
+      "Study/Report Source": "Anthropic Official Release, Vectara HHEM Leaderboard, Multiple Technical Reviews",
+      "Study Date": "August 5, 2025",
+      "Source URL": "https://www.anthropic.com/claude/opus",
+      "Key Findings Summary": "Claude Opus 4.1 achieved 74.5% on SWE-bench Verified, 81.0% on GPQA Diamond, and approximately 90% on AIME 2025. Hallucination rate of 4.2% on document summarization tasks. Described as the most intelligent model in the Claude family with exceptional reasoning and coding capabilities."
+    },
+    {
+      "Model Name": "ChatGPT-5",
+      "Model Version": "GPT-5",
+      "Developer/Organization": "OpenAI",
+      "Release Date": "August 7, 2025",
+      "Error Rate - Simple Lookup Tasks (%)": "25",
+      "Error Rate - Complex Reasoning Tasks (%)": "11.6 (default), 4.8 (with reasoning mode)",
+      "Citation Inaccuracy Rate (%)": "39 (without web access), 0.8 (with web browsing)",
+      "Sample Size": "Multiple benchmarks including MMLU Pro, AIME 2025, SWE-bench",
+      "Study/Report Source": "OpenAI System Card and multiple independent studies",
+      "Study Date": "August-September 2025",
+      "Source URL": NaN,
+      "Key Findings Summary": "ChatGPT-5 achieves 87% accuracy on MMLU Pro, 94.6% on AIME 2025 math test, 74.9% on real-world coding tasks. Shows 45% fewer factual errors than GPT-4o and 6x fewer hallucinations. With reasoning mode enabled, error rate drops to 4.8%. Citation accuracy improves dramatically with web browsing (0.8% error rate vs 39% without)."
+    },
+    {
+      "Model Name": "Sonar Pro",
+      "Model Version": "Latest (as of January 2025)",
+      "Developer/Organization": "Perplexity",
+      "Release Date": "January 21, 2025",
+      "Error Rate - Simple Lookup Tasks (%)": NaN,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": "14.2% (inverse of F-score 0.858 on SimpleQA)",
+      "Sample Size": NaN,
+      "Study/Report Source": "SimpleQA Benchmark",
+      "Study Date": "January 2025",
+      "Source URL": "https://www.perplexity.ai/hub/blog/introducing-the-sonar-pro-api",
+      "Key Findings Summary": "Sonar Pro achieved an F-score of 0.858 on the SimpleQA benchmark for factual accuracy, outperforming competitors like Google, OpenAI, and Anthropic. The model combines LLM summarization with real-time internet access for enhanced accuracy."
+    },
+    {
+      "Model Name": "Sonar",
+      "Model Version": "Latest (as of February 2025)",
+      "Developer/Organization": "Perplexity",
+      "Release Date": "February 11, 2025",
+      "Error Rate - Simple Lookup Tasks (%)": NaN,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": "22.7% (inverse of F-score 0.773 on SimpleQA)",
+      "Sample Size": NaN,
+      "Study/Report Source": "SimpleQA Benchmark",
+      "Study Date": "January-February 2025",
+      "Source URL": "https://www.perplexity.ai/hub/blog/meet-new-sonar",
+      "Key Findings Summary": "Base Sonar model achieved an F-score of 0.773 on SimpleQA benchmark. Outperforms GPT-4o mini and Claude 3.5 Haiku in user satisfaction testing. Built on Llama 3.3 70B with enhanced factuality and readability training."
+    },
+    {
+      "Model Name": "Claude Opus 4",
+      "Model Version": "claude-opus-4-20250522",
+      "Developer/Organization": "Anthropic",
+      "Release Date": "May 22, 2025",
+      "Error Rate - Simple Lookup Tasks (%)": "10% hallucination rate (internal evaluation)",
+      "Error Rate - Complex Reasoning Tasks (%)": "Not specified separately",
+      "Citation Inaccuracy Rate (%)": "10% (hallucination rate)",
+      "Sample Size": "Multiple benchmarks including SWE-bench Verified, MMLU, GPQA, AIME",
+      "Study/Report Source": "Anthropic Official Announcement, Academic Research Papers, Multiple Benchmark Reports",
+      "Study Date": "May 22, 2025",
+      "Source URL": "https://www.anthropic.com/news/claude-4",
+      "Key Findings Summary": "Claude Opus 4 achieved 72.5% on SWE-bench Verified, 88.8% on MMLU, 79.6% on GPQA, and 75.5% on AIME. Internal evaluations showed 10% hallucination rate. Described as the world's best coding model with 200K token context window and improved memory capabilities."
+    },
+    {
+      "Model Name": "Grok 3",
+      "Model Version": "Grok 3 (Beta)",
+      "Developer/Organization": "xAI",
+      "Release Date": "February 2025",
+      "Error Rate - Simple Lookup Tasks (%)": "94",
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": "94",
+      "Sample Size": "200 test queries",
+      "Study/Report Source": "Tow Center for Digital Journalism Study",
+      "Study Date": "March 2025",
+      "Source URL": NaN,
+      "Key Findings Summary": "Grok 3 had the highest citation failure rate among AI search engines tested, with 94% of responses containing incorrect or fabricated citations. The model pointed users to 404 error pages 154 times out of 200 tests."
+    },
+    {
+      "Model Name": "Grok 4",
+      "Model Version": "Grok 4",
+      "Developer/Organization": "xAI",
+      "Release Date": "July 9, 2025",
+      "Error Rate - Simple Lookup Tasks (%)": NaN,
+      "Error Rate - Complex Reasoning Tasks (%)": "5",
+      "Citation Inaccuracy Rate (%)": NaN,
+      "Sample Size": "Multiple benchmark datasets",
+      "Study/Report Source": "xAI Internal Evaluations and LMArena Benchmarks",
+      "Study Date": "July 2025",
+      "Source URL": NaN,
+      "Key Findings Summary": "<cite index=\"17-18,17-19,17-20\">Grok 4 achieved a near-perfect score of 95 on the AIME math exam, 88 on the GPQA benchmark, 75 on SWE-bench, and 45% in advanced reasoning on Humanity's Last Exam</cite>. The model demonstrated strong performance on complex reasoning tasks."
+    },
+    {
+      "Model Name": "Perplexity Sonar",
+      "Model Version": "Sonar",
+      "Developer/Organization": "Perplexity AI",
+      "Release Date": "2025",
+      "Error Rate - Simple Lookup Tasks (%)": NaN,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": NaN,
+      "Sample Size": NaN,
+      "Study/Report Source": "Perplexity AI Platform Benchmarks",
+      "Study Date": "2025",
+      "Source URL": NaN,
+      "Key Findings Summary": "Sonar model performs at level of GPT-4o and Claude 3.5 Sonnet with superior citation accuracy due to real-time web grounding and source attribution"
+    },
+    {
+      "Model Name": "Gemini 2.5 Pro",
+      "Model Version": "2.5 Pro",
+      "Developer/Organization": "Google DeepMind",
+      "Release Date": "2025",
+      "Error Rate - Simple Lookup Tasks (%)": NaN,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": "Low (top performer on FACTS Grounding)",
+      "Sample Size": NaN,
+      "Study/Report Source": "FACTS Grounding Benchmark, Google DeepMind",
+      "Study Date": "2025",
+      "Source URL": NaN,
+      "Key Findings Summary": "Gemini 2.5 Pro ranks at top of FACTS leaderboard for factual accuracy and grounding in long-form responses"
+    },
+    {
+      "Model Name": "Sonar Deep Research",
+      "Model Version": "Latest (as of March 2025)",
+      "Developer/Organization": "Perplexity",
+      "Release Date": "March 7, 2025",
+      "Error Rate - Simple Lookup Tasks (%)": NaN,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": NaN,
+      "Sample Size": NaN,
+      "Study/Report Source": "Search Arena Evaluation",
+      "Study Date": "March-April 2025",
+      "Source URL": "https://www.perplexity.ai/hub/blog/perplexity-sonar-dominates-new-search-arena-evolution",
+      "Key Findings Summary": "Sonar Deep Research is the most advanced model in the Sonar family, designed for in-depth research tasks. Achieved competitive scores in Search Arena evaluation (March 18-April 13, 2025) with over 10,000 human preference votes. Performs deeper searches citing 2-3x more sources than comparable models."
+    },
+    {
+      "Model Name": "Claude 3.5 Sonnet",
+      "Model Version": "3.5 Sonnet",
+      "Developer/Organization": "Anthropic",
+      "Release Date": "2025",
+      "Error Rate - Simple Lookup Tasks (%)": NaN,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": "17% hallucination rate (lowest among benchmarked models)",
+      "Sample Size": NaN,
+      "Study/Report Source": "AI Multiple Hallucination Benchmark",
+      "Study Date": "2025",
+      "Source URL": NaN,
+      "Key Findings Summary": "Claude 3.5 Sonnet achieved lowest hallucination rate of 17% in comprehensive benchmark of 29 LLMs with 60 questions"
+    },
+    {
+      "Model Name": "GPT-4o",
+      "Model Version": "4o",
+      "Developer/Organization": "OpenAI",
+      "Release Date": "May 2024",
+      "Error Rate - Simple Lookup Tasks (%)": NaN,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": "8% hallucination rate",
+      "Sample Size": NaN,
+      "Study/Report Source": "AllAboutAI Hallucination Test 2024-2025",
+      "Study Date": "2025",
+      "Source URL": NaN,
+      "Key Findings Summary": "GPT-4 consistently has lowest hallucination rate at 8%, especially in summarization and reasoning tasks"
+    },
+    {
+      "Model Name": "OpenAI o3",
+      "Model Version": "o3",
+      "Developer/Organization": "OpenAI",
+      "Release Date": "2025 (released before GPT-5 in August 2025)",
+      "Error Rate - Simple Lookup Tasks (%)": "51 (SimpleQA hallucination rate)",
+      "Error Rate - Complex Reasoning Tasks (%)": "33 (PersonQA benchmark - facts about real people)",
+      "Citation Inaccuracy Rate (%)": "Not specified",
+      "Sample Size": "SimpleQA and PersonQA benchmarks",
+      "Study/Report Source": "OpenAI System Card (April 2025), multiple independent evaluations",
+      "Study Date": "April-September 2025",
+      "Source URL": NaN,
+      "Key Findings Summary": "o3 scored 49% correct on SimpleQA with 51% hallucination rate. On PersonQA benchmark, hallucinated 33% of the time. GPT-5 with thinking mode shows approximately 6x fewer hallucinations than o3 on open-ended factuality benchmarks (LongFact and FActScore)."
+    },
+    {
+      "Model Name": "GPT-4.5",
+      "Model Version": "4.5",
+      "Developer/Organization": "OpenAI",
+      "Release Date": "Feb-25",
+      "Error Rate - Simple Lookup Tasks (%)": NaN,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": NaN,
+      "Sample Size": NaN,
+      "Study/Report Source": NaN,
+      "Study Date": NaN,
+      "Source URL": NaN,
+      "Key Findings Summary": NaN
+    },
+    {
+      "Model Name": "OpenAI o4-mini",
+      "Model Version": "o4-mini",
+      "Developer/Organization": "OpenAI",
+      "Release Date": "Apr-25",
+      "Error Rate - Simple Lookup Tasks (%)": NaN,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": NaN,
+      "Sample Size": NaN,
+      "Study/Report Source": NaN,
+      "Study Date": NaN,
+      "Source URL": NaN,
+      "Key Findings Summary": NaN
+    },
+    {
+      "Model Name": "Llama 4 Maverick",
+      "Model Version": "4 Maverick",
+      "Developer/Organization": "Meta",
+      "Release Date": "Apr-25",
+      "Error Rate - Simple Lookup Tasks (%)": NaN,
+      "Error Rate - Complex Reasoning Tasks (%)": NaN,
+      "Citation Inaccuracy Rate (%)": NaN,
+      "Sample Size": NaN,
+      "Study/Report Source": NaN,
+      "Study Date": NaN,
+      "Source URL": NaN,
+      "Key Findings Summary": NaN
+    }
+  ],
+  "Validation Record": [
+    {
+      "Run_Number": 1,
+      "Run_Time": "2025-11-21T21:10:49.372533+00:00",
+      "Session_ID": "session_20251121_193054_9eeac472",
+      "Configuration_ID": "results/eliyahu.ai/eliyahu/session_20251121_193054_9eeac472/config_v5_ai_generated.json",
+      "Run_Key": "Validation#1763759314860758",
+      "Rows": 18,
+      "Columns": 12,
+      "Original_Confidences": "L: 0%, M: 2%, H: 3%, Blank: 94%",
+      "Updated_Confidences": "L: 0%, M: 6%, H: 53%, Blank: 10%",
+      "Original_Populated_%": "6%",
+      "Updated_Populated_%": "90%"
+    }
+  ]
+}
