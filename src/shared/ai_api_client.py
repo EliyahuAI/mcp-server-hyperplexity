@@ -185,7 +185,13 @@ class AIAPIClient:
         # Try AWS Systems Manager Parameter Store
         try:
             ssm_client = boto3.client('ssm')
-            param_names = ['/Vertex_Credentials', 'Vertex_Credentials', 'GOOGLE_APPLICATION_CREDENTIALS']
+            # Try parameter names in order (first one uses existing wildcard permissions)
+            param_names = [
+                '/perplexity-validator/vertex-credentials',  # Matches existing wildcard permission
+                '/Vertex_Credentials',
+                'Vertex_Credentials',
+                'GOOGLE_APPLICATION_CREDENTIALS'
+            ]
 
             for param_name in param_names:
                 try:
