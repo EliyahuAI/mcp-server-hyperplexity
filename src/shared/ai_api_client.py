@@ -73,21 +73,30 @@ class AIAPIClient:
         # Initialize Google Vertex AI client
         try:
             from google.cloud import aiplatform
-            # Initialize Vertex AI with project and location from environment or defaults
-            project_id = os.environ.get('GOOGLE_CLOUD_PROJECT') or os.environ.get('GCP_PROJECT')
+
+            # Hardcoded project ID (as requested by user)
+            project_id = os.environ.get('GOOGLE_CLOUD_PROJECT', 'gen-lang-client-0650358146')
             location = os.environ.get('GOOGLE_CLOUD_LOCATION', 'us-west2')  # us-west2 supports DeepSeek MaaS
 
-            if project_id:
-                aiplatform.init(project=project_id, location=location)
-                self.vertex_client = aiplatform
-                self.vertex_project = project_id
-                self.vertex_location = location
-                logger.info(f"AI_API_CLIENT: Vertex AI initialized (project={project_id}, location={location})")
-            else:
-                logger.warning("AI_API_CLIENT: GOOGLE_CLOUD_PROJECT not set, Vertex AI unavailable")
-                self.vertex_client = None
-                self.vertex_project = None
-                self.vertex_location = None
+            # Set up credentials from SSM Parameter Store if not in environment
+            if not os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):
+                vertex_creds_json = self._get_vertex_credentials_from_ssm()
+                if vertex_creds_json:
+                    # Write credentials to temp file for google-auth library
+                    import tempfile
+                    temp_creds_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+                    temp_creds_file.write(vertex_creds_json)
+                    temp_creds_file.flush()
+                    temp_creds_file.close()
+                    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_creds_file.name
+                    logger.info(f"AI_API_CLIENT: Vertex credentials loaded from SSM to temp file")
+
+            aiplatform.init(project=project_id, location=location)
+            self.vertex_client = aiplatform
+            self.vertex_project = project_id
+            self.vertex_location = location
+            logger.info(f"AI_API_CLIENT: Vertex AI initialized (project={project_id}, location={location})")
+
         except ImportError as e:
             logger.warning(f"AI_API_CLIENT: google-cloud-aiplatform not installed: {e}")
             self.vertex_client = None
@@ -170,7 +179,35 @@ class AIAPIClient:
         except Exception as e:
             logger.error(f"Failed to retrieve Perplexity API key: {str(e)}")
             raise
-    
+
+    def _get_vertex_credentials_from_ssm(self) -> str:
+        """Get Google Cloud service account JSON from SSM Parameter Store."""
+        # Try AWS Systems Manager Parameter Store
+        try:
+            ssm_client = boto3.client('ssm')
+            param_names = ['/Vertex_Credentials', 'Vertex_Credentials', 'GOOGLE_APPLICATION_CREDENTIALS']
+
+            for param_name in param_names:
+                try:
+                    logger.info(f"Attempting to retrieve Vertex credentials from SSM parameter: {param_name}")
+                    response = ssm_client.get_parameter(
+                        Name=param_name,
+                        WithDecryption=True
+                    )
+                    credentials_json = response['Parameter']['Value']
+                    logger.info(f"Successfully retrieved Vertex credentials from {param_name}")
+                    return credentials_json
+                except Exception as e:
+                    logger.warning(f"Failed to get Vertex credentials from SSM parameter '{param_name}': {str(e)}")
+                    continue
+
+            # If we get here, all parameter names failed
+            logger.warning("Could not retrieve Vertex credentials from any SSM parameter")
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to retrieve Vertex credentials: {str(e)}")
+            return None
+
     def _determine_api_provider(self, model: str) -> str:
         """Determine API provider based on model name."""
         if (model.startswith('anthropic/') or
