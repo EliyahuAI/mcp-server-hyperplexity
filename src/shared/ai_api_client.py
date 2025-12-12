@@ -75,7 +75,7 @@ class AIAPIClient:
             from google.cloud import aiplatform
             # Initialize Vertex AI with project and location from environment or defaults
             project_id = os.environ.get('GOOGLE_CLOUD_PROJECT') or os.environ.get('GCP_PROJECT')
-            location = os.environ.get('GOOGLE_CLOUD_LOCATION', 'us-central1')
+            location = os.environ.get('GOOGLE_CLOUD_LOCATION', 'us-west2')  # us-west2 supports DeepSeek MaaS
 
             if project_id:
                 aiplatform.init(project=project_id, location=location)
@@ -254,26 +254,27 @@ class AIAPIClient:
 
     def _normalize_vertex_model(self, model: str) -> str:
         """
-        Normalize Vertex AI model names to official model IDs.
+        Normalize Vertex AI model names to official MaaS model IDs.
 
-        Maps user-friendly names to official Vertex AI model endpoints.
-        Available on Vertex: DeepSeek V3.1, V3.2, V3.2-Exp, V3.2-Speciale
+        DeepSeek models are accessed via publishers/deepseek/models/ with -maas suffix.
+        Available: deepseek-r1-0528-maas, deepseek-v3.1-maas, deepseek-v3.2-maas
 
         Args:
             model: User-provided model name
 
         Returns:
-            Official Vertex AI model ID
+            Official Vertex AI MaaS model ID (with -maas suffix)
         """
         # Strip any vertex. prefix
         normalized = model.replace('vertex.', '')
 
-        # Map simplified names to official Vertex model IDs
+        # Map simplified names to official Vertex MaaS model IDs
         model_id_map = {
-            'deepseek-v3.2-exp': 'deepseek-v3-2-exp',
-            'deepseek-v3.2': 'deepseek-v3-2',
-            'deepseek-v3.1': 'deepseek-v3-1',
-            'deepseek-v3': 'deepseek-v3-1',  # V3 alias for V3.1
+            'deepseek-v3.2-exp': 'deepseek-v3.2-maas',  # V3.2-Exp maps to V3.2
+            'deepseek-v3.2': 'deepseek-v3.2-maas',
+            'deepseek-v3.1': 'deepseek-v3.1-maas',
+            'deepseek-v3': 'deepseek-v3.1-maas',  # V3 alias for V3.1
+            'deepseek-r1': 'deepseek-r1-0528-maas',
         }
 
         # Check if it's a simplified name
@@ -282,14 +283,17 @@ class AIAPIClient:
                 logger.debug(f"Normalized Vertex model '{model}' to '{model_id}'")
                 return model_id
 
-        # If already has hyphens instead of dots, use as-is
-        if 'deepseek-v' in normalized and normalized.count('-') >= 2:
+        # If already has -maas suffix, use as-is
+        if normalized.endswith('-maas'):
             return normalized
 
-        # Default: convert dots to hyphens for Vertex format
-        normalized_with_hyphens = normalized.replace('.', '-')
-        logger.debug(f"Normalized Vertex model '{model}' to '{normalized_with_hyphens}'")
-        return normalized_with_hyphens
+        # Default: add -maas suffix if not present
+        if 'deepseek' in normalized and not normalized.endswith('-maas'):
+            normalized_with_maas = f"{normalized}-maas"
+            logger.debug(f"Added -maas suffix: '{model}' -> '{normalized_with_maas}'")
+            return normalized_with_maas
+
+        return normalized
 
     def _get_backup_models(self, primary_model: str, count: int = 2) -> List[str]:
         """Get the next N backup models based on hierarchy position."""
@@ -4070,6 +4074,32 @@ class AIAPIClient:
                                       None, error=e, context="structured_call_exception", debug_name=debug_name)
             raise
 
+    async def _get_vertex_access_token(self) -> str:
+        """
+        Get Google Cloud OAuth access token for Vertex AI authentication.
+
+        Uses Application Default Credentials or service account key file.
+
+        Returns:
+            OAuth access token string
+        """
+        try:
+            from google.auth.transport.requests import Request
+            from google.auth import default
+
+            # Get credentials using Application Default Credentials
+            credentials, project = default(scopes=['https://www.googleapis.com/auth/cloud-platform'])
+
+            # Refresh token if needed
+            if not credentials.valid:
+                await asyncio.to_thread(credentials.refresh, Request())
+
+            return credentials.token
+
+        except Exception as e:
+            logger.error(f"Failed to get Vertex access token: {e}")
+            raise Exception(f"Vertex authentication failed: {e}")
+
     async def _make_single_vertex_call(self, prompt: str, schema: Dict, model: str,
                                       use_cache: bool, cache_key: str, start_time: datetime,
                                       max_tokens: int = 8000, soft_schema: bool = False) -> Dict:
@@ -4115,36 +4145,56 @@ class AIAPIClient:
         }
 
         try:
-            from google.cloud.aiplatform_v1.types import GenerateContentRequest, Content, Part
+            # Get OAuth access token for Vertex AI authentication
+            access_token = await self._get_vertex_access_token()
 
-            # Build Vertex AI request
-            # Vertex uses a different API format than Bedrock
-            endpoint_name = f"projects/{self.vertex_project}/locations/{self.vertex_location}/publishers/google/models/{model}"
+            # Build OpenAI-compatible API request
+            # Vertex MaaS uses OpenAI chat completions format
+            url = f"https://aiplatform.googleapis.com/v1/projects/{self.vertex_project}/locations/global/endpoints/openapi/chat/completions"
 
-            # Create content request
-            content = Content(
-                role="user",
-                parts=[Part(text=final_prompt)]
-            )
-
-            generation_config = {
-                "max_output_tokens": enforced_max_tokens,
-                "temperature": 0.1,
-                "top_p": 0.95,
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
             }
 
-            # Call Vertex AI using asyncio.to_thread for sync client
-            response = await asyncio.to_thread(
-                self.vertex_client.gapic.PredictionServiceClient().generate_content,
-                model=endpoint_name,
-                contents=[content],
-                generation_config=generation_config
-            )
+            # Build request in OpenAI format
+            data = {
+                "model": f"deepseek-ai/{model}",  # e.g., deepseek-ai/deepseek-v3.2-maas
+                "messages": [{"role": "user", "content": final_prompt}],
+                "temperature": 0.1,
+                "max_tokens": enforced_max_tokens,
+                "stream": False
+            }
 
-            processing_time = (datetime.now() - start_time).total_seconds()
+            # Make REST API call using aiohttp (same pattern as Anthropic/Perplexity)
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=data) as response:
+                    processing_time = (datetime.now() - start_time).total_seconds()
+                    response_text = await response.text()
 
-            # Convert response to dict format
-            response_dict = type(response).to_dict(response)
+                    if response.status == 200:
+                        response_json = json.loads(response_text)
+
+                        # Convert OpenAI format to our standard format
+                        response_dict = {
+                            'candidates': [{
+                                'content': {
+                                    'parts': [{'text': response_json['choices'][0]['message']['content']}],
+                                    'role': 'assistant'
+                                },
+                                'finishReason': response_json['choices'][0].get('finish_reason', 'stop')
+                            }],
+                            'usage_metadata': {
+                                'prompt_token_count': response_json.get('usage', {}).get('prompt_tokens', 0),
+                                'candidates_token_count': response_json.get('usage', {}).get('completion_tokens', 0),
+                                'total_token_count': response_json.get('usage', {}).get('total_tokens', 0),
+                            }
+                        }
+                    else:
+                        error = Exception(f"Vertex API returned status {response.status}: {response_text}")
+                        await self._save_debug_data('vertex', model, debug_request,
+                                                  response_text, error=error, context=f"status_{response.status}", cache_key=cache_key)
+                        raise error
 
             # Convert to unified response format (Anthropic-style)
             unified_response = self._normalize_vertex_response(response_dict, soft_schema)

@@ -42,7 +42,9 @@
       "Bash(/tmp/debug_files/miller_qc_full.txt)",
       "WebFetch(domain:eliyahu.ai)",
       "WebFetch(domain:hyperplexity.ai)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(export GOOGLE_CLOUD_PROJECT=\"gen-lang-client-0650358146\")",
+      "Bash(export GOOGLE_APPLICATION_CREDENTIALS=\"/mnt/c/Users/ellio/OneDrive - Eliyahu.AI/Desktop/src/other/gen-lang-client-0650358146-897394b730e6.json\")"
     ],
     "deny": []
   }
