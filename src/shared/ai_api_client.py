@@ -394,11 +394,11 @@ class AIAPIClient:
                 cache_creation_tokens = max(0, int(usage.get('cache_creation_tokens', 0)))
                 cache_read_tokens = max(0, int(usage.get('cache_read_tokens', 0)))
                 total_tokens = input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens
-                
+
                 # Validate token counts are reasonable
                 if total_tokens > 10_000_000:  # 10M token sanity check
                     logger.warning(f"ai_api_client._extract_token_usage: Unusually high token count {total_tokens} for model {model}")
-                
+
                 return {
                     'api_provider': 'anthropic',
                     'input_tokens': input_tokens,
@@ -408,6 +408,12 @@ class AIAPIClient:
                     'total_tokens': total_tokens,
                     'model': model
                 }
+
+            elif api_provider == 'vertex':
+                # Vertex format: usage_metadata with snake_case fields
+                # Delegate to dedicated vertex extraction method
+                return self._extract_vertex_token_usage(response, model)
+
             else:
                 # Perplexity format: prompt_tokens, completion_tokens, total_tokens, search_context_size
                 prompt_tokens = max(0, int(usage.get('prompt_tokens', 0)))
