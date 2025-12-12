@@ -2261,9 +2261,13 @@ class AIAPIClient:
                     # Normalize model to official Vertex model ID
                     current_model_normalized = self._normalize_vertex_model(current_model)
 
+                    # Force soft schema for Vertex (DeepSeek doesn't support hard schemas/function calling)
+                    if not soft_schema:
+                        logger.info(f"[VERTEX] Forcing soft_schema=True for Vertex (hard schemas not supported)")
+
                     result = await self._make_single_vertex_call(
                         prompt, schema, current_model_normalized,
-                        use_cache, cache_key, call_start_time, max_tokens or 8000, soft_schema
+                        use_cache, cache_key, call_start_time, max_tokens or 8000, soft_schema=True  # Always True for Vertex
                     )
 
                 else:
