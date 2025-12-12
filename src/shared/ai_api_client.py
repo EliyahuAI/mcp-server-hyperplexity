@@ -188,6 +188,7 @@ class AIAPIClient:
             # Try parameter names in order (first one uses existing wildcard permissions)
             param_names = [
                 '/perplexity-validator/vertex-credentials',  # Matches existing wildcard permission
+                'perplexity-validator/vertex-credentials',   # Without leading slash (user's format)
                 '/Vertex_Credentials',
                 'Vertex_Credentials',
                 'GOOGLE_APPLICATION_CREDENTIALS'

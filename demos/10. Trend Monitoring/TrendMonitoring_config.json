@@ -5,7 +5,7 @@
   "general_notes": "Configuration for trend monitoring table tracking cross-domain topics, engagement patterns, and strategic insights for communications and strategy teams. Focus on current platform data, sentiment analysis, and actionable intelligence. Prioritize recent data sources and social media analytics platforms for accurate trend metrics.",
   "qc_settings": {
     "enable_qc": true,
-    "model": "claude-sonnet-4-5",
+    "model": ["deepseek-v3.2", "claude-sonnet-4-5"],
     "max_tokens_default": 8000,
     "tokens_per_validated_column_default": 4000,
     "anthropic_max_web_searches": 3

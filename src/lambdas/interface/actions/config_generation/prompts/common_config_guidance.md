@@ -147,14 +147,15 @@ QC provides automated review of validation outputs to improve accuracy and consi
 
 ### QC Configuration Options
 - **Enable QC**: Set `enable_qc: true` to enable automated quality control review
-- **QC Models**: Default models are `claude-sonnet-4-0` for cost-efficiency, can use `claude-opus-4-1` for complex cases
+- **QC Models**: Default is `["deepseek-v3.2", "claude-sonnet-4-5"]` for ultra-low cost with quality fallback
 - **Token Allocation**: Default 8K base + 4K per validated column (excluding ID fields)
-- **Web Searches**: Default 0 (disabled) for cost efficiency, increase when getting it right is critical, or when the model already used claude with web searches. 
+- **Web Searches**: Default 0 (disabled) for cost efficiency, increase when getting it right is critical, or when the model already used claude with web searches.
 
 ### When to Configure QC
 - **Enable QC (Recommended)**: For most validation tasks where accuracy is important
-- **Advanced QC Models**: Use `claude-opus-4-1` for complex scientific/technical data requiring deeper reasoning
-- **Increase QC Web Searches**: When you need to get everything right, or when claude web search is already being used. 
+- **Default QC**: Uses `deepseek-v3.2` (97% cheaper than Claude, excellent quality)
+- **Advanced QC Models**: Automatic fallback to `claude-sonnet-4-5` if deepseek fails
+- **Increase QC Web Searches**: When you need to get everything right, or when claude web search is already being used.
 - **Disable QC**: Only for simple fact-checking tasks or when speed is more important than accuracy
 
 

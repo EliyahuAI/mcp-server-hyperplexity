@@ -5,7 +5,7 @@
   "general_notes": "Configuration for AI/ML conference validation table. Focus on accuracy for event details, pricing, and relevance scoring. All dates should be in YYYY-MM-DD format. Pricing should include currency (USD) and specify if TBA/sold out status. For venue information, search for specific facility names and addresses. Format should be clearly specified (In-person, Hybrid, Virtual, etc.).",
   "qc_settings": {
     "enable_qc": true,
-    "model": "claude-sonnet-4-5",
+    "model": ["deepseek-v3.2", "claude-sonnet-4-5"],
     "max_tokens_default": 8000,
     "tokens_per_validated_column_default": 4000,
     "anthropic_max_web_searches": 1
@@ -43,7 +43,7 @@
       "group_id": 4,
       "group_name": "Assessment Data",
       "description": "Relevance scoring and internal notes requiring business context evaluation",
-      "model": "claude-sonnet-4-5",
+      "model": ["deepseek-v3.2", "claude-sonnet-4-5"],
       "search_context": "medium",
       "anthropic_max_web_searches": 2
     }

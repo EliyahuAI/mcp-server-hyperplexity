@@ -127,10 +127,11 @@
   },
 
   "qc_review": {
-    "_comment": "QC layer reviews discovered rows and decides which to keep, reject, or reprioritize. Uses Claude Sonnet 4.5 without web search",
+    "_comment": "QC layer reviews discovered rows and decides which to keep, reject, or reprioritize. Uses DeepSeek V3.2 (ultra-low cost) with Claude Sonnet 4.5 as backup",
 
     "_basic_settings": "Core QC parameters",
-    "model": "claude-sonnet-4-5",
+    "model": ["deepseek-v3.2", "claude-sonnet-4-5"],
+    "_note_model": "Primary: deepseek-v3.2 (97% cheaper), Backup: claude-sonnet-4-5 (highest quality)",
     "max_tokens": 8000,
     "min_qc_score": 0.3,
 
@@ -147,8 +148,8 @@
     "_note_qc_strategy": "Options: 'traditional' (LLM-based QC review), 'validator' (validator lambda with 2x1 hard/soft weighting), 'both' (run both and merge - intersection=approve, union=demote)",
 
     "_validator_qc_settings": "Settings for validator lambda QC (used when qc_strategy='validator' or 'both')",
-    "validator_qc_model": "sonar",
-    "_note_validator_model": "Options: 'sonar' or 'sonar-pro'",
+    "validator_qc_model": ["deepseek-v3.2", "claude-sonnet-4-5"],
+    "_note_validator_model": "Primary: deepseek-v3.2 (ultra-low cost), Backup: claude-sonnet-4-5",
     "validator_qc_context": "low",
     "_note_validator_context": "Options: 'low', 'medium', or 'high'",
 

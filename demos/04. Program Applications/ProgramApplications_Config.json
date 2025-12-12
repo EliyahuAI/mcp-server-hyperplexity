@@ -5,7 +5,7 @@
   "general_notes": "Configuration for academic program-paper fit analysis table used by university administrators and research office analysts. Focuses on validating research paper attributes and program integration metrics. Papers should be verified from multiple academic sources including arxiv.org, peer-reviewed journals, and conference proceedings. Include assessment of paper reliability, journal quality/impact factor, and venue prestige. Program fit scoring uses a standardized rubric: 90-100 (Exceptional fit - directly addresses core program objectives with novel methodology), 80-89 (Strong fit - significant alignment with clear implementation path), 70-79 (Good fit - relevant with moderate adaptation needed), 60-69 (Moderate fit - some relevance but requires substantial modification), 50-59 (Weak fit - limited relevance), 0-49 (Poor fit - minimal or no alignment with program goals).",
   "qc_settings": {
     "enable_qc": true,
-    "model": "claude-sonnet-4-5",
+    "model": ["deepseek-v3.2", "claude-sonnet-4-5"],
     "max_tokens_default": 8000,
     "tokens_per_validated_column_default": 4000,
     "anthropic_max_web_searches": 3
@@ -29,7 +29,7 @@
       "group_id": 2,
       "group_name": "Technical Assessment & Fit Scoring",
       "description": "Technical evaluation and standardized fit scoring using defined rubric criteria",
-      "model": "claude-sonnet-4-5",
+      "model": ["deepseek-v3.2", "claude-sonnet-4-5"],
       "search_context": "high",
       "anthropic_max_web_searches": 2
     },

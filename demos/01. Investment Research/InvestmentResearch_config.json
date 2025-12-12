@@ -5,7 +5,7 @@
   "anthropic_max_web_searches_default": 1,
   "qc_settings": {
     "enable_qc": true,
-    "model": "claude-sonnet-4-5",
+    "model": ["deepseek-v3.2", "claude-sonnet-4-5"],
     "max_tokens_default": 8000,
     "tokens_per_validated_column_default": 4000,
     "anthropic_max_web_searches": 1
@@ -43,7 +43,7 @@
       "group_id": 4,
       "group_name": "Investment Synthesis",
       "description": "Investment recommendations requiring synthesis of all previous validated information",
-      "model": "claude-sonnet-4-5",
+      "model": ["deepseek-v3.2", "claude-sonnet-4-5"],
       "search_context": "high",
       "anthropic_max_web_searches": 0
     }
