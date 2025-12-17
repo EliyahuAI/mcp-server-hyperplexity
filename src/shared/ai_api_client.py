@@ -70,10 +70,9 @@ class AIAPIClient:
         # Use aioboto3 for async S3 operations (non-blocking event loop)
         self.s3_session = aioboto3.Session()
 
-        # Initialize Google Vertex AI client
+        # Initialize Google Vertex AI (lightweight - no heavy SDK needed)
+        # We use direct REST API calls with google-auth for OAuth tokens only
         try:
-            from google.cloud import aiplatform
-
             # Hardcoded project ID (as requested by user)
             project_id = os.environ.get('GOOGLE_CLOUD_PROJECT', 'gen-lang-client-0650358146')
             location = os.environ.get('GOOGLE_CLOUD_LOCATION', 'us-west2')  # us-west2 supports DeepSeek MaaS
@@ -91,20 +90,13 @@ class AIAPIClient:
                     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_creds_file.name
                     logger.info(f"AI_API_CLIENT: Vertex credentials loaded from SSM to temp file")
 
-            aiplatform.init(project=project_id, location=location)
-            self.vertex_client = aiplatform
+            # Store project info for REST API calls (no heavy SDK needed)
             self.vertex_project = project_id
             self.vertex_location = location
-            logger.info(f"AI_API_CLIENT: Vertex AI initialized (project={project_id}, location={location})")
+            logger.info(f"AI_API_CLIENT: Vertex AI initialized (lightweight mode, project={project_id}, location={location})")
 
-        except ImportError as e:
-            logger.warning(f"AI_API_CLIENT: google-cloud-aiplatform not installed: {e}")
-            self.vertex_client = None
-            self.vertex_project = None
-            self.vertex_location = None
         except Exception as e:
-            logger.warning(f"AI_API_CLIENT: Failed to initialize Vertex AI client: {e}")
-            self.vertex_client = None
+            logger.warning(f"AI_API_CLIENT: Failed to initialize Vertex AI: {e}")
             self.vertex_project = None
             self.vertex_location = None
 
@@ -439,6 +431,16 @@ class AIAPIClient:
                 cache_read_tokens = max(0, int(usage.get('cache_read_tokens', 0)))
                 total_tokens = input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens
 
+                # Extract web search usage (server_tool_use)
+                server_tool_use = usage.get('server_tool_use', {})
+                web_search_requests = 0
+                web_fetch_requests = 0
+                if isinstance(server_tool_use, dict):
+                    web_search_requests = max(0, int(server_tool_use.get('web_search_requests', 0)))
+                    web_fetch_requests = max(0, int(server_tool_use.get('web_fetch_requests', 0)))
+                    if web_search_requests > 0:
+                        logger.debug(f"ai_api_client._extract_token_usage: Claude used {web_search_requests} web searches")
+
                 # Validate token counts are reasonable
                 if total_tokens > 10_000_000:  # 10M token sanity check
                     logger.warning(f"ai_api_client._extract_token_usage: Unusually high token count {total_tokens} for model {model}")
@@ -450,7 +452,10 @@ class AIAPIClient:
                     'cache_creation_tokens': cache_creation_tokens,
                     'cache_read_tokens': cache_read_tokens,
                     'total_tokens': total_tokens,
-                    'model': model
+                    'model': model,
+                    # NEW: Web search/fetch tracking
+                    'web_search_requests': web_search_requests,
+                    'web_fetch_requests': web_fetch_requests
                 }
 
             elif api_provider == 'vertex':
@@ -459,11 +464,11 @@ class AIAPIClient:
                 return self._extract_vertex_token_usage(response, model)
 
             else:
-                # Perplexity format: prompt_tokens, completion_tokens, total_tokens, search_context_size
+                # Perplexity format: prompt_tokens, completion_tokens, total_tokens, search_context_size, cost
                 prompt_tokens = max(0, int(usage.get('prompt_tokens', 0)))
                 completion_tokens = max(0, int(usage.get('completion_tokens', 0)))
                 reported_total = max(0, int(usage.get('total_tokens', 0)))
-                
+
                 # Calculate total tokens - use reported total if available, otherwise sum components
                 if reported_total > 0:
                     total_tokens = reported_total
@@ -473,11 +478,32 @@ class AIAPIClient:
                         logger.warning(f"ai_api_client._extract_token_usage: Token mismatch for {model}: reported={reported_total}, calculated={calculated_total}")
                 else:
                     total_tokens = prompt_tokens + completion_tokens
-                
+
+                # Extract actual cost data from Perplexity (if provided)
+                cost_data = usage.get('cost', {})
+                api_provided_cost = None
+                if isinstance(cost_data, dict) and cost_data:
+                    try:
+                        input_cost = float(cost_data.get('input_tokens_cost', 0))
+                        output_cost = float(cost_data.get('output_tokens_cost', 0))
+                        request_cost = float(cost_data.get('request_cost', 0))
+                        total_cost = float(cost_data.get('total_cost', 0))
+
+                        api_provided_cost = {
+                            'input_cost': input_cost,
+                            'output_cost': output_cost,
+                            'request_cost': request_cost,
+                            'total_cost': total_cost,
+                            'source': 'perplexity_api'
+                        }
+                        logger.debug(f"ai_api_client._extract_token_usage: Perplexity API cost: ${total_cost:.6f} (request: ${request_cost:.6f})")
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"ai_api_client._extract_token_usage: Error parsing Perplexity cost data: {e}")
+
                 # Validate token counts are reasonable
                 if total_tokens > 10_000_000:  # 10M token sanity check
                     logger.warning(f"ai_api_client._extract_token_usage: Unusually high token count {total_tokens} for model {model}")
-                
+
                 return {
                     'api_provider': 'perplexity',
                     'input_tokens': prompt_tokens,
@@ -486,7 +512,9 @@ class AIAPIClient:
                     'cache_read_tokens': 0,
                     'total_tokens': total_tokens,
                     'model': model,
-                    'search_context_size': usage.get('search_context_size', search_context_size)
+                    'search_context_size': usage.get('search_context_size', search_context_size),
+                    # NEW: API-provided cost data (includes request_cost!)
+                    'api_provided_cost': api_provided_cost
                 }
                 
         except (ValueError, TypeError) as e:
@@ -558,23 +586,45 @@ class AIAPIClient:
                 'model': model
             }
 
-    def _normalize_vertex_response(self, vertex_response: Dict, soft_schema: bool = False) -> Dict:
+    def _normalize_vertex_response(self, vertex_response: Dict, soft_schema: bool = False, schema: Dict = None) -> Dict:
         """
         Normalize Vertex AI API response to Anthropic-style format.
 
-        Vertex returns responses in Gemini/model-native format. We convert to the
-        Anthropic Messages API format that our system expects.
+        Vertex returns responses in Gemini/model-native format OR OpenAI-compatible format (DeepSeek).
+        We convert to the Anthropic Messages API format that our system expects.
 
         Args:
             vertex_response: Raw response from Vertex AI
             soft_schema: If True, extract JSON from text content
+            schema: Optional JSON schema for validation/normalization
 
         Returns:
             Normalized response in Anthropic format
         """
         try:
-            # Vertex response format typically has 'candidates' array
-            if 'candidates' in vertex_response:
+            # Format 1: DeepSeek/OpenAI-compatible format with 'content' array
+            if 'content' in vertex_response and isinstance(vertex_response['content'], list):
+                # DeepSeek format: {'content': [{'type': 'text', 'text': '...'}]}
+                text_content = vertex_response['content'][0].get('text', '')
+
+                # Build normalized response
+                normalized = {
+                    'id': vertex_response.get('id', 'vertex_msg'),
+                    'type': 'message',
+                    'role': 'assistant',
+                    'content': [{'type': 'text', 'text': text_content}],
+                    'stop_reason': vertex_response.get('stop_reason', 'stop'),
+                    'usage': vertex_response.get('usage', {})
+                }
+
+                # If soft schema, extract and validate JSON
+                if soft_schema:
+                    normalized = self._clean_anthropic_soft_schema_response(normalized, schema)
+
+                return normalized
+
+            # Format 2: Gemini format with 'candidates' array
+            elif 'candidates' in vertex_response:
                 # Extract text from first candidate
                 candidate = vertex_response['candidates'][0]
                 content_parts = candidate.get('content', {}).get('parts', [])
@@ -597,7 +647,7 @@ class AIAPIClient:
 
                 # If soft schema, extract and validate JSON
                 if soft_schema:
-                    normalized = self._clean_anthropic_soft_schema_response(normalized, None)
+                    normalized = self._clean_anthropic_soft_schema_response(normalized, schema)
 
                 return normalized
 
@@ -626,6 +676,33 @@ class AIAPIClient:
                 'stop_reason': 'error',
                 'usage': {}
             }
+
+    def _validate_against_schema(self, data: dict, schema: dict) -> bool:
+        """
+        Simple schema validation - checks if required fields are present.
+        Returns True if valid, False if missing required fields.
+        """
+        try:
+            if not isinstance(data, dict) or not isinstance(schema, dict):
+                return False
+
+            # Check required fields
+            required = schema.get('required', [])
+            for field in required:
+                if field not in data:
+                    logger.debug(f"[SCHEMA_VALIDATION] Missing required field: {field}")
+                    return False
+
+            # Check if all values are empty (indicates failure)
+            if all(not v for v in data.values()):
+                logger.debug(f"[SCHEMA_VALIDATION] All values empty")
+                return False
+
+            return True
+
+        except Exception as e:
+            logger.error(f"[SCHEMA_VALIDATION] Validation error: {e}")
+            return False
 
     def _get_empty_token_usage(self, model: str) -> Dict:
         """Return empty token usage structure with safe defaults."""
@@ -848,10 +925,35 @@ class AIAPIClient:
         
         api_provider = token_usage.get('api_provider', 'unknown')
         model = token_usage.get('model', 'unknown')
-        
+
         if not model or model == 'unknown':
             logger.warning("ai_api_client.calculate_token_costs: Missing or unknown model in token_usage")
-        
+
+        # ========== NEW: Check for API-provided costs first ==========
+        # For Perplexity: Use their actual costs (includes request_cost!)
+        api_provided_cost = token_usage.get('api_provided_cost')
+        if api_provided_cost and isinstance(api_provided_cost, dict):
+            logger.debug(f"ai_api_client.calculate_token_costs: Using API-provided cost from {api_provided_cost.get('source')}")
+            return {
+                'input_cost': api_provided_cost.get('input_cost', 0.0),
+                'output_cost': api_provided_cost.get('output_cost', 0.0),
+                'request_cost': api_provided_cost.get('request_cost', 0.0),  # NEW!
+                'total_cost': api_provided_cost.get('total_cost', 0.0),
+                'input_tokens': token_usage.get('input_tokens', 0),
+                'output_tokens': token_usage.get('output_tokens', 0),
+                'pricing_model': model,
+                'pricing_source': 'api_provided',
+                'api_provider': api_provider
+            }
+
+        # For Claude: Calculate web search costs and add to token-based costs
+        web_search_requests = token_usage.get('web_search_requests', 0)
+        web_search_cost = 0.0
+        if web_search_requests > 0:
+            # Claude web search: $10 per 1,000 searches = $0.01 per search
+            web_search_cost = web_search_requests * 0.01
+            logger.debug(f"ai_api_client.calculate_token_costs: Adding web search cost: {web_search_requests} searches × $0.01 = ${web_search_cost:.4f}")
+
         # Find pricing configuration with robust pattern matching
         pricing = None
         pricing_source = 'none'
@@ -1007,17 +1109,24 @@ class AIAPIClient:
             output_cost = round(output_cost, 6)
             total_cost = round(total_cost, 6)
 
+        # Add web search cost to total (for Claude)
+        if web_search_cost > 0:
+            total_cost += web_search_cost
+            logger.debug(f"ai_api_client.calculate_token_costs: Total cost with web search: ${total_cost:.6f} (base: ${total_cost - web_search_cost:.6f} + search: ${web_search_cost:.6f})")
+
         # Log calculation details for debugging high-cost scenarios
         if total_cost > 1.0:  # Log expensive calls
             logger.debug(f"ai_api_client.calculate_token_costs: High cost calculation - Model: {model}, "
                        f"Input: {input_tokens} tokens (${input_cost:.6f}), "
                        f"Output: {output_tokens} tokens (${output_cost:.6f}), "
+                       f"Web Search: ${web_search_cost:.6f}, "
                        f"Total: ${total_cost:.6f}, Source: {pricing_source}")
 
 
         return {
             'input_cost': input_cost,
-            'output_cost': output_cost, 
+            'output_cost': output_cost,
+            'web_search_cost': web_search_cost,  # NEW!
             'total_cost': total_cost,
             'input_tokens': input_tokens,
             'output_tokens': output_tokens,
@@ -1178,6 +1287,8 @@ class AIAPIClient:
                     'actual': {
                         'input_cost': cost_data.get('input_cost', 0.0),
                         'output_cost': cost_data.get('output_cost', 0.0),
+                        'request_cost': cost_data.get('request_cost', 0.0),  # NEW: Perplexity per-request cost
+                        'web_search_cost': cost_data.get('web_search_cost', 0.0),  # NEW: Claude web search cost
                         'total_cost': cost_data.get('total_cost', 0.0),
                         'pricing_source': cost_data.get('pricing_source', 'unknown')
                     },
@@ -1185,6 +1296,8 @@ class AIAPIClient:
                     'estimated': {
                         'input_cost': cost_estimated.get('input_cost', 0.0),
                         'output_cost': cost_estimated.get('output_cost', 0.0),
+                        'request_cost': cost_estimated.get('request_cost', 0.0),  # NEW
+                        'web_search_cost': cost_estimated.get('web_search_cost', 0.0),  # NEW
                         'total_cost': cost_estimated.get('total_cost', 0.0)
                     },
                     # Cost efficiency from caching
@@ -2261,20 +2374,25 @@ class AIAPIClient:
 
                 elif api_provider == 'vertex':
                     # Vertex AI API call for structured output
-                    if not self.vertex_client:
+                    if not self.vertex_project:
                         logger.warning(f"[SKIP] Vertex AI client not initialized, skipping model {current_model}")
                         continue
 
                     # Normalize model to official Vertex model ID
                     current_model_normalized = self._normalize_vertex_model(current_model)
 
-                    # Force soft schema for Vertex (DeepSeek doesn't support hard schemas/function calling)
-                    if not soft_schema:
-                        logger.info(f"[VERTEX] Forcing soft_schema=True for Vertex (hard schemas not supported)")
+                    # CRITICAL WARNING: DeepSeek cannot access the web
+                    if 'deepseek' in current_model.lower() and max_web_searches > 0:
+                        logger.warning(
+                            f"[DEEPSEEK_WEB_SEARCH_WARNING] DeepSeek model '{current_model}' called with "
+                            f"max_web_searches={max_web_searches}. DeepSeek CANNOT access the web - this setting "
+                            f"will be ignored. Use claude-sonnet-4-5 or claude-opus-4-1 for web search capabilities."
+                        )
 
+                    # Vertex AI supports hard schemas via OpenAI-compatible response_format parameter
                     result = await self._make_single_vertex_call(
                         prompt, schema, current_model_normalized,
-                        use_cache, cache_key, call_start_time, max_tokens or 8000, soft_schema=True  # Always True for Vertex
+                        use_cache, cache_key, call_start_time, max_tokens or 8000, soft_schema=soft_schema
                     )
 
                 else:
@@ -2356,6 +2474,55 @@ class AIAPIClient:
                     #   - _make_single_anthropic_call (for Anthropic)
                     #   - _make_single_perplexity_structured_call (for Perplexity)
                     # Removed duplicate logging here to prevent duplicate debug entries for both providers
+
+                    # Soft schema cleanup: If soft_schema was used, validate and clean up response
+                    if soft_schema and api_provider == 'vertex':
+                        try:
+                            response_content = result.get('response', {})
+                            if 'choices' in response_content:
+                                content = response_content['choices'][0]['message']['content']
+                                parsed = json.loads(content) if isinstance(content, str) else content
+                            elif 'content' in response_content and isinstance(response_content['content'], list):
+                                content = response_content['content'][0]['text']
+                                parsed = json.loads(content)
+                            else:
+                                parsed = response_content
+
+                            # Validate against schema
+                            schema_valid = self._validate_against_schema(parsed, schema)
+
+                            if not schema_valid:
+                                logger.warning(f"[SOFT_SCHEMA_CLEANUP] {current_model} output doesn't match schema, using Haiku to reformat")
+
+                                # Ask Haiku to reformat the answer to match schema
+                                cleanup_prompt = f"""The following answer was generated but doesn't exactly match the required schema.
+
+Answer:
+{json.dumps(parsed, indent=2)}
+
+Required Schema:
+{json.dumps(schema, indent=2)}
+
+Please reformat this answer to exactly match the schema. Preserve all information, just adjust field names and structure to comply with the schema."""
+
+                                # Call Haiku with hard schema to clean up
+                                cleanup_result = await self.call_structured_api(
+                                    prompt=cleanup_prompt,
+                                    schema=schema,
+                                    model="claude-haiku-4-5",
+                                    use_cache=False,
+                                    context=f"{context}_schema_cleanup",
+                                    max_tokens=max_tokens,
+                                    max_web_searches=0,
+                                    soft_schema=False
+                                )
+
+                                logger.info(f"[SOFT_SCHEMA_CLEANUP] Haiku cleanup successful")
+                                return cleanup_result
+
+                        except Exception as cleanup_error:
+                            logger.error(f"[SOFT_SCHEMA_CLEANUP] Cleanup failed: {cleanup_error}")
+                            # Continue with original result
 
                     return result
                     
@@ -2923,7 +3090,8 @@ class AIAPIClient:
             "max_tokens": 3000,
             "response_format": get_response_format_schema(is_multiplex=True),
             "web_search_options": {
-                "search_context_size": search_context_size
+                "search_context_size": search_context_size,
+                "max_tokens_per_page": {"low": 2048, "medium": 3072, "high": 4096}.get(search_context_size, 2048)
             }
         }
 
@@ -4033,7 +4201,8 @@ class AIAPIClient:
             "temperature": 0.1,
             "max_tokens": enforced_max_tokens,
             "web_search_options": {
-                "search_context_size": search_context_size
+                "search_context_size": search_context_size,
+                "max_tokens_per_page": {"low": 2048, "medium": 3072, "high": 4096}.get(search_context_size, 2048)
             }
         }
 
@@ -4182,13 +4351,13 @@ class AIAPIClient:
         # Build prompt with schema instructions
         if schema:
             if soft_schema:
-                # Soft schema: add JSON instructions to prompt
-                final_prompt = f"{prompt}\n\nReturn your answer as valid JSON matching this schema:\n{json.dumps(schema, indent=2)}"
+                # Soft schema: add JSON instructions to prompt only
+                final_prompt = f"{prompt}\n\nReturn your answer as valid JSON matching this schema. IMPORTANT: Use the EXACT field names specified in the schema (do not rename or modify them):\n{json.dumps(schema, indent=2)}"
                 logger.info(f"[SOFT_SCHEMA] Using soft schema - JSON requested in prompt only")
             else:
-                # Hard schema: add schema as system instruction
-                final_prompt = f"{prompt}\n\nIMPORTANT: Return ONLY valid JSON matching this exact schema:\n{json.dumps(schema, indent=2)}"
-                logger.debug(f"Using hard schema via prompt instructions")
+                # Hard schema: will use response_format parameter, minimal prompt change
+                final_prompt = prompt
+                logger.info(f"[HARD_SCHEMA] Using hard schema via response_format parameter")
         else:
             final_prompt = prompt
 
@@ -4219,6 +4388,18 @@ class AIAPIClient:
                 "max_tokens": enforced_max_tokens,
                 "stream": False
             }
+
+            # Add response_format for hard schema (OpenAI-compatible structured output)
+            if schema and not soft_schema:
+                data["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response_schema",
+                        "strict": True,
+                        "schema": schema
+                    }
+                }
+                logger.debug(f"[HARD_SCHEMA] Added response_format to API request")
 
             # Make REST API call using aiohttp (same pattern as Anthropic/Perplexity)
             async with aiohttp.ClientSession() as session:
@@ -4251,7 +4432,7 @@ class AIAPIClient:
                         raise error
 
             # Convert to unified response format (Anthropic-style)
-            unified_response = self._normalize_vertex_response(response_dict, soft_schema)
+            unified_response = self._normalize_vertex_response(response_dict, soft_schema, schema)
 
             # Check for stop reasons
             stop_reason = unified_response.get('stop_reason')
