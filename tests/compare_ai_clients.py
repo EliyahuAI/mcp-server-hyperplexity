@@ -77,7 +77,7 @@ def compare_dicts(d1, d2, path=""):
 async def test_live_structured_call(old_client, new_client, provider, model):
     logger.info(f"\n{'='*60}")
     logger.info(f"TESTING LIVE API: {provider} ({model})")
-    logger.info(f"{'='*60}")
+    logger.info(f"{ '='*60}")
     
     prompt = "What is 2+2? Return a JSON object with keys 'result' and 'explanation'."
     schema = {
@@ -215,6 +215,83 @@ async def main():
         await test_live_structured_call(old_client, new_client, "Vertex", "vertex.deepseek-v3.2")
     else:
         logger.warning("Skipping Vertex test: Project ID not configured.")
+
+    # 4. The Clone Test (DeepSeek variant)
+    logger.info("\n============================================================")
+    logger.info("TESTING LIVE API: The Clone (the-clone)")
+    logger.info("============================================================")
+    prompt_clone = "What is the capital of France?"
+    schema_clone = {"type": "object", "properties": {"answer": {"type": "string"}, "summary": {"type": "string"}, "citations": {"type": "array"}}}
+    
+    try:
+        # No old client for comparison, just test the new client
+        new_clone_response = await new_client.call_structured_api(
+            prompt=prompt_clone,
+            schema=schema_clone,
+            model="the-clone",
+            soft_schema=True # Clone always uses soft schema for its final output
+        )
+
+        logger.info(f"--- [New Client] The Clone Response ---")
+        # Safely extract and log the 'content' from the unified response structure
+        clone_content = new_clone_response.get('response', {}).get('choices', [{}])[0].get('message', {}).get('content', '')
+        logger.info(f"OUTPUT: {clone_content}")
+        
+        # Verify basic structure and costs for The Clone
+        assert new_clone_response is not None, "The Clone response should not be None"
+        assert new_clone_response.get('response') is not None, "The Clone response should have a 'response' key"
+        assert new_clone_response.get('enhanced_data') is not None, "The Clone response should have 'enhanced_data'"
+        
+        total_cost_clone = new_clone_response['enhanced_data']['costs']['actual']['total_cost']
+        logger.info(f"Total Cost (The Clone): ${total_cost_clone:.6f}")
+        assert total_cost_clone > 0, "The Clone total cost should be greater than 0"
+        
+        assert new_clone_response.get('citations') is not None and isinstance(new_clone_response['citations'], list), "The Clone response should have a 'citations' list"
+        
+        logger.info("✅ The Clone client (the-clone) returned valid response and cost data")
+
+    except Exception as e:
+        logger.error(f"❌ The Clone client (the-clone) test failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # 5. The Clone Test (Claude variant)
+    logger.info("\n============================================================")
+    logger.info("TESTING LIVE API: The Clone (the-clone-claude)")
+    logger.info("============================================================")
+    prompt_clone_claude = "What is the main advantage of fusion power over fission power?"
+    schema_clone_claude = {"type": "object", "properties": {"answer": {"type": "string"}, "advantage": {"type": "string"}, "citations": {"type": "array"}}}
+    
+    try:
+        new_clone_claude_response = await new_client.call_structured_api(
+            prompt=prompt_clone_claude,
+            schema=schema_clone_claude,
+            model="the-clone-claude",
+            soft_schema=True # Clone always uses soft schema for its final output
+        )
+
+        logger.info(f"--- [New Client] The Clone Claude Response ---")
+        clone_claude_content = new_clone_claude_response.get('response', {}).get('choices', [{}])[0].get('message', {}).get('content', '')
+        logger.info(f"OUTPUT: {clone_claude_content}")
+        
+        assert new_clone_claude_response is not None, "The Clone Claude response should not be None"
+        assert new_clone_claude_response.get('response') is not None, "The Clone Claude response should have a 'response' key"
+        assert new_clone_claude_response.get('enhanced_data') is not None, "The Clone Claude response should have 'enhanced_data'"
+        
+        total_cost_clone_claude = new_clone_claude_response['enhanced_data']['costs']['actual']['total_cost']
+        logger.info(f"Total Cost (The Clone Claude): ${total_cost_clone_claude:.6f}")
+        assert total_cost_clone_claude > 0, "The Clone Claude total cost should be greater than 0"
+        
+        assert new_clone_claude_response.get('citations') is not None and isinstance(new_clone_claude_response['citations'], list), "The Clone Claude response should have a 'citations' list"
+        
+        logger.info("✅ The Clone client (the-clone-claude) returned valid response and cost data")
+
+    except Exception as e:
+        logger.error(f"❌ The Clone client (the-clone-claude) test failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+    logger.info("\nLive Refactor Comparison Test Finished.")
 
 if __name__ == "__main__":
     asyncio.run(main())
