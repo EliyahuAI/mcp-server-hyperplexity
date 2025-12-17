@@ -305,7 +305,7 @@ def fuzzy_match_keys(data: Dict, schema_properties: Dict, threshold: float = 0.8
                 best_match = schema_key
 
         if best_match:
-            logger.info(f"[FUZZY_MATCH] Matched '{key}' -> '{best_match}' (similarity: {best_score:.2f})")
+            logger.debug(f"[FUZZY_MATCH] Matched '{key}' -> '{best_match}' (similarity: {best_score:.2f})")
             normalized[best_match] = value
         else:
             # Keep original key if no match found
@@ -396,7 +396,7 @@ def fuzzy_match_url_to_citations(url: str, citations: list) -> tuple[bool, str]:
             best_match = citation_url
 
     if best_score >= 0.6:
-        logger.info(f"[URL_VALIDATION] Fuzzy match: {url} -> {best_match} (similarity: {best_score:.2f})")
+        logger.debug(f"[URL_VALIDATION] Fuzzy match: {url} -> {best_match} (similarity: {best_score:.2f})")
         return (True, f"{url} (Citation: {best_match})")
 
     logger.warning(f"[URL_VALIDATION] URL not in citations: {url}")
@@ -491,7 +491,7 @@ def validate_and_normalize_soft_schema(data: Dict, schema: Dict, fuzzy_keys: boo
             if expected_type and not isinstance(value, dict) and not isinstance(value, list):
                 coerced = coerce_value_to_type(value, expected_type)
                 if coerced != value:
-                    logger.info(f"[TYPE_COERCE] Coerced '{key}': {value} -> {coerced} ({expected_type})")
+                    logger.debug(f"[TYPE_COERCE] Coerced '{key}': {value} -> {coerced} ({expected_type})")
                 normalized[key] = coerced
             elif expected_type == 'object' and isinstance(value, dict):
                 nested_normalized, nested_warnings = validate_and_normalize_soft_schema(value, prop_schema, fuzzy_keys)
@@ -526,7 +526,7 @@ def validate_and_normalize_soft_schema(data: Dict, schema: Dict, fuzzy_keys: boo
                 recency = float(breakdown.get('recency', 0))
                 match_score = (relevancy * 0.4) + (reliability * 0.3) + (recency * 0.3)
                 normalized['match_score'] = round(match_score, 3)
-                logger.info(f"[AUTO_CALCULATE] Calculated match_score={match_score:.3f}")
+                logger.debug(f"[AUTO_CALCULATE] Calculated match_score={match_score:.3f}")
             except Exception as e:
                 logger.warning(f"[AUTO_CALCULATE] Failed to calculate match_score: {e}")
 
@@ -548,7 +548,7 @@ def validate_and_normalize_soft_schema(data: Dict, schema: Dict, fuzzy_keys: boo
                     'demoted': demoted,
                     'reasoning': f"Reviewed {total_reviewed} rows: {kept} kept, {rejected} rejected"
                 }
-                logger.info(f"[AUTO_CALCULATE] Calculated qc_summary from {total_reviewed} reviewed_rows")
+                logger.debug(f"[AUTO_CALCULATE] Calculated qc_summary from {total_reviewed} reviewed_rows")
             except Exception as e:
                 logger.warning(f"[AUTO_CALCULATE] Failed to calculate qc_summary: {e}")
 

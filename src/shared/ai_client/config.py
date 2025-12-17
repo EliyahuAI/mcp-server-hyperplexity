@@ -26,7 +26,7 @@ def get_anthropic_api_key() -> str:
     """Get Anthropic API key from environment or SSM."""
     api_key = os.environ.get('ANTHROPIC_API_KEY')
     if api_key:
-        logger.info("Using Anthropic API key from environment variable")
+        logger.debug("Using Anthropic API key from environment variable")
         return api_key
     
     # Try AWS Systems Manager Parameter Store
@@ -36,12 +36,12 @@ def get_anthropic_api_key() -> str:
         
         for param_name in param_names:
             try:
-                logger.info(f"Attempting to retrieve Anthropic API key from SSM parameter: {param_name}")
+                logger.debug(f"Attempting to retrieve Anthropic API key from SSM parameter: {param_name}")
                 response = ssm_client.get_parameter(
                     Name=param_name,
                     WithDecryption=True
                 )
-                logger.info(f"Successfully retrieved Anthropic API key from {param_name}")
+                logger.debug(f"Successfully retrieved Anthropic API key from {param_name}")
                 return response['Parameter']['Value']
             except Exception as e:
                 logger.warning(f"Failed to get Anthropic API key from SSM parameter '{param_name}': {str(e)}")
@@ -58,7 +58,7 @@ def get_perplexity_api_key() -> str:
     """Get Perplexity API key from environment or SSM."""
     api_key = os.environ.get('PERPLEXITY_API_KEY')
     if api_key:
-        logger.info("Using Perplexity API key from environment variable")
+        logger.debug("Using Perplexity API key from environment variable")
         return api_key
     
     # Try AWS Systems Manager Parameter Store
@@ -68,12 +68,12 @@ def get_perplexity_api_key() -> str:
         
         for param_name in param_names:
             try:
-                logger.info(f"Attempting to retrieve Perplexity API key from SSM parameter: {param_name}")
+                logger.debug(f"Attempting to retrieve Perplexity API key from SSM parameter: {param_name}")
                 response = ssm_client.get_parameter(
                     Name=param_name,
                     WithDecryption=True
                 )
-                logger.info(f"Successfully retrieved Perplexity API key from {param_name}")
+                logger.debug(f"Successfully retrieved Perplexity API key from {param_name}")
                 return response['Parameter']['Value']
             except Exception as e:
                 logger.warning(f"Failed to get Perplexity API key from SSM parameter '{param_name}': {str(e)}")
@@ -101,13 +101,13 @@ def get_vertex_credentials_from_ssm() -> Optional[str]:
 
         for param_name in param_names:
             try:
-                logger.info(f"Attempting to retrieve Vertex credentials from SSM parameter: {param_name}")
+                logger.debug(f"Attempting to retrieve Vertex credentials from SSM parameter: {param_name}")
                 response = ssm_client.get_parameter(
                     Name=param_name,
                     WithDecryption=True
                 )
                 credentials_json = response['Parameter']['Value']
-                logger.info(f"Successfully retrieved Vertex credentials from {param_name}")
+                logger.debug(f"Successfully retrieved Vertex credentials from {param_name}")
                 return credentials_json
             except Exception as e:
                 logger.warning(f"Failed to get Vertex credentials from SSM parameter '{param_name}': {str(e)}")
@@ -140,9 +140,9 @@ def setup_vertex_credentials() -> tuple[Optional[str], Optional[str]]:
                 temp_creds_file.flush()
                 temp_creds_file.close()
                 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_creds_file.name
-                logger.info(f"AI_API_CLIENT: Vertex credentials loaded from SSM to temp file")
+                logger.debug(f"AI_API_CLIENT: Vertex credentials loaded from SSM to temp file")
 
-        logger.info(f"AI_API_CLIENT: Vertex AI initialized (lightweight mode, project={project_id}, location={location})")
+        logger.debug(f"AI_API_CLIENT: Vertex AI initialized (lightweight mode, project={project_id}, location={location})")
         return project_id, location
 
     except Exception as e:

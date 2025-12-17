@@ -211,7 +211,7 @@ class CacheHandler:
                 await s3_client.put_object(Bucket=self.s3_bucket, Key=debug_key, Body=json.dumps(debug_entry))
                 await s3_client.delete_object(Bucket=self.s3_bucket, Key=s3_key)
             
-            logger.info(f"Moved bad cache {s3_key} to {debug_key}")
+            logger.debug(f"Moved bad cache {s3_key} to {debug_key}")
             return True
         except Exception as e:
             logger.error(f"Failed to move bad cache: {e}")
