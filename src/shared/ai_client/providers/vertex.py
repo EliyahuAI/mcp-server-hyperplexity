@@ -1,0 +1,177 @@
+
+import json
+import logging
+import asyncio
+import aiohttp
+from datetime import datetime
+from typing import Dict, Any
+
+from ..utils import normalize_vertex_model
+
+logger = logging.getLogger(__name__)
+
+class VertexProvider:
+    def __init__(self, project_id: str, cache_handler, usage_handler):
+        self.project_id = project_id
+        self.cache_handler = cache_handler
+        self.usage_handler = usage_handler
+
+    async def _get_vertex_access_token(self) -> str:
+        """Get Google Cloud OAuth access token."""
+        try:
+            from google.auth.transport.requests import Request
+            from google.auth import default
+            credentials, _ = default(scopes=['https://www.googleapis.com/auth/cloud-platform'])
+            if not credentials.valid:
+                await asyncio.to_thread(credentials.refresh, Request())
+            return credentials.token
+        except Exception as e:
+            logger.error(f"Failed to get Vertex access token: {e}")
+            raise Exception(f"Vertex authentication failed: {e}")
+
+    def _normalize_vertex_response(self, vertex_response: Dict, soft_schema: bool = False, schema: Dict = None) -> Dict:
+        """Normalize Vertex AI API response to Anthropic-style format."""
+        try:
+            # DeepSeek/OpenAI format
+            if 'content' in vertex_response and isinstance(vertex_response['content'], list):
+                text_content = vertex_response['content'][0].get('text', '')
+                normalized = {
+                    'id': vertex_response.get('id', 'vertex_msg'),
+                    'type': 'message',
+                    'role': 'assistant',
+                    'content': [{'type': 'text', 'text': text_content}],
+                    'stop_reason': vertex_response.get('stop_reason', 'stop'),
+                    'usage': vertex_response.get('usage', {})
+                }
+            # Gemini format
+            elif 'candidates' in vertex_response:
+                candidate = vertex_response['candidates'][0]
+                text_content = ''
+                for part in candidate.get('content', {}).get('parts', []):
+                    if 'text' in part: text_content += part['text']
+                
+                normalized = {
+                    'id': vertex_response.get('id', 'vertex_msg'),
+                    'type': 'message',
+                    'role': 'assistant',
+                    'content': [{'type': 'text', 'text': text_content}],
+                    'stop_reason': candidate.get('finishReason', 'end_turn').lower(),
+                    'usage': vertex_response.get('usage_metadata', vertex_response.get('usage', {}))
+                }
+            else:
+                text_content = vertex_response.get('text', '') or str(vertex_response)
+                normalized = {
+                    'id': 'vertex_msg',
+                    'type': 'message',
+                    'role': 'assistant',
+                    'content': [{'type': 'text', 'text': text_content}],
+                    'stop_reason': 'end_turn',
+                    'usage': vertex_response.get('usage_metadata', {})
+                }
+
+            if soft_schema:
+                # Use Anthropic provider's cleaning logic? 
+                # Actually I should probably put that logic in utils or duplicate it here.
+                # The Utils file has validate_and_normalize_soft_schema but not the full cleaner.
+                # I'll implement a simple cleaner here or assume utils can handle it.
+                # Utils has validate_and_normalize_soft_schema. I need the regex cleaner part.
+                # I'll put the regex cleaner in this method for now.
+                import re
+                cleaned = re.sub(r'^```json\s*|\s*```$', '', text_content.strip(), flags=re.MULTILINE)
+                match = re.search(r'(\{.*\})', cleaned, re.DOTALL)
+                if match: cleaned = match.group(1)
+                
+                try:
+                    parsed = json.loads(cleaned)
+                    from ..utils import validate_and_normalize_soft_schema
+                    norm, _ = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
+                    normalized['content'][0]['text'] = json.dumps(norm)
+                except:
+                    pass
+            
+            return normalized
+
+        except Exception as e:
+            logger.error(f"Vertex normalization failed: {e}")
+            return {'id': 'error', 'type': 'message', 'role': 'assistant', 'content': [{'type': 'text', 'text': str(vertex_response)}], 'stop_reason': 'error', 'usage': {}}
+
+    async def make_single_call(self, prompt: str, schema: Dict, model: str, use_cache: bool, cache_key: str, start_time: datetime, max_tokens: int = 8000, soft_schema: bool = False) -> Dict:
+        enforced_max_tokens = self.usage_handler.enforce_provider_token_limit(model, max_tokens)
+        
+        final_prompt = prompt
+        if schema:
+            if soft_schema:
+                final_prompt = f"{prompt}\n\nReturn your answer as valid JSON matching this schema: {json.dumps(schema)}"
+        
+        debug_request = {'model_id': model, 'prompt': final_prompt[:500], 'max_tokens': enforced_max_tokens}
+        
+        try:
+            access_token = await self._get_vertex_access_token()
+            url = f"https://aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/global/endpoints/openapi/chat/completions"
+            headers = {'Authorization': f'Bearer {access_token}', 'Content-Type': 'application/json'}
+            
+            data = {
+                "model": f"deepseek-ai/{model}",
+                "messages": [{"role": "user", "content": final_prompt}],
+                "temperature": 0.1,
+                "max_tokens": enforced_max_tokens,
+                "stream": False
+            }
+            
+            if schema and not soft_schema:
+                data["response_format"] = {"type": "json_schema", "json_schema": {"name": "response_schema", "strict": True, "schema": schema}}
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=data) as response:
+                    processing_time = (datetime.now() - start_time).total_seconds()
+                    response_text = await response.text()
+                    
+                    if response.status == 200:
+                        response_json = json.loads(response_text)
+                        
+                        # Convert OpenAI format to Gemini/Vertex format for internal consistency if needed, 
+                        # OR just use the OpenAI format structure. 
+                        # The extract_vertex_token_usage handles both.
+                        # I'll construct a dict that matches what _normalize_vertex_response expects
+                        # The response_json here IS OpenAI format (choices/message/content)
+                        # So let's pass it as is to normalization if it supports it.
+                        # _normalize_vertex_response checks for 'content' list (DeepSeek) or 'candidates'.
+                        # OpenAI format has 'choices'. I should adapt it.
+                        
+                        response_dict = {
+                            'content': [{'type': 'text', 'text': response_json['choices'][0]['message']['content']}],
+                            'usage': response_json.get('usage', {}),
+                            'stop_reason': response_json['choices'][0].get('finish_reason', 'stop')
+                        }
+                    else:
+                        error = Exception(f"Vertex API status {response.status}: {response_text}")
+                        await self.cache_handler.save_debug_data('vertex', model, debug_request, response_text, error=error, context=f"status_{response.status}", cache_key=cache_key)
+                        raise error
+
+            unified_response = self._normalize_vertex_response(response_dict, soft_schema, schema)
+            
+            if unified_response.get('stop_reason') in ['max_tokens', 'length']:
+                 await self.cache_handler.save_debug_data('vertex', model, debug_request, unified_response, context="max_tokens_truncated", cache_key=cache_key)
+                 raise Exception(f"[MAX_TOKENS] Model {model} hit limit")
+
+            await self.cache_handler.save_debug_data('vertex', model, debug_request, unified_response, context="single_call_success", cache_key=cache_key)
+            
+            token_usage = self.usage_handler.extract_token_usage(response_dict, model)
+            
+            if use_cache and cache_key:
+                await self.cache_handler.save_to_cache(cache_key, unified_response, token_usage, processing_time, model, 'vertex')
+            
+            enhanced_data = self.usage_handler.get_enhanced_call_metrics(unified_response, model, processing_time, is_cached=False)
+            
+            return {
+                'response': unified_response,
+                'token_usage': token_usage,
+                'processing_time': processing_time,
+                'is_cached': False,
+                'citations': [],
+                'enhanced_data': enhanced_data
+            }
+
+        except Exception as e:
+            await self.cache_handler.save_debug_data('vertex', model, debug_request, None, error=e, context="exception", cache_key=cache_key)
+            raise
