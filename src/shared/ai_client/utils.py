@@ -21,6 +21,9 @@ def determine_api_provider(model: str) -> str:
     if (model.startswith('vertex.') or
         model.startswith('deepseek-') or
         model.startswith('deepseek.')):
+        # Check for Baseten specifically
+        if 'baseten' in model:
+            return 'baseten'
         return 'vertex'
 
     return 'perplexity'

@@ -9,6 +9,7 @@ from .config import (
     MODEL_HIERARCHY,
     get_anthropic_api_key,
     get_perplexity_api_key,
+    get_baseten_api_key,
     setup_vertex_credentials
 )
 from .utils import (
@@ -26,6 +27,7 @@ from .caching import CacheHandler
 from .providers.anthropic import AnthropicProvider
 from .providers.perplexity import PerplexityProvider
 from .providers.vertex import VertexProvider
+from .providers.baseten import BasetenProvider
 from .providers.clone import CloneProvider
 
 logger = logging.getLogger(__name__)
@@ -63,6 +65,13 @@ class AIAPIClient:
         self.vertex = VertexProvider(project_id, self.cache_handler, self.usage_handler)
         self.vertex_project = project_id # exposed for compatibility
         
+        # Initialize Baseten provider
+        try:
+             self.baseten = BasetenProvider(get_baseten_api_key(), self.cache_handler, self.usage_handler)
+        except Exception as e:
+             logger.warning(f"Failed to initialize Baseten provider: {e}")
+             self.baseten = None
+
         # Initialize Clone provider
         self.clone = CloneProvider(self, self.cache_handler, self.usage_handler)
 
@@ -147,6 +156,9 @@ class AIAPIClient:
                     # Force soft_schema for all Vertex models (DeepSeek) as hard schema support is experimental/flaky
                     use_soft_schema_for_vertex = True
                     result = await self.vertex.make_single_call(prompt, schema, current_model_normalized, use_cache, cache_key, call_start_time, max_tokens or 8000, use_soft_schema_for_vertex)
+                elif api_provider == 'baseten':
+                    if not self.baseten: continue
+                    result = await self.baseten.make_single_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 8000, soft_schema)
                 elif api_provider == 'clone':
                     result = await self.clone.make_structured_call(prompt, current_model, use_cache, cache_key, call_start_time, schema, soft_schema, debug_name)
                 else:

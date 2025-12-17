@@ -14,8 +14,11 @@ MODEL_HIERARCHY = [
     "the-clone-claude", # hybrid perplexity/claude
     "the-clone", # hybrid perplexity/deepseek/claude option
     "deepseek-v3.2",         # Ultra-low cost, most capable DeepSeek
+    "deepseek-baseten",      # Baseten-hosted DeepSeek V3.2
     "sonar-pro",
+    "deepseek-v3.2-exp",     # Ultra-low cost variant with caching
     "deepseek-v3.1",         # Hybrid thinking/non-thinking
+    "claude-3-7-sonnet-latest",
     "claude-haiku-4-5",
     "sonar"
 ]
@@ -50,6 +53,37 @@ def get_anthropic_api_key() -> str:
         
     except Exception as e:
         logger.error(f"Failed to retrieve Anthropic API key: {str(e)}")
+        raise
+
+def get_baseten_api_key() -> str:
+    """Get Baseten API key from environment or SSM."""
+    api_key = os.environ.get('BASETEN_API_KEY')
+    if api_key:
+        logger.debug("Using Baseten API key from environment variable")
+        return api_key
+    
+    # Try AWS Systems Manager Parameter Store
+    try:
+        ssm_client = boto3.client('ssm')
+        param_names = ['/perplexity-validator/baseten-credentials', 'Baseten_API_Key']
+        
+        for param_name in param_names:
+            try:
+                logger.debug(f"Attempting to retrieve Baseten API key from SSM parameter: {param_name}")
+                response = ssm_client.get_parameter(
+                    Name=param_name,
+                    WithDecryption=True
+                )
+                logger.debug(f"Successfully retrieved Baseten API key from {param_name}")
+                return response['Parameter']['Value']
+            except Exception as e:
+                logger.warning(f"Failed to get Baseten API key from SSM parameter '{param_name}': {str(e)}")
+                continue
+        
+        # If we get here, all parameter names failed
+        raise Exception("Could not retrieve Baseten API key from any SSM parameter")
+    except Exception as e:
+        logger.error(f"Failed to retrieve Baseten API key: {str(e)}")
         raise
 
 def get_perplexity_api_key() -> str:
