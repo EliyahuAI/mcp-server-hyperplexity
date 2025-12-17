@@ -9,15 +9,13 @@ logger = logging.getLogger(__name__)
 
 # Model hierarchy from best to most basic
 MODEL_HIERARCHY = [
-    "claude-opus-4-1",
-    "claude-opus-4-0",
+    "claude-opus-4-5",
     "claude-sonnet-4-5",
-    "claude-sonnet-4-0",
+    "the-clone-claude", # hybrid perplexity/claude
+    "the-clone", # hybrid perplexity/deepseek/claude option
     "deepseek-v3.2",         # Ultra-low cost, most capable DeepSeek
     "sonar-pro",
-    "deepseek-v3.2-exp",     # Ultra-low cost variant with caching
     "deepseek-v3.1",         # Hybrid thinking/non-thinking
-    "claude-3-7-sonnet-latest",
     "claude-haiku-4-5",
     "sonar"
 ]

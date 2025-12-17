@@ -1,10 +1,10 @@
-# Source Triage – Yield-Oriented, Diversity-Preserving Selection
+# Source Triage – Rank ALL Sources by Yield Potential
 
 Query: {query}
 Search Term: "{search_term}"
 
 Objective:
-Select UP TO {max_sources} sources from the {source_count} results below that are most likely to yield NEW, PRECISELY-AUDITABLE factual snippets that improve the final answer. This is triage, not fact-checking.
+Rank RELEVANT sources from best to worst. Exclude off-topic sources entirely.
 
 Existing Snippets Already Collected:
 {formatted_existing_snippets}
@@ -13,28 +13,30 @@ Existing snippet count: {existing_snippet_count}
 Sources from This Search ({source_count} results):
 {formatted_sources}
 
-Selection Guidance (Internal):
-Choose sources that are likely to contain short, checkable factual claims not already covered by existing snippets. Prefer sources that naturally produce auditable facts rather than opinion or high-level summaries.
+Ranking Criteria (Priority Order):
+1) Relevance: EXCLUDE sources that are off-topic or don't address the query
+2) Novelty: Prioritize sources likely to add NEW information not in existing snippets
+3) Auditability: Prefer primary/official sources, reports, data over opinion/commentary
+4) Independence: Prefer diverse origins, avoid echo chambers
+5) Recency: For time-sensitive queries ("latest", "current"), prefer recent sources
 
-Selection Heuristics (Priority Order):
-1) Novelty: Select only sources likely to add new information (different aspects, new numbers/dates/entities, primary or document-like material). Skip sources that likely repeat existing snippets.
-2) Independence & Diversity: Prefer independent origins or perspectives. Avoid multiple sources that appear to echo the same underlying material.
-3) Auditability Yield: Up-rank primary/official sources, reports, filings, announcements, datasets, or pages with concrete numbers and clear attribution. Down-rank opinion, commentary, listicles, explainers, promotional or persuasive content.
-4) Recency (Conditional): If the query is time-sensitive ("latest", "current", "new", "today"), prefer recent sources. Otherwise, do not penalize older authoritative material.
-5) Search Position: Use rank as a weak hint only; do not override novelty or independence.
+Output:
+Rank ONLY RELEVANT sources from best to worst. Exclude off-topic sources.
 
-When to Select NOTHING:
-Return an empty array if all sources repeat existing snippets, are high-level summaries without extractable facts, are promotional/opinion-only, or are otherwise low-yield.
-
-Output Rules:
-Select 0–{max_sources} indices. You are not required to select {max_sources}. Fewer high-yield sources are better than many weak ones.
-
-Output Format (indices only):
+Example - If 10 sources but only [0,2,5,7,8] are relevant:
 {{
-  "selected_indices": [0, 3, 7]
+  "ranked_indices": [5, 0, 8, 2, 7]
+}}
+(Source 5 is best, sources 1,3,4,6,9 excluded as off-topic)
+
+If ALL sources are relevant:
+{{
+  "ranked_indices": [5, 0, 8, 2, 7, 1, 9, 3, 4, 6]
 }}
 
-Or, if nothing is worth extracting:
+If NO sources are relevant:
 {{
-  "selected_indices": []
+  "ranked_indices": []
 }}
+
+Return ranked list of RELEVANT sources only.

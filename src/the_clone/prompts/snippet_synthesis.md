@@ -19,10 +19,10 @@ Generate a **structured JSON response** that synthesizes an answer by REFERENCIN
 **CRITICAL RULES:**
 
 1. **DO NOT extract new snippets** - All snippets are already provided above
-2. **ONLY reference snippet IDs** - Use [S1.1-H], [S1.2-M], etc. in your answer
+2. **ONLY reference snippet IDs** - Use [S1.1.0-p0.95], [S1.2.0-p0.85], etc. in your answer
 3. **Use ONLY the snippet IDs shown above** - Do not invent new IDs
 4. **Every factual claim must reference snippet ID(s)** - No unsourced claims
-5. **Multiple sources for same fact**: [S1.1-H][S1.2-M]
+5. **Multiple sources for same fact**: [S1.1.0-p0.95][S1.2.1-p0.85]
 
 ### Snippet ID Format and Quality Scores
 
@@ -38,7 +38,7 @@ Generate a **structured JSON response** that synthesizes an answer by REFERENCIN
 
 Return JSON with structured comparison organized by aspects/topics:
 
-**comparison**: Structured object with snippet ID references like [S1.1-H]
+**comparison**: Structured object with snippet ID references like [S1.1.0-p0.95]
 - Organize by logical aspects (architecture, performance, training, etc.)
 - Each value should include snippet ID citations
 

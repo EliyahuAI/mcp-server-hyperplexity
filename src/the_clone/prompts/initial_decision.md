@@ -1,59 +1,105 @@
-# Initial Decision: Answer, Search Context, and Model Selection
+# Initial Decision: Answer or Search with Strategy Assessment
 
 Query: {query}
 
-## Decisions to Make
-
-1. **Answer directly OR Search?**
-2. **If search: What context level?**
-3. **If search: What synthesis model tier?**
-
----
-
-## Decision 1: Answer or Search?
+## Decision 1: Answer Directly or Search?
 
 **Answer Directly IF:**
 - General concepts, definitions, well-established facts
 - High confidence, no post-cutoff information needed
-- No need for specific citations
-- When answering: Provide a complete answer in the answer object
+- No citations required
 
 **Need Search IF:**
-- Recent events, current data, benchmarks, specifications
-- Comparisons requiring up-to-date information
-- Benefits from authoritative sources
-- When searching: Set answer to empty object {{}}
+- Recent events, current data, specifications
+- Requires authoritative sources or citations
+- Post-cutoff information
 
 ---
 
-## Decision 2: Search Context (if searching)
+## Decision 2: Assess Breadth and Depth (if searching)
 
-{context_guidance}
+### Breadth: How many aspects/facets?
+
+**Narrow:**
+- Single fact or specific answer ("What is X's parameter count?")
+- One aspect of a topic ("How fast is X?")
+- Targeted information retrieval
+
+**Broad:**
+- Multiple aspects or comprehensive coverage ("What are X's features?")
+- Comparison across dimensions ("Compare X and Y")
+- Survey or analysis ("Explain X architecture")
+
+### Depth: How much detail needed?
+
+**Shallow:**
+- Facts, numbers, dates only
+- Surface-level information
+- Quick concrete claims
+
+**Deep:**
+- Context and explanations
+- Methodology and reasoning
+- Nuanced understanding
 
 ---
 
-## Decision 3: Synthesis Model Tier (if searching)
+## Decision 3: Search Terms (MINIMIZE!)
 
-{tier_guidance}
+**Default: 1 search term** for single domain
+
+**Multiple terms ONLY if:**
+- Different domains need independent investigation
+- Example: "GPT-4 vs Claude" → 2 terms (different systems)
+- Example: "Gemini features" → 1 term (single domain)
+
+**Max: 3 terms** - only for complex multi-domain queries
 
 ---
 
 ## Output Format
 
 **If answer_directly:**
-- decision: "answer_directly"
-- answer: (provide your complete answer as a JSON-formatted string)
-- search_context: "none"
-- synthesis_model_tier: "none"
-- search_terms: []
+```json
+{{
+  "decision": "answer_directly",
+  "breadth": "narrow",
+  "depth": "shallow",
+  "search_terms": [],
+  "reasoning": "..."
+}}
+```
 
 **If need_search:**
-- decision: "need_search"
-- answer: "Searching before answering"
-- search_context: "low" | "medium" | "high"
-- synthesis_model_tier: "fast" | "strong" | "deep_thinking"
-- search_terms: ["term1", "term2", ...]
+```json
+{{
+  "decision": "need_search",
+  "breadth": "narrow" | "broad",
+  "depth": "shallow" | "deep",
+  "search_terms": ["term1"],
+  "reasoning": "..."
+}}
+```
 
-**CRITICAL:** The 'answer' field must NEVER be empty. Always provide content.
+---
 
-Make your decision to get a reliable answer quickly.
+## Examples
+
+**Targeted (narrow + shallow):**
+- "What is DeepSeek V3's parameter count?" → breadth=narrow, depth=shallow, 1 term
+
+**Focused Deep (narrow + deep):**
+- "How does attention mechanism work?" → breadth=narrow, depth=deep, 1 term
+
+**Survey (broad + shallow):**
+- "List Gemini 2.0 features" → breadth=broad, depth=shallow, 1 term
+
+**Comprehensive (broad + deep):**
+- "Comprehensive analysis of transformer architecture" → breadth=broad, depth=deep, 1 term
+
+**Multi-domain:**
+- "Compare GPT-4 vs Claude Opus" → breadth=broad, depth=shallow, 2 terms (different systems)
+
+---
+
+**Minimize search terms. Default to 1 term unless truly different domains.**

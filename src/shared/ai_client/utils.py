@@ -9,6 +9,9 @@ logger = logging.getLogger(__name__)
 
 def determine_api_provider(model: str) -> str:
     """Determine API provider based on model name."""
+    if model.startswith('the-clone'):
+        return 'clone'
+
     if (model.startswith('anthropic/') or
         model.startswith('anthropic.') or
         model.startswith('claude-')):

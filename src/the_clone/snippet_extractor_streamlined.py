@@ -44,9 +44,11 @@ class SnippetExtractorStreamlined:
         snippet_id_prefix: str,
         all_search_terms: List[str],
         primary_search_index: int,
-        model: str = "claude-haiku-4-5",
+        model: str = "deepseek-v3.2",
         soft_schema: bool = False,
-        min_quality_threshold: float = 0.0
+        min_quality_threshold: float = 0.0,
+        extraction_mode: str = "simple_facts",
+        max_snippets_per_source: int = 5
     ) -> Dict[str, Any]:
         """
         Extract essential quotes from a single source for ALL search terms.
@@ -61,6 +63,8 @@ class SnippetExtractorStreamlined:
             model: Model to use for extraction (also performs validation)
             soft_schema: Whether to use soft schema mode
             min_quality_threshold: Minimum p score to keep snippets (0.0 = keep all)
+            extraction_mode: "simple_facts" (targeted) or "nuanced" (detailed)
+            max_snippets_per_source: Maximum snippets to extract from this source
 
         Returns:
             Dict with:
@@ -88,7 +92,9 @@ class SnippetExtractorStreamlined:
             source_reliability=source_reliability,
             source_date=source_date,
             all_search_terms=all_search_terms,
-            primary_search_index=primary_search_index
+            primary_search_index=primary_search_index,
+            extraction_mode=extraction_mode,
+            max_snippets=max_snippets_per_source
         )
 
         try:
@@ -206,7 +212,9 @@ class SnippetExtractorStreamlined:
         source_reliability: str,
         source_date: str,
         all_search_terms: List[str],
-        primary_search_index: int
+        primary_search_index: int,
+        extraction_mode: str = "simple_facts",
+        max_snippets: int = 5
     ) -> str:
         """Build extraction prompt with all search terms."""
         template_path = os.path.join(
@@ -226,6 +234,12 @@ class SnippetExtractorStreamlined:
 
         all_search_terms_formatted = '\n'.join(formatted_terms)
 
+        # Mode guidance
+        mode_guidance = {
+            "simple_facts": "Extract ONLY concrete atomic facts (numbers, dates, entities). Prefer brevity.",
+            "nuanced": "Extract facts with context, explanations, and methodology when relevant."
+        }.get(extraction_mode, "Extract essential quotes.")
+
         prompt = template.format(
             query=query,
             source_title=source_title,
@@ -233,7 +247,9 @@ class SnippetExtractorStreamlined:
             source_date=source_date or "Unknown",
             primary_search_num=primary_search_index,
             all_search_terms_formatted=all_search_terms_formatted,
-            source_full_text=source_text
+            source_full_text=source_text,
+            extraction_mode_guidance=mode_guidance,
+            max_snippets=max_snippets
         )
 
         return prompt

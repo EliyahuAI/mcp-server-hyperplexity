@@ -16,9 +16,7 @@ from typing import Dict, Any, List, Optional
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../shared'))
 
-# Lazy import for AIAPIClient to avoid circular dependency
-# from shared.ai_api_client import AIAPIClient 
-
+from shared.ai_api_client import AIAPIClient
 from the_clone.perplexity_search import PerplexitySearchClient
 from the_clone.search_manager import SearchManager
 from the_clone.strategy_loader import get_strategy, get_global_limits, get_default_models, should_stop_iteration
@@ -35,20 +33,21 @@ logger = logging.getLogger(__name__)
 class TheClone2Refined:
     """
     The Clone 2 - Strategy-based architecture.
+
+    Strategies:
+    - Targeted: narrow+shallow (find specific fact, iterate until 1 reliable snippet)
+    - Focused Deep: narrow+deep (detailed on one topic, pull 10 sources)
+    - Survey: broad+shallow (list many aspects, pull 12 sources)
+    - Comprehensive: broad+deep (detailed on many aspects, pull 15 sources)
     """
 
     def __init__(
         self,
-        ai_client=None,
+        ai_client: AIAPIClient = None,
         search_client: PerplexitySearchClient = None
     ):
         """Initialize The Clone 2 Refined."""
-        if ai_client is None:
-            from shared.ai_api_client import AIAPIClient
-            self.ai_client = AIAPIClient()
-        else:
-            self.ai_client = ai_client
-            
+        self.ai_client = ai_client or AIAPIClient()
         self.search_client = search_client or PerplexitySearchClient()
         self.search_manager = SearchManager(
             ai_client=self.ai_client,
@@ -65,8 +64,7 @@ class TheClone2Refined:
         search_context: str = "medium",
         schema: Optional[Dict] = None,
         config_variant: str = "common",
-        debug_dir: Optional[str] = None,
-        model_override: Optional[str] = None
+        debug_dir: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Execute query with strategy-based architecture.
@@ -75,7 +73,6 @@ class TheClone2Refined:
             prompt: User's query
             schema: Optional schema for synthesis
             debug_dir: Optional directory for debug output
-            model_override: Override all models (e.g., "claude-haiku-4-5")
 
         Returns:
             Dict containing answer, citations, and metadata
@@ -87,19 +84,7 @@ class TheClone2Refined:
         logger.info("=" * 80)
 
         # Load configuration
-        if model_override:
-            models = {
-                'initial_decision': model_override if 'claude' in model_override else 'claude-sonnet-4-5',
-                'triage': model_override,
-                'extraction': model_override,
-                'synthesis': model_override
-            }
-            use_soft_schema = 'deepseek' in model_override
-            logger.info(f"[CLONE] Model override: {model_override}")
-        else:
-            models = get_default_models()
-            use_soft_schema = True
-
+        models = get_default_models()
         global_limits = get_global_limits()
 
         # Save debug config
@@ -153,7 +138,7 @@ class TheClone2Refined:
             query=prompt,
             existing_snippets=[],
             model=models['triage'],
-            soft_schema=use_soft_schema
+            soft_schema=True
         )
 
         # Extract triage costs
@@ -199,7 +184,7 @@ class TheClone2Refined:
                     all_search_terms=search_terms,
                     primary_search_index=source['_search_index'],
                     model=models['extraction'],
-                    soft_schema=use_soft_schema,
+                    soft_schema=True,
                     min_quality_threshold=strategy['min_p_threshold'],
                     extraction_mode=strategy['extraction_mode'],
                     max_snippets_per_source=strategy['max_snippets_per_source']
@@ -257,7 +242,7 @@ class TheClone2Refined:
             model=models['synthesis'],
             search_terms=search_terms,
             debug_dir=debug_dir,
-            soft_schema=use_soft_schema
+            soft_schema=True
         )
 
         costs['synthesis'] = self._extract_cost(synthesis_result.get('model_response', {}))
@@ -327,9 +312,6 @@ class TheClone2Refined:
                 "query": prompt,
                 "decision": "answer_directly",
                 "iterations": 0,
-                "total_snippets": 0,
-                "citations_count": 0,
-                "sources_pulled": 0,
                 "total_cost": costs['initial'],
                 "cost_breakdown": costs
             }
@@ -344,9 +326,6 @@ class TheClone2Refined:
                 "query": prompt,
                 "search_terms": search_terms,
                 "total_snippets": 0,
-                "citations_count": 0,
-                "sources_pulled": 0,
-                "iterations": 0,
                 "total_cost": sum(costs.values()),
                 "cost_breakdown": costs
             }

@@ -1,0 +1,67 @@
+{
+  "default_model": "deepseek-v3.2",
+
+  "strategies": {
+    "targeted": {
+      "description": "Narrow breadth + Shallow depth: Find specific fact or answer",
+      "breadth": "narrow",
+      "depth": "shallow",
+      "sources_per_batch": 3,
+      "extraction_mode": "simple_facts",
+      "max_snippets_per_source": 2,
+      "min_p_threshold": 0.85,
+      "stop_condition": "1_reliable_snippet"
+    },
+    "focused_deep": {
+      "description": "Narrow breadth + Deep depth: Detailed explanation of single topic",
+      "breadth": "narrow",
+      "depth": "deep",
+      "sources_per_batch": 10,
+      "extraction_mode": "nuanced",
+      "max_snippets_per_source": 8,
+      "min_p_threshold": 0.50,
+      "stop_condition": null
+    },
+    "survey": {
+      "description": "Broad breadth + Shallow depth: List/enumerate many aspects",
+      "breadth": "broad",
+      "depth": "shallow",
+      "sources_per_batch": 12,
+      "extraction_mode": "simple_facts",
+      "max_snippets_per_source": 3,
+      "min_p_threshold": 0.65,
+      "stop_condition": null
+    },
+    "comprehensive": {
+      "description": "Broad breadth + Deep depth: Detailed analysis of many aspects",
+      "breadth": "broad",
+      "depth": "deep",
+      "sources_per_batch": 15,
+      "extraction_mode": "nuanced",
+      "max_snippets_per_source": 10,
+      "min_p_threshold": 0.50,
+      "stop_condition": null
+    }
+  },
+
+  "global_limits": {
+    "max_iterations": 3,
+    "max_sources_total": 20,
+    "max_search_terms": 3
+  },
+
+  "models": {
+    "default": {
+      "initial_decision": "deepseek-v3.2",
+      "triage": "deepseek-v3.2",
+      "extraction": "deepseek-v3.2",
+      "synthesis": "deepseek-v3.2"
+    },
+    "fallback": {
+      "initial_decision": "claude-sonnet-4-5",
+      "triage": "claude-haiku-4-5",
+      "extraction": "claude-haiku-4-5",
+      "synthesis": "claude-sonnet-4-5"
+    }
+  }
+}

@@ -6,6 +6,9 @@
 **URL:** {source_url}
 **Date:** {source_date}
 
+**Extraction Mode:** {extraction_mode_guidance}
+**Max Snippets:** Extract up to {max_snippets} quotes maximum from this source.
+
 ---
 
 ## All Search Terms

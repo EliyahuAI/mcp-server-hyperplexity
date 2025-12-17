@@ -384,15 +384,18 @@ Query: {query}
         """Convert snippet IDs to citation numbers."""
         answer_str = json.dumps(answer)
 
-        # Find all snippet ID patterns - both individual and comma-separated lists
-        # Pattern 1: Individual IDs like [S1.1.4.2-M]
-        # Pattern 2: Multiple IDs like [S1.1.4.2-M, S1.3.0.0-M]
-        individual_pattern = r'\[S\d+(?:\.\d+)*-[HML]\]'
-        list_pattern = r'\[S\d+(?:\.\d+)*-[HML](?:,\s*S\d+(?:\.\d+)*-[HML])+\]'
+        # Find all snippet ID patterns - both old (-H/-M/-L) and new (-pX.XX) formats
+        # Pattern 1: New format like [S1.1.0.0-p0.85]
+        # Pattern 2: Old format like [S1.1.4.2-M] (backward compatibility)
+        # Pattern 3: Lists like [S1.1.0-p0.95, S1.2.0-p0.85]
+        new_individual_pattern = r'\[S\d+(?:\.\d+)*-p\d+\.\d+\]'
+        old_individual_pattern = r'\[S\d+(?:\.\d+)*-[HML]\]'
+        new_list_pattern = r'\[S\d+(?:\.\d+)*-p\d+\.\d+(?:,\s*S\d+(?:\.\d+)*-p\d+\.\d+)+\]'
+        old_list_pattern = r'\[S\d+(?:\.\d+)*-[HML](?:,\s*S\d+(?:\.\d+)*-[HML])+\]'
 
-        # Find all matches
-        individual_matches = re.findall(individual_pattern, answer_str)
-        list_matches = re.findall(list_pattern, answer_str)
+        # Find all matches (new format first, then old for backward compatibility)
+        individual_matches = re.findall(new_individual_pattern, answer_str) + re.findall(old_individual_pattern, answer_str)
+        list_matches = re.findall(new_list_pattern, answer_str) + re.findall(old_list_pattern, answer_str)
 
         # Extract all unique snippet IDs
         snippet_ids = []
@@ -407,8 +410,8 @@ Query: {query}
 
         # From list matches
         for match in list_matches:
-            # Extract IDs from comma-separated list
-            ids_in_match = re.findall(r'S\d+(?:\.\d+)*-[HML]', match)
+            # Extract IDs from comma-separated list (both formats)
+            ids_in_match = re.findall(r'S\d+(?:\.\d+)*-(?:p\d+\.\d+|[HML])', match)
             for sid in ids_in_match:
                 if sid not in seen:
                     snippet_ids.append(sid)
@@ -479,16 +482,19 @@ Query: {query}
             answer_str = answer_str.replace(f'[{snippet_id}]', f'[{citation_idx}]')
 
         # Replace comma-separated lists with consecutive bracket notation
-        # e.g., [S1.1.4.2-M, S1.3.0.0-M] -> [1][2]
+        # e.g., [S1.1.0-p0.95, S1.2.0-p0.85] -> [1][2]
         def replace_list(match):
-            ids_in_match = re.findall(r'S\d+(?:\.\d+)*-[HML]', match.group(0))
+            # Match both new and old format IDs
+            ids_in_match = re.findall(r'S\d+(?:\.\d+)*-(?:p\d+\.\d+|[HML])', match.group(0))
             citation_nums = []
             for sid in ids_in_match:
                 if sid in snippet_to_citation:
                     citation_nums.append(str(snippet_to_citation[sid]))
             return ''.join(f'[{num}]' for num in citation_nums)
 
-        answer_str = re.sub(list_pattern, replace_list, answer_str)
+        # Apply to both old and new list patterns
+        answer_str = re.sub(new_list_pattern, replace_list, answer_str)
+        answer_str = re.sub(old_list_pattern, replace_list, answer_str)
 
         # Remove duplicate consecutive citations
         answer_str = re.sub(r'\[(\d+)\](?:\[\1\])+', r'[\1]', answer_str)

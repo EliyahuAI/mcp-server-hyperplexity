@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 
 class SourceTriage:
     """
-    Triages sources from search results with diversity focus.
-    Selects 0-3 best sources per search term that add new information.
+    Ranks sources from search results by yield potential.
+    Ranks ALL sources from best to worst for iterative extraction.
     """
 
     def __init__(self, ai_client: AIAPIClient = None):
@@ -92,25 +92,23 @@ class SourceTriage:
         # Execute all triages in parallel
         triage_results = await asyncio.gather(*triage_tasks, return_exceptions=True)
 
-        # Extract selected indices
-        selected_indices_list = []
-        total_selected = 0
+        # Extract ranked indices
+        ranked_indices_list = []
         for i, result in enumerate(triage_results):
             if isinstance(result, Exception):
                 logger.error(f"[TRIAGE] Search {i+1} triage failed: {result}")
-                selected_indices_list.append([])
+                ranked_indices_list.append([])
             else:
-                indices = result.get('selected_indices', [])
-                selected_indices_list.append(indices)
-                total_selected += len(indices)
+                indices = result.get('ranked_indices', [])
+                ranked_indices_list.append(indices)
 
-        logger.info(f"[TRIAGE] Parallel triage complete. Total sources selected: {total_selected}")
+        logger.info(f"[TRIAGE] Parallel triage complete. All sources ranked.")
 
-        return selected_indices_list, triage_results  # Return both indices and full results for cost extraction
+        return ranked_indices_list, triage_results  # Return both indices and full results for cost extraction
 
     async def _return_empty(self) -> Dict[str, Any]:
         """Return empty triage result for failed searches."""
-        return {"selected_indices": []}
+        return {"ranked_indices": []}
 
     async def triage_single_search(
         self,
@@ -177,18 +175,18 @@ class SourceTriage:
                 except:
                     pass  # Don't fail if debug save fails
 
-            # Extract selected indices using centralized parsing
+            # Extract ranked indices using centralized parsing
             actual_response = response.get('response', response)
             data = extract_structured_response(actual_response)
 
-            selected_indices = data.get('selected_indices', [])
+            ranked_indices = data.get('ranked_indices', [])
 
-            logger.info(f"[TRIAGE] Search {search_index}: Selected {len(selected_indices)}/{len(results)} sources")
-            if len(selected_indices) == 0:
+            logger.info(f"[TRIAGE] Search {search_index}: Ranked {len(ranked_indices)} sources")
+            if len(ranked_indices) == 0:
                 logger.info(f"[TRIAGE DEBUG] Model response data: {data}")
 
             return {
-                "selected_indices": selected_indices,
+                "ranked_indices": ranked_indices,
                 "search_term": search_term,
                 "search_index": search_index,
                 "model_response": response  # For cost extraction
@@ -196,7 +194,7 @@ class SourceTriage:
 
         except Exception as e:
             logger.error(f"[TRIAGE] Search {search_index} triage failed: {e}")
-            return {"selected_indices": []}
+            return {"ranked_indices": []}
 
     def _build_triage_prompt(
         self,
@@ -204,7 +202,7 @@ class SourceTriage:
         results: List[Dict],
         query: str,
         existing_snippets: List[Dict],
-        max_sources: int
+        max_sources: int = None
     ) -> str:
         """
         Build triage prompt from template.
@@ -235,12 +233,11 @@ class SourceTriage:
         # Format existing snippets
         formatted_existing = self._format_existing_snippets(existing_snippets)
 
-        # Fill template
+        # Fill template (max_sources not used in new ranking prompt)
         prompt = template.format(
             query=query,
             search_term=search_term,
             source_count=len(results),
-            max_sources=max_sources,
             formatted_sources=formatted_sources,
             existing_snippet_count=len(existing_snippets),
             formatted_existing_snippets=formatted_existing or "(No snippets collected yet)"

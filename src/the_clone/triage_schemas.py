@@ -6,8 +6,8 @@ Schemas for source triage and sufficiency evaluation in Clone 2.
 
 def get_source_triage_schema() -> dict:
     """
-    Schema for triaging sources from a single search term.
-    Selects 0-3 sources that add new information with diversity.
+    Schema for ranking sources from a single search term.
+    Ranks ALL sources from best to worst for iterative extraction.
 
     Returns:
         JSON schema for triage response
@@ -15,24 +15,23 @@ def get_source_triage_schema() -> dict:
     return {
         "type": "object",
         "properties": {
-            "selected_indices": {
+            "ranked_indices": {
                 "type": "array",
                 "items": {
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 20
                 },
-                "description": "Indices of 0-3 sources to extract (empty if nothing new)",
+                "description": "RELEVANT source indices ranked from best to worst. Exclude off-topic sources entirely. (e.g., [0, 5, 2, 7] if only 4 are relevant)",
                 "minItems": 0,
-                "maxItems": 3,
                 "uniqueItems": True
             },
             "reasoning": {
                 "type": "string",
-                "description": "Brief explanation of selection (optional for debugging)"
+                "description": "Brief explanation of ranking (optional)"
             }
         },
-        "required": ["selected_indices"]
+        "required": ["ranked_indices"]
     }
 
 

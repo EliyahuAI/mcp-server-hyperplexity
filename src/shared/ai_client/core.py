@@ -26,6 +26,7 @@ from .caching import CacheHandler
 from .providers.anthropic import AnthropicProvider
 from .providers.perplexity import PerplexityProvider
 from .providers.vertex import VertexProvider
+from .providers.clone import CloneProvider
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,9 @@ class AIAPIClient:
         project_id, location = setup_vertex_credentials()
         self.vertex = VertexProvider(project_id, self.cache_handler, self.usage_handler)
         self.vertex_project = project_id # exposed for compatibility
+        
+        # Initialize Clone provider
+        self.clone = CloneProvider(self, self.cache_handler, self.usage_handler)
 
         # Expose usage handler methods directly for compatibility
         self.calculate_token_costs = self.usage_handler.calculate_token_costs
@@ -143,6 +147,8 @@ class AIAPIClient:
                     # Force soft_schema for all Vertex models (DeepSeek) as hard schema support is experimental/flaky
                     use_soft_schema_for_vertex = True
                     result = await self.vertex.make_single_call(prompt, schema, current_model_normalized, use_cache, cache_key, call_start_time, max_tokens or 8000, use_soft_schema_for_vertex)
+                elif api_provider == 'clone':
+                    result = await self.clone.make_structured_call(prompt, current_model, use_cache, cache_key, call_start_time, schema, soft_schema, debug_name)
                 else:
                     continue
 
