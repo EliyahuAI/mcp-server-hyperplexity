@@ -14,6 +14,7 @@ from typing import Dict, Any
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from shared.ai_api_client import AIAPIClient
+from shared.ai_client.utils import extract_structured_response
 from the_clone.initial_decision_schemas import get_initial_decision_schema
 
 # Configure logging
@@ -91,17 +92,9 @@ class InitialDecision:
                 soft_schema=soft_schema
             )
 
-            # Extract decision
+            # Extract decision using centralized parsing
             actual_response = response.get('response', response)
-
-            if 'choices' in actual_response:
-                content = actual_response['choices'][0]['message']['content']
-                if isinstance(content, str):
-                    data = json.loads(content)
-                else:
-                    data = content
-            else:
-                data = actual_response
+            data = extract_structured_response(actual_response)
 
             decision = data.get('decision', 'need_search')
             confidence = data.get('confidence', 'low')
@@ -163,7 +156,7 @@ class InitialDecision:
             }
 
     def _build_prompt(self, query: str) -> str:
-        """Build initial decision prompt dynamically from config."""
+        """Build initial decision prompt from template."""
         from the_clone.config_loader import load_config
 
         config = load_config()
@@ -193,64 +186,21 @@ class InitialDecision:
         # Build tier descriptions dynamically
         tier_guidance = f"**Available tiers:** {tier_list}\n\nUse 'strong' as default for most queries."
 
-        prompt = f"""# Initial Decision: Answer, Search Context, and Model Selection
+        # Load template
+        template_path = os.path.join(
+            os.path.dirname(__file__),
+            'prompts',
+            'initial_decision.md'
+        )
 
-Query: {query}
+        with open(template_path, 'r', encoding='utf-8') as f:
+            template = f.read()
 
-## Decisions to Make
-
-1. **Answer directly OR Search?**
-2. **If search: What context level?**
-3. **If search: What synthesis model tier?**
-
----
-
-## Decision 1: Answer or Search?
-
-**Answer Directly IF:**
-- General concepts, definitions, well-established facts
-- High confidence, no post-cutoff information needed
-- No need for specific citations
-- When answering: Provide a complete answer in the answer object
-
-**Need Search IF:**
-- Recent events, current data, benchmarks, specifications
-- Comparisons requiring up-to-date information
-- Benefits from authoritative sources
-- When searching: Set answer to empty object {{}}
-
----
-
-## Decision 2: Search Context (if searching)
-
-{context_guidance}
-
----
-
-## Decision 3: Synthesis Model Tier (if searching)
-
-{tier_guidance}
-
----
-
-## Output Format
-
-**If answer_directly:**
-- decision: "answer_directly"
-- answer: (provide your complete answer as a JSON-formatted string)
-- search_context: "none"
-- synthesis_model_tier: "none"
-- search_terms: []
-
-**If need_search:**
-- decision: "need_search"
-- answer: "Searching before answering"
-- search_context: "low" | "medium" | "high"
-- synthesis_model_tier: "fast" | "strong" | "deep_thinking"
-- search_terms: ["term1", "term2", ...]
-
-**CRITICAL:** The 'answer' field must NEVER be empty. Always provide content.
-
-Make your decision to get a reliable answer quickly."""
+        # Fill template
+        prompt = template.format(
+            query=query,
+            context_guidance=context_guidance,
+            tier_guidance=tier_guidance
+        )
 
         return prompt

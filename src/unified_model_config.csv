@@ -1,7 +1,14 @@
 model_pattern,api_provider,priority,enabled,min_batch_size,max_batch_size,initial_batch_size,weight,rate_limit_factor,success_threshold,failure_threshold,input_cost_per_million_tokens,output_cost_per_million_tokens,max_tokens,notes
-# TIER 2 OPTIMIZED: Claude 4 Opus (450k input TPM, 90k output TPM, WEB SEARCH OPTIMIZED)
-claude-4-opus*,anthropic,1,true,50,200,100,1.5,0.5,5,2,15.00,75.00,32000,Tier 2: Opus 4.x - Most expensive but highest capability
-claude-opus-4*,anthropic,1,true,50,200,100,1.5,0.5,5,2,15.00,75.00,32000,Tier 2: Opus 4.x - Most expensive but highest capability (alternate naming)
+# TIER 1 OPTIMIZED: Claude 4.5 Opus (NEW - CHEAPER THAN 4.1! $5/$25 vs $15/$75)
+claude-opus-4-5*,anthropic,1,true,50,200,100,1.6,0.5,5,2,5.00,25.00,32000,Tier 1: Opus 4.5 - NEW cheaper flagship model
+claude-opus-4.5*,anthropic,1,true,50,200,100,1.6,0.5,5,2,5.00,25.00,32000,Tier 1: Opus 4.5 - NEW cheaper flagship model (dot notation)
+claude-4-opus-5*,anthropic,1,true,50,200,100,1.6,0.5,5,2,5.00,25.00,32000,Tier 1: Opus 4.5 - NEW cheaper flagship model (alternate naming)
+# TIER 2 OPTIMIZED: Claude 4.1 Opus (450k input TPM, 90k output TPM, WEB SEARCH OPTIMIZED)
+claude-opus-4-1*,anthropic,2,true,50,200,100,1.5,0.5,5,2,15.00,75.00,32000,Tier 2: Opus 4.1 - Previous flagship (more expensive)
+claude-opus-4.1*,anthropic,2,true,50,200,100,1.5,0.5,5,2,15.00,75.00,32000,Tier 2: Opus 4.1 - Previous flagship (dot notation)
+# TIER 2: Claude 4 Opus (450k input TPM, 90k output TPM, WEB SEARCH OPTIMIZED)
+claude-4-opus*,anthropic,2,true,50,200,100,1.5,0.5,5,2,15.00,75.00,32000,Tier 2: Opus 4.x - Most expensive but highest capability
+claude-opus-4*,anthropic,2,true,50,200,100,1.5,0.5,5,2,15.00,75.00,32000,Tier 2: Opus 4.x - Most expensive but highest capability (alternate naming)
 # TIER 2 OPTIMIZED: Claude 4.5 Sonnet (Latest - 450k input TPM, 90k output TPM)
 claude-sonnet-4-5*,anthropic,2,true,50,200,100,1.5,0.5,5,2,3.00,15.00,64000,Tier 2: Sonnet 4.5 - Latest balanced model
 claude-sonnet-4.5*,anthropic,2,true,50,200,100,1.5,0.5,5,2,3.00,15.00,64000,Tier 2: Sonnet 4.5 - Latest balanced model (dot notation)

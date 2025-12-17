@@ -33,10 +33,16 @@ async def main():
     print(f"  - Deep thinking tier: Sonnet 4.5")
     print(f"\nQuery: {query}\n")
 
+    # Create debug directory
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    debug_dir = os.path.join(os.path.dirname(__file__), f'../test_results/debug/deepseek_synthesis_{timestamp}')
+    os.makedirs(debug_dir, exist_ok=True)
+    print(f"Debug output: {debug_dir}\n")
+
     clone = TheClone()
     start_time = time.time()
 
-    result = await clone.query(prompt=query, config_variant="deepseek_synthesis_variant")
+    result = await clone.query(prompt=query, config_variant="deepseek_synthesis_variant", debug_dir=debug_dir)
     elapsed = time.time() - start_time
 
     metadata = result['metadata']

@@ -140,7 +140,9 @@ class AIAPIClient:
                     result = await self.perplexity.make_single_structured_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, search_context_size, debug_name, max_tokens or 8000, soft_schema, include_domains, exclude_domains)
                 elif api_provider == 'vertex':
                     if not self.vertex.project_id: continue
-                    result = await self.vertex.make_single_call(prompt, schema, current_model_normalized, use_cache, cache_key, call_start_time, max_tokens or 8000, soft_schema)
+                    # Force soft_schema for all Vertex models (DeepSeek) as hard schema support is experimental/flaky
+                    use_soft_schema_for_vertex = True
+                    result = await self.vertex.make_single_call(prompt, schema, current_model_normalized, use_cache, cache_key, call_start_time, max_tokens or 8000, use_soft_schema_for_vertex)
                 else:
                     continue
 

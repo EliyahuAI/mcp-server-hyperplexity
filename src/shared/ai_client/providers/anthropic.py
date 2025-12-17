@@ -10,7 +10,8 @@ from ..utils import (
     normalize_anthropic_model,
     extract_citations_from_response,
     validate_and_normalize_soft_schema,
-    extract_content_description
+    extract_content_description,
+    extract_json_from_text
 )
 
 logger = logging.getLogger(__name__)
@@ -174,31 +175,28 @@ class AnthropicProvider:
                 await asyncio.sleep(base_delay * (2 ** attempt))
 
     def _clean_soft_schema_response(self, response_json: dict, schema: dict) -> dict:
-        import re
         try:
             if 'content' in response_json:
                 text_content = ""
                 for block in response_json['content']:
                     if block.get('type') == 'text': text_content += block.get('text', '')
                 
-                cleaned = re.sub(r'^```json\s*|\s*```$', '', text_content.strip(), flags=re.MULTILINE)
-                match = re.search(r'(\{.*\})', cleaned, re.DOTALL)
-                if match: cleaned = match.group(1)
+                parsed = extract_json_from_text(text_content)
                 
-                parsed = json.loads(cleaned)
-                if schema:
-                    normalized, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
-                    if warnings:
-                        logger.warning(f"Soft schema warnings: {warnings}")
-                    parsed = normalized
-                
-                return {
-                    'choices': [{'message': {'role': 'assistant', 'content': json.dumps(parsed)}}],
-                    'id': response_json.get('id'),
-                    'model': response_json.get('model'),
-                    'usage': response_json.get('usage'),
-                    'stop_reason': response_json.get('stop_reason')
-                }
+                if parsed:
+                    if schema:
+                        normalized, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
+                        if warnings:
+                            logger.warning(f"Soft schema warnings: {warnings}")
+                        parsed = normalized
+                    
+                    return {
+                        'choices': [{'message': {'role': 'assistant', 'content': json.dumps(parsed)}}],
+                        'id': response_json.get('id'),
+                        'model': response_json.get('model'),
+                        'usage': response_json.get('usage'),
+                        'stop_reason': response_json.get('stop_reason')
+                    }
             return response_json
         except Exception as e:
             logger.error(f"Soft schema cleaning failed: {e}")

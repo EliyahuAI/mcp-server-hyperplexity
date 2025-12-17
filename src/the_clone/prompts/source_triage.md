@@ -1,105 +1,40 @@
-# Source Triage - Diversity-Focused Selection
+# Source Triage – Yield-Oriented, Diversity-Preserving Selection
 
-**Query:** {query}
+Query: {query}
+Search Term: "{search_term}"
 
-**Search Term:** "{search_term}"
+Objective:
+Select UP TO {max_sources} sources from the {source_count} results below that are most likely to yield NEW, PRECISELY-AUDITABLE factual snippets that improve the final answer. This is triage, not fact-checking.
 
-**Your Task:** Select UP TO {max_sources} sources from the {source_count} results below that will **ADD NEW, INDEPENDENT information** beyond what we already have.
-
----
-
-## Existing Snippets Already Collected
-
+Existing Snippets Already Collected:
 {formatted_existing_snippets}
+Existing snippet count: {existing_snippet_count}
 
-**Count:** {existing_snippet_count} snippets
-
----
-
-## Sources from This Search ({source_count} results)
-
+Sources from This Search ({source_count} results):
 {formatted_sources}
 
----
+Selection Guidance (Internal):
+Choose sources that are likely to contain short, checkable factual claims not already covered by existing snippets. Prefer sources that naturally produce auditable facts rather than opinion or high-level summaries.
 
-## Selection Criteria
+Selection Heuristics (Priority Order):
+1) Novelty: Select only sources likely to add new information (different aspects, new numbers/dates/entities, primary or document-like material). Skip sources that likely repeat existing snippets.
+2) Independence & Diversity: Prefer independent origins or perspectives. Avoid multiple sources that appear to echo the same underlying material.
+3) Auditability Yield: Up-rank primary/official sources, reports, filings, announcements, datasets, or pages with concrete numbers and clear attribution. Down-rank opinion, commentary, listicles, explainers, promotional or persuasive content.
+4) Recency (Conditional): If the query is time-sensitive ("latest", "current", "new", "today"), prefer recent sources. Otherwise, do not penalize older authoritative material.
+5) Search Position: Use rank as a weak hint only; do not override novelty or independence.
 
-Evaluate each source based on:
+When to Select NOTHING:
+Return an empty array if all sources repeat existing snippets, are high-level summaries without extractable facts, are promotional/opinion-only, or are otherwise low-yield.
 
-1. **Recency:**
-   - **Prioritize recent sources** (newer dates are strongly preferred)
-   - Recent information is more accurate and relevant
-   - Date shown in source metadata
+Output Rules:
+Select 0–{max_sources} indices. You are not required to select {max_sources}. Fewer high-yield sources are better than many weak ones.
 
-2. **Quality:**
-   - Position in search results (lower index = more relevant)
-   - Source authority and reliability
-   - Content preview quality
-
-3. **Novelty:**
-   - Does this add NEW information not in existing snippets?
-   - Avoid sources that duplicate what we already have
-
-4. **Diversity:**
-   - Select sources that cover INDEPENDENT aspects
-   - Don't select 3 sources that all say the same thing
-   - Prefer sources that each add a unique piece of information
-
-5. **Value:**
-   - Will extracting from this source meaningfully improve our answer?
-   - Skip sources with marginal/redundant value
-
----
-
-## Output Rules
-
-**Select 0-3 source indices:**
-- **3 sources:** If you find 3 high-quality sources each adding unique information
-- **1-2 sources:** If only some sources add value
-- **0 sources (empty array):** If NOTHING in these results adds new information
-
-**Important:**
-- Return indices only (e.g., [0, 2, 5])
-- You are NOT required to select {max_sources} sources
-- Empty array is a valid response if nothing is worth extracting
-- Prioritize quality and diversity over quantity
-
----
-
-## Examples
-
-**Good Selection (Diverse):**
-```json
+Output Format (indices only):
 {{
-  "selected_indices": [0, 3, 7],
-  "reasoning": "Source 0 covers architecture, 3 covers performance, 7 covers pricing - all independent"
+  "selected_indices": [0, 3, 7]
 }}
-```
 
-**Good Selection (Partial):**
-```json
+Or, if nothing is worth extracting:
 {{
-  "selected_indices": [1],
-  "reasoning": "Only source 1 adds new benchmark data, others duplicate existing info"
+  "selected_indices": []
 }}
-```
-
-**Good Selection (Empty):**
-```json
-{{
-  "selected_indices": [],
-  "reasoning": "All sources cover information already in existing snippets"
-}}
-```
-
-**Bad Selection (Not Diverse):**
-```json
-{{
-  "selected_indices": [0, 1, 2],
-  "reasoning": "All three say the same thing about architecture"
-}}
-```
-
----
-
-**Return selected_indices array with 0-3 source indices that maximize information gain.**

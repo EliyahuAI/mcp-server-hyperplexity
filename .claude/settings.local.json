@@ -44,7 +44,15 @@
       "WebFetch(domain:hyperplexity.ai)",
       "Bash(git checkout:*)",
       "Bash(export GOOGLE_CLOUD_PROJECT=\"gen-lang-client-0650358146\")",
-      "Bash(export GOOGLE_APPLICATION_CREDENTIALS=\"/mnt/c/Users/ellio/OneDrive - Eliyahu.AI/Desktop/src/other/gen-lang-client-0650358146-897394b730e6.json\")"
+      "Bash(export GOOGLE_APPLICATION_CREDENTIALS=\"/mnt/c/Users/ellio/OneDrive - Eliyahu.AI/Desktop/src/other/gen-lang-client-0650358146-897394b730e6.json\")",
+      "Bash(export:*)",
+      "Bash(tee:*)",
+      "Bash(timeout 60 python3:*)",
+      "Bash(timeout 180 python3:*)",
+      "Bash(timeout 300 python3:*)",
+      "Bash(timeout 60 python.exe:*)",
+      "Bash(timeout 180 python.exe:*)",
+      "Bash(timeout 120 python.exe src/the_clone/tests/single_test_deepseek_synthesis.py)"
     ],
     "deny": []
   }

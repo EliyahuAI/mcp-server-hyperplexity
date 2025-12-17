@@ -65,7 +65,7 @@ def normalize_vertex_model(model: str) -> str:
     return normalized
 
 def extract_structured_response(response: Dict, tool_name: str = "structured_response") -> Dict:
-    """Extract structured data from both Claude tool use format and unified Perplexity format."""
+    """Extract structured data from Claude, Perplexity, and Vertex AI formats."""
     try:
         # Check if this is unified Perplexity format (from call_structured_api)
         if 'choices' in response and isinstance(response['choices'], list) and len(response['choices']) > 0:
@@ -78,12 +78,24 @@ def extract_structured_response(response: Dict, tool_name: str = "structured_res
                 except json.JSONDecodeError as e:
                     logger.error(f"Failed to parse JSON from unified response: {e}")
                     # Fall through to try other formats
-        
+
+        # Vertex AI format (DeepSeek, etc.)
+        if 'content' in response and isinstance(response['content'], list):
+            for content_item in response['content']:
+                if content_item.get('type') == 'text':
+                    text = content_item.get('text', '')
+                    if isinstance(text, str) and text.strip().startswith('{'):
+                        try:
+                            return json.loads(text)
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Failed to parse JSON from Vertex AI text: {e}")
+                            # Continue to next content item
+
         # Original Claude tool use format
         for content_item in response.get('content', []):
             if content_item.get('type') == 'tool_use' and content_item.get('name') == tool_name:
                 return content_item.get('input', {})
-        
+
         # Fallback: extract from text content (original Claude format)
         for content_item in response.get('content', []):
             if content_item.get('type') == 'text':
@@ -92,9 +104,9 @@ def extract_structured_response(response: Dict, tool_name: str = "structured_res
                     start = text.find('{')
                     end = text.rfind('}') + 1
                     return json.loads(text[start:end])
-        
+
         raise ValueError("Could not extract structured response from response format")
-        
+
     except Exception as e:
         logger.error(f"Failed to extract structured response: {str(e)}")
         logger.error(f"Response format: {type(response)}, keys: {list(response.keys()) if isinstance(response, dict) else 'N/A'}")
@@ -567,3 +579,21 @@ def extract_content_description(request_data: Dict) -> str:
         return 'request'
     except Exception:
         return 'request'
+
+def extract_json_from_text(text: str) -> Optional[Dict]:
+    """
+    Extract and parse JSON from text, handling markdown code blocks and surrounding whitespace.
+    """
+    try:
+        # Remove markdown code blocks
+        cleaned = re.sub(r'^```json\s*|\s*```$', '', text.strip(), flags=re.MULTILINE)
+        
+        # Find the JSON object (first { to last })
+        match = re.search(r'(\{.*\})', cleaned, re.DOTALL)
+        if match:
+            cleaned = match.group(1)
+            
+        return json.loads(cleaned)
+    except Exception as e:
+        logger.warning(f"Failed to extract JSON from text: {e}")
+        return None

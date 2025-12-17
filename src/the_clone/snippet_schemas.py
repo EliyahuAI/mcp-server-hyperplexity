@@ -7,8 +7,8 @@ Defines structured output formats for per-source snippet extraction and synthesi
 
 def get_snippet_extraction_schema() -> dict:
     """
-    Schema for extracting quotes organized by search term.
-    Can extract quotes for multiple search terms from single source (off-topic quotes).
+    Schema for extracting quotes organized by search term WITH validation scores.
+    Each quote includes quality assessment (p score and reason).
 
     Returns:
         JSON schema for snippet extraction response
@@ -22,8 +22,23 @@ def get_snippet_extraction_schema() -> dict:
                 "additionalProperties": {
                     "type": "array",
                     "items": {
-                        "type": "string",
-                        "description": "Exact quote with [...] for orientation and ... for omissions"
+                        "type": "object",
+                        "properties": {
+                            "text": {
+                                "type": "string",
+                                "description": "Exact quote with [...] for orientation and ... for omissions. For ATTRIBUTED quotes, include the attribution in the text (e.g., 'Dr. Jane Smith, Chief Scientist, stated that...')"
+                            },
+                            "p": {
+                                "type": "number",
+                                "description": "Quality probability score. MUST be one of: 0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95",
+                                "enum": [0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95]
+                            },
+                            "reason": {
+                                "type": "string",
+                                "description": "Validation reason: PRIMARY/DOCUMENTED/ATTRIBUTED (p>=0.85), CONTRADICTED/UNSOURCED/ANONYMOUS/PROMOTIONAL/STALE (p<=0.15), or OK"
+                            }
+                        },
+                        "required": ["text", "p", "reason"]
                     }
                 }
             }

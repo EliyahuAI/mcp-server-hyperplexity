@@ -18,6 +18,7 @@ from typing import Dict, Any, List
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from shared.ai_api_client import AIAPIClient
+from shared.ai_client.utils import extract_structured_response
 from the_clone.unified_schemas import get_unified_evaluation_synthesis_schema, get_synthesis_only_schema
 from the_clone.config import get_synthesis_guidance
 
@@ -111,21 +112,9 @@ class UnifiedSynthesizer:
                 soft_schema=soft_schema
             )
 
-            # Extract response
+            # Extract response using centralized parsing
             actual_response = response.get('response', response)
-
-            if 'choices' in actual_response:
-                content = actual_response['choices'][0]['message']['content']
-                if isinstance(content, str):
-                    data = json.loads(content)
-                else:
-                    data = content
-            elif 'content' in actual_response and isinstance(actual_response['content'], list):
-                # Vertex AI format (DeepSeek)
-                content = actual_response['content'][0]['text']
-                data = json.loads(content)
-            else:
-                data = actual_response
+            data = extract_structured_response(actual_response)
 
             # Parse response based on mode
             logger.info(f"[UNIFIED DEBUG] data keys: {list(data.keys())}")
@@ -353,13 +342,14 @@ Query: {query}
                     by_url[url] = {
                         'url': url,
                         'date': snippet.get('_source_date', ''),
-                        'reliability': snippet.get('_source_reliability', 'MEDIUM'),
                         'snippets': []
                     }
 
                 by_url[url]['snippets'].append({
                     'id': snippet.get('id', ''),
-                    'text': snippet.get('text', '')
+                    'text': snippet.get('text', ''),
+                    'p': snippet.get('p', 0.50),
+                    'reason': snippet.get('validation_reason', 'OK')
                 })
 
             # Format sources under this query
@@ -368,20 +358,21 @@ Query: {query}
                 first_snippet_id = data['snippets'][0]['id'] if data['snippets'] else ''
                 source_prefix = '.'.join(first_snippet_id.split('.')[:3]) if first_snippet_id else ''
 
-                # Source header: [S1.1.0] URL [RELIABILITY, DATE]
+                # Source header: [S1.1.0] URL [DATE]
                 source_line = f"  [{source_prefix}] {data['url']}" if source_prefix else f"  {data['url']}"
-                if data['reliability'] or data['date']:
-                    metadata = []
-                    if data['reliability']:
-                        metadata.append(data['reliability'])
-                    if data['date']:
-                        metadata.append(data['date'])
-                    source_line += f" [{', '.join(metadata)}]"
+                if data['date']:
+                    source_line += f" [{data['date']}]"
                 formatted.append(source_line)
 
-                # Snippets under this source
+                # Snippets under this source (p-score already in ID)
                 for snip in data['snippets']:
-                    formatted.append(f"    - [{snip['id']}] \"{snip['text']}\"")
+                    reason = snip.get('reason', 'OK')
+
+                    # Show reason for non-OK snippets (attribution is in quote text)
+                    if reason != 'OK':
+                        formatted.append(f"    - [{snip['id']}] ({reason}) \"{snip['text']}\"")
+                    else:
+                        formatted.append(f"    - [{snip['id']}] \"{snip['text']}\"")
 
         return '\n'.join(formatted)
 

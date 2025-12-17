@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../shared'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../perplexity_search_tests'))
 
 from shared.ai_api_client import AIAPIClient
+from shared.ai_client.utils import extract_structured_response
 from the_clone.perplexity_search import PerplexitySearchClient
 from the_clone.schemas import get_search_generation_schema, get_result_evaluation_schema
 from the_clone.prompt_loader import PromptLoader
@@ -85,20 +86,9 @@ class SearchManager:
                 context="search_term_generation"
             )
 
-            # Extract structured data
-            # Handle wrapped response from AIAPIClient
+            # Extract structured data using centralized parsing
             actual_response = response.get('response', response)
-
-            if 'choices' in actual_response:
-                # Perplexity/OpenAI format
-                content = actual_response['choices'][0]['message']['content']
-                if isinstance(content, str):
-                    data = json.loads(content)
-                else:
-                    data = content
-            else:
-                # Anthropic format - extract from tool use
-                data = actual_response
+            data = extract_structured_response(actual_response)
 
             logger.info(f"[SEARCH_MANAGER] Generated {len(data.get('search_terms', []))} search terms")
             logger.debug(f"[SEARCH_MANAGER] Search terms: {data.get('search_terms')}")
@@ -217,18 +207,9 @@ class SearchManager:
                 context=f"result_evaluation_iter{current_iteration}"
             )
 
-            # Extract structured data
-            # Handle wrapped response from AIAPIClient
+            # Extract structured data using centralized parsing
             actual_response = response.get('response', response)
-
-            if 'choices' in actual_response:
-                content = actual_response['choices'][0]['message']['content']
-                if isinstance(content, str):
-                    data = json.loads(content)
-                else:
-                    data = content
-            else:
-                data = actual_response
+            data = extract_structured_response(actual_response)
 
             # Extract evaluation data (new simplified schema with reliability)
             relevant_count = data.get('relevant_count', 0)

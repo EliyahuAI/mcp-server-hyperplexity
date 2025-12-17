@@ -1,10 +1,10 @@
-# Essential Quote Extraction with Off-Topic Detection
+# Essential Quote Extraction with Precision Betting
 
 **Main Query:** {query}
 
 **Source:** {source_title}
 **URL:** {source_url}
-**Reliability:** {source_reliability}
+**Date:** {source_date}
 
 ---
 
@@ -22,6 +22,25 @@ This source was found by **Search {primary_search_num}**, but it may contain inf
 
 ---
 
+## Pre-Extraction Gate (Internal)
+
+Before extracting any quote, ask:
+
+> **"Could a judge, using only the query, URL, date, and this snippet, reasonably decide whether all factual claims in it are precisely accurate?"**
+
+If **NO**, do **not** extract the quote.
+
+In particular, **do not extract**:
+
+* high-level summaries without concrete facts
+* speculative or hedged statements without attribution
+* opinion or analysis without checkable claims
+* statements that require reading the full article to verify
+
+If no snippet passes this gate, return an empty result.
+
+---
+
 ## Your Task
 
 Extract **essential quotes** from this source, organized by which search term they address.
@@ -30,109 +49,141 @@ Extract **essential quotes** from this source, organized by which search term th
 
 **IMPORTANT:** Only extract quotes for a DIFFERENT search term if the information is genuinely NOT about the main query topic.
 
-- **Main Query:** {query}
-- **If a quote IS relevant to the main query**, extract it for the PRIMARY search term (Search {primary_search_num})
-- **Only use other search terms** if the quote is about a DIFFERENT topic that doesn't directly answer the main query
+* **Main Query:** {query}
+* **If a quote IS relevant to the main query**, extract it for the PRIMARY search term (Search {primary_search_num})
+* **Only use other search terms** if the quote is about a DIFFERENT topic that does not directly answer the main query
 
 **Example:**
-- Main Query: "What are the key features of Gemini 2.0 Flash?"
-- Search 1: "Gemini 2.0 Flash features"
-- Search 2: "GPT-4 features"
 
-A quote like "Gemini 2.0 Flash has 1M token context" should go to Search 1 (directly relevant to main query)
-A quote like "GPT-4 has 128K context" should go to Search 2 (different model, off-topic)
+* Main Query: *"What are the key features of Gemini 2.0 Flash?"*
+* Search 1: *"Gemini 2.0 Flash features"*
+* Search 2: *"GPT-4 features"*
 
-### Extraction Rules
+A quote like *"Gemini 2.0 Flash has a 1M token context window"* → Search 1
+A quote like *"GPT-4 supports 128K context"* → Search 2
 
-1. **Essential quotes only** - Must directly help answer the query
-2. **Return empty if no clear quotes** - Don't force extraction
-3. **Exact quotes** - Word-for-word from source
-4. **Brackets for orientation** - [of DeepSeek V3], [in 2024] to add context
-5. **Use "..." for omissions** - Skip non-essential text
-6. **Keep it minimal** - 1-5 quotes maximum (not 10+)
-7. **Avoid false off-topic marks** - Don't mark quotes as off-topic if they're relevant to main query
-
-### When to Return Empty
-
-Return `quotes: []` (empty array) if:
-- Source doesn't directly address the query
-- Information is vague or speculative
-- Content duplicates what's already known
-- No clear, quotable facts
-
-### Output Format
-
-```json
-{{
-  "quotes_by_search": {{
-    "1": ["Quote for search term 1", "Another quote for term 1"],
-    "2": ["Off-topic quote for search term 2"],
-    "3": []
-  }}
-}}
-```
-
-Or if nothing essential:
-
-```json
-{{
-  "quotes_by_search": {{}}
-}}
-```
+If a quote partially overlaps the main query but does **not** add new factual information, treat it as relevant but **do not extract it**.
 
 ---
 
-## Examples
+## Extraction Rules
 
-**Good (Primary + Off-topic):**
+1. **Essential quotes only**
+   Must contain **concrete, checkable factual claims** that help answer the query.
+
+2. **Return empty if no clear quotes**
+   Do not force extraction.
+
+3. **Exact quotes only**
+   Word-for-word from the source.
+
+4. **Brackets for orientation**
+   Use brackets only to clarify context:
+   `[of DeepSeek V3]`, `[in 2024]`
+
+5. **Use "…" for omissions**
+   Skip non-essential text.
+
+6. **Keep it minimal**
+   1–5 quotes maximum total.
+
+7. **Avoid false off-topic marking**
+   Do not mark quotes as off-topic if they directly address the main query.
+
+---
+
+## When to Return Empty
+
+Return:
+
+```json
+{{"quotes_by_search": {{}}}}
+```
+
+if:
+
+* the source does not directly address the query
+* information is vague, speculative, or opinion-only
+* content duplicates what is already known
+* no snippet passes the Pre-Extraction Gate
+
+---
+
+## Quality Assessment (Precision Betting System)
+
+**For EACH extracted quote, place a bet using only:**
+**query, URL, date, snippet**
+
+### Bet Definition
+
+An all knowing judgee will extract up to **K = 2 query-relevant atomic factual claims** from the snippet.
+
+The snippet **PASSes** iff **all extracted claims** are **precisely accurate as stated**
+(entity, date, quantity, scope).
+Any material error or overstatement = FAIL.
+
+You must output:
+
+> **p = expected pass-rate over many similar (query, URL, date, snippet) items**
+
+---
+
+### Hard Rules
+
+* If **internal contradiction**, **promotional tone**, **anonymous sourcing**, or **stale vs query intent**
+  → `p = 0.05–0.10`
+  → reason ∈ `{{CONTRADICTED, PROMOTIONAL, ANONYMOUS, STALE}}`
+
+* `p ≥ 0.85` **only if one gate is met**:
+
+  * **PRIMARY**: official self-report / primary-document style
+  * **DOCUMENTED**: methods, data, denominators, or record excerpts
+  * **ATTRIBUTED**: named accountable source + role + specifics
+    → Include attribution IN the quote text itself (e.g., "[Dr. Jane Smith, Chief Scientist, stated that] ...", or with the explicit reference in brackets at the end)
+
+* Choose **p from exactly**:
+
+  ```
+  {{0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95}}
+  ```
+
+  No other values.
+
+### Reason Keywords
+
+* If `p ≥ 0.85` → `PRIMARY`, `DOCUMENTED`, or `ATTRIBUTED`
+* If `p ≤ 0.15` → `CONTRADICTED`, `UNSOURCED`, `ANONYMOUS`, `PROMOTIONAL`, or `STALE`
+* Else → `OK`
+
+> **Do not extract a quote unless you are willing to place a non-trivial bet on its precise accuracy.**
+
+---
+
+## Output Format
+
 ```json
 {{
   "quotes_by_search": {{
     "1": [
-      "Claude Opus 4 uses hybrid architecture with two modes",
-      "Supports 200K context window"
+      {{"text": "Quote text here", "p": 0.95, "reason": "PRIMARY"}},
+      {{"text": "Another quote", "p": 0.65, "reason": "OK"}}
     ],
     "2": [
-      "GPT-4.5 has 12.8T parameters"
+      {{"text": "[Dr. Jane Smith, Chief Scientist, stated that] ...", "p": 0.85, "reason": "ATTRIBUTED"}}
     ]
   }}
 }}
 ```
 
-**Good (Primary only):**
-```json
-{{
-  "quotes_by_search": {{
-    "3": [
-      "DeepSeek V3 uses MoE architecture with 671B parameters",
-      "Achieves 85.2% on MMLU"
-    ]
-  }}
-}}
-```
+Or, if nothing essential:
 
-**Good (Nothing Essential):**
 ```json
 {{
   "quotes_by_search": {{}}
 }}
 ```
 
-**Bad (Too much):**
-```json
-{{
-  "quotes": [
-    "DeepSeek is an AI model",
-    "It was developed by researchers",
-    "The model performs various tasks",
-    "Some users like it",
-    "It has capabilities",
-    ... (10 more vague quotes)
-  ],
-  "has_quotes": true
-}}
-```
-
 ---
 
-**Extract minimal essential quotes or return empty. Quality over quantity.**
+**Extract minimal, auditable quotes only.
+Precision over coverage. Bet honestly.**

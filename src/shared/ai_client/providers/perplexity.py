@@ -10,7 +10,8 @@ from perplexity_schema import get_response_format_schema
 
 from ..utils import (
     extract_citations_from_perplexity_response,
-    validate_and_normalize_soft_schema
+    validate_and_normalize_soft_schema,
+    extract_json_from_text
 )
 
 logger = logging.getLogger(__name__)
@@ -215,16 +216,14 @@ class PerplexityProvider:
         try:
             if 'choices' in response_json and response_json['choices']:
                 content = response_json['choices'][0]['message']['content']
-                cleaned = re.sub(r'^```json\s*|\s*```$', '', content.strip(), flags=re.MULTILINE)
-                match = re.search(r'(\{.*\})', cleaned, re.DOTALL)
-                if match: cleaned = match.group(1)
+                parsed = extract_json_from_text(content)
                 
-                parsed = json.loads(cleaned)
-                normalized, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
-                if warnings:
-                    logger.warning(f"Perplexity soft schema warnings: {warnings}")
-                
-                response_json['choices'][0]['message']['content'] = json.dumps(normalized)
+                if parsed:
+                    normalized, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
+                    if warnings:
+                        logger.warning(f"Perplexity soft schema warnings: {warnings}")
+                    
+                    response_json['choices'][0]['message']['content'] = json.dumps(normalized)
             return response_json
         except Exception as e:
             logger.error(f"Perplexity soft schema cleaning error: {e}")

@@ -5,13 +5,16 @@ This document contains shared guidelines used by both new config creation and re
 ## Model Selection Guidelines
 - **Default Model**: `sonar` is the default for most use cases - particularly for new configurations
 - **Alternative Models**: Available models include:
-  - Perplexity models: `sonar` (recommended for simple fact checking- default for new configurations), `sonar-pro` (recommended deeper synthesis of sources, a great inexpensive upgrade for more reasoning)
-  - Anthropic models: `claude-opus-4-1` (latest Claude 4 opus for advanced reasoning - expensive!, bring out the big guns only when really deep thought and synthesis is needed - with ), `claude-sonnet-4-5` (latest Claude 4 - this is the first line of defense for qc and advanced reasoning solutions that require search, and very helpful when pure reasoning is needed in response when anthropic_max_web_searches is set to 0, `claude-haiku-4-5` (latest fast model - great for fast reasoning solutions that dont need much thought, great way to reduce QC cost if needed)
+  - Perplexity models: `sonar` (recommended for simple fact checking - default for new configurations), `sonar-pro` (recommended for deeper synthesis of sources, a great inexpensive upgrade for more reasoning)
+  - DeepSeek models: `deepseek-v3.2` (ultra-low cost, 97% cheaper than Claude - FRONT LINE for reasoning without web search, displaces Haiku and Sonnet for pure reasoning tasks), `deepseek-v3.2-exp` (variant with caching support)
+  - Anthropic models: `claude-sonnet-4-5` (automatic fallback for DeepSeek, first line when web search is needed for reasoning), `claude-opus-4-1` (expensive advanced reasoning - only for deep synthesis requiring web research)
 - **Best Practices**:
-  - Use Perplexity models (`sonar` or`sonar-pro`) for standard web search and validation tasks
-  - Only use Anthropic models only when deeper reasoning (sonnet-4 in most cases, opus when deep reasoning is called for)
-  - Consider the validation complexity before choosing Anthropic models
-  - Rely on the anthropic QC layer (with or without web-search) to process the full information for the row. Sonar (easy columns) /Sonar Pro (harder columns) validation with Sonnet QC (without web search) is a great first approach.
+  - Use Perplexity models (`sonar` or `sonar-pro`) for standard web search and validation tasks
+  - Use `deepseek-v3.2` for pure reasoning tasks that don't require web access (QC review, synthesis of existing data, analysis)
+  - Use `claude-sonnet-4-5` when web search is needed for reasoning tasks (anthropic_max_web_searches > 0)
+  - Only use `claude-opus-4-1` when deep reasoning with extensive web research is critical
+  - **CRITICAL LIMITATION**: DeepSeek cannot access the web - never use with anthropic_max_web_searches > 0
+  - **Recommended QC Approach**: Sonar/Sonar-Pro validation (with web search) → DeepSeek V3.2 QC (without web search, ultra-low cost)
 
 ## Search Context Size Guidelines for Perplexity
 - **Values**: `"low"`,  `"medium"`,`"high"` (default), (Perplexity only)

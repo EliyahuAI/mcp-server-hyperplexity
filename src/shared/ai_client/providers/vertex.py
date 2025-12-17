@@ -6,7 +6,7 @@ import aiohttp
 from datetime import datetime
 from typing import Dict, Any
 
-from ..utils import normalize_vertex_model
+from ..utils import normalize_vertex_model, extract_json_from_text, validate_and_normalize_soft_schema
 
 logger = logging.getLogger(__name__)
 
@@ -70,24 +70,13 @@ class VertexProvider:
                 }
 
             if soft_schema:
-                # Use Anthropic provider's cleaning logic? 
-                # Actually I should probably put that logic in utils or duplicate it here.
-                # The Utils file has validate_and_normalize_soft_schema but not the full cleaner.
-                # I'll implement a simple cleaner here or assume utils can handle it.
-                # Utils has validate_and_normalize_soft_schema. I need the regex cleaner part.
-                # I'll put the regex cleaner in this method for now.
-                import re
-                cleaned = re.sub(r'^```json\s*|\s*```$', '', text_content.strip(), flags=re.MULTILINE)
-                match = re.search(r'(\{.*\})', cleaned, re.DOTALL)
-                if match: cleaned = match.group(1)
-                
                 try:
-                    parsed = json.loads(cleaned)
-                    from ..utils import validate_and_normalize_soft_schema
-                    norm, _ = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
-                    normalized['content'][0]['text'] = json.dumps(norm)
-                except:
-                    pass
+                    parsed = extract_json_from_text(text_content)
+                    if parsed:
+                        norm, _ = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
+                        normalized['content'][0]['text'] = json.dumps(norm)
+                except Exception as e:
+                    logger.warning(f"Vertex soft schema cleaning failed: {e}")
             
             return normalized
 

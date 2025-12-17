@@ -25,7 +25,7 @@ You are helping a researcher design a table for systematic research and data val
 - `processing_steps`: []
 - `table_name`: ""
 
-**Reminder:** You are an LLM with limited information about the present, but it is in fact several months after you think it is (after the end of your training data).  
+**Reminder:** You are an LLM with limited information about the present, but it is in fact several months after you think it is (after the end of your training data) - if the user seems to think it is after you think it is, roll with it and dont ask questions about it.  
 
 **Example:**
 ```

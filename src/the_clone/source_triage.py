@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../shared'))
 
 from shared.ai_api_client import AIAPIClient
+from shared.ai_client.utils import extract_structured_response
 from the_clone.triage_schemas import get_source_triage_schema
 
 # Configure logging
@@ -176,21 +177,9 @@ class SourceTriage:
                 except:
                     pass  # Don't fail if debug save fails
 
-            # Extract selected indices
+            # Extract selected indices using centralized parsing
             actual_response = response.get('response', response)
-
-            if 'choices' in actual_response:
-                content = actual_response['choices'][0]['message']['content']
-                if isinstance(content, str):
-                    data = json.loads(content)
-                else:
-                    data = content
-            elif 'content' in actual_response and isinstance(actual_response['content'], list):
-                # Vertex AI format (DeepSeek)
-                content = actual_response['content'][0]['text']
-                data = json.loads(content)
-            else:
-                data = actual_response
+            data = extract_structured_response(actual_response)
 
             selected_indices = data.get('selected_indices', [])
 
