@@ -72,7 +72,7 @@ class TheClone2Refined:
         exclude_domains: Optional[List[str]] = None,
         provider: str = "deepseek",
         use_baseten: bool = False,
-        use_code_extraction: bool = False
+        use_code_extraction: bool = True
     ) -> Dict[str, Any]:
         """
         Execute query with strategy-based architecture.
