@@ -1,32 +1,24 @@
-#!/usr/bin/env python3
-"""
-Academic domain whitelist for scholarly searches.
-"""
-
-ACADEMIC_DOMAINS = [
-    "scholar.google.com",
-    "semanticscholar.org",
-    "pubmed.ncbi.nlm.nih.gov",
-    "europepmc.org",
-    "jstor.org",
-    "sciencedirect.com",
-    "link.springer.com",
-    "onlinelibrary.wiley.com",
-    "tandfonline.com",
-    "nature.com",
-    "science.org",
-    "cell.com",
-    "pnas.org",
-    "acm.org",
-    "ieee.org",
-    "doi.org",
-    "crossref.org",
-    "arxiv.org",
-    "biorxiv.org",
-    "medrxiv.org",
-]
-
-
-def get_academic_domains():
-    """Get list of academic/scholarly domains."""
-    return ACADEMIC_DOMAINS.copy()
+def get_academic_domains() -> list[str]:
+    """Returns a list of academic domains for filtering search results."""
+    return [
+        "jstor.org",
+        "dl.acm.org",
+        "ieee.org",
+        "sciencedirect.com",
+        "link.springer.com",
+        "onlinelibrary.wiley.com",
+        "ncbi.nlm.nih.gov",
+        "pubmed.ncbi.nlm.nih.gov",
+        "nature.com",
+        "science.org",
+        "cell.com",
+        "frontiersin.org",
+        "mdpi.com",
+        "arxiv.org",
+        "ssrn.com",
+        "researchgate.net",
+        "academia.edu",
+        "osf.io",
+        "core.ac.uk",
+        "semanticscholar.org"
+    ]

@@ -1,0 +1,7 @@
+Refactor: Remove old client tests from regression suite
+
+- Removed import of `AIAPIClient as OldClient`.
+- Removed instantiation of `old_client`.
+- Renamed `test_live_structured_call` to `test_new_client_structured_call` and refactored it to only test the new client, removing all comparison logic.
+- Updated all calls to `test_new_client_structured_call` in `main`.
+- The regression test suite now exclusively tests the new modular AI client and its providers (Anthropic, Perplexity, Vertex, The Clone, Baseten).

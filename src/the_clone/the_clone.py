@@ -148,22 +148,27 @@ class TheClone2Refined:
         logger.info(f"[CLONE] Search terms: {search_terms}")
 
         # Determine domain filters
-        domains_to_use = None
+        search_include_domains: Optional[List[str]] = None
+        search_exclude_domains: Optional[List[str]] = None
+
         if academic:
             from the_clone.academic_domains import get_academic_domains
-            domains_to_use = get_academic_domains()
-            logger.info(f"[CLONE] Academic mode - using {len(domains_to_use)} academic domains")
+            search_include_domains = get_academic_domains()
+            logger.info(f"[CLONE] Academic mode - using {len(search_include_domains)} academic domains")
         elif include_domains:
-            domains_to_use = include_domains
-            logger.info(f"[CLONE] Using {len(domains_to_use)} included domains")
+            search_include_domains = include_domains
+            logger.info(f"[CLONE] Using {len(search_include_domains)} included domains")
+        elif exclude_domains:
+            search_exclude_domains = exclude_domains
+            logger.info(f"[CLONE] Using {len(search_exclude_domains)} excluded domains")
 
         # Step 2: Search
         logger.info(f"\n[CLONE] Step 2: Executing {len(search_terms)} searches...")
         search_results = await self.search_manager.execute_searches(
             search_terms=search_terms,
             search_settings={'max_results': 10},
-            include_domains=domains_to_use,
-            exclude_domains=exclude_domains if not domains_to_use else None
+            include_domains=search_include_domains,
+            exclude_domains=search_exclude_domains
         )
         costs['search'] = len(search_terms) * 0.005  # Perplexity cost per search
 
