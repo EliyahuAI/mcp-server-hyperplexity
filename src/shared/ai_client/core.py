@@ -162,7 +162,7 @@ class AIAPIClient:
                     use_soft_schema_for_baseten = True 
                     result = await self.baseten.make_single_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 8000, use_soft_schema_for_baseten)
                 elif api_provider == 'clone':
-                    result = await self.clone.make_structured_call(prompt, current_model, use_cache, cache_key, call_start_time, schema, soft_schema, debug_name)
+                    result = await self.clone.make_structured_call(prompt, current_model, use_cache, cache_key, call_start_time, schema, soft_schema, debug_name, include_domains, exclude_domains)
                 else:
                     continue
 

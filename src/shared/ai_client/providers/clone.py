@@ -37,7 +37,7 @@ class CloneProvider:
 
         return self._clone_instance
 
-    async def make_structured_call(self, prompt: str, model: str, use_cache: bool, cache_key: str, start_time: datetime, schema: Dict = None, soft_schema: bool = False, debug_name: str = None) -> Dict:
+    async def make_structured_call(self, prompt: str, model: str, use_cache: bool, cache_key: str, start_time: datetime, schema: Dict = None, soft_schema: bool = False, debug_name: str = None, include_domains: List[str] = None, exclude_domains: List[str] = None) -> Dict:
         """
         Execute a call to 'The Clone' agentic pipeline.
         
@@ -62,7 +62,9 @@ class CloneProvider:
             result = await clone.query(
                 prompt=prompt,
                 model_override=model_override,
-                debug_dir=f"/tmp/clone_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}" # Temp debug dir
+                debug_dir=f"/tmp/clone_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}", # Temp debug dir
+                include_domains=include_domains,
+                exclude_domains=exclude_domains
             )
             
             processing_time = (datetime.now() - start_time).total_seconds()
