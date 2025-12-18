@@ -72,11 +72,41 @@ class TextLabeler:
 
         structure['label_map'] = label_map
 
+        # Detect tables and mark header rows
+        self._detect_tables(structure)
+
         logger.debug(f"[LABELER] Labeled {len(structure.get('sections', []))} sections, "
                     f"{sum(len(s['sentences']) for s in structure.get('sections', []))} sentences, "
                     f"{len(label_map)} labels mapped")
 
         return labeled_text, structure
+
+    def _detect_tables(self, structure: Dict):
+        """
+        Detect tables and mark header rows.
+        Tables have rows starting with |. First row is header.
+        """
+        for section in structure.get('sections', []):
+            sentences = section.get('sentences', {})
+            table_header = None
+
+            for sent_id in sorted(sentences.keys(), key=lambda x: int(x.split('.')[-1])):
+                sent_text = sentences[sent_id]['text']
+
+                # Check if this looks like a table row
+                if sent_text.strip().startswith('|') and '|' in sent_text[1:]:
+                    # This is a table row
+                    if table_header is None:
+                        # First row of table - mark as header
+                        table_header = sent_id
+                        sentences[sent_id]['is_table_header'] = True
+                    else:
+                        # Data row - link to header
+                        sentences[sent_id]['is_table_row'] = True
+                        sentences[sent_id]['table_header_id'] = table_header
+                else:
+                    # Not a table row, reset header tracking
+                    table_header = None
 
     def _label_with_suffixes(self, text: str) -> Tuple[List[str], Dict]:
         """
@@ -296,21 +326,25 @@ class TextLabeler:
                 logger.warning(f"[LABELER] nltk tokenization failed: {e}, using regex")
 
         # Fallback: improved regex splitting
-        # Common abbreviations that shouldn't split sentences
-        # Replace abbreviations temporarily
+        # Protect patterns that shouldn't cause sentence splits
         protected = text
+
+        # 1. Protect abbreviations
         abbreviations = ['Dr.', 'Mr.', 'Mrs.', 'Ms.', 'Prof.', 'Sr.', 'Jr.',
                         'vs.', 'Inc.', 'Ltd.', 'Corp.', 'Co.', 'etc.', 'e.g.', 'i.e.']
-
-        # Temporarily replace periods in abbreviations
         for i, abbr in enumerate(abbreviations):
             protected = protected.replace(abbr, f'ABBR{i}PLACEHOLDER')
 
-        # Split on .!? followed by space and capital letter or number
-        sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z0-9])', protected)
+        # 2. Protect numbered lists in tables: |1., |2., etc.
+        protected = re.sub(r'\|(\d+)\.', r'|NUM\1PERIOD', protected)
 
-        # Restore abbreviations
+        # 3. Split on .!? followed by space and capital letter or number
+        # But NOT on patterns like "1. " at start of line (numbered lists)
+        sentences = re.split(r'(?<=[.!?])(?<!\d\.)\s+(?=[A-Z])', protected)
+
+        # 4. Restore protected patterns
         for i, abbr in enumerate(abbreviations):
             sentences = [s.replace(f'ABBR{i}PLACEHOLDER', abbr) for s in sentences]
+        sentences = [re.sub(r'NUM(\d+)PERIOD', r'\1.', s) for s in sentences]
 
         return [s.strip() for s in sentences if s.strip()]

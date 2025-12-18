@@ -251,7 +251,22 @@ class CodeResolver:
 
         # Try direct label_map lookup first (fast path)
         if self.label_map and code in self.label_map:
-            return self.label_map[code]
+            text = self.label_map[code]
+
+            # Check if this is a table row - auto-prepend header
+            sent_id = f"H{code}" if not code.startswith('H') else code
+            for section in self.sections.values():
+                sent_data = section['sentences'].get(sent_id)
+                if sent_data and sent_data.get('is_table_row'):
+                    # This is a table data row, prepend header
+                    header_id = sent_data.get('table_header_id')
+                    if header_id:
+                        header_text = section['sentences'].get(header_id, {}).get('text', '')
+                        if header_text:
+                            logger.info(f"[RESOLVER] Auto-prepending table header to row {code}")
+                            return f"{header_text}\n{text}"
+
+            return text
 
         # Normalize code format (1.2 → H1.2)
         if re.match(r'^\d+\.\d+$', code):
