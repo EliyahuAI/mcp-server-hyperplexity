@@ -150,6 +150,38 @@ class SnippetExtractorStreamlined:
             for search_num_str, quotes in quotes_by_search.items():
                 search_num = int(search_num_str)
 
+                # Check if any quote uses `* (pass-all) - if so, skip snippet extraction
+                has_pass_all = False
+                if isinstance(quotes, list):
+                    for q in quotes:
+                        if isinstance(q, list) and len(q) > 0:
+                            code = q[0]
+                            if code == '`*' or code == '*':
+                                has_pass_all = True
+                                logger.info(f"[EXTRACTOR] Found `* pass-all code, using entire source instead of snippets")
+                                break
+
+                # If pass-all detected, create single snippet with entire source
+                if has_pass_all:
+                    snippet_id = f"{snippet_id_prefix}.{total_quotes}-p0.95"
+                    snippet = {
+                        "id": snippet_id,
+                        "text": source_text,  # Entire original source
+                        "p": 0.95,
+                        "validation_reason": "PASS_ALL",
+                        "search_ref": search_num,
+                        "_source_title": source_title,
+                        "_source_url": source_url,
+                        "_source_date": source_date,
+                        "_source_reliability": source_reliability,
+                        "_search_term": source_search_term,
+                        "_primary_search": primary_search_index,
+                        "_is_off_topic": search_num != primary_search_index
+                    }
+                    snippets.append(snippet)
+                    total_quotes += 1
+                    continue  # Skip individual quote processing
+
                 for i, quote_obj in enumerate(quotes):
                     # Handle multiple formats: string, array, object
                     if isinstance(quote_obj, str):
