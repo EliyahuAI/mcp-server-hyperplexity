@@ -269,7 +269,8 @@ class SnippetExtractorStreamlined:
                     structure=text_structure,
                     ai_response=data,
                     resolved_snippets=snippets,
-                    issues=issues
+                    issues=issues,
+                    query=query
                 )
 
             return {

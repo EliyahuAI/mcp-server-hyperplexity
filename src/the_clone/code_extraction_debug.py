@@ -46,7 +46,8 @@ class CodeExtractionDebugger:
         structure: Dict,
         ai_response: Dict,
         resolved_snippets: List[Dict],
-        issues: List[str] = None
+        issues: List[str] = None,
+        query: str = None
     ):
         """
         Log a complete extraction pipeline.
@@ -79,7 +80,8 @@ class CodeExtractionDebugger:
                 "session_id": self.session_id,
                 "extraction_number": self.extraction_count,
                 "severity": severity,
-                "issues": issues or []
+                "issues": issues or [],
+                "query": query or "Unknown"
             },
             "input": {
                 "original_text": original_text,
