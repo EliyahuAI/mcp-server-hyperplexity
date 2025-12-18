@@ -95,7 +95,12 @@ class TextLabeler:
 
                 # Check if this looks like a table row
                 if sent_text.strip().startswith('|') and '|' in sent_text[1:]:
-                    # This is a table row
+                    # Skip separator rows (|--|--|)
+                    if re.match(r'^\|(?:--\|)+', sent_text.strip()):
+                        # This is a separator, not a data row - skip
+                        continue
+
+                    # This is a table row (header or data)
                     if table_header is None:
                         # First row of table - mark as header
                         table_header = sent_id
