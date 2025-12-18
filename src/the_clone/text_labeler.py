@@ -58,8 +58,23 @@ class TextLabeler:
 
         labeled_text = "".join(labeled_parts)
 
+        # Build direct label->text mapping for fast resolution
+        label_map = {}
+        for section in structure.get('sections', []):
+            for sent_id, sent_data in section['sentences'].items():
+                # Extract section.sentence format: H1.1 -> 1.1, H2.3 -> 2.3, H1.0 -> 1.0
+                parts = sent_id.split('.')
+                if len(parts) >= 2:
+                    simple_label = f"{parts[0][1:]}.{parts[1]}"  # H1.1 -> 1.1, H1.0 -> 1.0
+                    label_map[simple_label] = sent_data['text']
+                    # Also map the full H format for backward compat
+                    label_map[sent_id] = sent_data['text']  # H1.1 -> text
+
+        structure['label_map'] = label_map
+
         logger.debug(f"[LABELER] Labeled {len(structure.get('sections', []))} sections, "
-                    f"{sum(len(s['sentences']) for s in structure.get('sections', []))} sentences")
+                    f"{sum(len(s['sentences']) for s in structure.get('sections', []))} sentences, "
+                    f"{len(label_map)} labels mapped")
 
         return labeled_text, structure
 

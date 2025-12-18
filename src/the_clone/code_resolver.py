@@ -29,6 +29,7 @@ class CodeResolver:
         self.sections = {s["id"]: s for s in structure.get("sections", [])}
         self.headings = structure.get("headings", {})
         self.labeled_text = labeled_text
+        self.label_map = structure.get('label_map', {})  # Direct label->text mapping
 
     def resolve(self, code: str) -> str:
         """
@@ -79,8 +80,8 @@ class CodeResolver:
 
             # Find all [...] patterns and `code patterns
             # Pattern: [...] or `code (with backtick prefix)
-            # Match brackets, simple codes (`1, `1-3), heading-only (`H5), or full codes (`H1.2)
-            pattern = r'\[([^\]]+)\]|`(\d+(?:\.w\d+(?:-\d+)?)?(?:-\d+)?)|`(H\d+(?:\.\d+)?(?:\.w\d+(?:-(?:\d+|H\d+\.\d+(?:\.w\d+)?))?)?(?:-(?:\d+|H\d+\.\d+))?)'
+            # Order matters: match longer patterns first (section.sentence before simple number)
+            pattern = r'\[([^\]]+)\]|`(H\d+(?:\.\d+)?(?:\.w\d+(?:-(?:\d+|H\d+\.\d+(?:\.w\d+)?))?)?(?:-(?:\d+|H\d+\.\d+))?)|`(\d+\.\d+(?:\.w\d+(?:-\d+)?)?(?:-\d+\.\d+)?)|`(\d+(?:\.w\d+(?:-\d+)?)?(?:-\d+)?)'
 
             for match in re.finditer(pattern, code_clean, re.IGNORECASE):
                 # Add any literal text before this match
@@ -101,14 +102,16 @@ class CodeResolver:
                             resolved_parts.append(f"[{resolved_text}]")
                         else:
                             # Failed to resolve, keep as literal
+                            logger.debug(f"[RESOLVER] Bracket code '{bracket_content}' failed to resolve, keeping as literal")
                             resolved_parts.append(f"[{bracket_content}]")
                     else:
                         # Not a location code, keep as literal (restore backtick if it had one)
                         original_bracket = match.group(1)
                         resolved_parts.append(f"[{original_bracket}]")
 
-                elif match.group(2) or match.group(3):  # Backtick-prefixed location code (simple or full)
-                    location_code = match.group(2) or match.group(3)
+                elif match.group(2) or match.group(3) or match.group(4):  # Backtick-prefixed location code
+                    # Group 2: H codes, Group 3: section.sentence, Group 4: simple
+                    location_code = match.group(2) or match.group(3) or match.group(4)
                     resolved_text = self._resolve_location_code(location_code)
                     if resolved_text:
                         resolved_parts.append(resolved_text)
@@ -207,13 +210,20 @@ class CodeResolver:
         """
         Resolve single sentence code: H1.2 or 1.2
 
-        Uses structure dict lookup. Graceful fallback for heading-only codes.
+        Uses direct label_map lookup first, then falls back to structure dict.
         """
         original_code = code
 
+        # Try direct label_map lookup first (fast path)
+        if self.label_map and code in self.label_map:
+            return self.label_map[code]
+
         # Normalize code format (1.2 → H1.2)
         if re.match(r'^\d+\.\d+$', code):
-            # Simple format like 1.2 - convert to H1.2
+            # Simple format like 1.2 - check label_map first
+            if code in self.label_map:
+                return self.label_map[code]
+            # Convert to H1.2 for structure lookup
             code = f"H{code}"
             logger.debug(f"[RESOLVER] Normalized {original_code} → {code}")
 
