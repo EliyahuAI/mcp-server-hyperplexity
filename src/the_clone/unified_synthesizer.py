@@ -224,7 +224,7 @@ Query: {query}
 
 ## Your Task
 
-Generate a structured comparison answering the query.
+Generate a structured comparison answering the query, then self-assess.
 
 **Citation Format:** Use [S1.2.3.0-H] style snippet IDs to reference quotes.
 **Output Structure:** Use nested objects to avoid repetition.
@@ -240,11 +240,19 @@ Example structure:
     "gpt_4_5": {{
       "architecture": "... [S1.2.0.0-M]"
     }}
-  }}
+  }},
+  "self_assessment": "A"
 }}
 ```
 
-Return JSON with 'comparison' field."""
+## Self-Assessment
+
+Grade your synthesis (A+ to C-):
+- **A+/A**: Handled complexity well OR info not available in sources
+- **B**: Struggled with complexity, conflicting sources need deeper reasoning
+- **C**: Insufficient capability for this complexity
+
+Return JSON with 'comparison' and 'self_assessment' fields."""
 
         else:
             # Evaluation + synthesis mode

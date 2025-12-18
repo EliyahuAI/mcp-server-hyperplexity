@@ -50,7 +50,7 @@ def get_unified_evaluation_synthesis_schema(answer_schema: dict = None) -> dict:
 def get_synthesis_only_schema(answer_schema: dict = None) -> dict:
     """
     Schema for synthesis-only (last iteration).
-    No evaluation, just generate answer.
+    No evaluation, just generate answer with self-assessment.
 
     Returns:
         JSON schema
@@ -61,7 +61,12 @@ def get_synthesis_only_schema(answer_schema: dict = None) -> dict:
             "comparison": {
                 "type": "object",
                 "description": "Nested comparison structure. Avoid repetitive keys."
+            },
+            "self_assessment": {
+                "type": "string",
+                "enum": ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-"],
+                "description": "Grade synthesis quality: A+/A if handled well OR info not available, B if struggled with complexity, C if insufficient"
             }
         },
-        "required": ["comparison"]
+        "required": ["comparison", "self_assessment"]
     }

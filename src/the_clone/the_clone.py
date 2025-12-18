@@ -303,6 +303,45 @@ class TheClone2Refined:
 
         costs['synthesis'] = self._extract_cost(synthesis_result.get('model_response', {}))
 
+        # Check self-assessment and upgrade to tier4 if needed
+        answer_data = synthesis_result.get('answer', {})
+        self_assessment = answer_data.get('self_assessment', 'A')
+        upgraded = False
+
+        if self_assessment not in ['A+', 'A'] and synthesis_tier != 'tier4':
+            logger.info(f"\n[CLONE] Self-assessment: {self_assessment} - Upgrading to tier4 (deepest)")
+
+            # Get tier4 models
+            tier4_models = get_models_for_tier(provider, 'tier4')
+            tier4_synthesis_model = tier4_models['synthesis']
+            tier4_soft_schema = 'deepseek' in tier4_synthesis_model or 'baseten' in tier4_synthesis_model
+
+            logger.info(f"[CLONE] Retrying synthesis with {tier4_synthesis_model}")
+
+            # Re-run synthesis with tier4
+            synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
+                query=prompt,
+                snippets=all_snippets,
+                context=synthesis_context,
+                iteration=1,
+                is_last_iteration=True,
+                schema=schema,
+                model=tier4_synthesis_model,
+                search_terms=search_terms,
+                debug_dir=debug_dir,
+                soft_schema=tier4_soft_schema
+            )
+
+            costs['synthesis'] += self._extract_cost(synthesis_result.get('model_response', {}))
+            synthesis_tier = 'tier4'
+            models['synthesis'] = tier4_synthesis_model
+            upgraded = True
+
+            # Get new self-assessment
+            answer_data = synthesis_result.get('answer', {})
+            self_assessment = answer_data.get('self_assessment', 'A')
+            logger.info(f"[CLONE] Tier4 self-assessment: {self_assessment}")
+
         # Build response
         total_time = (datetime.now() - start_time).total_seconds()
         total_cost = sum(costs.values())
@@ -321,6 +360,8 @@ class TheClone2Refined:
                 "depth": depth,
                 "synthesis_tier": synthesis_tier,
                 "synthesis_model": models['synthesis'],
+                "upgraded_to_deepest": upgraded,
+                "self_assessment": self_assessment,
                 "search_terms": search_terms,
                 "iterations": iteration,
                 "total_snippets": len(all_snippets),
