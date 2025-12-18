@@ -37,6 +37,7 @@ Extract only if quote has concrete, verifiable facts. Skip:
 
 **Basic codes** - Copy exact labels:
 - `` `1.1 ``, `` `1.2 ``, `` `2.1 `` (single sentences)
+- **REQUIRED: Use ranges for consecutive rows** - If extracting 1.5, 1.6, 1.7 (continuous), use `` `1.5-1.7 `` NOT separate codes. Especially for table rows within same section.
 - Ranges: `` `1.1-1.3 `` or `` `1.1-3 `` (shorthand for `1.1-1.3)
 - Word ranges: `` `1.1.w5-7 `` (words 5-7, **1-indexed** - w1 is first word)
 - **Pass all:** `` `* `` (entire source) - use when source is dense/valuable and splitting would lose critical relationships, or if we would retain >50% of the words anyways in the snippets.  You can add this at any point if you realize that we should just pass the entire source. If the source is high quality and addresses the query use this flag. 
