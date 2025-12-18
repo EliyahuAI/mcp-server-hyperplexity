@@ -46,22 +46,15 @@ Query: {query}
 
 ## Decision 3: Synthesis Model Tier
 
-Choose synthesis model based on synthesis complexity (NOT search complexity):
+Choose based on synthesis complexity only:
 
-**default** - DeepSeek V3.2 (USE FOR MOST QUERIES)
-- Straightforward synthesis (targeted facts, lists, surveys)
-- Clear structure from snippets
-- Default choice - push DeepSeek hard
+**tier1** - Simple facts (direct lookup, no synthesis needed)
 
-**strong** - Claude Sonnet 4.5 (ONLY IF moderately complex synthesis)
-- Nuanced synthesis requiring careful reasoning
-- Cross-referencing multiple conflicting sources
-- Complex comparisons
+**tier2** - Master's-level (standard synthesis, organizing multiple aspects) - DEFAULT
 
-**deepest** - Claude Opus 4.5 (EXTREMELY RARE - hardest synthesis only)
-- Multi-layered analysis with deep reasoning
-- Synthesis requires exceptional judgment
-- Use very sparingly (most expensive)
+**tier3** - PhD-level (complex technical synthesis, conflicting sources, deep reasoning)
+
+**tier4** - PhD + Grant (maximum complexity, multi-layered cross-domain synthesis)
 
 ---
 
@@ -87,7 +80,7 @@ Choose synthesis model based on synthesis complexity (NOT search complexity):
   "breadth": "narrow",
   "depth": "shallow",
   "search_terms": [],
-  "synthesis_tier": "default"
+  "synthesis_tier": "tier2"
 }}
 ```
 
@@ -98,7 +91,7 @@ Choose synthesis model based on synthesis complexity (NOT search complexity):
   "breadth": "narrow" | "broad",
   "depth": "shallow" | "deep",
   "search_terms": ["term1"],
-  "synthesis_tier": "default" | "strong" | "deepest"
+  "synthesis_tier": "tier1" | "tier2" | "tier3" | "tier4"
 }}
 ```
 
@@ -107,19 +100,22 @@ Choose synthesis model based on synthesis complexity (NOT search complexity):
 ## Examples
 
 **Targeted (narrow + shallow):**
-- "What is DeepSeek V3's parameter count?" → breadth=narrow, depth=shallow, 1 term
+- "What is DeepSeek V3's parameter count?" → breadth=narrow, depth=shallow, 1 term, tier1
 
 **Focused Deep (narrow + deep):**
-- "How does attention mechanism work?" → breadth=narrow, depth=deep, 1 term
+- "How does attention mechanism work?" → breadth=narrow, depth=deep, 1 term, tier2
 
 **Survey (broad + shallow):**
-- "List Gemini 2.0 features" → breadth=broad, depth=shallow, 1 term
+- "List Gemini 2.0 features" → breadth=broad, depth=shallow, 1 term, tier2
 
 **Comprehensive (broad + deep):**
-- "Comprehensive analysis of transformer architecture" → breadth=broad, depth=deep, 1 term, synthesis_tier=default (DeepSeek can handle)
+- "Comprehensive analysis of transformer architecture" → breadth=broad, depth=deep, 1 term, tier2 (most can handle)
 
 **Multi-domain:**
-- "Compare GPT-4 vs Claude Opus" → breadth=broad, depth=shallow, 2 terms (different systems)
+- "Compare GPT-4 vs Claude Opus" → breadth=broad, depth=shallow, 2 terms (different systems), tier2
+
+**Complex synthesis (rare):**
+- "Synthesize conflicting evidence about X's effectiveness across domains" → tier3 or tier4 (expensive!)
 
 ---
 

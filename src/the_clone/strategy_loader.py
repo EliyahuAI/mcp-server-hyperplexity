@@ -55,30 +55,63 @@ def get_global_limits() -> Dict[str, int]:
     return config['global_limits']
 
 
-def get_default_models() -> Dict[str, str]:
-    """Get default model configuration."""
+def get_provider_config(provider: str = "deepseek") -> Dict[str, Any]:
+    """
+    Get provider configuration.
+
+    Args:
+        provider: Provider name ("deepseek", "claude", or "baseten")
+
+    Returns:
+        Provider configuration dict
+    """
     config = load_strategy_config()
-    return config['models']['default']
+    if provider not in config['providers']:
+        logger.warning(f"Provider '{provider}' not found, falling back to 'deepseek'")
+        provider = 'deepseek'
+    return config['providers'][provider]
 
 
-def get_fallback_models() -> Dict[str, str]:
-    """Get fallback model configuration."""
-    config = load_strategy_config()
-    return config['models']['fallback']
+def get_models_for_tier(provider: str, synthesis_tier: str) -> Dict[str, str]:
+    """
+    Get models for specified provider and synthesis tier.
 
+    Args:
+        provider: Provider name ("deepseek", "claude", or "baseten")
+        synthesis_tier: Tier name ("tier1", "tier2", "tier3", or "tier4")
 
-def get_models_for_tier(synthesis_tier: str) -> Dict[str, str]:
-    """Get models for specified synthesis tier."""
-    config = load_strategy_config()
-    tier_map = {
-        'default': 'default',
-        'default_baseten': 'default_baseten',
-        'strong': 'fallback',
-        'deepest': 'deepest',
-        'deepest_baseten': 'deepest_baseten'
+    Returns:
+        Dict with model configuration for all stages
+    """
+    provider_config = get_provider_config(provider)
+
+    # Validate tier
+    if synthesis_tier not in provider_config['tiers']:
+        logger.warning(f"Tier '{synthesis_tier}' not found for provider '{provider}', falling back to 'tier2'")
+        synthesis_tier = 'tier2'
+
+    tier_config = provider_config['tiers'][synthesis_tier]
+    extraction_model = provider_config['default_extraction_model']
+
+    return {
+        'initial_decision': extraction_model,
+        'triage': extraction_model,
+        'extraction': extraction_model,
+        'synthesis': tier_config['synthesis']
     }
-    tier = tier_map.get(synthesis_tier, 'default')
-    return config['models'].get(tier, config['models']['default'])
+
+
+def get_default_models(provider: str = "deepseek") -> Dict[str, str]:
+    """
+    Get default model configuration for a provider (tier2 - balanced).
+
+    Args:
+        provider: Provider name ("deepseek", "claude", or "baseten")
+
+    Returns:
+        Model configuration dict
+    """
+    return get_models_for_tier(provider, 'tier2')
 
 
 def should_stop_iteration(snippets: list, strategy: Dict[str, Any]) -> bool:

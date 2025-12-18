@@ -44,8 +44,8 @@ def get_initial_decision_schema() -> dict:
             },
             "synthesis_tier": {
                 "type": "string",
-                "enum": ["default", "strong", "deepest"],
-                "description": "Synthesis model tier: default (DeepSeek-fast), strong (Sonnet-balanced), deepest (Opus-hardest problems only)"
+                "enum": ["tier1", "tier2", "tier3", "tier4"],
+                "description": "Synthesis complexity tier: tier1 (fast/simple), tier2 (balanced), tier3 (strong reasoning), tier4 (deepest analysis, hardest problems only)"
             }
         },
         "required": ["decision", "breadth", "depth", "search_terms", "synthesis_tier"]

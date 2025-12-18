@@ -50,43 +50,84 @@
     "max_search_terms": 3
   },
 
-  "models": {
-    "default": {
-      "initial_decision": "deepseek-v3.2",
-      "triage": "deepseek-v3.2",
-      "extraction": "deepseek-v3.2",
-      "synthesis": "deepseek-v3.2"
+  "providers": {
+    "deepseek": {
+      "description": "Default provider using DeepSeek V3.2 for cost efficiency",
+      "default_extraction_model": "deepseek-v3.2",
+      "tiers": {
+        "tier1": {
+          "synthesis": "deepseek-v3.2",
+          "label": "Fast",
+          "description": "Fast, cost-effective synthesis for simple queries"
+        },
+        "tier2": {
+          "synthesis": "deepseek-v3.2",
+          "label": "Balanced",
+          "description": "Balanced performance for typical queries"
+        },
+        "tier3": {
+          "synthesis": "claude-sonnet-4-5",
+          "label": "Strong",
+          "description": "Strong reasoning for complex queries"
+        },
+        "tier4": {
+          "synthesis": "claude-opus-4-5",
+          "label": "Deepest",
+          "description": "Deepest analysis for hardest problems"
+        }
+      }
     },
-    "default_baseten": {
-      "initial_decision": "deepseek-v3.2-baseten",
-      "triage": "deepseek-v3.2-baseten",
-      "extraction": "deepseek-v3.2-baseten",
-      "synthesis": "deepseek-v3.2-baseten"
+    "claude": {
+      "description": "All-Claude provider for maximum reliability",
+      "default_extraction_model": "claude-haiku-4-5",
+      "tiers": {
+        "tier1": {
+          "synthesis": "claude-haiku-4-5",
+          "label": "Fast",
+          "description": "Fast synthesis for simple queries"
+        },
+        "tier2": {
+          "synthesis": "claude-sonnet-4-5",
+          "label": "Balanced",
+          "description": "Balanced performance for typical queries"
+        },
+        "tier3": {
+          "synthesis": "claude-sonnet-4-5",
+          "label": "Strong",
+          "description": "Strong reasoning for complex queries"
+        },
+        "tier4": {
+          "synthesis": "claude-opus-4-5",
+          "label": "Deepest",
+          "description": "Deepest analysis for hardest problems"
+        }
+      }
     },
-    "fallback": {
-      "initial_decision": "claude-sonnet-4-5",
-      "triage": "claude-haiku-4-5",
-      "extraction": "claude-haiku-4-5",
-      "synthesis": "claude-sonnet-4-5"
-    },
-    "deepest": {
-      "initial_decision": "claude-sonnet-4-5",
-      "triage": "claude-haiku-4-5",
-      "extraction": "claude-haiku-4-5",
-      "synthesis": "claude-opus-4-5"
-    },
-    "deepest_baseten": {
-      "initial_decision": "deepseek-v3.2-baseten",
-      "triage": "deepseek-v3.2-baseten",
-      "extraction": "deepseek-v3.2-baseten",
-      "synthesis": "claude-opus-4-5"
+    "baseten": {
+      "description": "DeepSeek via Baseten for lower latency",
+      "default_extraction_model": "deepseek-v3.2-baseten",
+      "tiers": {
+        "tier1": {
+          "synthesis": "deepseek-v3.2-baseten",
+          "label": "Fast",
+          "description": "Fast, cost-effective synthesis via Baseten"
+        },
+        "tier2": {
+          "synthesis": "deepseek-v3.2-baseten",
+          "label": "Balanced",
+          "description": "Balanced performance via Baseten"
+        },
+        "tier3": {
+          "synthesis": "claude-sonnet-4-5",
+          "label": "Strong",
+          "description": "Strong reasoning for complex queries"
+        },
+        "tier4": {
+          "synthesis": "claude-opus-4-5",
+          "label": "Deepest",
+          "description": "Deepest analysis for hardest problems"
+        }
+      }
     }
-  },
-
-  "model_tier_mapping": {
-    "comprehensive": "deepest",
-    "focused_deep": "default",
-    "survey": "default",
-    "targeted": "default"
   }
 }

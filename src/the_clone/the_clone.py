@@ -70,6 +70,7 @@ class TheClone2Refined:
         academic: bool = False,
         include_domains: Optional[List[str]] = None,
         exclude_domains: Optional[List[str]] = None,
+        provider: str = "deepseek",
         use_baseten: bool = False
     ) -> Dict[str, Any]:
         """
@@ -90,6 +91,11 @@ class TheClone2Refined:
         logger.info(f"[CLONE] Query: {prompt[:100]}...")
         logger.info("=" * 80)
 
+        # Handle backwards compatibility: use_baseten=True → provider="baseten"
+        if use_baseten:
+            provider = "baseten"
+            logger.info(f"[CLONE] use_baseten=True (backwards compat), setting provider='baseten'")
+
         # Load configuration
         if model_override:
             models = {
@@ -101,10 +107,12 @@ class TheClone2Refined:
             use_soft_schema = 'deepseek' in model_override
             logger.info(f"[CLONE] Model override: {model_override}")
         else:
-            models = get_default_models()
+            models = get_default_models(provider)
             use_soft_schema = True
 
         global_limits = get_global_limits()
+
+        logger.info(f"[CLONE] Provider: {provider}")
 
         # Save debug config
         if debug_dir:
@@ -134,20 +142,13 @@ class TheClone2Refined:
         # Get strategy and models
         breadth = initial_result.get('breadth', 'narrow')
         depth = initial_result.get('depth', 'shallow')
-        synthesis_tier = initial_result.get('synthesis_tier', 'default')
+        synthesis_tier = initial_result.get('synthesis_tier', 'tier2')
         strategy = get_strategy(breadth, depth)
         search_terms = initial_result.get('search_terms', [prompt])
 
         # Get models for synthesis tier (unless overridden)
         if not model_override:
-            # Adjust tier for Baseten if requested
-            tier_to_use = synthesis_tier
-            if use_baseten:
-                tier_map = {'default': 'default_baseten', 'deepest': 'deepest_baseten'}
-                tier_to_use = tier_map.get(synthesis_tier, synthesis_tier)
-                logger.info(f"[CLONE] Using Baseten provider")
-
-            models = get_models_for_tier(tier_to_use)
+            models = get_models_for_tier(provider, synthesis_tier)
             use_soft_schema = 'deepseek' in models['synthesis'] or 'baseten' in models['synthesis']
 
         logger.info(f"[CLONE] Strategy: {strategy['name']} (breadth={breadth}, depth={depth})")
