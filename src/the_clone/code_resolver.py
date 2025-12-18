@@ -408,7 +408,8 @@ class CodeResolver:
                     # Sentence doesn't exist, clamp range
                     logger.warning(f"[RESOLVER] Sentence {label} not found, clamping range")
                     break
-            return " ".join(sentences) if sentences else ""
+            # Join with newlines (important for table rows)
+            return "\n".join(sentences) if sentences else ""
 
         # Fallback to structure lookup
         section_id = start_section
@@ -428,7 +429,8 @@ class CodeResolver:
                 logger.warning(f"[RESOLVER] Sentence {sent_id} not in range, clamping")
                 break
 
-        return " ".join(sentences) if sentences else ""
+        # Join with newlines (important for table rows)
+        return "\n".join(sentences) if sentences else ""
 
     def _resolve_word_code(self, code: str) -> str:
         """
