@@ -67,6 +67,18 @@ def get_fallback_models() -> Dict[str, str]:
     return config['models']['fallback']
 
 
+def get_models_for_tier(synthesis_tier: str) -> Dict[str, str]:
+    """Get models for specified synthesis tier."""
+    config = load_strategy_config()
+    tier_map = {
+        'default': 'default',
+        'strong': 'fallback',
+        'deepest': 'deepest'
+    }
+    tier = tier_map.get(synthesis_tier, 'default')
+    return config['models'].get(tier, config['models']['default'])
+
+
 def should_stop_iteration(snippets: list, strategy: Dict[str, Any]) -> bool:
     """
     Check if we should stop iterating based on strategy stop condition.

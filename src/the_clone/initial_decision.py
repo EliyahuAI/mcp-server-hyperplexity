@@ -94,7 +94,7 @@ class InitialDecision:
             breadth = data.get('breadth', 'narrow')
             depth = data.get('depth', 'shallow')
             search_terms = data.get('search_terms', [])
-            reasoning = data.get('reasoning', '')
+            synthesis_tier = data.get('synthesis_tier', 'default')
 
             # No answer parsing needed for new schema
 
@@ -119,7 +119,7 @@ class InitialDecision:
                 "breadth": breadth,
                 "depth": depth,
                 "search_terms": search_terms,
-                "reasoning": reasoning,
+                "synthesis_tier": synthesis_tier,
                 "model_response": response
             }
 
@@ -131,7 +131,7 @@ class InitialDecision:
                 "breadth": "narrow",
                 "depth": "shallow",
                 "search_terms": [query],  # Fallback to query itself
-                "reasoning": f"Error occurred: {e}",
+                "synthesis_tier": "default",
                 "error": str(e)
             }
 

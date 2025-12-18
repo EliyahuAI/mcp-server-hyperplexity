@@ -25,10 +25,6 @@ def get_source_triage_schema() -> dict:
                 "description": "RELEVANT source indices ranked from best to worst. Exclude off-topic sources entirely. (e.g., [0, 5, 2, 7] if only 4 are relevant)",
                 "minItems": 0,
                 "uniqueItems": True
-            },
-            "reasoning": {
-                "type": "string",
-                "description": "Brief explanation of ranking (optional)"
             }
         },
         "required": ["ranked_indices"]

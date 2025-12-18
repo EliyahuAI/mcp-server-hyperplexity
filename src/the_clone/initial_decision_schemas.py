@@ -42,10 +42,11 @@ def get_initial_decision_schema() -> dict:
                 "minItems": 0,
                 "maxItems": 3
             },
-            "reasoning": {
+            "synthesis_tier": {
                 "type": "string",
-                "description": "Brief explanation"
+                "enum": ["default", "strong", "deepest"],
+                "description": "Synthesis model tier: default (DeepSeek-fast), strong (Sonnet-balanced), deepest (Opus-hardest problems only)"
             }
         },
-        "required": ["decision", "breadth", "depth", "search_terms", "reasoning"]
+        "required": ["decision", "breadth", "depth", "search_terms", "synthesis_tier"]
     }

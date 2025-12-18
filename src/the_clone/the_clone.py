@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../shared'))
 
 from the_clone.perplexity_search import PerplexitySearchClient
 from the_clone.search_manager import SearchManager
-from the_clone.strategy_loader import get_strategy, get_global_limits, get_default_models, should_stop_iteration
+from the_clone.strategy_loader import get_strategy, get_global_limits, get_default_models, get_models_for_tier, should_stop_iteration
 from the_clone.source_triage import SourceTriage
 from the_clone.snippet_extractor_streamlined import SnippetExtractorStreamlined
 from the_clone.unified_synthesizer import UnifiedSynthesizer
@@ -127,13 +127,20 @@ class TheClone2Refined:
             logger.info("[CLONE] Answered directly - no search needed")
             return self._build_direct_answer_response(prompt, initial_result, costs)
 
-        # Get strategy
+        # Get strategy and models
         breadth = initial_result.get('breadth', 'narrow')
         depth = initial_result.get('depth', 'shallow')
+        synthesis_tier = initial_result.get('synthesis_tier', 'default')
         strategy = get_strategy(breadth, depth)
         search_terms = initial_result.get('search_terms', [prompt])
 
+        # Get models for synthesis tier (unless overridden)
+        if not model_override:
+            models = get_models_for_tier(synthesis_tier)
+            use_soft_schema = 'deepseek' in models['synthesis']
+
         logger.info(f"[CLONE] Strategy: {strategy['name']} (breadth={breadth}, depth={depth})")
+        logger.info(f"[CLONE] Synthesis tier: {synthesis_tier} (model: {models['synthesis']})")
         logger.info(f"[CLONE] Params: batch={strategy['sources_per_batch']}, mode={strategy['extraction_mode']}, max_snippets={strategy['max_snippets_per_source']}, min_p={strategy['min_p_threshold']}")
         logger.info(f"[CLONE] Search terms: {search_terms}")
 
@@ -278,6 +285,8 @@ class TheClone2Refined:
                 "strategy": strategy['name'],
                 "breadth": breadth,
                 "depth": depth,
+                "synthesis_tier": synthesis_tier,
+                "synthesis_model": models['synthesis'],
                 "search_terms": search_terms,
                 "iterations": iteration,
                 "total_snippets": len(all_snippets),

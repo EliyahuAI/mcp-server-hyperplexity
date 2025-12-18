@@ -44,7 +44,28 @@ Query: {query}
 
 ---
 
-## Decision 3: Search Terms (MINIMIZE!)
+## Decision 3: Synthesis Model Tier
+
+Choose synthesis model based on synthesis complexity (NOT search complexity):
+
+**default** - DeepSeek V3.2 (USE FOR MOST QUERIES)
+- Straightforward synthesis (targeted facts, lists, surveys)
+- Clear structure from snippets
+- Default choice - push DeepSeek hard
+
+**strong** - Claude Sonnet 4.5 (ONLY IF moderately complex synthesis)
+- Nuanced synthesis requiring careful reasoning
+- Cross-referencing multiple conflicting sources
+- Complex comparisons
+
+**deepest** - Claude Opus 4.5 (EXTREMELY RARE - hardest synthesis only)
+- Multi-layered analysis with deep reasoning
+- Synthesis requires exceptional judgment
+- Use very sparingly (most expensive)
+
+---
+
+## Decision 4: Search Terms (MINIMIZE!)
 
 **Default: 1 search term** for single domain
 
@@ -66,7 +87,7 @@ Query: {query}
   "breadth": "narrow",
   "depth": "shallow",
   "search_terms": [],
-  "reasoning": "..."
+  "synthesis_tier": "default"
 }}
 ```
 
@@ -77,7 +98,7 @@ Query: {query}
   "breadth": "narrow" | "broad",
   "depth": "shallow" | "deep",
   "search_terms": ["term1"],
-  "reasoning": "..."
+  "synthesis_tier": "default" | "strong" | "deepest"
 }}
 ```
 
@@ -95,7 +116,7 @@ Query: {query}
 - "List Gemini 2.0 features" → breadth=broad, depth=shallow, 1 term
 
 **Comprehensive (broad + deep):**
-- "Comprehensive analysis of transformer architecture" → breadth=broad, depth=deep, 1 term
+- "Comprehensive analysis of transformer architecture" → breadth=broad, depth=deep, 1 term, synthesis_tier=default (DeepSeek can handle)
 
 **Multi-domain:**
 - "Compare GPT-4 vs Claude Opus" → breadth=broad, depth=shallow, 2 terms (different systems)
