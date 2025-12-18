@@ -151,7 +151,12 @@ class TheClone2Refined:
         search_include_domains: Optional[List[str]] = None
         search_exclude_domains: Optional[List[str]] = None
 
-        if academic:
+        # Backdoor: include_domains=["academic"] triggers academic mode
+        if include_domains and include_domains == ["academic"]:
+            from the_clone.academic_domains import get_academic_domains
+            search_include_domains = get_academic_domains()
+            logger.info(f"[CLONE] Academic mode (backdoor) - using {len(search_include_domains)} academic domains")
+        elif academic:
             from the_clone.academic_domains import get_academic_domains
             search_include_domains = get_academic_domains()
             logger.info(f"[CLONE] Academic mode - using {len(search_include_domains)} academic domains")
