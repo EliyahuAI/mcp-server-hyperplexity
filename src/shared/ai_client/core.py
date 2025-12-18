@@ -84,11 +84,23 @@ class AIAPIClient:
     def _get_backup_models(self, primary_model: str, count: int = 2) -> List[str]:
         try:
             primary_index = self.MODEL_HIERARCHY.index(primary_model)
+            primary_is_baseten = 'baseten' in primary_model.lower()
+            
             backup_models = []
-            for i in range(1, count + 1):
-                backup_index = primary_index + i
-                if backup_index < len(self.MODEL_HIERARCHY):
-                    backup_models.append(self.MODEL_HIERARCHY[backup_index])
+            curr_index = primary_index + 1
+            
+            while len(backup_models) < count and curr_index < len(self.MODEL_HIERARCHY):
+                candidate = self.MODEL_HIERARCHY[curr_index]
+                candidate_is_baseten = 'baseten' in candidate.lower()
+                
+                # Rule: Baseten models only chosen if primary was Baseten
+                if candidate_is_baseten and not primary_is_baseten:
+                    curr_index += 1
+                    continue
+                
+                backup_models.append(candidate)
+                curr_index += 1
+                
             return backup_models
         except ValueError:
             return ["claude-opus-4-0", "claude-3-7-sonnet-latest"][:count]
@@ -97,7 +109,8 @@ class AIAPIClient:
                                  tool_name: str = "structured_response", use_cache: bool = True,
                                  context: str = "", max_tokens: int = None, max_web_searches: int = 3,
                                  search_context_size: str = "low", debug_name: str = None, soft_schema: bool = False,
-                                 include_domains: Optional[List[str]] = None, exclude_domains: Optional[List[str]] = None) -> Dict:
+                                 include_domains: Optional[List[str]] = None, exclude_domains: Optional[List[str]] = None,
+                                 use_code_extraction: bool = False) -> Dict:
         
         call_start_time = datetime.now()
         
@@ -162,7 +175,7 @@ class AIAPIClient:
                     use_soft_schema_for_baseten = True 
                     result = await self.baseten.make_single_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 8000, use_soft_schema_for_baseten)
                 elif api_provider == 'clone':
-                    result = await self.clone.make_structured_call(prompt, current_model, use_cache, cache_key, call_start_time, schema, soft_schema, debug_name, include_domains, exclude_domains)
+                    result = await self.clone.make_structured_call(prompt, current_model, use_cache, cache_key, call_start_time, schema, soft_schema, debug_name, include_domains, exclude_domains, use_code_extraction)
                 else:
                     continue
 

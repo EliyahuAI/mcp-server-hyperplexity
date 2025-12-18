@@ -11,10 +11,11 @@ logger = logging.getLogger(__name__)
 MODEL_HIERARCHY = [
     "claude-opus-4-5",
     "claude-sonnet-4-5",
+    "the-clone-baseten", # hybrid perplexity/deepseek/claude via baseten
     "the-clone-claude", # hybrid perplexity/claude
     "the-clone", # hybrid perplexity/deepseek/claude option
-    "deepseek-v3.2",         # Ultra-low cost, most capable DeepSeek
     "deepseek-v3.2-baseten",      # Baseten-hosted DeepSeek V3.2
+    "deepseek-v3.2",         # Ultra-low cost, most capable DeepSeek
     "sonar-pro",
     "deepseek-v3.2-exp",     # Ultra-low cost variant with caching
     "deepseek-v3.1",         # Hybrid thinking/non-thinking

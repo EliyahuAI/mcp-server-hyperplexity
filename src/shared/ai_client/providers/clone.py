@@ -37,34 +37,37 @@ class CloneProvider:
 
         return self._clone_instance
 
-    async def make_structured_call(self, prompt: str, model: str, use_cache: bool, cache_key: str, start_time: datetime, schema: Dict = None, soft_schema: bool = False, debug_name: str = None, include_domains: List[str] = None, exclude_domains: List[str] = None) -> Dict:
+    async def make_structured_call(self, prompt: str, model: str, use_cache: bool, cache_key: str, start_time: datetime, schema: Dict = None, soft_schema: bool = False, debug_name: str = None, include_domains: List[str] = None, exclude_domains: List[str] = None, use_code_extraction: bool = False) -> Dict:
         """
         Execute a call to 'The Clone' agentic pipeline.
         
         Args:
             prompt: The user query
-            model: 'the-clone' or 'the-clone-claude'
+            model: 'the-clone', 'the-clone-claude', or 'the-clone-baseten'
             ...
         """
         try:
             clone = self._get_clone_instance()
             
-            # Determine model overrides based on model name
-            model_override = None
+            # Determine provider based on model name
+            provider = 'deepseek' # Default
+            
             if model == 'the-clone-claude':
-                model_override = 'claude-sonnet-4-5'
+                provider = 'claude'
+            elif model == 'the-clone-baseten':
+                provider = 'baseten'
             elif model == 'the-clone':
-                # Default behavior (DeepSeek/Hybrid)
-                model_override = None 
+                provider = 'deepseek'
             
             # Execute query
-            logger.info(f"[CLONE_PROVIDER] Executing agentic pipeline for model: {model}")
+            logger.info(f"[CLONE_PROVIDER] Executing agentic pipeline for model: {model} (provider={provider})")
             result = await clone.query(
                 prompt=prompt,
-                model_override=model_override,
+                provider=provider,
                 debug_dir=f"/tmp/clone_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}", # Temp debug dir
                 include_domains=include_domains,
-                exclude_domains=exclude_domains
+                exclude_domains=exclude_domains,
+                use_code_extraction=use_code_extraction
             )
             
             processing_time = (datetime.now() - start_time).total_seconds()
