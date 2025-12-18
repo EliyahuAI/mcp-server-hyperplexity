@@ -95,20 +95,26 @@ class TextLabeler:
 
                 # Check if this looks like a table row
                 if sent_text.strip().startswith('|') and '|' in sent_text[1:]:
-                    # Skip separator rows (|--|--|)
-                    if re.match(r'^\|(?:--\|)+', sent_text.strip()):
-                        # This is a separator, not a data row - skip
+                    # Check if separator row (|--|--|)
+                    is_separator = bool(re.match(r'^\|(?:--\|)+', sent_text.strip()))
+
+                    if is_separator:
+                        # Separator - skip but don't reset table_header
+                        logger.debug(f"[TABLE] Skipping separator {sent_id}")
                         continue
 
                     # This is a table row (header or data)
+                    # Never let this be a header if we just saw a separator
                     if table_header is None:
                         # First row of table - mark as header
                         table_header = sent_id
                         sentences[sent_id]['is_table_header'] = True
+                        logger.debug(f"[TABLE] Marked {sent_id} as header")
                     else:
                         # Data row - link to header
                         sentences[sent_id]['is_table_row'] = True
                         sentences[sent_id]['table_header_id'] = table_header
+                        logger.debug(f"[TABLE] Linked {sent_id} to header {table_header}")
                 else:
                     # Not a table row, reset header tracking
                     table_header = None
