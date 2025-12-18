@@ -139,7 +139,17 @@ class TheClone2Refined:
 
         if decision == "answer_directly":
             logger.info("[CLONE] Answered directly - no search needed")
-            return self._build_direct_answer_response(prompt, initial_result, costs)
+            direct_response = self._build_direct_answer_response(prompt, initial_result, costs)
+
+            # Check if answer is actually empty - if so, retry with search
+            answer = direct_response.get('answer', {})
+            if not answer or answer == {} or (isinstance(answer, dict) and not answer.keys()):
+                logger.warning("[CLONE] Direct answer was empty - retriggering with search requirement")
+                # Force search by changing decision
+                decision = "need_search"
+                # Continue to search path below
+            else:
+                return direct_response
 
         # Get strategy and models
         breadth = initial_result.get('breadth', 'narrow')
