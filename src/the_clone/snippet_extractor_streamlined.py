@@ -285,6 +285,43 @@ class SnippetExtractorStreamlined:
                 low_q = sum(1 for s in snippets if s["p"] <= 0.15)
                 logger.info(f"[EXTRACTOR] Quality: avg_p={avg_p:.2f}, high={high_q}, low={low_q}")
 
+                # Optimization: If >50% of source words extracted, use entire source instead
+                if use_code_extraction and text_structure:
+                    # Calculate word coverage, not sentence coverage
+                    total_words = len(source_text.split())
+                    extracted_words = sum(len(s['text'].split()) for s in snippets)
+                    coverage = extracted_words / total_words if total_words > 0 else 0
+
+                    if coverage > 0.5:
+                        # Calculate median p-score and most common reason
+                        p_scores = sorted([s["p"] for s in snippets])
+                        median_p = p_scores[len(p_scores) // 2]
+
+                        # Get most common reason
+                        from collections import Counter
+                        reason_counts = Counter(s["validation_reason"] for s in snippets)
+                        most_common_reason = reason_counts.most_common(1)[0][0]
+
+                        logger.info(f"[EXTRACTOR] Coverage {coverage:.1%} >50% - using entire source (median_p={median_p}, reason={most_common_reason})")
+
+                        # Replace all snippets with single snippet containing entire source
+                        snippet_id = f"{snippet_id_prefix}.0-p{median_p:.2f}"
+                        snippets = [{
+                            "id": snippet_id,
+                            "text": source_text,
+                            "p": median_p,
+                            "validation_reason": most_common_reason,
+                            "search_ref": 1,
+                            "_source_title": source_title,
+                            "_source_url": source_url,
+                            "_source_date": source_date,
+                            "_source_reliability": source_reliability,
+                            "_search_term": source_search_term,
+                            "_primary_search": primary_search_index,
+                            "_is_off_topic": False,
+                            "_optimized_from_coverage": coverage
+                        }]
+
             # Debug logging for code extraction
             if use_code_extraction and self.debugger and text_structure:
                 issues = self.debugger.detect_issues(
