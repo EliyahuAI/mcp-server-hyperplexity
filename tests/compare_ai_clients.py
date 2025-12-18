@@ -291,6 +291,53 @@ async def main():
         import traceback
         traceback.print_exc()
 
+    # 6. Baseten DeepSeek Test
+    logger.info("\n============================================================")
+    logger.info("TESTING LIVE API: Baseten DeepSeek V3.2 (deepseek-baseten)")
+    logger.info("============================================================")
+    prompt_baseten = "What is the capital of France?"
+    schema_baseten = {"type": "object", "properties": {"answer": {"type": "string"}, "summary": {"type": "string"}}}
+    
+    try:
+        # Check if Baseten provider is initialized
+        if new_client.baseten:
+            new_baseten_response = await new_client.call_structured_api(
+                prompt=prompt_baseten,
+                schema=schema_baseten,
+                model="deepseek-baseten",
+                soft_schema=False # Try hard schema
+            )
+
+            logger.info(f"--- [New Client] Baseten DeepSeek Response ---")
+            
+            baseten_content = ""
+            if 'choices' in new_baseten_response['response']:
+                baseten_content = new_baseten_response['response']['choices'][0]['message']['content']
+            elif 'content' in new_baseten_response['response']:
+                for block in new_baseten_response['response']['content']:
+                    if block['type'] == 'text':
+                        baseten_content += block['text']
+            
+            logger.info(f"OUTPUT: {baseten_content}")
+            
+            assert new_baseten_response is not None, "Baseten response should not be None"
+            assert new_baseten_response.get('response') is not None, "Baseten response should have a 'response' key"
+            
+            # Verify cost calculation if cost data is available
+            if new_baseten_response.get('enhanced_data'):
+                total_cost_baseten = new_baseten_response['enhanced_data']['costs']['actual']['total_cost']
+                logger.info(f"Total Cost (Baseten): ${total_cost_baseten:.6f}")
+                assert total_cost_baseten > 0, "Baseten total cost should be greater than 0"
+            
+            logger.info("✅ Baseten client returned valid response and cost data")
+        else:
+            logger.warning("Skipping Baseten test: Provider not initialized (missing API key?)")
+
+    except Exception as e:
+        logger.error(f"❌ Baseten client test failed: {e}")
+        import traceback
+        traceback.print_exc()
+
     logger.info("\nLive Refactor Comparison Test Finished.")
 
 if __name__ == "__main__":
