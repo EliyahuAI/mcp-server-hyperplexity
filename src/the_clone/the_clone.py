@@ -71,7 +71,8 @@ class TheClone2Refined:
         include_domains: Optional[List[str]] = None,
         exclude_domains: Optional[List[str]] = None,
         provider: str = "deepseek",
-        use_baseten: bool = False
+        use_baseten: bool = False,
+        use_code_extraction: bool = False
     ) -> Dict[str, Any]:
         """
         Execute query with strategy-based architecture.
@@ -90,6 +91,7 @@ class TheClone2Refined:
         logger.info("=" * 80)
         logger.info(f"[CLONE] Query: {prompt[:100]}...")
         logger.info("=" * 80)
+        logger.info(f"[CLONE] use_code_extraction: {use_code_extraction}")
 
         # Handle backwards compatibility: use_baseten=True → provider="baseten"
         if use_baseten:
@@ -243,7 +245,8 @@ class TheClone2Refined:
                     soft_schema=use_soft_schema,
                     min_quality_threshold=strategy['min_p_threshold'],
                     extraction_mode=strategy['extraction_mode'],
-                    max_snippets_per_source=strategy['max_snippets_per_source']
+                    max_snippets_per_source=strategy['max_snippets_per_source'],
+                    use_code_extraction=use_code_extraction
                 )
                 extraction_tasks.append(task)
 

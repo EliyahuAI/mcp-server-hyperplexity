@@ -6,7 +6,7 @@ import aiohttp
 import re
 from datetime import datetime
 from typing import Dict, List, Optional
-from perplexity_schema import get_response_format_schema
+from shared.perplexity_schema import get_response_format_schema
 
 from ..utils import (
     extract_citations_from_perplexity_response,

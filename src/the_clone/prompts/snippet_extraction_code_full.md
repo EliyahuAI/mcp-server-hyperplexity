@@ -19,7 +19,12 @@ This source was found by **Search {primary_search_num}**, but it may contain inf
 
 ---
 
-## Source Text
+## Labeled Source
+
+The source text below has been labeled with backtick suffixes (`X.Y) at the end of each sentence:
+- Headings end with `X.0 (e.g., `1.0, `2.0)
+- Sentences end with `X.Y (e.g., `1.1, `1.2, `2.1)
+- All original text, markdown, and formatting is preserved
 
 {source_full_text}
 
@@ -164,19 +169,30 @@ You must output:
 
 ## Output Format
 
+**Return codes (field `c`) matching the backtick labels in the source above.**
+
+Copy exact labels: `` `1.1 ``, `` `1.2 ``, `` `2.1 ``, etc.
+Ranges: `` `1.1-1.3 `` or `` `1.1-3 ``
+Attribution: `` [`2.w1-4] `1.1 ``
+Context: `` `1.1 [of X] ``
+
+**Must include section.sentence (`` `1.1 `` NOT `` `1 ``). Only use labels that exist.**
+
 ```json
 {{
   "quotes_by_search": {{
     "1": [
-      {{"text": "Quote text here", "p": 0.95, "reason": "PRIMARY"}},
-      {{"text": "Another quote", "p": 0.65, "reason": "OK"}}
+      {{"c": "`1.1", "p": 0.95, "r": "PRIMARY"}},
+      {{"c": "`1.2-1.3", "p": 0.65, "r": "OK"}}
     ],
     "2": [
-      {{"text": "[Dr. Jane Smith, Chief Scientist, stated that] ...", "p": 0.85, "reason": "ATTRIBUTED"}}
+      {{"c": "[`2.1.w1-4] `1.3", "p": 0.85, "r": "ATTRIBUTED"}}
     ]
   }}
 }}
 ```
+
+**Note:** Field names are `c` (code), `p` (probability), `r` (reason) for compactness.
 
 Or, if nothing essential:
 

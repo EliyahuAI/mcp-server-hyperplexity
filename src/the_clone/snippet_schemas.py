@@ -67,6 +67,52 @@ def get_snippet_synthesis_schema() -> dict:
     }
 
 
+def get_snippet_extraction_code_schema() -> dict:
+    """
+    Schema for code-based extraction - compact array format.
+    Each quote is [code, p_score, reason_abbrev].
+
+    Returns:
+        JSON schema for code-based snippet extraction response
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "quotes_by_search": {
+                "type": "object",
+                "description": "Quotes organized by search term number (e.g., '1', '2', '3')",
+                "additionalProperties": {
+                    "type": "array",
+                    "description": "Array of quotes, each as [code, p_score, reason_abbrev]",
+                    "items": {
+                        "type": "array",
+                        "description": "Quote as [code, p, reason]. Position-based: [0]=code, [1]=p-score, [2]=reason.",
+                        "minItems": 3,
+                        "maxItems": 3,
+                        "items": [
+                            {
+                                "type": "string",
+                                "description": "Location code with backtick, e.g., '`1.1', '`1.2-1.3'"
+                            },
+                            {
+                                "type": "number",
+                                "description": "Quality probability",
+                                "enum": [0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95]
+                            },
+                            {
+                                "type": "string",
+                                "description": "Reason: P/D/A (≥0.85), O (mid), C/U/N/PR/S/SL (≤0.15, SL=AI slop)",
+                                "enum": ["P", "D", "A", "O", "C", "U", "N", "PR", "S", "SL"]
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        "required": ["quotes_by_search"]
+    }
+
+
 def get_sufficiency_check_schema() -> dict:
     """
     Schema for checking if accumulated snippets are sufficient.

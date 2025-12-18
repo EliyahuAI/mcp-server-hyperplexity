@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../shared'))
 from shared.ai_api_client import AIAPIClient
 from shared.ai_client.utils import extract_structured_response
 from the_clone.triage_schemas import get_source_triage_schema
+from the_clone.text_labeler import TextLabeler
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -30,14 +31,17 @@ class SourceTriage:
     Ranks ALL sources from best to worst for iterative extraction.
     """
 
-    def __init__(self, ai_client: AIAPIClient = None):
+    def __init__(self, ai_client: AIAPIClient = None, use_labeled_text: bool = True):
         """
         Initialize source triage.
 
         Args:
             ai_client: Optional AIAPIClient instance
+            use_labeled_text: Whether to use labeled text format for triage (default True)
         """
         self.ai_client = ai_client or AIAPIClient()
+        self.use_labeled_text = use_labeled_text
+        self.text_labeler = TextLabeler() if use_labeled_text else None
 
     async def triage_all_searches(
         self,
@@ -258,8 +262,12 @@ class SourceTriage:
             # Use date, fall back to last_updated if date not available
             source_date = result.get('date') or result.get('last_updated', '')
 
-            # Extract headings and first/last sentences
-            preview = self._extract_content_preview(snippet)
+            # Use labeled text format for better structure visibility
+            if self.use_labeled_text and self.text_labeler and snippet:
+                preview = self._create_labeled_preview(snippet)
+            else:
+                # Fallback to old preview format
+                preview = self._extract_content_preview(snippet)
 
             # Build source info with date
             source_info = f"[{i}] {title}\n    URL: {url}\n"
@@ -270,6 +278,52 @@ class SourceTriage:
             formatted.append(source_info)
 
         return '\n'.join(formatted)
+
+    def _create_labeled_preview(self, snippet: str) -> str:
+        """
+        Create labeled preview showing structure and first/last sentences.
+        More informative than simple first/last for triage.
+        """
+        if not snippet:
+            return "    (No content)"
+
+        try:
+            labeled_text, structure = self.text_labeler.label_text(snippet)
+
+            # Create compact preview
+            preview_parts = []
+
+            for section in structure.get('sections', []):
+                heading = section.get('heading', '')
+                sentences = section['sentences']
+                sent_count = len(sentences)
+
+                if sent_count == 0:
+                    continue
+
+                # Section header
+                if heading:
+                    preview_parts.append(f"    {section['id']}: {heading} ({sent_count} sentences)")
+                else:
+                    preview_parts.append(f"    {section['id']}: ({sent_count} sentences)")
+
+                # Show first sentence
+                sent_ids = list(sentences.keys())
+                first_id = sent_ids[0]
+                first_text = sentences[first_id]['text'][:100]
+                preview_parts.append(f"      {first_id}: {first_text}...")
+
+                # Show last sentence if different
+                if len(sent_ids) > 1:
+                    last_id = sent_ids[-1]
+                    last_text = sentences[last_id]['text'][:100]
+                    preview_parts.append(f"      {last_id}: {last_text}...")
+
+            return '\n'.join(preview_parts) if preview_parts else "    (No content)"
+
+        except Exception as e:
+            logger.warning(f"[TRIAGE] Failed to create labeled preview: {e}, using fallback")
+            return self._extract_content_preview(snippet)
 
     def _extract_content_preview(self, text: str, max_chars: int = 300) -> str:
         """Extract headings + first/last sentences from text."""

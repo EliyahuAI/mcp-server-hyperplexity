@@ -16,7 +16,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../shared'))
 
 from shared.ai_api_client import AIAPIClient
 from shared.ai_client.utils import extract_structured_response
-from the_clone.snippet_schemas import get_snippet_extraction_schema
+from the_clone.snippet_schemas import get_snippet_extraction_schema, get_snippet_extraction_code_schema
+from the_clone.text_labeler import TextLabeler
+from the_clone.code_resolver import CodeResolver
+from the_clone.code_extraction_debug import CodeExtractionDebugger
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,13 +32,16 @@ class SnippetExtractorStreamlined:
     No topics, no relevance, no metadata - just quotes.
     """
 
-    def __init__(self, ai_client: AIAPIClient = None):
+    def __init__(self, ai_client: AIAPIClient = None, enable_debug: bool = True):
         """Initialize the streamlined extractor.
 
         Args:
             ai_client: AIAPIClient instance
+            enable_debug: Enable debug logging for code extraction (default True)
         """
         self.ai_client = ai_client or AIAPIClient()
+        self.text_labeler = TextLabeler()
+        self.debugger = CodeExtractionDebugger() if enable_debug else None
 
     async def extract_from_source(
         self,
@@ -48,7 +54,8 @@ class SnippetExtractorStreamlined:
         soft_schema: bool = False,
         min_quality_threshold: float = 0.0,
         extraction_mode: str = "simple_facts",
-        max_snippets_per_source: int = 5
+        max_snippets_per_source: int = 5,
+        use_code_extraction: bool = False
     ) -> Dict[str, Any]:
         """
         Extract essential quotes from a single source for ALL search terms.
@@ -65,6 +72,7 @@ class SnippetExtractorStreamlined:
             min_quality_threshold: Minimum p score to keep snippets (0.0 = keep all)
             extraction_mode: "simple_facts" (targeted) or "nuanced" (detailed)
             max_snippets_per_source: Maximum snippets to extract from this source
+            use_code_extraction: If True, use code-based extraction (more token-efficient)
 
         Returns:
             Dict with:
@@ -79,29 +87,43 @@ class SnippetExtractorStreamlined:
         source_date = source.get('date') or source.get('last_updated', '')
         # Get search term that found this source
         source_search_term = source.get('_search_term', '')
+        # Get current date for staleness assessment
+        from datetime import datetime
+        current_date = datetime.now().strftime('%Y-%m-%d')
 
         logger.debug(f"[EXTRACTOR] Extracting from: {source_title[:60]}...")
         logger.info(f"[EXTRACTOR_DEBUG] Source _search_term: '{source_search_term}'")
+
+        # Code-based extraction: label the source text first
+        labeled_text = None
+        text_structure = None
+        if use_code_extraction:
+            labeled_text, text_structure = self.text_labeler.label_text(source_text)
+            logger.debug(f"[EXTRACTOR] Labeled source text: {len(text_structure.get('sections', []))} sections")
 
         # Build extraction prompt with all search terms
         extraction_prompt = self._build_prompt(
             query=query,
             source_title=source_title,
             source_url=source_url,
-            source_text=source_text,
+            source_text=labeled_text if use_code_extraction else source_text,
             source_reliability=source_reliability,
             source_date=source_date,
+            current_date=current_date,
             all_search_terms=all_search_terms,
             primary_search_index=primary_search_index,
             extraction_mode=extraction_mode,
-            max_snippets=max_snippets_per_source
+            max_snippets=max_snippets_per_source,
+            use_code_extraction=use_code_extraction
         )
 
         try:
-            # Call extraction model
+            # Call extraction model with appropriate schema
+            schema = get_snippet_extraction_code_schema() if use_code_extraction else get_snippet_extraction_schema()
+
             response = await self.ai_client.call_structured_api(
                 prompt=extraction_prompt,
-                schema=get_snippet_extraction_schema(),
+                schema=schema,
                 model=model,
                 use_cache=False,
                 max_web_searches=0,
@@ -115,8 +137,13 @@ class SnippetExtractorStreamlined:
 
             quotes_by_search = data.get('quotes_by_search', {})
 
+            # Initialize code resolver if using code extraction
+            resolver = None
+            if use_code_extraction and text_structure:
+                resolver = CodeResolver(text_structure, labeled_text)
+
             # Assign snippet IDs to each quote, organized by search term
-            # Quotes now come as objects with {text, p, reason}
+            # Quotes now come as objects with {text, p, reason} or {c, p, r} for code-based
             snippets = []
             total_quotes = 0
 
@@ -124,14 +151,59 @@ class SnippetExtractorStreamlined:
                 search_num = int(search_num_str)
 
                 for i, quote_obj in enumerate(quotes):
-                    # Handle both old format (string) and new format (object)
+                    # Handle multiple formats: string, array, object
                     if isinstance(quote_obj, str):
                         # Old format - assign default validation
                         quote_text = quote_obj
                         p_score = 0.50
                         reason = "OK"
+                    elif isinstance(quote_obj, list):
+                        # Array format: [code, p, reason_abbrev]
+                        if len(quote_obj) >= 3:
+                            code = quote_obj[0]
+                            p_score = quote_obj[1]
+                            reason_abbrev = quote_obj[2]
+
+                            # Expand abbreviated reason
+                            reason_map = {
+                                "P": "PRIMARY", "D": "DOCUMENTED", "A": "ATTRIBUTED",
+                                "O": "OK",
+                                "C": "CONTRADICTED", "U": "UNSOURCED", "N": "ANONYMOUS",
+                                "PR": "PROMOTIONAL", "S": "STALE", "SL": "SLOP"
+                            }
+                            reason = reason_map.get(reason_abbrev, reason_abbrev)
+
+                            # Resolve code to text if using code extraction
+                            if use_code_extraction and resolver:
+                                quote_text = resolver.resolve(code)
+                                logger.debug(f"[EXTRACTOR] Resolved code '{code}' → {len(quote_text)} chars: {quote_text[:50]}...")
+                                if not quote_text:
+                                    logger.warning(f"[EXTRACTOR] Failed to resolve code '{code}', skipping")
+                                    continue
+                            else:
+                                # Not using code extraction, treat as literal
+                                quote_text = code
+                        else:
+                            logger.warning(f"[EXTRACTOR] Invalid array format (len={len(quote_obj)}), skipping")
+                            continue
+                    elif use_code_extraction and 'c' in quote_obj:
+                        # Code-based object format with {c, p, r}
+                        code = quote_obj.get('c', '')
+                        p_score = quote_obj.get('p', 0.50)
+                        reason = quote_obj.get('r', 'OK')
+
+                        # Resolve code to text
+                        if resolver:
+                            quote_text = resolver.resolve(code)
+                            logger.debug(f"[EXTRACTOR] Resolved code '{code}' → {len(quote_text)} chars: {quote_text[:50]}...")
+                            if not quote_text:
+                                logger.warning(f"[EXTRACTOR] Failed to resolve code '{code}', skipping")
+                                continue
+                        else:
+                            logger.warning(f"[EXTRACTOR] No resolver available for code '{code}', skipping")
+                            continue
                     else:
-                        # New format with validation
+                        # Text-based object format with {text, p, reason}
                         quote_text = quote_obj.get('text', '')
                         p_score = quote_obj.get('p', 0.50)
                         reason = quote_obj.get('reason', 'OK')
@@ -181,6 +253,25 @@ class SnippetExtractorStreamlined:
                 low_q = sum(1 for s in snippets if s["p"] <= 0.15)
                 logger.info(f"[EXTRACTOR] Quality: avg_p={avg_p:.2f}, high={high_q}, low={low_q}")
 
+            # Debug logging for code extraction
+            if use_code_extraction and self.debugger and text_structure:
+                issues = self.debugger.detect_issues(
+                    labeled_text=labeled_text,
+                    structure=text_structure,
+                    ai_response=data,
+                    resolved_snippets=snippets
+                )
+
+                self.debugger.log_extraction(
+                    source_id=snippet_id_prefix,
+                    original_text=source_text,
+                    labeled_text=labeled_text,
+                    structure=text_structure,
+                    ai_response=data,
+                    resolved_snippets=snippets,
+                    issues=issues
+                )
+
             return {
                 "snippets": snippets,
                 "source_info": {
@@ -211,16 +302,19 @@ class SnippetExtractorStreamlined:
         source_text: str,
         source_reliability: str,
         source_date: str,
+        current_date: str,
         all_search_terms: List[str],
         primary_search_index: int,
         extraction_mode: str = "simple_facts",
-        max_snippets: int = 5
+        max_snippets: int = 5,
+        use_code_extraction: bool = False
     ) -> str:
         """Build extraction prompt with all search terms."""
+        template_file = 'snippet_extraction_code_compressed.md' if use_code_extraction else 'snippet_extraction_streamlined.md'
         template_path = os.path.join(
             os.path.dirname(__file__),
             'prompts',
-            'snippet_extraction_streamlined.md'
+            template_file
         )
 
         with open(template_path, 'r', encoding='utf-8') as f:
@@ -245,6 +339,7 @@ class SnippetExtractorStreamlined:
             source_title=source_title,
             source_url=source_url,
             source_date=source_date or "Unknown",
+            current_date=current_date,
             primary_search_num=primary_search_index,
             all_search_terms_formatted=all_search_terms_formatted,
             source_full_text=source_text,
