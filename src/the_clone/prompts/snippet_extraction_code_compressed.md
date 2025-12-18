@@ -35,8 +35,9 @@ Return codes (field `c`), not full text. Organize by search term number.
 **Tables - REQUIRED:** ALWAYS include header row with data row. Extract both: `` `1.1 `1.4 `` (header + row 4) or `` `1.1-1.4 `` if contiguous. Table data is meaningless without column headers.
 
 **Basic codes** - Copy exact labels:
-- `` `1.1 ``, `` `1.2 ``, `` `2.1 ``
-- Ranges: `` `1.1-1.3 `` (only if all sentences exist)
+- `` `1.1 ``, `` `1.2 ``, `` `2.1 `` (single sentences)
+- Ranges: `` `1.1-1.3 `` or `` `1.1-3 `` (shorthand for `1.1-1.3)
+- Word ranges: `` `1.1.w5-7 `` (words 5-7, **1-indexed** - w1 is first word)
 
 **CRITICAL - Snippets must make sense in isolation:** Given only URL, page title, and snippet, the quote must be understandable. Use headings and context liberally.
 

@@ -142,7 +142,7 @@ class CodeResolver:
         # Simple: 1, 1-3, 1.w5-7 (single number or range)
         # Heading-only: H1, H2 (entire section)
         # Full: H1.2, H1.2-4, H1.2.w5-7 (with H prefix)
-        section_sentence_pattern = r'^\d+\.\d+(?:\.w\d+(?:-\d+)?)?(?:-\d+\.\d+)?$'  # 1.1, 1.1.w5-7, 1.1-1.3
+        section_sentence_pattern = r'^\d+\.\d+(?:\.w\d+(?:-\d+)?)?(?:-\d+(?:\.\d+)?)?$'  # 1.1, 1.1.w5-7, 1.1-1.3, 1.1-3
         simple_pattern = r'^\d+(?:\.w\d+(?:-\d+)?)?(?:-\d+)?$'  # 1, 1-3, 1.w5-7
         heading_only_pattern = r'^H\d+$'  # H1, H2
         full_pattern = r'^H\d+\.\d+(?:\.w\d+(?:-\d+)?)?(?:-(?:\d+|H\d+\.\d+(?:\.w\d+)?))?$'  # H1.2, H1.2-4
@@ -186,25 +186,49 @@ class CodeResolver:
             return ""
 
     def _normalize_simple_code(self, code: str) -> str:
-        """Convert simple code (1, 1-3, 1.2, 1.2.w5-7) to full format (H1.1, H1.1-3, H1.2, H1.2.w5-7)."""
-        # Check if already in section.sentence format: 1.2, 2.3, etc.
-        if re.match(r'^\d+\.\d+', code):
-            # Already has section.sentence, just prepend H
-            return f"H{code}"
+        """
+        Convert simple code to full H format. Parse left-to-right:
+        - 1.1-1.3 → H1.1-H1.3 (explicit range, has D.D after dash)
+        - 1.1-3 → H1.1-H1.3 (shorthand, just D after dash)
+        - 1.1.w5-7 → H1.1.w5-7 (word range)
+        - 1.1 → H1.1 (single)
+        - 1 → H1.1 (bare number)
+        """
+        # Clean spaces around dashes
+        code = code.replace(' -', '-').replace('- ', '-')
 
-        # Handle ranges: 1-3 → H1.1-H1.3
-        if '-' in code and '.w' not in code.lower():
+        # Check for section.sentence pattern at start: D.D
+        if re.match(r'^\d+\.\d+', code):
+            # Has section.sentence, check what follows
+            if '-' in code:
+                # Has a dash - check what's after it
+                base, after_dash = code.split('-', 1)
+
+                if re.match(r'^\d+\.\d+', after_dash):
+                    # Explicit range: 1.1-1.3 → H1.1-H1.3
+                    return f"H{base}-H{after_dash}"
+                elif re.match(r'^\d+$', after_dash):
+                    # Shorthand: 1.1-3 → H1.1-H1.3
+                    section = base.split('.')[0]
+                    return f"H{base}-H{section}.{after_dash}"
+                else:
+                    # Unknown format, just prepend H
+                    return f"H{code}"
+            else:
+                # No dash, pure section.sentence or word range
+                return f"H{code}"
+
+        # Simple number range: 1-3 → H1.1-H1.3
+        if re.match(r'^\d+-\d+$', code):
             parts = code.split('-')
             return f"H1.{parts[0]}-H1.{parts[1]}"
 
-        # Handle word ranges: 1.w5-7 → H1.1.w5-7
-        if '.w' in code.lower():
-            sent_num = code.split('.')[0]
-            word_part = '.'.join(code.split('.')[1:])
-            return f"H1.{sent_num}.{word_part}"
+        # Simple number: 1 → H1.1
+        if re.match(r'^\d+$', code):
+            return f"H1.{code}"
 
-        # Handle simple number: 1 → H1.1
-        return f"H1.{code}"
+        # Already in H format or unknown, return as-is
+        return code
 
     def _resolve_sentence_code(self, code: str) -> str:
         """
@@ -277,17 +301,37 @@ class CodeResolver:
 
     def _resolve_range_code(self, code: str) -> str:
         """
-        Resolve range code: H1.2-4 or H1.2-H1.4
+        Resolve range code: 1.2-1.4, H1.2-4, or H1.2-H1.4
 
         Fallback: If range is too large, take what exists
         """
+        # Check for section.sentence range: 1.2-1.4 (normalize to H1.2-H1.4)
+        section_range_match = re.match(r'(\d+)\.(\d+)-(\d+)\.(\d+)$', code)
+        if section_range_match:
+            section_num = section_range_match.group(1)
+            start_sent = section_range_match.group(2)
+            end_section = section_range_match.group(3)
+            end_sent = section_range_match.group(4)
+
+            # If different sections, not supported yet
+            if section_num != end_section:
+                logger.warning(f"[RESOLVER] Cross-section ranges not supported: {code}")
+                return ""
+
+            # Convert to H format and continue to explicit range parsing
+            code = f"H{section_num}.{start_sent}-H{section_num}.{end_sent}"
+            logger.debug(f"[RESOLVER] Normalized section.sentence range to: {code}")
+            # Fall through to explicit range parsing below
+
         # Check for shorthand: H1.2-4 (expand to H1.2-H1.4)
-        shorthand_match = re.match(r'(H\d+)\.(\d+)-(\d+)', code)
+        # But NOT 1.2-1.4 or H1.2-H1.4 (those have explicit end section)
+        shorthand_match = re.match(r'^(H\d+)\.(\d+)-(\d+)$', code)
         if shorthand_match:
             section_id = shorthand_match.group(1)
             start_sent = shorthand_match.group(2)
             end_sent = shorthand_match.group(3)
             code = f"{section_id}.{start_sent}-{section_id}.{end_sent}"
+            logger.debug(f"[RESOLVER] Expanded shorthand to: {code}")
 
         # Parse explicit range: H1.2-H1.4
         range_match = re.match(r'(H\d+)\.(\d+)-(H\d+)\.(\d+)', code)
@@ -306,26 +350,39 @@ class CodeResolver:
             # Fallback: just return first sentence
             return self._resolve_sentence_code(f"{start_section}.{start_sent}")
 
+        section_num = start_section[1:]  # H1 -> 1
+
+        # Use label_map for fast lookup if available
+        if self.label_map:
+            sentences = []
+            for sent_num in range(start_sent, end_sent + 1):
+                label = f"{section_num}.{sent_num}"
+                text = self.label_map.get(label)
+                if text:
+                    sentences.append(text)
+                else:
+                    # Sentence doesn't exist, clamp range
+                    logger.warning(f"[RESOLVER] Sentence {label} not found, clamping range")
+                    break
+            return " ".join(sentences) if sentences else ""
+
+        # Fallback to structure lookup
         section_id = start_section
         section = self.sections.get(section_id)
         if not section:
             logger.warning(f"[RESOLVER] Section {section_id} not found")
             return ""
 
-        # Collect sentences in range (with fallback if range too large)
+        # Collect sentences in range
         sentences = []
-        max_sent = max(int(sid.split('.')[-1]) for sid in section["sentences"].keys())
-
-        # Clamp end_sent to available range
-        end_sent_clamped = min(end_sent, max_sent)
-        if end_sent > max_sent:
-            logger.warning(f"[RESOLVER] Range end {end_sent} exceeds max {max_sent}, clamping")
-
-        for sent_num in range(start_sent, end_sent_clamped + 1):
+        for sent_num in range(start_sent, end_sent + 1):
             sent_id = f"{section_id}.{sent_num}"
             sent_data = section["sentences"].get(sent_id)
             if sent_data:
                 sentences.append(sent_data["text"])
+            else:
+                logger.warning(f"[RESOLVER] Sentence {sent_id} not in range, clamping")
+                break
 
         return " ".join(sentences) if sentences else ""
 
@@ -359,19 +416,30 @@ class CodeResolver:
         start_word = int(word_match.group(2))
         end_word = int(word_match.group(3)) if word_match.group(3) else start_word
 
-        # Get sentence
-        section_id = sent_id.rsplit('.', 1)[0]
-        section = self.sections.get(section_id)
-        if not section:
-            logger.warning(f"[RESOLVER] Section {section_id} not found")
-            return ""
+        # Get sentence text - try label_map first
+        sent_text = None
+        if self.label_map:
+            # Extract simple label from H1.1 format
+            parts = sent_id.split('.')
+            if len(parts) >= 2 and parts[0].startswith('H'):
+                simple_label = f"{parts[0][1:]}.{parts[1]}"
+                sent_text = self.label_map.get(simple_label) or self.label_map.get(sent_id)
 
-        sent_data = section["sentences"].get(sent_id)
-        if not sent_data:
-            logger.warning(f"[RESOLVER] Sentence {sent_id} not found")
-            return ""
+        # Fallback to structure lookup
+        if not sent_text:
+            section_id = sent_id.rsplit('.', 1)[0]
+            section = self.sections.get(section_id)
+            if not section:
+                logger.warning(f"[RESOLVER] Section {section_id} not found")
+                return ""
 
-        words = sent_data["words"]
+            sent_data = section["sentences"].get(sent_id)
+            if not sent_data:
+                logger.warning(f"[RESOLVER] Sentence {sent_id} not found")
+                return ""
+            sent_text = sent_data["text"]
+
+        words = sent_text.split()
         total_words = len(words)
 
         # Clamp word indices (1-indexed in code, 0-indexed in array)
