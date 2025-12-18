@@ -17,18 +17,20 @@ class CodeResolver:
     Implements graceful fallback when codes are invalid.
     """
 
-    def __init__(self, structure: Dict, labeled_text: str = None):
+    def __init__(self, structure: Dict, labeled_text: str = None, original_text: str = None):
         """
         Initialize resolver with text structure.
 
         Args:
             structure: Structure dict from TextLabeler
             labeled_text: Labeled text with `X.Y suffixes (for suffix-based resolution)
+            original_text: Original unlabeled text (for `* pass-all code)
         """
         self.structure = structure
         self.sections = {s["id"]: s for s in structure.get("sections", [])}
         self.headings = structure.get("headings", {})
         self.labeled_text = labeled_text
+        self.original_text = original_text
         self.label_map = structure.get('label_map', {})  # Direct label->text mapping
 
     def resolve(self, code: str) -> str:
@@ -66,6 +68,15 @@ class CodeResolver:
         code_clean = code.strip()
 
         try:
+            # Special case: `* means pass entire source
+            if code_clean == '`*' or code_clean == '*':
+                if self.original_text:
+                    logger.info(f"[RESOLVER] Pass-all code `* - returning entire source ({len(self.original_text)} chars)")
+                    return self.original_text
+                else:
+                    logger.warning(f"[RESOLVER] Pass-all code `* but no original_text available")
+                    return ""
+
             # For simple codes without brackets (e.g., "`1", "`1-3"), directly resolve
             # Strip backtick prefix if present
             if code_clean.startswith('`'):

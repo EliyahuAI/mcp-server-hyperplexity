@@ -140,7 +140,7 @@ class SnippetExtractorStreamlined:
             # Initialize code resolver if using code extraction
             resolver = None
             if use_code_extraction and text_structure:
-                resolver = CodeResolver(text_structure, labeled_text)
+                resolver = CodeResolver(text_structure, labeled_text, source_text)
 
             # Assign snippet IDs to each quote, organized by search term
             # Quotes now come as objects with {text, p, reason} or {c, p, r} for code-based

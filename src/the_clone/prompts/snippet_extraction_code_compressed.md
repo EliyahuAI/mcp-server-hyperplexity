@@ -38,8 +38,9 @@ Return codes (field `c`), not full text. Organize by search term number.
 - `` `1.1 ``, `` `1.2 ``, `` `2.1 `` (single sentences)
 - Ranges: `` `1.1-1.3 `` or `` `1.1-3 `` (shorthand for `1.1-1.3)
 - Word ranges: `` `1.1.w5-7 `` (words 5-7, **1-indexed** - w1 is first word)
+- **Pass all:** `` `* `` (entire source) - use when source is dense/valuable and splitting would lose critical relationships
 
-**CRITICAL - Snippets must make sense in isolation:** Given only URL, page title, and snippet, the quote must be understandable. Use headings and context liberally.
+**CRITICAL - Snippets must make sense in isolation:** Given only URL, page title, and snippet, the quote must be perfectly understandable and testable. Use headings and context liberally.
 
 **Heading context** - Use `` `X.0 `` to add section context:
 - `` [`2.0] `2.1 `` → `[API Pricing] pricing details`
@@ -50,10 +51,10 @@ Return codes (field `c`), not full text. Organize by search term number.
 - `` [`2.1.w1-4] `1.3 `` → `[Dr. Jane Smith] sentence 1.3 text`
 - **Required** for ATTRIBUTED quotes (p≥0.85) when attribution is separate
 
-**Context** - Add clarifying brackets:
+**Context** - Add clarifying bracket with clarifying context:
 - `` `1.1 [of Gemini] `` → `sentence text [of Gemini]`
 - `` [re: Topic] `2.1 `` → `[re: Topic] sentence text`
-- Use whenever ambiguity exists (model names, dates, entities)
+- Use whenever ambiguity exists - snippet must be complete
 
 ## Validation
 
