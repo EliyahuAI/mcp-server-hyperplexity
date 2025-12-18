@@ -74,9 +74,9 @@ def compare_dicts(d1, d2, path=""):
                 
     return diffs
 
-async def test_live_structured_call(old_client, new_client, provider, model):
+async def test_new_client_structured_call(new_client, provider, model):
     logger.info(f"\n{'='*60}")
-    logger.info(f"TESTING LIVE API: {provider} ({model})")
+    logger.info(f"TESTING NEW CLIENT: {provider} ({model})")
     logger.info(f"{ '='*60}")
     
     prompt = "What is 2+2? Return a JSON object with keys 'result' and 'explanation'."
@@ -94,36 +94,6 @@ async def test_live_structured_call(old_client, new_client, provider, model):
     import time
     timestamp = str(time.time())
     
-    # --- Old Client ---
-    res_old = None
-    try:
-        logger.info(f"--- [Old Client] Request ---")
-        res_old = await old_client.call_structured_api(
-            prompt=prompt, 
-            schema=schema, 
-            model=model, 
-            use_cache=False, 
-            context=f"test_old_{timestamp}",
-            max_web_searches=0
-        )
-        logger.info(f"--- [Old Client] Response ---")
-        if 'response' in res_old:
-            # Extract content for display
-            content = res_old['response']
-            if 'choices' in content: # Unified format or OpenAI/Perplexity
-                display_content = content['choices'][0]['message']['content']
-            elif 'content' in content: # Anthropic
-                display_content = content['content']
-            else:
-                display_content = content
-            logger.info(f"OUTPUT: {display_content}")
-        else:
-            logger.warning("No 'response' key in result")
-            
-    except Exception as e:
-        logger.error(f"--- [Old Client] Failed: {e}")
-
-    # --- New Client ---
     res_new = None
     try:
         logger.info(f"--- [New Client] Request ---")
@@ -148,46 +118,29 @@ async def test_live_structured_call(old_client, new_client, provider, model):
         else:
             logger.warning("No 'response' key in result")
 
+        new_tokens = res_new.get('token_usage', {}).get('total_tokens')
+        new_cost = res_new.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost')
+        logger.info(f"Token Usage: {new_tokens}")
+        logger.info(f"Total Cost:  ${new_cost}")
+        
+        assert new_tokens is not None, "❌ Missing token usage in new response"
+        assert new_cost is not None, "❌ Missing cost data in new response"
+        if res_new.get('enhanced_data') is None:
+            logger.error("❌ New client missing 'enhanced_data' entirely")
+        elif res_new.get('enhanced_data', {}).get('costs') is None:
+            logger.error("❌ New client missing 'costs' in enhanced_data")
+
+        logger.info("✅ New client returned valid response, token usage, and cost data")
+
     except Exception as e:
-        logger.error(f"--- [New Client] Failed: {e}")
+        logger.error(f"❌ New Client test failed: {e}")
         import traceback
         traceback.print_exc()
-
-    # Comparison
-    logger.info(f"--- Comparison ---")
-    if res_old and res_new:
-        old_tokens = res_old.get('token_usage', {}).get('total_tokens')
-        new_tokens = res_new.get('token_usage', {}).get('total_tokens')
-        logger.info(f"Token Usage: Old={old_tokens}, New={new_tokens}")
-        
-        # Check Cost Data
-        old_cost = res_old.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost')
-        new_cost = res_new.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost')
-        
-        logger.info(f"Total Cost:  Old=${old_cost}, New=${new_cost}")
-
-        if old_tokens is not None and new_tokens is not None:
-             logger.info("✅ Both clients returned token usage")
-        else:
-             logger.warning("⚠️ Missing token usage in one or both responses")
-             
-        if old_cost is not None and new_cost is not None:
-             logger.info("✅ Both clients returned cost data")
-        else:
-             logger.warning(f"⚠️ Missing cost data: Old={old_cost is not None}, New={new_cost is not None}")
-             if res_new.get('enhanced_data') is None:
-                 logger.error("❌ New client missing 'enhanced_data' entirely")
-             elif res_new.get('enhanced_data', {}).get('costs') is None:
-                 logger.error("❌ New client missing 'costs' in enhanced_data")
-
-    else:
-        logger.error("❌ Comparison failed - one or both clients failed")
 
 async def main():
     logger.info("Starting Live Refactor Comparison Test...")
     
     try:
-        from src.shared.ai_api_client_old import AIAPIClient as OldClient
         from src.shared.ai_client import AIAPIClient as NewClient
         logger.info("Imports successful.")
     except ImportError as e:
@@ -196,7 +149,6 @@ async def main():
 
     # Instantiate
     try:
-        old_client = OldClient()
         new_client = NewClient()
         logger.info("Clients instantiated successfully.")
     except Exception as e:
@@ -204,15 +156,15 @@ async def main():
         return
 
     # 1. Anthropic Test
-    await test_live_structured_call(old_client, new_client, "Anthropic", "claude-haiku-4-5") # Use cheap model
+    await test_new_client_structured_call(new_client, "Anthropic", "claude-haiku-4-5") # Use cheap model
 
     # 2. Perplexity Test
-    await test_live_structured_call(old_client, new_client, "Perplexity", "sonar") # Use cheap model
+    await test_new_client_structured_call(new_client, "Perplexity", "sonar") # Use cheap model
 
     # 3. Vertex Test
     # Note: Vertex configuration depends on env vars. The clients try to load them.
     if new_client.vertex.project_id:
-        await test_live_structured_call(old_client, new_client, "Vertex", "vertex.deepseek-v3.2")
+        await test_new_client_structured_call(new_client, "Vertex", "vertex.deepseek-v3.2")
     else:
         logger.warning("Skipping Vertex test: Project ID not configured.")
 
@@ -293,7 +245,7 @@ async def main():
 
     # 6. Baseten DeepSeek Test
     logger.info("\n============================================================")
-    logger.info("TESTING LIVE API: Baseten DeepSeek V3.2 (deepseek-baseten)")
+    logger.info("TESTING LIVE API: Baseten DeepSeek V3.2 (deepseek-v3.2-baseten)")
     logger.info("============================================================")
     prompt_baseten = "What is the capital of France?"
     schema_baseten = {"type": "object", "properties": {"answer": {"type": "string"}, "summary": {"type": "string"}}}
@@ -304,7 +256,7 @@ async def main():
             new_baseten_response = await new_client.call_structured_api(
                 prompt=prompt_baseten,
                 schema=schema_baseten,
-                model="deepseek-baseten",
+                model="deepseek-v3.2-baseten",
                 soft_schema=False # Try hard schema
             )
 

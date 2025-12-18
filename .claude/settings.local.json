@@ -52,7 +52,8 @@
       "Bash(timeout 300 python3:*)",
       "Bash(timeout 60 python.exe:*)",
       "Bash(timeout 180 python.exe:*)",
-      "Bash(timeout 120 python.exe src/the_clone/tests/single_test_deepseek_synthesis.py)"
+      "Bash(timeout 120 python.exe src/the_clone/tests/single_test_deepseek_synthesis.py)",
+      "Bash(git -C /mnt/c/Users/ellio/OneDrive - Eliyahu.AI/Desktop/src/perplexityValidator log --all --oneline --name-only)"
     ],
     "deny": []
   }

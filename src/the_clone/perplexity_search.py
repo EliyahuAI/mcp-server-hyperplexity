@@ -35,6 +35,8 @@ class PerplexitySearchClient:
         query: Union[str, List[str]],
         max_results: int = 10,
         search_recency_filter: Optional[str] = None,
+        include_domains: Optional[List[str]] = None,
+        exclude_domains: Optional[List[str]] = None,
         max_retries: int = 3,
         base_delay: float = 2.0
     ) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
@@ -46,6 +48,8 @@ class PerplexitySearchClient:
             query: Single search query string OR array of up to 5 queries
             max_results: Maximum number of results to return (default: 10)
             search_recency_filter: Filter by recency - "day", "week", "month", "year", or None
+            include_domains: Whitelist of domains to search (prefer over exclude if both given)
+            exclude_domains: Blacklist of domains to exclude
             max_retries: Maximum retry attempts for rate limits
             base_delay: Base delay in seconds for exponential backoff
 
@@ -62,6 +66,12 @@ class PerplexitySearchClient:
 
         if search_recency_filter:
             payload["search_recency_filter"] = search_recency_filter
+
+        # Domain filtering - prefer include_domains if both given
+        if include_domains:
+            payload["search_domain_filter"] = include_domains
+        elif exclude_domains:
+            payload["search_domain_filter"] = exclude_domains
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -125,7 +135,9 @@ class PerplexitySearchClient:
         self,
         queries: List[str],
         max_results: int = 10,
-        search_recency_filter: Optional[str] = None
+        search_recency_filter: Optional[str] = None,
+        include_domains: Optional[List[str]] = None,
+        exclude_domains: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """
         Execute multiple searches with automatic rate limiting.
@@ -138,13 +150,15 @@ class PerplexitySearchClient:
             queries: List of search queries
             max_results: Max results per query
             search_recency_filter: Recency filter
+            include_domains: Whitelist of domains
+            exclude_domains: Blacklist of domains
 
         Returns:
             List of search result dicts, one per query
         """
         tasks = []
         for query in queries:
-            task = self.search(query, max_results, search_recency_filter)
+            task = self.search(query, max_results, search_recency_filter, include_domains, exclude_domains)
             tasks.append(task)
 
         # Run with rate limiting built into each search call

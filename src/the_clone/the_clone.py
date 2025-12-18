@@ -66,7 +66,10 @@ class TheClone2Refined:
         schema: Optional[Dict] = None,
         config_variant: str = "common",
         debug_dir: Optional[str] = None,
-        model_override: Optional[str] = None
+        model_override: Optional[str] = None,
+        academic: bool = False,
+        include_domains: Optional[List[str]] = None,
+        exclude_domains: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Execute query with strategy-based architecture.
@@ -144,11 +147,23 @@ class TheClone2Refined:
         logger.info(f"[CLONE] Params: batch={strategy['sources_per_batch']}, mode={strategy['extraction_mode']}, max_snippets={strategy['max_snippets_per_source']}, min_p={strategy['min_p_threshold']}")
         logger.info(f"[CLONE] Search terms: {search_terms}")
 
+        # Determine domain filters
+        domains_to_use = None
+        if academic:
+            from the_clone.academic_domains import get_academic_domains
+            domains_to_use = get_academic_domains()
+            logger.info(f"[CLONE] Academic mode - using {len(domains_to_use)} academic domains")
+        elif include_domains:
+            domains_to_use = include_domains
+            logger.info(f"[CLONE] Using {len(domains_to_use)} included domains")
+
         # Step 2: Search
         logger.info(f"\n[CLONE] Step 2: Executing {len(search_terms)} searches...")
         search_results = await self.search_manager.execute_searches(
             search_terms=search_terms,
-            search_settings={'max_results': 10}
+            search_settings={'max_results': 10},
+            include_domains=domains_to_use,
+            exclude_domains=exclude_domains if not domains_to_use else None
         )
         costs['search'] = len(search_terms) * 0.005  # Perplexity cost per search
 

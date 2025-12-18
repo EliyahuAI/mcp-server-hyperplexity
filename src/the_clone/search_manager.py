@@ -107,7 +107,9 @@ class SearchManager:
     async def execute_searches(
         self,
         search_terms: List[str],
-        search_settings: Dict[str, Any]
+        search_settings: Dict[str, Any],
+        include_domains: Optional[List[str]] = None,
+        exclude_domains: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """
         Execute searches for all terms using Perplexity Search API.
@@ -135,7 +137,9 @@ class SearchManager:
             results = await self.search_client.batch_search(
                 queries=search_terms,
                 max_results=max_results,
-                search_recency_filter=recency_filter
+                search_recency_filter=recency_filter,
+                include_domains=include_domains,
+                exclude_domains=exclude_domains
             )
 
             # Check for errors

@@ -14,7 +14,7 @@ MODEL_HIERARCHY = [
     "the-clone-claude", # hybrid perplexity/claude
     "the-clone", # hybrid perplexity/deepseek/claude option
     "deepseek-v3.2",         # Ultra-low cost, most capable DeepSeek
-    "deepseek-baseten",      # Baseten-hosted DeepSeek V3.2
+    "deepseek-v3.2-baseten",      # Baseten-hosted DeepSeek V3.2
     "sonar-pro",
     "deepseek-v3.2-exp",     # Ultra-low cost variant with caching
     "deepseek-v3.1",         # Hybrid thinking/non-thinking
