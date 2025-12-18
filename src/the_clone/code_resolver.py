@@ -83,7 +83,8 @@ class CodeResolver:
                 code_clean = code_clean[1:]
 
             if not '[' in code_clean and self._is_location_code(code_clean):
-                return self._resolve_location_code(code_clean)
+                result = self._resolve_location_code(code_clean)
+                return self._deduplicate_lines(result)
 
             # Parse complex code strings with brackets and/or literals
             resolved_parts = []
@@ -140,11 +141,28 @@ class CodeResolver:
 
             # Join all parts with appropriate spacing
             result = " ".join(resolved_parts)
-            return result.strip()
+            return self._deduplicate_lines(result.strip())
 
         except Exception as e:
             logger.warning(f"[RESOLVER] Failed to resolve code '{code}': {e}")
             return ""
+
+    def _deduplicate_lines(self, text: str) -> str:
+        """Remove consecutive duplicate lines from text."""
+        if not text:
+            return text
+
+        lines = text.split('\n')
+        deduped = []
+        prev_line = None
+
+        for line in lines:
+            line_stripped = line.strip()
+            if line_stripped != prev_line:
+                deduped.append(line)
+                prev_line = line_stripped
+
+        return '\n'.join(deduped)
 
     def _is_location_code(self, text: str) -> bool:
         """Check if text matches location code pattern."""
