@@ -72,8 +72,10 @@ def get_models_for_tier(synthesis_tier: str) -> Dict[str, str]:
     config = load_strategy_config()
     tier_map = {
         'default': 'default',
+        'default_baseten': 'default_baseten',
         'strong': 'fallback',
-        'deepest': 'deepest'
+        'deepest': 'deepest',
+        'deepest_baseten': 'deepest_baseten'
     }
     tier = tier_map.get(synthesis_tier, 'default')
     return config['models'].get(tier, config['models']['default'])

@@ -69,7 +69,8 @@ class TheClone2Refined:
         model_override: Optional[str] = None,
         academic: bool = False,
         include_domains: Optional[List[str]] = None,
-        exclude_domains: Optional[List[str]] = None
+        exclude_domains: Optional[List[str]] = None,
+        use_baseten: bool = False
     ) -> Dict[str, Any]:
         """
         Execute query with strategy-based architecture.
@@ -139,8 +140,15 @@ class TheClone2Refined:
 
         # Get models for synthesis tier (unless overridden)
         if not model_override:
-            models = get_models_for_tier(synthesis_tier)
-            use_soft_schema = 'deepseek' in models['synthesis']
+            # Adjust tier for Baseten if requested
+            tier_to_use = synthesis_tier
+            if use_baseten:
+                tier_map = {'default': 'default_baseten', 'deepest': 'deepest_baseten'}
+                tier_to_use = tier_map.get(synthesis_tier, synthesis_tier)
+                logger.info(f"[CLONE] Using Baseten provider")
+
+            models = get_models_for_tier(tier_to_use)
+            use_soft_schema = 'deepseek' in models['synthesis'] or 'baseten' in models['synthesis']
 
         logger.info(f"[CLONE] Strategy: {strategy['name']} (breadth={breadth}, depth={depth})")
         logger.info(f"[CLONE] Synthesis tier: {synthesis_tier} (model: {models['synthesis']})")

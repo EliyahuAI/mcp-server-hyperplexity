@@ -57,6 +57,12 @@
       "extraction": "deepseek-v3.2",
       "synthesis": "deepseek-v3.2"
     },
+    "default_baseten": {
+      "initial_decision": "deepseek-v3.2-baseten",
+      "triage": "deepseek-v3.2-baseten",
+      "extraction": "deepseek-v3.2-baseten",
+      "synthesis": "deepseek-v3.2-baseten"
+    },
     "fallback": {
       "initial_decision": "claude-sonnet-4-5",
       "triage": "claude-haiku-4-5",
@@ -67,6 +73,12 @@
       "initial_decision": "claude-sonnet-4-5",
       "triage": "claude-haiku-4-5",
       "extraction": "claude-haiku-4-5",
+      "synthesis": "claude-opus-4-5"
+    },
+    "deepest_baseten": {
+      "initial_decision": "deepseek-v3.2-baseten",
+      "triage": "deepseek-v3.2-baseten",
+      "extraction": "deepseek-v3.2-baseten",
       "synthesis": "claude-opus-4-5"
     }
   },
