@@ -283,7 +283,17 @@ class SnippetExtractorStreamlined:
                 avg_p = sum(s["p"] for s in snippets) / len(snippets)
                 high_q = sum(1 for s in snippets if s["p"] >= 0.85)
                 low_q = sum(1 for s in snippets if s["p"] <= 0.15)
-                logger.info(f"[EXTRACTOR] Quality: avg_p={avg_p:.2f}, high={high_q}, low={low_q}")
+
+                # Calculate mode p-score (most common)
+                from collections import Counter
+                p_scores = [s["p"] for s in snippets]
+                mode_p = Counter(p_scores).most_common(1)[0][0] if p_scores else 0.5
+
+                logger.info(f"[EXTRACTOR] Quality: avg_p={avg_p:.2f}, mode_p={mode_p:.2f}, high={high_q}, low={low_q}")
+
+                # Add source quality (mode p-score) to all snippets
+                for snippet in snippets:
+                    snippet["_source_quality"] = mode_p
 
                 # Optimization: If >50% of source words extracted, use entire source instead
                 if use_code_extraction and text_structure:
