@@ -32,6 +32,8 @@ Return codes (field `c`), not full text. Organize by search term number.
 
 **CRITICAL: Only use sentence codes that exist in the labeled source above.** Count the labels you see - don't reference `` `1.15 `` if only `` `1.1 `` through `` `1.10 `` exist.
 
+**Tables:** Extract header row + data row. Use multiple codes or range: `` `1.1 `1.4 `` or `` `1.1-1.4 ``. Include newline if not contiguous.
+
 **Basic codes** - Copy exact labels:
 - `` `1.1 ``, `` `1.2 ``, `` `2.1 ``
 - Ranges: `` `1.1-1.3 `` (only if all sentences exist)
