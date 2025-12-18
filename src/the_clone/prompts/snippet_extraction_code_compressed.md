@@ -32,24 +32,27 @@ Return codes (field `c`), not full text. Organize by search term number.
 
 **CRITICAL: Only use sentence codes that exist in the labeled source above.** Count the labels you see - don't reference `` `1.15 `` if only `` `1.1 `` through `` `1.10 `` exist.
 
-**Tables:** Extract header row + data row. Use multiple codes or range: `` `1.1 `1.4 `` or `` `1.1-1.4 ``. Include newline if not contiguous.
+**Tables - REQUIRED:** ALWAYS include header row with data row. Extract both: `` `1.1 `1.4 `` (header + row 4) or `` `1.1-1.4 `` if contiguous. Table data is meaningless without column headers.
 
 **Basic codes** - Copy exact labels:
 - `` `1.1 ``, `` `1.2 ``, `` `2.1 ``
 - Ranges: `` `1.1-1.3 `` (only if all sentences exist)
 
-**Heading context** - Use `` `X.0 `` (heading) only if necessary for clarity:
+**CRITICAL - Snippets must make sense in isolation:** Given only URL, page title, and snippet, the quote must be understandable. Use headings and context liberally.
+
+**Heading context** - Use `` `X.0 `` to add section context:
 - `` [`2.0] `2.1 `` → `[API Pricing] pricing details`
-- Can use parent heading: `` [`1.0] `2.1 `` if broader context is clearer
-- Only add if quote needs context - skip if self-evident
+- `` [`1.0] `2.1 `` → use parent heading for broader context
+- **Required when** quote lacks clarity without knowing section topic
 
 **Attribution** - Pull from elsewhere:
 - `` [`2.1.w1-4] `1.3 `` → `[Dr. Jane Smith] sentence 1.3 text`
-- Required for ATTRIBUTED quotes (p≥0.85) when attribution is separate
+- **Required** for ATTRIBUTED quotes (p≥0.85) when attribution is separate
 
-**Context** - Add literal brackets:
+**Context** - Add clarifying brackets:
 - `` `1.1 [of Gemini] `` → `sentence text [of Gemini]`
 - `` [re: Topic] `2.1 `` → `[re: Topic] sentence text`
+- Use whenever ambiguity exists (model names, dates, entities)
 
 ## Validation
 
