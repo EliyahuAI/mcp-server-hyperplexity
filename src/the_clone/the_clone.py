@@ -160,7 +160,7 @@ class TheClone2Refined:
             direct_answer = initial_result.get('direct_answer', {})
 
             # Return direct answer without search
-            total_time = (datetime.now() - query_start_time).total_seconds()
+            total_time = (datetime.now() - start_time).total_seconds()
             total_cost = sum(costs.values())
 
             return {

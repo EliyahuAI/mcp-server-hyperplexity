@@ -565,5 +565,20 @@ Query: {query}
             logger.info(f"[SCHEMA_TRANSFORM] Extracted {len(extracted)} custom schema fields")
             return extracted
 
+        # If no exact match, the LLM might have used different field names (soft schema)
+        # Wrap the entire comparison in the first schema property (usually validation_results)
+        if len(schema_properties) == 1:
+            prop_name = list(schema_properties.keys())[0]
+            prop_schema = schema_properties[prop_name]
+
+            # If the property is an array, wrap comparison data as array
+            if prop_schema.get('type') == 'array':
+                logger.info(f"[SCHEMA_TRANSFORM] Wrapping comparison data into '{prop_name}' array")
+                # The comparison might already be structured data, just wrap it
+                return {prop_name: [comparison] if not isinstance(comparison, list) else comparison}
+            else:
+                logger.info(f"[SCHEMA_TRANSFORM] Wrapping comparison data into '{prop_name}' object")
+                return {prop_name: comparison}
+
         logger.warning(f"[SCHEMA_TRANSFORM] No custom schema fields found in comparison. Expected: {list(schema_properties.keys())}, Found: {list(comparison.keys())}")
         return answer
