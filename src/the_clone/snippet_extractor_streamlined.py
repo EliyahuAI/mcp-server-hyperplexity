@@ -161,6 +161,10 @@ class SnippetExtractorStreamlined:
                                 logger.info(f"[EXTRACTOR] Found `* pass-all code, using entire source instead of snippets")
                                 break
 
+                # Merge consecutive table row codes into ranges (if using code extraction)
+                if use_code_extraction and resolver and not has_pass_all and isinstance(quotes, list):
+                    quotes = self._merge_consecutive_codes(quotes, resolver)
+
                 # If pass-all detected, create single snippet with entire source
                 if has_pass_all:
                     snippet_id = f"{snippet_id_prefix}.{total_quotes}-p0.95"
@@ -373,6 +377,126 @@ class SnippetExtractorStreamlined:
                 },
                 "error": str(e)
             }
+
+    def _merge_consecutive_codes(self, quotes: List, resolver: 'CodeResolver') -> List:
+        """
+        Merge consecutive table row codes into ranges to avoid duplicate header prepending.
+
+        E.g., [["H8.3", 0.9, "P"], ["H8.4", 0.9, "P"], ["H8.5", 0.9, "P"]]
+        becomes [["H8.3-H8.5", 0.9, "P"]]
+
+        Only merges if:
+        1. Codes are consecutive (H8.3, H8.4, H8.5)
+        2. All are from the same table (same table_header_id)
+        3. Have same p-score and reason
+        """
+        if not quotes or len(quotes) <= 1:
+            return quotes
+
+        import re
+        merged = []
+        i = 0
+
+        while i < len(quotes):
+            quote = quotes[i]
+
+            # Only process array format codes
+            if not isinstance(quote, list) or len(quote) < 3:
+                merged.append(quote)
+                i += 1
+                continue
+
+            code = quote[0]
+            p_score = quote[1]
+            reason = quote[2]
+
+            # Check if this is a sentence code (H1.2 or 1.2 format)
+            match = re.match(r'`?(H?\d+)\.(\d+)$', code)
+            if not match:
+                merged.append(quote)
+                i += 1
+                continue
+
+            section = match.group(1)
+            sent_num = int(match.group(2))
+
+            # Check if this is a table row using the resolver
+            section_id = f"H{section}" if not section.startswith('H') else section
+            sent_id = f"{section_id}.{sent_num}"
+
+            # Get sentence metadata from resolver
+            section_data = resolver.sections.get(section_id)
+            if not section_data:
+                merged.append(quote)
+                i += 1
+                continue
+
+            sent_data = section_data['sentences'].get(sent_id)
+            if not sent_data or not sent_data.get('is_table_row'):
+                # Not a table row, keep as-is
+                merged.append(quote)
+                i += 1
+                continue
+
+            # This is a table row - look ahead for consecutive rows from same table
+            table_header_id = sent_data.get('table_header_id')
+            consecutive_end = sent_num
+            j = i + 1
+
+            while j < len(quotes):
+                next_quote = quotes[j]
+
+                # Must be same format and same p/reason to merge
+                if not isinstance(next_quote, list) or len(next_quote) < 3:
+                    break
+
+                next_code = next_quote[0]
+                next_p = next_quote[1]
+                next_reason = next_quote[2]
+
+                # Must have same p-score and reason
+                if next_p != p_score or next_reason != reason:
+                    break
+
+                # Must be consecutive sentence from same section
+                next_match = re.match(r'`?(H?\d+)\.(\d+)$', next_code)
+                if not next_match:
+                    break
+
+                next_section = next_match.group(1)
+                next_sent_num = int(next_match.group(2))
+
+                if next_section != section or next_sent_num != consecutive_end + 1:
+                    break
+
+                # Check if same table
+                next_sent_id = f"{section_id}.{next_sent_num}"
+                next_sent_data = section_data['sentences'].get(next_sent_id)
+
+                if not next_sent_data or not next_sent_data.get('is_table_row'):
+                    break
+
+                if next_sent_data.get('table_header_id') != table_header_id:
+                    break
+
+                # This is consecutive, extend range
+                consecutive_end = next_sent_num
+                j += 1
+
+            # If we found consecutive rows, create a range
+            if consecutive_end > sent_num:
+                # Create range code (strip backtick if present)
+                code_clean = code[1:] if code.startswith('`') else code
+                range_code = f"`{code_clean}-{consecutive_end}"
+                logger.info(f"[EXTRACTOR] Merged {consecutive_end - sent_num + 1} consecutive table rows into range {range_code}")
+                merged.append([range_code, p_score, reason])
+                i = j  # Skip all merged quotes
+            else:
+                # No consecutive rows, keep as-is
+                merged.append(quote)
+                i += 1
+
+        return merged
 
     def _build_prompt(
         self,

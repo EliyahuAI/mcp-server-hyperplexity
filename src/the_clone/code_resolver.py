@@ -388,11 +388,9 @@ class CodeResolver:
         end_section = range_match.group(3)
         end_sent = int(range_match.group(4))
 
-        # For simplicity, only support ranges within same section
+        # Handle cross-section ranges (e.g., H7.0-H11.3)
         if start_section != end_section:
-            logger.warning(f"[RESOLVER] Cross-section ranges not yet supported: {code}")
-            # Fallback: just return first sentence
-            return self._resolve_sentence_code(f"{start_section}.{start_sent}")
+            return self._resolve_cross_section_range(start_section, start_sent, end_section, end_sent, code)
 
         section_num = start_section[1:]  # H1 -> 1
 
@@ -408,6 +406,35 @@ class CodeResolver:
                     # Sentence doesn't exist, clamp range
                     logger.warning(f"[RESOLVER] Sentence {label} not found, clamping range")
                     break
+
+            # Check if all sentences in range are table rows from the same table
+            if sentences and self.sections:
+                section_id = start_section
+                section = self.sections.get(section_id)
+                if section:
+                    # Check first sentence to see if it's a table row
+                    first_sent_id = f"{section_id}.{start_sent}"
+                    first_sent_data = section['sentences'].get(first_sent_id)
+
+                    if first_sent_data and first_sent_data.get('is_table_row'):
+                        # Check if ALL sentences in range are from same table
+                        table_header_id = first_sent_data.get('table_header_id')
+                        all_same_table = True
+
+                        for sent_num in range(start_sent, end_sent + 1):
+                            sent_id = f"{section_id}.{sent_num}"
+                            sent_data = section['sentences'].get(sent_id)
+                            if not sent_data or not sent_data.get('is_table_row') or sent_data.get('table_header_id') != table_header_id:
+                                all_same_table = False
+                                break
+
+                        # If all rows are from same table, prepend header once
+                        if all_same_table and table_header_id:
+                            header_text = section['sentences'].get(table_header_id, {}).get('text', '')
+                            if header_text:
+                                logger.info(f"[RESOLVER] Auto-prepending table header to range {code} ({end_sent - start_sent + 1} rows)")
+                                return f"{header_text}\n" + "\n".join(sentences)
+
             # Join with newlines (important for table rows)
             return "\n".join(sentences) if sentences else ""
 
@@ -429,8 +456,153 @@ class CodeResolver:
                 logger.warning(f"[RESOLVER] Sentence {sent_id} not in range, clamping")
                 break
 
+        # Check if all sentences in range are table rows from the same table
+        if sentences:
+            # Check first sentence to see if it's a table row
+            first_sent_id = f"{section_id}.{start_sent}"
+            first_sent_data = section['sentences'].get(first_sent_id)
+
+            if first_sent_data and first_sent_data.get('is_table_row'):
+                # Check if ALL sentences in range are from same table
+                table_header_id = first_sent_data.get('table_header_id')
+                all_same_table = True
+
+                for sent_num in range(start_sent, end_sent + 1):
+                    sent_id = f"{section_id}.{sent_num}"
+                    sent_data = section['sentences'].get(sent_id)
+                    if not sent_data or not sent_data.get('is_table_row') or sent_data.get('table_header_id') != table_header_id:
+                        all_same_table = False
+                        break
+
+                # If all rows are from same table, prepend header once
+                if all_same_table and table_header_id:
+                    header_text = section['sentences'].get(table_header_id, {}).get('text', '')
+                    if header_text:
+                        logger.info(f"[RESOLVER] Auto-prepending table header to range {code} ({end_sent - start_sent + 1} rows)")
+                        return f"{header_text}\n" + "\n".join(sentences)
+
         # Join with newlines (important for table rows)
         return "\n".join(sentences) if sentences else ""
+
+    def _resolve_cross_section_range(self, start_section: str, start_sent: int,
+                                      end_section: str, end_sent: int, original_code: str) -> str:
+        """
+        Resolve cross-section range (e.g., H7.0-H11.3).
+
+        Collects all sentences from start_section.start_sent through end_section.end_sent,
+        traversing all intermediate sections.
+
+        Args:
+            start_section: Starting section ID (e.g., "H7")
+            start_sent: Starting sentence number
+            end_section: Ending section ID (e.g., "H11")
+            end_sent: Ending sentence number
+            original_code: Original code string for logging
+
+        Returns:
+            Resolved text with all sentences joined
+        """
+        start_num = int(start_section[1:])  # H7 -> 7
+        end_num = int(end_section[1:])  # H11 -> 11
+
+        if start_num > end_num:
+            logger.warning(f"[RESOLVER] Invalid cross-section range {original_code}: start > end")
+            return ""
+
+        all_sentences = []
+
+        # Use label_map for fast lookup if available
+        if self.label_map:
+            for section_num in range(start_num, end_num + 1):
+                section_id = f"H{section_num}"
+                section = self.sections.get(section_id)
+
+                if not section:
+                    logger.warning(f"[RESOLVER] Section {section_id} not found in cross-section range, stopping")
+                    break
+
+                sentences_dict = section.get("sentences", {})
+                if not sentences_dict:
+                    continue
+
+                # Determine sentence range for this section
+                if section_num == start_num and section_num == end_num:
+                    sent_range_start = start_sent
+                    sent_range_end = end_sent
+                elif section_num == start_num:
+                    sent_nums = [int(sid.split('.')[-1]) for sid in sentences_dict.keys()]
+                    sent_range_start = start_sent
+                    sent_range_end = max(sent_nums) if sent_nums else start_sent
+                elif section_num == end_num:
+                    sent_range_start = 0
+                    sent_range_end = end_sent
+                else:
+                    sent_nums = [int(sid.split('.')[-1]) for sid in sentences_dict.keys()]
+                    sent_range_start = 0
+                    sent_range_end = max(sent_nums) if sent_nums else 0
+
+                # Collect sentences using label_map
+                for sent_num in range(sent_range_start, sent_range_end + 1):
+                    label = f"{section_num}.{sent_num}"
+                    text = self.label_map.get(label)
+                    if text:
+                        all_sentences.append(text)
+
+            if all_sentences:
+                logger.info(f"[RESOLVER] Resolved cross-section range {original_code} ({len(all_sentences)} sentences across {end_num - start_num + 1} sections)")
+                return "\n".join(all_sentences)
+            else:
+                logger.warning(f"[RESOLVER] No sentences found in cross-section range {original_code}")
+                return ""
+
+        # Fallback to structure lookup
+        for section_num in range(start_num, end_num + 1):
+            section_id = f"H{section_num}"
+            section = self.sections.get(section_id)
+
+            if not section:
+                logger.warning(f"[RESOLVER] Section {section_id} not found in cross-section range, stopping")
+                break
+
+            sentences_dict = section.get("sentences", {})
+            if not sentences_dict:
+                logger.debug(f"[RESOLVER] Section {section_id} has no sentences, skipping")
+                continue
+
+            # Determine sentence range for this section
+            if section_num == start_num and section_num == end_num:
+                # Single section (shouldn't happen, but handle it)
+                sent_range_start = start_sent
+                sent_range_end = end_sent
+            elif section_num == start_num:
+                # First section: from start_sent to end of section
+                sent_range_start = start_sent
+                # Find max sentence number in this section
+                sent_nums = [int(sid.split('.')[-1]) for sid in sentences_dict.keys()]
+                sent_range_end = max(sent_nums) if sent_nums else start_sent
+            elif section_num == end_num:
+                # Last section: from 0 to end_sent
+                sent_range_start = 0
+                sent_range_end = end_sent
+            else:
+                # Middle section: all sentences
+                sent_range_start = 0
+                sent_nums = [int(sid.split('.')[-1]) for sid in sentences_dict.keys()]
+                sent_range_end = max(sent_nums) if sent_nums else 0
+
+            # Collect sentences from this section
+            for sent_num in range(sent_range_start, sent_range_end + 1):
+                sent_id = f"{section_id}.{sent_num}"
+                sent_data = sentences_dict.get(sent_id)
+                if sent_data:
+                    all_sentences.append(sent_data["text"])
+
+        if all_sentences:
+            logger.info(f"[RESOLVER] Resolved cross-section range {original_code} ({len(all_sentences)} sentences across {end_num - start_num + 1} sections)")
+            return "\n".join(all_sentences)
+        else:
+            logger.warning(f"[RESOLVER] No sentences found in cross-section range {original_code}")
+            return ""
 
     def _resolve_word_code(self, code: str) -> str:
         """
