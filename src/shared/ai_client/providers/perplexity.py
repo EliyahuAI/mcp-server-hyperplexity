@@ -230,11 +230,23 @@ class PerplexityProvider:
                     if warnings:
                         logger.warning(f"Perplexity soft schema warnings: {warnings}")
 
+                    # Check if critical required fields are missing
+                    required = schema.get('required', [])
+                    missing_critical = [f for f in required if f not in normalized or not normalized[f]]
+                    if missing_critical:
+                        logger.error(f"[PERPLEXITY] Missing critical required fields: {missing_critical}")
+                        raise Exception(f"[SCHEMA_ERROR] Missing required fields: {missing_critical}")
+
                     response_json['choices'][0]['message']['content'] = json.dumps(normalized)
                 else:
                     logger.error(f"[PERPLEXITY] Could not extract or repair JSON from response")
+                    raise Exception("[REPAIR_FAILED] Haiku repair failed to extract valid JSON")
 
             return response_json
         except Exception as e:
+            # Re-raise critical errors to trigger backup model retry
+            if "[SCHEMA_ERROR]" in str(e) or "[REPAIR_FAILED]" in str(e):
+                logger.error(f"[PERPLEXITY] Critical soft schema error: {e}")
+                raise
             logger.error(f"Perplexity soft schema cleaning error: {e}")
             return response_json

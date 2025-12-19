@@ -59,15 +59,31 @@ class BasetenProvider:
                         norm, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
                         if warnings:
                             logger.warning(f"[BASETEN] Soft schema warnings: {warnings}")
+
+                        # Check if critical required fields are missing (treat as error)
+                        required = schema.get('required', [])
+                        missing_critical = [f for f in required if f not in norm or not norm[f]]
+                        if missing_critical:
+                            logger.error(f"[BASETEN] Missing critical required fields after repair: {missing_critical}")
+                            raise Exception(f"[SCHEMA_ERROR] Missing required fields: {missing_critical}")
+
                         normalized['content'][0]['text'] = json.dumps(norm)
                     else:
                         logger.error(f"[BASETEN] Could not extract or repair JSON from response")
+                        raise Exception("[REPAIR_FAILED] Haiku repair failed to extract valid JSON")
                 except Exception as e:
+                    # Re-raise critical errors to trigger backup model retry
+                    if "[SCHEMA_ERROR]" in str(e) or "[REPAIR_FAILED]" in str(e):
+                        logger.error(f"[BASETEN] Critical soft schema error: {e}")
+                        raise
                     logger.warning(f"Baseten soft schema cleaning failed: {e}")
-            
+
             return normalized
 
         except Exception as e:
+            # Re-raise critical errors to trigger backup model retry
+            if "[SCHEMA_ERROR]" in str(e) or "[REPAIR_FAILED]" in str(e):
+                raise
             logger.error(f"Baseten normalization failed: {e}")
             return {'id': 'error', 'type': 'message', 'role': 'assistant', 'content': [{'type': 'text', 'text': str(response)}], 'stop_reason': 'error', 'usage': {}}
 
