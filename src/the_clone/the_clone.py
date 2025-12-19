@@ -445,7 +445,7 @@ class TheClone2Refined:
         enhanced = model_response.get('enhanced_data', {})
         costs = enhanced.get('costs', {}).get('actual', {})
         cost = costs.get('total_cost', 0.0)
-        provider = enhanced.get('api_provider', 'unknown')
+        provider = enhanced.get('call_info', {}).get('api_provider', 'unknown')
         return cost, provider
 
     def _build_ranked_source_pool(
