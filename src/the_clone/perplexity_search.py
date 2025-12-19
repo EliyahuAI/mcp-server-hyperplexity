@@ -23,9 +23,18 @@ class PerplexitySearchClient:
 
     def __init__(self, api_key: Optional[str] = None):
         """Initialize the search client."""
-        self.api_key = api_key or os.environ.get('PERPLEXITY_API_KEY')
-        if not self.api_key:
-            raise ValueError("PERPLEXITY_API_KEY not set")
+        if api_key:
+            self.api_key = api_key
+        else:
+            # Try environment variable first, then SSM Parameter Store
+            self.api_key = os.environ.get('PERPLEXITY_API_KEY')
+            if not self.api_key:
+                try:
+                    # Import here to avoid circular dependency
+                    from shared.ai_client.config import get_perplexity_api_key
+                    self.api_key = get_perplexity_api_key()
+                except Exception as e:
+                    raise ValueError(f"PERPLEXITY_API_KEY not set and failed to load from SSM: {e}")
 
         self.base_url = "https://api.perplexity.ai"
         # Reactive rate limiting - only throttle when hitting 429 errors

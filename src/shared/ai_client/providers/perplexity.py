@@ -11,16 +11,18 @@ from shared.perplexity_schema import get_response_format_schema
 from ..utils import (
     extract_citations_from_perplexity_response,
     validate_and_normalize_soft_schema,
-    extract_json_from_text
+    extract_json_from_text,
+    repair_json_with_haiku
 )
 
 logger = logging.getLogger(__name__)
 
 class PerplexityProvider:
-    def __init__(self, api_key: str, cache_handler, usage_handler):
+    def __init__(self, api_key: str, cache_handler, usage_handler, ai_client=None):
         self.api_key = api_key
         self.cache_handler = cache_handler
         self.usage_handler = usage_handler
+        self.ai_client = ai_client  # For Haiku JSON repair
 
     async def validate_with_smart_cache(self, prompt: str, row_data: Dict, targets: List,
                                         model: str, search_context_size: str,
@@ -185,7 +187,7 @@ class PerplexityProvider:
                         response_json = await response.json()
                         
                         if soft_schema:
-                            response_json = self._clean_soft_schema_response(response_json, actual_schema)
+                            response_json = await self._clean_soft_schema_response(response_json, actual_schema)
 
                         await self.cache_handler.save_debug_data('perplexity', model, debug_request, response_json, context="structured_call_success", debug_name=debug_name)
                         token_usage = self.usage_handler.extract_token_usage(response_json, model, "low")
@@ -212,18 +214,26 @@ class PerplexityProvider:
             await self.cache_handler.save_debug_data('perplexity', model, debug_request, None, error=e, context="structured_call_exception", debug_name=debug_name)
             raise
 
-    def _clean_soft_schema_response(self, response_json: dict, schema: dict) -> dict:
+    async def _clean_soft_schema_response(self, response_json: dict, schema: dict) -> dict:
         try:
             if 'choices' in response_json and response_json['choices']:
                 content = response_json['choices'][0]['message']['content']
                 parsed = extract_json_from_text(content)
-                
+
+                # If extraction failed, try Haiku repair
+                if not parsed and self.ai_client:
+                    logger.warning(f"[PERPLEXITY] JSON extraction failed, attempting Haiku repair")
+                    parsed = await repair_json_with_haiku(content, schema, self.ai_client)
+
                 if parsed:
                     normalized, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
                     if warnings:
                         logger.warning(f"Perplexity soft schema warnings: {warnings}")
-                    
+
                     response_json['choices'][0]['message']['content'] = json.dumps(normalized)
+                else:
+                    logger.error(f"[PERPLEXITY] Could not extract or repair JSON from response")
+
             return response_json
         except Exception as e:
             logger.error(f"Perplexity soft schema cleaning error: {e}")

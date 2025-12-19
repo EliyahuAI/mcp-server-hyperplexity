@@ -24,16 +24,32 @@ class CodeExtractionDebugger:
         Initialize debugger.
 
         Args:
-            debug_dir: Directory to save debug files (default: src/test_results/code_extraction_debug)
+            debug_dir: Directory to save debug files (default: /tmp in Lambda, else test_results/code_extraction_debug)
         """
         if debug_dir is None:
-            debug_dir = os.path.join(
-                os.path.dirname(__file__),
-                'test_results/code_extraction_debug'
-            )
+            # Check if we're in Lambda environment (read-only filesystem)
+            if os.path.exists('/var/task'):  # Lambda indicator
+                debug_dir = '/tmp/code_extraction_debug'
+            else:
+                debug_dir = os.path.join(
+                    os.path.dirname(__file__),
+                    'test_results/code_extraction_debug'
+                )
 
         self.debug_dir = debug_dir
-        os.makedirs(self.debug_dir, exist_ok=True)
+
+        # Try to create directory, but don't fail if we can't
+        try:
+            os.makedirs(self.debug_dir, exist_ok=True)
+        except (OSError, PermissionError) as e:
+            logger.warning(f"Could not create debug directory {self.debug_dir}: {e}")
+            # Fallback to /tmp if creation failed
+            self.debug_dir = '/tmp/code_extraction_debug'
+            try:
+                os.makedirs(self.debug_dir, exist_ok=True)
+            except Exception:
+                logger.error("Could not create debug directory even in /tmp - debug logging disabled")
+                self.debug_dir = None
 
         self.session_id = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.extraction_count = 0
@@ -110,19 +126,31 @@ class CodeExtractionDebugger:
             }
         }
 
-        # Save to file
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(debug_record, f, indent=2, ensure_ascii=False)
+        # Save to file (skip if debug disabled)
+        if self.debug_dir:
+            try:
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(debug_record, f, indent=2, ensure_ascii=False)
 
-        # Log
-        if has_issues:
-            logger.warning(f"[DEBUG] Extraction {source_id} had issues, saved to {filename}")
-            for issue in issues:
-                logger.warning(f"  - {issue}")
+                # Log
+                if has_issues:
+                    logger.warning(f"[DEBUG] Extraction {source_id} had issues, saved to {filename}")
+                    for issue in issues:
+                        logger.warning(f"  - {issue}")
+                else:
+                    logger.debug(f"[DEBUG] Extraction {source_id} successful, logged to {filename}")
+
+                return filepath
+            except Exception as e:
+                logger.warning(f"[DEBUG] Could not save debug file: {e}")
+                return None
         else:
-            logger.debug(f"[DEBUG] Extraction {source_id} successful, logged to {filename}")
-
-        return filepath
+            # Debug disabled - just log issues
+            if has_issues:
+                logger.warning(f"[DEBUG] Extraction {source_id} had issues (debug logging disabled)")
+                for issue in issues:
+                    logger.warning(f"  - {issue}")
+            return None
 
     def _simplify_structure(self, structure: Dict) -> Dict:
         """Simplify structure for JSON serialization."""

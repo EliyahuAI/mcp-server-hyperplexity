@@ -58,16 +58,16 @@ class AIAPIClient:
         self.usage_handler = UsageHandler()
 
         # Initialize providers
-        self.anthropic = AnthropicProvider(get_anthropic_api_key(), self.cache_handler, self.usage_handler)
-        self.perplexity = PerplexityProvider(get_perplexity_api_key(), self.cache_handler, self.usage_handler)
+        self.anthropic = AnthropicProvider(get_anthropic_api_key(), self.cache_handler, self.usage_handler, ai_client=self)
+        self.perplexity = PerplexityProvider(get_perplexity_api_key(), self.cache_handler, self.usage_handler, ai_client=self)
         
         project_id, location = setup_vertex_credentials()
-        self.vertex = VertexProvider(project_id, self.cache_handler, self.usage_handler)
+        self.vertex = VertexProvider(project_id, self.cache_handler, self.usage_handler, ai_client=self)
         self.vertex_project = project_id # exposed for compatibility
         
-        # Initialize Baseten provider
+        # Initialize Baseten provider (pass self for Haiku repair capability)
         try:
-             self.baseten = BasetenProvider(get_baseten_api_key(), self.cache_handler, self.usage_handler)
+             self.baseten = BasetenProvider(get_baseten_api_key(), self.cache_handler, self.usage_handler, ai_client=self)
         except Exception as e:
              logger.warning(f"Failed to initialize Baseten provider: {e}")
              self.baseten = None
@@ -110,15 +110,20 @@ class AIAPIClient:
                                  context: str = "", max_tokens: int = None, max_web_searches: int = 3,
                                  search_context_size: str = "low", debug_name: str = None, soft_schema: bool = False,
                                  include_domains: Optional[List[str]] = None, exclude_domains: Optional[List[str]] = None,
-                                 use_code_extraction: bool = False) -> Dict:
-        
+                                 use_code_extraction: bool = None) -> Dict:
+
         call_start_time = datetime.now()
-        
+
         if isinstance(model, str):
             models_to_try = [model]
             models_to_try.extend(self._get_backup_models(model, 2))
         else:
             models_to_try = model
+
+        # Default use_code_extraction to True for clone models, False otherwise
+        if use_code_extraction is None:
+            primary_model = models_to_try[0] if models_to_try else model
+            use_code_extraction = primary_model.startswith('the-clone') if isinstance(primary_model, str) else False
         
         last_error = None
         
@@ -260,15 +265,19 @@ class AIAPIClient:
     def _extract_token_usage(self, response, model, search_context_size=None):
         return self.usage_handler.extract_token_usage(response, model, search_context_size)
 
+    def extract_structured_response(self, response, tool_name="structured_response"):
+        """Extract structured response from API response."""
+        return extract_structured_response(response, tool_name)
+
     def load_pricing_data(self):
         return self.usage_handler.load_pricing_data()
-        
+
     def aggregate_provider_metrics(self, metrics_list):
         return self.usage_handler.aggregate_provider_metrics(metrics_list)
-        
+
     async def _save_debug_data(self, *args, **kwargs):
         return await self.cache_handler.save_debug_data(*args, **kwargs)
-        
+
     async def _move_bad_cache_to_debug(self, *args, **kwargs):
         return await self.cache_handler.move_bad_cache_to_debug(*args, **kwargs)
 

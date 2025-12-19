@@ -11,16 +11,18 @@ from ..utils import (
     extract_citations_from_response,
     validate_and_normalize_soft_schema,
     extract_content_description,
-    extract_json_from_text
+    extract_json_from_text,
+    repair_json_with_haiku
 )
 
 logger = logging.getLogger(__name__)
 
 class AnthropicProvider:
-    def __init__(self, api_key: str, cache_handler, usage_handler):
+    def __init__(self, api_key: str, cache_handler, usage_handler, ai_client=None):
         self.api_key = api_key
         self.cache_handler = cache_handler
         self.usage_handler = usage_handler
+        self.ai_client = ai_client  # For Haiku JSON repair
 
     async def call_text_api(self, prompt: str, model: str, use_cache: bool, context: str, max_web_searches: int):
         normalized_model = normalize_anthropic_model(model)
@@ -100,7 +102,7 @@ class AnthropicProvider:
 
                         if soft_schema:
                             # Clean soft schema response
-                            response_json = self._clean_soft_schema_response(response_json, schema)
+                            response_json = await self._clean_soft_schema_response(response_json, schema)
 
                         await self.cache_handler.save_debug_data('anthropic', normalized_model, debug_request, response_json, context="single_call_success", cache_key=cache_key)
                         
@@ -174,22 +176,27 @@ class AnthropicProvider:
                 if attempt == max_retries: raise
                 await asyncio.sleep(base_delay * (2 ** attempt))
 
-    def _clean_soft_schema_response(self, response_json: dict, schema: dict) -> dict:
+    async def _clean_soft_schema_response(self, response_json: dict, schema: dict) -> dict:
         try:
             if 'content' in response_json:
                 text_content = ""
                 for block in response_json['content']:
                     if block.get('type') == 'text': text_content += block.get('text', '')
-                
+
                 parsed = extract_json_from_text(text_content)
-                
+
+                # If extraction failed, try Haiku repair
+                if not parsed and self.ai_client and schema:
+                    logger.warning(f"[ANTHROPIC] JSON extraction failed, attempting Haiku repair")
+                    parsed = await repair_json_with_haiku(text_content, schema, self.ai_client)
+
                 if parsed:
                     if schema:
                         normalized, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
                         if warnings:
-                            logger.warning(f"Soft schema warnings: {warnings}")
+                            logger.warning(f"Anthropic soft schema warnings: {warnings}")
                         parsed = normalized
-                    
+
                     return {
                         'choices': [{'message': {'role': 'assistant', 'content': json.dumps(parsed)}}],
                         'id': response_json.get('id'),
@@ -197,7 +204,10 @@ class AnthropicProvider:
                         'usage': response_json.get('usage'),
                         'stop_reason': response_json.get('stop_reason')
                     }
+                else:
+                    logger.error(f"[ANTHROPIC] Could not extract or repair JSON from response")
+
             return response_json
         except Exception as e:
-            logger.error(f"Soft schema cleaning failed: {e}")
+            logger.error(f"Anthropic soft schema cleaning failed: {e}")
             return response_json

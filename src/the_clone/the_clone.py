@@ -122,8 +122,22 @@ class TheClone2Refined:
             with open(os.path.join(debug_dir, '00_config.json'), 'w') as f:
                 json.dump({'query': prompt, 'models': models, 'limits': global_limits}, f, indent=2)
 
-        # Cost tracking
+        # Cost tracking by stage
         costs = {'initial': 0.0, 'search': 0.0, 'triage': 0.0, 'extraction': 0.0, 'synthesis': 0.0}
+
+        # Cost tracking by provider (for proper DynamoDB attribution)
+        costs_by_provider = {
+            'perplexity': 0.0,
+            'vertex': 0.0,
+            'baseten': 0.0,
+            'anthropic': 0.0
+        }
+        calls_by_provider = {
+            'perplexity': 0,
+            'vertex': 0,
+            'baseten': 0,
+            'anthropic': 0
+        }
 
         # Step 1: Initial Decision
         logger.info("\n[CLONE] Step 1: Initial Decision...")
@@ -135,7 +149,10 @@ class TheClone2Refined:
         )
 
         decision = initial_result.get('decision', 'need_search')
-        costs['initial'] = self._extract_cost(initial_result.get('model_response', {}))
+        initial_cost, initial_provider = self._extract_cost_and_provider(initial_result.get('model_response', {}))
+        costs['initial'] = initial_cost
+        costs_by_provider[initial_provider] = costs_by_provider.get(initial_provider, 0.0) + initial_cost
+        calls_by_provider[initial_provider] = calls_by_provider.get(initial_provider, 0) + 1
 
         if decision == "answer_directly":
             logger.warning("[CLONE] Direct answer not implemented - forcing search instead")
@@ -196,7 +213,10 @@ class TheClone2Refined:
             include_domains=search_include_domains,
             exclude_domains=search_exclude_domains
         )
-        costs['search'] = len(search_terms) * 0.005  # Perplexity cost per search
+        search_cost = len(search_terms) * 0.005  # Perplexity search API cost
+        costs['search'] = search_cost
+        costs_by_provider['perplexity'] += search_cost
+        calls_by_provider['perplexity'] += len(search_terms)
 
         # Step 3: Triage (rank ALL sources)
         logger.info(f"\n[CLONE] Step 3: Ranking sources...")
@@ -209,10 +229,13 @@ class TheClone2Refined:
             soft_schema=use_soft_schema
         )
 
-        # Extract triage costs
+        # Extract triage costs by provider
         for result in triage_results:
             if not isinstance(result, Exception):
-                costs['triage'] += self._extract_cost(result.get('model_response', {}))
+                triage_cost, triage_provider = self._extract_cost_and_provider(result.get('model_response', {}))
+                costs['triage'] += triage_cost
+                costs_by_provider[triage_provider] = costs_by_provider.get(triage_provider, 0.0) + triage_cost
+                calls_by_provider[triage_provider] = calls_by_provider.get(triage_provider, 0) + 1
 
         # Build ranked source pool
         ranked_sources = self._build_ranked_source_pool(search_results, ranked_lists, search_terms)
@@ -262,14 +285,17 @@ class TheClone2Refined:
 
             results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
 
-            # Collect snippets and costs
+            # Collect snippets and costs by provider
             new_snippets = []
             for result in results:
                 if isinstance(result, Exception):
                     logger.error(f"[CLONE] Extraction error: {result}")
                     continue
                 new_snippets.extend(result.get('snippets', []))
-                costs['extraction'] += self._extract_cost(result.get('model_response', {}))
+                extract_cost, extract_provider = self._extract_cost_and_provider(result.get('model_response', {}))
+                costs['extraction'] += extract_cost
+                costs_by_provider[extract_provider] = costs_by_provider.get(extract_provider, 0.0) + extract_cost
+                calls_by_provider[extract_provider] = calls_by_provider.get(extract_provider, 0) + 1
 
             all_snippets.extend(new_snippets)
             sources_pulled = batch_end
@@ -314,7 +340,10 @@ class TheClone2Refined:
             soft_schema=use_soft_schema
         )
 
-        costs['synthesis'] = self._extract_cost(synthesis_result.get('model_response', {}))
+        synth_cost, synth_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}))
+        costs['synthesis'] = synth_cost
+        costs_by_provider[synth_provider] = costs_by_provider.get(synth_provider, 0.0) + synth_cost
+        calls_by_provider[synth_provider] = calls_by_provider.get(synth_provider, 0) + 1
 
         # Check self-assessment and upgrade to tier4 if needed
         answer_data = synthesis_result.get('answer', {})
@@ -345,7 +374,10 @@ class TheClone2Refined:
                 soft_schema=tier4_soft_schema
             )
 
-            costs['synthesis'] += self._extract_cost(synthesis_result.get('model_response', {}))
+            tier4_cost, tier4_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}))
+            costs['synthesis'] += tier4_cost
+            costs_by_provider[tier4_provider] = costs_by_provider.get(tier4_provider, 0.0) + tier4_cost
+            calls_by_provider[tier4_provider] = calls_by_provider.get(tier4_provider, 0) + 1
             synthesis_tier = 'tier4'
             models['synthesis'] = tier4_synthesis_model
             upgraded = True
@@ -358,9 +390,24 @@ class TheClone2Refined:
         # Build response
         total_time = (datetime.now() - start_time).total_seconds()
         total_cost = sum(costs.values())
+        total_cost_by_provider = sum(costs_by_provider.values())
+
+        # Sanity check: both totals should match
+        if abs(total_cost - total_cost_by_provider) > 0.0001:
+            logger.warning(f"[CLONE] Cost mismatch! By-stage: ${total_cost:.4f}, By-provider: ${total_cost_by_provider:.4f}")
 
         logger.info(f"\n[CLONE] Complete in {total_time:.1f}s, Cost: ${total_cost:.4f}")
+        logger.info(f"[CLONE] Cost by provider: " + ", ".join(f"{p}=${c:.4f}" for p, c in costs_by_provider.items() if c > 0))
         logger.info(f"[CLONE] Snippets: {len(all_snippets)}, Citations: {len(synthesis_result.get('citations', []))}")
+
+        # Build provider-level cost structure for DynamoDB
+        provider_costs = {}
+        for provider, cost in costs_by_provider.items():
+            if cost > 0 or calls_by_provider[provider] > 0:
+                provider_costs[provider] = {
+                    'cost': cost,
+                    'calls': calls_by_provider[provider]
+                }
 
         return {
             "answer": synthesis_result.get('answer', {}),
@@ -382,7 +429,8 @@ class TheClone2Refined:
                 "sources_pulled": sources_pulled,
                 "total_time_seconds": total_time,
                 "total_cost": total_cost,
-                "cost_breakdown": costs
+                "cost_breakdown": costs,  # By-stage breakdown (for debugging)
+                "cost_by_provider": provider_costs  # By-provider breakdown (for DynamoDB)
             }
         }
 
@@ -391,6 +439,14 @@ class TheClone2Refined:
         enhanced = model_response.get('enhanced_data', {})
         costs = enhanced.get('costs', {}).get('actual', {})
         return costs.get('total_cost', 0.0)
+
+    def _extract_cost_and_provider(self, model_response: Dict) -> tuple[float, str]:
+        """Extract cost and provider from model response."""
+        enhanced = model_response.get('enhanced_data', {})
+        costs = enhanced.get('costs', {}).get('actual', {})
+        cost = costs.get('total_cost', 0.0)
+        provider = enhanced.get('api_provider', 'unknown')
+        return cost, provider
 
     def _build_ranked_source_pool(
         self,

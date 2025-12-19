@@ -77,8 +77,9 @@ class CloneProvider:
             citations = result.get('citations', [])
             metadata = result.get('metadata', {})
             cost_breakdown = metadata.get('cost_breakdown', {})
+            cost_by_provider = metadata.get('cost_by_provider', {})
             total_cost = metadata.get('total_cost', 0.0)
-            
+
             # Construct synthetic token usage from cost
             # We don't have exact tokens, so we create a 'cost-only' usage object
             # Enhanced metrics will pick this up
@@ -94,6 +95,17 @@ class CloneProvider:
                     'source': 'agentic_pipeline'
                 }
             }
+
+            # Build provider_metrics from cost_by_provider for DynamoDB tracking
+            provider_metrics = {}
+            for provider, data in cost_by_provider.items():
+                provider_metrics[provider] = {
+                    'cost_actual': data.get('cost', 0.0),
+                    'cost_estimated': data.get('cost', 0.0),  # No cache, so actual = estimated
+                    'calls': data.get('calls', 0),
+                    'tokens': 0,  # Token count not available from Clone
+                    'cache_efficiency_percent': 0.0
+                }
             
             # Normalize response structure
             # The Clone returns an 'answer' dict. 
@@ -124,9 +136,13 @@ class CloneProvider:
                 response_json, model, processing_time, is_cached=False,
                 pre_extracted_token_usage=token_usage
             )
-            
+
             # Inject detailed cost breakdown into enhanced metrics
             enhanced_data['costs']['actual']['breakdown'] = cost_breakdown
+
+            # Inject provider-level metrics for DynamoDB aggregation
+            enhanced_data['provider_metrics'] = provider_metrics
+            enhanced_data['api_provider'] = 'clone'  # Top-level provider is 'clone'
             
             return {
                 'response': response_json,

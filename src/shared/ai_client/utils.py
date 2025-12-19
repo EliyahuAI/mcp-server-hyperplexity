@@ -107,9 +107,52 @@ def extract_structured_response(response: Dict, tool_name: str = "structured_res
             if content_item.get('type') == 'text':
                 text = content_item.get('text', '')
                 if '{' in text and '}' in text:
-                    start = text.find('{')
-                    end = text.rfind('}') + 1
-                    return json.loads(text[start:end])
+                    # Strip markdown code fences first
+                    cleaned_text = re.sub(r'^```(?:json)?\s*|\s*```$', '', text.strip(), flags=re.MULTILINE)
+
+                    # Find balanced JSON object
+                    start = cleaned_text.find('{')
+                    if start == -1:
+                        continue
+
+                    brace_count = 0
+                    in_string = False
+                    escape_next = False
+
+                    for i in range(start, len(cleaned_text)):
+                        char = cleaned_text[i]
+
+                        # Handle string escaping
+                        if escape_next:
+                            escape_next = False
+                            continue
+                        if char == '\\':
+                            escape_next = True
+                            continue
+                        if char == '"':
+                            in_string = not in_string
+                            continue
+
+                        # Count braces outside strings
+                        if not in_string:
+                            if char == '{':
+                                brace_count += 1
+                            elif char == '}':
+                                brace_count -= 1
+                                if brace_count == 0:
+                                    # Found complete JSON object
+                                    end = i + 1
+                                    try:
+                                        return json.loads(cleaned_text[start:end])
+                                    except json.JSONDecodeError:
+                                        # Invalid JSON, continue searching
+                                        continue
+
+                    # Fallback: try parsing the whole cleaned text
+                    try:
+                        return json.loads(cleaned_text)
+                    except json.JSONDecodeError:
+                        pass
 
         raise ValueError("Could not extract structured response from response format")
 
@@ -593,13 +636,55 @@ def extract_json_from_text(text: str) -> Optional[Dict]:
     try:
         # Remove markdown code blocks
         cleaned = re.sub(r'^```json\s*|\s*```$', '', text.strip(), flags=re.MULTILINE)
-        
+
         # Find the JSON object (first { to last })
         match = re.search(r'(\{.*\})', cleaned, re.DOTALL)
         if match:
             cleaned = match.group(1)
-            
+
         return json.loads(cleaned)
     except Exception as e:
         logger.warning(f"Failed to extract JSON from text: {e}")
+        return None
+
+async def repair_json_with_haiku(malformed_text: str, schema: Dict, ai_client) -> Optional[Dict]:
+    """
+    Use Claude Haiku to repair/extract JSON from malformed text.
+
+    Args:
+        malformed_text: The text containing malformed or embedded JSON
+        schema: Expected schema for the JSON
+        ai_client: AIAPIClient instance for making the repair call
+
+    Returns:
+        Repaired JSON dict or None if repair fails
+    """
+    try:
+        cleanup_prompt = f"""The following text contains JSON that needs to be extracted and cleaned.
+
+Text:
+{malformed_text}
+
+Required Schema:
+{json.dumps(schema, indent=2)}
+
+Extract the JSON and reformat it to exactly match the schema. Preserve all information, just adjust field names and structure to comply with the schema. Return only valid JSON."""
+
+        # Call Haiku with hard schema to extract/repair
+        cleanup_result = await ai_client.call_structured_api(
+            prompt=cleanup_prompt,
+            schema=schema,
+            model="claude-haiku-4-5",
+            use_cache=False,
+            max_web_searches=0,
+            soft_schema=False  # Use hard schema for Haiku to ensure valid output
+        )
+
+        # Extract the repaired JSON
+        repaired = extract_structured_response(cleanup_result['response'], "structured_response")
+        logger.info("[HAIKU_REPAIR] Successfully repaired JSON")
+        return repaired
+
+    except Exception as e:
+        logger.error(f"[HAIKU_REPAIR] Repair failed: {e}")
         return None

@@ -3,8 +3,9 @@
 # Packaging boto3/botocore causes version conflicts with Lambda's built-in versions
 aioboto3>=15.4.0  # Latest version supports modern botocore
 
-# Google Vertex AI for DeepSeek models (ultra-low cost provider)
-google-cloud-aiplatform>=1.72.0
+# Google Auth for Vertex AI API calls (lightweight, ~2MB vs 160MB for google-cloud-aiplatform)
+# We use direct HTTP API calls via aiohttp, not the full SDK
+google-auth>=2.0.0
 
 python-multipart>=0.0.5
 openpyxl>=3.0.0

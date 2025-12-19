@@ -134,6 +134,10 @@ class UsageHandler:
             elif api_provider == 'vertex':
                 return self._extract_vertex_token_usage(response, model)
 
+            elif api_provider == 'baseten':
+                # Baseten uses OpenAI-compatible format (same as Vertex for DeepSeek)
+                return self._extract_vertex_token_usage(response, model)
+
             else:
                 # Perplexity
                 prompt_tokens = max(0, int(usage.get('prompt_tokens', 0)))
@@ -176,34 +180,37 @@ class UsageHandler:
             return self.get_empty_token_usage(model)
 
     def _extract_vertex_token_usage(self, vertex_response: Dict, model: str) -> Dict:
-        """Extract token usage from Vertex AI API response."""
+        """Extract token usage from Vertex AI or Baseten API response (both use OpenAI-compatible format)."""
         try:
+            # Determine actual provider from model name
+            api_provider = determine_api_provider(model)
+
             usage = vertex_response.get('usage_metadata', {}) or vertex_response.get('usage', {})
-            
+
             # Support Vertex native (prompt_token_count), standard (input_tokens), and OpenAI (prompt_tokens)
             input_tokens = max(0, int(
-                usage.get('prompt_token_count') or 
-                usage.get('input_tokens') or 
-                usage.get('prompt_tokens') or 
+                usage.get('prompt_token_count') or
+                usage.get('input_tokens') or
+                usage.get('prompt_tokens') or
                 0
             ))
-            
+
             # Support Vertex native (candidates_token_count), standard (output_tokens), and OpenAI (completion_tokens)
             output_tokens = max(0, int(
-                usage.get('candidates_token_count') or 
-                usage.get('output_tokens') or 
-                usage.get('completion_tokens') or 
+                usage.get('candidates_token_count') or
+                usage.get('output_tokens') or
+                usage.get('completion_tokens') or
                 0
             ))
-            
+
             total_tokens = max(0, int(
-                usage.get('total_token_count') or 
-                usage.get('total_tokens') or 
+                usage.get('total_token_count') or
+                usage.get('total_tokens') or
                 (input_tokens + output_tokens)
             ))
 
             return {
-                'api_provider': 'vertex',
+                'api_provider': api_provider,  # Use detected provider (vertex or baseten)
                 'input_tokens': input_tokens,
                 'output_tokens': output_tokens,
                 'cache_creation_tokens': 0,
@@ -212,8 +219,9 @@ class UsageHandler:
                 'model': model
             }
         except Exception:
+            api_provider = determine_api_provider(model)
             return {
-                'api_provider': 'vertex',
+                'api_provider': api_provider,  # Use detected provider
                 'input_tokens': 0, 'output_tokens': 0, 'cache_creation_tokens': 0, 'cache_read_tokens': 0,
                 'total_tokens': 0, 'model': model
             }
@@ -538,3 +546,86 @@ class UsageHandler:
     def _calculate_percentage_savings(self, actual: float, estimated: float) -> float:
         if estimated <= 0: return 0.0
         return ((estimated - actual) / estimated) * 100
+
+    def aggregate_provider_metrics(self, metrics_list: List[Dict]) -> Dict:
+        """Aggregate metrics from multiple API calls, including nested provider_metrics from Clone."""
+        if not metrics_list:
+            return {'totals': {'total_cost': 0.0}, 'providers': {}, 'by_model': {}}
+
+        total_cost_actual = 0.0
+        total_cost_estimated = 0.0
+        providers = {}
+        by_model = {}
+
+        for metric in metrics_list:
+            if not isinstance(metric, dict):
+                continue
+
+            # Check if this has nested provider_metrics (from Clone)
+            if 'provider_metrics' in metric:
+                # Aggregate nested provider metrics
+                for provider, provider_data in metric.get('provider_metrics', {}).items():
+                    if provider not in providers:
+                        providers[provider] = {
+                            'cost_actual': 0.0,
+                            'cost_estimated': 0.0,
+                            'calls': 0,
+                            'tokens': 0,
+                            'cache_efficiency_percent': 0.0
+                        }
+                    providers[provider]['cost_actual'] += provider_data.get('cost_actual', 0.0)
+                    providers[provider]['cost_estimated'] += provider_data.get('cost_estimated', 0.0)
+                    providers[provider]['calls'] += provider_data.get('calls', 0)
+                    providers[provider]['tokens'] += provider_data.get('tokens', 0)
+                total_cost_actual += sum(p.get('cost_actual', 0.0) for p in metric.get('provider_metrics', {}).values())
+                total_cost_estimated += sum(p.get('cost_estimated', 0.0) for p in metric.get('provider_metrics', {}).values())
+            else:
+                # Single provider call - extract from costs
+                costs = metric.get('costs', {})
+                actual = costs.get('actual', {})
+                estimated = costs.get('estimated', {})
+                cost_actual = actual.get('total_cost', 0.0)
+                cost_estimated = estimated.get('total_cost', 0.0)
+                total_cost_actual += cost_actual
+                total_cost_estimated += cost_estimated
+
+                # Aggregate by single provider
+                provider = metric.get('api_provider', 'unknown')
+                if provider not in providers:
+                    providers[provider] = {
+                        'cost_actual': 0.0,
+                        'cost_estimated': 0.0,
+                        'calls': 0,
+                        'tokens': 0,
+                        'cache_efficiency_percent': 0.0
+                    }
+                providers[provider]['cost_actual'] += cost_actual
+                providers[provider]['cost_estimated'] += cost_estimated
+                providers[provider]['calls'] += 1
+                providers[provider]['tokens'] += metric.get('token_usage', {}).get('total_tokens', 0)
+
+            # Aggregate by model (top-level model name)
+            model = metric.get('model', 'unknown')
+            if model not in by_model:
+                by_model[model] = {'cost': 0.0, 'calls': 0}
+            metric_cost = metric.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+            if 'provider_metrics' in metric:
+                metric_cost = sum(p.get('cost_actual', 0.0) for p in metric.get('provider_metrics', {}).values())
+            by_model[model]['cost'] += metric_cost
+            by_model[model]['calls'] += 1
+
+        # Calculate cache efficiency for each provider
+        for provider, data in providers.items():
+            if data['cost_estimated'] > 0:
+                savings = data['cost_estimated'] - data['cost_actual']
+                data['cache_efficiency_percent'] = (savings / data['cost_estimated']) * 100
+
+        return {
+            'totals': {
+                'total_cost_actual': total_cost_actual,
+                'total_cost_estimated': total_cost_estimated,
+                'total_calls': len(metrics_list)
+            },
+            'providers': providers,
+            'by_model': by_model
+        }

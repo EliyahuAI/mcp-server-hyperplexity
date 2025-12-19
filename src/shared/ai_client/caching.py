@@ -22,27 +22,30 @@ class CacheHandler:
         self.s3_session = s3_session
         self.use_unified_structure = use_unified_structure
 
-    def get_cache_key(self, prompt: str, model: str, schema: Dict = None, context: str = "", max_web_searches: int = 3,
+    def get_cache_key(self, prompt: str, model, schema: Dict = None, context: str = "", max_web_searches: int = 3,
                        soft_schema: bool = False, include_domains: Optional[List[str]] = None,
                        exclude_domains: Optional[List[str]] = None) -> str:
-        """Generate a unique cache key for the request."""
+        """Generate a unique cache key for the request. Model can be str or List[str]."""
         # Normalize prompt whitespace
         normalized_prompt = re.sub(r'\s+', ' ', prompt).strip()
         schema_str = json.dumps(schema, sort_keys=True) if schema else ""
         sorted_include = sorted(include_domains) if include_domains else []
         sorted_exclude = sorted(exclude_domains) if exclude_domains else []
 
-        cache_input = f"{normalized_prompt}:{model}:{schema_str}:{context}:{max_web_searches}:{sorted_include}:{sorted_exclude}"
+        # Handle model as string or list
+        model_str = json.dumps(model) if isinstance(model, list) else model
+
+        cache_input = f"{normalized_prompt}:{model_str}:{schema_str}:{context}:{max_web_searches}:{sorted_include}:{sorted_exclude}"
         return hashlib.md5(cache_input.encode()).hexdigest()
 
-    def get_validation_cache_key(self, row_data: Dict, targets: List, model: str, search_context_size: str = "low", config_hash: str = "") -> str:
-        """Generate a cache key based on core validation data."""
+    def get_validation_cache_key(self, row_data: Dict, targets: List, model, search_context_size: str = "low", config_hash: str = "") -> str:
+        """Generate a cache key based on core validation data. Model can be str or List[str]."""
         cache_components = {
             'row_data': {k: str(v) for k, v in row_data.items()},
-            'targets': [{'column': t.column if hasattr(t, 'column') else str(t), 
+            'targets': [{'column': t.column if hasattr(t, 'column') else str(t),
                         'importance': t.importance if hasattr(t, 'importance') else '',
                         'format': t.format if hasattr(t, 'format') else ''} for t in targets],
-            'model': model,
+            'model': model if isinstance(model, str) else json.dumps(model),
             'search_context_size': search_context_size,
             'config_hash': config_hash
         }
@@ -202,7 +205,7 @@ class CacheHandler:
                 'cache_key': cache_key,
                 'rejected_at': datetime.now(timezone.utc).isoformat(),
                 'cached_data': cache_data,
-                'prompt_preview': prompt[:1000] if prompt else None
+                'prompt_preview': prompt if prompt else None
             }
             
             debug_key = f"debug/bad_cache/{service}/{timestamp}_{cache_key[:8]}_rejected.json"

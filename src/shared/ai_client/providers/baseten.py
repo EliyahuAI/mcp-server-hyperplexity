@@ -5,18 +5,19 @@ import aiohttp
 from datetime import datetime
 from typing import Dict, Any
 
-from ..utils import extract_json_from_text, validate_and_normalize_soft_schema
+from ..utils import extract_json_from_text, validate_and_normalize_soft_schema, repair_json_with_haiku
 
 logger = logging.getLogger(__name__)
 
 class BasetenProvider:
-    def __init__(self, api_key: str, cache_handler, usage_handler):
+    def __init__(self, api_key: str, cache_handler, usage_handler, ai_client=None):
         self.api_key = api_key
         self.cache_handler = cache_handler
         self.usage_handler = usage_handler
+        self.ai_client = ai_client  # For Haiku JSON repair
         self.base_url = "https://inference.baseten.co/v1"
 
-    def _normalize_baseten_response(self, response: Dict, soft_schema: bool = False, schema: Dict = None) -> Dict:
+    async def _normalize_baseten_response(self, response: Dict, soft_schema: bool = False, schema: Dict = None) -> Dict:
         """Normalize Baseten API response to Anthropic-style format."""
         try:
             # Baseten returns standard OpenAI format
@@ -45,12 +46,22 @@ class BasetenProvider:
                     'usage': {}
                 }
 
-            if soft_schema:
+            if soft_schema and schema:
                 try:
                     parsed = extract_json_from_text(text_content)
+
+                    # If extraction failed, try Haiku repair
+                    if not parsed and self.ai_client:
+                        logger.warning(f"[BASETEN] JSON extraction failed, attempting Haiku repair")
+                        parsed = await repair_json_with_haiku(text_content, schema, self.ai_client)
+
                     if parsed:
-                        norm, _ = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
+                        norm, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
+                        if warnings:
+                            logger.warning(f"[BASETEN] Soft schema warnings: {warnings}")
                         normalized['content'][0]['text'] = json.dumps(norm)
+                    else:
+                        logger.error(f"[BASETEN] Could not extract or repair JSON from response")
                 except Exception as e:
                     logger.warning(f"Baseten soft schema cleaning failed: {e}")
             
@@ -68,7 +79,7 @@ class BasetenProvider:
             if soft_schema:
                 final_prompt = f"{prompt}\n\nReturn your answer as valid JSON matching this schema: {json.dumps(schema)}"
         
-        debug_request = {'model_id': model, 'prompt': final_prompt[:500], 'max_tokens': enforced_max_tokens}
+        debug_request = {'model_id': model, 'prompt': final_prompt, 'max_tokens': enforced_max_tokens}
         
         try:
             url = f"{self.base_url}/chat/completions"
@@ -113,7 +124,7 @@ class BasetenProvider:
                         await self.cache_handler.save_debug_data('baseten', model, debug_request, response_text, error=error, context=f"status_{response.status}", cache_key=cache_key)
                         raise error
 
-            unified_response = self._normalize_baseten_response(response_json, soft_schema, schema)
+            unified_response = await self._normalize_baseten_response(response_json, soft_schema, schema)
             
             if unified_response.get('stop_reason') in ['max_tokens', 'length']:
                  await self.cache_handler.save_debug_data('baseten', model, debug_request, unified_response, context="max_tokens_truncated", cache_key=cache_key)

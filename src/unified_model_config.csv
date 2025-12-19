@@ -46,12 +46,12 @@ claude-3-sonnet*,anthropic,7,true,30,80,60,1.0,0.75,5,2,3.00,15.00,32000,Tier 2:
 claude-*,anthropic,10,true,20,80,40,0.8,0.8,5,2,3.00,15.00,32000,Tier 2: Fallback for other Claude models
 
 # VERTEX AI TIER: DeepSeek models (Ultra-low cost via Google Vertex AI - V3.1, V3.2, V3.2-Exp available)
-deepseek-v3.2-exp*,vertex,1,true,50,200,120,1.6,0.5,5,2,0.21,0.32,32000,Vertex: DeepSeek-V3.2-Exp - Cheapest variant with cache support
-deepseek-v3.2*,vertex,2,true,50,200,120,1.5,0.5,5,2,0.28,0.40,32000,Vertex: DeepSeek-V3.2 - Latest most capable model
-deepseek-v3.2-baseten*,baseten,2,true,50,200,120,1.5,0.5,5,2,0.30,0.45,32000,Baseten: DeepSeek V3.2 - Hosted via Baseten
-deepseek-v3.1*,vertex,3,true,50,180,100,1.4,0.6,5,2,0.60,1.70,32000,Vertex: DeepSeek-V3.1 - Hybrid thinking/non-thinking
-deepseek-v3*,vertex,3,true,50,180,100,1.4,0.6,5,2,0.60,1.70,32000,Vertex: DeepSeek-V3 alias for V3.1
-deepseek*,vertex,4,true,50,150,100,1.3,0.7,5,2,0.28,0.40,32000,Vertex: Generic DeepSeek fallback (uses V3.2 pricing)
+deepseek-v3.2-exp*,vertex,1,true,50,200,120,1.6,0.5,5,2,0.21,0.32,120000,Vertex: DeepSeek-V3.2-Exp - Cheapest variant with cache support (120K context)
+deepseek-v3.2*,vertex,2,true,50,200,120,1.5,0.5,5,2,0.28,0.40,120000,Vertex: DeepSeek-V3.2 - Latest most capable model (120K context)
+deepseek-v3.2-baseten*,baseten,2,true,50,200,120,1.5,0.5,5,2,0.30,0.45,120000,Baseten: DeepSeek V3.2 - Hosted via Baseten (120K context)
+deepseek-v3.1*,vertex,3,true,50,180,100,1.4,0.6,5,2,0.60,1.70,120000,Vertex: DeepSeek-V3.1 - Hybrid thinking/non-thinking (120K context)
+deepseek-v3*,vertex,3,true,50,180,100,1.4,0.6,5,2,0.60,1.70,120000,Vertex: DeepSeek-V3 alias for V3.1 (120K context)
+deepseek*,vertex,4,true,50,150,100,1.3,0.7,5,2,0.28,0.40,120000,Vertex: Generic DeepSeek fallback - uses V3.2 pricing (120K context)
 
 # TIER 3 OPTIMIZED: Perplexity sonar-deep-research (40 RPM - SEVERELY CONSTRAINED + $5/1000 searches)
 sonar-deep-research*,perplexity,1,true,3,10,5,0.8,0.5,3,2,2.00,8.00,32000,Tier 3: Deep research - 40 RPM + $5/1000 searches

@@ -6,15 +6,16 @@ import aiohttp
 from datetime import datetime
 from typing import Dict, Any
 
-from ..utils import normalize_vertex_model, extract_json_from_text, validate_and_normalize_soft_schema
+from ..utils import normalize_vertex_model, extract_json_from_text, validate_and_normalize_soft_schema, repair_json_with_haiku
 
 logger = logging.getLogger(__name__)
 
 class VertexProvider:
-    def __init__(self, project_id: str, cache_handler, usage_handler):
+    def __init__(self, project_id: str, cache_handler, usage_handler, ai_client=None):
         self.project_id = project_id
         self.cache_handler = cache_handler
         self.usage_handler = usage_handler
+        self.ai_client = ai_client  # For Haiku JSON repair
 
     async def _get_vertex_access_token(self) -> str:
         """Get Google Cloud OAuth access token."""
@@ -29,7 +30,7 @@ class VertexProvider:
             logger.error(f"Failed to get Vertex access token: {e}")
             raise Exception(f"Vertex authentication failed: {e}")
 
-    def _normalize_vertex_response(self, vertex_response: Dict, soft_schema: bool = False, schema: Dict = None) -> Dict:
+    async def _normalize_vertex_response(self, vertex_response: Dict, soft_schema: bool = False, schema: Dict = None) -> Dict:
         """Normalize Vertex AI API response to Anthropic-style format."""
         try:
             # DeepSeek/OpenAI format
@@ -69,12 +70,22 @@ class VertexProvider:
                     'usage': vertex_response.get('usage_metadata', {})
                 }
 
-            if soft_schema:
+            if soft_schema and schema:
                 try:
                     parsed = extract_json_from_text(text_content)
+
+                    # If extraction failed, try Haiku repair
+                    if not parsed and self.ai_client:
+                        logger.warning(f"[VERTEX] JSON extraction failed, attempting Haiku repair")
+                        parsed = await repair_json_with_haiku(text_content, schema, self.ai_client)
+
                     if parsed:
-                        norm, _ = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
+                        norm, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
+                        if warnings:
+                            logger.warning(f"[VERTEX] Soft schema warnings: {warnings}")
                         normalized['content'][0]['text'] = json.dumps(norm)
+                    else:
+                        logger.error(f"[VERTEX] Could not extract or repair JSON from response")
                 except Exception as e:
                     logger.warning(f"Vertex soft schema cleaning failed: {e}")
             
@@ -92,7 +103,7 @@ class VertexProvider:
             if soft_schema:
                 final_prompt = f"{prompt}\n\nReturn your answer as valid JSON matching this schema: {json.dumps(schema)}"
         
-        debug_request = {'model_id': model, 'prompt': final_prompt[:500], 'max_tokens': enforced_max_tokens}
+        debug_request = {'model_id': model, 'prompt': final_prompt, 'max_tokens': enforced_max_tokens}
         
         try:
             access_token = await self._get_vertex_access_token()
@@ -137,7 +148,7 @@ class VertexProvider:
                         await self.cache_handler.save_debug_data('vertex', model, debug_request, response_text, error=error, context=f"status_{response.status}", cache_key=cache_key)
                         raise error
 
-            unified_response = self._normalize_vertex_response(response_dict, soft_schema, schema)
+            unified_response = await self._normalize_vertex_response(response_dict, soft_schema, schema)
             
             if unified_response.get('stop_reason') in ['max_tokens', 'length']:
                  await self.cache_handler.save_debug_data('vertex', model, debug_request, unified_response, context="max_tokens_truncated", cache_key=cache_key)

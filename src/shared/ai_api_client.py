@@ -7,5 +7,8 @@ This maintains backward compatibility for imports.
 
 from shared.ai_client import AIAPIClient
 
-# Expose the class directly
-__all__ = ['AIAPIClient']
+# Create a singleton instance for backward compatibility
+ai_client = AIAPIClient()
+
+# Expose both the class and the instance
+__all__ = ['AIAPIClient', 'ai_client']
