@@ -206,14 +206,20 @@ def copy_source_files():
     shutil.copytree(SHARED_SRC_DIR, PACKAGE_DIR, dirs_exist_ok=True)
     logger.info(f"Copied shared modules from {SHARED_SRC_DIR} to {PACKAGE_DIR}")
 
-    # Verify prompts directory was copied
-    prompts_dir = PACKAGE_DIR / "prompts"
-    if prompts_dir.exists():
-        logger.info(f"Verified prompts directory copied with {len(list(prompts_dir.glob('*.md')))} markdown files")
+    # 3. Copy shared files to 'shared/' directory to support 'from shared.xxx' imports
+    # This is needed for nested imports in ai_api_client.py and others
+    shutil.copytree(SHARED_SRC_DIR, PACKAGE_DIR / "shared", dirs_exist_ok=True)
+    logger.info(f"Copied shared modules to {PACKAGE_DIR}/shared for nested imports")
+
+    # 4. Copy 'the_clone' package
+    the_clone_src = SRC_DIR / "the_clone"
+    if the_clone_src.exists():
+        shutil.copytree(the_clone_src, PACKAGE_DIR / "the_clone", dirs_exist_ok=True)
+        logger.info("Copied 'the_clone' package")
     else:
-        logger.warning(f"Prompts directory not found at {prompts_dir}")
-    
-    # 4. Copy pricing_data.csv for cost calculations
+        logger.warning(f"'the_clone' directory not found at {the_clone_src}")
+
+    # 5. Copy pricing_data.csv for cost calculations
     pricing_file = PROJECT_DIR / "src" / "pricing_data.csv"
     if pricing_file.exists():
         shutil.copy(pricing_file, PACKAGE_DIR / "pricing_data.csv")
@@ -221,7 +227,7 @@ def copy_source_files():
     else:
         logger.warning(f"pricing_data.csv not found at {pricing_file}")
     
-    # 5. Copy config directory for enhanced batch manager
+    # 6. Copy config directory for enhanced batch manager
     config_src_dir = PROJECT_DIR / "src" / "config"
     if config_src_dir.exists():
         # Copy entire config directory
@@ -233,7 +239,7 @@ def copy_source_files():
     else:
         logger.warning(f"config directory not found at {config_src_dir}")
     
-    # 6. Copy logo files for PDF receipts
+    # 7. Copy logo files for PDF receipts
     # Primary: New hyperplexity logo
     new_logo_file = PROJECT_DIR / "frontend" / "hyperplexity-logo-2.png"
     if new_logo_file.exists():

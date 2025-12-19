@@ -53,7 +53,16 @@
       "Bash(timeout 60 python.exe:*)",
       "Bash(timeout 180 python.exe:*)",
       "Bash(timeout 120 python.exe src/the_clone/tests/single_test_deepseek_synthesis.py)",
-      "Bash(git -C /mnt/c/Users/ellio/OneDrive - Eliyahu.AI/Desktop/src/perplexityValidator log --all --oneline --name-only)"
+      "Bash(git -C /mnt/c/Users/ellio/OneDrive - Eliyahu.AI/Desktop/src/perplexityValidator log --all --oneline --name-only)",
+      "Bash(timeout 120 python.exe src/the_clone/test_code_extraction_direct.py)",
+      "Bash(xargs cat:*)",
+      "Bash(timeout 600 python.exe:*)",
+      "Bash(timeout 300 python.exe:*)",
+      "Bash(if [ -d \"deployment/interface_package_background\" ])",
+      "Bash(then ls -lh deployment/interface_package_background/)",
+      "Bash(fi)",
+      "Bash(if [ -d deployment/interface_package_background ])",
+      "Bash(then find deployment/interface_package_background -name *pandas* -type d)"
     ],
     "deny": []
   }

@@ -379,6 +379,36 @@ See `STARTING_PROMPT.md` for instructions on testing in a new chat.
 
 ---
 
+## Experimental Features (Not in Production)
+
+### Merged Synthesis Approach
+
+⚠️ **Status**: Experimental - Not integrated into production clone
+
+An alternative implementation that combines extraction and synthesis into a single LLM call:
+
+**Key Metrics** (from validation testing):
+- ✅ **85.7% fewer LLM calls** (7 → 1)
+- ✅ **15-20% fewer tokens**
+- ✅ **99-100% code resolution**
+- ⚠️ ~10% higher cost (output token heavy)
+- ⚠️ 50-90% slower (single large call)
+
+**Files** (isolated, not used):
+- `merged_synthesizer.py`
+- `merged_synthesis_schemas.py`
+- `prompts/merged_synthesis_code.md`
+
+**Documentation**:
+- `MERGED_SYNTHESIS_EXPERIMENTAL.md` - Full technical details
+- `MERGED_SYNTHESIS_README.md` - Quick reference
+- `test_results/COMPREHENSIVE_FINAL_REPORT.md` - Performance analysis
+
+**Decision**: Sticking with traditional approach for production (speed + stability).
+**Future use**: Available if API call reduction becomes priority.
+
+---
+
 ## Next Steps
 
 1. Review `STARTING_PROMPT.md`

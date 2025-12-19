@@ -317,6 +317,49 @@ All internal API calls use JSON schemas:
 
 ---
 
+## Experimental Approaches (Not in Production)
+
+### Merged Synthesis (Code-Based Citations)
+
+**Status**: Experimental - Fully functional but not integrated
+**Documentation**: See `MERGED_SYNTHESIS_EXPERIMENTAL.md`
+
+An alternative approach that combines extraction and synthesis into a single LLM call:
+
+```
+┌─────────────────────────────────────────────┐
+│  All sources → Label with codes (`S1:1.1)   │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────┐
+│  Single LLM Call:                            │
+│  - Synthesize from all labeled sources       │
+│  - Cite using codes {`S1:1.1, 0.95, P}       │
+│  - Include p-scores inline                   │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────┐
+│  Post-processing:                            │
+│  - Resolve codes to text                     │
+│  - Create citations [1][2]                   │
+└─────────────────────────────────────────────┘
+
+Total: 1 LLM call (vs N+1 traditional)
+```
+
+**Validated Performance**:
+- ✅ 85.7% LLM call reduction (7 → 1)
+- ✅ 15-20% token reduction
+- ✅ 99-100% code resolution rate
+- ⚠️ ~10% higher cost (output token heavy)
+- ⚠️ 50-90% slower (single large call)
+
+**Use cases**: Rate-limited scenarios, cost-per-call billing, batch processing
+
+**Current decision**: Stick with traditional approach for production (speed + proven stability)
+
+---
+
 ## Future Enhancements
 
 Potential optimizations:

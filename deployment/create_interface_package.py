@@ -261,7 +261,29 @@ def copy_source_files():
         shutil.copy(root_logo_file, PACKAGE_DIR / "EliyahuLogo_NoText_Crop.png")
         logger.info("Copied EliyahuLogo_NoText_Crop.png from project root")
 
-    # 5. Table Maker prompts and code are in interface_lambda/actions/table_maker/
+    # 5. Copy 'the_clone' package
+    the_clone_src = SRC_DIR / "the_clone"
+    if the_clone_src.exists():
+        shutil.copytree(the_clone_src, PACKAGE_DIR / "the_clone", dirs_exist_ok=True)
+        logger.info("Copied 'the_clone' package")
+    else:
+        logger.warning(f"'the_clone' directory not found at {the_clone_src}")
+
+    # 6. Copy 'shared/ai_client' package (nested in shared)
+    ai_client_src = SHARED_SRC_DIR / "ai_client"
+    if ai_client_src.exists():
+        shared_pkg_dir = PACKAGE_DIR / "shared"
+        shared_pkg_dir.mkdir(exist_ok=True)
+        # Create __init__.py for shared package if not exists
+        if not (shared_pkg_dir / "__init__.py").exists():
+            (shared_pkg_dir / "__init__.py").touch()
+            
+        shutil.copytree(ai_client_src, shared_pkg_dir / "ai_client", dirs_exist_ok=True)
+        logger.info("Copied 'shared/ai_client' package")
+    else:
+        logger.warning(f"'shared/ai_client' directory not found at {ai_client_src}")
+
+    # 7. Table Maker prompts and code are in interface_lambda/actions/table_maker/
     # No need to copy root table_maker directory - Lambda uses the local copy
     logger.info("Table Maker prompts/schemas already in interface_lambda/actions/table_maker/ (no root copy needed)")
 

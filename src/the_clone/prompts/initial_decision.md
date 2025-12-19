@@ -8,6 +8,7 @@ Query: {query}
 - General concepts, definitions, well-established facts
 - High confidence, no post-cutoff information needed
 - No citations required
+- You must provide a complete answer in your response if you select this
 
 **Need Search IF:**
 - Recent events, current data, specifications

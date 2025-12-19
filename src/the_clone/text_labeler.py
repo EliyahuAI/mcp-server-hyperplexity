@@ -188,8 +188,9 @@ class TextLabeler:
                     }
 
             else:
-                # Empty line - preserve it
-                labeled_parts.append(line + "\n")
+                # Empty line - preserve only one blank line, skip consecutive blanks
+                if not labeled_parts or not labeled_parts[-1].strip() == "":
+                    labeled_parts.append("\n")
 
         # Save final section
         if current_section_sentences:

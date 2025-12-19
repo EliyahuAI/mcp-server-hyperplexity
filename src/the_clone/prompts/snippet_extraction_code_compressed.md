@@ -65,14 +65,17 @@ Extract only if quote has concrete, verifiable facts. Skip:
 Bet: Judge extracts all atomic factual claims and tests each. Pass = precisely accurate. p = expected pass-rate. Bet honestly on the pass rate.
 
 **Positive indicators**
-- P=PRIMARY: official/self-report
-- D=DOCUMENTED: methods/data shown
-- A=ATTRIBUTED: named source + role
-- O=OK: no red flags
+- P=PRIMARY: official self-report / primary-document style
+- D=DOCUMENTED: methods/data shown/peer reviewed
+- A=ATTRIBUTED: believable named source + role
+- O=OK: no red flags, aligns with your knowledge
 
 **Negative indicators**
-- C=CONTRADICTED, U=UNSOURCED, PR=PROMOTIONAL, S=STALE, SL=SLOP (AI-generated SEO)
-
+- C=CONTRADICTED: You know otherwise / internally incosistent
+- U=UNSOURCED: Just statements
+- PR=PROMOTIONAL: Clear bias
+- S=STALE: Out of date dynamic information
+- SL=SLOP: AI-generated SEO (be wary of perfect markdown on a random page)
 
 Return codes (field `c`), not full text. Organize by search term number.
 ---
