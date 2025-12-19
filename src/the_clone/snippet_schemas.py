@@ -89,7 +89,7 @@ def get_snippet_extraction_code_schema() -> dict:
                         "description": "Quote as [code, p, reason]. Position-based: [0]=code, [1]=p-score, [2]=reason.",
                         "minItems": 3,
                         "maxItems": 3,
-                        "items": [
+                        "prefixItems": [
                             {
                                 "type": "string",
                                 "description": "Location code with backtick, e.g., '`1.1', '`1.2-1.3'"
@@ -104,7 +104,8 @@ def get_snippet_extraction_code_schema() -> dict:
                                 "description": "Reason: P/D/A (≥0.85), O (mid), C/U/N/PR/S/SL (≤0.15, SL=AI slop)",
                                 "enum": ["P", "D", "A", "O", "C", "U", "N", "PR", "S", "SL"]
                             }
-                        ]
+                        ],
+                        "items": false
                     }
                 }
             }
