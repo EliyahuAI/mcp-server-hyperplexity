@@ -105,7 +105,7 @@ def get_snippet_extraction_code_schema() -> dict:
                                 "enum": ["P", "D", "A", "O", "C", "U", "N", "PR", "S", "SL"]
                             }
                         ],
-                        "items": false
+                        "items": False
                     }
                 }
             }
