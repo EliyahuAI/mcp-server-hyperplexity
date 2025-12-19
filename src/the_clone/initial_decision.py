@@ -37,7 +37,8 @@ class InitialDecision:
         query: str,
         model: str = "claude-sonnet-4-5",
         soft_schema: bool = False,
-        debug_dir: str = None
+        debug_dir: str = None,
+        custom_schema: Dict = None
     ) -> Dict[str, Any]:
         """
         Decide: Answer directly or Search? If search, determine context and model tier.
@@ -69,7 +70,7 @@ class InitialDecision:
                 pass
 
         try:
-            schema_obj = get_initial_decision_schema()
+            schema_obj = get_initial_decision_schema(answer_schema=custom_schema)
 
             # Save schema
             if debug_dir:
@@ -96,7 +97,18 @@ class InitialDecision:
             search_terms = data.get('search_terms', [])
             synthesis_tier = data.get('synthesis_tier', 'default')
 
-            # No answer parsing needed for new schema
+            # Extract answer if answering directly
+            direct_answer = None
+            if decision == "answer_directly":
+                # Check for validation_results or other custom answer fields
+                if 'validation_results' in data:
+                    direct_answer = {'validation_results': data['validation_results']}
+                elif custom_schema:
+                    # Extract fields from custom schema
+                    direct_answer = {}
+                    for prop_name in custom_schema.get('properties', {}).keys():
+                        if prop_name in data:
+                            direct_answer[prop_name] = data[prop_name]
 
             # Save response
             if debug_dir:
@@ -120,6 +132,7 @@ class InitialDecision:
                 "depth": depth,
                 "search_terms": search_terms,
                 "synthesis_tier": synthesis_tier,
+                "direct_answer": direct_answer,  # Include direct answer if provided
                 "model_response": response
             }
 

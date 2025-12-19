@@ -145,7 +145,8 @@ class TheClone2Refined:
             query=prompt,
             model=models['initial_decision'],
             soft_schema=True,
-            debug_dir=debug_dir
+            debug_dir=debug_dir,
+            custom_schema=schema  # Pass custom schema for direct answers
         )
 
         decision = initial_result.get('decision', 'need_search')
@@ -155,18 +156,32 @@ class TheClone2Refined:
         calls_by_provider[initial_provider] = calls_by_provider.get(initial_provider, 0) + 1
 
         if decision == "answer_directly":
-            logger.warning("[CLONE] Direct answer not implemented - forcing search instead")
-            # Direct answer path is incomplete, force search with default params
-            decision = "need_search"
-            # Ensure search params are set (they won't be if initial said answer_directly)
-            if 'breadth' not in initial_result:
-                initial_result['breadth'] = 'broad'
-            if 'depth' not in initial_result:
-                initial_result['depth'] = 'shallow'
-            if 'search_terms' not in initial_result or not initial_result['search_terms']:
-                initial_result['search_terms'] = [prompt]
-            if 'synthesis_tier' not in initial_result:
-                initial_result['synthesis_tier'] = 'tier2'
+            logger.info("[CLONE] Answering directly from model knowledge")
+            direct_answer = initial_result.get('direct_answer', {})
+
+            # Return direct answer without search
+            total_time = (datetime.now() - query_start_time).total_seconds()
+            total_cost = sum(costs.values())
+
+            return {
+                "answer": direct_answer,
+                "citations": [],  # No citations for direct answers
+                "metadata": {
+                    "query": prompt,
+                    "decision": "answer_directly",
+                    "breadth": initial_result.get('breadth', 'narrow'),
+                    "depth": initial_result.get('depth', 'shallow'),
+                    "synthesis_tier": initial_result.get('synthesis_tier', 'tier1'),
+                    "iterations": 0,
+                    "total_snippets": 0,
+                    "citations_count": 0,
+                    "sources_pulled": 0,
+                    "total_time_seconds": total_time,
+                    "total_cost": total_cost,
+                    "cost_breakdown": costs,
+                    "cost_by_provider": {p: {'cost': c, 'calls': calls_by_provider[p]} for p, c in costs_by_provider.items() if c > 0}
+                }
+            }
 
         # Get strategy and models
         breadth = initial_result.get('breadth', 'narrow')

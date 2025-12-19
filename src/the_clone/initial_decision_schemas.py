@@ -5,7 +5,7 @@ First call decides: Answer directly OR Search.
 """
 
 
-def get_initial_decision_schema() -> dict:
+def get_initial_decision_schema(answer_schema: dict = None) -> dict:
     """
     Schema for initial smart routing decision with breadth/depth assessment.
 
@@ -13,11 +13,15 @@ def get_initial_decision_schema() -> dict:
     1. Answer directly OR Search
     2. If search: Breadth (narrow/broad) and Depth (shallow/deep)
     3. Search terms (minimize - only if different domains needed)
+    4. If answer_directly: Include answer in custom schema format
+
+    Args:
+        answer_schema: Optional custom schema for direct answers (e.g., validation_results)
 
     Returns:
         JSON schema
     """
-    return {
+    base_schema = {
         "type": "object",
         "properties": {
             "decision": {
@@ -50,3 +54,13 @@ def get_initial_decision_schema() -> dict:
         },
         "required": ["decision", "breadth", "depth", "search_terms", "synthesis_tier"]
     }
+
+    # If custom answer schema provided, merge it for direct answers
+    if answer_schema and answer_schema.get('properties'):
+        for prop_name, prop_schema in answer_schema['properties'].items():
+            base_schema['properties'][prop_name] = prop_schema
+        # Add to required if needed
+        if 'required' in answer_schema:
+            base_schema['required'].extend(answer_schema['required'])
+
+    return base_schema
