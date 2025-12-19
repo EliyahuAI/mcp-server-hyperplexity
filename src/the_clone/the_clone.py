@@ -139,9 +139,17 @@ class TheClone2Refined:
 
         if decision == "answer_directly":
             logger.warning("[CLONE] Direct answer not implemented - forcing search instead")
-            # Direct answer path is incomplete, always use search
+            # Direct answer path is incomplete, force search with default params
             decision = "need_search"
-            # Fall through to search path
+            # Ensure search params are set (they won't be if initial said answer_directly)
+            if 'breadth' not in initial_result:
+                initial_result['breadth'] = 'broad'
+            if 'depth' not in initial_result:
+                initial_result['depth'] = 'shallow'
+            if 'search_terms' not in initial_result or not initial_result['search_terms']:
+                initial_result['search_terms'] = [prompt]
+            if 'synthesis_tier' not in initial_result:
+                initial_result['synthesis_tier'] = 'tier2'
 
         # Get strategy and models
         breadth = initial_result.get('breadth', 'narrow')
