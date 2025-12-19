@@ -362,7 +362,8 @@ class TheClone2Refined:
 
         # Check self-assessment and upgrade to tier4 if needed
         answer_data = synthesis_result.get('answer', {})
-        self_assessment = answer_data.get('self_assessment', 'A')
+        # Handle case where answer is unwrapped array (Sonar format compatibility)
+        self_assessment = answer_data.get('self_assessment', 'A') if isinstance(answer_data, dict) else 'A'
         upgraded = False
 
         if self_assessment not in ['A+', 'A'] and synthesis_tier != 'tier4':
@@ -399,7 +400,7 @@ class TheClone2Refined:
 
             # Get new self-assessment
             answer_data = synthesis_result.get('answer', {})
-            self_assessment = answer_data.get('self_assessment', 'A')
+            self_assessment = answer_data.get('self_assessment', 'A') if isinstance(answer_data, dict) else 'A'
             logger.info(f"[CLONE] Tier4 self-assessment: {self_assessment}")
 
         # Build response

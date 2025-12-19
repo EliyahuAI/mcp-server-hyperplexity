@@ -563,6 +563,18 @@ Query: {query}
 
         if extracted:
             logger.info(f"[SCHEMA_TRANSFORM] Extracted {len(extracted)} custom schema fields")
+
+            # If schema has single array property, return unwrapped to match Sonar format
+            # Sonar returns [{"column": ...}] not {"validation_results": [...]}
+            if len(extracted) == 1:
+                prop_name = list(extracted.keys())[0]
+                prop_value = extracted[prop_name]
+                prop_schema = schema_properties.get(prop_name, {})
+
+                if prop_schema.get('type') == 'array' and isinstance(prop_value, list):
+                    logger.info(f"[SCHEMA_TRANSFORM] Unwrapping single array property '{prop_name}' to match Sonar format")
+                    return prop_value
+
             return extracted
 
         # If no exact match, the LLM might have used different field names (soft schema)
@@ -574,8 +586,10 @@ Query: {query}
             # If the property is an array, wrap comparison data as array
             if prop_schema.get('type') == 'array':
                 logger.info(f"[SCHEMA_TRANSFORM] Wrapping comparison data into '{prop_name}' array")
-                # The comparison might already be structured data, just wrap it
-                return {prop_name: [comparison] if not isinstance(comparison, list) else comparison}
+                wrapped_data = [comparison] if not isinstance(comparison, list) else comparison
+                # Return unwrapped to match Sonar format
+                logger.info(f"[SCHEMA_TRANSFORM] Unwrapping to match Sonar format (single array)")
+                return wrapped_data
             else:
                 logger.info(f"[SCHEMA_TRANSFORM] Wrapping comparison data into '{prop_name}' object")
                 return {prop_name: comparison}
