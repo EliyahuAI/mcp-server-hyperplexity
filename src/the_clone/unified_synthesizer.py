@@ -160,6 +160,10 @@ class UnifiedSynthesizer:
                     answer=answer_raw,
                     snippets=snippets
                 )
+
+                # Post-process for validation format if custom schema is validation_results
+                if schema and self._is_validation_schema(schema):
+                    answer_final = self._transform_to_validation_format(answer_final, citations, schema)
             else:
                 answer_final = {}
                 citations = []
@@ -512,3 +516,128 @@ Query: {query}
         logger.info(f"[UNIFIED] Converted {len(snippet_ids)} snippet IDs to {len(citations)} citations")
 
         return answer_final, citations, list(snippet_ids)
+
+    def _is_validation_schema(self, schema: Dict) -> bool:
+        """Check if the custom schema is a validation_results schema."""
+        if not schema:
+            return False
+
+        # Check if schema has validation_results property
+        properties = schema.get('properties', {})
+        return 'validation_results' in properties
+
+    def _transform_to_validation_format(self, answer: Dict, citations: List[Dict], schema: Dict) -> Dict:
+        """
+        Transform Clone's synthesis output to validation array format.
+
+        The Clone returns:
+            {"comparison": {"validated_projections": {...}}, "self_assessment": "A"}
+
+        This transforms it to:
+            {"validation_results": [{"column": "Projections", "answer": "...", "confidence": "HIGH", "sources": [...]}]}
+        """
+        # If already has validation_results, return as-is
+        if isinstance(answer, dict) and 'validation_results' in answer:
+            return answer
+
+        # Extract from comparison structure
+        comparison = answer.get('comparison', {})
+        if not comparison:
+            logger.warning("[VALIDATION_TRANSFORM] No comparison data found in answer")
+            return answer
+
+        validation_results = []
+
+        # Look for validated_* fields in comparison
+        for key, value in comparison.items():
+            if key.startswith('validated_'):
+                # Extract column name
+                column_name = key.replace('validated_', '').replace('_', ' ').title()
+
+                if isinstance(value, dict):
+                    # Format the structured data as answer text
+                    answer_text = self._format_validation_answer(value)
+                    confidence = self._extract_confidence_from_data(value)
+                    sources = self._extract_sources_from_data(value, citations)
+
+                    validation_results.append({
+                        "column": column_name,
+                        "answer": answer_text,
+                        "confidence": confidence,
+                        "original_confidence": "LOW",  # Default
+                        "sources": sources,
+                        "explanation": f"Synthesized from {len(sources)} sources",
+                        "supporting_quotes": ""
+                    })
+
+        if validation_results:
+            logger.info(f"[VALIDATION_TRANSFORM] Transformed {len(validation_results)} validation results")
+            return {"validation_results": validation_results}
+
+        logger.warning("[VALIDATION_TRANSFORM] No validated_* fields found in comparison")
+        return answer
+
+    def _format_validation_answer(self, value: Dict) -> str:
+        """Format validation answer from Clone's structured output."""
+        if isinstance(value, str):
+            return value
+
+        # Try common patterns
+        if "value" in value:
+            return str(value["value"])
+        if "answer" in value:
+            return str(value["answer"])
+
+        # Format as bullet list
+        parts = []
+        for k, v in value.items():
+            if k not in ["sources", "reliability", "confidence", "date"]:
+                if isinstance(v, dict):
+                    # Nested dict - format as sub-bullets
+                    for sub_k, sub_v in v.items():
+                        parts.append(f"• {k.replace('_', ' ').title()}: {sub_k.replace('_', ' ')}: {sub_v}")
+                elif isinstance(v, list):
+                    parts.append(f"• {k.replace('_', ' ').title()}: {', '.join(str(x) for x in v)}")
+                else:
+                    parts.append(f"• {k.replace('_', ' ').title()}: {v}")
+
+        return "\n".join(parts) if parts else json.dumps(value)
+
+    def _extract_confidence_from_data(self, value: Dict) -> str:
+        """Extract confidence level from Clone output."""
+        if "confidence" in value:
+            return str(value["confidence"]).upper()
+        if "reliability" in value:
+            reliability = str(value["reliability"]).upper()
+            if "HIGH" in reliability:
+                return "HIGH"
+            elif "MEDIUM" in reliability or "MED" in reliability:
+                return "MEDIUM"
+            elif "LOW" in reliability:
+                return "LOW"
+        return "MEDIUM"
+
+    def _extract_sources_from_data(self, value: Dict, citations: List[Dict]) -> List[str]:
+        """Extract source URLs from Clone output and match with citations."""
+        sources = []
+
+        # Look for source references in the data
+        if "sources" in value and isinstance(value["sources"], list):
+            # Value has source references - match them to citations
+            for source_ref in value["sources"]:
+                # Source ref might be like "TipRanks (S1.1.0.0-H)" or just a URL
+                if isinstance(source_ref, str):
+                    # Try to find matching citation
+                    for citation in citations:
+                        if citation.get("url") and (
+                            citation["url"] in source_ref or
+                            citation.get("title", "") in source_ref
+                        ):
+                            sources.append(citation["url"])
+                            break
+
+        # Fallback: use first few citations
+        if not sources and citations:
+            sources = [c.get("url", "") for c in citations[:5] if c.get("url")]
+
+        return sources
