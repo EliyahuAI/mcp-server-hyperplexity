@@ -116,7 +116,10 @@ class AIAPIClient:
 
         if isinstance(model, str):
             models_to_try = [model]
-            models_to_try.extend(self._get_backup_models(model, 2))
+            backups = self._get_backup_models(model, 2)
+            models_to_try.extend(backups)
+            if backups:
+                logger.info(f"[BACKUP_MODELS] Primary: {model}, Backups: {backups}")
         else:
             models_to_try = model
 
@@ -211,7 +214,8 @@ class AIAPIClient:
                     return result
             
             except Exception as e:
-                logger.warning(f"Model {current_model} failed: {e}")
+                logger.warning(f"[BACKUP_RETRY] Model {current_model} failed: {e}")
+                logger.info(f"[BACKUP_RETRY] Trying next model in queue (remaining: {len(models_to_try) - model_index - 1})")
                 last_error = e
                 if "[REFUSAL]" in str(e):
                     # Add fallbacks
