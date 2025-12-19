@@ -64,6 +64,7 @@ class CloneProvider:
             result = await clone.query(
                 prompt=prompt,
                 provider=provider,
+                schema=schema,  # Pass schema to Clone for structured output
                 debug_dir=f"/tmp/clone_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}", # Temp debug dir
                 include_domains=include_domains,
                 exclude_domains=exclude_domains,
