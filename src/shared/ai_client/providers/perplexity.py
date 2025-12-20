@@ -197,6 +197,16 @@ class PerplexityProvider:
                         
                         enhanced_data = self.usage_handler.get_enhanced_call_metrics(response_json, model, processing_time, is_cached=False)
                         
+                        # Merge repair costs if present
+                        if '_repair_meta' in response_json:
+                            repair_meta = response_json['_repair_meta']
+                            repair_cost = repair_meta.get('cost', 0.0)
+                            
+                            if 'costs' in enhanced_data and 'actual' in enhanced_data['costs']:
+                                enhanced_data['costs']['actual']['total_cost'] += repair_cost
+                                enhanced_data['repair_info'] = repair_meta
+                                logger.info(f"[COST_UPDATE] Added repair cost ${repair_cost:.4f} to total. New total: ${enhanced_data['costs']['actual']['total_cost']:.4f}")
+                        
                         return {
                             'response': response_json,
                             'token_usage': token_usage,
@@ -223,7 +233,15 @@ class PerplexityProvider:
                 # If extraction failed, try Haiku repair
                 if not parsed and self.ai_client:
                     logger.warning(f"[PERPLEXITY] JSON extraction failed, attempting Haiku repair")
-                    parsed = await repair_json_with_haiku(content, schema, self.ai_client)
+                    parsed, repair_result = await repair_json_with_haiku(content, schema, self.ai_client)
+                    
+                    if repair_result:
+                        response_json['_repair_meta'] = {
+                            'repaired': True,
+                            'cost': repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0),
+                            'model': 'claude-haiku-4-5',
+                            'provider': 'anthropic'
+                        }
 
                 if parsed:
                     normalized, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)

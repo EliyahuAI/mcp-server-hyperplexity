@@ -9,6 +9,7 @@ import os
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
@@ -26,6 +27,7 @@ from the_clone.source_triage import SourceTriage
 from the_clone.snippet_extractor_streamlined import SnippetExtractorStreamlined
 from the_clone.unified_synthesizer import UnifiedSynthesizer
 from the_clone.initial_decision import InitialDecision
+from the_clone.clone_logger import CloneLogger
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -86,12 +88,16 @@ class TheClone2Refined:
         Returns:
             Dict containing answer, citations, and metadata
         """
-        start_time = datetime.now()
+        call_start_time = time.time()
+        
+        # Initialize Consolidated Logger (works in memory even if debug_dir is None)
+        clone_logger = CloneLogger(debug_dir)
+        
+        clone_logger.log_section("Initial Query", prompt, level=1)
 
         logger.info("=" * 80)
         logger.info(f"[CLONE] Query: {prompt[:100]}...")
         logger.info("=" * 80)
-        logger.info(f"[CLONE] use_code_extraction: {use_code_extraction}")
 
         # Handle backwards compatibility: use_baseten=True → provider="baseten"
         if use_baseten:
@@ -116,14 +122,23 @@ class TheClone2Refined:
 
         logger.info(f"[CLONE] Provider: {provider}")
 
-        # Save debug config
-        if debug_dir:
-            os.makedirs(debug_dir, exist_ok=True)
-            with open(os.path.join(debug_dir, '00_config.json'), 'w') as f:
-                json.dump({'query': prompt, 'models': models, 'limits': global_limits}, f, indent=2)
+        # Log initial settings
+        if clone_logger:
+            clone_logger.log_section("Clone Configuration & Initial Settings", {
+                "Provider": provider,
+                "Model Override": model_override,
+                "Schema Provided": bool(schema),
+                "Use Code Extraction": use_code_extraction,
+                "Academic Mode": academic,
+                "Models": models,
+                "Global Limits": global_limits
+            }, level=2, collapse=False)
 
         # Cost tracking by stage
         costs = {'initial': 0.0, 'search': 0.0, 'triage': 0.0, 'extraction': 0.0, 'synthesis': 0.0}
+        
+        # Stats tracking
+        stats = {'schema_repairs': 0}
 
         # Cost tracking by provider (for proper DynamoDB attribution)
         costs_by_provider = {
@@ -141,46 +156,71 @@ class TheClone2Refined:
 
         # Step 1: Initial Decision
         logger.info("\n[CLONE] Step 1: Initial Decision...")
+        step_start_phase = time.time()
+        if clone_logger:
+            clone_logger.start_step("Initial Decision")
+            
         initial_result = await self.initial_decision.make_decision(
             query=prompt,
             model=models['initial_decision'],
             soft_schema=True,
             debug_dir=debug_dir,
-            custom_schema=schema  # Pass custom schema for direct answers
+            clone_logger=clone_logger
         )
 
         decision = initial_result.get('decision', 'need_search')
-        initial_cost, initial_provider = self._extract_cost_and_provider(initial_result.get('model_response', {}))
+        model_resp = initial_result.get('model_response', {})
+        initial_cost, initial_provider = self._extract_cost_and_provider(model_resp, clone_logger, stats)
         costs['initial'] = initial_cost
         costs_by_provider[initial_provider] = costs_by_provider.get(initial_provider, 0.0) + initial_cost
         calls_by_provider[initial_provider] = calls_by_provider.get(initial_provider, 0) + 1
+        
+        step_time_phase = time.time() - step_start_phase
+        if clone_logger:
+            used_model = model_resp.get('model_used', models['initial_decision'])
+            if model_resp.get('used_backup_model'): used_model += " (Backup)"
+            clone_logger.record_step_metric("Initial Decision", initial_provider, used_model, initial_cost, step_time_phase, f"Decision: {decision}")
+            clone_logger.end_step("Initial Decision")
 
         if decision == "answer_directly":
             logger.info("[CLONE] Answering directly from model knowledge")
             direct_answer = initial_result.get('direct_answer', {})
 
-            # Return direct answer without search
-            total_time = (datetime.now() - start_time).total_seconds()
+            total_time = time.time() - call_start_time
             total_cost = sum(costs.values())
+            
+            final_citations = [] # No citations for direct answers
+            final_answer_data = direct_answer
+
+            metadata = {
+                "query": prompt,
+                "strategy": "direct_answer",
+                "breadth": initial_result.get('breadth', 'narrow'),
+                "depth": initial_result.get('depth', 'shallow'),
+                "synthesis_tier": initial_result.get('synthesis_tier', 'tier1'),
+                "iterations": 0,
+                "total_snippets": 0,
+                "citations_count": 0,
+                "sources_pulled": 0,
+                "total_time_seconds": total_time,
+                "total_cost": total_cost,
+                "cost_breakdown": costs,
+                "cost_by_provider": {p: {'cost': c, 'calls': calls_by_provider[p]} for p, c in costs_by_provider.items() if c > 0},
+                "schema_repairs": stats['schema_repairs'],
+                "provider": provider, # Add top-level provider for settings summary
+                "model_override": model_override,
+                "schema_provided": bool(schema),
+                "use_code_extraction": use_code_extraction,
+                "academic": academic
+            }
+            if clone_logger:
+                clone_logger.finalize(metadata, final_answer_data, final_citations)
 
             return {
-                "answer": direct_answer,
-                "citations": [],  # No citations for direct answers
-                "metadata": {
-                    "query": prompt,
-                    "decision": "answer_directly",
-                    "breadth": initial_result.get('breadth', 'narrow'),
-                    "depth": initial_result.get('depth', 'shallow'),
-                    "synthesis_tier": initial_result.get('synthesis_tier', 'tier1'),
-                    "iterations": 0,
-                    "total_snippets": 0,
-                    "citations_count": 0,
-                    "sources_pulled": 0,
-                    "total_time_seconds": total_time,
-                    "total_cost": total_cost,
-                    "cost_breakdown": costs,
-                    "cost_by_provider": {p: {'cost': c, 'calls': calls_by_provider[p]} for p, c in costs_by_provider.items() if c > 0}
-                }
+                "answer": final_answer_data,
+                "citations": final_citations,
+                "synthesis_prompt": "",
+                "metadata": {**metadata, "debug_log": clone_logger.get_log_content()}
             }
 
         # Get strategy and models
@@ -199,6 +239,15 @@ class TheClone2Refined:
         logger.info(f"[CLONE] Synthesis tier: {synthesis_tier} (model: {models['synthesis']})")
         logger.info(f"[CLONE] Params: batch={strategy['sources_per_batch']}, mode={strategy['extraction_mode']}, max_snippets={strategy['max_snippets_per_source']}, min_p={strategy['min_p_threshold']}")
         logger.info(f"[CLONE] Search terms: {search_terms}")
+        
+        if clone_logger:
+            clone_logger.log_section("Strategy Selected", {
+                'name': strategy['name'], 
+                'breadth': breadth, 
+                'depth': depth,
+                'synthesis_tier': synthesis_tier,
+                'search_terms': search_terms
+            }, level=2, collapse=True)
 
         # Determine domain filters
         search_include_domains: Optional[List[str]] = None
@@ -222,35 +271,71 @@ class TheClone2Refined:
 
         # Step 2: Search
         logger.info(f"\n[CLONE] Step 2: Executing {len(search_terms)} searches...")
+        step_start_phase = time.time()
+        if clone_logger:
+            clone_logger.start_step("Search Execution")
+
         search_results = await self.search_manager.execute_searches(
             search_terms=search_terms,
             search_settings={'max_results': 10},
             include_domains=search_include_domains,
-            exclude_domains=search_exclude_domains
+            exclude_domains=search_exclude_domains,
+            clone_logger=clone_logger
         )
         search_cost = len(search_terms) * 0.005  # Perplexity search API cost
         costs['search'] = search_cost
         costs_by_provider['perplexity'] += search_cost
         calls_by_provider['perplexity'] += len(search_terms)
+        
+        step_time_phase = time.time() - step_start_phase
+        if clone_logger:
+            total_results = sum(len(r.get('results', [])) for r in search_results if not isinstance(r, Exception))
+            clone_logger.record_step_metric("Search", "perplexity", "sonar-pro", search_cost, step_time_phase, f"{len(search_terms)} queries, {total_results} results")
+            clone_logger.end_step("Search Execution")
 
         # Step 3: Triage (rank ALL sources)
         logger.info(f"\n[CLONE] Step 3: Ranking sources...")
+        step_start_phase = time.time()
+        if clone_logger:
+            clone_logger.start_step("Source Triage")
+
         ranked_lists, triage_results = await self.source_triage.triage_all_searches(
             search_results=search_results,
             search_terms=search_terms,
             query=prompt,
             existing_snippets=[],
             model=models['triage'],
-            soft_schema=use_soft_schema
+            soft_schema=use_soft_schema,
+            clone_logger=clone_logger
         )
 
         # Extract triage costs by provider
-        for result in triage_results:
+        triage_providers = set()
+        for i, result in enumerate(triage_results):
             if not isinstance(result, Exception):
-                triage_cost, triage_provider = self._extract_cost_and_provider(result.get('model_response', {}))
+                triage_cost, triage_provider = self._extract_cost_and_provider(result.get('model_response', {}), clone_logger, stats)
                 costs['triage'] += triage_cost
                 costs_by_provider[triage_provider] = costs_by_provider.get(triage_provider, 0.0) + triage_cost
                 calls_by_provider[triage_provider] = calls_by_provider.get(triage_provider, 0) + 1
+                triage_providers.add(triage_provider)
+
+            if clone_logger and i == 0: # Log first prompt uncollapsed
+                if not isinstance(result, Exception) and result.get('triage_prompt'):
+                    clone_logger.log_section(f"Triage Prompt (Search {i+1})", result['triage_prompt'], level=3, collapse=False)
+
+        step_time_phase = time.time() - step_start_phase
+        if clone_logger:
+            provider_display = list(triage_providers)[0] if len(triage_providers) == 1 else f"mixed:{','.join(sorted(list(triage_providers)))}"
+            triage_model = models['triage']
+            # Check for backup usage in any result
+            backup_triggered = any(
+                r.get('model_response', {}).get('used_backup_model') 
+                for r in triage_results if not isinstance(r, Exception)
+            )
+            if backup_triggered: triage_model += " (Backup)"
+                
+            clone_logger.record_step_metric("Triage", provider_display, triage_model, costs['triage'], step_time_phase, f"Ranked {len(ranked_lists)} search groups")
+            clone_logger.end_step("Source Triage")
 
         # Build ranked source pool
         ranked_sources = self._build_ranked_source_pool(search_results, ranked_lists, search_terms)
@@ -258,15 +343,55 @@ class TheClone2Refined:
 
         if len(ranked_sources) == 0:
             logger.info("[CLONE] No relevant sources found")
-            return self._build_empty_response(prompt, search_terms, costs)
+            total_time = time.time() - call_start_time
+            metadata = {
+                "query": prompt,
+                "strategy": strategy['name'],
+                "breadth": breadth,
+                "depth": depth,
+                "synthesis_tier": synthesis_tier,
+                "synthesis_model": models['synthesis'],
+                "upgraded_to_deepest": False,
+                "self_assessment": "No sources found",
+                "search_terms": search_terms,
+                "iterations": 0,
+                "total_snippets": 0,
+                "citations_count": 0,
+                "sources_pulled": 0,
+                "total_time_seconds": total_time,
+                "total_cost": sum(costs.values()),
+                "cost_breakdown": costs,
+                "cost_by_provider": {p: {'cost': c, 'calls': calls_by_provider[p]} for p, c in costs_by_provider.items() if c > 0},
+                "schema_repairs": stats['schema_repairs'],
+                "provider": provider,
+                "model_override": model_override,
+                "schema_provided": bool(schema),
+                "use_code_extraction": use_code_extraction,
+                "academic": academic
+            }
+            if clone_logger: 
+                clone_logger.finalize(metadata, {}, []) # No answer or citations
+            return {
+                "answer": {},
+                "citations": [],
+                "synthesis_prompt": "",
+                "metadata": {**metadata, "debug_log": clone_logger.get_log_content()}
+            }
 
         # Step 4: Iterative Extraction
         logger.info(f"\n[CLONE] Step 4: Iterative extraction (max {global_limits['max_iterations']} iterations)...")
+        step_start_phase = time.time()
+        if clone_logger:
+            clone_logger.start_step("Extraction")
+
         all_snippets = []
         sources_pulled = 0
+        first_extraction_prompt_logged = False
 
         for iteration in range(1, global_limits['max_iterations'] + 1):
             logger.info(f"\n[CLONE] Iteration {iteration}/{global_limits['max_iterations']}")
+            if clone_logger:
+                clone_logger.log_section(f"Iteration {iteration}", f"Pulling sources from index {sources_pulled}", level=3)
 
             # Determine batch
             batch_size = strategy['sources_per_batch']
@@ -294,23 +419,32 @@ class TheClone2Refined:
                     min_quality_threshold=strategy['min_p_threshold'],
                     extraction_mode=strategy['extraction_mode'],
                     max_snippets_per_source=strategy['max_snippets_per_source'],
-                    use_code_extraction=use_code_extraction
+                    use_code_extraction=use_code_extraction,
+                    clone_logger=clone_logger,
+                    log_prompt_collapsed=(first_extraction_prompt_logged)
                 )
                 extraction_tasks.append(task)
+            
+            if not first_extraction_prompt_logged: first_extraction_prompt_logged = True
 
             results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
 
             # Collect snippets and costs by provider
             new_snippets = []
+            iteration_cost = 0.0
+            extract_providers = set()
+            
             for result in results:
                 if isinstance(result, Exception):
                     logger.error(f"[CLONE] Extraction error: {result}")
                     continue
                 new_snippets.extend(result.get('snippets', []))
-                extract_cost, extract_provider = self._extract_cost_and_provider(result.get('model_response', {}))
+                extract_cost, extract_provider = self._extract_cost_and_provider(result.get('model_response', {}), clone_logger, stats)
                 costs['extraction'] += extract_cost
+                iteration_cost += extract_cost
                 costs_by_provider[extract_provider] = costs_by_provider.get(extract_provider, 0.0) + extract_cost
                 calls_by_provider[extract_provider] = calls_by_provider.get(extract_provider, 0) + 1
+                extract_providers.add(extract_provider)
 
             all_snippets.extend(new_snippets)
             sources_pulled = batch_end
@@ -329,9 +463,20 @@ class TheClone2Refined:
             if sources_pulled >= len(ranked_sources):
                 logger.info(f"[CLONE] All sources exhausted")
                 break
+        
+        step_time_phase = time.time() - step_start_phase
+        if clone_logger:
+            provider_display = list(extract_providers)[0] if len(extract_providers) == 1 else f"mixed:{','.join(sorted(list(extract_providers)))}"
+            extract_model = models['extraction']
+            # For simplicity, we just list the configured model. Backup models are logged at the individual call level in log_section.
+            clone_logger.record_step_metric("Extraction", provider_display, extract_model, costs['extraction'], step_time_phase, f"Extracted {len(all_snippets)} snippets")
+            clone_logger.end_step("Extraction")
 
         # Step 5: Synthesis
         logger.info(f"\n[CLONE] Step 5: Synthesis from {len(all_snippets)} snippets...")
+        step_start_phase = time.time()
+        if clone_logger:
+            clone_logger.start_step("Synthesis")
 
         # Map strategy to old context for synthesis guidance (temporary until synthesis updated)
         context_map = {
@@ -352,22 +497,34 @@ class TheClone2Refined:
             model=models['synthesis'],
             search_terms=search_terms,
             debug_dir=debug_dir,
-            soft_schema=use_soft_schema
+            soft_schema=use_soft_schema,
+            clone_logger=clone_logger
         )
 
-        synth_cost, synth_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}))
+        synth_cost, synth_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}), clone_logger, stats)
         costs['synthesis'] = synth_cost
         costs_by_provider[synth_provider] = costs_by_provider.get(synth_provider, 0.0) + synth_cost
         calls_by_provider[synth_provider] = calls_by_provider.get(synth_provider, 0) + 1
+        
+        step_time_phase = time.time() - step_start_phase
+        if clone_logger:
+            model_resp = synthesis_result.get('model_response', {})
+            used_model = model_resp.get('model_used', models['synthesis'])
+            if model_resp.get('used_backup_model'): used_model += " (Backup)"
+            clone_logger.record_step_metric("Synthesis", synth_provider, used_model, synth_cost, step_time_phase, f"Generated {len(synthesis_result.get('citations', []))} citations")
+            clone_logger.end_step("Synthesis")
 
         # Check self-assessment and upgrade to tier4 if needed
         answer_data = synthesis_result.get('answer', {})
-        # Handle case where answer is unwrapped array (Sonar format compatibility)
         self_assessment = answer_data.get('self_assessment', 'A') if isinstance(answer_data, dict) else 'A'
         upgraded = False
 
         if self_assessment not in ['A+', 'A'] and synthesis_tier != 'tier4':
             logger.info(f"\n[CLONE] Self-assessment: {self_assessment} - Upgrading to tier4 (deepest)")
+            step_start_phase = time.time()
+            if clone_logger:
+                clone_logger.start_step("Tier 4 Upgrade")
+                clone_logger.log_section("Tier 4 Upgrade", f"Self-assessment: {self_assessment}. Upgrading to tier4.", level=2)
 
             # Get tier4 models
             tier4_models = get_models_for_tier(provider, 'tier4')
@@ -387,16 +544,25 @@ class TheClone2Refined:
                 model=tier4_synthesis_model,
                 search_terms=search_terms,
                 debug_dir=debug_dir,
-                soft_schema=tier4_soft_schema
+                soft_schema=tier4_soft_schema,
+                clone_logger=clone_logger
             )
 
-            tier4_cost, tier4_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}))
+            tier4_cost, tier4_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}), clone_logger, stats)
             costs['synthesis'] += tier4_cost
             costs_by_provider[tier4_provider] = costs_by_provider.get(tier4_provider, 0.0) + tier4_cost
             calls_by_provider[tier4_provider] = calls_by_provider.get(tier4_provider, 0) + 1
             synthesis_tier = 'tier4'
             models['synthesis'] = tier4_synthesis_model
             upgraded = True
+            
+            step_time_phase = time.time() - step_start_phase
+            if clone_logger:
+                model_resp = synthesis_result.get('model_response', {})
+                used_model = model_resp.get('model_used', tier4_synthesis_model)
+                if model_resp.get('used_backup_model'): used_model += " (Backup)"
+                clone_logger.record_step_metric("Tier 4 Synthesis", tier4_provider, used_model, tier4_cost, step_time_phase, "Re-synthesized with deepest model")
+                clone_logger.end_step("Tier 4 Upgrade")
 
             # Get new self-assessment
             answer_data = synthesis_result.get('answer', {})
@@ -404,7 +570,7 @@ class TheClone2Refined:
             logger.info(f"[CLONE] Tier4 self-assessment: {self_assessment}")
 
         # Build response
-        total_time = (datetime.now() - start_time).total_seconds()
+        total_time = time.time() - call_start_time # Use overall start time
         total_cost = sum(costs.values())
         total_cost_by_provider = sum(costs_by_provider.values())
 
@@ -418,105 +584,48 @@ class TheClone2Refined:
 
         # Build provider-level cost structure for DynamoDB
         provider_costs = {}
-        for provider, cost in costs_by_provider.items():
-            if cost > 0 or calls_by_provider[provider] > 0:
-                provider_costs[provider] = {
+        for p, cost in costs_by_provider.items():
+            if cost > 0 or calls_by_provider.get(p, 0) > 0:
+                provider_costs[p] = {
                     'cost': cost,
-                    'calls': calls_by_provider[provider]
+                    'calls': calls_by_provider.get(p, 0)
                 }
+        
+        final_answer_data = synthesis_result.get('answer', {})
+        final_citations = synthesis_result.get('citations', [])
+
+        metadata = {
+            "query": prompt,
+            "strategy": strategy['name'],
+            "breadth": breadth,
+            "depth": depth,
+            "synthesis_tier": synthesis_tier,
+            "synthesis_model": models['synthesis'],
+            "upgraded_to_deepest": upgraded,
+            "self_assessment": self_assessment,
+            "search_terms": search_terms,
+            "iterations": iteration,
+            "total_snippets": len(all_snippets),
+            "citations_count": len(final_citations),
+            "sources_pulled": sources_pulled,
+            "total_time_seconds": total_time,
+            "total_cost": total_cost,
+            "cost_breakdown": costs,  # By-stage breakdown (for debugging)
+            "cost_by_provider": provider_costs,  # By-provider breakdown (for DynamoDB)
+            "schema_repairs": stats['schema_repairs'],
+            "provider": provider, # Add top-level provider for settings summary
+            "model_override": model_override,
+            "schema_provided": bool(schema),
+            "use_code_extraction": use_code_extraction,
+            "academic": academic
+        }
+
+        if clone_logger:
+            clone_logger.finalize(metadata, final_answer_data, final_citations)
 
         return {
-            "answer": synthesis_result.get('answer', {}),
-            "citations": synthesis_result.get('citations', []),
+            "answer": final_answer_data,
+            "citations": final_citations,
             "synthesis_prompt": synthesis_result.get('synthesis_prompt', ''),
-            "metadata": {
-                "query": prompt,
-                "strategy": strategy['name'],
-                "breadth": breadth,
-                "depth": depth,
-                "synthesis_tier": synthesis_tier,
-                "synthesis_model": models['synthesis'],
-                "upgraded_to_deepest": upgraded,
-                "self_assessment": self_assessment,
-                "search_terms": search_terms,
-                "iterations": iteration,
-                "total_snippets": len(all_snippets),
-                "citations_count": len(synthesis_result.get('citations', [])),
-                "sources_pulled": sources_pulled,
-                "total_time_seconds": total_time,
-                "total_cost": total_cost,
-                "cost_breakdown": costs,  # By-stage breakdown (for debugging)
-                "cost_by_provider": provider_costs  # By-provider breakdown (for DynamoDB)
-            }
-        }
-
-    def _extract_cost(self, model_response: Dict) -> float:
-        """Extract cost from model response."""
-        enhanced = model_response.get('enhanced_data', {})
-        costs = enhanced.get('costs', {}).get('actual', {})
-        return costs.get('total_cost', 0.0)
-
-    def _extract_cost_and_provider(self, model_response: Dict) -> tuple[float, str]:
-        """Extract cost and provider from model response."""
-        enhanced = model_response.get('enhanced_data', {})
-        costs = enhanced.get('costs', {}).get('actual', {})
-        cost = costs.get('total_cost', 0.0)
-        provider = enhanced.get('call_info', {}).get('api_provider', 'unknown')
-        return cost, provider
-
-    def _build_ranked_source_pool(
-        self,
-        search_results: List,
-        ranked_lists: List[List[int]],
-        search_terms: List[str]
-    ) -> List[Dict]:
-        """Build ranked source pool from triage results."""
-        pool = []
-        for search_idx, (search_result, ranked_indices) in enumerate(zip(search_results, ranked_lists)):
-            if isinstance(search_result, Exception):
-                continue
-
-            results = search_result.get('results', [])
-            for rank_position, source_idx in enumerate(ranked_indices):
-                if 0 <= source_idx < len(results):
-                    source = results[source_idx].copy()
-                    source['_search_term'] = search_terms[search_idx]
-                    source['_search_index'] = search_idx + 1
-                    source['_rank_position'] = rank_position
-                    pool.append(source)
-
-        return pool
-
-    def _build_direct_answer_response(self, prompt: str, initial_result: Dict, costs: Dict) -> Dict:
-        """Build response for direct answer (no search)."""
-        return {
-            "answer": {},
-            "citations": [],
-            "metadata": {
-                "query": prompt,
-                "decision": "answer_directly",
-                "iterations": 0,
-                "total_snippets": 0,
-                "citations_count": 0,
-                "sources_pulled": 0,
-                "total_cost": costs['initial'],
-                "cost_breakdown": costs
-            }
-        }
-
-    def _build_empty_response(self, prompt: str, search_terms: List[str], costs: Dict) -> Dict:
-        """Build response when no sources found."""
-        return {
-            "answer": {},
-            "citations": [],
-            "metadata": {
-                "query": prompt,
-                "search_terms": search_terms,
-                "total_snippets": 0,
-                "citations_count": 0,
-                "sources_pulled": 0,
-                "iterations": 0,
-                "total_cost": sum(costs.values()),
-                "cost_breakdown": costs
-            }
+            "metadata": {**metadata, "debug_log": clone_logger.get_log_content()}
         }

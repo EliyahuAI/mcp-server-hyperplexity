@@ -51,7 +51,9 @@ class SourceTriage:
         existing_snippets: List[Dict],
         model: str = "claude-haiku-4-5",
         max_sources_per_search: int = 3,
-        soft_schema: bool = False
+        soft_schema: bool = False,
+        clone_logger: Any = None,
+        log_prompt_collapsed: bool = False
     ) -> List[List[int]]:
         """
         Triage ALL search results in PARALLEL.
@@ -89,7 +91,9 @@ class SourceTriage:
                 existing_snippets=existing_snippets,
                 model=model,
                 max_sources=max_sources_per_search,
-                soft_schema=soft_schema
+                soft_schema=soft_schema,
+                clone_logger=clone_logger,
+                log_prompt_collapsed=log_prompt_collapsed
             )
             triage_tasks.append(task)
 
@@ -123,7 +127,9 @@ class SourceTriage:
         existing_snippets: List[Dict],
         model: str,
         max_sources: int,
-        soft_schema: bool = False
+        soft_schema: bool = False,
+        clone_logger: Any = None,
+        log_prompt_collapsed: bool = False
     ) -> Dict[str, Any]:
         """
         Triage a single search's results.
@@ -157,6 +163,9 @@ class SourceTriage:
             max_sources=max_sources
         )
 
+        if clone_logger:
+            clone_logger.log_section(f"Triage Prompt (Search {search_index})", triage_prompt, level=4, collapse=log_prompt_collapsed)
+
         try:
             # Call triage model
             response = await self.ai_client.call_structured_api(
@@ -184,6 +193,9 @@ class SourceTriage:
             data = extract_structured_response(actual_response)
 
             ranked_indices = data.get('ranked_indices', [])
+
+            if clone_logger:
+                 clone_logger.log_section(f"Triage Result (Search {search_index})", data, level=4, collapse=True)
 
             logger.info(f"[TRIAGE] Search {search_index}: Ranked {len(ranked_indices)} sources")
             if len(ranked_indices) == 0:

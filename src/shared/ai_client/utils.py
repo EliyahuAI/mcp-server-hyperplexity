@@ -647,7 +647,7 @@ def extract_json_from_text(text: str) -> Optional[Dict]:
         logger.warning(f"Failed to extract JSON from text: {e}")
         return None
 
-async def repair_json_with_haiku(malformed_text: str, schema: Dict, ai_client) -> Optional[Dict]:
+async def repair_json_with_haiku(malformed_text: str, schema: Dict, ai_client) -> tuple[Optional[Dict], Optional[Dict]]:
     """
     Use Claude Haiku to repair/extract JSON from malformed text.
 
@@ -657,7 +657,7 @@ async def repair_json_with_haiku(malformed_text: str, schema: Dict, ai_client) -
         ai_client: AIAPIClient instance for making the repair call
 
     Returns:
-        Repaired JSON dict or None if repair fails
+        Tuple of (Repaired JSON dict or None, Full API response dict or None)
     """
     try:
         cleanup_prompt = f"""The following text contains JSON that needs to be extracted and cleaned.
@@ -683,8 +683,8 @@ Extract the JSON and reformat it to exactly match the schema. Preserve all infor
         # Extract the repaired JSON
         repaired = extract_structured_response(cleanup_result['response'], "structured_response")
         logger.info("[HAIKU_REPAIR] Successfully repaired JSON")
-        return repaired
+        return repaired, cleanup_result
 
     except Exception as e:
         logger.error(f"[HAIKU_REPAIR] Repair failed: {e}")
-        return None
+        return None, None

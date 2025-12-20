@@ -109,7 +109,8 @@ class SearchManager:
         search_terms: List[str],
         search_settings: Dict[str, Any],
         include_domains: Optional[List[str]] = None,
-        exclude_domains: Optional[List[str]] = None
+        exclude_domains: Optional[List[str]] = None,
+        clone_logger: Any = None
     ) -> List[Dict[str, Any]]:
         """
         Execute searches for all terms using Perplexity Search API.
@@ -124,6 +125,9 @@ class SearchManager:
         """
         logger.info(f"[SEARCH_MANAGER] Executing {len(search_terms)} searches "
                    f"(will batch into {(len(search_terms) + 4) // 5} API call(s))")
+
+        if clone_logger:
+            clone_logger.log_section("Executing Searches", {"terms": search_terms, "settings": search_settings}, level=3)
 
         max_results = search_settings.get("max_results", 20)
         recency_filter = search_settings.get("search_recency_filter")
@@ -149,6 +153,24 @@ class SearchManager:
                 else:
                     result_count = len(result.get('results', []))
                     logger.info(f"[SEARCH_MANAGER] Search {i+1} returned {result_count} results")
+
+            if clone_logger:
+                 # Create a summary of results
+                 summary = []
+                 for i, res in enumerate(results):
+                     if isinstance(res, Exception):
+                         summary.append(f"Search {i+1}: Failed - {str(res)}")
+                     else:
+                         count = len(res.get('results', []))
+                         summary.append(f"Search {i+1}: {count} results")
+                         # Optionally log first few titles
+                         titles = [r.get('title', 'No Title') for r in res.get('results', [])[:3]]
+                         if titles:
+                             summary.append(f"  Top results: {titles}")
+                 
+                 clone_logger.log_section("Search Results Summary", summary, level=3, collapse=True)
+                 # Also log full raw results collapsed
+                 clone_logger.log_section("Raw Search Results", results, level=3, collapse=True)
 
             return results
 

@@ -38,7 +38,9 @@ class InitialDecision:
         model: str = "claude-sonnet-4-5",
         soft_schema: bool = False,
         debug_dir: str = None,
-        custom_schema: Dict = None
+        custom_schema: Dict = None,
+        clone_logger: Any = None,
+        log_prompt_collapsed: bool = False
     ) -> Dict[str, Any]:
         """
         Decide: Answer directly or Search? If search, determine context and model tier.
@@ -60,6 +62,9 @@ class InitialDecision:
         logger.info(f"[INITIAL] Making decision: Answer directly or Search?")
 
         prompt = self._build_prompt(query)
+
+        if clone_logger:
+            clone_logger.log_section("Initial Decision Prompt", prompt, level=3, collapse=log_prompt_collapsed)
 
         # Save debug info
         if debug_dir:
@@ -90,6 +95,9 @@ class InitialDecision:
             # Extract decision using centralized parsing
             actual_response = response.get('response', response)
             data = extract_structured_response(actual_response)
+
+            if clone_logger:
+                clone_logger.log_section("Initial Decision Response", data, level=3, collapse=True)
 
             decision = data.get('decision', 'need_search')
             breadth = data.get('breadth', 'narrow')

@@ -48,7 +48,8 @@ class UnifiedSynthesizer:
         model: str = "claude-sonnet-4-5",
         search_terms: List[str] = None,
         debug_dir: str = None,
-        soft_schema: bool = False
+        soft_schema: bool = False,
+        clone_logger: Any = None
     ) -> Dict[str, Any]:
         """
         Unified evaluation + synthesis call.
@@ -84,6 +85,9 @@ class UnifiedSynthesizer:
             search_terms=search_terms
         )
 
+        if clone_logger:
+            clone_logger.log_section(f"Synthesis Prompt (Iter {iteration})", prompt, level=3, collapse=True)
+
         # Select schema - if custom schema provided, merge it
         if is_last_iteration:
             response_schema = get_synthesis_only_schema(answer_schema=schema)
@@ -115,6 +119,9 @@ class UnifiedSynthesizer:
             # Extract response using centralized parsing
             actual_response = response.get('response', response)
             data = extract_structured_response(actual_response)
+            
+            if clone_logger:
+                clone_logger.log_section(f"Synthesis Result (Iter {iteration})", data, level=3, collapse=True)
 
             # Parse response based on mode
             logger.info(f"[UNIFIED DEBUG] data keys: {list(data.keys())}")

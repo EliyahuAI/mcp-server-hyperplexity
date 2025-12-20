@@ -55,7 +55,8 @@ class SnippetExtractorStreamlined:
         min_quality_threshold: float = 0.0,
         extraction_mode: str = "simple_facts",
         max_snippets_per_source: int = 5,
-        use_code_extraction: bool = False
+        use_code_extraction: bool = False,
+        clone_logger: Any = None
     ) -> Dict[str, Any]:
         """
         Extract essential quotes from a single source for ALL search terms.
@@ -117,6 +118,9 @@ class SnippetExtractorStreamlined:
             use_code_extraction=use_code_extraction
         )
 
+        if clone_logger:
+            clone_logger.log_section(f"Extraction Prompt ({snippet_id_prefix})", extraction_prompt, level=4, collapse=True)
+
         try:
             # Call extraction model with appropriate schema
             schema = get_snippet_extraction_code_schema() if use_code_extraction else get_snippet_extraction_schema()
@@ -134,6 +138,9 @@ class SnippetExtractorStreamlined:
             # Extract quotes using centralized parsing
             actual_response = response.get('response', response)
             data = extract_structured_response(actual_response)
+
+            if clone_logger:
+                 clone_logger.log_section(f"Extraction Result ({snippet_id_prefix})", data, level=4, collapse=True)
 
             quotes_by_search = data.get('quotes_by_search', {})
 
@@ -281,6 +288,16 @@ class SnippetExtractorStreamlined:
                     total_quotes += 1
 
             logger.info(f"[EXTRACTOR] {snippet_id_prefix}: {len(snippets)} quotes across {len(quotes_by_search)} search terms (threshold: {min_quality_threshold})")
+
+            # Log resolved snippets if using code extraction
+            if clone_logger and use_code_extraction and snippets:
+                resolved_snippet_texts = [{'id': s['id'], 'text': s['text']} for s in snippets]
+                clone_logger.log_section(
+                    f"Resolved Snippets ({snippet_id_prefix})",
+                    resolved_snippet_texts,
+                    level=4,
+                    collapse=True
+                )
 
             # Calculate validation stats
             if snippets:

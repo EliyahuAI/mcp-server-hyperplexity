@@ -1,0 +1,180 @@
+import os
+import json
+import time
+import io
+from typing import Any, Dict, Optional, List
+from datetime import datetime
+
+class CloneLogger:
+    """
+    Enhanced consolidated logger for The Clone's execution.
+    Creates a structured, nested Markdown log with collapsible sections.
+    """
+
+    def __init__(self, debug_dir: Optional[str] = None):
+        self.debug_dir = debug_dir
+        self.log_file = None
+        self.start_time = time.time()
+        self.memory_buffer = io.StringIO()
+        self.steps_data: List[Dict[str, Any]] = []
+        self.step_start_times: Dict[str, float] = {}
+
+        if debug_dir:
+            try:
+                os.makedirs(debug_dir, exist_ok=True)
+                self.log_file = os.path.join(debug_dir, "FULL_LOG.md")
+            except Exception:
+                self.log_file = None
+        
+        self._write_header()
+
+    def _write_header(self):
+        header = f"# Clone Execution Log\n"
+        header += f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        if self.debug_dir:
+            header += f"**Debug Directory:** `{self.debug_dir}`\n"
+        self._write(header) # Write immediately
+
+    def _write(self, text: str):
+        self.memory_buffer.write(text)
+        if self.log_file:
+            try:
+                # Use 'a' to append incrementally
+                with open(self.log_file, 'a', encoding='utf-8') as f:
+                    f.write(text)
+            except Exception:
+                pass # Fail silently if file writing fails
+
+    def start_step(self, step_name: str):
+        """Starts a top-level collapsible section for a major step."""
+        self.step_start_times[step_name] = time.time()
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        self._write(f"\n<details>\n<summary><h2>🟢 Step: {step_name} <small>({timestamp})</small></h2></summary>\n\n")
+
+    def end_step(self, step_name: str):
+        """Closes the top-level collapsible section for a step."""
+        duration = time.time() - self.step_start_times.get(step_name, self.start_time)
+        self._write(f"<p align='right'><small>Step duration: {duration:.2f}s</small></p>\n")
+        self._write("</details>\n")
+
+    def record_step_metric(self, name: str, provider: str, model: str, cost: float, time_taken: float, details: str = ""):
+        self.steps_data.append({
+            "name": name, "provider": provider, "model": model,
+            "cost": cost, "time": time_taken, "details": details
+        })
+
+    def log_section(self, title: str, content: Any = None, level: int = 3, collapse: bool = False):
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        heading = "#" * level
+        
+        section_text = f"{heading} {title} <small>({timestamp})</small>\n\n"
+        
+        if content is not None:
+            formatted_content = self._format_content(content)
+            if collapse:
+                section_text += f"<details><summary>Click to expand</summary>\n\n{formatted_content}\n</details>\n\n"
+            else:
+                section_text += f"{formatted_content}\n\n"
+        
+        self._write(section_text)
+
+    def get_log_content(self) -> str:
+        return self.memory_buffer.getvalue()
+
+    def finalize(self, metadata: Dict[str, Any], final_answer: Dict, citations: List[Dict]):
+        """Prepends the summary, settings, and final answer to the log."""
+        summary_section = self._generate_summary(metadata)
+        settings_section = self._generate_settings_summary(metadata)
+        answer_section = self._generate_final_answer(final_answer, citations)
+
+        current_content = self.memory_buffer.getvalue()
+        header_end_pos = current_content.find("---") + 4 if "---" in current_content else 0
+
+        header = current_content[:header_end_pos]
+        body = current_content[header_end_pos:]
+
+        full_content = (
+            f"{header}\n{summary_section}\n{settings_section}\n{answer_section}\n---\n{body}"
+        )
+
+        self.memory_buffer = io.StringIO(full_content)
+        self.memory_buffer.seek(0, 2)
+
+        if self.log_file:
+            try:
+                with open(self.log_file, 'w', encoding='utf-8') as f:
+                    f.write(full_content)
+            except Exception:
+                pass
+
+    def _generate_final_answer(self, answer: Dict, citations: List[Dict]) -> str:
+        answer_str = f"## 📝 Final Answer\n\n"
+        answer_str += self._format_content(answer)
+        answer_str += f"\n\n### Citations\n\n"
+        answer_str += self._to_markdown_citations(citations)
+        return answer_str
+
+    def _to_markdown_citations(self, citations: List[Dict]) -> str:
+        if not citations: return "(No citations)"
+        md_citations = []
+        for i, cite in enumerate(citations):
+            url = cite.get('url', '#')
+            title = cite.get('title', 'No Title')
+            date = cite.get('date', cite.get('last_updated', ''))
+            snippet = cite.get('cited_text', '')
+            
+            entry = f"- **[{i+1}] [{title}]({url})**"
+            if date: entry += f" ({date})"
+            if snippet: entry += f"\n  > {snippet}"
+            md_citations.append(entry)
+        return "\n".join(md_citations)
+
+    def _generate_settings_summary(self, m: Dict[str, Any]) -> str:
+        settings = {
+            "Provider": m.get('provider'),
+            "Model Override": m.get('model_override'),
+            "Schema Provided": "Yes" if m.get('schema_provided') else "No",
+            "Use Code Extraction": m.get('use_code_extraction'),
+            "Academic Mode": m.get('academic')
+        }
+        settings_lines = []
+        for k, v in settings.items():
+            if v is not None: # Only include if value is not None
+                settings_lines.append(f"| **{k}** | `{v}` |")
+        settings_str = "\n".join(settings_lines)
+        return f"### ⚙️ Initial Settings\n\n| Setting | Value |\n| :--- | :--- |\n{settings_str}\n\n---\n"
+
+    def _generate_summary(self, m: Dict[str, Any]) -> str:
+        """Generate markdown summary table from recorded steps."""
+        
+        # Overall metrics
+        cost_total = m.get('total_cost', 0.0)
+        time_total = m.get('total_time_seconds', 0.0)
+        
+        summary = f"# ⚡ Execution Summary\n\n| Metric | Value |\n| :--- | :--- |\n"
+        summary += f"| **Strategy** | `{m.get('strategy', 'unknown')}` ({m.get('breadth')}/{m.get('depth')}) |\n"
+        summary += f"| **Total Cost** | **${cost_total:.4f}** |\n"
+        summary += f"| **Total Time** | **{time_total:.1f}s** |\n"
+        summary += f"| **Output** | {m.get('citations_count')} Citations / {m.get('total_snippets')} Snippets |\n"
+        summary += f"| **Quality** | {m.get('self_assessment', 'N/A')} |\n"
+        summary += f"| **Repairs** | {m.get('schema_repairs', 0)} |\n"
+        summary += f"| **Tier 4 Upgrade** | {'Yes' if m.get('upgraded_to_deepest') else 'No'} |\n"
+
+        summary += "\n### 🔍 Process Breakdown\n\n| Step | Provider | Model | Cost | Time | Details |\n| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+        
+        for step in self.steps_data:
+            provider = step['provider']
+            if provider in ['unknown', 'mixed']: provider = f"⚠️ {provider}"
+            summary += f"| **{step['name']}** | {provider} | `{step['model']}` | ${step['cost']:.4f} | {step['time']:.2f}s | {step['details']} |\n"
+            
+        return summary + "\n"
+
+    def _format_content(self, content: Any) -> str:
+        """Format content for Markdown."""
+        if isinstance(content, (dict, list)):
+            return f"```json\n{json.dumps(content, indent=2, ensure_ascii=False)}\n```"
+        elif isinstance(content, str):
+            if content.strip().startswith("```"): return content
+            return f"```text\n{content}\n```"
+        else:
+            return str(content)
