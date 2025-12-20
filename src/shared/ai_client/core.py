@@ -127,7 +127,7 @@ class AIAPIClient:
         if use_code_extraction is None:
             primary_model = models_to_try[0] if models_to_try else model
             use_code_extraction = primary_model.startswith('the-clone') if isinstance(primary_model, str) else False
-        
+
         last_error = None
         
         for model_index, current_model in enumerate(models_to_try):
