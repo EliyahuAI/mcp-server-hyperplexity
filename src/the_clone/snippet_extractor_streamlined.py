@@ -20,6 +20,7 @@ from the_clone.snippet_schemas import get_snippet_extraction_schema, get_snippet
 from the_clone.text_labeler import TextLabeler
 from the_clone.code_resolver import CodeResolver
 from the_clone.code_extraction_debug import CodeExtractionDebugger
+from the_clone.strategy_loader import get_model_with_backups
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -126,15 +127,22 @@ class SnippetExtractorStreamlined:
             # Call extraction model with appropriate schema
             schema = get_snippet_extraction_code_schema() if use_code_extraction else get_snippet_extraction_schema()
 
+            # Get model with backups to override ai_client defaults
+            model_chain = get_model_with_backups(model)
+
             response = await self.ai_client.call_structured_api(
                 prompt=extraction_prompt,
                 schema=schema,
-                model=model,
+                model=model_chain,
                 use_cache=False,
                 max_web_searches=0,
                 context=f"extract_{snippet_id_prefix}",
                 soft_schema=soft_schema
             )
+
+            # Log model attempts if backups were used
+            if clone_logger and response.get('attempted_models'):
+                clone_logger.log_model_attempts(response['attempted_models'], f"Extraction {snippet_id_prefix}")
 
             # Extract quotes using centralized parsing
             actual_response = response.get('response', response)

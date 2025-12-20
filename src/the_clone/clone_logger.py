@@ -63,6 +63,24 @@ class CloneLogger:
             "cost": cost, "time": time_taken, "details": details
         })
 
+    def log_model_attempts(self, attempted_models: List[Dict], step_name: str = ""):
+        """Log model attempts including failures for transparency."""
+        if not attempted_models or len(attempted_models) <= 1:
+            return  # No failures to report
+
+        failures = [a for a in attempted_models if not a.get('success', True)]
+        if not failures:
+            return  # All succeeded on first try
+
+        self._write(f"\n> **Model Attempts{' (' + step_name + ')' if step_name else ''}:**\n")
+        for attempt in attempted_models:
+            if attempt.get('success'):
+                self._write(f"> - ✓ `{attempt['model']}` - Success\n")
+            else:
+                error = attempt.get('error', 'Unknown error')
+                self._write(f"> - ✗ `{attempt['model']}` - Failed: {error}\n")
+        self._write("\n")
+
     def log_section(self, title: str, content: Any = None, level: int = 3, collapse: bool = False):
         timestamp = datetime.now().strftime('%H:%M:%S')
         heading = "#" * level

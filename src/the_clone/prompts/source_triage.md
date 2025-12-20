@@ -15,10 +15,16 @@ Sources from This Search ({source_count} results):
 
 Ranking Criteria (Priority Order):
 1) Relevance: EXCLUDE sources that are off-topic or don't address the query
-2) Novelty: Prioritize sources likely to add NEW information not in existing snippets
-3) Auditability: Prefer primary/official sources, reports, data over opinion/commentary
-4) Independence: Prefer diverse origins, avoid echo chambers
-5) Recency: For time-sensitive queries ("latest", "current"), prefer recent sources
+2) Authority: Assess source authority for the query topic
+   - AU (Authoritative): High general authority + known topic expertise → prioritize
+   - UK (Unknown): Unclear/medium authority → neutral
+   - LA (Low Authority): Low general authority or lacks topic expertise → deprioritize
+3) Quality Codes: Sources will be coded during extraction. Seek sources likely to yield:
+   - GOOD codes: P (Primary/official), D (Documented), A (Attributed), O (OK/reliable)
+   - AVOID sources likely to yield: C (Contradicted), U (Unsourced), PR (Promotional), S (Stale), SL (SEO slop)
+4) Novelty: Prioritize sources likely to add NEW information not in existing snippets
+5) Independence: Prefer diverse origins, avoid echo chambers
+6) Recency: For time-sensitive queries ("latest", "current"), prefer recent sources
 
 Output:
 Rank ONLY RELEVANT sources from best to worst. Exclude off-topic sources.

@@ -129,7 +129,8 @@ class AIAPIClient:
             use_code_extraction = primary_model.startswith('the-clone') if isinstance(primary_model, str) else False
 
         last_error = None
-        
+        attempted_models = []  # Track all attempts for logging
+
         for model_index, current_model in enumerate(models_to_try):
             try:
                 api_provider = determine_api_provider(current_model)
@@ -190,7 +191,9 @@ class AIAPIClient:
                 if result:
                     result['model_used'] = current_model
                     result['used_backup_model'] = model_index > 0
-                    
+                    attempted_models.append({'model': current_model, 'success': True})
+                    result['attempted_models'] = attempted_models
+
                     # Normalize response format for compatibility
                     if api_provider == 'anthropic':
                         # Convert to unified format
@@ -214,6 +217,7 @@ class AIAPIClient:
                     return result
             
             except Exception as e:
+                attempted_models.append({'model': current_model, 'success': False, 'error': str(e)[:100]})
                 logger.warning(f"[BACKUP_RETRY] Model {current_model} failed: {e}")
                 logger.info(f"[BACKUP_RETRY] Trying next model in queue (remaining: {len(models_to_try) - model_index - 1})")
                 last_error = e

@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from shared.ai_api_client import AIAPIClient
 from shared.ai_client.utils import extract_structured_response
 from the_clone.initial_decision_schemas import get_initial_decision_schema
+from the_clone.strategy_loader import get_model_with_backups
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -82,15 +83,22 @@ class InitialDecision:
                 with open(os.path.join(debug_dir, '01_initial_decision_schema.json'), 'w', encoding='utf-8') as f:
                     json.dump(schema_obj, f, indent=2)
 
+            # Get model with backups to override ai_client defaults
+            model_chain = get_model_with_backups(model)
+
             response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema_obj,
-                model=model,
+                model=model_chain,
                 use_cache=False,
                 max_web_searches=0,
                 context="initial_decision",
                 soft_schema=soft_schema
             )
+
+            # Log model attempts if backups were used
+            if clone_logger and response.get('attempted_models'):
+                clone_logger.log_model_attempts(response['attempted_models'], "Initial Decision")
 
             # Extract decision using centralized parsing
             actual_response = response.get('response', response)

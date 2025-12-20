@@ -50,7 +50,12 @@ Sources are organized by search term. Text is labeled with codes you'll use for 
 
 **P-Scores** (use exact values): 0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95
 
-**Validation: Bet on pass rate.** Imagine a judge extracts all atomic factual claims and tests each. Pass = precisely accurate. p = expected pass-rate. Bet honestly.
+**Source Authority** - Assess BEFORE betting:
+- **AU** (Authoritative): High general authority + known expertise on query topic
+- **UK** (Unknown): Unclear authority or medium general authority
+- **LA** (Low Authority): Low general authority or lacks topic expertise
+
+**Validation: Bet on pass rate.** Imagine a judge extracts all atomic factual claims and tests each. Pass = precisely accurate. p = expected pass-rate. Consider source authority (AU/UK/LA) when betting - higher authority → higher confidence in same claim.
 
 **Positive indicators** (higher p):
 - **P=PRIMARY**: Official self-report / primary document style

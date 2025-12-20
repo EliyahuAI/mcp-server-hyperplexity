@@ -19,6 +19,7 @@ from shared.ai_api_client import AIAPIClient
 from shared.ai_client.utils import extract_structured_response
 from the_clone.triage_schemas import get_source_triage_schema
 from the_clone.text_labeler import TextLabeler
+from the_clone.strategy_loader import get_model_with_backups
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -167,11 +168,14 @@ class SourceTriage:
             clone_logger.log_section(f"Triage Prompt (Search {search_index})", triage_prompt, level=4, collapse=log_prompt_collapsed)
 
         try:
+            # Get model with backups to override ai_client defaults
+            model_chain = get_model_with_backups(model)
+
             # Call triage model
             response = await self.ai_client.call_structured_api(
                 prompt=triage_prompt,
                 schema=get_source_triage_schema(),
-                model=model,
+                model=model_chain,
                 use_cache=False,
                 max_web_searches=0,
                 context=f"source_triage_s{search_index}",
@@ -187,6 +191,10 @@ class SourceTriage:
                         f.write(triage_prompt)
                 except:
                     pass  # Don't fail if debug save fails
+
+            # Log model attempts if backups were used
+            if clone_logger and response.get('attempted_models'):
+                clone_logger.log_model_attempts(response['attempted_models'], f"Triage Search {search_index}")
 
             # Extract ranked indices using centralized parsing
             actual_response = response.get('response', response)

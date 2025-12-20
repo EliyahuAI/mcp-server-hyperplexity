@@ -114,6 +114,61 @@ def get_default_models(provider: str = "deepseek") -> Dict[str, str]:
     return get_models_for_tier(provider, 'tier2')
 
 
+def get_model_with_backups(model: str) -> list:
+    """
+    Get model with appropriate backup chain for The Clone.
+
+    Rules:
+    - DeepSeek variants → claude-sonnet-4-5
+    - Claude models → cross-fallback then deepseek-v3.2
+    - Creates robust cross-provider safety net
+
+    Args:
+        model: Primary model name
+
+    Returns:
+        List of models [primary, backup1, backup2, ...]
+    """
+    # DeepSeek Baseten → DeepSeek → Claude Sonnet
+    if model == 'deepseek-v3.2-baseten':
+        return ['deepseek-v3.2-baseten', 'deepseek-v3.2', 'claude-sonnet-4-5']
+
+    # DeepSeek Vertex → Claude Sonnet
+    if model == 'deepseek-v3.2':
+        return ['deepseek-v3.2', 'claude-sonnet-4-5']
+
+    # DeepSeek Exp (same as v3.2) → DeepSeek → Claude Sonnet
+    if model == 'deepseek-v3.2-exp':
+        return ['deepseek-v3.2-exp', 'deepseek-v3.2', 'claude-sonnet-4-5']
+
+    # Claude Opus → Sonnet → DeepSeek
+    if model == 'claude-opus-4-5':
+        return ['claude-opus-4-5', 'claude-sonnet-4-5', 'deepseek-v3.2']
+
+    # Claude Sonnet → Opus → DeepSeek
+    if model == 'claude-sonnet-4-5':
+        return ['claude-sonnet-4-5', 'claude-opus-4-5', 'deepseek-v3.2']
+
+    # Claude Haiku → DeepSeek
+    if model == 'claude-haiku-4-5':
+        return ['claude-haiku-4-5', 'deepseek-v3.2']
+
+    # Perplexity models
+    if model == 'sonar-pro':
+        return ['sonar-pro', 'sonar']
+
+    if model == 'sonar':
+        return ['sonar']
+
+    # Clone models - these have internal retry logic, no backups
+    if model.startswith('the-clone'):
+        return [model]
+
+    # Unknown model - return as-is
+    logger.warning(f"Unknown model '{model}' - no backup chain defined")
+    return [model]
+
+
 def should_stop_iteration(snippets: list, strategy: Dict[str, Any]) -> bool:
     """
     Check if we should stop iterating based on strategy stop condition.

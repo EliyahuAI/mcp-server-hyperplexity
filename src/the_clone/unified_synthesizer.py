@@ -21,6 +21,7 @@ from shared.ai_api_client import AIAPIClient
 from shared.ai_client.utils import extract_structured_response
 from the_clone.unified_schemas import get_unified_evaluation_synthesis_schema, get_synthesis_only_schema
 from the_clone.config import get_synthesis_guidance
+from the_clone.strategy_loader import get_model_with_backups
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -105,16 +106,23 @@ class UnifiedSynthesizer:
                 pass
 
         try:
+            # Get model with backups to override ai_client defaults
+            model_chain = get_model_with_backups(model)
+
             # Call model
             response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=response_schema,
-                model=model,
+                model=model_chain,
                 use_cache=False,
                 max_web_searches=0,
                 context=f"unified_iter{iteration}",
                 soft_schema=soft_schema
             )
+
+            # Log model attempts if backups were used
+            if clone_logger and response.get('attempted_models'):
+                clone_logger.log_model_attempts(response['attempted_models'], f"Synthesis Iteration {iteration}")
 
             # Extract response using centralized parsing
             actual_response = response.get('response', response)

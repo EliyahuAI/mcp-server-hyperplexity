@@ -60,9 +60,14 @@ Extract only if quote has concrete, verifiable facts. Skip:
 
 ## Validation
 
+**Source Authority** - Assess BEFORE betting:
+- **AU** (Authoritative): High general authority + known expertise on query topic
+- **UK** (Unknown): Unclear authority or medium general authority
+- **LA** (Low Authority): Low general authority or lacks topic expertise
+
 **P-scores** (exact): 0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95
 
-Bet: Judge extracts all atomic factual claims and tests each. Pass = precisely accurate. p = expected pass-rate. Bet honestly on the pass rate.
+Bet: Judge extracts all atomic factual claims and tests each. Pass = precisely accurate. p = expected pass-rate. Consider source authority (AU/UK/LA) when betting - higher authority → higher confidence in same claim.
 
 **Positive indicators**
 - P=PRIMARY: official self-report / primary-document style
