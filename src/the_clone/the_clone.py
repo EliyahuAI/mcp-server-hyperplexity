@@ -165,6 +165,7 @@ class TheClone2Refined:
             model=models['initial_decision'],
             soft_schema=True,
             debug_dir=debug_dir,
+            custom_schema=schema,
             clone_logger=clone_logger
         )
 
@@ -627,5 +628,43 @@ class TheClone2Refined:
             "answer": final_answer_data,
             "citations": final_citations,
             "synthesis_prompt": synthesis_result.get('synthesis_prompt', ''),
-            "metadata": {**metadata, "debug_log": clone_logger.get_log_content()}
+            "metadata": {**metadata, "debug_log": clone_logger.get_log_content() if clone_logger else ""}
         }
+
+    def _extract_cost_and_provider(self, model_response: Dict, clone_logger=None, stats: Dict = None) -> tuple[float, str]:
+        """Extract cost and provider from model response."""
+        enhanced = model_response.get('enhanced_data', {})
+        costs = enhanced.get('costs', {}).get('actual', {})
+        cost = costs.get('total_cost', 0.0)
+        provider = enhanced.get('call_info', {}).get('api_provider', 'unknown')
+
+        # Track schema repairs if stats provided
+        if stats and 'schema_repairs' in stats:
+            # Check if this response used Haiku repair
+            if 'haiku_repair' in str(model_response):
+                stats['schema_repairs'] += 1
+
+        return cost, provider
+
+    def _build_ranked_source_pool(
+        self,
+        search_results: List,
+        ranked_lists: List[List[int]],
+        search_terms: List[str]
+    ) -> List[Dict]:
+        """Build ranked source pool from triage results."""
+        pool = []
+        for search_idx, (search_result, ranked_indices) in enumerate(zip(search_results, ranked_lists)):
+            if isinstance(search_result, Exception):
+                continue
+
+            results = search_result.get('results', [])
+            for rank_position, source_idx in enumerate(ranked_indices):
+                if 0 <= source_idx < len(results):
+                    source = results[source_idx].copy()
+                    source['_search_term'] = search_terms[search_idx]
+                    source['_search_index'] = search_idx + 1
+                    source['_rank_position'] = rank_position
+                    pool.append(source)
+
+        return pool

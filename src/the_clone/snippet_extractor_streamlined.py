@@ -56,7 +56,8 @@ class SnippetExtractorStreamlined:
         extraction_mode: str = "simple_facts",
         max_snippets_per_source: int = 5,
         use_code_extraction: bool = False,
-        clone_logger: Any = None
+        clone_logger: Any = None,
+        log_prompt_collapsed: bool = False
     ) -> Dict[str, Any]:
         """
         Extract essential quotes from a single source for ALL search terms.
