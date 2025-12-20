@@ -171,6 +171,11 @@ class TheClone2Refined:
 
         decision = initial_result.get('decision', 'need_search')
         model_resp = initial_result.get('model_response', {})
+
+        # Debug: check if model_response exists
+        if not model_resp:
+            logger.warning(f"[DEBUG] No model_response in initial_result. Keys: {list(initial_result.keys())}")
+
         initial_cost, initial_provider = self._extract_cost_and_provider(model_resp, clone_logger, stats)
         costs['initial'] = initial_cost
         costs_by_provider[initial_provider] = costs_by_provider.get(initial_provider, 0.0) + initial_cost
@@ -637,6 +642,12 @@ class TheClone2Refined:
         costs = enhanced.get('costs', {}).get('actual', {})
         cost = costs.get('total_cost', 0.0)
         provider = enhanced.get('call_info', {}).get('api_provider', 'unknown')
+
+        # Debug unknown provider
+        if provider == 'unknown' and enhanced:
+            logger.warning(f"[DEBUG] Provider unknown - enhanced_data keys: {list(enhanced.keys())}")
+            if 'call_info' in enhanced:
+                logger.warning(f"[DEBUG] call_info keys: {list(enhanced['call_info'].keys())}")
 
         # Track schema repairs if stats provided
         if stats and 'schema_repairs' in stats:

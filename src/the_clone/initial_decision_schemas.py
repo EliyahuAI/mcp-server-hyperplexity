@@ -56,11 +56,10 @@ def get_initial_decision_schema(answer_schema: dict = None) -> dict:
     }
 
     # If custom answer schema provided, merge it for direct answers
+    # BUT: custom fields are NOT required (only needed if decision='answer_directly')
     if answer_schema and answer_schema.get('properties'):
         for prop_name, prop_schema in answer_schema['properties'].items():
             base_schema['properties'][prop_name] = prop_schema
-        # Add to required if needed
-        if 'required' in answer_schema:
-            base_schema['required'].extend(answer_schema['required'])
+        # Do NOT add custom fields to required - they're only needed for direct answers
 
     return base_schema

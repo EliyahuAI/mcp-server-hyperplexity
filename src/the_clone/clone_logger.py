@@ -88,13 +88,21 @@ class CloneLogger:
         answer_section = self._generate_final_answer(final_answer, citations)
 
         current_content = self.memory_buffer.getvalue()
-        header_end_pos = current_content.find("---") + 4 if "---" in current_content else 0
 
-        header = current_content[:header_end_pos]
-        body = current_content[header_end_pos:]
+        # Find the end of the configuration section (look for the <details> tag)
+        details_pos = current_content.find("\n<details>")
+        if details_pos == -1:
+            # Fallback: insert after first ## heading
+            details_pos = current_content.find("\n##")
+        if details_pos == -1:
+            # Last fallback: insert at beginning
+            details_pos = len(current_content)
+
+        header = current_content[:details_pos]
+        body = current_content[details_pos:]
 
         full_content = (
-            f"{header}\n{summary_section}\n{settings_section}\n{answer_section}\n---\n{body}"
+            f"{header}\n\n{summary_section}\n{settings_section}\n{answer_section}\n---\n{body}"
         )
 
         self.memory_buffer = io.StringIO(full_content)
