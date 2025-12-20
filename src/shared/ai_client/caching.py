@@ -182,6 +182,34 @@ class CacheHandler:
         except Exception as e:
             logger.error(f"Failed to save debug data: {e}")
 
+    async def save_markdown_log(self, api_provider: str, model: str, markdown_content: str, debug_name: str = None):
+        """Save markdown log alongside standard debug data."""
+        try:
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]
+            model_clean = model.replace('/', '_').replace(':', '_')
+
+            if debug_name:
+                filename = f"{timestamp}_{model_clean}_{debug_name}.md"
+            else:
+                filename = f"{timestamp}_{model_clean}.md"
+
+            # Store in debug folder alongside JSON debug files
+            path = f"debug/{api_provider}" if self.use_unified_structure else f"api_debug/{api_provider}"
+            s3_key = f"{path}/{filename}"
+
+            async with self.s3_session.client('s3') as s3_client:
+                await s3_client.put_object(
+                    Bucket=self.s3_bucket,
+                    Key=s3_key,
+                    Body=markdown_content.encode('utf-8'),
+                    ContentType='text/markdown'
+                )
+
+            logger.info(f"Saved markdown log: {s3_key}")
+
+        except Exception as e:
+            logger.error(f"Failed to save markdown log: {e}")
+
     async def move_bad_cache_to_debug(self, cache_key: str, api_provider: str, failure_reason: str,
                                        prompt: str = None, expected_columns: List[str] = None,
                                        actual_columns: List[str] = None, cached_response: Dict = None) -> bool:

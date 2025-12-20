@@ -126,6 +126,11 @@ class CloneProvider:
             # Save debug data
             if debug_name:
                 await self.cache_handler.save_debug_data('clone', model, {'prompt': prompt}, response_json, context="agent_success", debug_name=debug_name)
+
+                # Also save markdown log if available
+                debug_log = metadata.get('debug_log', '')
+                if debug_log:
+                    await self.cache_handler.save_markdown_log('clone', model, debug_log, debug_name=debug_name)
             
             # Save to cache if enabled
             if use_cache and cache_key:
