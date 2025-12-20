@@ -56,15 +56,19 @@ def get_initial_decision_schema(answer_schema: dict = None) -> dict:
     }
 
     # If custom answer schema provided, merge it for direct answers
-    # Add properties but NOT to required (post-validation checks if answer_directly)
+    # Keep fields REQUIRED to prevent DeepSeek from skipping them
     if answer_schema and answer_schema.get('properties'):
         for prop_name, prop_schema in answer_schema['properties'].items():
-            # Add description hint that fields are needed for direct answers
+            # Add description: null/empty OK for routing, required for direct answers
             prop_schema_copy = prop_schema.copy()
             if 'description' in prop_schema_copy:
-                prop_schema_copy['description'] += " (Required if decision='answer_directly')"
+                prop_schema_copy['description'] += " (Provide null/empty if decision='need_search', will be ignored)"
             else:
-                prop_schema_copy['description'] = "Required if decision='answer_directly'"
+                prop_schema_copy['description'] = "Provide null/empty if decision='need_search', will be ignored"
             base_schema['properties'][prop_name] = prop_schema_copy
+
+        # Add custom required fields to schema (keeps DeepSeek from skipping)
+        if 'required' in answer_schema:
+            base_schema['required'].extend(answer_schema['required'])
 
     return base_schema

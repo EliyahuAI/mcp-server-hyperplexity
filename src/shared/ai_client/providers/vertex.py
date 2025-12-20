@@ -94,11 +94,13 @@ class VertexProvider:
                             logger.warning(f"[VERTEX] Soft schema warnings: {warnings}")
 
                         # Check if critical required fields are missing
+                        # Allow empty values for non-core fields (custom schema fields can be null/empty)
                         required = schema.get('required', [])
-                        missing_critical = [f for f in required if f not in norm or not norm[f]]
+                        core_fields = ['decision', 'breadth', 'depth', 'search_terms', 'synthesis_tier', 'can_answer', 'confidence', 'answer_raw', 'comparison']
+                        missing_critical = [f for f in required if (f in core_fields) and (f not in norm or not norm[f])]
                         if missing_critical:
-                            logger.error(f"[VERTEX] Missing critical required fields: {missing_critical}")
-                            raise Exception(f"[SCHEMA_ERROR] Missing required fields: {missing_critical}")
+                            logger.error(f"[VERTEX] Missing critical core fields: {missing_critical}")
+                            raise Exception(f"[SCHEMA_ERROR] Missing core fields: {missing_critical}")
 
                         normalized['content'][0]['text'] = json.dumps(norm)
                     else:

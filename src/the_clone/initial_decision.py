@@ -105,25 +105,18 @@ class InitialDecision:
             search_terms = data.get('search_terms', [])
             synthesis_tier = data.get('synthesis_tier', 'default')
 
-            # Extract answer if answering directly
+            # Extract answer if answering directly (ignore null/empty from routing responses)
             direct_answer = None
             if decision == "answer_directly":
-                # Check for validation_results or other custom answer fields
-                if 'validation_results' in data:
-                    direct_answer = {'validation_results': data['validation_results']}
-                elif custom_schema:
-                    # Extract fields from custom schema
+                # Extract custom schema fields
+                if custom_schema:
                     direct_answer = {}
                     for prop_name in custom_schema.get('properties', {}).keys():
                         if prop_name in data:
-                            direct_answer[prop_name] = data[prop_name]
-
-                # Post-validation: If answering directly, custom fields MUST be present
-                if custom_schema and custom_schema.get('required'):
-                    missing = [f for f in custom_schema['required'] if f not in data or not data[f]]
-                    if missing:
-                        logger.error(f"[INITIAL] Direct answer missing required custom fields: {missing}")
-                        raise Exception(f"[SCHEMA_ERROR] Direct answer missing required fields: {missing}")
+                            value = data[prop_name]
+                            # Filter out explicit null markers (None, null, empty arrays/objects/strings)
+                            if value and value not in [None, 'null', '', [], {}]:
+                                direct_answer[prop_name] = value
 
             # Save response
             if debug_dir:

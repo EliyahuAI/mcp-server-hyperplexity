@@ -119,7 +119,7 @@ class UnifiedSynthesizer:
             # Extract response using centralized parsing
             actual_response = response.get('response', response)
             data = extract_structured_response(actual_response)
-            
+
             if clone_logger:
                 clone_logger.log_section(f"Synthesis Result (Iter {iteration})", data, level=3, collapse=True)
 
