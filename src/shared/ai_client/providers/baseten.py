@@ -69,14 +69,13 @@ class BasetenProvider:
                         if warnings:
                             logger.warning(f"[BASETEN] Soft schema warnings: {warnings}")
 
-                        # Check if critical required fields are missing (treat as error)
-                        # Allow empty values for non-core fields (custom schema fields can be null/empty)
+                        # Check if required fields are present (but allow empty values)
+                        # In soft_schema mode, if field exists, it's OK even if empty
                         required = schema.get('required', [])
-                        core_fields = ['decision', 'breadth', 'depth', 'search_terms', 'synthesis_tier', 'can_answer', 'confidence', 'answer_raw', 'comparison']
-                        missing_critical = [f for f in required if (f in core_fields) and (f not in norm or not norm[f])]
-                        if missing_critical:
-                            logger.error(f"[BASETEN] Missing critical core fields after repair: {missing_critical}")
-                            raise Exception(f"[SCHEMA_ERROR] Missing core fields: {missing_critical}")
+                        missing = [f for f in required if f not in norm]
+                        if missing:
+                            logger.error(f"[BASETEN] Missing required fields after repair: {missing}")
+                            raise Exception(f"[SCHEMA_ERROR] Missing required fields: {missing}")
 
                         normalized['content'][0]['text'] = json.dumps(norm)
                     else:

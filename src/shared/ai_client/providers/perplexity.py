@@ -248,14 +248,13 @@ class PerplexityProvider:
                     if warnings:
                         logger.warning(f"Perplexity soft schema warnings: {warnings}")
 
-                    # Check if critical required fields are missing
-                    # Allow empty values for non-core fields (custom schema fields can be null/empty)
+                    # Check if required fields are present (but allow empty values)
+                    # In soft_schema mode, if field exists, it's OK even if empty
                     required = schema.get('required', [])
-                    core_fields = ['decision', 'breadth', 'depth', 'search_terms', 'synthesis_tier', 'can_answer', 'confidence', 'answer_raw', 'comparison']
-                    missing_critical = [f for f in required if (f in core_fields) and (f not in normalized or not normalized[f])]
-                    if missing_critical:
-                        logger.error(f"[PERPLEXITY] Missing critical core fields: {missing_critical}")
-                        raise Exception(f"[SCHEMA_ERROR] Missing core fields: {missing_critical}")
+                    missing = [f for f in required if f not in normalized]
+                    if missing:
+                        logger.error(f"[PERPLEXITY] Missing required fields: {missing}")
+                        raise Exception(f"[SCHEMA_ERROR] Missing required fields: {missing}")
 
                     response_json['choices'][0]['message']['content'] = json.dumps(normalized)
                 else:
