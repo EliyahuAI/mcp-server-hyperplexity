@@ -118,6 +118,13 @@ class InitialDecision:
                         if prop_name in data:
                             direct_answer[prop_name] = data[prop_name]
 
+                # Post-validation: If answering directly, custom fields MUST be present
+                if custom_schema and custom_schema.get('required'):
+                    missing = [f for f in custom_schema['required'] if f not in data or not data[f]]
+                    if missing:
+                        logger.error(f"[INITIAL] Direct answer missing required custom fields: {missing}")
+                        raise Exception(f"[SCHEMA_ERROR] Direct answer missing required fields: {missing}")
+
             # Save response
             if debug_dir:
                 try:
