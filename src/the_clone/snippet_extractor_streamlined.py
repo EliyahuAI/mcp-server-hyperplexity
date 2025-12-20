@@ -94,7 +94,7 @@ class SnippetExtractorStreamlined:
         current_date = datetime.now().strftime('%Y-%m-%d')
 
         logger.debug(f"[EXTRACTOR] Extracting from: {source_title[:60]}...")
-        logger.info(f"[EXTRACTOR_DEBUG] Source _search_term: '{source_search_term}'")
+        logger.debug(f"[EXTRACTOR] Source _search_term: '{source_search_term}'")
 
         # Code-based extraction: label the source text first
         labeled_text = None

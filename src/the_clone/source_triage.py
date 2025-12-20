@@ -199,7 +199,7 @@ class SourceTriage:
 
             logger.info(f"[TRIAGE] Search {search_index}: Ranked {len(ranked_indices)} sources")
             if len(ranked_indices) == 0:
-                logger.info(f"[TRIAGE DEBUG] Model response data: {data}")
+                logger.debug(f"[TRIAGE] Model response data: {data}")
 
             return {
                 "ranked_indices": ranked_indices,

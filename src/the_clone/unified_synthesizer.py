@@ -124,7 +124,7 @@ class UnifiedSynthesizer:
                 clone_logger.log_section(f"Synthesis Result (Iter {iteration})", data, level=3, collapse=True)
 
             # Parse response based on mode
-            logger.info(f"[UNIFIED DEBUG] data keys: {list(data.keys())}")
+            logger.debug(f"[UNIFIED] data keys: {list(data.keys())}")
             if is_last_iteration:
                 # Synthesis mode - just answer
                 answer_raw = data
@@ -145,7 +145,7 @@ class UnifiedSynthesizer:
                 suggested = data.get('suggested_search_terms', [])
 
             logger.info(f"[UNIFIED] Can answer: {can_answer}, Confidence: {confidence}")
-            logger.info(f"[UNIFIED DEBUG] answer_raw type: {type(answer_raw)}, content: {str(answer_raw)[:200]}")
+            logger.debug(f"[UNIFIED] answer_raw type: {type(answer_raw)}, content: {str(answer_raw)[:200]}")
 
             # Save response
             if debug_dir:

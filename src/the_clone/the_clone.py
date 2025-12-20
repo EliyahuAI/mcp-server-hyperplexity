@@ -177,15 +177,15 @@ class TheClone2Refined:
             enhanced = model_resp.get('enhanced_data', {})
             if enhanced:
                 call_info = enhanced.get('call_info', {})
-                logger.info(f"[DEBUG] Initial decision - call_info keys: {list(call_info.keys()) if call_info else 'NO call_info'}")
-                logger.info(f"[DEBUG] Initial decision - api_provider: {call_info.get('api_provider', 'NOT FOUND')}")
+                logger.debug(f"Initial decision - call_info keys: {list(call_info.keys()) if call_info else 'NO call_info'}")
+                logger.debug(f"Initial decision - api_provider: {call_info.get('api_provider', 'NOT FOUND')}")
             else:
-                logger.warning(f"[DEBUG] No enhanced_data in model_response")
+                logger.debug(f"No enhanced_data in model_response")
         else:
-            logger.warning(f"[DEBUG] No model_response in initial_result")
+            logger.debug(f"No model_response in initial_result")
 
         initial_cost, initial_provider = self._extract_cost_and_provider(model_resp, clone_logger, stats)
-        logger.info(f"[DEBUG] Extracted provider: {initial_provider}")
+        logger.debug(f"Extracted provider: {initial_provider}")
         costs['initial'] = initial_cost
         costs_by_provider[initial_provider] = costs_by_provider.get(initial_provider, 0.0) + initial_cost
         calls_by_provider[initial_provider] = calls_by_provider.get(initial_provider, 0) + 1
