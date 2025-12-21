@@ -204,7 +204,7 @@ class AIAPIClient:
                     result['attempted_models'] = attempted_models
 
                     # Normalize response format for compatibility
-                    if api_provider == 'anthropic' or api_provider == 'gemini':
+                    if api_provider in ['anthropic', 'gemini', 'baseten', 'vertex']:
                         # Convert to unified format
                         import json
                         api_response = result['response']
