@@ -210,6 +210,16 @@ class AIAPIClient:
                         api_response = result['response']
                         structured = extract_structured_response(api_response, tool_name)
                         validation = structured.get('validation_results', structured)
+
+                        # Handle case where model returns single object instead of array
+                        # If validation is a dict with 'column' key, it's a single validation item
+                        if isinstance(validation, dict) and 'column' in validation:
+                            # Wrap single item in array with validation_results key
+                            validation = {'validation_results': [validation]}
+                        elif isinstance(validation, dict) and 'validation_results' not in validation:
+                            # If it's a dict without validation_results or column, wrap the whole thing
+                            validation = {'validation_results': [validation]}
+
                         result['response'] = {'choices': [{'message': {'role': 'assistant', 'content': json.dumps(validation)}}]}
                         if api_provider == 'anthropic':
                             result['citations'] = extract_citations_from_response(api_response)
