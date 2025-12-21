@@ -307,7 +307,7 @@ class TheClone2Refined:
         step_time_phase = time.time() - step_start_phase
         if clone_logger:
             total_results = sum(len(r.get('results', [])) for r in search_results if not isinstance(r, Exception))
-            clone_logger.record_step_metric("Search", "perplexity", "sonar-pro", search_cost, step_time_phase, f"{len(search_terms)} queries, {total_results} results")
+            clone_logger.record_step_metric("Search", "perplexity", "Search API", search_cost, step_time_phase, f"{len(search_terms)} queries, {total_results} results")
             clone_logger.end_step("Search Execution")
 
         # Step 3: Triage (rank ALL sources)
