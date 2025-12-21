@@ -102,7 +102,7 @@ class AnthropicProvider:
 
                         if soft_schema:
                             # Clean soft schema response
-                            response_json = await self._clean_soft_schema_response(response_json, schema)
+                            response_json = await self._clean_soft_schema_response(response_json, schema, normalized_model)
 
                         await self.cache_handler.save_debug_data('anthropic', normalized_model, debug_request, response_json, context="single_call_success", cache_key=cache_key)
                         
