@@ -168,7 +168,7 @@ class BasetenProvider:
             if soft_schema:
                 final_prompt = f"""{prompt}
 
-Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
+Return raw JSON (first char {{, last char }}}}, parseable by json.loads() as-is):
 {json.dumps(schema)}"""
         
         debug_request = {'model_id': model, 'prompt': final_prompt, 'max_tokens': enforced_max_tokens}
