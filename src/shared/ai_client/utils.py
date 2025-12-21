@@ -83,25 +83,24 @@ def extract_structured_response(response: Dict, tool_name: str = "structured_res
         if 'choices' in response and isinstance(response['choices'], list) and len(response['choices']) > 0:
             message = response['choices'][0].get('message', {})
             content = message.get('content', '')
-            if isinstance(content, str) and content.strip().startswith('{'):
-                try:
-                    # Parse JSON content from unified format
-                    return json.loads(content)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse JSON from unified response: {e}")
-                    # Fall through to try other formats
+            if isinstance(content, str) and content.strip():
+                # Use improved extraction with balanced brace matching
+                extracted = extract_json_from_text(content)
+                if extracted:
+                    return extracted
+                logger.warning(f"Failed to extract JSON from unified format, trying fallback")
 
         # Vertex AI format (DeepSeek, etc.)
         if 'content' in response and isinstance(response['content'], list):
             for content_item in response['content']:
                 if content_item.get('type') == 'text':
                     text = content_item.get('text', '')
-                    if isinstance(text, str) and text.strip().startswith('{'):
-                        try:
-                            return json.loads(text)
-                        except json.JSONDecodeError as e:
-                            logger.error(f"Failed to parse JSON from Vertex AI text: {e}")
-                            # Continue to next content item
+                    if isinstance(text, str) and text.strip():
+                        # Use improved extraction with balanced brace matching
+                        extracted = extract_json_from_text(text)
+                        if extracted:
+                            return extracted
+                        logger.warning(f"Failed to extract JSON from Vertex AI format")
 
         # Original Claude tool use format
         for content_item in response.get('content', []):
