@@ -186,7 +186,7 @@ class AnthropicProvider:
                 if attempt == max_retries: raise
                 await asyncio.sleep(base_delay * (2 ** attempt))
 
-    async def _clean_soft_schema_response(self, response_json: dict, schema: dict) -> dict:
+    async def _clean_soft_schema_response(self, response_json: dict, schema: dict, normalized_model: str = None) -> dict:
         try:
             if 'content' in response_json:
                 text_content = ""

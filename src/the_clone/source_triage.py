@@ -54,7 +54,8 @@ class SourceTriage:
         max_sources_per_search: int = 3,
         soft_schema: bool = False,
         clone_logger: Any = None,
-        log_prompt_collapsed: bool = False
+        log_prompt_collapsed: bool = False,
+        provider: str = None
     ) -> List[List[int]]:
         """
         Triage ALL search results in PARALLEL.
