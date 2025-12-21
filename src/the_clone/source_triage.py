@@ -94,7 +94,8 @@ class SourceTriage:
                 max_sources=max_sources_per_search,
                 soft_schema=soft_schema,
                 clone_logger=clone_logger,
-                log_prompt_collapsed=log_prompt_collapsed
+                log_prompt_collapsed=log_prompt_collapsed,
+                provider=provider
             )
             triage_tasks.append(task)
 
@@ -130,7 +131,8 @@ class SourceTriage:
         max_sources: int,
         soft_schema: bool = False,
         clone_logger: Any = None,
-        log_prompt_collapsed: bool = False
+        log_prompt_collapsed: bool = False,
+        provider: str = None
     ) -> Dict[str, Any]:
         """
         Triage a single search's results.
@@ -169,7 +171,7 @@ class SourceTriage:
 
         try:
             # Get model with backups to override ai_client defaults
-            model_chain = get_model_with_backups(model)
+            model_chain = get_model_with_backups(model, provider)
 
             # Call triage model
             response = await self.ai_client.call_structured_api(

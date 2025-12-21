@@ -91,7 +91,7 @@ class UsageHandler:
             return self.get_empty_token_usage('unknown')
         
         # Check for usage data in response
-        if 'usage' not in response and 'usage_metadata' not in response:
+        if 'usage' not in response and 'usage_metadata' not in response and 'usageMetadata' not in response:
             logger.warning(f"No usage data in API response for model {model}")
             return self.get_empty_token_usage(model)
         
@@ -129,6 +129,21 @@ class UsageHandler:
                     'model': model,
                     'web_search_requests': web_search_requests,
                     'web_fetch_requests': web_fetch_requests
+                }
+
+            elif api_provider == 'gemini':
+                # Gemini uses usageMetadata (camelCase)
+                usage_data = response.get('usageMetadata', response.get('usage', {}))
+                prompt_tokens = max(0, int(usage_data.get('promptTokenCount', 0)))
+                candidates_tokens = max(0, int(usage_data.get('candidatesTokenCount', 0)))
+                total_tokens = max(0, int(usage_data.get('totalTokenCount', prompt_tokens + candidates_tokens)))
+
+                return {
+                    'api_provider': 'gemini',
+                    'model': model,
+                    'input_tokens': prompt_tokens,
+                    'output_tokens': candidates_tokens,
+                    'total_tokens': total_tokens
                 }
 
             elif api_provider == 'vertex':

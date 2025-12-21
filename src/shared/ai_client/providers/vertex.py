@@ -73,20 +73,40 @@ class VertexProvider:
             if soft_schema and schema:
                 try:
                     parsed = extract_json_from_text(text_content)
+                    repair_attempted = False
 
                     # If extraction failed, try Haiku repair
                     if not parsed and self.ai_client:
                         logger.warning(f"[VERTEX] JSON extraction failed, attempting Haiku repair")
-                        parsed, repair_result = await repair_json_with_haiku(text_content, schema, self.ai_client)
-                        
+                        repair_attempted = True
+                        parsed, repair_result, repair_explanation = await repair_json_with_haiku(text_content, schema, self.ai_client)
+
                         if repair_result:
+                            repair_cost = repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+
+                            # Log the repair explanation
+                            logger.info(f"[HAIKU_REPAIR] Provider: vertex, Model: {model}")
+                            logger.info(f"[HAIKU_REPAIR] Explanation: {repair_explanation}")
+                            logger.info(f"[HAIKU_REPAIR] Cost: ${repair_cost:.6f}")
+
                             # Attach repair metrics to normalized response
                             normalized['_repair_meta'] = {
                                 'repaired': True,
-                                'cost': repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0),
-                                'model': 'claude-haiku-4-5',
-                                'provider': 'anthropic'
+                                'cost': repair_cost,
+                                'model': 'gemini-2.0-flash',
+                                'provider': 'gemini',
+                                'explanation': repair_explanation
                             }
+
+                            # Save repair data to S3
+                            await self.cache_handler.save_haiku_repair_data(
+                                original_provider='vertex',
+                                original_model=model,
+                                malformed_input=text_content,
+                                repaired_output=parsed,
+                                repair_explanation=repair_explanation or 'No explanation provided',
+                                repair_cost=repair_cost
+                            )
 
                     if parsed:
                         norm, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
@@ -98,8 +118,47 @@ class VertexProvider:
                         required = schema.get('required', [])
                         missing = [f for f in required if f not in norm]
                         if missing:
-                            logger.error(f"[VERTEX] Missing required fields: {missing}")
-                            raise Exception(f"[SCHEMA_ERROR] Missing required fields: {missing}")
+                            # Try Haiku repair if we haven't already
+                            if not repair_attempted and self.ai_client:
+                                logger.warning(f"[VERTEX] Missing required fields {missing}, attempting Haiku repair")
+                                repair_attempted = True
+                                parsed, repair_result, repair_explanation = await repair_json_with_haiku(text_content, schema, self.ai_client)
+
+                                if repair_result and parsed:
+                                    repair_cost = repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+
+                                    # Log the repair explanation
+                                    logger.info(f"[HAIKU_REPAIR] Provider: vertex, Model: {model}")
+                                    logger.info(f"[HAIKU_REPAIR] Explanation: {repair_explanation}")
+                                    logger.info(f"[HAIKU_REPAIR] Cost: ${repair_cost:.6f}")
+
+                                    # Attach repair metrics to normalized response
+                                    normalized['_repair_meta'] = {
+                                        'repaired': True,
+                                        'cost': repair_cost,
+                                        'model': 'gemini-2.0-flash',
+                                        'provider': 'gemini',
+                                        'explanation': repair_explanation
+                                    }
+
+                                    # Save repair data to S3
+                                    await self.cache_handler.save_haiku_repair_data(
+                                        original_provider='vertex',
+                                        original_model=model,
+                                        malformed_input=text_content,
+                                        repaired_output=parsed,
+                                        repair_explanation=repair_explanation or 'No explanation provided',
+                                        repair_cost=repair_cost
+                                    )
+
+                                    # Re-validate after repair
+                                    norm, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
+                                    missing = [f for f in required if f not in norm]
+
+                            # If still missing after repair attempt, raise error
+                            if missing:
+                                logger.error(f"[VERTEX] Missing required fields: {missing}")
+                                raise Exception(f"[SCHEMA_ERROR] Missing required fields: {missing}")
 
                         normalized['content'][0]['text'] = json.dumps(norm)
                     else:

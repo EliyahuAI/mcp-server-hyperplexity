@@ -229,19 +229,39 @@ class PerplexityProvider:
             if 'choices' in response_json and response_json['choices']:
                 content = response_json['choices'][0]['message']['content']
                 parsed = extract_json_from_text(content)
+                repair_attempted = False
 
                 # If extraction failed, try Haiku repair
                 if not parsed and self.ai_client:
                     logger.warning(f"[PERPLEXITY] JSON extraction failed, attempting Haiku repair")
-                    parsed, repair_result = await repair_json_with_haiku(content, schema, self.ai_client)
-                    
+                    repair_attempted = True
+                    parsed, repair_result, repair_explanation = await repair_json_with_haiku(content, schema, self.ai_client)
+
                     if repair_result:
+                        repair_cost = repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+
+                        # Log the repair explanation
+                        logger.info(f"[HAIKU_REPAIR] Provider: perplexity, Model: {model}")
+                        logger.info(f"[HAIKU_REPAIR] Explanation: {repair_explanation}")
+                        logger.info(f"[HAIKU_REPAIR] Cost: ${repair_cost:.6f}")
+
                         response_json['_repair_meta'] = {
                             'repaired': True,
-                            'cost': repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0),
-                            'model': 'claude-haiku-4-5',
-                            'provider': 'anthropic'
+                            'cost': repair_cost,
+                            'model': 'gemini-2.0-flash',
+                            'provider': 'gemini',
+                            'explanation': repair_explanation
                         }
+
+                        # Save repair data to S3
+                        await self.cache_handler.save_haiku_repair_data(
+                            original_provider='perplexity',
+                            original_model=model,
+                            malformed_input=content,
+                            repaired_output=parsed,
+                            repair_explanation=repair_explanation or 'No explanation provided',
+                            repair_cost=repair_cost
+                        )
 
                 if parsed:
                     normalized, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
@@ -253,8 +273,46 @@ class PerplexityProvider:
                     required = schema.get('required', [])
                     missing = [f for f in required if f not in normalized]
                     if missing:
-                        logger.error(f"[PERPLEXITY] Missing required fields: {missing}")
-                        raise Exception(f"[SCHEMA_ERROR] Missing required fields: {missing}")
+                        # Try Haiku repair if we haven't already
+                        if not repair_attempted and self.ai_client:
+                            logger.warning(f"[PERPLEXITY] Missing required fields {missing}, attempting Haiku repair")
+                            repair_attempted = True
+                            parsed, repair_result, repair_explanation = await repair_json_with_haiku(content, schema, self.ai_client)
+
+                            if repair_result and parsed:
+                                repair_cost = repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+
+                                # Log the repair explanation
+                                logger.info(f"[HAIKU_REPAIR] Provider: perplexity, Model: {model}")
+                                logger.info(f"[HAIKU_REPAIR] Explanation: {repair_explanation}")
+                                logger.info(f"[HAIKU_REPAIR] Cost: ${repair_cost:.6f}")
+
+                                response_json['_repair_meta'] = {
+                                    'repaired': True,
+                                    'cost': repair_cost,
+                                    'model': 'claude-haiku-4-5',
+                                    'provider': 'anthropic',
+                                    'explanation': repair_explanation
+                                }
+
+                                # Save repair data to S3
+                                await self.cache_handler.save_haiku_repair_data(
+                                    original_provider='perplexity',
+                                    original_model=model,
+                                    malformed_input=content,
+                                    repaired_output=parsed,
+                                    repair_explanation=repair_explanation or 'No explanation provided',
+                                    repair_cost=repair_cost
+                                )
+
+                                # Re-validate after repair
+                                normalized, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
+                                missing = [f for f in required if f not in normalized]
+
+                        # If still missing after repair attempt, raise error
+                        if missing:
+                            logger.error(f"[PERPLEXITY] Missing required fields: {missing}")
+                            raise Exception(f"[SCHEMA_ERROR] Missing required fields: {missing}")
 
                     response_json['choices'][0]['message']['content'] = json.dumps(normalized)
                 else:

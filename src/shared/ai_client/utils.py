@@ -17,7 +17,13 @@ def determine_api_provider(model: str) -> str:
         model.startswith('claude-')):
         return 'anthropic'
 
-    # Vertex AI provider detection
+    # Gemini models (Google native via Vertex AI)
+    if (model.startswith('gemini-') or
+        model.startswith('gemini.') or
+        model.startswith('vertex.gemini')):
+        return 'gemini'
+
+    # Vertex AI provider detection (DeepSeek MaaS)
     if (model.startswith('vertex.') or
         model.startswith('deepseek-') or
         model.startswith('deepseek.')):
@@ -647,7 +653,7 @@ def extract_json_from_text(text: str) -> Optional[Dict]:
         logger.warning(f"Failed to extract JSON from text: {e}")
         return None
 
-async def repair_json_with_haiku(malformed_text: str, schema: Dict, ai_client) -> tuple[Optional[Dict], Optional[Dict]]:
+async def repair_json_with_haiku(malformed_text: str, schema: Dict, ai_client) -> tuple[Optional[Dict], Optional[Dict], Optional[str]]:
     """
     Use Claude Haiku to repair/extract JSON from malformed text.
 
@@ -657,9 +663,24 @@ async def repair_json_with_haiku(malformed_text: str, schema: Dict, ai_client) -
         ai_client: AIAPIClient instance for making the repair call
 
     Returns:
-        Tuple of (Repaired JSON dict or None, Full API response dict or None)
+        Tuple of (Repaired JSON dict or None, Full API response dict or None, Repair explanation or None)
     """
     try:
+        # Create enhanced schema with repair explanation field
+        enhanced_schema = json.loads(json.dumps(schema))  # Deep copy
+        if 'properties' not in enhanced_schema:
+            enhanced_schema['properties'] = {}
+
+        enhanced_schema['properties']['_repair_explanation'] = {
+            'type': 'string',
+            'description': 'A concise 1-2 sentence explanation of why the schema failed and how you fixed it'
+        }
+
+        # Add _repair_explanation to required fields
+        if 'required' not in enhanced_schema:
+            enhanced_schema['required'] = []
+        enhanced_schema['required'].append('_repair_explanation')
+
         cleanup_prompt = f"""The following text contains JSON that needs to be extracted and cleaned.
 
 Text:
@@ -668,23 +689,33 @@ Text:
 Required Schema:
 {json.dumps(schema, indent=2)}
 
-Extract the JSON and reformat it to exactly match the schema. Preserve all information, just adjust field names and structure to comply with the schema. Return only valid JSON."""
+Extract the JSON and reformat it to exactly match the schema. Preserve all information, just adjust field names and structure to comply with the schema.
 
-        # Call Haiku with hard schema to extract/repair
+IMPORTANT: In the _repair_explanation field, provide a concise 1-2 sentence explanation of:
+1. Why the original schema failed (e.g., "JSON was wrapped in markdown code fences" or "Field names used underscores instead of Title Case")
+2. How you fixed it (e.g., "Extracted JSON and normalized field names to match schema")
+
+Return only valid JSON."""
+
+        # Call Gemini 2.0 Flash (stable, FREE!) with hard schema to extract/repair (using enhanced schema with explanation)
         cleanup_result = await ai_client.call_structured_api(
             prompt=cleanup_prompt,
-            schema=schema,
-            model="claude-haiku-4-5",
+            schema=enhanced_schema,
+            model="gemini-2.0-flash",  # Stable production model, FREE tier available!
             use_cache=False,
             max_web_searches=0,
-            soft_schema=False  # Use hard schema for Haiku to ensure valid output
+            soft_schema=False  # Use hard schema to ensure valid output
         )
 
         # Extract the repaired JSON
         repaired = extract_structured_response(cleanup_result['response'], "structured_response")
-        logger.info("[HAIKU_REPAIR] Successfully repaired JSON")
-        return repaired, cleanup_result
+
+        # Extract and remove the repair explanation
+        repair_explanation = repaired.pop('_repair_explanation', 'No explanation provided')
+
+        logger.info(f"[HAIKU_REPAIR] Successfully repaired JSON - {repair_explanation}")
+        return repaired, cleanup_result, repair_explanation
 
     except Exception as e:
         logger.error(f"[HAIKU_REPAIR] Repair failed: {e}")
-        return None, None
+        return None, None, None

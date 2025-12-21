@@ -17,9 +17,7 @@ MODEL_HIERARCHY = [
     "deepseek-v3.2-baseten",      # Baseten-hosted DeepSeek V3.2
     "deepseek-v3.2",         # Ultra-low cost, most capable DeepSeek
     "sonar-pro",
-    "deepseek-v3.2-exp",     # Ultra-low cost variant with caching
-    "deepseek-v3.1",         # Hybrid thinking/non-thinking
-    "claude-3-7-sonnet-latest",
+    "gemini-2.0-flash",       # Google's latest multimodal model (FREE in preview!) 
     "claude-haiku-4-5",
     "sonar"
 ]
@@ -162,6 +160,10 @@ def setup_vertex_credentials() -> tuple[Optional[str], Optional[str]]:
         # Hardcoded project ID (as requested by user)
         project_id = os.environ.get('GOOGLE_CLOUD_PROJECT', 'gen-lang-client-0650358146')
         location = os.environ.get('GOOGLE_CLOUD_LOCATION', 'us-west2')  # us-west2 supports DeepSeek MaaS
+
+        # Strip quotes if present (common issue with env vars)
+        project_id = project_id.strip('"').strip("'") if project_id else 'gen-lang-client-0650358146'
+        location = location.strip('"').strip("'") if location else 'us-west2'
 
         # Set up credentials from SSM Parameter Store if not in environment
         if not os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):

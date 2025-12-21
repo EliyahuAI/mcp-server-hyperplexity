@@ -58,7 +58,8 @@ class SnippetExtractorStreamlined:
         max_snippets_per_source: int = 5,
         use_code_extraction: bool = False,
         clone_logger: Any = None,
-        log_prompt_collapsed: bool = False
+        log_prompt_collapsed: bool = False,
+        provider: str = None
     ) -> Dict[str, Any]:
         """
         Extract essential quotes from a single source for ALL search terms.
@@ -128,7 +129,7 @@ class SnippetExtractorStreamlined:
             schema = get_snippet_extraction_code_schema() if use_code_extraction else get_snippet_extraction_schema()
 
             # Get model with backups to override ai_client defaults
-            model_chain = get_model_with_backups(model)
+            model_chain = get_model_with_backups(model, provider)
 
             response = await self.ai_client.call_structured_api(
                 prompt=extraction_prompt,

@@ -29,6 +29,7 @@ from .providers.perplexity import PerplexityProvider
 from .providers.vertex import VertexProvider
 from .providers.baseten import BasetenProvider
 from .providers.clone import CloneProvider
+from .providers.gemini import GeminiProvider
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +61,15 @@ class AIAPIClient:
         # Initialize providers
         self.anthropic = AnthropicProvider(get_anthropic_api_key(), self.cache_handler, self.usage_handler, ai_client=self)
         self.perplexity = PerplexityProvider(get_perplexity_api_key(), self.cache_handler, self.usage_handler, ai_client=self)
-        
+
         project_id, location = setup_vertex_credentials()
         self.vertex = VertexProvider(project_id, self.cache_handler, self.usage_handler, ai_client=self)
         self.vertex_project = project_id # exposed for compatibility
-        
+
+        # Initialize Gemini provider (same project as Vertex, but us-central1 for better Gemini availability)
+        gemini_location = os.environ.get('GEMINI_LOCATION', 'us-central1')
+        self.gemini = GeminiProvider(project_id, gemini_location, self.cache_handler, self.usage_handler, ai_client=self)
+
         # Initialize Baseten provider (pass self for Haiku repair capability)
         try:
              self.baseten = BasetenProvider(get_baseten_api_key(), self.cache_handler, self.usage_handler, ai_client=self)
@@ -167,12 +172,16 @@ class AIAPIClient:
 
                 # Make Call
                 if api_provider == 'anthropic':
-                    result = await self.anthropic.make_single_call("https://api.anthropic.com/v1/messages", 
+                    result = await self.anthropic.make_single_call("https://api.anthropic.com/v1/messages",
                          {'Content-Type': 'application/json', 'X-API-Key': self.anthropic.api_key, 'anthropic-version': '2023-06-01'},
                          self._build_anthropic_data(current_model_normalized, prompt, schema, tool_name, max_tokens, max_web_searches, soft_schema),
                          current_model_normalized, use_cache, cache_key, call_start_time, max_web_searches, soft_schema, schema)
                 elif api_provider == 'perplexity':
                     result = await self.perplexity.make_single_structured_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, search_context_size, debug_name, max_tokens or 8000, soft_schema, include_domains, exclude_domains)
+                elif api_provider == 'gemini':
+                    if not self.gemini.project_id: continue
+                    # Gemini has native JSON mode support, use soft_schema parameter as-is
+                    result = await self.gemini.make_single_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 8000, soft_schema)
                 elif api_provider == 'vertex':
                     if not self.vertex.project_id: continue
                     # Force soft_schema for all Vertex models (DeepSeek) as hard schema support is experimental/flaky
@@ -181,7 +190,7 @@ class AIAPIClient:
                 elif api_provider == 'baseten':
                     if not self.baseten: continue
                     # Force soft_schema for Baseten DeepSeek V3.2 due to potential native JSON issues or consistency
-                    use_soft_schema_for_baseten = True 
+                    use_soft_schema_for_baseten = True
                     result = await self.baseten.make_single_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 8000, use_soft_schema_for_baseten)
                 elif api_provider == 'clone':
                     result = await self.clone.make_structured_call(prompt, current_model, use_cache, cache_key, call_start_time, schema, soft_schema, debug_name, include_domains, exclude_domains, use_code_extraction)
@@ -195,14 +204,15 @@ class AIAPIClient:
                     result['attempted_models'] = attempted_models
 
                     # Normalize response format for compatibility
-                    if api_provider == 'anthropic':
+                    if api_provider == 'anthropic' or api_provider == 'gemini':
                         # Convert to unified format
                         import json
-                        claude_response = result['response']
-                        structured = extract_structured_response(claude_response, tool_name)
+                        api_response = result['response']
+                        structured = extract_structured_response(api_response, tool_name)
                         validation = structured.get('validation_results', structured)
                         result['response'] = {'choices': [{'message': {'role': 'assistant', 'content': json.dumps(validation)}}]}
-                        result['citations'] = extract_citations_from_response(claude_response)
+                        if api_provider == 'anthropic':
+                            result['citations'] = extract_citations_from_response(api_response)
                     
                     # URL validation
                     try:

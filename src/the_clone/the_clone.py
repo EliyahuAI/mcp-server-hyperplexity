@@ -321,7 +321,8 @@ class TheClone2Refined:
             existing_snippets=[],
             model=models['triage'],
             soft_schema=use_soft_schema,
-            clone_logger=clone_logger
+            clone_logger=clone_logger,
+            provider=provider
         )
 
         # Extract triage costs by provider
@@ -436,7 +437,8 @@ class TheClone2Refined:
                     max_snippets_per_source=strategy['max_snippets_per_source'],
                     use_code_extraction=use_code_extraction,
                     clone_logger=clone_logger,
-                    log_prompt_collapsed=(first_extraction_prompt_logged)
+                    log_prompt_collapsed=(first_extraction_prompt_logged),
+                    provider=provider
                 )
                 extraction_tasks.append(task)
             

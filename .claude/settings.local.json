@@ -62,7 +62,9 @@
       "Bash(then ls -lh deployment/interface_package_background/)",
       "Bash(fi)",
       "Bash(if [ -d deployment/interface_package_background ])",
-      "Bash(then find deployment/interface_package_background -name *pandas* -type d)"
+      "Bash(then find deployment/interface_package_background -name *pandas* -type d)",
+      "Bash(cd /mnt/c/Users/ellio/OneDrive\\\\ -\\\\ Eliyahu.AI/Desktop/src/perplexityValidator && timeout 120 python.exe test_gemini_simple.py:*)",
+      "Bash(cd /mnt/c/Users/ellio/OneDrive - Eliyahu.AI/Desktop/src/perplexityValidator && timeout 30 python.exe test_gemini_simple.py:*)"
     ],
     "deny": []
   }

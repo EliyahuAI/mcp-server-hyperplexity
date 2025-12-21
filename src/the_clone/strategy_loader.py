@@ -114,21 +114,35 @@ def get_default_models(provider: str = "deepseek") -> Dict[str, str]:
     return get_models_for_tier(provider, 'tier2')
 
 
-def get_model_with_backups(model: str) -> list:
+def get_model_with_backups(model: str, provider: str = None) -> list:
     """
     Get model with appropriate backup chain for The Clone.
 
     Rules:
-    - DeepSeek variants → claude-sonnet-4-5
-    - Claude models → cross-fallback then deepseek-v3.2
+    - Gemini 2.0 Flash first line of defense for extraction
+    - Provider-specific backups (Baseten uses Baseten, others skip it)
     - Creates robust cross-provider safety net
 
     Args:
         model: Primary model name
+        provider: Clone provider context ("baseten", "deepseek", or "claude")
 
     Returns:
         List of models [primary, backup1, backup2, ...]
     """
+    # Gemini 2.0 Flash (extraction model) → Context-aware backups
+    if model == 'gemini-2.0-flash':
+        if provider == 'baseten':
+            # Baseten context: use Baseten in backup chain
+            return ['gemini-2.0-flash', 'deepseek-v3.2-baseten', 'deepseek-v3.2', 'claude-haiku-4-5']
+        else:
+            # Regular/Claude context: skip Baseten, go straight to Vertex DeepSeek
+            return ['gemini-2.0-flash', 'deepseek-v3.2', 'claude-haiku-4-5']
+
+    # Other Gemini models
+    if model.startswith('gemini-'):
+        return [model, 'gemini-2.0-flash', 'claude-haiku-4-5']
+
     # DeepSeek Baseten → DeepSeek → Claude Sonnet
     if model == 'deepseek-v3.2-baseten':
         return ['deepseek-v3.2-baseten', 'deepseek-v3.2', 'claude-sonnet-4-5']

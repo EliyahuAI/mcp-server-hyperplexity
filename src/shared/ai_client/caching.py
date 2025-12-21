@@ -210,6 +210,47 @@ class CacheHandler:
         except Exception as e:
             logger.error(f"Failed to save markdown log: {e}")
 
+    async def save_haiku_repair_data(self, original_provider: str, original_model: str,
+                                      malformed_input: str, repaired_output: Dict,
+                                      repair_explanation: str, repair_cost: float = 0.0):
+        """Save Haiku repair data to S3 debug folder under haiku_repairs."""
+        if os.environ.get('DISABLE_AI_DEBUG_SAVES', '').lower() == 'true':
+            return
+
+        try:
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]
+            original_model_clean = original_model.replace('/', '_').replace(':', '_')
+
+            repair_filename = f"{timestamp}_{original_provider}_{original_model_clean}_haiku_repair.json"
+
+            repair_entry = {
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'original_provider': original_provider,
+                'original_model': original_model,
+                'repair_model': 'claude-haiku-4-5',
+                'repair_explanation': repair_explanation,
+                'repair_cost': repair_cost,
+                'malformed_input': malformed_input,
+                'repaired_output': repaired_output
+            }
+
+            # Save to haiku_repairs subfolder
+            path = "debug/haiku_repairs" if self.use_unified_structure else "api_debug/haiku_repairs"
+            s3_key = f"{path}/{repair_filename}"
+
+            async with self.s3_session.client('s3') as s3_client:
+                await s3_client.put_object(
+                    Bucket=self.s3_bucket,
+                    Key=s3_key,
+                    Body=json.dumps(repair_entry, indent=2, ensure_ascii=False),
+                    ContentType='application/json'
+                )
+
+            logger.info(f"[HAIKU_REPAIR] Saved repair data: {s3_key}")
+
+        except Exception as e:
+            logger.error(f"Failed to save Haiku repair data: {e}")
+
     async def move_bad_cache_to_debug(self, cache_key: str, api_provider: str, failure_reason: str,
                                        prompt: str = None, expected_columns: List[str] = None,
                                        actual_columns: List[str] = None, cached_response: Dict = None) -> bool:
