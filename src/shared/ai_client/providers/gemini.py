@@ -269,13 +269,21 @@ class GeminiProvider:
             if use_cache and cache_key:
                 await self.cache_handler.cache_response(cache_key, unified_response, 'gemini', token_usage, processing_time)
 
+            # Generate enhanced metrics
+            enhanced_data = self.usage_handler.get_enhanced_call_metrics(
+                unified_response, model, processing_time,
+                pre_extracted_token_usage=token_usage,
+                is_cached=False
+            )
+
             # Return in unified format
             return {
                 'response': unified_response,
                 'token_usage': token_usage,
                 'processing_time': processing_time,
                 'is_cached': False,
-                'citations': []  # Gemini doesn't provide citations in this endpoint
+                'citations': [],  # Gemini doesn't provide citations in this endpoint
+                'enhanced_data': enhanced_data
             }
 
         except Exception as e:
