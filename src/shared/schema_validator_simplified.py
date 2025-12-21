@@ -600,34 +600,26 @@ class SimplifiedSchemaValidator:
     def parse_multiplex_result(self, result: Dict, row: Dict[str, Any]) -> Dict[str, Tuple[Any, None, List[str], str, str, str, bool, bool, Optional[str]]]:
         """Parse the multiplex validation result from API response (normalized to Perplexity format)."""
         try:
-            # Log diagnostic info about result format
-            logger.info(f"[PARSE_DEBUG] Result type: {type(result)}, has 'choices': {'choices' in result if isinstance(result, dict) else False}")
-            if isinstance(result, dict):
-                logger.info(f"[PARSE_DEBUG] Result keys: {list(result.keys())}")
-
             # Extract content from API response
             if not isinstance(result, dict) or 'choices' not in result:
-                logger.error(f"[PARSE_DEBUG] Result doesn't have 'choices' key - returning empty dict")
+                logger.error(f"[PARSE_ERROR] Result missing 'choices' key. Type: {type(result)}, Keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
                 return {}
 
             content = result['choices'][0]['message'].get('content', '')
-            logger.info(f"[PARSE_DEBUG] Content length: {len(content) if content else 0} chars")
-            logger.info(f"[PARSE_DEBUG] Content preview: {content[:200] if content else 'EMPTY'}")
 
             if not content:
-                logger.error(f"[PARSE_DEBUG] Content is empty - returning empty dict")
+                logger.error(f"[PARSE_ERROR] Content is empty - returning empty dict")
                 return {}
+
+            # Only log if content is suspiciously short (likely an error)
+            if len(content) < 10:
+                logger.warning(f"[PARSE_WARN] Suspiciously short content ({len(content)} chars): {content}")
             
             # Parse JSON response
             try:
                 validation_results = json.loads(content)
-                logger.info(f"[PARSE_DEBUG] Parsed JSON type: {type(validation_results)}")
-                if isinstance(validation_results, dict):
-                    logger.info(f"[PARSE_DEBUG] Parsed JSON keys: {list(validation_results.keys())}")
-                elif isinstance(validation_results, list):
-                    logger.info(f"[PARSE_DEBUG] Parsed JSON is array with {len(validation_results)} items")
             except json.JSONDecodeError as e:
-                logger.error(f"[PARSE_DEBUG] JSON decode failed: {e}")
+                logger.error(f"[PARSE_ERROR] JSON decode failed: {e}")
                 # Try to extract JSON from markdown code block
                 if "```json" in content:
                     json_start = content.find("```json") + 7
@@ -643,19 +635,15 @@ class SimplifiedSchemaValidator:
             # If it's a dict with 'validation_results' key, extract it (json_schema wrapper)
             if isinstance(validation_results, dict):
                 if 'validation_results' in validation_results:
-                    logger.info(f"[PARSE_DEBUG] Extracting validation_results array from dict wrapper")
                     validation_results = validation_results['validation_results']
                 else:
-                    logger.error(f"[PARSE_DEBUG] Dict has no 'validation_results' key - returning empty dict")
-                    logger.error(f"[PARSE_DEBUG] Available keys: {list(validation_results.keys())}")
+                    logger.error(f"[PARSE_ERROR] Dict missing 'validation_results' key. Keys: {list(validation_results.keys())}")
                     return {}
 
             # Ensure it's a list
             if not isinstance(validation_results, list):
-                logger.error(f"[PARSE_DEBUG] validation_results is not a list, type: {type(validation_results)}")
+                logger.error(f"[PARSE_ERROR] Expected list, got {type(validation_results)}")
                 return {}
-
-            logger.info(f"[PARSE_DEBUG] Processing {len(validation_results)} validation items")
             
             parsed_results = {}
             
