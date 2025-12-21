@@ -5279,12 +5279,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
             anthropic_provider = qc_enhanced_aggregated_metrics['providers']['anthropic']
             # Add QC costs/tokens/time/calls to anthropic provider for consistent aggregation
-            anthropic_provider['calls'] += qc_tracker_metrics.get('total_qc_calls', 0)  # Include QC calls in Anthropic provider
-            anthropic_provider['tokens'] += qc_tracker_metrics.get('total_qc_tokens', 0)
-            anthropic_provider['cost_actual'] += qc_tracker_metrics.get('total_qc_cost', 0.0)
-            anthropic_provider['cost_estimated'] += qc_tracker_metrics.get('total_qc_estimated_cost', 0.0)
-            anthropic_provider['time_actual'] += qc_tracker_metrics.get('total_qc_time_actual', 0.0)
-            anthropic_provider['time_estimated'] += qc_tracker_metrics.get('total_qc_time_estimated', 0.0)
+            anthropic_provider['calls'] = anthropic_provider.get('calls', 0) + qc_tracker_metrics.get('total_qc_calls', 0)
+            anthropic_provider['tokens'] = anthropic_provider.get('tokens', 0) + qc_tracker_metrics.get('total_qc_tokens', 0)
+            anthropic_provider['cost_actual'] = anthropic_provider.get('cost_actual', 0.0) + qc_tracker_metrics.get('total_qc_cost', 0.0)
+            anthropic_provider['cost_estimated'] = anthropic_provider.get('cost_estimated', 0.0) + qc_tracker_metrics.get('total_qc_estimated_cost', 0.0)
+            anthropic_provider['time_actual'] = anthropic_provider.get('time_actual', 0.0) + qc_tracker_metrics.get('total_qc_time_actual', 0.0)
+            anthropic_provider['time_estimated'] = anthropic_provider.get('time_estimated', 0.0) + qc_tracker_metrics.get('total_qc_time_estimated', 0.0)
 
             # Calculate QC fail rates by column
             qc_fail_rates = qc_manager.cost_tracker.get_qc_fail_rates_by_column()
