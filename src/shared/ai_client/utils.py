@@ -638,17 +638,95 @@ def extract_content_description(request_data: Dict) -> str:
 def extract_json_from_text(text: str) -> Optional[Dict]:
     """
     Extract and parse JSON from text, handling markdown code blocks and surrounding whitespace.
+
+    Uses multiple extraction strategies in order:
+    1. Extract from markdown code fences (```json ... ```)
+    2. Find balanced JSON object with proper brace matching
+    3. Try simple first { to last } as fallback
     """
+
+    def find_balanced_json(text: str, start_char: str = '{', end_char: str = '}') -> Optional[str]:
+        """Find a balanced JSON object/array by counting braces/brackets."""
+        start_idx = text.find(start_char)
+        if start_idx == -1:
+            return None
+
+        count = 0
+        in_string = False
+        escape = False
+
+        for i in range(start_idx, len(text)):
+            char = text[i]
+
+            # Handle string escaping
+            if escape:
+                escape = False
+                continue
+            if char == '\\':
+                escape = True
+                continue
+
+            # Track if we're inside a string
+            if char == '"':
+                in_string = not in_string
+                continue
+
+            # Only count braces/brackets outside strings
+            if not in_string:
+                if char == start_char:
+                    count += 1
+                elif char == end_char:
+                    count -= 1
+                    if count == 0:
+                        # Found balanced JSON
+                        return text[start_idx:i+1]
+
+        return None
+
     try:
-        # Remove markdown code blocks
-        cleaned = re.sub(r'^```json\s*|\s*```$', '', text.strip(), flags=re.MULTILINE)
+        text = text.strip()
 
-        # Find the JSON object (first { to last })
-        match = re.search(r'(\{.*\})', cleaned, re.DOTALL)
+        # Strategy 1: Extract from markdown code fences
+        # Look for ```json ... ``` or ``` ... ```
+        code_fence_pattern = r'```(?:json)?\s*\n?(.*?)\n?```'
+        code_match = re.search(code_fence_pattern, text, re.DOTALL)
+        if code_match:
+            json_text = code_match.group(1).strip()
+            try:
+                return json.loads(json_text)
+            except:
+                # Code fence content wasn't valid JSON, try other strategies
+                pass
+
+        # Strategy 2: Find balanced JSON object (handles extra text before/after)
+        balanced = find_balanced_json(text, '{', '}')
+        if balanced:
+            try:
+                return json.loads(balanced)
+            except:
+                # Balanced braces but not valid JSON, continue
+                pass
+
+        # Strategy 3: Try balanced array (less common but possible)
+        balanced_array = find_balanced_json(text, '[', ']')
+        if balanced_array:
+            try:
+                parsed = json.loads(balanced_array)
+                # If it's an array, wrap it in a dict with 'items' key
+                if isinstance(parsed, list):
+                    return {'items': parsed}
+                return parsed
+            except:
+                pass
+
+        # Strategy 4: Fallback to simple first { to last } (original behavior)
+        match = re.search(r'(\{.*\})', text, re.DOTALL)
         if match:
-            cleaned = match.group(1)
+            return json.loads(match.group(1))
 
-        return json.loads(cleaned)
+        # No JSON found
+        return None
+
     except Exception as e:
         logger.warning(f"Failed to extract JSON from text: {e}")
         return None
