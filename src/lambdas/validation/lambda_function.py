@@ -5092,7 +5092,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         validated_columns_count = len(validation_targets)
         logger.debug(f"[VALIDATION_METRICS] Calculated validated_columns_count: {validated_columns_count} from {len(validator.validation_targets)} total targets (after filtering ID/IGNORED)")
         grouped_targets = validator.group_columns_by_search_group(validation_targets)
-        search_groups_count = len(grouped_targets)
+
+        # Count only non-empty groups (groups with at least one RESEARCH column)
+        # ID-only groups don't trigger API calls, so don't count them
+        search_groups_count = sum(1 for group_id, targets in grouped_targets.items() if targets)
+        logger.debug(f"[VALIDATION_METRICS] search_groups_count: {search_groups_count} (filtered {len(grouped_targets) - search_groups_count} empty/ID-only groups)")
         
         # Count enhanced context (medium + high) and Claude search groups
         enhanced_context_groups_count = 0
@@ -5455,7 +5459,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             "validated_columns_count": validated_columns_count,
                             "search_groups_count": search_groups_count,
                             "enhanced_context_search_groups_count": enhanced_context_groups_count,
-                            "claude_search_groups_count": claude_groups_count
+                            "claude_search_groups_count": claude_groups_count,
+                            "qc_enabled": qc_manager.is_qc_enabled() if qc_manager else False,
+                            "qc_calls_per_row": 1 if (qc_manager and qc_manager.is_qc_enabled()) else 0
                         },
                         # NEW: Enhanced models parameter with detailed search group information
                         "enhanced_models_parameter": enhanced_models_parameter,

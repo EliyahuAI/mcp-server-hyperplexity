@@ -485,6 +485,7 @@ class UsageHandler:
             'timing': timing_metrics,
             'caching': caching_metrics,
             'per_row': per_row_metrics,
+            'is_top_level_call': True,  # This is always a top-level call (user-facing validation/QC call)
             'provider_metrics': {
                 api_provider: {
                     'calls': 1,
@@ -569,6 +570,7 @@ class UsageHandler:
 
         total_cost_actual = 0.0
         total_cost_estimated = 0.0
+        total_top_level_calls = 0  # Track user-facing validation/QC calls (not Clone internals)
         providers = {}
         by_model = {}
 
@@ -576,15 +578,20 @@ class UsageHandler:
             if not isinstance(metric, dict):
                 continue
 
+            # Count top-level calls (user-facing validation/QC calls)
+            # Each validation call or QC call counts as 1, regardless of internal Clone calls
+            if metric.get('is_top_level_call', True):  # Default to True for backward compatibility
+                total_top_level_calls += 1
+
             # Check if this has nested provider_metrics (from Clone)
             if 'provider_metrics' in metric:
-                # Aggregate nested provider metrics
+                # Aggregate nested provider metrics (for cost tracking only)
                 for provider, provider_data in metric.get('provider_metrics', {}).items():
                     if provider not in providers:
                         providers[provider] = {
                             'cost_actual': 0.0,
                             'cost_estimated': 0.0,
-                            'calls': 0,
+                            'calls': 0,  # Internal call count (for cost breakdown)
                             'tokens': 0,
                             'cache_efficiency_percent': 0.0
                         }
@@ -639,7 +646,8 @@ class UsageHandler:
             'totals': {
                 'total_cost_actual': total_cost_actual,
                 'total_cost_estimated': total_cost_estimated,
-                'total_calls': len(metrics_list)
+                'total_calls': len(metrics_list),  # Legacy: total enhanced_data items processed
+                'total_top_level_calls': total_top_level_calls  # NEW: User-facing validation/QC calls only
             },
             'providers': providers,
             'by_model': by_model

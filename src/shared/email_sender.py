@@ -39,12 +39,14 @@ def generate_simple_text_receipt(session_id: str, email: str, amount: float,
     # Extract transaction details with defaults
     rows_processed = transaction_details.get('rows_processed', 0)
     fields_validated = transaction_details.get('columns_validated_count', 0)
-    perplexity_calls = transaction_details.get('perplexity_api_calls', 0)
-    claude_calls = transaction_details.get('anthropic_api_calls', 0)
-    qc_calls = transaction_details.get('qc_api_calls', 0)
+    total_ai_calls = transaction_details.get('total_ai_calls', 0)
 
-    # NOTE: anthropic_api_calls already includes QC calls, don't add again
-    total_claude_calls = claude_calls
+    # Backward compatibility: If total_ai_calls not present, calculate from legacy fields
+    if total_ai_calls == 0:
+        perplexity_calls_legacy = transaction_details.get('perplexity_api_calls', 0)
+        claude_calls_legacy = transaction_details.get('anthropic_api_calls', 0)
+        total_ai_calls = perplexity_calls_legacy + claude_calls_legacy
+
     table_name = transaction_details.get('table_name', transaction_details.get('input_filename', 'N/A'))
     config_id = transaction_details.get('config_id', 'N/A')
     
@@ -68,8 +70,7 @@ Service:               Table Validation
 
 Rows Processed:        {rows_processed:,}
 Columns Validated:      {fields_validated:,}
-Perplexity API Calls:  {perplexity_calls:,}
-Claude API Calls:      {total_claude_calls:,}
+Total AI API Calls:    {total_ai_calls:,}
 
 ----------------------------------------------------------------------
                                TOTAL
@@ -253,14 +254,17 @@ def generate_receipt_pdf_html(session_id: str, email: str, amount: float,
 
         rp = transaction_details.get('rows_processed', 0)
         cv = transaction_details.get('columns_validated_count', 0)
-        pa = transaction_details.get('perplexity_api_calls', 0)
-        ca = transaction_details.get('anthropic_api_calls', 0)
-        # NOTE: anthropic_api_calls already includes QC calls, don't add qc_api_calls again
+        total_ai = transaction_details.get('total_ai_calls', 0)
+
+        # Backward compatibility: If total_ai_calls not present, calculate from legacy fields
+        if total_ai == 0:
+            pa_legacy = transaction_details.get('perplexity_api_calls', 0)
+            ca_legacy = transaction_details.get('anthropic_api_calls', 0)
+            total_ai = pa_legacy + ca_legacy
 
         y = draw_label_value(y, "Rows Processed:", f"{rp:,}")
         y = draw_label_value(y, "Columns Validated:", f"{cv:,}")
-        y = draw_label_value(y, "Perplexity API Calls:", f"{pa:,}")
-        y = draw_label_value(y, "Claude API Calls:", f"{ca:,}")
+        y = draw_label_value(y, "Total AI API Calls:", f"{total_ai:,}")
 
         # --- Separator line ---
         y += 0.2 * inch
@@ -705,9 +709,8 @@ def send_validation_results_email(email_address, excel_content, config_content, 
                     'rows_processed': billing_info.get('rows_processed', summary_data.get('total_rows', 0)),
                     'description': f"Full validation - {summary_data.get('total_rows', 0)} rows processed",
                     'session_id': session_id,
-                    'perplexity_api_calls': billing_info.get('perplexity_api_calls', 0),
-                    'anthropic_api_calls': billing_info.get('anthropic_api_calls', 0),
-                    'qc_api_calls': billing_info.get('qc_api_calls', 0),  # Add QC calls to receipt
+                    'total_ai_calls': billing_info.get('total_ai_calls', 0),  # NEW: Total top-level AI calls
+                    'qc_api_calls': billing_info.get('qc_api_calls', 0),  # QC calls (subset of total)
                     'columns_validated_count': billing_info.get('columns_validated_count', 0),
                     'table_name': billing_info.get('table_name', 'N/A'),
                     'input_filename': billing_info.get('table_name', 'N/A'),
@@ -922,41 +925,24 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
     logger.info(f"[EMAIL_API_DEBUG] billing_info exists: {billing_info is not None}")
     if billing_info:
         logger.info(f"[EMAIL_API_DEBUG] billing_info keys: {list(billing_info.keys())}")
-        logger.info(f"[EMAIL_API_DEBUG] perplexity_api_calls: {billing_info.get('perplexity_api_calls', 0)}")
-        logger.info(f"[EMAIL_API_DEBUG] anthropic_api_calls: {billing_info.get('anthropic_api_calls', 0)}")
+        logger.info(f"[EMAIL_API_DEBUG] total_ai_calls: {billing_info.get('total_ai_calls', 0)}")
         logger.info(f"[EMAIL_API_DEBUG] qc_api_calls: {billing_info.get('qc_api_calls', 0)}")
 
-    if billing_info and (billing_info.get('perplexity_api_calls', 0) > 0 or
-                        billing_info.get('anthropic_api_calls', 0) > 0 or
-                        billing_info.get('qc_api_calls', 0) > 0):
-        # Get API call counts from billing_info (authoritative source from DynamoDB runs)
-        perplexity_calls = billing_info.get('perplexity_api_calls', 0)
-        claude_calls = billing_info.get('anthropic_api_calls', 0)
-        # NOTE: anthropic_api_calls already includes QC calls, don't add qc_api_calls again
-
-        call_parts = []
-        if perplexity_calls > 0:
-            call_parts.append(f"<p><b>Perplexity Calls:</b> {perplexity_calls:,}</p>")
-        if claude_calls > 0:
-            call_parts.append(f"<p><b>Claude Calls:</b> {claude_calls:,}</p>")
-
-        if call_parts:
-            api_calls_info = "\n".join(call_parts)
-            logger.info(f"[EMAIL_API_DEBUG] Using billing_info for API calls: {api_calls_info}")
+    if billing_info and billing_info.get('total_ai_calls', 0) > 0:
+        # Get total AI call count from billing_info (authoritative source from DynamoDB runs)
+        total_ai_calls = billing_info.get('total_ai_calls', 0)
+        api_calls_info = f"<p><b>Total AI API Calls:</b> {total_ai_calls:,}</p>"
+        logger.info(f"[EMAIL_API_DEBUG] Using billing_info for API calls: total_ai_calls={total_ai_calls}")
     elif token_usage:
         # Fallback to token_usage if billing_info doesn't have call counts
         by_provider = token_usage.get('by_provider', {})
-        perplexity_calls = by_provider.get('perplexity', {}).get('calls', 0)
-        claude_calls = by_provider.get('anthropic', {}).get('calls', 0)
+        perplexity_calls_legacy = by_provider.get('perplexity', {}).get('calls', 0)
+        claude_calls_legacy = by_provider.get('anthropic', {}).get('calls', 0)
+        total_ai_calls = perplexity_calls_legacy + claude_calls_legacy
 
-        call_parts = []
-        if perplexity_calls > 0:
-            call_parts.append(f"<p><b>Perplexity Calls:</b> {perplexity_calls:,}</p>")
-        if claude_calls > 0:
-            call_parts.append(f"<p><b>Claude Calls:</b> {claude_calls:,}</p>")
-
-        if call_parts:
-            api_calls_info = "\n".join(call_parts)
+        if total_ai_calls > 0:
+            api_calls_info = f"<p><b>Total AI API Calls:</b> {total_ai_calls:,}</p>"
+            logger.info(f"[EMAIL_API_DEBUG] Using token_usage fallback for API calls: total_ai_calls={total_ai_calls}")
     
     # Cost info - get from billing_info which comes from DynamoDB runs table
     cost_info = ""

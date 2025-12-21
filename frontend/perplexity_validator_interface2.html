@@ -3818,17 +3818,24 @@
                             estimatesHtml += `<div class="cost-item"><span class="cost-label">Columns to Validate</span><span class="cost-value">${metrics.validated_columns_count}</span></div>`;
                         }
                         
-                        const perplexityGroups = (metrics.search_groups_count || 0) - (metrics.claude_search_groups_count || 0);
-                        const claudeGroups = metrics.claude_search_groups_count || 0;
-                        
-                        if (perplexityGroups > 0) {
-                            const totalPerplexityCalls = totalRows * perplexityGroups;
-                            estimatesHtml += `<div class="cost-item"><span class="cost-label">Perplexity Calls</span><span class="cost-value">${totalPerplexityCalls.toLocaleString()}</span></div>`;
-                        }
-                        
-                        if (claudeGroups > 0) {
-                            const totalClaudeCalls = totalRows * claudeGroups;
-                            estimatesHtml += `<div class="cost-item"><span class="cost-label">Claude Calls</span><span class="cost-value">${totalClaudeCalls.toLocaleString()}</span></div>`;
+                        // Show total AI calls (validation + QC calls)
+                        // Clone counts as 1 call even if it makes multiple internal calls
+                        const totalSearchGroups = metrics.search_groups_count || 0;
+                        const qcCallsPerRow = metrics.qc_calls_per_row || 0;
+
+                        // DEBUG: Log the values being used
+                        console.log('[AI_CALLS_CALC] validation_metrics:', metrics);
+                        console.log('[AI_CALLS_CALC] totalRows:', totalRows);
+                        console.log('[AI_CALLS_CALC] search_groups_count:', totalSearchGroups);
+                        console.log('[AI_CALLS_CALC] qc_calls_per_row:', qcCallsPerRow);
+
+                        if (totalSearchGroups > 0 || qcCallsPerRow > 0) {
+                            // Total AI calls = (validation calls per row + QC calls per row) × total rows
+                            const callsPerRow = totalSearchGroups + qcCallsPerRow;
+                            const totalAICalls = totalRows * callsPerRow;
+                            console.log('[AI_CALLS_CALC] callsPerRow:', callsPerRow, '(groups:', totalSearchGroups, '+ QC:', qcCallsPerRow, ')');
+                            console.log('[AI_CALLS_CALC] totalAICalls:', totalAICalls, '(', totalRows, '×', callsPerRow, ')');
+                            estimatesHtml += `<div class="cost-item"><span class="cost-label">Total AI Calls</span><span class="cost-value">${totalAICalls.toLocaleString()}</span></div>`;
                         }
                         
                         estimatesHtml += `<div class="cost-item"><span class="cost-label">Est. Time</span><span class="cost-value">${Math.ceil(estimatedTime / 60)} min</span></div>`;

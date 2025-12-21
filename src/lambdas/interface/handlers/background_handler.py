@@ -4642,30 +4642,33 @@ def handle_main_processing(event, context):
                     safe_enhanced_excel_content = enhanced_excel_content if isinstance(enhanced_excel_content, (bytes, type(None))) else None
                     
                     # Extract API call counts from enhanced_metrics (authoritative source)
-                    # FIX: Use aggregated_metrics.providers instead of token_usage.by_provider
-                    perplexity_calls = 0
-                    anthropic_calls = 0
+                    # Extract total AI calls (top-level validation + QC calls)
+                    # These are user-facing calls - Clone counts as 1 call even if it makes multiple internal calls
+                    total_ai_calls = 0
+                    qc_calls = 0
 
                     if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
-                        providers = enhanced_metrics['aggregated_metrics'].get('providers', {})
-                        perplexity_calls = providers.get('perplexity', {}).get('calls', 0)
-                        anthropic_calls = providers.get('anthropic', {}).get('calls', 0)
-                        logger.debug(f"[API_CALLS_EXTRACT] From enhanced_metrics: Perplexity={perplexity_calls}, Anthropic={anthropic_calls}")
+                        totals = enhanced_metrics['aggregated_metrics'].get('totals', {})
+                        # Use total_top_level_calls which correctly counts validation calls (Clone = 1 call)
+                        validation_calls = totals.get('total_top_level_calls', 0)
+
+                        # Extract QC calls from qc_metrics variable (defined around line 3416)
+                        if qc_metrics and isinstance(qc_metrics, dict):
+                            qc_calls = qc_metrics.get('total_qc_calls', 0)
+                            logger.debug(f"[RECEIPT_QC_CALLS] Extracted QC calls for receipt: {qc_calls}")
+                        else:
+                            logger.warning(f"[RECEIPT_QC_CALLS] qc_metrics not available or not a dict: {type(qc_metrics)}")
+
+                        # Total AI calls = validation calls + QC calls
+                        total_ai_calls = validation_calls + qc_calls
+                        logger.debug(f"[API_CALLS_EXTRACT] Total AI Calls: {total_ai_calls} (Validation: {validation_calls}, QC: {qc_calls})")
                     else:
                         # Fallback to token_usage if enhanced_metrics not available
                         by_provider = token_usage.get('by_provider', {})
-                        perplexity_calls = by_provider.get('perplexity', {}).get('calls', 0)
-                        anthropic_calls = by_provider.get('anthropic', {}).get('calls', 0)
-                        logger.warning(f"[API_CALLS_EXTRACT] Falling back to token_usage: Perplexity={perplexity_calls}, Anthropic={anthropic_calls}")
-
-                    # Extract QC call counts from already-extracted qc_metrics variable (defined around line 3416)
-                    # Using the already-extracted variable instead of re-fetching to avoid stale data
-                    qc_calls = 0
-                    if qc_metrics and isinstance(qc_metrics, dict):
-                        qc_calls = qc_metrics.get('total_qc_calls', 0)
-                        logger.debug(f"[RECEIPT_QC_CALLS] Extracted QC calls for receipt: {qc_calls}")
-                    else:
-                        logger.warning(f"[RECEIPT_QC_CALLS] qc_metrics not available or not a dict: {type(qc_metrics)}")
+                        perplexity_calls_legacy = by_provider.get('perplexity', {}).get('calls', 0)
+                        anthropic_calls_legacy = by_provider.get('anthropic', {}).get('calls', 0)
+                        total_ai_calls = perplexity_calls_legacy + anthropic_calls_legacy
+                        logger.warning(f"[API_CALLS_EXTRACT] Falling back to token_usage: Total={total_ai_calls}")
                     
                     # Extract original table name (remove _input suffix if present)
                     # This is used for receipt and email display - should be clean and user-friendly
@@ -4702,9 +4705,8 @@ def handle_main_processing(event, context):
                         'initial_balance': float(initial_balance) if initial_balance else 0,
                         'final_balance': float(final_balance) if final_balance else 0,
                         # Add receipt-specific data
-                        'perplexity_api_calls': perplexity_calls,
-                        'anthropic_api_calls': anthropic_calls,
-                        'qc_api_calls': qc_calls,  # Add QC calls for receipt
+                        'total_ai_calls': total_ai_calls,  # NEW: Total top-level AI calls (validation + QC)
+                        'qc_api_calls': qc_calls,  # QC calls (subset of total, for display if needed)
                         'rows_processed': processed_rows_count,
                         'table_name': original_table_name,
                         'columns_validated_count': len(summary_data.get('fields_validated', []))
