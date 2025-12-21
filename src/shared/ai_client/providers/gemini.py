@@ -416,13 +416,22 @@ class GeminiProvider:
                             if content_block.get('type') == 'text':
                                 text_content += content_block.get('text', '')
 
+                    logger.info(f"[GEMINI_SCHEMA] Attempting to restore NULL values in response")
+                    logger.info(f"[GEMINI_SCHEMA] Text content length: {len(text_content)} chars")
+
                     if text_content:
                         response_data = json.loads(text_content)
+                        logger.info(f"[GEMINI_SCHEMA] Parsed response data successfully")
                         restored_data = self._restore_gemini_response_values(response_data, conversion_map)
+                        logger.info(f"[GEMINI_SCHEMA] Restored values successfully")
                         # Update response with restored values
                         unified_response['content'][0]['text'] = json.dumps(restored_data)
+                        logger.info(f"[GEMINI_SCHEMA] Updated response with restored JSON")
                 except Exception as e:
-                    logger.warning(f"[GEMINI_SCHEMA] Failed to restore converted values: {e}")
+                    logger.error(f"[GEMINI_SCHEMA] Failed to restore converted values: {e}")
+                    logger.error(f"[GEMINI_SCHEMA] Text content preview: {text_content[:500]}")
+                    import traceback
+                    logger.error(f"[GEMINI_SCHEMA] Stack trace: {traceback.format_exc()}")
 
             # Check for max_tokens truncation
             if unified_response.get('stop_reason') in ['max_tokens', 'length']:

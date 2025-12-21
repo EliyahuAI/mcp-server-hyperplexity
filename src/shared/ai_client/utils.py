@@ -160,6 +160,21 @@ def extract_structured_response(response: Dict, tool_name: str = "structured_res
                     except json.JSONDecodeError:
                         pass
 
+        # Log detailed information about the response format before raising error
+        logger.error(f"[EXTRACT_ERROR] Could not extract structured response from any format")
+        logger.error(f"[EXTRACT_ERROR] Response type: {type(response)}")
+        if isinstance(response, dict):
+            logger.error(f"[EXTRACT_ERROR] Response keys: {list(response.keys())}")
+            logger.error(f"[EXTRACT_ERROR] Has 'choices': {'choices' in response}")
+            logger.error(f"[EXTRACT_ERROR] Has 'content': {'content' in response}")
+            if 'content' in response:
+                logger.error(f"[EXTRACT_ERROR] Content type: {type(response['content'])}")
+                if isinstance(response['content'], list) and response['content']:
+                    logger.error(f"[EXTRACT_ERROR] First content item: {response['content'][0]}")
+                    if response['content'][0].get('type') == 'text':
+                        text_preview = response['content'][0].get('text', '')[:200]
+                        logger.error(f"[EXTRACT_ERROR] Text preview: {text_preview}")
+
         raise ValueError("Could not extract structured response from response format")
 
     except Exception as e:
