@@ -787,7 +787,13 @@ IMPORTANT: In the _repair_explanation field, provide a concise 1-2 sentence expl
 1. Why the original schema failed (e.g., "JSON was wrapped in markdown code fences" or "Field names used underscores instead of Title Case")
 2. How you fixed it (e.g., "Extracted JSON and normalized field names to match schema")
 
-Return only valid JSON."""
+CRITICAL FORMAT REQUIREMENTS:
+- Return ONLY valid JSON
+- First character MUST be {{
+- Last character MUST be }}
+- NO explanatory text before or after the JSON
+- NO markdown code fences
+- NO extra braces or characters"""
 
         # Call Gemini 2.0 Flash (stable, FREE!) with hard schema to extract/repair (using enhanced schema with explanation)
         cleanup_result = await ai_client.call_structured_api(
