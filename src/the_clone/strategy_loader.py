@@ -93,11 +93,14 @@ def get_models_for_tier(provider: str, synthesis_tier: str) -> Dict[str, str]:
     tier_config = provider_config['tiers'][synthesis_tier]
     extraction_model = provider_config['default_extraction_model']
 
-    # For non-Claude providers, use DeepSeek/Baseten for initial routing, Gemini for extraction
-    if provider in ['deepseek', 'baseten']:
-        routing_model = 'deepseek-v3.2-baseten' if provider == 'baseten' else 'deepseek-v3.2'
+    # Provider-specific routing models for initial decision
+    if provider == 'baseten':
+        routing_model = 'deepseek-v3.2-baseten'
+    elif provider == 'deepseek':
+        routing_model = 'deepseek-v3.2'
+    elif provider == 'claude':
+        routing_model = 'claude-sonnet-4-5'  # Use Sonnet for initial routing, Gemini for extraction
     else:
-        # Claude provider uses extraction model for all phases
         routing_model = extraction_model
 
     return {
