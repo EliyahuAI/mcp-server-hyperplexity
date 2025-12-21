@@ -145,13 +145,15 @@ class TheClone2Refined:
             'perplexity': 0.0,
             'vertex': 0.0,
             'baseten': 0.0,
-            'anthropic': 0.0
+            'anthropic': 0.0,
+            'gemini': 0.0
         }
         calls_by_provider = {
             'perplexity': 0,
             'vertex': 0,
             'baseten': 0,
-            'anthropic': 0
+            'anthropic': 0,
+            'gemini': 0
         }
 
         # Step 1: Initial Decision
