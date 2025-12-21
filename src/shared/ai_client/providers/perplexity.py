@@ -273,6 +273,10 @@ class PerplexityProvider:
                     required = schema.get('required', [])
                     missing = [f for f in required if f not in normalized]
                     if missing:
+                        # Log diagnostic info
+                        logger.error(f"[PERPLEXITY] Found missing required fields: {missing}")
+                        logger.error(f"[PERPLEXITY] repair_attempted={repair_attempted}, ai_client_available={self.ai_client is not None}")
+
                         # Try Haiku repair if we haven't already
                         if not repair_attempted and self.ai_client:
                             logger.warning(f"[PERPLEXITY] Missing required fields {missing}, attempting Haiku repair")

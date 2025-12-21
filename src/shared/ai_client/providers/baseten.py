@@ -94,6 +94,10 @@ class BasetenProvider:
                         required = schema.get('required', [])
                         missing = [f for f in required if f not in norm]
                         if missing:
+                            # Log diagnostic info
+                            logger.error(f"[BASETEN] Found missing required fields: {missing}")
+                            logger.error(f"[BASETEN] repair_attempted={repair_attempted}, ai_client_available={self.ai_client is not None}")
+
                             # Try Haiku repair if we haven't already
                             if not repair_attempted and self.ai_client:
                                 logger.warning(f"[BASETEN] Missing required fields {missing}, attempting Haiku repair")
