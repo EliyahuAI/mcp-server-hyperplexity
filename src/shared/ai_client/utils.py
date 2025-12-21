@@ -783,7 +783,7 @@ Schema:
 
 Add _repair_explanation field (1-2 sentences): why original failed and how you fixed it.
 
-Return raw JSON (first char {{, last char }}}}, parseable by json.loads() as-is)."""
+Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is)."""
 
         # Call Gemini 2.0 Flash (stable, FREE!) with hard schema to extract/repair (using enhanced schema with explanation)
         cleanup_result = await ai_client.call_structured_api(
