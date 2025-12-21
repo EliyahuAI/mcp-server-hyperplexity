@@ -773,27 +773,17 @@ async def repair_json_with_haiku(malformed_text: str, schema: Dict, ai_client) -
             enhanced_schema['required'] = []
         enhanced_schema['required'].append('_repair_explanation')
 
-        cleanup_prompt = f"""The following text contains JSON that needs to be extracted and cleaned.
+        cleanup_prompt = f"""Extract and reformat JSON to match schema. Preserve all information.
 
 Text:
 {malformed_text}
 
-Required Schema:
+Schema:
 {json.dumps(schema, indent=2)}
 
-Extract the JSON and reformat it to exactly match the schema. Preserve all information, just adjust field names and structure to comply with the schema.
+Add _repair_explanation field (1-2 sentences): why original failed and how you fixed it.
 
-IMPORTANT: In the _repair_explanation field, provide a concise 1-2 sentence explanation of:
-1. Why the original schema failed (e.g., "JSON was wrapped in markdown code fences" or "Field names used underscores instead of Title Case")
-2. How you fixed it (e.g., "Extracted JSON and normalized field names to match schema")
-
-CRITICAL FORMAT REQUIREMENTS:
-- Return ONLY valid JSON
-- First character MUST be {{
-- Last character MUST be }}
-- NO explanatory text before or after the JSON
-- NO markdown code fences
-- NO extra braces or characters"""
+Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is)."""
 
         # Call Gemini 2.0 Flash (stable, FREE!) with hard schema to extract/repair (using enhanced schema with explanation)
         cleanup_result = await ai_client.call_structured_api(

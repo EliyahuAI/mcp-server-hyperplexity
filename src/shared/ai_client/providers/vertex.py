@@ -189,12 +189,7 @@ class VertexProvider:
             if soft_schema:
                 final_prompt = f"""{prompt}
 
-CRITICAL: Return ONLY valid JSON matching this schema. No explanatory text, no markdown code fences, no extra characters.
-- First character must be {{
-- Last character must be }}
-- No text before or after the JSON object
-
-Schema:
+Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
 {json.dumps(schema)}"""
         
         debug_request = {'model_id': model, 'prompt': final_prompt, 'max_tokens': enforced_max_tokens}

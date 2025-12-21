@@ -374,12 +374,7 @@ class GeminiProvider:
                 # Soft schema: Add instructions to prompt, no API enforcement
                 request_body["contents"][0]["parts"][0]["text"] = f"""{prompt}
 
-CRITICAL: Return ONLY valid JSON matching this schema. No explanatory text, no markdown code fences, no extra characters.
-- First character must be {{
-- Last character must be }}
-- No text before or after the JSON object
-
-Schema:
+Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
 {json.dumps(schema)}"""
             else:
                 # Hard schema: Use native Gemini JSON mode with compatibility fixes

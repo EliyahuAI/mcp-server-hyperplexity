@@ -82,7 +82,7 @@ class PerplexityProvider:
         data = {
             "model": model,
             "messages": [
-                {"role": "system", "content": "You are a data validation expert. CRITICAL: Return ONLY valid JSON. First character must be {, last character must be }. No explanatory text, no markdown code fences, no extra characters before or after the JSON object."},
+                {"role": "system", "content": "You are a data validation expert. Return raw JSON only (first char {, last char }, parseable by json.loads() as-is)."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.1,
@@ -156,7 +156,7 @@ class PerplexityProvider:
         data = {
             "model": model,
             "messages": [
-                {"role": "system", "content": "You are a helpful assistant. CRITICAL: Return ONLY valid JSON. First character must be {, last character must be }. No explanatory text, no markdown code fences, no extra characters before or after the JSON object."},
+                {"role": "system", "content": "You are a helpful assistant. Return raw JSON only (first char {, last char }, parseable by json.loads() as-is)."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.1,
