@@ -1,30 +1,64 @@
 # The Clone - Intelligent Search System
 
-**Complete self-contained implementation**
-**Date:** 2025-12-16
+**Strategy-based architecture with batch extraction and verbal handles**
+**Date:** 2025-12-22
 
 ---
 
 ## Overview
 
-The Clone is an advanced search system that intelligently routes queries, extracts essential quotes with off-topic detection, and synthesizes comprehensive answers with full cost tracking.
+The Clone is an advanced search system that uses strategy-based routing (breadth/depth), batch extraction for efficiency, verbal handles for citations, and intelligent synthesis with full cost tracking.
 
 ### Key Features
 
-✅ **Smart Initial Routing** - Answers simple queries directly (6s), searches when needed
-✅ **Dynamic Configuration** - Context and model tier determined automatically
-✅ **Parallel Processing** - Triage and extraction happen concurrently
-✅ **Off-Topic Detection** - Captures cross-search information (36% bonus quotes)
-✅ **Unified Synthesis** - Evaluation + synthesis in single call
-✅ **Full Cost Tracking** - Actual costs from enhanced_data
-✅ **Schema Validation** - All internal calls use JSON schemas
+✅ **Strategy-Based Routing** - Auto-determines breadth (narrow/broad) and depth (shallow/deep)
+✅ **Batch Extraction** - Process 5-15 sources per call for shallow strategies
+✅ **Verbal Handle System** - Structured `source_detail_limits` handles for citations
+✅ **Academic Mode** - Prioritize scholarly/peer-reviewed sources
+✅ **Smart Stop Conditions** - Stop when reliable answer found (targeted queries)
+✅ **Dual Citation Matching** - Match by handle OR snippet ID (100% match rate)
+✅ **Content Control** - 512 tokens/page (shallow) or 2048 (deep)
+✅ **Full Cost Tracking** - Provider-level cost breakdown
 
 ### Performance
 
-- **69% faster than baseline** (125s vs 400s)
-- **8.4x more citations** (92 vs 11)
-- **$0.21 per complex query**
-- **36% off-topic quotes** (cross-topic information)
+- **Targeted queries:** 5 sources, single extraction call, stops early
+- **Comprehensive queries:** 15 sources, individual extraction, full analysis
+- **Citation match rate:** 100% with fuzzy fallbacks
+- **Cost range:** $0.01-0.15 per query depending on complexity
+
+---
+
+## Latest Features (2025-12-22)
+
+### Batch Extraction
+Shallow strategies (targeted, survey) now process multiple sources in single API call:
+- **Targeted:** 5 sources per batch call
+- **Survey:** 15 sources per batch call (3x5 pattern)
+- Reduces extraction overhead while maintaining quality
+
+### Verbal Handle System
+All snippets include structured semantic handles:
+- **Format:** `source_detail_limits` (e.g., `pubmed_weight-loss_dec-2025`)
+- **Deduplication:** Auto-append _2, _3 for uniqueness
+- **Citation format:** `[handle, S1.1.0.0-p0.95]` - dual matching paths
+- **100% match rate:** Fuzzy matching with handle/ID fallbacks
+
+### Strategy-Based Architecture
+Routes queries based on breadth and depth dimensions:
+- **Targeted** (narrow+shallow): Find specific fact, stop when found
+- **Survey** (broad+shallow): Enumerate aspects with batch extraction
+- **Focused Deep** (narrow+deep): Deep dive single topic
+- **Comprehensive** (broad+deep): Full analysis across aspects
+
+### Content Control
+- **max_tokens_per_page:** 512 (shallow/fast) or 2048 (deep/comprehensive)
+- Controls Perplexity content extraction size per webpage
+
+### Academic Mode
+- Explicit `academic: true/false` field in initial decision
+- Triggers scholarly source prioritization
+- Optimized for research papers, peer-reviewed studies
 
 ---
 

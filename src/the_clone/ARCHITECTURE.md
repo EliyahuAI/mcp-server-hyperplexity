@@ -1,19 +1,48 @@
 # The Clone - Complete Architecture Documentation
 
-**Version:** 3.0
+**Version:** 4.0
 **Status:** Production Ready
-**Date:** 2025-12-16
+**Date:** 2025-12-22
 
 ---
 
 ## System Overview
 
 The Clone is an intelligent search and synthesis system that:
-1. **Routes smartly** - Answers simple queries directly, searches when needed
-2. **Determines configuration** - Selects context level and synthesis model tier
-3. **Extracts efficiently** - Parallel processing with off-topic detection
-4. **Synthesizes intelligently** - Unified evaluation + synthesis
-5. **Tracks costs precisely** - Full aggregation from enhanced_data
+1. **Routes smartly** - Strategy-based (breadth/depth), answers directly or searches
+2. **Batches efficiently** - 5-15 sources per extraction call for shallow strategies
+3. **Handles semantically** - Structured verbal handles (`source_detail_limits`) for citations
+4. **Matches perfectly** - 100% citation match rate with dual handle/ID paths
+5. **Stops intelligently** - Early termination when reliable answer found
+6. **Tracks costs precisely** - Provider-level cost aggregation
+
+## Latest Updates (v4.0)
+
+### Batch Extraction System
+- **Shallow strategies** process 5-15 sources in single API call
+- **Deep strategies** use individual extraction for thorough processing
+- Reduces API overhead while maintaining quality
+
+### Verbal Handle System
+- All snippets have semantic handles: `source_detail_limits`
+- Format: `pubmed_weight-loss_dec-2025`, `nih_insulin-sensitivity_tre-protocol`
+- Citations use `[handle, S1.1.0.0-p0.95]` format
+- Dual matching: by handle OR by snippet ID
+- Auto-deduplication with _2, _3 suffixes
+
+### Strategy Matrix
+| Strategy | Breadth | Depth | Batch | Tokens/Page | Stop Condition |
+|----------|---------|-------|-------|-------------|----------------|
+| Targeted | narrow | shallow | 5 (batch) | 512 | Answer found (p≥0.85) |
+| Focused Deep | narrow | deep | 10 (individual) | 2048 | All sources |
+| Survey | broad | shallow | 15 (batch) | 512 | All sources |
+| Comprehensive | broad | deep | 15 (individual) | 2048 | All sources |
+
+### Model Updates
+- **Initial Decision:** Gemini 2.0 Flash (all providers)
+- **Triage/Extraction:** Gemini 2.0 Flash (fast, cost-effective)
+- **Synthesis:** Provider-specific (tier-based: tier1-4)
+- **Max tokens:** 64K for all synthesis models
 
 ---
 
