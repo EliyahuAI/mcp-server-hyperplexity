@@ -427,12 +427,12 @@ class TheClone2Refined:
 
             logger.info(f"[CLONE] Pulling sources {sources_pulled}-{batch_end-1} ({len(sources_this_batch)} sources)")
 
-            # Extract from batch - use batch mode if strategy specifies it
-            use_batch_extraction = strategy.get('batch_extraction', False)
+            # For code extraction, decide between batch (shallow) or parallel individual (deep)
+            use_batch_single_call = strategy.get('batch_extraction', False) and use_code_extraction
 
-            if use_batch_extraction and use_code_extraction:
-                # Batch extraction: process all sources in single API call (for shallow strategies)
-                logger.info(f"[CLONE] Using batch extraction for {len(sources_this_batch)} sources")
+            if use_batch_single_call:
+                # Batch extraction: ALL sources in SINGLE API call (shallow strategies)
+                logger.info(f"[CLONE] Using batch extraction (single call) for {len(sources_this_batch)} sources")
                 snippet_id_prefix = f"S{iteration}"
 
                 batch_result = await self.snippet_extractor.extract_from_sources_batch(
@@ -451,9 +451,38 @@ class TheClone2Refined:
                 results = batch_result
 
                 if not first_extraction_prompt_logged: first_extraction_prompt_logged = True
+            elif use_code_extraction:
+                # Parallel individual extraction: Each source in SEPARATE call (deep strategies)
+                # Still uses batch pathway (for source-level assessment) but one source per call
+                logger.info(f"[CLONE] Using parallel individual extraction ({len(sources_this_batch)} calls) for deep strategy")
+                extraction_tasks = []
+                for idx, source in enumerate(sources_this_batch):
+                    snippet_id_prefix = f"S{iteration}"
+                    # Call batch extractor with single source
+                    task = self.snippet_extractor.extract_from_sources_batch(
+                        sources=[source],  # Single source wrapped in list
+                        query=prompt,
+                        snippet_id_prefix=snippet_id_prefix,
+                        all_search_terms=search_terms,
+                        model=models['extraction'],
+                        soft_schema=use_soft_schema,
+                        min_quality_threshold=strategy['min_p_threshold'],
+                        extraction_mode=strategy['extraction_mode'],
+                        max_snippets_per_source=strategy['max_snippets_per_source'],
+                        clone_logger=clone_logger if idx == 0 else None,  # Only log first
+                        provider=provider
+                    )
+                    extraction_tasks.append(task)
+
+                if not first_extraction_prompt_logged: first_extraction_prompt_logged = True
+
+                # Run all extractions in parallel
+                batch_results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
+                # Flatten results (each batch_result is a list with 1 item)
+                results = [r[0] for r in batch_results if isinstance(r, list) and len(r) > 0]
             else:
-                # Individual extraction: process each source separately (for deep strategies)
-                logger.info(f"[CLONE] Using individual extraction for {len(sources_this_batch)} sources")
+                # Legacy non-code extraction (shouldn't happen)
+                logger.info(f"[CLONE] Using legacy individual extraction for {len(sources_this_batch)} sources")
                 extraction_tasks = []
                 for idx, source in enumerate(sources_this_batch):
                     snippet_id_prefix = f"S{iteration}.{source['_search_index']}.{sources_pulled + idx}"
@@ -483,18 +512,26 @@ class TheClone2Refined:
             new_snippets = []
             iteration_cost = 0.0
             extract_providers = set()
-            
+            seen_responses = set()  # Track response objects to avoid double-counting
+
             for result in results:
                 if isinstance(result, Exception):
                     logger.error(f"[CLONE] Extraction error: {result}")
                     continue
                 new_snippets.extend(result.get('snippets', []))
-                extract_cost, extract_provider = self._extract_cost_and_provider(result.get('model_response', {}), clone_logger, stats)
-                costs['extraction'] += extract_cost
-                iteration_cost += extract_cost
-                costs_by_provider[extract_provider] = costs_by_provider.get(extract_provider, 0.0) + extract_cost
-                calls_by_provider[extract_provider] = calls_by_provider.get(extract_provider, 0) + 1
-                extract_providers.add(extract_provider)
+
+                # Extract cost, but avoid double-counting shared responses
+                model_response = result.get('model_response', {})
+                response_id = id(model_response)  # Use object ID to detect duplicates
+
+                if response_id not in seen_responses:
+                    extract_cost, extract_provider = self._extract_cost_and_provider(model_response, clone_logger, stats)
+                    costs['extraction'] += extract_cost
+                    iteration_cost += extract_cost
+                    costs_by_provider[extract_provider] = costs_by_provider.get(extract_provider, 0.0) + extract_cost
+                    calls_by_provider[extract_provider] = calls_by_provider.get(extract_provider, 0) + 1
+                    extract_providers.add(extract_provider)
+                    seen_responses.add(response_id)
 
             all_snippets.extend(new_snippets)
             sources_pulled = batch_end

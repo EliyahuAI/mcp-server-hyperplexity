@@ -1,42 +1,153 @@
 #!/usr/bin/env python3
 """
-Schemas for The Clone 2 - Snippet Extraction and Synthesis.
-Defines structured output formats for per-source snippet extraction and synthesis.
+Updated schemas for snippet extraction with source-level c/p assessment.
+Source-level: c (classification), p (probability), source_handle
+Snippet-level: code, detail_limitation
 """
+
+
+def get_snippet_extraction_batch_code_schema_v2() -> dict:
+    """
+    Schema for batch extraction with source-level assessment.
+
+    Structure:
+    - Each source has: source_handle, c (classification), p (probability)
+    - Each snippet has: [code, detail_limitation]
+    - Full handle assembled later: {source_handle}_{detail}_{limitation}
+
+    Returns:
+        JSON schema for batch code-based extraction with source-level assessment
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "quotes_by_source": {
+                "type": "object",
+                "description": "Quotes organized by source ID (e.g., 'S1', 'S2', 'S3')",
+                "additionalProperties": {
+                    "type": "object",
+                    "description": "Source-level assessment + snippets",
+                    "properties": {
+                        "source_handle": {
+                            "type": "string",
+                            "description": "1-word source identifier (freddie, nih, pubmed, nrel, bankrate, etc.)"
+                        },
+                        "c": {
+                            "type": "string",
+                            "description": "Classification: Authority + all applicable quality codes (e.g., H/P, M/A/O, L/U/S, H/P/D). Authority (required): H (high), M (medium), L (low). Quality (include all that apply): P, D, A, O, C, U, PR, S, SL, IR. Format: H/P or M/A/O or H/P/D (multiple quality codes allowed)."
+                        },
+                        "p": {
+                            "type": "number",
+                            "description": "Source-level probability score (expected pass-rate if judge tests all atomic claims)",
+                            "enum": [0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95]
+                        },
+                        "quotes_by_search": {
+                            "type": "object",
+                            "description": "Snippets organized by search term number (e.g., '1', '2', '3')",
+                            "additionalProperties": {
+                                "type": "array",
+                                "description": "Array of snippets for this search term, each as [code, detail_limitation]",
+                                "items": {
+                                    "type": "array",
+                                    "description": "Snippet as [detail_limitation, code]. Position-based: [0]=detail_limitation, [1]=code. HANDLE FIRST, code second.",
+                                    "minItems": 2,
+                                    "maxItems": 2,
+                                    "prefixItems": [
+                                        {
+                                            "type": "string",
+                                            "description": "Snippet handle components: detail_limitation (e.g., 'mortgage-rate_dec-2025', 'weight-loss_if-protocol'). Max 25 chars, unique within source."
+                                        },
+                                        {
+                                            "type": "string",
+                                            "description": "Source-prefixed location code with backtick, e.g., '`S1:1.1', '`S2:2.3-2.5', '`S1:*' (pass-all)"
+                                        }
+                                    ],
+                                    "items": False
+                                }
+                            }
+                        }
+                    },
+                    "required": ["source_handle", "c", "p", "quotes_by_search"]
+                }
+            }
+        },
+        "required": ["quotes_by_source"]
+    }
+
+
+def get_snippet_extraction_code_schema_v2() -> dict:
+    """
+    Schema for single-source extraction with source-level assessment.
+    Same structure as batch but for one source.
+
+    Returns:
+        JSON schema for single-source code-based extraction
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "source_handle": {
+                "type": "string",
+                "description": "1-word source identifier (freddie, nih, pubmed, etc.)"
+            },
+            "c": {
+                "type": "string",
+                "description": "Classification: Authority + all applicable quality codes (e.g., H/P, M/A/O, L/U/S, H/P/D). Authority (required): H (high), M (medium), L (low). Quality (include all that apply): P, D, A, O, C, U, PR, S, SL, IR. Format: H/P or M/A/O or H/P/D (multiple quality codes allowed)."
+            },
+            "p": {
+                "type": "number",
+                "description": "Source-level probability score",
+                "enum": [0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95]
+            },
+            "quotes_by_search": {
+                "type": "object",
+                "description": "Snippets organized by search term number",
+                "additionalProperties": {
+                    "type": "array",
+                    "description": "Array of snippets, each as [detail_limitation, code]. HANDLE FIRST, code second.",
+                    "items": {
+                        "type": "array",
+                        "description": "Snippet as [detail_limitation, code]",
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "prefixItems": [
+                            {
+                                "type": "string",
+                                "description": "Snippet handle: detail_limitation (max 25 chars)"
+                            },
+                            {
+                                "type": "string",
+                                "description": "Location code with backtick, e.g., '`1.1', '`2.3-2.5'"
+                            }
+                        ],
+                        "items": False
+                    }
+                }
+            }
+        },
+        "required": ["source_handle", "c", "p", "quotes_by_search"]
+    }
 
 
 def get_snippet_extraction_schema() -> dict:
     """
-    Schema for extracting quotes organized by search term WITH validation scores.
-    Each quote includes quality assessment (p score and reason).
-
-    Returns:
-        JSON schema for snippet extraction response
+    Legacy text-based extraction schema (not code-based).
+    Returns schema for old format with text quotes.
     """
     return {
         "type": "object",
         "properties": {
             "quotes_by_search": {
                 "type": "object",
-                "description": "Quotes organized by search term number (e.g., '1', '2', '3')",
+                "description": "Quotes organized by search term number",
                 "additionalProperties": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "text": {
-                                "type": "string",
-                                "description": "Exact quote with [...] for orientation and ... for omissions. For ATTRIBUTED quotes, include the attribution in the text (e.g., 'Dr. Jane Smith, Chief Scientist, stated that...')"
-                            },
-                            "p": {
-                                "type": "number",
-                                "description": "Quality probability score. MUST be one of: 0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95",
-                                "enum": [0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95]
-                            },
-                            "reason": {
-                                "type": "string",
-                                "description": "Validation reason: PRIMARY/DOCUMENTED/ATTRIBUTED (p>=0.85), CONTRADICTED/UNSOURCED/ANONYMOUS/PROMOTIONAL/STALE (p<=0.15), or OK"
-                            }
+                            "text": {"type": "string"},
+                            "p": {"type": "number", "enum": [0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95]},
+                            "reason": {"type": "string"}
                         },
                         "required": ["text", "p", "reason"]
                     }
@@ -47,160 +158,12 @@ def get_snippet_extraction_schema() -> dict:
     }
 
 
-def get_snippet_synthesis_schema() -> dict:
-    """
-    Schema for synthesizing answer from pre-extracted snippets.
-    Model references snippet IDs, does NOT generate new snippets.
-
-    Returns:
-        JSON schema for synthesis response
-    """
-    return {
-        "type": "object",
-        "properties": {
-            "comparison": {
-                "type": "object",
-                "description": "Structured comparison organized by aspects/topics. Each value should reference snippet IDs like [S1.1.0-p0.95]"
-            }
-        },
-        "required": ["comparison"]
-    }
+# Backward compatibility - keep old schema function names
+def get_snippet_extraction_batch_code_schema() -> dict:
+    """Legacy schema - redirects to v2."""
+    return get_snippet_extraction_batch_code_schema_v2()
 
 
 def get_snippet_extraction_code_schema() -> dict:
-    """
-    Schema for code-based extraction - compact array format.
-    Each quote is [code, p_score, reason_abbrev, verbal_handle].
-
-    Returns:
-        JSON schema for code-based snippet extraction response
-    """
-    return {
-        "type": "object",
-        "properties": {
-            "quotes_by_search": {
-                "type": "object",
-                "description": "Quotes organized by search term number (e.g., '1', '2', '3')",
-                "additionalProperties": {
-                    "type": "array",
-                    "description": "Array of quotes, each as [code, p_score, reason_abbrev, verbal_handle]",
-                    "items": {
-                        "type": "array",
-                        "description": "Quote as [code, p, reason, handle]. Position-based: [0]=code, [1]=p-score, [2]=reason, [3]=handle.",
-                        "minItems": 4,
-                        "maxItems": 4,
-                        "prefixItems": [
-                            {
-                                "type": "string",
-                                "description": "Location code with backtick, e.g., '`1.1', '`1.2-1.3'"
-                            },
-                            {
-                                "type": "number",
-                                "description": "Quality probability",
-                                "enum": [0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95]
-                            },
-                            {
-                                "type": "string",
-                                "description": "Reason: P/D/A (≥0.85), O (mid), C/U/N/PR/S/SL (≤0.15, SL=AI slop)",
-                                "enum": ["P", "D", "A", "O", "C", "U", "N", "PR", "S", "SL"]
-                            },
-                            {
-                                "type": "string",
-                                "description": "Verbal handle: short semantic tag with qualifications (e.g., 'mortgage_rate_dec2025', 'solar_residential_only', 'opus_4.5_mmlu')"
-                            }
-                        ],
-                        "items": False
-                    }
-                }
-            }
-        },
-        "required": ["quotes_by_search"]
-    }
-
-
-def get_snippet_extraction_batch_code_schema() -> dict:
-    """
-    Schema for batch code-based extraction from multiple sources.
-    Organizes quotes by source ID first, then by search term within each source.
-    Each quote is [code, p_score, reason_abbrev, verbal_handle] with source-prefixed codes.
-
-    Returns:
-        JSON schema for batch code-based extraction response
-    """
-    return {
-        "type": "object",
-        "properties": {
-            "quotes_by_source": {
-                "type": "object",
-                "description": "Quotes organized by source ID (e.g., 'S1', 'S2', 'S3'), then by search term number within each source",
-                "additionalProperties": {
-                    "type": "object",
-                    "description": "For this source, quotes organized by search term number (e.g., '1', '2', '3')",
-                    "additionalProperties": {
-                        "type": "array",
-                        "description": "Array of quotes from this source for this search term, each as [code, p_score, reason_abbrev, verbal_handle]",
-                        "items": {
-                            "type": "array",
-                            "description": "Quote as [code, p, reason, handle]. Position-based: [0]=code, [1]=p-score, [2]=reason, [3]=handle.",
-                            "minItems": 4,
-                            "maxItems": 4,
-                            "prefixItems": [
-                                {
-                                    "type": "string",
-                                    "description": "Source-prefixed location code with backtick, e.g., '`S1:1.1', '`S2:2.3-2.5'"
-                                },
-                                {
-                                    "type": "number",
-                                    "description": "Quality probability",
-                                    "enum": [0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95]
-                                },
-                                {
-                                    "type": "string",
-                                    "description": "Reason: P/D/A (≥0.85), O (mid), C/U/N/PR/S/SL (≤0.15, SL=AI slop)",
-                                    "enum": ["P", "D", "A", "O", "C", "U", "N", "PR", "S", "SL"]
-                                },
-                                {
-                                    "type": "string",
-                                    "description": "Verbal handle: short semantic tag with qualifications/limitations (e.g., 'mortgage_rate_dec2025', 'solar_residential_only', 'opus_4.5_mmlu', 'post_2024')"
-                                }
-                            ],
-                            "items": False
-                        }
-                    }
-                }
-            }
-        },
-        "required": ["quotes_by_source"]
-    }
-
-
-def get_sufficiency_check_schema() -> dict:
-    """
-    Schema for checking if accumulated snippets are sufficient.
-
-    Returns:
-        JSON schema for sufficiency check response
-    """
-    return {
-        "type": "object",
-        "properties": {
-            "is_sufficient": {
-                "type": "boolean",
-                "description": "Do we have enough information to answer the query?"
-            },
-            "snippet_count": {
-                "type": "integer",
-                "description": "Current number of snippets"
-            },
-            "coverage_assessment": {
-                "type": "string",
-                "description": "Assessment of how well the query is covered"
-            },
-            "missing_aspects": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "What key aspects are still missing (if insufficient)"
-            }
-        },
-        "required": ["is_sufficient", "snippet_count", "coverage_assessment"]
-    }
+    """Legacy schema - redirects to v2."""
+    return get_snippet_extraction_code_schema_v2()

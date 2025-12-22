@@ -67,6 +67,11 @@ class CodeResolver:
 
         code_clean = code.strip()
 
+        # Strip trailing backtick if present (AI sometimes adds it)
+        if code_clean.endswith('`'):
+            code_clean = code_clean[:-1]
+            logger.debug(f"[RESOLVER] Stripped trailing backtick from code: {code} -> {code_clean}")
+
         try:
             # Special case: `* means pass entire source
             if code_clean == '`*' or code_clean == '*':

@@ -156,8 +156,9 @@ class TextLabeler:
                 current_heading = self._clean_heading(line_stripped)
                 structure["headings"][f"H{current_section}"] = current_heading
 
-                # Add heading with label (sentence 0)
-                labeled_parts.append(line)
+                # Add heading with label (sentence 0), wrapped in HTML bounds
+                # This differentiates source headings from prompt headings
+                labeled_parts.append(f"<snippet-heading>{line}</snippet-heading>")
                 labeled_parts.append(f" `{current_section}.0\n")
 
                 # Store heading in structure

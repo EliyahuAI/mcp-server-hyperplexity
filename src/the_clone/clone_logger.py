@@ -140,6 +140,62 @@ class CloneLogger:
         answer_str += self._to_markdown_citations(citations)
         return answer_str
 
+    def _expand_classification(self, c: str) -> str:
+        """Expand classification codes to full words."""
+        if not c:
+            return ""
+
+        # Map codes to full descriptions
+        code_map = {
+            # Authority
+            'H': 'High Authority',
+            'M': 'Medium Authority',
+            'L': 'Low Authority',
+            # Quality
+            'P': 'Primary',
+            'D': 'Documented',
+            'A': 'Attributed',
+            'O': 'OK',
+            'C': 'Contradicted',
+            'U': 'Unsourced',
+            'PR': 'Promotional',
+            'S': 'Stale',
+            'SL': 'AI Slop',
+            'IR': 'Indirect'
+        }
+
+        # Split by / and expand each code
+        parts = c.split('/')
+        expanded = [code_map.get(part.strip(), part.strip()) for part in parts]
+        return ' + '.join(expanded)
+
+    def _escape_markdown(self, text: str) -> str:
+        """Escape markdown special characters in citation text."""
+        if not text:
+            return ""
+        # Don't escape characters already in code blocks
+        if text.strip().startswith('```'):
+            return text
+
+        # Escape markdown characters that break formatting
+        text = text.replace('*', '\\*')
+        text = text.replace('_', '\\_')
+
+        # Escape markdown headers (# at start of line) to prevent breaking out of blockquote
+        lines = text.split('\n')
+        escaped_lines = []
+        for line in lines:
+            # If line starts with # (markdown header), escape it
+            if line.lstrip().startswith('#'):
+                # Add backslash before first #
+                stripped = line.lstrip()
+                leading_space = line[:len(line) - len(stripped)]
+                escaped_lines.append(leading_space + '\\' + stripped)
+            else:
+                escaped_lines.append(line)
+
+        return '\n'.join(escaped_lines)
+
     def _to_markdown_citations(self, citations: List[Dict]) -> str:
         if not citations: return "(No citations)"
         md_citations = []
@@ -148,10 +204,27 @@ class CloneLogger:
             title = cite.get('title', 'No Title')
             date = cite.get('date', cite.get('last_updated', ''))
             snippet = cite.get('cited_text', '')
-            
+            p_score = cite.get('p', '')
+            c_classification = cite.get('c', '')
+
             entry = f"- **[{i+1}] [{title}]({url})**"
             if date: entry += f" ({date})"
-            if snippet: entry += f"\n  > {snippet}"
+
+            # Add p/c metadata - expand codes to full words
+            metadata = []
+            if p_score:
+                metadata.append(f"probability={p_score}")
+            if c_classification:
+                expanded_c = self._expand_classification(c_classification)
+                metadata.append(f"classification={expanded_c}")
+
+            if metadata:
+                entry += f"\n  *{', '.join(metadata)}*"
+
+            if snippet:
+                # Escape markdown in snippet to prevent formatting issues
+                escaped_snippet = self._escape_markdown(snippet)
+                entry += f"\n  > {escaped_snippet}"
             md_citations.append(entry)
         return "\n".join(md_citations)
 

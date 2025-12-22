@@ -231,7 +231,15 @@ Query: {query}
 - **Q1.{'{n}'}:** Query number in iteration 1 (search term used)
 - **Snippet ID Format:** S{'{iter}'}.{'{search}'}.{'{source}'}.{'{snippet}'}-p{'{score}'}
   - Example: S1.2.3.0-p0.85 = Iteration 1, Search 2, Source 3, Snippet 0, p-score 0.85
-- **P-score:** Quality probability (0.95=highest, 0.85=high, 0.65=medium, 0.50=ok, 0.15=low)
+- **p (probability):** Source-level quality score (0.05-0.95) - judge tests all atomic claims, p = expected pass-rate
+  - 0.85-0.95: High confidence (PRIMARY/DOCUMENTED/ATTRIBUTED) - prefer these
+  - 0.50-0.65: Medium confidence (OK quality)
+  - 0.05-0.30: Low confidence (UNSOURCED/STALE/PROMOTIONAL) - use cautiously
+- **c (classification):** Source authority + quality codes (shown in snippet metadata)
+  - H/P = High Authority + Primary
+  - H/P/D/A = High + Primary + Documented + Attributed
+  - M/O = Medium Authority + OK
+  - L/U = Low Authority + Unsourced
 - **Date:** Publication or last updated date from source
 
 ## Quotes Organized by Search Term
@@ -300,7 +308,15 @@ Query: {query}
 - **Q1.{'{n}'}:** Query number in iteration 1 (search term used)
 - **Snippet ID Format:** S{'{iter}'}.{'{search}'}.{'{source}'}.{'{snippet}'}-p{'{score}'}
   - Example: S1.2.3.0-p0.85 = Iteration 1, Search 2, Source 3, Snippet 0, p-score 0.85
-- **P-score:** Quality probability (0.95=highest, 0.85=high, 0.65=medium, 0.50=ok, 0.15=low)
+- **p (probability):** Source-level quality score (0.05-0.95) - judge tests all atomic claims, p = expected pass-rate
+  - 0.85-0.95: High confidence (PRIMARY/DOCUMENTED/ATTRIBUTED) - prefer these
+  - 0.50-0.65: Medium confidence (OK quality)
+  - 0.05-0.30: Low confidence (UNSOURCED/STALE/PROMOTIONAL) - use cautiously
+- **c (classification):** Source authority + quality codes (shown in snippet metadata)
+  - H/P = High Authority + Primary
+  - H/P/D/A = High + Primary + Documented + Attributed
+  - M/O = Medium Authority + OK
+  - L/U = Low Authority + Unsourced
 - **Date:** Publication or last updated date from source
 
 ## Quotes Organized by Search Term
@@ -397,6 +413,7 @@ Query: {query}
                     'verbal_handle': snippet.get('verbal_handle', ''),
                     'text': snippet.get('text', ''),
                     'p': snippet.get('p', 0.50),
+                    'c': snippet.get('c', 'M/O'),  # Classification (H/M/L + quality codes)
                     'reason': snippet.get('validation_reason', 'OK')
                 })
 
@@ -412,23 +429,22 @@ Query: {query}
                     source_line += f" [{data['date']}]"
                 formatted.append(source_line)
 
-                # Snippets under this source (with verbal handle and p-score in ID)
+                # Snippets under this source (with verbal handle, p-score, and classification)
                 for snip in data['snippets']:
-                    reason = snip.get('reason', 'OK')
                     handle = snip.get('verbal_handle', '')
                     snippet_id = snip['id']
+                    p_score = snip.get('p', 0.50)
+                    c_class = snip.get('c', 'M/O')
 
-                    # Format: [handle, S1.1.0-p0.95] (reason) "text"
+                    # Format: [handle, S1.1.0-p0.95] (p=0.95, c=H/P) "text"
                     if handle:
                         citation_ref = f"[{handle}, {snippet_id}]"
                     else:
                         citation_ref = f"[{snippet_id}]"
 
-                    # Show reason for non-OK snippets (attribution is in quote text)
-                    if reason != 'OK':
-                        formatted.append(f"    - {citation_ref} ({reason}) \"{snip['text']}\"")
-                    else:
-                        formatted.append(f"    - {citation_ref} \"{snip['text']}\"")
+                    # Show p and c metadata
+                    metadata = f"(p={p_score}, c={c_class})"
+                    formatted.append(f"    - {citation_ref} {metadata} \"{snip['text']}\"")
 
         return '\n'.join(formatted)
 
@@ -589,20 +605,70 @@ Query: {query}
             citation_index = len(citations) + 1
             url_to_citation_idx[source_url] = citation_index
 
+            # Sort snippets by code (extract section.sentence from ID or _code field)
+            def extract_sort_key(snip):
+                """Extract numeric sort key from snippet code."""
+                code = snip.get('_code', '')
+                # If no _code, try extracting from snippet ID
+                if not code:
+                    snippet_id = snip.get('id', '')
+                    # ID format: S1.1.1.0-p0.95 - try to use snippet number as rough ordering
+                    import re
+                    id_match = re.search(r'S\d+\.\d+\.\d+\.(\d+)-p', snippet_id)
+                    if id_match:
+                        snippet_num = int(id_match.group(1))
+                        # Return snippet number as sort key (not true sequentiality, just order)
+                        return (0, snippet_num)
+
+                # Extract section.sentence from code like `S1:2.5 or `2.5
+                import re
+                match = re.search(r'(\d+)\.(\d+)', code)
+                if match:
+                    section = int(match.group(1))
+                    sentence = int(match.group(2))
+                    return (section, sentence)
+                return (999, 999)  # Put unsortable at end
+
+            sorted_snippets = sorted(url_snippets, key=extract_sort_key)
+
+            # Debug: Log if _code is missing
+            missing_code = sum(1 for s in url_snippets if not s.get('_code'))
+            if missing_code > 0:
+                logger.warning(f"[CITATIONS] {missing_code}/{len(url_snippets)} snippets missing _code field, using snippet ID order")
+
             # Get metadata from first snippet
-            first_snippet = url_snippets[0]
+            first_snippet = sorted_snippets[0]
 
-            # Aggregate all unique snippet texts
-            snippet_texts = []
+            # Aggregate unique snippet texts, checking for sequentiality
+            snippet_parts = []
             seen_texts = set()
-            for snip in url_snippets:
-                text = snip.get('text', '')
-                if text and text not in seen_texts:
-                    snippet_texts.append(text)
-                    seen_texts.add(text)
+            prev_key = None
 
-            # Combine all snippets into single cited_text (Sonar-compatible, newline-joined)
-            cited_text = '\n'.join(snippet_texts) if snippet_texts else ''
+            for snip in sorted_snippets:
+                text = snip.get('text', '')
+                if not text or text in seen_texts:
+                    continue
+
+                current_key = extract_sort_key(snip)
+
+                # Add separator if this is not the first snippet
+                if snippet_parts and prev_key:
+                    # Check if sequential: same section, consecutive sentence numbers
+                    is_sequential = (current_key[0] == prev_key[0] and
+                                   current_key[1] == prev_key[1] + 1)
+                    if is_sequential:
+                        # Sequential, add space
+                        snippet_parts.append(' ')
+                    else:
+                        # Non-sequential, add inline ellipsis
+                        snippet_parts.append(' ... ')
+
+                snippet_parts.append(text)
+                seen_texts.add(text)
+                prev_key = current_key
+
+            # Combine all snippets into single cited_text
+            cited_text = ''.join(snippet_parts) if snippet_parts else ''
 
             # Sonar-compatible format with additional Clone-specific fields
             citations.append({
@@ -613,7 +679,9 @@ Query: {query}
                 'last_updated': first_snippet.get('_source_date', ''),
                 'index': citation_index,
                 'reliability': first_snippet.get('_source_reliability', 'MEDIUM'),
-                'snippets': snippet_texts
+                'snippets': [cited_text],  # Single combined text
+                'p': first_snippet.get('p', 0.50),  # Source-level probability
+                'c': first_snippet.get('c', 'M/O')  # Source-level classification
             })
 
         # Map snippet IDs to citation indices

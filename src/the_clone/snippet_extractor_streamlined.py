@@ -265,7 +265,7 @@ class SnippetExtractorStreamlined:
                                 "P": "PRIMARY", "D": "DOCUMENTED", "A": "ATTRIBUTED",
                                 "O": "OK",
                                 "C": "CONTRADICTED", "U": "UNSOURCED", "N": "ANONYMOUS",
-                                "PR": "PROMOTIONAL", "S": "STALE", "SL": "SLOP"
+                                "PR": "PROMOTIONAL", "S": "STALE", "SL": "SLOP", "IR": "INDIRECT"
                             }
                             reason = reason_map.get(reason_abbrev, reason_abbrev)
 
@@ -586,22 +586,28 @@ class SnippetExtractorStreamlined:
                 source_num = labeled_src['source_num']
                 resolver = labeled_src['resolver']
 
-                # Get quotes for this source
-                source_quotes = quotes_by_source.get(source_id, {})
+                # Get source data (new format with source-level assessment)
+                source_data = quotes_by_source.get(source_id, {})
+
+                # Extract source-level metadata
+                source_handle = source_data.get('source_handle', f'source{source_num}')
+                source_c = source_data.get('c', 'M/O')  # Classification (e.g., H/P, M/A/O)
+                source_p = source_data.get('p', 0.50)  # Source-level probability
+                source_quotes_by_search = source_data.get('quotes_by_search', {})
 
                 snippets = []
                 snippet_counter = 0
 
                 # Process quotes organized by search term
-                for search_num_str, quotes in source_quotes.items():
+                for search_num_str, quotes in source_quotes_by_search.items():
                     search_num = int(search_num_str)
 
-                    # Check for pass-all flag
+                    # Check for pass-all flag (NEW FORMAT: [detail_limitation, code])
                     has_pass_all = False
                     if isinstance(quotes, list):
                         for q in quotes:
-                            if isinstance(q, list) and len(q) > 0:
-                                code = q[0]
+                            if isinstance(q, list) and len(q) >= 2:
+                                code = q[1]  # Code is now position [1], handle is [0]
                                 if code == f'`{source_id}:*' or code == '`*':
                                     has_pass_all = True
                                     logger.info(f"[BATCH EXTRACTOR] Found pass-all code for {source_id}, using entire source")
@@ -609,15 +615,16 @@ class SnippetExtractorStreamlined:
 
                     # If pass-all, create single snippet with entire source
                     if has_pass_all:
-                        # Format: S{iteration}.{search_ref}.{source_num}.{snippet_counter}-p{score}
-                        snippet_id = f"{snippet_id_prefix}.{labeled_src['search_ref']}.{source_num}.{snippet_counter}-p0.95"
-                        verbal_handle = self._generate_verbal_handle(labeled_src['search_term'], snippet_counter)
+                        snippet_id = f"{snippet_id_prefix}.{labeled_src['search_ref']}.{source_num}.{snippet_counter}-p{source_p:.2f}"
+                        # Full verbal handle = source_handle + detail_limitation
+                        verbal_handle = f"{source_handle}_entire-source_pass-all"
 
                         snippet = {
                             "id": snippet_id,
                             "verbal_handle": verbal_handle,
                             "text": labeled_src['original_text'],
-                            "p": 0.95,
+                            "p": source_p,
+                            "c": source_c,
                             "validation_reason": "PASS_ALL",
                             "search_ref": search_num,
                             "_source_title": labeled_src['title'],
@@ -625,31 +632,19 @@ class SnippetExtractorStreamlined:
                             "_source_date": labeled_src['date'],
                             "_source_reliability": labeled_src['reliability'],
                             "_search_term": labeled_src['search_term'],
-                            "_source_quality": 0.95
+                            "_source_handle": source_handle
                         }
                         snippets.append(snippet)
                         snippet_counter += 1
                         continue
 
-                    # Process individual quotes
+                    # Process individual quotes (NEW FORMAT: [detail_limitation, code])
                     for quote_array in quotes:
-                        if not isinstance(quote_array, list) or len(quote_array) < 3:
+                        if not isinstance(quote_array, list) or len(quote_array) < 2:
                             continue
 
-                        code = quote_array[0]
-                        p_score = quote_array[1]
-                        reason_abbrev = quote_array[2]
-                        # Verbal handle is optional (4th element)
-                        extracted_handle = quote_array[3] if len(quote_array) >= 4 else None
-
-                        # Expand abbreviated reason
-                        reason_map = {
-                            "P": "PRIMARY", "D": "DOCUMENTED", "A": "ATTRIBUTED",
-                            "O": "OK",
-                            "C": "CONTRADICTED", "U": "UNSOURCED", "N": "ANONYMOUS",
-                            "PR": "PROMOTIONAL", "S": "STALE", "SL": "SLOP"
-                        }
-                        reason = reason_map.get(reason_abbrev, reason_abbrev)
+                        detail_limitation = quote_array[0]  # Handle components (detail_limitation)
+                        code = quote_array[1]  # Location code
 
                         # Strip source prefix from code before resolving (e.g., `S1:1.1 -> `1.1)
                         code_without_prefix = code
@@ -663,44 +658,37 @@ class SnippetExtractorStreamlined:
                             logger.warning(f"[BATCH EXTRACTOR] Failed to resolve code '{code}' (stripped: '{code_without_prefix}') from {source_id}, skipping")
                             continue
 
-                        # Filter by quality threshold
-                        if p_score < min_quality_threshold:
+                        # Filter by quality threshold (using source-level p)
+                        if source_p < min_quality_threshold:
                             continue
 
-                        # Create snippet with format: S{iteration}.{search_ref}.{source_num}.{snippet_counter}-p{score}
-                        snippet_id = f"{snippet_id_prefix}.{labeled_src['search_ref']}.{source_num}.{snippet_counter}-p{p_score:.2f}"
+                        # Create snippet with source-level p in ID
+                        snippet_id = f"{snippet_id_prefix}.{labeled_src['search_ref']}.{source_num}.{snippet_counter}-p{source_p:.2f}"
 
-                        # Use extracted verbal handle if provided, otherwise generate
-                        if extracted_handle:
-                            verbal_handle = extracted_handle
-                        else:
-                            verbal_handle = self._generate_verbal_handle(labeled_src['search_term'], snippet_counter)
+                        # Assemble full verbal handle: source_handle + detail_limitation
+                        verbal_handle = f"{source_handle}_{detail_limitation}"
 
                         snippet = {
                             "id": snippet_id,
                             "verbal_handle": verbal_handle,
                             "text": quote_text,
-                            "p": p_score,
-                            "validation_reason": reason,
+                            "p": source_p,
+                            "c": source_c,
                             "search_ref": search_num,
                             "_source_title": labeled_src['title'],
                             "_source_url": labeled_src['url'],
                             "_source_date": labeled_src['date'],
                             "_source_reliability": labeled_src['reliability'],
-                            "_search_term": labeled_src['search_term']
+                            "_search_term": labeled_src['search_term'],
+                            "_source_handle": source_handle,
+                            "_detail_limitation": detail_limitation,
+                            "_code": code
                         }
                         snippets.append(snippet)
                         snippet_counter += 1
 
-                # Calculate source quality (mode p-score)
-                if snippets:
-                    from collections import Counter
-                    p_scores = [s["p"] for s in snippets]
-                    mode_p = Counter(p_scores).most_common(1)[0][0] if p_scores else 0.5
-                    for snippet in snippets:
-                        snippet["_source_quality"] = mode_p
-
-                logger.info(f"[BATCH EXTRACTOR] {source_id}: {len(snippets)} quotes extracted")
+                # All snippets from this source have same source-level p (already set above)
+                logger.info(f"[BATCH EXTRACTOR] {source_id} ({source_handle}): {len(snippets)} quotes extracted, p={source_p}, c={source_c}")
 
                 # Add result for this source
                 results.append({
@@ -783,12 +771,8 @@ class SnippetExtractorStreamlined:
             source_line = f"\n### {source_id}: {src['title']}"
             if src['url']:
                 source_line += f"\nURL: {src['url']}"
-            if src['date'] or src['reliability']:
-                meta = []
-                if src['date']:
-                    meta.append(f"Date: {src['date']}")
-                meta.append(f"Reliability: {src['reliability']}")
-                source_line += f"\n{', '.join(meta)}"
+            if src['date']:
+                source_line += f"\nDate: {src['date']}"
 
             formatted.append(source_line)
             formatted.append("\nLabeled text:\n")

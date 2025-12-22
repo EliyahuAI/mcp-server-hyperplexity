@@ -416,10 +416,10 @@ class MergedSynthesizer:
         sample = answer_str[:500] if len(answer_str) > 500 else answer_str
         logger.info(f"[MERGED] answer_str sample: {sample}")
 
-        # Pattern to match code citations: {`code, p_score, reason}
-        # In JSON, this becomes: {`S1:1.1, 0.95, P}
-        # Handles source-prefixed codes with optional context: {`S1:1.1 [context], 0.95, P}
-        citation_pattern = r'\{`(S\d+:[\d.]+(?:-[\d.]+)?(?:\s*\[[^\]]+\])*),\s*([0-9.]+),\s*([^}]+)\}'
+        # Pattern to match code citations: {`code, p, c:classification}
+        # In JSON, this becomes: {`S1:1.1, 0.95, c:H/P}
+        # Handles source-prefixed codes with optional context: {`S1:1.1 [context], 0.95, c:H/P}
+        citation_pattern = r'\{`(S\d+:[\d.]+(?:-[\d.]+)?(?:\s*\[[^\]]+\])*),\s*([0-9.]+),\s*c:([^}]+)\}'
 
         # Find all code citations
         matches = re.findall(citation_pattern, answer_str)
@@ -432,16 +432,20 @@ class MergedSynthesizer:
         citations_metadata = []
         seen_codes = set()
 
-        for code, p_str, reason in matches:
+        for match in matches:
+            code = match[0]
+            p_str = match[1]
+            c_classification = match[2]
+
             # Clean up escaped characters
             code_clean = code.replace('\\', '')
-            reason_clean = reason.strip()
+            c_clean = c_classification.strip()
 
             if code_clean not in seen_codes:
                 citations_metadata.append({
                     'code': code_clean,
                     'p': float(p_str),
-                    'reason': reason_clean
+                    'c': c_clean
                 })
                 seen_codes.add(code_clean)
 
@@ -457,7 +461,7 @@ class MergedSynthesizer:
         for cite_meta in citations_metadata:
             code = cite_meta['code']
             p_score = cite_meta['p']
-            reason = cite_meta['reason']
+            c_classification = cite_meta['c']
 
             # Parse source ID from code (e.g., S1:1.1 -> source 1, code 1.1)
             # Extract source ID and code part
@@ -513,7 +517,7 @@ class MergedSynthesizer:
                 failed_resolutions.append({
                     'code': code,
                     'p_score': p_score,
-                    'reason': reason,
+                    'c': c_classification,
                     'resolution_attempt': resolution_attempt if resolution_attempt else 'No attempt made',
                     'error': 'Code not found or resolution failed'
                 })
@@ -545,8 +549,8 @@ class MergedSynthesizer:
                     'index': citation_index,
                     'reliability': source_info['reliability'],
                     'snippets': [resolved_text],
-                    'p_score': p_score,
-                    'reason': reason
+                    'p': p_score,
+                    'c': c_classification
                 })
 
         # Replace code citations with numeric citations
