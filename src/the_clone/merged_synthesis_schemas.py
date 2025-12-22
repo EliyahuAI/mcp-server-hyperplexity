@@ -77,7 +77,7 @@ def get_merged_synthesis_only_schema(answer_schema: dict = None) -> dict:
             "self_assessment": {
                 "type": "string",
                 "enum": ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-"],
-                "description": "Grade synthesis quality: A+/A if handled well OR info not available, B if struggled with complexity, C if insufficient"
+                "description": "Grade synthesis quality: A+/A ONLY if exact and sufficient answer provided, B if partial/struggled, C if insufficient/info unavailable"
             }
         },
         "required": ["comparison", "self_assessment"]

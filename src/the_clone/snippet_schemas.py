@@ -60,7 +60,7 @@ def get_snippet_synthesis_schema() -> dict:
         "properties": {
             "comparison": {
                 "type": "object",
-                "description": "Structured comparison organized by aspects/topics. Each value should reference snippet IDs like [S1.1-H]"
+                "description": "Structured comparison organized by aspects/topics. Each value should reference snippet IDs like [S1.1.0-p0.95]"
             }
         },
         "required": ["comparison"]
@@ -70,7 +70,7 @@ def get_snippet_synthesis_schema() -> dict:
 def get_snippet_extraction_code_schema() -> dict:
     """
     Schema for code-based extraction - compact array format.
-    Each quote is [code, p_score, reason_abbrev].
+    Each quote is [code, p_score, reason_abbrev, verbal_handle].
 
     Returns:
         JSON schema for code-based snippet extraction response
@@ -83,12 +83,12 @@ def get_snippet_extraction_code_schema() -> dict:
                 "description": "Quotes organized by search term number (e.g., '1', '2', '3')",
                 "additionalProperties": {
                     "type": "array",
-                    "description": "Array of quotes, each as [code, p_score, reason_abbrev]",
+                    "description": "Array of quotes, each as [code, p_score, reason_abbrev, verbal_handle]",
                     "items": {
                         "type": "array",
-                        "description": "Quote as [code, p, reason]. Position-based: [0]=code, [1]=p-score, [2]=reason.",
-                        "minItems": 3,
-                        "maxItems": 3,
+                        "description": "Quote as [code, p, reason, handle]. Position-based: [0]=code, [1]=p-score, [2]=reason, [3]=handle.",
+                        "minItems": 4,
+                        "maxItems": 4,
                         "prefixItems": [
                             {
                                 "type": "string",
@@ -103,6 +103,10 @@ def get_snippet_extraction_code_schema() -> dict:
                                 "type": "string",
                                 "description": "Reason: P/D/A (≥0.85), O (mid), C/U/N/PR/S/SL (≤0.15, SL=AI slop)",
                                 "enum": ["P", "D", "A", "O", "C", "U", "N", "PR", "S", "SL"]
+                            },
+                            {
+                                "type": "string",
+                                "description": "Verbal handle: short semantic tag with qualifications (e.g., 'mortgage_rate_dec2025', 'solar_residential_only', 'opus_4.5_mmlu')"
                             }
                         ],
                         "items": False
@@ -111,6 +115,62 @@ def get_snippet_extraction_code_schema() -> dict:
             }
         },
         "required": ["quotes_by_search"]
+    }
+
+
+def get_snippet_extraction_batch_code_schema() -> dict:
+    """
+    Schema for batch code-based extraction from multiple sources.
+    Organizes quotes by source ID first, then by search term within each source.
+    Each quote is [code, p_score, reason_abbrev, verbal_handle] with source-prefixed codes.
+
+    Returns:
+        JSON schema for batch code-based extraction response
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "quotes_by_source": {
+                "type": "object",
+                "description": "Quotes organized by source ID (e.g., 'S1', 'S2', 'S3'), then by search term number within each source",
+                "additionalProperties": {
+                    "type": "object",
+                    "description": "For this source, quotes organized by search term number (e.g., '1', '2', '3')",
+                    "additionalProperties": {
+                        "type": "array",
+                        "description": "Array of quotes from this source for this search term, each as [code, p_score, reason_abbrev, verbal_handle]",
+                        "items": {
+                            "type": "array",
+                            "description": "Quote as [code, p, reason, handle]. Position-based: [0]=code, [1]=p-score, [2]=reason, [3]=handle.",
+                            "minItems": 4,
+                            "maxItems": 4,
+                            "prefixItems": [
+                                {
+                                    "type": "string",
+                                    "description": "Source-prefixed location code with backtick, e.g., '`S1:1.1', '`S2:2.3-2.5'"
+                                },
+                                {
+                                    "type": "number",
+                                    "description": "Quality probability",
+                                    "enum": [0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95]
+                                },
+                                {
+                                    "type": "string",
+                                    "description": "Reason: P/D/A (≥0.85), O (mid), C/U/N/PR/S/SL (≤0.15, SL=AI slop)",
+                                    "enum": ["P", "D", "A", "O", "C", "U", "N", "PR", "S", "SL"]
+                                },
+                                {
+                                    "type": "string",
+                                    "description": "Verbal handle: short semantic tag with qualifications/limitations (e.g., 'mortgage_rate_dec2025', 'solar_residential_only', 'opus_4.5_mmlu', 'post_2024')"
+                                }
+                            ],
+                            "items": False
+                        }
+                    }
+                }
+            }
+        },
+        "required": ["quotes_by_source"]
     }
 
 

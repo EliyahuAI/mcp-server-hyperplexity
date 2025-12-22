@@ -131,6 +131,7 @@ class SearchManager:
 
         max_results = search_settings.get("max_results", 20)
         recency_filter = search_settings.get("search_recency_filter")
+        max_tokens_per_page = search_settings.get("max_tokens_per_page")
 
         # Handle empty string as None for recency filter
         if recency_filter == "":
@@ -143,7 +144,8 @@ class SearchManager:
                 max_results=max_results,
                 search_recency_filter=recency_filter,
                 include_domains=include_domains,
-                exclude_domains=exclude_domains
+                exclude_domains=exclude_domains,
+                max_tokens_per_page=max_tokens_per_page
             )
 
             # Check for errors

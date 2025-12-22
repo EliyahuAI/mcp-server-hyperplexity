@@ -11,9 +11,17 @@ Query: {query}
 - You must provide a complete answer in your response if you select this
 
 **Need Search IF:**
+- Today's date is provided above - it is later than your training. Accept this fact.
 - Recent events, current data, specifications
 - Requires authoritative sources or citations
 - Post-cutoff information
+
+**Academic Mode:**
+Set `academic: true` if query requires scholarly/peer-reviewed sources:
+- Research papers, academic studies, scientific findings
+- Peer-reviewed publications needed
+- Technical/scholarly analysis
+When true, search prioritizes academic databases over general web.
 
 ---
 
@@ -59,16 +67,21 @@ Choose based on synthesis complexity only:
 
 ---
 
-## Decision 4: Search Terms (MINIMIZE!)
+## Decision 4: Search Terms
 
-**Default: 1 search term** for single domain
+**Search Term Quality:**
+- Be SPECIFIC and TARGETED to the query (not overly general)
+- Include relevant qualifiers (dates, versions, specific aspects)
+- Example: "Claude Opus 4.5 MMLU score" NOT just "Claude benchmarks"
 
-**Multiple terms ONLY if:**
-- Different domains need independent investigation
-- Example: "GPT-4 vs Claude" → 2 terms (different systems)
-- Example: "Gemini features" → 1 term (single domain)
+**Minimize COUNT (not specificity):**
+- **Default: 1 search term** for single domain
+- **Multiple terms ONLY if:** Different domains need independent investigation
+- **Max: 3 terms** - only for complex multi-domain queries
 
-**Max: 3 terms** - only for complex multi-domain queries
+**Examples:**
+- "GPT-4 vs Claude" → 2 terms: ["GPT-4 performance", "Claude performance"] (different systems)
+- "Gemini features" → 1 term: ["Gemini 2.0 features"] (single domain, specific)
 
 ---
 
@@ -81,7 +94,9 @@ Choose based on synthesis complexity only:
   "breadth": "narrow",
   "depth": "shallow",
   "search_terms": [],
-  "synthesis_tier": "tier2"
+  "synthesis_tier": "tier2",
+  "academic": false,
+  "answer": "<your complete answer here - REQUIRED when answering directly>"
 }}
 ```
 
@@ -92,7 +107,8 @@ Choose based on synthesis complexity only:
   "breadth": "narrow" | "broad",
   "depth": "shallow" | "deep",
   "search_terms": ["term1"],
-  "synthesis_tier": "tier1" | "tier2" | "tier3" | "tier4"
+  "synthesis_tier": "tier1" | "tier2" | "tier3" | "tier4",
+  "academic": true | false
 }}
 ```
 
@@ -118,6 +134,17 @@ Choose based on synthesis complexity only:
 **Complex synthesis (rare):**
 - "Synthesize conflicting evidence about X's effectiveness across domains" → tier3 or tier4 (expensive!)
 
+**Academic queries:**
+- "What does research show about climate change impact on crop yields?" → academic=true, depth=deep
+- "Peer-reviewed studies on vaccine efficacy" → academic=true, prioritize scholarly sources
+
 ---
 
-**Minimize search terms. Default to 1 term unless truly different domains.**
+**Search Term Guidelines:**
+- Be SPECIFIC and TARGETED (include versions, dates, qualifiers)
+- Minimize COUNT (default 1 term unless different domains needed)
+- Quality over quantity - one specific term beats multiple vague ones
+
+**Academic Field:**
+- Set `academic: true` for queries needing scholarly/peer-reviewed sources
+- Set `academic: false` for general information queries (default)

@@ -1,4 +1,4 @@
-# Quote Extraction (Code-Based)
+# Batch Quote Extraction (Code-Based)
 
 ## Purpose
 Detect and enrich reliable information into quotable snippets with sufficient context for synthesis.
@@ -8,22 +8,22 @@ Detect and enrich reliable information into quotable snippets with sufficient co
 2. **Enriched with context** - Include necessary background in [brackets]
 3. **Directly quotable** - Ready for citation in final answer
 
-**When enrichment not possible:** If source is dense/interconnected where splitting loses meaning, use pass-all flag `` `* ``.
+**When enrichment not possible:** If source is dense/interconnected where splitting loses meaning, use pass-all flag `` `SX:* `` (X=source num).
 
 ---
 
-Search Focus: {primary_search_term} | Source: {source_title} | Date: {source_date} | Today: {current_date}
-Mode: {extraction_mode_guidance} | Max: {max_snippets}
+Search Focus: Multiple sources | Today: {current_date}
+Mode: {extraction_mode_guidance} | Max: {max_snippets} per source
 
-All search terms (found by #{primary_search_num}): {all_search_terms_formatted}
+Search terms: {all_search_terms_formatted}
 
 ---
 
-## Labeled Source
+## Labeled Sources
 
-Sentences end with `` `X.Y `` labels. Headings end with `` `X.0 ``. Copy these exact labels in your codes.
+Sentences end with `` `SX:Y.Z `` labels where X=source number. Headings end with `` `SX:Y.0 ``. Copy these exact labels in your codes.
 
-{source_full_text}
+{formatted_sources}
 
 ---
 
@@ -33,29 +33,30 @@ Extract only if quote has concrete, verifiable facts. Skip:
 - Vague summaries, speculation, opinion (unless query asks for it)
 - Statements needing full article to verify
 - **AI-generated SEO slop** (generic filler, keyword stuffing, low-info content) → tag with p=0.05, reason=SL (SLOP)
-- If it all looks relevant to the query and likely accurate use the pass all flag `` `* ``
+- If entire source looks relevant to query and likely accurate use pass all flag `` `SX:* `` (X=source num)
 
 ## Task
 
+Extract quotes from each source using **source-prefixed codes**.
 
 **Off-topic:** Only extract for different search term if info is NOT about main query. If relevant to main query → use primary search term.
 
 ## Codes & Annotations
 
-**CRITICAL: Only use sentence codes that exist in the labeled source above.** Count the labels you see - don't reference `` `1.15 `` if only `` `1.1 `` through `` `1.10 `` exist.
+**CRITICAL: Only use sentence codes that exist in the labeled sources above.** Don't reference `` `S1:1.15 `` if only `` `S1:1.1 `` through `` `S1:1.10 `` exist.
 
 **Tables - CRITICAL GROUPING RULE:**
 - **ONE snippet per table** (or per meaningful table section if very large)
-- ALWAYS include header row: `` `H5.0-5.7 `` = header + rows 1-7 as SINGLE snippet
+- ALWAYS include header row: `` `S1:H5.0-5.7 `` = header + rows 1-7 as SINGLE snippet
 - NEVER split rows from same table into separate snippets
-- Use ranges to group: `` `H5.0-5.3 `` (header + rows 1-3) NOT separate `` `H5.0 ``, `` `H5.1 ``, etc.
+- Use ranges to group: `` `S1:H5.0-5.3 `` (header + rows 1-3) NOT separate `` `S1:H5.0 ``, `` `S1:H5.1 ``, etc.
 
-**Basic codes** - Copy exact labels:
-- `` `1.1 ``, `` `1.2 ``, `` `2.1 `` (single sentences - use for non-table content)
-- **REQUIRED: Use ranges for consecutive content** - `` `1.5-1.7 `` NOT separate codes
-- Ranges: `` `1.1-1.3 `` or `` `1.1-3 `` (shorthand for `1.1-1.3)
-- Word ranges: `` `1.1.w5-7 `` (words 5-7, **1-indexed** - w1 is first word)
-- **Pass all:** `` `* `` (entire source) - use when source is dense/valuable and splitting would lose critical relationships, or if we would retain >50% of the words anyways in the snippets.  You can add this at any point if you realize that we should just pass the entire source. If the source is high quality and addresses the query use this flag. 
+**Basic codes** - Copy exact labels with source prefix:
+- `` `S1:1.1 ``, `` `S2:2.1 `` (single sentences - use for non-table content)
+- **REQUIRED: Use ranges for consecutive content** - `` `S1:1.5-1.7 `` NOT separate codes
+- Ranges: `` `S1:1.1-1.3 `` or `` `S1:1.1-3 `` (shorthand)
+- Word ranges: `` `S2:1.1.w5-7 `` (words 5-7, **1-indexed** - w1 is first word)
+- **Pass all:** `` `S1:* `` (entire source 1) - use when source is dense/valuable and splitting would lose critical relationships, or if we would retain >50% of words in snippets. If source is high quality and addresses query use this flag.
 
 **CRITICAL - Snippets must make sense in isolation:**
 Synthesis has NO access to original sources. Given only URL, page title, and this snippet, it must be perfectly understandable and testable.
@@ -65,21 +66,21 @@ Synthesis has NO access to original sources. Given only URL, page title, and thi
 - Fact: ALWAYS direct extract from source, never paraphrase
 - Goal: Create self-contained snippets ready for synthesis WITHOUT needing the original source
 
-**Heading context** - Use `` `X.0 `` to add section context:
-- `` [`2.0] `2.1 `` → `[API Pricing] pricing details`
-- `` [`1.0, Q3 2024] `2.1 `` → use parent heading + brief context (≤10 words)
+**Heading context** - Use `` `SX:Y.0 `` to add section context:
+- `` [`S1:2.0] `S1:2.1 `` → `[API Pricing] pricing details`
+- `` [`S2:1.0, Q3 2024] `S2:2.1 `` → use parent heading + brief context (≤10 words)
 - **Required when** quote lacks clarity without knowing section topic
 
 **Attribution** - Pull from elsewhere:
-- `` [`2.1.w1-4] `1.3 `` → `[Dr. Jane Smith] sentence 1.3 text`
+- `` [`S1:2.1.w1-4] `S1:1.3 `` → `[Dr. Jane Smith] sentence 1.3 text`
 - **REQUIRED** for ATTRIBUTED quotes (p≥0.85, reason=A) when attribution is separate
 - **CRITICAL:** The attribution (name + role) MUST appear in the final snippet text in brackets
 - Keep attributions concise (≤10 words in brackets)
 - Example: Don't just mark as "A" - actually include `[Dr. Smith, MIT researcher]` in the snippet
 
 **Context clarification** - Add SHORT clarifying brackets:
-- `` `1.1 [of Gemini] `` → `sentence text [of Gemini]`
-- `` [re: GPU performance] `2.1 `` → `[re: GPU performance] sentence text`
+- `` `S1:1.1 [of Gemini] `` → `sentence text [of Gemini]`
+- `` [re: GPU performance] `S2:2.1 `` → `[re: GPU performance] sentence text`
 - Context must be ≤10 words - replace long/messy with clean summary
 - Use whenever ambiguity exists - snippet must be complete, specific, and testable
 
@@ -102,36 +103,43 @@ Bet: Judge extracts all atomic factual claims and tests each. Pass = precisely a
 
 **CRITICAL for ATTRIBUTED (A):** The actual attribution MUST be in the snippet text!
 - ❌ WRONG: Just marking reason=A without including attribution
-- ✅ CORRECT: `["[Dr. Jane Smith, MIT] `1.3", 0.85, "A"]` → Final text includes "[Dr. Jane Smith, MIT] fact text"
+- ✅ CORRECT: `["[`S1:2.1.w1-4] `S1:1.3", 0.85, "A"]` → Final text includes "[Dr. Jane Smith, MIT] fact text"
 
 **Negative indicators**
-- C=CONTRADICTED: You know otherwise / internally incosistent
+- C=CONTRADICTED: You know otherwise / internally inconsistent
 - U=UNSOURCED: Just statements
 - PR=PROMOTIONAL: Clear bias
 - S=STALE: Out of date dynamic information
-- SL=SLOP: AI-generated SEO (be wary of perfect markdown on a random page)
+- SL=SLOP: AI-generated SEO
 
-Return codes (field `c`), not full text. Organize by search term number.
+Return codes (not full text). Organize by source ID, then by search term.
+
 ---
 
 ## Output
 
 ```json
 {{
-  "quotes_by_search": {{
-    "1": [
-      ["`1.1", 0.95, "P", "mortgage_rate_dec2025"],
-      ["`H5.0-5.3", 0.85, "D", "efficiency_table"],
-      ["[`2.0] `2.5", 0.65, "O", "solar_residential_only"]
-    ],
-    "2": [
-      ["[`3.1.w1-4] `3.5", 0.85, "A", "wind_capacity_2024"]
-    ]
+  "quotes_by_source": {{
+    "S1": {{
+      "1": [
+        ["`S1:1.1", 0.95, "P", "mortgage_rate_dec2025"],
+        ["`S1:H5.0-5.3", 0.85, "D", "efficiency_table"],
+        ["[`S1:2.0] `S1:2.5", 0.65, "O", "solar_residential_only"]
+      ],
+      "2": []
+    }},
+    "S2": {{
+      "1": [
+        ["[`S2:3.1.w1-4] `S2:3.5", 0.85, "A", "wind_capacity_2024"]
+      ],
+      "2": []
+    }}
   }}
 }}
 ```
 
-Format: `[code, p_score, reason_abbrev, verbal_handle]`
+Format: `[source_prefixed_code, p_score, reason_abbrev, verbal_handle]`
 
 **Verbal Handle Requirements:**
 
@@ -156,13 +164,13 @@ Format: `[code, p_score, reason_abbrev, verbal_handle]`
 - Max 30 chars total
 
 **Code Examples:**
-- `` `1.1 `` = single sentence (non-table content)
-- `` `H5.0-5.3 `` = table header + rows 1-3 as ONE snippet (all rows from same table grouped)
-- `` [`2.0] `2.5 `` = section heading as context + fact
-- `` [`3.1.w1-4] `3.5 `` = attribution from elsewhere + fact
+- `` `S1:1.1 `` = single sentence from source 1 (non-table content)
+- `` `S1:H5.0-5.3 `` = table header + rows 1-3 as ONE snippet (all rows from same table grouped)
+- `` [`S1:2.0] `S1:2.5 `` = section heading as context + fact
+- `` [`S2:3.1.w1-4] `S2:3.5 `` = attribution from elsewhere + fact
 
 **Table Extraction Examples:**
-- ❌ WRONG: Separate snippets for rows: `` `H5.0 ``, `` `H5.1 ``, `` `H5.2 ``
-- ✅ CORRECT: Single snippet for table: `` `H5.0-5.7 `` (header + all relevant rows)
+- ❌ WRONG: Separate snippets for rows: `` `S1:H5.0 ``, `` `S1:H5.1 ``, `` `S1:H5.2 ``
+- ✅ CORRECT: Single snippet for table: `` `S1:H5.0-5.7 `` (header + all relevant rows)
 
-Return `{{}}` if nothing clear. Essential facts only. Minimal quotes. 
+Return empty objects `{{}}` if nothing clear. Essential facts only. Minimal quotes.

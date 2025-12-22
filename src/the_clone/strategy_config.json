@@ -6,11 +6,13 @@
       "description": "Narrow breadth + Shallow depth: Find specific fact or answer",
       "breadth": "narrow",
       "depth": "shallow",
-      "sources_per_batch": 3,
+      "sources_per_batch": 5,
       "extraction_mode": "simple_facts",
       "max_snippets_per_source": 2,
       "min_p_threshold": 0.85,
-      "stop_condition": "1_reliable_snippet"
+      "stop_condition": "reliable_answer_found",
+      "max_tokens_per_page": 512,
+      "batch_extraction": true
     },
     "focused_deep": {
       "description": "Narrow breadth + Deep depth: Detailed explanation of single topic",
@@ -20,17 +22,21 @@
       "extraction_mode": "nuanced",
       "max_snippets_per_source": 8,
       "min_p_threshold": 0.50,
-      "stop_condition": null
+      "stop_condition": null,
+      "max_tokens_per_page": 2048,
+      "batch_extraction": false
     },
     "survey": {
       "description": "Broad breadth + Shallow depth: List/enumerate many aspects",
       "breadth": "broad",
       "depth": "shallow",
-      "sources_per_batch": 12,
+      "sources_per_batch": 15,
       "extraction_mode": "simple_facts",
       "max_snippets_per_source": 3,
       "min_p_threshold": 0.65,
-      "stop_condition": null
+      "stop_condition": null,
+      "max_tokens_per_page": 512,
+      "batch_extraction": true
     },
     "comprehensive": {
       "description": "Broad breadth + Deep depth: Detailed analysis of many aspects",
@@ -40,7 +46,9 @@
       "extraction_mode": "nuanced",
       "max_snippets_per_source": 10,
       "min_p_threshold": 0.50,
-      "stop_condition": null
+      "stop_condition": null,
+      "max_tokens_per_page": 2048,
+      "batch_extraction": false
     }
   },
 

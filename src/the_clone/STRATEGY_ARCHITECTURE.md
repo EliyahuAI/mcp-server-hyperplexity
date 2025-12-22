@@ -54,12 +54,19 @@
 
 ## Strategy Matrix
 
-| Strategy | Breadth | Depth | Batch Size | Mode | Stop When |
-|----------|---------|-------|------------|------|-----------|
-| Targeted | narrow | shallow | 3 | simple_facts | 1 snippet p≥0.85 |
-| Focused Deep | narrow | deep | 10 | nuanced | All sources (1 iter) |
-| Survey | broad | shallow | 12 | simple_facts | All sources (1 iter) |
-| Comprehensive | broad | deep | 15 | nuanced | All sources (1 iter) |
+| Strategy | Breadth | Depth | Batch Size | Mode | Tokens/Page | Batch Extract | Stop When |
+|----------|---------|-------|------------|------|-------------|---------------|-----------|
+| Targeted | narrow | shallow | 5 | simple_facts | 512 | Yes (5/call) | Reliable answer found (p≥0.85) |
+| Focused Deep | narrow | deep | 10 | nuanced | 2048 | No | All sources (1 iter) |
+| Survey | broad | shallow | 15 | simple_facts | 512 | Yes (3x5) | All sources (1 iter) |
+| Comprehensive | broad | deep | 15 | nuanced | 2048 | No | All sources (1 iter) |
+
+**Dimensions:**
+- **Tokens/Page**: Controls Perplexity max_tokens_per_page (512 for shallow = faster/smaller, 2048 for deep = comprehensive)
+- **Batch Extract**: If true, extract multiple sources in single API call (shallow strategies = 5 sources/call); if false, individual extraction calls (deep)
+- **Stop Condition**:
+  - "reliable_answer_found" = stop when reliable answer to EXACT query found (p≥0.85, search_ref=1) - targeted only
+  - null = process all sources (broad or deep strategies)
 
 ## Example: Targeted (narrow + shallow)
 
@@ -67,19 +74,19 @@ Query: "What is DeepSeek V3's parameter count?"
 
 ```
 Initial: breadth=narrow, depth=shallow, terms=["DeepSeek V3 parameters"]
-Strategy: targeted (batch=3, mode=simple_facts, stop=1_reliable)
+Strategy: targeted (batch=5, mode=simple_facts, stop=reliable_answer_found)
 
 Search: 10 results
 Triage: Ranked [5, 0, 8, 2, 7, 1, 9, 3, 4, 6]
 
 Iteration 1:
-  Pull sources [5, 0, 8] (indices 0-3)
-  Extract (simple_facts)
-  → Got 2 snippets: p=0.95, p=0.85
-  Check stop: YES (≥1 reliable) → STOP
+  Pull sources [5, 0, 8, 2, 7] (5 sources - batch extraction)
+  Extract (batch mode: single API call for all 5)
+  → Got 3 snippets: p=0.95 (search_ref=1), p=0.85 (search_ref=1), p=0.65 (search_ref=2)
+  Check stop: YES (≥1 reliable answer to exact query, search_ref=1) → STOP
 
-Synthesize from 2 snippets
-Total: 1 iteration, 3 sources
+Synthesize from 3 snippets
+Total: 1 iteration, 5 sources, 1 extraction API call
 ```
 
 ## Example: Comprehensive (broad + deep)

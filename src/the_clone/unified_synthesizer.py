@@ -109,7 +109,7 @@ class UnifiedSynthesizer:
             # Get model with backups to override ai_client defaults
             model_chain = get_model_with_backups(model)
 
-            # Call model
+            # Call model with 64K max_tokens for long synthesis outputs
             response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=response_schema,
@@ -117,7 +117,8 @@ class UnifiedSynthesizer:
                 use_cache=False,
                 max_web_searches=0,
                 context=f"unified_iter{iteration}",
-                soft_schema=soft_schema
+                soft_schema=soft_schema,
+                max_tokens=64000
             )
 
             # Log model attempts if backups were used
@@ -228,9 +229,9 @@ Query: {query}
 ## Structure Legend
 
 - **Q1.{'{n}'}:** Query number in iteration 1 (search term used)
-- **Snippet ID Format:** S{'{iter}'}.{'{search}'}.{'{source}'}.{'{snippet}'}-{'{rel}'}
-  - Example: S1.2.3.0-M = Iteration 1, Search 2, Source 3, Snippet 0, MEDIUM reliability
-- **Reliability:** H=HIGH (authoritative sources), M=MEDIUM (reliable), L=LOW (less reliable)
+- **Snippet ID Format:** S{'{iter}'}.{'{search}'}.{'{source}'}.{'{snippet}'}-p{'{score}'}
+  - Example: S1.2.3.0-p0.85 = Iteration 1, Search 2, Source 3, Snippet 0, p-score 0.85
+- **P-score:** Quality probability (0.95=highest, 0.85=high, 0.65=medium, 0.50=ok, 0.15=low)
 - **Date:** Publication or last updated date from source
 
 ## Quotes Organized by Search Term
@@ -245,31 +246,44 @@ Query: {query}
 
 Generate a structured comparison answering the query, then self-assess.
 
-**Citation Format:** Use [S1.2.3.0-H] style snippet IDs to reference quotes.
+**Citation Format:** Use [verbal_handle, snippet_id] format for all citations.
+
+**CRITICAL - COPY EXACT handles and IDs from snippets above:**
+- Format: `[handle, S1.1.5.6-p0.95]` - FULL 4-part ID
+- **DO NOT create your own handles** - COPY from snippet listings
+- **DO NOT shorten IDs** - Use full 4-part format
+- Example from listings: `[intermittent_fasting_weight_2, S1.1.1.0-p0.95]`
+  - ❌ WRONG: `[if_weight, S1.1.1-p0.95]` - made up handle, shortened ID
+  - ✅ CORRECT: `[intermittent_fasting_weight_2, S1.1.1.0-p0.95]` - exact copy
+- **Look up the snippet in listings above, copy its [handle, ID] exactly**
+- **REQUIRED:** Every factual claim must have citations
+
 **Output Structure:** Use nested objects to avoid repetition.
 
 Example structure:
 ```json
 {{
   "comparison": {{
-    "claude_opus_4": {{
-      "architecture": "... [S1.1.0.0-H]",
-      "performance": "... [S1.1.0.1-H]"
-    }},
-    "gpt_4_5": {{
-      "architecture": "... [S1.2.0.0-M]"
-    }}
+    "current_value": "6.21% [mortgage_rate_dec2025, S1.1.1.0-p0.95]",
+    "trend": "decreased from prior week [rate_change, S1.1.2.1-p0.85]"
   }},
   "self_assessment": "A"
 }}
 ```
+Note: Use FULL 4-part IDs exactly as shown in snippets above.
 
 ## Self-Assessment
 
 Grade your synthesis (A+ to C-):
-- **A+/A**: Handled complexity well OR info not available in sources
-- **B**: Struggled with complexity, conflicting sources need deeper reasoning
-- **C**: Insufficient capability for this complexity
+- **A+/A**: Provided EXACT and SUFFICIENT answer to the query with high-quality sources
+- **B**: Partial answer provided, or struggled with complexity/conflicting sources
+  - If B grade AND additional search would help: Set can_answer=false and suggest search terms
+- **C**: Cannot provide sufficient answer, info not available, or insufficient capability
+  - Set can_answer=false and suggest search terms if more search would help
+
+**CRITICAL:**
+- Only grade A/A+ if you provided a complete, direct answer to what was asked
+- If B or lower AND more search would improve answer: Set can_answer=false to trigger additional search
 
 Return JSON with 'comparison' and 'self_assessment' fields."""
 
@@ -284,9 +298,9 @@ Query: {query}
 ## Structure Legend
 
 - **Q1.{'{n}'}:** Query number in iteration 1 (search term used)
-- **Snippet ID Format:** S{'{iter}'}.{'{search}'}.{'{source}'}.{'{snippet}'}-{'{rel}'}
-  - Example: S1.2.3.0-M = Iteration 1, Search 2, Source 3, Snippet 0, MEDIUM reliability
-- **Reliability:** H=HIGH (authoritative sources), M=MEDIUM (reliable), L=LOW (less reliable)
+- **Snippet ID Format:** S{'{iter}'}.{'{search}'}.{'{source}'}.{'{snippet}'}-p{'{score}'}
+  - Example: S1.2.3.0-p0.85 = Iteration 1, Search 2, Source 3, Snippet 0, p-score 0.85
+- **P-score:** Quality probability (0.95=highest, 0.85=high, 0.65=medium, 0.50=ok, 0.15=low)
 - **Date:** Publication or last updated date from source
 
 ## Quotes Organized by Search Term
@@ -310,7 +324,13 @@ Query: {query}
    - List missing_aspects
    - Suggest search_terms to fill gaps
 
-**Citation Format:** Use [S1.2.3.0-H] style snippet IDs.
+**Citation Format:** Use [verbal_handle, snippet_id] format for all citations.
+
+**CRITICAL - Use EXACT IDs from snippets above:**
+- Format: `[handle, S1.1.5.6-p0.95]` - FULL 4-part ID
+- ❌ WRONG: `[handle, S1.1.5-p0.95]` - shortened ID
+- ✅ CORRECT: Copy exact IDs and handles from snippet listings
+- **REQUIRED:** Always include citations when providing answers
 
 **Output Structure Example:**
 ```json
@@ -374,6 +394,7 @@ Query: {query}
 
                 by_url[url]['snippets'].append({
                     'id': snippet.get('id', ''),
+                    'verbal_handle': snippet.get('verbal_handle', ''),
                     'text': snippet.get('text', ''),
                     'p': snippet.get('p', 0.50),
                     'reason': snippet.get('validation_reason', 'OK')
@@ -391,15 +412,23 @@ Query: {query}
                     source_line += f" [{data['date']}]"
                 formatted.append(source_line)
 
-                # Snippets under this source (p-score already in ID)
+                # Snippets under this source (with verbal handle and p-score in ID)
                 for snip in data['snippets']:
                     reason = snip.get('reason', 'OK')
+                    handle = snip.get('verbal_handle', '')
+                    snippet_id = snip['id']
+
+                    # Format: [handle, S1.1.0-p0.95] (reason) "text"
+                    if handle:
+                        citation_ref = f"[{handle}, {snippet_id}]"
+                    else:
+                        citation_ref = f"[{snippet_id}]"
 
                     # Show reason for non-OK snippets (attribution is in quote text)
                     if reason != 'OK':
-                        formatted.append(f"    - [{snip['id']}] ({reason}) \"{snip['text']}\"")
+                        formatted.append(f"    - {citation_ref} ({reason}) \"{snip['text']}\"")
                     else:
-                        formatted.append(f"    - [{snip['id']}] \"{snip['text']}\"")
+                        formatted.append(f"    - {citation_ref} \"{snip['text']}\"")
 
         return '\n'.join(formatted)
 
@@ -411,41 +440,131 @@ Query: {query}
         """Convert snippet IDs to citation numbers."""
         answer_str = json.dumps(answer)
 
-        # Find all snippet ID patterns - both old (-H/-M/-L) and new (-pX.XX) formats
-        # Pattern 1: New format like [S1.1.0.0-p0.85]
-        # Pattern 2: Old format like [S1.1.4.2-M] (backward compatibility)
-        # Pattern 3: Lists like [S1.1.0-p0.95, S1.2.0-p0.85]
-        new_individual_pattern = r'\[S\d+(?:\.\d+)*-p\d+\.\d+\]'
-        old_individual_pattern = r'\[S\d+(?:\.\d+)*-[HML]\]'
-        new_list_pattern = r'\[S\d+(?:\.\d+)*-p\d+\.\d+(?:,\s*S\d+(?:\.\d+)*-p\d+\.\d+)+\]'
-        old_list_pattern = r'\[S\d+(?:\.\d+)*-[HML](?:,\s*S\d+(?:\.\d+)*-[HML])+\]'
+        # Build snippet maps FIRST - needed for handle lookup
+        snippet_map = {s.get('id'): s for s in snippets}
+        handle_to_id = {s.get('verbal_handle'): s.get('id') for s in snippets if s.get('verbal_handle')}
 
-        # Find all matches (new format first, then old for backward compatibility)
-        individual_matches = re.findall(new_individual_pattern, answer_str) + re.findall(old_individual_pattern, answer_str)
-        list_matches = re.findall(new_list_pattern, answer_str) + re.findall(old_list_pattern, answer_str)
+        # Pull ALL bracketed items and try strategies on each
+        all_brackets = re.findall(r'\[([^\]]+)\]', answer_str)
 
-        # Extract all unique snippet IDs
         snippet_ids = []
         seen = set()
+        matched_count = 0
+        failed_items = []
 
-        # From individual matches
-        for match in individual_matches:
-            sid = match[1:-1]  # Remove brackets
-            if sid not in seen:
-                snippet_ids.append(sid)
-                seen.add(sid)
+        for item in all_brackets:
+            item = item.strip()
 
-        # From list matches
-        for match in list_matches:
-            # Extract IDs from comma-separated list (both formats)
-            ids_in_match = re.findall(r'S\d+(?:\.\d+)*-(?:p\d+\.\d+|[HML])', match)
-            for sid in ids_in_match:
+            # Skip if already a citation number
+            if item.isdigit():
+                continue
+
+            matched = False
+            extracted_sid = None
+
+            # Strategy 1: Contains comma - try [handle, ID] format
+            if ',' in item:
+                parts = item.split(',', 1)
+                handle = parts[0].strip()
+                id_part = parts[1].strip()
+
+                # Extract snippet ID from second part
+                sid_match = re.search(r'S\d+(?:\.\d+)*-p\d+\.\d+', id_part)
+                if sid_match:
+                    extracted_sid = sid_match.group(0)
+
+                    # Try direct ID match
+                    if extracted_sid in snippet_map:
+                        matched = True  # Set matched=True even if already in seen
+                        if extracted_sid not in seen:
+                            snippet_ids.append(extracted_sid)
+                            seen.add(extracted_sid)
+                            logger.debug(f"[CITATIONS] Direct match: [{handle}, {extracted_sid}]")
+                    # Fuzzy match via exact handle
+                    elif handle in handle_to_id:
+                        correct_sid = handle_to_id[handle]
+                        matched = True  # Set matched=True even if already in seen
+                        if correct_sid not in seen:
+                            snippet_ids.append(correct_sid)
+                            seen.add(correct_sid)
+                    # Super fuzzy: partial string match on handles
+                    elif len(handle) >= 15:
+                        for existing_handle, existing_id in handle_to_id.items():
+                            if len(existing_handle) >= 15 and (handle in existing_handle or existing_handle in handle):
+                                matched = True  # Set even if already in seen
+                                if existing_id not in seen:
+                                    snippet_ids.append(existing_id)
+                                    seen.add(existing_id)
+                                break
+
+            # Strategy 2: Starts with S and has -p - try as snippet ID (or if Strategy 1 extracted an ID but didn't match)
+            if not matched and (extracted_sid or (item.startswith('S') and '-p' in item)):
+                sid = extracted_sid if extracted_sid else item
+                sid_match = re.search(r'S\d+(?:\.\d+)*-p\d+\.\d+', sid)
+                if sid_match:
+                    sid = sid_match.group(0)
+                    # Try exact match first
+                    if sid in snippet_map:
+                        matched = True  # Set even if already in seen
+                        if sid not in seen:
+                            snippet_ids.append(sid)
+                            seen.add(sid)
+                    # Prefix match for shortened IDs (e.g., S1.1.3-p0.95 -> S1.1.3.X-p0.95)
+                    elif not matched:
+                        sid_prefix = sid.rsplit('-p', 1)[0]  # Get part before p-score
+                        p_score = sid.split('-p')[1] if '-p' in sid else None
+                        for full_id in snippet_map.keys():
+                            full_prefix = full_id.rsplit('-p', 1)[0]
+                            if full_prefix.startswith(sid_prefix):
+                                # Check p-score matches if provided
+                                if not p_score or f'-p{p_score}' in full_id:
+                                    if full_id not in seen:
+                                        snippet_ids.append(full_id)
+                                        seen.add(full_id)
+                                        matched = True
+                                        break
+
+            # Strategy 3: Try as verbal handle
+            if not matched and item in handle_to_id:
+                sid = handle_to_id[item]
+                matched = True  # Set even if already in seen
                 if sid not in seen:
                     snippet_ids.append(sid)
                     seen.add(sid)
 
-        # Build snippet map
-        snippet_map = {s.get('id'): s for s in snippets}
+            # Track failures for logging
+            if not matched:
+                failed_items.append(item)
+
+        if failed_items:
+            logger.warning(f"[CITATIONS] Could not match {len(failed_items)} items")
+
+            # Save debug file with missing items and available pairs
+            debug_output = []
+            debug_output.append("=== MISSING CITATIONS ===\n")
+            for item in failed_items:
+                debug_output.append(f"[{item}]\n")
+
+            debug_output.append("\n=== AVAILABLE [handle, ID] PAIRS ===\n")
+            for handle, sid in sorted(handle_to_id.items()):
+                snippet = snippet_map.get(sid)
+                if snippet:
+                    p_score = snippet.get('p', 0)
+                    debug_output.append(f"[{handle}, {sid}]\n")
+
+            # Write to file in test results directory
+            try:
+                import os
+                debug_dir = os.path.join(os.path.dirname(__file__), 'test_results')
+                os.makedirs(debug_dir, exist_ok=True)
+                debug_file = os.path.join(debug_dir, 'citation_debug.txt')
+                with open(debug_file, 'w') as f:
+                    f.writelines(debug_output)
+                logger.warning(f"[CITATIONS] Debug info saved to {debug_file}")
+            except Exception as e:
+                logger.warning(f"[CITATIONS] Could not save debug file: {e}")
+
+        logger.info(f"[CITATIONS] Matched {len(snippet_ids)} snippet references from {len(all_brackets)} bracketed items ({len(failed_items)} unmatched)")
 
         # Build citations (deduplicate by URL, aggregate all snippets per URL)
         citations = []
@@ -498,30 +617,30 @@ Query: {query}
             })
 
         # Map snippet IDs to citation indices
+        handle_to_citation = {}
         for snippet_id in snippet_ids:
             snippet = snippet_map.get(snippet_id)
             if snippet:
                 source_url = snippet.get('_source_url', '')
-                snippet_to_citation[snippet_id] = url_to_citation_idx.get(source_url)
+                citation_idx = url_to_citation_idx.get(source_url)
+                snippet_to_citation[snippet_id] = citation_idx
 
-        # Replace individual IDs first
+                # Also map handle to citation
+                handle = snippet.get('verbal_handle')
+                if handle:
+                    handle_to_citation[handle] = citation_idx
+
+        # Replace all matched snippet IDs with citation numbers
+        # We've already identified all valid snippet IDs above, now replace any occurrence
         for snippet_id, citation_idx in snippet_to_citation.items():
+            # Replace [handle, snippet_id] format
+            answer_str = re.sub(rf'\[[^,\]]+,\s*{re.escape(snippet_id)}\]', f'[{citation_idx}]', answer_str)
+            # Replace [snippet_id] format
             answer_str = answer_str.replace(f'[{snippet_id}]', f'[{citation_idx}]')
 
-        # Replace comma-separated lists with consecutive bracket notation
-        # e.g., [S1.1.0-p0.95, S1.2.0-p0.85] -> [1][2]
-        def replace_list(match):
-            # Match both new and old format IDs
-            ids_in_match = re.findall(r'S\d+(?:\.\d+)*-(?:p\d+\.\d+|[HML])', match.group(0))
-            citation_nums = []
-            for sid in ids_in_match:
-                if sid in snippet_to_citation:
-                    citation_nums.append(str(snippet_to_citation[sid]))
-            return ''.join(f'[{num}]' for num in citation_nums)
-
-        # Apply to both old and new list patterns
-        answer_str = re.sub(new_list_pattern, replace_list, answer_str)
-        answer_str = re.sub(old_list_pattern, replace_list, answer_str)
+        # Replace handle-only citations
+        for handle, citation_idx in handle_to_citation.items():
+            answer_str = re.sub(rf'\[{re.escape(handle)}\]', f'[{citation_idx}]', answer_str)
 
         # Remove duplicate consecutive citations
         answer_str = re.sub(r'\[(\d+)\](?:\[\1\])+', r'[\1]', answer_str)

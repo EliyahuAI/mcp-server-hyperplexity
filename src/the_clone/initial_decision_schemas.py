@@ -50,9 +50,13 @@ def get_initial_decision_schema(answer_schema: dict = None) -> dict:
                 "type": "string",
                 "enum": ["tier1", "tier2", "tier3", "tier4"],
                 "description": "Synthesis complexity tier: tier1 (fast/simple), tier2 (balanced), tier3 (strong reasoning), tier4 (deepest analysis, hardest problems only)"
+            },
+            "academic": {
+                "type": "boolean",
+                "description": "Set true if query requires scholarly/peer-reviewed sources (research papers, academic studies, scientific findings). Prioritizes academic databases over general web."
             }
         },
-        "required": ["decision", "breadth", "depth", "search_terms", "synthesis_tier"]
+        "required": ["decision", "breadth", "depth", "search_terms", "synthesis_tier", "academic"]
     }
 
     # If custom answer schema provided, merge it for direct answers

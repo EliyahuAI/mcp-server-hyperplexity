@@ -93,15 +93,8 @@ def get_models_for_tier(provider: str, synthesis_tier: str) -> Dict[str, str]:
     tier_config = provider_config['tiers'][synthesis_tier]
     extraction_model = provider_config['default_extraction_model']
 
-    # Provider-specific routing models for initial decision
-    if provider == 'baseten':
-        routing_model = 'deepseek-v3.2-baseten'
-    elif provider == 'deepseek':
-        routing_model = 'deepseek-v3.2'
-    elif provider == 'claude':
-        routing_model = 'claude-sonnet-4-5'  # Use Sonnet for initial routing, Gemini for extraction
-    else:
-        routing_model = extraction_model
+    # Use Gemini 2.0 Flash for initial decision across all providers (fast, cost-effective routing)
+    routing_model = 'gemini-2.0-flash'
 
     return {
         'initial_decision': routing_model,
@@ -210,11 +203,22 @@ def should_stop_iteration(snippets: list, strategy: Dict[str, Any]) -> bool:
         # No early stopping - continue until max iterations
         return False
 
-    if stop_condition == "1_reliable_snippet":
-        # Stop if we have at least 1 snippet with p >= min threshold
+    if stop_condition in ["reliable_answer_found", "1_reliable_snippet"]:
+        # Stop if we found at least 1 reliable answer to the EXACT query (p≥0.85)
+        # Check snippets for primary search term (search_ref=1) with high confidence
+        # Used for targeted queries where we're looking for a specific fact
         min_p = strategy.get('min_p_threshold', 0.85)
-        reliable_count = sum(1 for s in snippets if s.get('p', 0) >= min_p)
-        return reliable_count >= 1
+
+        # Count reliable snippets for primary search term only (search_ref=1)
+        primary_reliable = sum(1 for s in snippets
+                              if s.get('p', 0) >= min_p and s.get('search_ref') == 1)
+
+        if primary_reliable >= 1:
+            logger.info(f"[STRATEGY] Reliable answer to exact query found: {primary_reliable} snippet(s) with p≥{min_p} for primary search term")
+            return True
+
+        logger.debug(f"[STRATEGY] No reliable answer yet (found {len([s for s in snippets if s.get('p', 0) >= min_p])} high-p snippets, but {primary_reliable} for primary query)")
+        return False
 
     # Unknown stop condition - don't stop
     return False

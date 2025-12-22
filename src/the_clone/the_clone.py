@@ -292,9 +292,14 @@ class TheClone2Refined:
         if clone_logger:
             clone_logger.start_step("Search Execution")
 
+        # Build search settings with max_tokens_per_page from strategy
+        search_settings = {'max_results': 10}
+        if 'max_tokens_per_page' in strategy:
+            search_settings['max_tokens_per_page'] = strategy['max_tokens_per_page']
+
         search_results = await self.search_manager.execute_searches(
             search_terms=search_terms,
-            search_settings={'max_results': 10},
+            search_settings=search_settings,
             include_domains=search_include_domains,
             exclude_domains=search_exclude_domains,
             clone_logger=clone_logger
@@ -422,31 +427,57 @@ class TheClone2Refined:
 
             logger.info(f"[CLONE] Pulling sources {sources_pulled}-{batch_end-1} ({len(sources_this_batch)} sources)")
 
-            # Extract from batch
-            extraction_tasks = []
-            for idx, source in enumerate(sources_this_batch):
-                snippet_id_prefix = f"S{iteration}.{source['_search_index']}.{sources_pulled + idx}"
-                task = self.snippet_extractor.extract_from_source(
-                    source=source,
+            # Extract from batch - use batch mode if strategy specifies it
+            use_batch_extraction = strategy.get('batch_extraction', False)
+
+            if use_batch_extraction and use_code_extraction:
+                # Batch extraction: process all sources in single API call (for shallow strategies)
+                logger.info(f"[CLONE] Using batch extraction for {len(sources_this_batch)} sources")
+                snippet_id_prefix = f"S{iteration}"
+
+                batch_result = await self.snippet_extractor.extract_from_sources_batch(
+                    sources=sources_this_batch,
                     query=prompt,
                     snippet_id_prefix=snippet_id_prefix,
                     all_search_terms=search_terms,
-                    primary_search_index=source['_search_index'],
                     model=models['extraction'],
                     soft_schema=use_soft_schema,
                     min_quality_threshold=strategy['min_p_threshold'],
                     extraction_mode=strategy['extraction_mode'],
                     max_snippets_per_source=strategy['max_snippets_per_source'],
-                    use_code_extraction=use_code_extraction,
                     clone_logger=clone_logger,
-                    log_prompt_collapsed=(first_extraction_prompt_logged),
                     provider=provider
                 )
-                extraction_tasks.append(task)
-            
-            if not first_extraction_prompt_logged: first_extraction_prompt_logged = True
+                results = batch_result
 
-            results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
+                if not first_extraction_prompt_logged: first_extraction_prompt_logged = True
+            else:
+                # Individual extraction: process each source separately (for deep strategies)
+                logger.info(f"[CLONE] Using individual extraction for {len(sources_this_batch)} sources")
+                extraction_tasks = []
+                for idx, source in enumerate(sources_this_batch):
+                    snippet_id_prefix = f"S{iteration}.{source['_search_index']}.{sources_pulled + idx}"
+                    task = self.snippet_extractor.extract_from_source(
+                        source=source,
+                        query=prompt,
+                        snippet_id_prefix=snippet_id_prefix,
+                        all_search_terms=search_terms,
+                        primary_search_index=source['_search_index'],
+                        model=models['extraction'],
+                        soft_schema=use_soft_schema,
+                        min_quality_threshold=strategy['min_p_threshold'],
+                        extraction_mode=strategy['extraction_mode'],
+                        max_snippets_per_source=strategy['max_snippets_per_source'],
+                        use_code_extraction=use_code_extraction,
+                        clone_logger=clone_logger,
+                        log_prompt_collapsed=(first_extraction_prompt_logged),
+                        provider=provider
+                    )
+                    extraction_tasks.append(task)
+
+                if not first_extraction_prompt_logged: first_extraction_prompt_logged = True
+
+                results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
 
             # Collect snippets and costs by provider
             new_snippets = []
@@ -490,6 +521,19 @@ class TheClone2Refined:
             # For simplicity, we just list the configured model. Backup models are logged at the individual call level in log_section.
             clone_logger.record_step_metric("Extraction", provider_display, extract_model, costs['extraction'], step_time_phase, f"Extracted {len(all_snippets)} snippets")
             clone_logger.end_step("Extraction")
+
+        # Deduplicate verbal handles across all snippets
+        used_handles = {}
+        for snippet in all_snippets:
+            handle = snippet.get('verbal_handle')
+            if handle:
+                if handle in used_handles:
+                    # Handle collision - append counter
+                    used_handles[handle] += 1
+                    new_handle = f"{handle}_{used_handles[handle]}"
+                    snippet['verbal_handle'] = new_handle
+                else:
+                    used_handles[handle] = 1
 
         # Step 5: Synthesis
         logger.info(f"\n[CLONE] Step 5: Synthesis from {len(all_snippets)} snippets...")
