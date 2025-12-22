@@ -49,7 +49,7 @@ class CloneLogger:
         """Starts a top-level collapsible section for a major step."""
         self.step_start_times[step_name] = time.time()
         timestamp = datetime.now().strftime('%H:%M:%S')
-        self._write(f"\n<details>\n<summary><h2>🟢 Step: {step_name} <small>({timestamp})</small></h2></summary>\n\n")
+        self._write(f"\n<details>\n<summary><b>[SUCCESS] Step: {step_name}</b> <small>({timestamp})</small></summary>\n\n")
 
     def end_step(self, step_name: str):
         """Closes the top-level collapsible section for a step."""
@@ -84,16 +84,16 @@ class CloneLogger:
     def log_section(self, title: str, content: Any = None, level: int = 3, collapse: bool = False):
         timestamp = datetime.now().strftime('%H:%M:%S')
         heading = "#" * level
-        
+
         section_text = f"{heading} {title} <small>({timestamp})</small>\n\n"
-        
+
         if content is not None:
             formatted_content = self._format_content(content)
             if collapse:
-                section_text += f"<details><summary>Click to expand</summary>\n\n{formatted_content}\n</details>\n\n"
+                section_text += f"<details><summary>Click to expand</summary>\n\n{formatted_content}\n\n</details>\n\n"
             else:
                 section_text += f"{formatted_content}\n\n"
-        
+
         self._write(section_text)
 
     def get_log_content(self) -> str:
