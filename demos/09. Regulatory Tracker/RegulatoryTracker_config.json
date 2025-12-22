@@ -5,7 +5,7 @@
   "general_notes": "Configuration for regulatory compliance tracking table. Focuses on validating regulatory framework details, compliance requirements, and organizational mappings. Uses high search context for comprehensive regulatory information gathering.",
   "qc_settings": {
     "enable_qc": true,
-    "model": ["deepseek-v3.2", "claude-sonnet-4-5"],
+    "model": ["deepseek-v3.2-baseten", "claude-sonnet-4-5"],
     "max_tokens_default": 8000,
     "tokens_per_validated_column_default": 4000,
     "anthropic_max_web_searches": 0
@@ -15,28 +15,28 @@
       "group_id": 0,
       "group_name": "Framework Identification",
       "description": "Primary regulatory framework identifiers used for context",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 1,
       "group_name": "Regulatory Status and Scope",
       "description": "Current status, regional coverage, and scope details of regulations",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 2,
       "group_name": "Compliance Requirements",
       "description": "Covered entities, obligation themes, and required artifacts",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 3,
       "group_name": "Implementation Details",
       "description": "Impact assessment, milestones, and internal ownership assignments",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "high"
     }
   ],

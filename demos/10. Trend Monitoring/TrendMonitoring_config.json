@@ -5,7 +5,7 @@
   "general_notes": "Configuration for trend monitoring table tracking cross-domain topics, engagement patterns, and strategic insights for communications and strategy teams. Focus on current platform data, sentiment analysis, and actionable intelligence. Prioritize recent data sources and social media analytics platforms for accurate trend metrics.",
   "qc_settings": {
     "enable_qc": true,
-    "model": ["deepseek-v3.2", "claude-sonnet-4-5"],
+    "model": ["deepseek-v3.2-baseten", "claude-sonnet-4-5"],
     "max_tokens_default": 8000,
     "tokens_per_validated_column_default": 4000,
     "anthropic_max_web_searches": 3
@@ -15,21 +15,21 @@
       "group_id": 0,
       "group_name": "Topic Identification",
       "description": "Core topic identifiers used for context - not validated but essential for row identification",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 1,
       "group_name": "Platform Distribution",
       "description": "Primary platforms where topic engagement occurs - focus on current social media and news platform activity patterns",
-      "model": "sonar-pro",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 2,
       "group_name": "Engagement Metrics",
       "description": "Baseline engagement levels - requires recent analytics data from social platforms",
-      "model": "sonar-pro",
+      "model": "the-clone-baseten",
       "search_context": "high",
       "anthropic_max_web_searches": 2
     },
@@ -37,14 +37,14 @@
       "group_id": 3,
       "group_name": "Voice and Sentiment Analysis",
       "description": "Key influencers, sentiment scores, and geographic activity patterns - usually reported together in social listening tools",
-      "model": "sonar-pro",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 4,
       "group_name": "Strategic Intelligence",
       "description": "Narrative summaries, risk assessments, and recommended actions - strategic insights that build on engagement data",
-      "model": "sonar-pro",
+      "model": "the-clone-baseten",
       "search_context": "high"
     }
   ],

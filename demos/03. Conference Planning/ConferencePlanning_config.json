@@ -1,11 +1,11 @@
 {
-  "default_model": "sonar",
+  "default_model": "the-clone-baseten",
   "default_search_context_size": "high",
   "anthropic_max_web_searches_default": 1,
   "general_notes": "Configuration for AI/ML conference validation table. Focus on accuracy for event details, pricing, and relevance scoring. All dates should be in YYYY-MM-DD format. Pricing should include currency (USD) and specify if TBA/sold out status. For venue information, search for specific facility names and addresses. Format should be clearly specified (In-person, Hybrid, Virtual, etc.).",
   "qc_settings": {
     "enable_qc": true,
-    "model": ["deepseek-v3.2", "claude-sonnet-4-5"],
+    "model": ["deepseek-v3.2-baseten", "claude-sonnet-4-5"],
     "max_tokens_default": 8000,
     "tokens_per_validated_column_default": 4000,
     "anthropic_max_web_searches": 1
@@ -15,28 +15,28 @@
       "group_id": 0,
       "group_name": "Conference Identifiers",
       "description": "Core conference identification fields used for context",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 1,
       "group_name": "Event Logistics",
       "description": "Date, location, venue, and format information typically found together in event announcements",
-      "model": "sonar-pro",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 2,
       "group_name": "Event Details",
       "description": "Pricing, size, audience, and themes information usually found in conference marketing materials",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 3,
       "group_name": "Conference Resources",
       "description": "Website, sponsor info, and submission details typically found on conference websites",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {

@@ -15,35 +15,35 @@
       "group_id": 0,
       "group_name": "Client Identification",
       "description": "Primary client identifier used for context in all searches",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "low"
     },
     {
       "group_id": 1,
       "group_name": "Company Profile",
       "description": "Basic company information including sector classification and organizational structure",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "medium"
     },
     {
       "group_id": 2,
       "group_name": "Trigger Events",
       "description": "Time-sensitive business events and triggers for outreach timing",
-      "model": "sonar-pro",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 3,
       "group_name": "Outreach Strategy",
       "description": "Proposed outreach approaches and value propositions tailored to client context",
-      "model": "sonar-pro",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 4,
       "group_name": "Tactical Planning",
       "description": "Priority assessment and next action recommendations based on opportunity quality",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "medium"
     }
   ],

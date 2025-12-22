@@ -15,28 +15,28 @@
       "group_id": 0,
       "group_name": "Company Identification",
       "description": "Primary company identifier used for context in all other searches",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "low"
     },
     {
       "group_id": 1,
       "group_name": "Company Fundamentals",
       "description": "Basic company information typically found together in company profiles and directories - sector, region, and current employee count",
-      "model": "sonar-pro",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 2,
       "group_name": "Technology Intelligence",
       "description": "Technical signals and pain points derived from tech blogs, job postings, and engineering content",
-      "model": "sonar-pro",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 3,
       "group_name": "Sales Intelligence",
       "description": "Strategic assessments and outreach recommendations requiring synthesis of multiple data points",
-      "model": "sonar-pro",
+      "model": "the-clone-baseten",
       "search_context": "high"
     }
   ],

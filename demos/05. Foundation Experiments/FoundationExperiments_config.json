@@ -5,7 +5,7 @@
   "general_notes": "Configuration for foundational experiments research table used by research strategists and lab PIs to ground new hypotheses in replicated experiments across domains (AI, biology, climate, physics). Focus on bibliographic accuracy, experimental details, and reproducibility assessment.",
   "qc_settings": {
     "enable_qc": true,
-    "model": ["deepseek-v3.2", "claude-sonnet-4-5"],
+    "model": ["deepseek-v3.2-baseten", "claude-sonnet-4-5"],
     "max_tokens_default": 8000,
     "tokens_per_validated_column_default": 4000,
     "anthropic_max_web_searches": 0
@@ -15,28 +15,28 @@
       "group_id": 0,
       "group_name": "Paper Identification",
       "description": "Core paper/experiment identification and temporal context - used for row identification and search context",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 1,
       "group_name": "Research Domain & Methodology",
       "description": "Field classification, experimental essence, and datasets/systems - foundational research characteristics typically found together in academic sources",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 2,
       "group_name": "Results & Impact Assessment",
       "description": "Key experimental results, limitations, and reproducibility status - outcome information typically discussed together in reviews and meta-analyses",
-      "model": "sonar-pro",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 3,
       "group_name": "Hypothesis Integration",
       "description": "Hypothesis links and next experiment design - strategic research planning information requiring synthesis across sources",
-      "model": "sonar-pro",
+      "model": "the-clone-baseten",
       "search_context": "high"
     }
   ],
