@@ -264,7 +264,7 @@ class GeminiProvider:
 
             # Fix 3: Remove "items": False (not supported in Gemini)
             if 'items' in node and node['items'] is False:
-                logger.warning(f"[GEMINI_SCHEMA] Removing 'items': False at {path} (tuple validation not supported)")
+                logger.debug(f"[GEMINI_SCHEMA] Removing 'items': False at {path} (tuple validation not supported)")
                 del node['items']
 
             # Recursively process nested structures
@@ -286,22 +286,39 @@ class GeminiProvider:
 
             # Handle prefixItems (used in tuple schemas)
             if 'prefixItems' in node and isinstance(node['prefixItems'], list):
+                # First recursively process each prefixItem schema
                 node['prefixItems'] = [
                     process_schema_node(item, f"{path}[{i}]")
                     for i, item in enumerate(node['prefixItems'])
                 ]
+
+                # Then convert to items (Gemini doesn't support tuple validation)
+                logger.debug(f"[GEMINI_SCHEMA] Converting prefixItems to items at {path} (tuple validation not supported)")
+                if len(node['prefixItems']) == 1:
+                    # Single item: just use it directly
+                    node['items'] = node['prefixItems'][0]
+                else:
+                    # Multiple items: use anyOf to accept any of the position schemas
+                    node['items'] = {
+                        'anyOf': node['prefixItems']
+                    }
+                conversion_map['prefixItems_conversions'] = conversion_map.get('prefixItems_conversions', [])
+                conversion_map['prefixItems_conversions'].append(path)
+                del node['prefixItems']
 
             return node
 
         converted = process_schema_node(schema)
 
         # Log conversions if any were made
-        if conversion_map['null_conversions'] or conversion_map['type_array_fixes']:
+        if conversion_map['null_conversions'] or conversion_map['type_array_fixes'] or conversion_map.get('prefixItems_conversions'):
             logger.info(f"[GEMINI_SCHEMA] Applied compatibility fixes:")
             if conversion_map['type_array_fixes']:
                 logger.info(f"  - Fixed {len(conversion_map['type_array_fixes'])} type array(s)")
             if conversion_map['null_conversions']:
                 logger.info(f"  - Converted null to 'NULL' in {len(conversion_map['null_conversions'])} field(s): {conversion_map['null_conversions']}")
+            if conversion_map.get('prefixItems_conversions'):
+                logger.info(f"  - Converted prefixItems to items in {len(conversion_map['prefixItems_conversions'])} field(s): {conversion_map['prefixItems_conversions']}")
 
         return converted, conversion_map
 
