@@ -254,8 +254,8 @@ class TheClone2Refined:
 
         logger.info(f"[CLONE] Strategy: {strategy['name']} (breadth={breadth}, depth={depth})")
         logger.info(f"[CLONE] Synthesis tier: {synthesis_tier} (model: {models['synthesis']})")
-        logger.info(f"[CLONE] Params: batch={strategy['sources_per_batch']}, mode={strategy['extraction_mode']}, max_snippets={strategy['max_snippets_per_source']}, min_p={strategy['min_p_threshold']}")
-        logger.info(f"[CLONE] Search terms: {search_terms}")
+        logger.debug(f"[CLONE] Params: batch={strategy['sources_per_batch']}, mode={strategy['extraction_mode']}, max_snippets={strategy['max_snippets_per_source']}, min_p={strategy['min_p_threshold']}")
+        logger.debug(f"[CLONE] Search terms: {search_terms}")
         
         if clone_logger:
             clone_logger.log_section("Strategy Selected", {
@@ -281,10 +281,10 @@ class TheClone2Refined:
             logger.info(f"[CLONE] Academic mode - using {len(search_include_domains)} academic domains")
         elif include_domains:
             search_include_domains = include_domains
-            logger.info(f"[CLONE] Using {len(search_include_domains)} included domains")
+            logger.debug(f"[CLONE] Using {len(search_include_domains)} included domains")
         elif exclude_domains:
             search_exclude_domains = exclude_domains
-            logger.info(f"[CLONE] Using {len(search_exclude_domains)} excluded domains")
+            logger.debug(f"[CLONE] Using {len(search_exclude_domains)} excluded domains")
 
         # Step 2: Search
         logger.info(f"\n[CLONE] Step 2: Executing {len(search_terms)} searches...")
@@ -435,14 +435,14 @@ class TheClone2Refined:
                 logger.info("[CLONE] No more sources to pull")
                 break
 
-            logger.info(f"[CLONE] Pulling sources {sources_pulled}-{batch_end-1} ({len(sources_this_batch)} sources)")
+            logger.debug(f"[CLONE] Pulling sources {sources_pulled}-{batch_end-1} ({len(sources_this_batch)} sources)")
 
             # For code extraction, decide between batch (shallow) or parallel individual (deep)
             use_batch_single_call = strategy.get('batch_extraction', False) and use_code_extraction
 
             if use_batch_single_call:
                 # Batch extraction: ALL sources in SINGLE API call (shallow strategies)
-                logger.info(f"[CLONE] Using batch extraction (single call) for {len(sources_this_batch)} sources")
+                logger.debug(f"[CLONE] Using batch extraction (single call) for {len(sources_this_batch)} sources")
                 snippet_id_prefix = f"S{iteration}"
 
                 batch_result = await self.snippet_extractor.extract_from_sources_batch(
@@ -465,7 +465,7 @@ class TheClone2Refined:
             elif use_code_extraction:
                 # Parallel individual extraction: Each source in SEPARATE call (deep strategies)
                 # Still uses batch pathway (for source-level assessment) but one source per call
-                logger.info(f"[CLONE] Using parallel individual extraction ({len(sources_this_batch)} calls) for deep strategy")
+                logger.debug(f"[CLONE] Using parallel individual extraction ({len(sources_this_batch)} calls) for deep strategy")
                 extraction_tasks = []
                 for idx, source in enumerate(sources_this_batch):
                     snippet_id_prefix = f"S{iteration}"
@@ -494,7 +494,7 @@ class TheClone2Refined:
                 results = [r[0] for r in batch_results if isinstance(r, list) and len(r) > 0]
             else:
                 # Legacy non-code extraction (shouldn't happen)
-                logger.info(f"[CLONE] Using legacy individual extraction for {len(sources_this_batch)} sources")
+                logger.debug(f"[CLONE] Using legacy individual extraction for {len(sources_this_batch)} sources")
                 extraction_tasks = []
                 for idx, source in enumerate(sources_this_batch):
                     snippet_id_prefix = f"S{iteration}.{source['_search_index']}.{sources_pulled + idx}"
@@ -548,19 +548,19 @@ class TheClone2Refined:
             all_snippets.extend(new_snippets)
             sources_pulled = batch_end
 
-            logger.info(f"[CLONE] Extracted {len(new_snippets)} snippets (total: {len(all_snippets)})")
+            logger.debug(f"[CLONE] Extracted {len(new_snippets)} snippets (total: {len(all_snippets)})")
             if all_snippets:
                 avg_p = sum(s.get('p', 0.5) for s in all_snippets) / len(all_snippets)
                 high_p = sum(1 for s in all_snippets if s.get('p', 0) >= 0.85)
-                logger.info(f"[CLONE] Quality: avg_p={avg_p:.2f}, high_quality={high_p}/{len(all_snippets)}")
+                logger.debug(f"[CLONE] Quality: avg_p={avg_p:.2f}, high_quality={high_p}/{len(all_snippets)}")
 
             # Check stop condition
             if should_stop_iteration(all_snippets, strategy):
-                logger.info(f"[CLONE] Stop condition met ({strategy.get('stop_condition')})")
+                logger.debug(f"[CLONE] Stop condition met ({strategy.get('stop_condition')})")
                 break
 
             if sources_pulled >= len(ranked_sources):
-                logger.info("[CLONE] All sources exhausted")
+                logger.debug("[CLONE] All sources exhausted")
                 break
         
         step_time_phase = time.time() - step_start_phase
@@ -716,7 +716,7 @@ class TheClone2Refined:
 
                 # Extraction
                 if new_ranked_sources:
-                    logger.info(f"[CLONE] Extracting from {len(new_ranked_sources)} new sources (Parallel)...")
+                    logger.debug(f"[CLONE] Extracting from {len(new_ranked_sources)} new sources (Parallel)...")
                     
                     new_sources_pulled = 0
                     total_new_snippets = 0
@@ -800,7 +800,7 @@ class TheClone2Refined:
                             f"Extracted {total_new_snippets} new snippets (Parallel)"
                         )
                             
-                    logger.info(f"[CLONE] Added {total_new_snippets} new snippets")
+                    logger.debug(f"[CLONE] Added {total_new_snippets} new snippets")
 
             # 2. Determine model for re-synthesis
             target_model = models['synthesis']
