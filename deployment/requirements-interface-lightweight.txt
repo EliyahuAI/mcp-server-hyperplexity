@@ -7,6 +7,9 @@
 # Packaging boto3/botocore causes version conflicts with Lambda's built-in versions
 aioboto3>=15.4.0  # Latest (Oct 18, 2025) - uses Lambda's built-in boto3/botocore
 
+# Google Auth for Gemini provider (needed by shared.ai_client import chain)
+google-auth>=2.0.0
+
 # File upload handling
 python-multipart>=0.0.5
 

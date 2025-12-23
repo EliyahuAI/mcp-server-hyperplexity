@@ -277,11 +277,31 @@ def copy_source_files():
         # Create __init__.py for shared package if not exists
         if not (shared_pkg_dir / "__init__.py").exists():
             (shared_pkg_dir / "__init__.py").touch()
-            
+
         shutil.copytree(ai_client_src, shared_pkg_dir / "ai_client", dirs_exist_ok=True)
         logger.info("Copied 'shared/ai_client' package")
     else:
         logger.warning(f"'shared/ai_client' directory not found at {ai_client_src}")
+
+    # 6b. Also copy perplexity_schema.py to shared/ directory (imported as shared.perplexity_schema)
+    perplexity_schema_src = SHARED_SRC_DIR / "perplexity_schema.py"
+    if perplexity_schema_src.exists():
+        shared_pkg_dir = PACKAGE_DIR / "shared"
+        shared_pkg_dir.mkdir(exist_ok=True)
+        shutil.copy(perplexity_schema_src, shared_pkg_dir / "perplexity_schema.py")
+        logger.info("Copied 'perplexity_schema.py' to shared/ directory")
+    else:
+        logger.warning(f"'perplexity_schema.py' not found at {perplexity_schema_src}")
+
+    # 6c. Also copy ai_api_client.py to shared/ directory (imported as shared.ai_api_client by the_clone)
+    ai_api_client_src = SHARED_SRC_DIR / "ai_api_client.py"
+    if ai_api_client_src.exists():
+        shared_pkg_dir = PACKAGE_DIR / "shared"
+        shared_pkg_dir.mkdir(exist_ok=True)
+        shutil.copy(ai_api_client_src, shared_pkg_dir / "ai_api_client.py")
+        logger.info("Copied 'ai_api_client.py' to shared/ directory")
+    else:
+        logger.warning(f"'ai_api_client.py' not found at {ai_api_client_src}")
 
     # 7. Table Maker prompts and code are in interface_lambda/actions/table_maker/
     # No need to copy root table_maker directory - Lambda uses the local copy
