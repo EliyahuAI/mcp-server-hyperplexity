@@ -392,7 +392,12 @@ def discover_batch_models(rows, validator):
     for group_id, group_targets in grouped_targets.items():
         if group_targets:
             model, _ = resolve_search_group_model(group_targets, validator)
-            models.add(model)
+            # If model is a list (backup models), add each individual model to the set
+            if isinstance(model, list):
+                for m in model:
+                    models.add(m)
+            else:
+                models.add(model)
             # Found model for search group
     
         logger.debug(f"Found models for batch: {sorted(models)}")
@@ -465,17 +470,35 @@ def get_anthropic_api_key() -> str:
         logger.debug("Using Anthropic API key from environment variable")
     return api_key
 
-def determine_api_provider(model: str) -> str:
-    """Determine which API provider to use based on model name."""
-    if (model.startswith('anthropic/') or 
-        model.startswith('anthropic.') or 
+def determine_api_provider(model) -> str:
+    """Determine which API provider to use based on model name.
+
+    Args:
+        model: Model name (string) or list of model names (for backup models).
+               If list, uses the first model.
+    """
+    # Handle backup models (list)
+    if isinstance(model, list):
+        model = model[0] if model else 'llama-3.1-sonar-small-128k-online'
+
+    if (model.startswith('anthropic/') or
+        model.startswith('anthropic.') or
         model.startswith('claude-')):
         return 'anthropic'
     else:
         return 'perplexity'
 
-def normalize_anthropic_model(model: str) -> str:
-    """Convert anthropic/ format to direct API format if needed."""
+def normalize_anthropic_model(model) -> str:
+    """Convert anthropic/ format to direct API format if needed.
+
+    Args:
+        model: Model name (string) or list of model names (for backup models).
+               If list, uses the first model.
+    """
+    # Handle backup models (list)
+    if isinstance(model, list):
+        model = model[0] if model else 'claude-sonnet-4-20250514'
+
     if model.startswith('anthropic/'):
         # Convert anthropic/claude-sonnet-4-20250514 to claude-sonnet-4-20250514
         return model.replace('anthropic/', '')
@@ -850,11 +873,15 @@ def calculate_token_costs_REMOVED(token_usage: Dict[str, Any], pricing_data: Dic
     
     api_provider = token_usage.get('api_provider', 'unknown')
     model = token_usage.get('model', 'unknown')
-    
+
+    # Handle backup models (list) - use first model for pricing
+    if isinstance(model, list):
+        model = model[0] if model else 'unknown'
+
     # Try to find exact model match first
     pricing = None
     # Looking for pricing data
-    
+
     if model in pricing_data:
         pricing = pricing_data[model]
         # Using exact pricing match
@@ -1273,10 +1300,20 @@ def resolve_search_group_model(targets: List[Any], validator) -> Tuple[str, List
     # Collect all models used in this group
     for target in targets:
         if target.preferred_model:
-            models_in_group.add(target.preferred_model)
+            # Handle backup models (list) - add first model to set for comparison
+            pref_model = target.preferred_model
+            if isinstance(pref_model, list):
+                models_in_group.add(pref_model[0] if pref_model else 'unknown')
+            else:
+                models_in_group.add(pref_model)
             preferred_models.append((target.column, target.preferred_model))
         else:
-            models_in_group.add(validator.default_model)
+            # Handle backup models (list) in default model
+            default_model = validator.default_model
+            if isinstance(default_model, list):
+                models_in_group.add(default_model[0] if default_model else 'unknown')
+            else:
+                models_in_group.add(default_model)
     
     # If only one model is used, that's our answer
     if len(models_in_group) == 1:
@@ -1953,7 +1990,10 @@ def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[
             # Extract model from call_info structure
             call_info = call_data.get('call_info', {})
             model_used = call_info.get('model', 'unknown')
-            
+            # Handle backup models (list) - use first model for tracking
+            if isinstance(model_used, list):
+                model_used = model_used[0] if model_used else 'unknown'
+
             # Extract cost and timing from nested structures
             costs = call_data.get('costs', {})
             estimated_costs = costs.get('estimated', {})
@@ -2080,7 +2120,9 @@ def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[
             
             # Determine max_web_searches value for display
             max_web_searches = None
-            if 'claude' in configured_model.lower() or 'anthropic' in configured_model.lower():
+            # Handle backup models (list) - use first model
+            check_model = configured_model[0] if isinstance(configured_model, list) else configured_model
+            if 'claude' in check_model.lower() or 'anthropic' in check_model.lower():
                 max_web_searches = max_web_searches_value
             
             # NOTE: QC metrics are now tracked separately at the validation level,
@@ -4065,7 +4107,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         qc_metrics_summary['confidence_lowered_count'] += qc_metrics.get('confidence_lowered_count', 0)
                         qc_metrics_summary['values_replaced_count'] += qc_metrics.get('values_replaced_count', 0)
                         if qc_metrics.get('qc_model_used'):
-                            qc_metrics_summary['qc_models_used'].add(qc_metrics['qc_model_used'])
+                            qc_model = qc_metrics['qc_model_used']
+                            # Handle backup models (list) - add each individual model
+                            if isinstance(qc_model, list):
+                                for m in qc_model:
+                                    qc_metrics_summary['qc_models_used'].add(m)
+                            else:
+                                qc_metrics_summary['qc_models_used'].add(qc_model)
 
                     logger.debug(f"QC processing completed for row {row_idx}: {len(qc_results_by_field)} fields processed")
 
@@ -4169,9 +4217,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             search_context_size = resolve_search_group_context_size(validation_targets, local_validator)
             max_web_searches = resolve_search_group_max_web_searches(validation_targets, local_validator)
             api_provider = determine_api_provider(model)
-            
+
             # Track which model is being used for this row
-            row_models_used.add(model)
+            # If model is a list (backup models), add each individual model to tracking set
+            # but keep the original list for passing to ai_client so it can handle fallback
+            if isinstance(model, list):
+                for m in model:
+                    row_models_used.add(m)
+            else:
+                row_models_used.add(model)
             row_api_providers.add(api_provider)
             
             # Filter validation history to just the fields we're validating in this group
@@ -4969,6 +5023,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             
                             # Track by model
                             model = response_data.get('model', 'unknown')
+                            # Handle backup models (list) - use first model for tracking
+                            if isinstance(model, list):
+                                model = model[0] if model else 'unknown'
                             if model not in total_token_usage['by_model']:
                                 total_token_usage['by_model'][model] = {
                                     'api_provider': api_provider,

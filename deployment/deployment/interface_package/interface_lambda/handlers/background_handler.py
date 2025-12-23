@@ -2361,9 +2361,11 @@ def handle_main_processing(event, context):
 
                     model = search_group.get('model', 'sonar-pro')
                     search_context = search_group.get('search_context', 'low')
-                    
+
                     # Build model display name
-                    if 'claude' in model.lower() or 'anthropic' in model.lower():
+                    # Handle backup models (list) - use first model for display
+                    check_model = model[0] if isinstance(model, list) else model
+                    if 'claude' in check_model.lower() or 'anthropic' in check_model.lower():
                         # Get anthropic_max_web_searches from this specific search group, or fall back to default
                         max_web_searches = search_group.get('anthropic_max_web_searches', anthropic_default_web_searches)
                         if search_context == 'high':
@@ -4914,9 +4916,11 @@ def handle_main_processing(event, context):
                             columns_for_this_group = columns_per_search_group.get(search_group_id, 0)
                             model = search_group.get('model', 'sonar-pro')
                             search_context = search_group.get('search_context', 'low')
-                        
+
                             # Build model display name
-                            if 'claude' in model.lower() or 'anthropic' in model.lower():
+                            # Handle backup models (list) - use first model for display
+                            check_model = model[0] if isinstance(model, list) else model
+                            if 'claude' in check_model.lower() or 'anthropic' in check_model.lower():
                                 # Get anthropic_max_web_searches from this specific search group, or fall back to default
                                 max_web_searches = search_group.get('anthropic_max_web_searches', anthropic_default_web_searches)
                                 if search_context == 'high':
