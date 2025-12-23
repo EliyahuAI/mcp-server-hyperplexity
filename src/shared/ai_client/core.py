@@ -146,11 +146,12 @@ class AIAPIClient:
 
                 cache_key = self.cache_handler.get_cache_key(prompt, current_model_normalized, schema, context, max_web_searches,
                                                soft_schema, include_domains, exclude_domains) if use_cache else None
-                
+
                 # Check cache via provider logic or manually?
                 # Providers have check_cache inside them usually? No, I put it in AnthropicProvider.call_text_api but make_single_call doesn't check.
                 # The original call_structured_api checked cache itself.
-                
+
+                cached_data = None  # Initialize to prevent UnboundLocalError
                 if use_cache and cache_key:
                     cached_data = await self.cache_handler.check_cache(cache_key, api_provider)
                     if cached_data:
@@ -158,17 +159,40 @@ class AIAPIClient:
                          # Return cached response logic
                          # I'll rely on what check_cache returns and normalize it
                          token_usage = cached_data.get('token_usage', {})
-                         enhanced_data = self.usage_handler.get_enhanced_call_metrics(cached_data['api_response'], current_model, 0.001, pre_extracted_token_usage=token_usage, is_cached=True)
-                         
-                         return {
-                             'response': cached_data['api_response'],
-                             'token_usage': token_usage,
-                             'processing_time': cached_data.get('processing_time', 0),
-                             'is_cached': True,
-                             'model_used': current_model,
-                             'citations': extract_citations_from_response(cached_data['api_response']) if api_provider=='anthropic' else extract_citations_from_perplexity_response(cached_data['api_response']),
-                             'enhanced_data': enhanced_data
-                         }
+                         cached_response = cached_data['api_response']
+
+                         # [FIX] Validate cached response format - must have 'choices' key for compatibility
+                         # If it's in old/raw Anthropic format, invalidate and rebuild cache
+                         if not isinstance(cached_response, dict) or 'choices' not in cached_response:
+                             logger.warning(f"[CACHE_FORMAT] Cached response missing 'choices' key for {api_provider}. Keys: {list(cached_response.keys()) if isinstance(cached_response, dict) else 'N/A'}")
+                             logger.warning(f"[CACHE_FORMAT] Invalidating bad cache entry and making fresh call")
+
+                             # Move bad cache to debug
+                             await self.cache_handler.move_bad_cache_to_debug(
+                                 cache_key,
+                                 api_provider,
+                                 "Missing 'choices' key in cached response (likely old format)",
+                                 cached_response=cached_data
+                             )
+
+                             # Don't return cached data - fall through to make fresh API call
+                             cached_data = None
+                         else:
+                             # Cached response is valid - return it
+                             enhanced_data = self.usage_handler.get_enhanced_call_metrics(cached_response, current_model, 0.001, pre_extracted_token_usage=token_usage, is_cached=True)
+
+                             return {
+                                 'response': cached_response,
+                                 'token_usage': token_usage,
+                                 'processing_time': cached_data.get('processing_time', 0),
+                                 'is_cached': True,
+                                 'model_used': current_model,
+                                 'citations': extract_citations_from_response(cached_response) if api_provider=='anthropic' else extract_citations_from_perplexity_response(cached_response),
+                                 'enhanced_data': enhanced_data
+                             }
+
+                if not cached_data and use_cache and cache_key:
+                    logger.debug(f"No valid cache found for {api_provider}, making fresh API call")
 
                 # Make Call
                 if api_provider == 'anthropic':
@@ -215,7 +239,21 @@ class AIAPIClient:
                         result['response'] = {'choices': [{'message': {'role': 'assistant', 'content': json.dumps(structured)}}]}
                         if api_provider == 'anthropic':
                             result['citations'] = extract_citations_from_response(api_response)
-                    
+
+                        # Cache the NORMALIZED response (not the provider-specific format)
+                        if use_cache and cache_key and not result.get('is_cached', False):
+                            processing_time = result.get('processing_time', 0)
+                            token_usage = result.get('token_usage', {})
+                            await self.cache_handler.save_to_cache(
+                                cache_key,
+                                result['response'],  # Save normalized response with 'choices' key
+                                token_usage,
+                                processing_time,
+                                current_model,
+                                api_provider
+                            )
+                            logger.debug(f"[CACHE_SAVE] Saved normalized response for {api_provider}/{current_model}")
+
                     # URL validation
                     try:
                          if result.get('citations'):

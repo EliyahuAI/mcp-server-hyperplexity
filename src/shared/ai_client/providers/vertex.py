@@ -246,10 +246,11 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
             await self.cache_handler.save_debug_data('vertex', model, debug_request, unified_response, context="single_call_success", cache_key=cache_key)
             
             token_usage = self.usage_handler.extract_token_usage(response_dict, model)
-            
-            if use_cache and cache_key:
-                await self.cache_handler.save_to_cache(cache_key, unified_response, token_usage, processing_time, model, 'vertex')
-            
+
+            # NOTE: Don't cache here - core.py will cache after normalizing to Perplexity format
+            # if use_cache and cache_key:
+            #     await self.cache_handler.save_to_cache(cache_key, unified_response, token_usage, processing_time, model, 'vertex')
+
             enhanced_data = self.usage_handler.get_enhanced_call_metrics(unified_response, model, processing_time, is_cached=False)
             
             # Merge repair costs if present

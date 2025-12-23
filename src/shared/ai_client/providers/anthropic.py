@@ -105,12 +105,13 @@ class AnthropicProvider:
                             response_json = await self._clean_soft_schema_response(response_json, schema, normalized_model)
 
                         await self.cache_handler.save_debug_data('anthropic', normalized_model, debug_request, response_json, context="single_call_success", cache_key=cache_key)
-                        
+
                         token_usage = self.usage_handler.extract_token_usage(response_json, normalized_model)
-                        
-                        if use_cache and cache_key:
-                            await self.cache_handler.save_to_cache(cache_key, response_json, token_usage, processing_time, normalized_model, 'anthropic')
-                        
+
+                        # NOTE: Don't cache here - core.py will cache after normalizing to Perplexity format
+                        # if use_cache and cache_key:
+                        #     await self.cache_handler.save_to_cache(cache_key, response_json, token_usage, processing_time, normalized_model, 'anthropic')
+
                         enhanced_data = self.usage_handler.get_enhanced_call_metrics(
                             response_json, normalized_model, processing_time, is_cached=False, max_web_searches=max_web_searches
                         )
@@ -158,9 +159,10 @@ class AnthropicProvider:
                             response_json = json.loads(response_text)
                             await self.cache_handler.save_debug_data('anthropic', normalized_model, debug_request, response_json, context=f"attempt_{attempt}")
                             token_usage = self.usage_handler.extract_token_usage(response_json, normalized_model)
-                            
-                            if use_cache and cache_key:
-                                await self.cache_handler.save_to_cache(cache_key, response_json, token_usage, processing_time, normalized_model, 'anthropic')
+
+                            # NOTE: Don't cache here - core.py will cache after normalizing to Perplexity format
+                            # if use_cache and cache_key:
+                            #     await self.cache_handler.save_to_cache(cache_key, response_json, token_usage, processing_time, normalized_model, 'anthropic')
 
                             return {
                                 'response': response_json,

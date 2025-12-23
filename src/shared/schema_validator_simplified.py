@@ -603,6 +603,9 @@ class SimplifiedSchemaValidator:
             # Extract content from API response
             if not isinstance(result, dict) or 'choices' not in result:
                 logger.error(f"[PARSE_ERROR] Result missing 'choices' key. Type: {type(result)}, Keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+                # [DEBUG] Check if this is a raw Anthropic response that wasn't normalized
+                if isinstance(result, dict) and 'content' in result and 'role' in result:
+                    logger.error(f"[PARSE_ERROR] Response appears to be raw Anthropic format - this should have been normalized by ai_client")
                 return {}
 
             content = result['choices'][0]['message'].get('content', '')
