@@ -475,7 +475,8 @@ class SnippetExtractorStreamlined:
         extraction_mode: str = "simple_facts",
         max_snippets_per_source: int = 3,
         clone_logger: Any = None,
-        provider: str = None
+        provider: str = None,
+        start_source_index: int = 1
     ) -> List[Dict[str, Any]]:
         """
         Extract quotes from multiple sources in a single API call (batch mode).
@@ -493,6 +494,7 @@ class SnippetExtractorStreamlined:
             max_snippets_per_source: Max snippets per source
             clone_logger: Optional logger
             provider: Provider name
+            start_source_index: Starting index for source numbering (default 1)
 
         Returns:
             List of extraction results, one per source
@@ -500,11 +502,11 @@ class SnippetExtractorStreamlined:
         from datetime import datetime
         current_date = datetime.now().strftime('%Y-%m-%d')
 
-        logger.info(f"[BATCH EXTRACTOR] Processing {len(sources)} sources in single call")
+        logger.info(f"[BATCH EXTRACTOR] Processing {len(sources)} sources in single call (starting index {start_source_index})")
 
         # Label all sources with source-prefixed codes
         labeled_sources = []
-        for i, source in enumerate(sources):
+        for i, source in enumerate(sources, start=start_source_index):
             source_text = source.get('snippet', '')
             source_url = source.get('url', 'Unknown URL')
             source_title = source.get('title', 'Unknown')
@@ -517,14 +519,14 @@ class SnippetExtractorStreamlined:
             labeled_text, text_structure = self.text_labeler.label_text(source_text)
 
             # Add source prefix to all codes for display (e.g., `1.1 -> `S1:1.1)
-            source_id = f"S{i + 1}"
+            source_id = f"S{i}"
             labeled_text_with_prefix = re.sub(r'`(\d+\.\d+)', f'`{source_id}:\\1', labeled_text)
 
             # Create resolver with ORIGINAL labeled_text (without source prefix)
             # Model will return codes WITH prefix (S1:1.1), we'll strip before resolving
             labeled_sources.append({
                 'source_id': source_id,
-                'source_num': i + 1,
+                'source_num': i,
                 'url': source_url,
                 'title': source_title,
                 'date': source_date,
@@ -579,6 +581,22 @@ class SnippetExtractorStreamlined:
 
             quotes_by_source = data.get('quotes_by_source', {})
 
+            # 1. Calculate dynamic threshold based on available quality (Top 2 Levels)
+            all_p_scores = set()
+            for src_id, src_data in quotes_by_source.items():
+                if src_data.get('quotes_by_search'):
+                    all_p_scores.add(src_data.get('p', 0.50))
+            
+            sorted_p = sorted(list(all_p_scores), reverse=True)
+            # Use top 2 levels if available, otherwise just the top 1
+            allowed_levels = sorted_p[:2]
+            dynamic_threshold = allowed_levels[-1] if allowed_levels else 0.0
+            
+            # Effective threshold is dynamic but never below 0.15 (absolute junk)
+            effective_threshold = max(dynamic_threshold, 0.15)
+            
+            logger.info(f"[BATCH EXTRACTOR] Dynamic threshold: p >= {effective_threshold} (Available levels: {sorted_p}, Strategy min: {min_quality_threshold})")
+
             # Process each source's quotes
             results = []
             for labeled_src in labeled_sources:
@@ -597,6 +615,10 @@ class SnippetExtractorStreamlined:
 
                 snippets = []
                 snippet_counter = 0
+                dropped_count = 0
+                
+                # Check if this source is considered "lower quality" relative to original strict requirements
+                is_lower_quality = source_p < min_quality_threshold
 
                 # Process quotes organized by search term
                 for search_num_str, quotes in source_quotes_by_search.items():
@@ -615,6 +637,11 @@ class SnippetExtractorStreamlined:
 
                     # If pass-all, create single snippet with entire source
                     if has_pass_all:
+                        # Only check effective threshold for pass-all
+                        if source_p < effective_threshold:
+                            dropped_count += 1
+                            continue
+
                         snippet_id = f"{snippet_id_prefix}.{labeled_src['search_ref']}.{source_num}.{snippet_counter}-p{source_p:.2f}"
                         # Full verbal handle = source_handle + detail_limitation
                         verbal_handle = f"{source_handle}_entire-source_pass-all"
@@ -632,7 +659,8 @@ class SnippetExtractorStreamlined:
                             "_source_date": labeled_src['date'],
                             "_source_reliability": labeled_src['reliability'],
                             "_search_term": labeled_src['search_term'],
-                            "_source_handle": source_handle
+                            "_source_handle": source_handle,
+                            "_is_lower_quality": is_lower_quality
                         }
                         snippets.append(snippet)
                         snippet_counter += 1
@@ -658,8 +686,9 @@ class SnippetExtractorStreamlined:
                             logger.warning(f"[BATCH EXTRACTOR] Failed to resolve code '{code}' (stripped: '{code_without_prefix}') from {source_id}, skipping")
                             continue
 
-                        # Filter by quality threshold (using source-level p)
-                        if source_p < min_quality_threshold:
+                        # Filter by dynamic effective threshold
+                        if source_p < effective_threshold:
+                            dropped_count += 1
                             continue
 
                         # Create snippet with source-level p in ID
@@ -682,13 +711,14 @@ class SnippetExtractorStreamlined:
                             "_search_term": labeled_src['search_term'],
                             "_source_handle": source_handle,
                             "_detail_limitation": detail_limitation,
-                            "_code": code
+                            "_code": code,
+                            "_is_lower_quality": is_lower_quality
                         }
                         snippets.append(snippet)
                         snippet_counter += 1
 
                 # All snippets from this source have same source-level p (already set above)
-                logger.info(f"[BATCH EXTRACTOR] {source_id} ({source_handle}): {len(snippets)} quotes extracted, p={source_p}, c={source_c}")
+                logger.info(f"[BATCH EXTRACTOR] {source_id} ({source_handle}): {len(snippets)} quotes extracted (dropped {dropped_count} low quality), p={source_p}, c={source_c}")
 
                 # Add result for this source
                 results.append({

@@ -50,7 +50,8 @@ class UnifiedSynthesizer:
         search_terms: List[str] = None,
         debug_dir: str = None,
         soft_schema: bool = False,
-        clone_logger: Any = None
+        clone_logger: Any = None,
+        note_to_self: str = None
     ) -> Dict[str, Any]:
         """
         Unified evaluation + synthesis call.
@@ -66,6 +67,7 @@ class UnifiedSynthesizer:
             is_last_iteration: If true, skip evaluation (just synthesize)
             schema: Optional custom schema
             model: Model to use (default: Sonnet 4.5)
+            note_to_self: Optional note from previous iteration
 
         Returns:
             Dict with:
@@ -73,6 +75,7 @@ class UnifiedSynthesizer:
                 - answer: dict (if can_answer=true or last iteration)
                 - missing_aspects: list (if can_answer=false)
                 - suggested_search_terms: list (if can_answer=false)
+                - note_to_self: str (optional, from synthesis)
                 - citations: list (final citations with snippet ID conversion)
         """
         logger.info(f"[UNIFIED] Mode: {'Synthesis' if is_last_iteration else 'Evaluation+Synthesis'}")
@@ -83,7 +86,8 @@ class UnifiedSynthesizer:
             snippets=snippets,
             context=context,
             is_last_iteration=is_last_iteration,
-            search_terms=search_terms
+            search_terms=search_terms,
+            note_to_self=note_to_self
         )
 
         if clone_logger:
@@ -135,12 +139,14 @@ class UnifiedSynthesizer:
             # Parse response based on mode
             logger.debug(f"[UNIFIED] data keys: {list(data.keys())}")
             if is_last_iteration:
-                # Synthesis mode - just answer
+                # Synthesis mode - answer and potentially suggest new search
                 answer_raw = data
                 can_answer = True
                 confidence = "high"
                 missing = []
-                suggested = []
+                suggested = data.get('suggested_search_terms', [])
+                request_upgrade = data.get('request_capability_upgrade', False)
+                new_note = data.get('note_to_self')
             else:
                 # Evaluation mode - may have answer
                 can_answer = data.get('can_answer', False)
@@ -152,6 +158,8 @@ class UnifiedSynthesizer:
                     can_answer = False
                 missing = data.get('missing_aspects', [])
                 suggested = data.get('suggested_search_terms', [])
+                request_upgrade = False
+                new_note = None
 
             logger.info(f"[UNIFIED] Can answer: {can_answer}, Confidence: {confidence}")
             logger.debug(f"[UNIFIED] answer_raw type: {type(answer_raw)}, content: {str(answer_raw)[:200]}")
@@ -165,7 +173,9 @@ class UnifiedSynthesizer:
                             'confidence': confidence,
                             'answer_raw': answer_raw,
                             'missing': missing,
-                            'suggested': suggested
+                            'suggested': suggested,
+                            'request_upgrade': request_upgrade,
+                            'note_to_self': new_note
                         }, f, indent=2)
                 except:
                     pass
@@ -193,6 +203,8 @@ class UnifiedSynthesizer:
                 "snippets_used": snippets_used,
                 "missing_aspects": missing,
                 "suggested_search_terms": suggested,
+                "request_capability_upgrade": request_upgrade,
+                "note_to_self": new_note,
                 "synthesis_prompt": prompt,  # Return actual prompt sent to model
                 "model_response": response
             }
@@ -207,7 +219,8 @@ class UnifiedSynthesizer:
         snippets: List[Dict],
         context: str,
         is_last_iteration: bool,
-        search_terms: List[str] = None
+        search_terms: List[str] = None,
+        note_to_self: str = None
     ) -> str:
         """Build unified prompt."""
         from datetime import datetime
@@ -220,12 +233,20 @@ class UnifiedSynthesizer:
 
         if is_last_iteration:
             # Synthesis mode
+            note_section = ""
+            if note_to_self:
+                note_section = f"""
+## Note from Previous Attempt
+The previous synthesis attempt was self-assessed as insufficient. Here is your note to yourself for this attempt:
+"{note_to_self}"
+"""
+
             prompt = f"""# Generate Answer from Quotes
 
 Query: {query}
 
 **Today's Date:** {current_date}
-
+{note_section}
 ## Structure Legend
 
 - **Q1.{'{n}'}:** Query number in iteration 1 (search term used)
@@ -285,15 +306,22 @@ Note: Use FULL 4-part IDs exactly as shown in snippets above.
 Grade your synthesis (A+ to C-):
 - **A+/A**: Provided EXACT and SUFFICIENT answer to the query with high-quality sources
 - **B**: Partial answer provided, or struggled with complexity/conflicting sources
-  - If B grade AND additional search would help: Set can_answer=false and suggest search terms
+  - **Required:** Provide a best-effort answer satisfying the schema.
+  - **Optional:** If additional search would help, provide `suggested_search_terms`.
+  - **Optional:** If reasoning complexity requires a smarter model, set `request_capability_upgrade=true`.
+  - **Optional:** If needed for next attempt, provide `note_to_self`.
 - **C**: Cannot provide sufficient answer, info not available, or insufficient capability
-  - Set can_answer=false and suggest search terms if more search would help
+  - **Required:** Provide a best-effort answer satisfying the schema.
+  - **Optional:** If additional search would help, provide `suggested_search_terms`.
+  - **Optional:** If reasoning complexity requires a smarter model, set `request_capability_upgrade=true`.
+  - **Optional:** If needed for next attempt, provide `note_to_self`.
 
 **CRITICAL:**
-- Only grade A/A+ if you provided a complete, direct answer to what was asked
-- If B or lower AND more search would improve answer: Set can_answer=false to trigger additional search
+- You MUST always provide an answer that satisfies the schema structure, even if incomplete.
+- If you grade B or C, we will only re-run if you provide `suggested_search_terms` OR set `request_capability_upgrade=true`.
+- Be specific with search terms if you need more info.
 
-Return JSON with 'comparison' and 'self_assessment' fields."""
+Return JSON with 'comparison', 'self_assessment', and optional 'suggested_search_terms', 'request_capability_upgrade', and 'note_to_self' fields."""
 
         else:
             # Evaluation + synthesis mode
@@ -414,7 +442,8 @@ Query: {query}
                     'text': snippet.get('text', ''),
                     'p': snippet.get('p', 0.50),
                     'c': snippet.get('c', 'M/O'),  # Classification (H/M/L + quality codes)
-                    'reason': snippet.get('validation_reason', 'OK')
+                    'reason': snippet.get('validation_reason', 'OK'),
+                    '_is_lower_quality': snippet.get('_is_lower_quality', False)
                 })
 
             # Format sources under this query
@@ -422,11 +451,20 @@ Query: {query}
                 # Get source ID prefix from first snippet (e.g., S1.1.0 from S1.1.0.0-M)
                 first_snippet_id = data['snippets'][0]['id'] if data['snippets'] else ''
                 source_prefix = '.'.join(first_snippet_id.split('.')[:3]) if first_snippet_id else ''
+                
+                # Check for lower quality flag
+                is_lower_quality = any(s.get('_is_lower_quality', False) for s in data['snippets'])
 
                 # Source header: [S1.1.0] URL [DATE]
                 source_line = f"  [{source_prefix}] {data['url']}" if source_prefix else f"  {data['url']}"
                 if data['date']:
                     source_line += f" [{data['date']}]"
+                
+                if is_lower_quality:
+                    # Get p score from the first snippet
+                    p_score = data['snippets'][0].get('p', 0.50) if data['snippets'] else 0.50
+                    source_line += f" [WARNING: Lower Quality Source (p={p_score})]"
+                
                 formatted.append(source_line)
 
                 # Snippets under this source (with verbal handle, p-score, and classification)

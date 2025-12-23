@@ -90,6 +90,19 @@ def get_synthesis_only_schema(answer_schema: dict = None) -> dict:
                 "type": "string",
                 "enum": ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-"],
                 "description": "Grade synthesis quality: A+/A if handled well OR info not available, B if struggled with complexity, C if insufficient"
+            },
+            "suggested_search_terms": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional: Search terms to improve answer if grade < A"
+            },
+            "request_capability_upgrade": {
+                "type": "boolean",
+                "description": "Optional: Set true if reasoning complexity requires a smarter model (PhD+ level)."
+            },
+            "note_to_self": {
+                "type": "string",
+                "description": "Optional: Note for next attempt if grade < A"
             }
         },
         "required": ["comparison", "self_assessment"]
