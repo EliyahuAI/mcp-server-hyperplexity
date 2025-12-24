@@ -1,13 +1,13 @@
 # Configuration Refinement Prompt
 
-**MISSION**: Make targeted improvements to existing configuration based on user instructions, an existing configuration, and past results with confidence levels (low medium and high) 
+**MISSION**: Make targeted improvements to existing configuration based on user instructions, an existing configuration, and past validation results with confidence assessments 
 
 ## CRITICAL REQUIREMENTS
 1. NEVER modify column names from table analysis
 2. Make ONLY changes that address user's specific request
 3. Use LOWER urgency than new configurations (0.1-0.3 range)
 4. Every column MUST be assigned to a search group
-5. Return both technical_ai_summary AND ai_summary
+5. Return clear ai_summary explaining your changes
 
 ## Context
 You are working with an **existing configuration** that has been previously created and potentially refined. Your goal is to make **surgical changes** based on the user's specific instructions while preserving the overall structure and previous decisions.
@@ -27,16 +27,11 @@ Refine the existing configuration by:
    - Preserve good existing decisions
    - Make minimal necessary changes
 
-3. **Technical AI Summary** (REQUIRED)
-   - List the important changes you made with technical details
-   - Explain the reasoning behind each change including search groups, context, and model decisions
-   - Assess whether further clarifications are needed
-   - Note any areas where you preserved existing decisions
-
-4. **Simple AI Summary** (REQUIRED)
-   - Provide a simple, business-friendly description of changes
-   - Avoid technical terms like "search groups" or "context size"
-   - Focus on what the user will see in plain language
+3. **AI Summary** (REQUIRED)
+   - 1-3 sentences only - keep it brief
+   - Describe what changed in simple terms
+   - Example: "Upgraded validation for financial fields to improve accuracy."
+   - No technical details or model names
 
 ## General guidance on configurations
 {{INCLUDE:common_config_guidance.md}}
@@ -87,14 +82,9 @@ This conversation context is essential for making informed refinements that buil
 - **Goal**: Small enough search groups, with enough context, sent to smarter models to solve identified issues, that are reliably talking about the right information. 
 - **Break problematic groups apart**: When information is not being found - a common problem, consider creating smaller, more specific groups that reflect actual data source patterns from problematic groups that are not getting it right (either low confidence or complained about).
 
-### 2. Increase context
-Did we look at enough sources? For perplexity models, increasing search_context moderately increases cost - for anthropic models increasing anthropic_max_web_searches is the most powerful way to get an answer, but at high cost, particularly if opus is involve. 
-- **Increase perplexity search_context**: For perplexity models, medium and high context searches can be used sparingly in search groups to find information that is not coming up, this is helpful if the groups are already small, or the information is really esoteric. 
-- **Adjust anthropic web search intensity**: When Anthropic models are not finding results, gently raise the search group's `anthropic_max_web_searches` parameter (0-10). When costs are high, lower this parameter to reduce web search usage.
-
 ### 3. Change model
-- **Use sonar-pro**: Use the more powerful, more expensive sonar-pro. This is a great option when the information requires some synthesis, but sofisticated reasoning is not needed.  
-- **Use Claude**: When more careful synthesis of information, use Claude Sonnet (front line), or if deep synthesis with extended reasoning is need use Claude Opus (*expensive, but your most powerful option). When no web search is needed, make sure to set anthropic_max_web_searches to 0 to limit cost. 
+- **the-clone-claude**: this version forces the clone to use claude over deepseek and can give better results at higher cost  
+- **Use Claude**: for advanced reasoning tasks (no web) use claude sonnet, or opus. 
 
 ### 4. Adjust the ID Columns
 - **Stabilization**: If the columns are not getting information about the right thing cosistently, use more columns as input 'ID' fields in Group 0 to make sure that the sequential searches in the same row focus on the correct single topic. 
@@ -105,13 +95,12 @@ Did we look at enough sources? For perplexity models, increasing search_context 
 
 ## Common Refinement Scenarios
 - **Restructure search groups** to better reflect where information appears in sources.
-- **Increase context model** based on business priorities and user feedback
 - **Choose a smarter model** based on business priorities and user feedback
 - **Update examples** with more accurate, realistic data from the table (including proper units)
 - **Refine general and column notes descriptions** for clarity and business relevance in the column notes or search group descriptions
 - **Add unit requirements** to notes for measurement columns (weights, volumes, temperatures, etc.)
 - **Adjust importance levels** based on business priorities and user feedback
-- **Add QC Power** make sure QC is on, consider giving web access or improving the model if it requires real depth. 
+- **Add QC Power** make sure QC is on, consider giving web access 
 
 {{TABLE_ANALYSIS}}
 
@@ -123,4 +112,4 @@ Did we look at enough sources? For perplexity models, increasing search_context 
 
 
 ## REFINEMENT FOCUS REMINDER
-**Your mission**: Make targeted improvements to an existing configuration based on aggregated user instructions and validation results. Preserve what works, fix what doesn't, and use exact column names. Return both technical and simple AI summaries with your changes - that make sense in the context of refinement. 
+**Your mission**: Make targeted improvements to an existing configuration based on aggregated user instructions and validation results. Preserve what works, fix what doesn't, and use exact column names. Return clear AI summary with your changes - that makes sense in the context of refinement. 

@@ -22,7 +22,7 @@
 - Search groups organized by information sources
 - Appropriate models and context sizes for each group
 - Clear general notes and column-specific notes incorporating all context
-- Both technical_ai_summary and ai_summary
+- Clear ai_summary explaining the configuration
 
 **KEY RULES:**
 1. ✅ **CRITICAL**: EVERY column must have a validation target - NO columns can be marked as IGNORED
@@ -206,23 +206,12 @@ For EACH column (no exceptions):
 ### Step 5: Select Models, Context, and QC Settings
 
 Follow the guidance from Common Configuration Guidance above:
-- **Model Selection**: Use sonar (default), sonar-pro, or claude models based on complexity
-- **Search Context**: Set `search_context_size` and `anthropic_max_web_searches` per the guidelines
+- **Model Selection**: stick with `the-clone` unless simple calculation `gemeni-2.0-flash` or advanced analysis needed
 - **QC Settings**: Enable `enable_qc: true` (recommended for Table Maker configs)
 
-### Step 6: Write Summaries
+### Step 6: Write Summary
 
-**technical_ai_summary**: Explain your configuration decisions with technical details:
-- How you organized search groups and why
-- Which models you chose and why
-- How you used the table maker context (conversation, column definitions, tablewide research)
-- Which ID columns you upgraded to CRITICAL for validation and why
-- Any assumptions you made
-
-**ai_summary**: Simple business-friendly overview:
-- What information will be validated
-- How the validation will work (in plain language)
-- Avoid technical terms like "search groups" or "context size"
+**ai_summary**: Write 1-3 sentences describing what will be validated. Keep it light and simple. Example: "Set up thorough validation for all research fields including company names, researcher details, and publication information."
 
 ---
 
@@ -260,6 +249,6 @@ Follow the guidance from Common Configuration Guidance above:
 
 7. ✅ **EVERY COLUMN ASSIGNED**: Every column must be in a search group
 
-8. ✅ **RETURN BOTH SUMMARIES**: Must include both technical_ai_summary and ai_summary
+8. ✅ **RETURN CLEAR SUMMARY**: Must include clear ai_summary explaining your configuration decisions
 
 **Return your configuration using the generate_config_and_questions tool with complete updated_config.**

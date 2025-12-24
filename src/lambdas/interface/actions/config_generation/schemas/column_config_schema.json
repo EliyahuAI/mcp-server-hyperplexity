@@ -10,18 +10,7 @@
     },
     "default_model": {
       "type": "string",
-      "description": "Default model to use for validation (e.g., 'sonar', 'sonar-pro', 'claude-sonnet-4')"
-    },
-    "default_search_context_size": {
-      "type": "string",
-      "enum": ["low", "medium", "high"],
-      "description": "Default search context size for Perplexity models"
-    },
-    "anthropic_max_web_searches_default": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 10,
-      "description": "Default maximum web searches for Anthropic models (0-10). 0=disable web search entirely, 1=obvious items, 3=complex items, 5=esoteric facts.  Caution when increasing this number as it can get expensive, especially as the default."
+      "description": "Default model to use for validation (e.g., 'the-clone', 'gemini-2.0-flash', 'claude-sonnet-4-5')"
     },
     "qc_settings": {
       "type": "object",
@@ -52,14 +41,7 @@
             {"type": "array", "items": {"type": "string"}}
           ],
           "description": "QC model(s) to use. Can be string or array of models for fallback",
-          "default": ["claude-sonnet-4-5", "claude-opus-4-1"]
-        },
-        "anthropic_max_web_searches": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 10,
-          "description": "Maximum web searches for QC (0-10). 0=disable web search entirely (default for cost efficiency)",
-          "default": 0
+          "default": ["deepseek-v3.2", "claude-sonnet-4-5"]
         }
       },
       "required": ["enable_qc"],
@@ -70,7 +52,7 @@
       "description": "Required search group definitions for organizing columns - essential for building effective search strategy",
       "items": {
         "type": "object",
-        "required": ["group_id", "group_name", "description", "model"],
+        "required": ["group_id", "group_name", "description"],
         "properties": {
           "group_id": {
             "type": "integer",
@@ -86,18 +68,7 @@
           },
           "model": {
             "type": "string",
-            "description": "Model to use for this search group"
-          },
-          "search_context": {
-            "type": "string",
-            "enum": ["low","medium", "high"],
-            "description": "Search context size for this group"
-          },
-          "anthropic_max_web_searches": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 10,
-            "description": "Override max web searches for Anthropic models in this search group (0-10). 0=disable web search entirely, caution when increasing this number as it can get expensive"
+            "description": "Model to use for this search group. Optional - defaults to 'the-clone' if not specified. Only specify when using a different model like 'gemini-2.0-flash', 'claude-sonnet-4-5', or 'the-clone-claude'."
           }
         },
         "additionalProperties": false
@@ -145,11 +116,6 @@
           "preferred_model": {
             "type": "string",
             "description": "Override model for this specific column"
-          },
-          "search_context_size": {
-            "type": "string",
-            "enum": ["low", "medium", "high"],
-            "description": "Override search context size for this column"
           },
           "formula_info": {
             "type": "object",

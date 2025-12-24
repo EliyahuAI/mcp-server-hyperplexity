@@ -3,41 +3,20 @@
 This document contains shared guidelines used by both new config creation and refinement processes.
 
 ## Model Selection Guidelines
-- **Default Model**: `sonar` is the default for most use cases - particularly for new configurations
-- **Alternative Models**: Available models include:
-  - Perplexity models: `sonar` (recommended for simple fact checking - default for new configurations), `sonar-pro` (recommended for deeper synthesis of sources, a great inexpensive upgrade for more reasoning)
-  - DeepSeek models: `deepseek-v3.2` (ultra-low cost, 97% cheaper than Claude - FRONT LINE for reasoning without web search, displaces Haiku and Sonnet for pure reasoning tasks), `deepseek-v3.2-exp` (variant with caching support)
-  - Anthropic models: `claude-sonnet-4-5` (automatic fallback for DeepSeek, first line when web search is needed for reasoning), `claude-opus-4-1` (expensive advanced reasoning - only for deep synthesis requiring web research)
-- **Best Practices**:
-  - Use Perplexity models (`sonar` or `sonar-pro`) for standard web search and validation tasks
-  - Use `deepseek-v3.2` for pure reasoning tasks that don't require web access (QC review, synthesis of existing data, analysis)
-  - Use `claude-sonnet-4-5` when web search is needed for reasoning tasks (anthropic_max_web_searches > 0)
-  - Only use `claude-opus-4-1` when deep reasoning with extensive web research is critical
-  - **CRITICAL LIMITATION**: DeepSeek cannot access the web - never use with anthropic_max_web_searches > 0
-  - **Recommended QC Approach**: Sonar/Sonar-Pro validation (with web search) → DeepSeek V3.2 QC (without web search, ultra-low cost)
+- **Default Model**: `the-clone` is the default for ALL search groups. This is an agentic mix of perplexity search with deepseek-v3.2 and scales internally to the need.
 
-## Search Context Size Guidelines for Perplexity
-- **Values**: `"low"`,  `"medium"`,`"high"` (default), (Perplexity only)
-- **Global Default**: Set `default_search_context_size` at the root level (defaults to `"high"`, unless you it is a simple fact lookup -> `"low"`). Setting search context to `"low"` results in the fastest results. 
-- **Per-Search Group Override**: You can use `search_context_size` field for specific search groups
-- **Best Practices**:
-  - Use `"high"` for most columns (cheap enough with sonar, takes time but worth it).
-  - Use `"medium"`, and `"low"` when search results are obvious.
+- **IMPORTANT**: Only specify a `model` in a search group when you need something OTHER than `the-clone`. If omitted, `the-clone` is automatically used.
 
-## Anthropic Web Search Guidelines
-- **Global Default**: Set `anthropic_max_web_searches_default` at the root level (defaults to 1)
-- **Per-Search Group Override**: Use `anthropic_max_web_searches` field (0-10) for specific search groups  
-- **Recommended Values**:
-  - **0**: Disable web search entirely (cached knowledge only), great for reasoning only tasks
-  - **1**: For obvious items that need the internet, but still benefit from anthropic models (default)
-  - **3**: For more complex items requiring moderate research, this can get expensive fast
-  - **5**: For esoteric facts requiring extensive search - a bit of a last resort. 
-- **Cost Control**: Lower values reduce API costs but may miss current information
+- **When to Override the Default**:
+  - Calculation/light reasoning → `gemini-2.0-flash`
+  - Advanced PhD level synthesis with web → `the-clone-claude` (forces Claude over Deepseek, with web search)
+  - Advanced PhD+ level synthesis (without web) → `claude-sonnet-4-5` or `claude-opus-4-5`
 
+- **Recommended QC Approach**: `deepseek-v3.2` is ultra-low cost with excellent quality. Use `the-clone` for QC only when you need additional web research capability (not as first approach).
 
 ## Importance Level Guidelines
 - **ID**: These define the rows - at least one column must be assigned 'ID', usually it is one or more columns to the left of the table.  Getting these right is critical as these define the row information and the stability of the analysis.  An Index is not enough.
-- **CRITICAL**: ANy column requiring research that we can help with
+- **RESEARCH**: ANy column requiring research that we can help with
 - **IGNORED**: Indices, metadata, internal fields, timestamps, calculated/formula columns that are dependent on other columns and need calculation not AI approximation. 
 
 ## Search Group Strategy
@@ -47,43 +26,33 @@ Create search groups based on where information typically appears together. Are 
 
 When analyzing any table, follow this process:
 
-1. **Infer table purpose** from column names and data patterns, how is this table used? who uses it? what are the critical patterns?
+1. **Infer table purpose** from column names and data patterns, how is this table used? who uses it?
 2. **Detect data types** from sample values (dates, time, numbers, strings, URLs, etc.) - be specific about the format in the notes is not evident in the examples. 
-3. **Identify likely ID columns** usually the first column(s), these are used to identify the row and are not used for research. Another indicator of an ID collumn is that they are usually filled in in every row. In many cases you need more than 1 column to form the stable context for the row. 
-5. **Group related columns** that would appear in same sources, with the simplest information in the lowest columns.
-6. **Extract real examples** from the actual data if provided and consistent with the guidance, otherwise specify a new consistent set.  Examples must match the requirements, update the examples to be in scope. Strongly prefer consistent formatting across the examples.  
-7. **Assign importance levels** based on column criticality, mark calculated/formula columns as IGNORED as they are dependent on other columns and require calculation not AI research, ID columns needed to specify the row precisely, critical columns which serve the tables primary purpose. Make sure to mark any columns that you do not know what they are as IGNORED.
+3. **Identify likely ID columns** usually the first column(s), these are used to identify the row and are not used for research. Another indicator of an ID collumn is that they are usually filled in in every row. In many cases you need more than 1 column to form the stable ID context for the row. 
+5. **Group related columns** that would appear in same sources into a single search group, with the simplest information in the lowest group.
+6. **Extract real examples** from the actual data if provided and consistent with the guidance, otherwise specify a new consistent set.  Examples must match the requirements, update the examples to be in scope. Strongly prefer consistent formatting across the examples. If you are instructed to do something different (e.g. in a refinement step you can generate examples that match the guidance.)  
+7. **Assign importance levels** based on column criticality, mark calculated/formula columns as IGNORED as they are dependent on other columns and require calculation not AI research, ID columns needed to specify the row precisely, RESEARCH columns which serve the tables primary purpose. Make sure to mark any columns that you do not clearly know what they are as IGNORED.
 
-## Analysis Presentation Format
+## AI Summary Guidelines
 
-Show your assumptions clearly in this format:
+**CRITICAL**: Keep ai_summary to 1-3 sentences maximum - a light description only.
 
-**Technical AI Summary:**
+**Good Examples** (1-3 sentences):
+- ✅ "Set up thorough validation for company and researcher information with quick checks for dates and identifiers."
+- ✅ "Upgraded validation for financial columns to improve accuracy based on previous results."
+- ✅ "Configured comprehensive research validation for all data fields with quality control enabled."
 
-**Table Purpose**: [Your inference from columns/data]
-**Unique Identifiers**: [Likely ID columns]
+**Bad Examples** (too long, too technical):
+- ❌ Multiple paragraphs explaining every detail
+- ❌ Mentioning specific models, search groups, or technical parameters
+- ❌ Listing every column or change made
 
-**Search Groups**:
-- Group 0: [ID columns] (not validated, used for context)
-- Group 1: [Columns typically found together in source A]
-- Group 2: [Columns typically found together in source B]
-- Group N: [Additional logical groupings]
+**Rules**:
+- 1-3 sentences total
+- Plain language only
+- Focus on WHAT is being validated
+- No technical details
 
-**Column Classifications**:
-| Column | Importance | Format | Notes | Examples (from data) |
-|--------|------------|--------|-------|---------------------|
-| [name] | [level] | [type] | [formatting rules] | [actual values] |
-
-## Clarification Urgency Scale
-
-**Use these anchored levels:**
-- 0.0-0.1 = MINIMAL (configuration is solid, minor tweaks only)
-- 0.2-0.3 = LOW (clarification would improve the output modestly)
-- 0.4-0.6 = MODERATE (important clarifications needed)
-- 0.7-0.8 = HIGH (significant assumptions made)
-- 0.9-1.0 = CRITICAL (core columns will likely be wrong)
-
-**REFINEMENT RULE**: Always use LOWER urgency than the original configurations
 
 ## CLARIFYING QUESTIONS - When and How to Ask
 
@@ -94,6 +63,18 @@ Show your assumptions clearly in this format:
 - Prefer NO questions if the configuration is solid
 - Keep total questions to 2-3 maximum (shorter is better)
 
+### Clarification Urgency Scale
+
+**Use these anchored levels:**
+- 0.0-0.1 = MINIMAL (configuration is solid, minor tweaks only)
+- 0.2-0.3 = LOW (clarification would improve the output modestly)
+- 0.4-0.6 = MODERATE (important clarifications needed)
+- 0.7-0.8 = HIGH (significant assumptions made)
+- 0.9-1.0 = CRITICAL (core columns will likely be wrong)
+
+**REFINEMENT RULE**: Always use LOWER urgency than the original configurations
+
+###
 **How to Format Questions:**
 
 ✅ **GOOD - Clear, lay-person language:**
@@ -102,21 +83,23 @@ Show your assumptions clearly in this format:
 
 ❌ **BAD - References preview, technical details, or specific models:**
 - "The preview shows X - should I change Y?" (user hasn't seen preview yet when answering)
-- "Should I use claude-sonnet-4-5 instead of sonar-pro?" (exposes internal model names)
-- "Should I increase anthropic_max_web_searches from 1 to 3?" (technical parameter)
-- "Should I set search_context_size to high?" (technical detail)
+- "Should I use a different AI model?" (exposes internal model names)
+- "Should I increase search depth?" (technical parameter)
+- "Should I use more context?" (technical detail)
+- "Should I prioritize these rows" (you can only influence columns, rows are fixed)
 
 **Question Format Rules:**
 1. **Limit A/B choices to 2 options maximum** - don't offer 3+ alternatives
-2. **Use general terms** - "more thorough searching" not "high search context"
-3. **Never mention specific models or costs** - "more advanced AI" not "claude-opus-4-1 at $15 per 1M tokens"
+2. **Use general terms** - "more thorough searching" not technical parameters
+3. **Never mention specific models or costs** - "more advanced AI" not specific model names or prices
 4. **Keep it short** - one clear sentence per question
 5. **Focus on business needs** - what information they want, not how we get it
 6. **Don't reference preview data** - questions are shown AFTER preview, so don't say "I noticed X in the results"
+7. **No row selection data** - We cannot adjust rows or row attention - questions are about columns only.
 
 **Cost/Accuracy Tradeoff Language:**
-- ✅ "Would you like more thorough analysis? This increases AI usage."
-- ❌ "Should I upgrade to claude-opus-4-1 for $15/million tokens?"
+- ✅ "Would you like more thorough analysis? This increases processing time and cost."
+- ❌ "Should I upgrade models or increase search depth?"
 
 **Types of Questions to Ask:**
 - **Risky Assumptions**: "Should I focus on [assumption] or [alternative]?"
@@ -152,14 +135,12 @@ QC provides automated review of validation outputs to improve accuracy and consi
 - **Enable QC**: Set `enable_qc: true` to enable automated quality control review
 - **QC Models**: Default is `["deepseek-v3.2", "claude-sonnet-4-5"]` for ultra-low cost with quality fallback
 - **Token Allocation**: Default 8K base + 4K per validated column (excluding ID fields)
-- **Web Searches**: Default 0 (disabled) for cost efficiency, increase when getting it right is critical, or when the model already used claude with web searches.
 
 ### When to Configure QC
 - **Enable QC (Recommended)**: For most validation tasks where accuracy is important
 - **Default QC**: Uses `deepseek-v3.2` (97% cheaper than Claude, excellent quality)
-- **Advanced QC Models**: Automatic fallback to `claude-sonnet-4-5` if deepseek fails
-- **Increase QC Web Searches**: When you need to get everything right, or when claude web search is already being used.
-- **Disable QC**: Only for simple fact-checking tasks or when speed is more important than accuracy
+- **Give QC Search Access**: use `the-clone` when initial validation is not finding the right results - only when pushed. 
+- **Disable QC**: Only for simple fact-checking tasks or when speed is more important than accuracy or when psuhed to reduce costs. 
 
 
 ## Search Group Requirements (MANDATORY)
@@ -168,11 +149,12 @@ Search groups are **REQUIRED** for every configuration - they are essential for 
 **MANDATORY REQUIREMENTS:**
 - **You MUST define at least two search groups** in the `search_groups` array (Group 0/ID Group and another)
 - **Every validation target MUST be assigned to a search group** via the `search_group` field (except those with IGNORED importance)
-- **Group 0**: Always ID/identifier fields (not validated, used for context), you must provide an ID group and assign at least one,  validation target to this. Note - these usually come from the left-most column(s). No validated columns in this group!
+- **Group 0**: Always ID/identifier fields (not validated, used for context), you must provide an ID group and assign at least one validation target to this. Note - these usually come from the left-most column(s). No validated columns in this group!
 - **Group 1+**: Columns whose information appears together in typical sources
 - **Target Number of Groups**: Shoot for number of validation columns ceil((non-ID or IGNORED)/2)
 - **Upper limit**: Maximum 10
 - **No ungrouped fields allowed**: Every column must belong to a search group for optimal performance
+- **Model field**: ONLY specify `model` in a search group when using something other than `the-clone` (the default). Omit the model field to use `the-clone`.
 
 ## Embedding Tablewide Context Research
 

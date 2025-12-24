@@ -81,7 +81,6 @@ async def generate_config(payload: Dict[str, Any]) -> Dict[str, Any]:
             - clarification_urgency: float
             - reasoning: str
             - ai_summary: str
-            - technical_ai_summary: str
             - session_id: str
             - eliyahu_cost: float
             - enhanced_data: Dict
@@ -308,7 +307,6 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         clarification_urgency = response_data.get('clarification_urgency', 0.0)
         reasoning = response_data.get('reasoning', '')
         ai_summary = response_data.get('ai_summary', '')
-        technical_ai_summary = response_data.get('technical_ai_summary', '')
 
         # Debug: Log clarifying questions details
         logger.debug(f"CONFIG_DEBUG: Clarifying questions generated: {bool(clarifying_questions)}")
@@ -346,7 +344,6 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
                         # Merge retry information
                         reasoning += f"\n\nRetry: {retry_result.get('reasoning', '')}"
                         ai_summary += f"\n\nRetry Summary: {retry_result.get('ai_summary', '')}"
-                        technical_ai_summary += f"\n\nRetry Technical Summary: {retry_result.get('technical_ai_summary', '')}"
                     else:
                         logger.error(f"Failed to fix config validation errors on retry {retry_count + 1}")
 
@@ -360,7 +357,6 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             'clarification_urgency': clarification_urgency,
             'reasoning': reasoning,
             'ai_summary': ai_summary,
-            'technical_ai_summary': technical_ai_summary,
             'session_id': session_id,
             # Add cost and usage tracking data (enhanced metrics)
             'eliyahu_cost': eliyahu_cost,
@@ -700,8 +696,7 @@ These columns have high QC fail rates and should be improved:
 
 **REFINEMENT GUIDANCE:**
 - Focus improvements on problem columns with high fail rates
-- Consider upgrading models for failing columns (sonar -> sonar-pro -> claude-sonnet-4)
-- Increase web searches for claude models if accuracy is critical
+- Consider upgrading to more advanced models for failing columns
 - Review examples and format specifications for failing columns
 - Consider moving problem columns to different search groups with related information"""
 
@@ -1265,7 +1260,7 @@ def get_unified_generation_schema() -> Dict:
             "title": "AI Config Generation Response Schema",
             "description": "Schema for AI responses when generating or refining column configurations",
             "type": "object",
-            "required": ["updated_config", "clarifying_questions", "clarification_urgency", "technical_ai_summary", "ai_summary"],
+            "required": ["updated_config", "clarifying_questions", "clarification_urgency", "ai_summary"],
             "properties": {
                 "updated_config": config_schema,  # Use the loaded config schema directly
                 "clarifying_questions": {
@@ -1276,13 +1271,9 @@ def get_unified_generation_schema() -> Dict:
                     "type": "number",
                     "description": "Urgency score from 0-1 with anchored levels:\n0.0-0.1 = MINIMAL (configuration is solid, minor tweaks only)\n0.2-0.3 = LOW (refinements should typically use this range - good foundation, some improvements possible)\n0.4-0.6 = MODERATE (several important clarifications needed)\n0.7-0.8 = HIGH (significant assumptions made, clarification strongly recommended)\n0.9-1.0 = CRITICAL (core columns will likely be wrong without clarification)\n\nREFINEMENT RULE: Refinements must use LOWER urgency than new configurations (typically 0.1-0.3) since they build on existing validated foundations."
                 },
-                "technical_ai_summary": {
-                    "type": "string",
-                    "description": "Technical summary explaining what you did, highlighting assumptions. Include details about search groups, context, and configuration decisions. Can reference preview data/results since this is shown BEFORE next preview. FOR NEW CONFIGS: Your understanding, assumptions, whether refinement needed. FOR REFINEMENTS: Changes made and reasons."
-                },
                 "ai_summary": {
                     "type": "string",
-                    "description": "Short, clear lay-person summary. Use general terms ('more thorough searching' NOT 'high search context', 'more advanced AI' NOT model names). NEVER mention specific models or costs. Can reference preview results since shown BEFORE next preview. Keep it brief and focus on business value."
+                    "description": "Light, 1-3 sentence description of validation settings or changes in plain language. Use general terms ONLY ('thorough validation', 'quick checks', etc.). NEVER mention specific models, technical parameters, or implementation details. Focus on what's being validated. Keep it very brief."
                 }
             },
             "additionalProperties": False
@@ -1299,7 +1290,7 @@ def get_unified_generation_schema() -> Dict:
 def add_conversation_entry(updated_config: Dict, existing_config: Dict = None,
                           instructions: str = '', clarifying_questions: str = '',
                           clarification_urgency: float = 0.0, reasoning: str = '',
-                          ai_summary: str = '', technical_ai_summary: str = '',
+                          ai_summary: str = '',
                           session_id: str = 'unknown', conversation_history: list = None,
                           config_filename: str = '') -> Dict:
     """Add conversation entry to config change log and update metadata."""
@@ -1336,7 +1327,6 @@ def add_conversation_entry(updated_config: Dict, existing_config: Dict = None,
         'clarification_urgency': clarification_urgency,
         'reasoning': reasoning,
         'ai_summary': ai_summary,
-        'technical_ai_summary': technical_ai_summary,
         'version': current_version,
         'model_used': 'claude-opus-4-1',
         'config_filename': config_filename

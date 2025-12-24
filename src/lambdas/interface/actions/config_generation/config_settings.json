@@ -1,15 +1,12 @@
 {
-  "max_tokens": 12000,
+  "max_tokens": 14000,
   "max_tokens_default": 6000,
-  "tokens_per_validated_column_default": 2000,
-  "model": [ "claude-sonnet-4-5","claude-sonnet-4-5", "claude-opus-4-1", "claude-opus-4-20240229"],
-  "anthropic_max_web_searches": 0,
-  "anthropic_max_web_searches_default": 1,
+  "tokens_per_validated_column_default": 4000,
+  "model": ["the-clone", "gemini-2.0-flash", "claude-sonnet-4-5"],
   "qc_settings": {
     "enable_qc": true,
-    "max_tokens_default": 6000,
-    "tokens_per_validated_column_default": 2000,
-    "model": ["claude-sonnet-4-5","claude-sonnet-4-5", "claude-opus-4-1", "claude-opus-4-20240229"],
-    "anthropic_max_web_searches": 0
+    "max_tokens_default": 16000,
+    "tokens_per_validated_column_default":4000,
+    "model": ["deepseek-v3.2","claude-sonnet-4-5"]
   }
 }

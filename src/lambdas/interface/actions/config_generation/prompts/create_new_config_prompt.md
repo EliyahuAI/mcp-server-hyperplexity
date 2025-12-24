@@ -6,7 +6,7 @@
 1. NEVER modify column names from table analysis
 2. Minimum 2 search groups (Group 0 + validation groups)
 3. Every column MUST be assigned to a search group
-5. Return both technical_ai_summary AND ai_summary
+4. Return clear ai_summary explaining your configuration
 
 ## Context
 You are analyzing a table for the **first time** and need to create an optimal configuration from scratch.
@@ -25,18 +25,11 @@ Create a comprehensive configuration that includes:
    - If guidance no longer matches the provided examples, update the examples to a coherent set that matches the guidance
    - Appropriate format specifications with unit requirements for measurements
 
-3. **Technical AI Summary** (REQUIRED - goes in technical_ai_summary field)
-   - Overview of the search group structure you created with technical details
-   - Which columns you identified as critical and why, including search groups and context decisions
-   - Assessment of clarification urgency (use 0.4-0.8 range for new configs per anchored scale)
-   - Specific areas where clarification would improve the configuration
-   - Technical assumptions made about models, context sizes, and groupings
-
-4. **Simple AI Summary** (REQUIRED - goes in ai_summary field)
-   - Simple business-friendly overview of the configuration
-   - Avoid technical terms like "search groups" or "context size"
-   - Focus on what information will be validated and how
-   - Examples: "Set up focused searches for company data" instead of "Created search groups"
+3. **AI Summary** (REQUIRED - goes in ai_summary field)
+   - 1-3 sentences describing what will be validated
+   - Keep it simple and light
+   - Example: "Configured thorough validation for company data and financial information with quality control enabled."
+   - No technical details
 
 {{INCLUDE:common_config_guidance.md}}
 
@@ -58,7 +51,6 @@ Reference your actual configuration decisions and offer concrete alternatives th
 You MUST use the generate_config_and_questions tool with:
 - Complete updated_config with all required fields
 - Specific clarifying_questions (2-4 questions)
-- **technical_ai_summary** field with detailed technical reasoning explaining your configuration decisions
-- **ai_summary** field with simple business-friendly overview
+- **ai_summary** field with clear explanation of your configuration decisions
 
 Focus on creating a solid foundation that can be iteratively improved through user feedback.
