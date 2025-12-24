@@ -150,7 +150,7 @@ def _add_api_call_to_runs(
         )
 
         # Step 4: Re-aggregate ALL calls
-        aggregated = AIAPIClient.aggregate_provider_metrics(existing_call_metrics)
+        aggregated = AIAPIClient().aggregate_provider_metrics(existing_call_metrics)
         providers = aggregated.get('providers', {})
         totals = aggregated.get('totals', {})
 

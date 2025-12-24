@@ -128,7 +128,7 @@ def _add_api_call_to_runs(
         logger.info(f"[COLUMN_DEF] Added {call_type} call metrics for {model}, total calls: {len(existing_call_metrics)}")
 
         # Step 4: Re-aggregate ALL calls
-        aggregated = AIAPIClient.aggregate_provider_metrics(existing_call_metrics)
+        aggregated = AIAPIClient().aggregate_provider_metrics(existing_call_metrics)
         providers = aggregated.get('providers', {})
         totals = aggregated.get('totals', {})
 
