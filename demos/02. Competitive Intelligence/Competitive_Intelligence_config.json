@@ -1,11 +1,11 @@
 {
   "general_notes": "Configuration for Takeda gastroenterology competitive intelligence table tracking drug development pipeline. This table monitors competitor drugs, their development stages, mechanisms, and timelines - critical for strategic planning and market positioning.",
-  "default_model": "sonar",
+  "default_model": "the-clone-baseten",
   "default_search_context_size": "high",
   "anthropic_max_web_searches_default": 1,
   "qc_settings": {
     "enable_qc": true,
-    "model": ["deepseek-v3.2", "claude-sonnet-4-5"],
+    "model": ["deepseek-v3.2-baseten", "claude-sonnet-4-5"],
     "max_tokens_default": 8000,
     "tokens_per_validated_column_default": 4000,
     "anthropic_max_web_searches": 0
@@ -15,28 +15,28 @@
       "group_id": 0,
       "group_name": "Drug Identity",
       "description": "Primary identifiers for each drug entry - developer and drug names/aliases",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "medium"
     },
     {
       "group_id": 1,
       "group_name": "Clinical Profile",
       "description": "Target population and mechanism of action - typically found together in clinical documentation",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 2,
       "group_name": "Development Status",
       "description": "Current development stage and pivotal trials - information that appears together in pipeline reports",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "high"
     },
     {
       "group_id": 3,
       "group_name": "Timeline & Sources",
       "description": "Release projections and supporting documentation - forward-looking information and references",
-      "model": "sonar",
+      "model": "the-clone-baseten",
       "search_context": "high"
     }
   ],
@@ -155,7 +155,7 @@
       "clarification_urgency": 0.5,
       "reasoning": "",
       "ai_summary": "Set up comprehensive validation for Takeda's competitive drug pipeline tracking. The system will verify company information, drug names, target diseases, how the drugs work, development stages, key clinical trials, launch timelines, and supporting documentation. Configured to use high-quality searches with accuracy review to ensure reliable competitive intelligence for strategic planning.",
-      "technical_ai_summary": "**Table Purpose**: Competitive intelligence tracking for Takeda's gastroenterology pipeline, monitoring competitor drugs across development stages with focus on clinical progress and market timing.\n\n**Search Group Strategy**: Created 4 logical groups based on information co-location:\n- Group 0: Drug Identity (Developer + Drug/Aliases) - primary identifiers, not validated but used for context\n- Group 1: Clinical Profile (Target population + Mechanism) - typically found together in clinical documentation  \n- Group 2: Development Status (Stage + Pivotal trials) - pipeline information that appears together\n- Group 3: Timeline & Sources (Release date + Press releases) - forward-looking data and supporting references\n\n**Column Classifications**: All 8 columns assigned as required. Developer and Drug/Aliases set as ID fields for row identification. Remaining 6 columns marked CRITICAL as they serve the table's core competitive intelligence purpose.\n\n**Model Selection**: Used default 'sonar' model with high search context for comprehensive competitive intelligence gathering. QC enabled with Claude Sonnet for accuracy verification given strategic importance.\n\n**Key Assumptions**: \n- Biotech domain requires high accuracy for strategic decisions\n- Timeline information needs current validation given rapid industry changes  \n- Clinical trial data requires authoritative sources\n- Mechanism of action needs scientific precision\n\n**Clarification Urgency (0.5 - MODERATE)**: Configuration is functional but several strategic decisions about competitive scope, timeline conservatism, technical detail level, and source prioritization could significantly improve validation quality for Takeda's specific needs.",
+      "technical_ai_summary": "**Table Purpose**: Competitive intelligence tracking for Takeda's gastroenterology pipeline, monitoring competitor drugs across development stages with focus on clinical progress and market timing.\n\n**Search Group Strategy**: Created 4 logical groups based on information co-location:\n- Group 0: Drug Identity (Developer + Drug/Aliases) - primary identifiers, not validated but used for context\n- Group 1: Clinical Profile (Target population + Mechanism) - typically found together in clinical documentation  \n- Group 2: Development Status (Stage + Pivotal trials) - pipeline information that appears together\n- Group 3: Timeline & Sources (Release date + Press releases) - forward-looking data and supporting references\n\n**Column Classifications**: All 8 columns assigned as required. Developer and Drug/Aliases set as ID fields for row identification. Remaining 6 columns marked CRITICAL as they serve the table's core competitive intelligence purpose.\n\n**Model Selection**: Used default 'the-clone-baseten' model with high search context for comprehensive competitive intelligence gathering. QC enabled with Claude Sonnet for accuracy verification given strategic importance.\n\n**Key Assumptions**: \n- Biotech domain requires high accuracy for strategic decisions\n- Timeline information needs current validation given rapid industry changes  \n- Clinical trial data requires authoritative sources\n- Mechanism of action needs scientific precision\n\n**Clarification Urgency (0.5 - MODERATE)**: Configuration is functional but several strategic decisions about competitive scope, timeline conservatism, technical detail level, and source prioritization could significantly improve validation quality for Takeda's specific needs.",
       "version": 1,
       "model_used": "claude-opus-4-1",
       "config_filename": "takeda_gastro_competitive_intelligence_input_config_V01.json"
