@@ -1,11 +1,11 @@
 {
   "general_notes": "This table contains extracted claims that need validation. The ID columns are pre-populated from extraction. The RESEARCH columns must be validated using the following logic:\n\n**VALIDATION LOGIC**:\n1. **If Reference is provided** (external citation):\n   - Access the cited reference via web search\n   - Verify how well it supports the claim\n   - Do NOT use the paper itself as validation source\n\n2. **If Supporting Data is provided** (paper's own results):\n   - Evaluate whether the stated measurements/data actually support the claim\n   - Check if other data in the original text (see below) corroborates or contradicts\n   - Do NOT use the paper's own assertions as proof - check if measurements logically support the claim\n   - If claim needs external validation, use web search to check acceptance of the statement (excluding this paper)\n\n3. **If neither Reference nor Supporting Data**:\n   - Use web search to assess how accepted/verified this statement is\n   - Search for authoritative sources on the topic\n   - EXCLUDE this paper from validation sources (cannot self-reference)\n\n**CRITICAL**: The paper being analyzed cannot validate its own claims. Supporting Data shows what the paper claims - you must evaluate if those measurements actually support the claim or if external verification is needed.",
-  "default_model": "sonar-pro",
+  "default_model": "the-clone",
   "default_search_context_size": "high",
   "anthropic_max_web_searches_default": 0,
   "qc_settings": {
     "enable_qc": false,
-    "model": "claude-sonnet-4-5",
+    "model": "deepseek-v3.2",
     "max_tokens_default": 8000,
     "tokens_per_validated_column_default": 3000,
     "anthropic_max_web_searches": 0
@@ -15,14 +15,14 @@
       "group_id": 0,
       "group_name": "Claim Identifiers",
       "description": "Claim identifiers and extracted text - already populated, used for context only",
-      "model": "sonar",
+      "model": "the-clone",
       "search_context": "low"
     },
     {
       "group_id": 1,
       "group_name": "Reference Validation",
       "description": "Comprehensive validation of all research columns in a single pass - access the reference, assess support level, determine confidence, and provide detailed notes",
-      "model": "sonar-pro",
+      "model": "the-clone",
       "search_context": "high"
     }
   ],

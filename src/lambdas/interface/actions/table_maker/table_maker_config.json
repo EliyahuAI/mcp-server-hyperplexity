@@ -7,7 +7,7 @@
 
   "interview": {
     "_comment": "Interview phase - AI interacts with user to understand requirements and approve table structure",
-    "model": "claude-sonnet-4-5",
+    "model": "deepseek-v3.2",
     "max_tokens": 8000,
     "use_web_search": false,
     "max_turns": 5,
@@ -37,7 +37,7 @@
   "table_extraction": {
     "_comment": "Step 0b - Sequential follow-up to background research. Extracts complete tables from identified URLs. Only runs if background research identifies tables with extract_table=true",
 
-    "model": "claude-haiku-4-5",
+    "model": "the-clone",
     "max_web_searches": 10,
     "_note_max_web_searches": "FOR ANTHROPIC MODELS ONLY (claude-*). Increased to 10 to support pagination - allows extracting from up to 10 pages in a single call",
 
@@ -54,7 +54,7 @@
 
   "column_definition": {
     "_comment": "Step 1 - Defines column specifications and search strategy using background research output as input. Generates initial rows from available data.",
-    "model": "claude-sonnet-4-5",
+    "model": "deepseek-v3.2",
     "_note_model": "Recommended: claude-sonnet-4-5 (receives formatted research, no web search needed)",
     "max_tokens": 32000,
     "_note_max_tokens": "Set to 32000 to handle large entity counts (50+ rows). No auto-boost logic - uses this value directly.",
@@ -74,6 +74,13 @@
 
     "_escalation_info": "The escalation_strategy array defines progressive model fallback. Each level is tried until sufficient candidates found (based on min_candidates_percentage). This REPLACES the old 'model', 'web_search_model', 'scoring_model', 'progressive_context' settings",
     "escalation_strategy": [
+      {
+        "model": "the-clone",
+        "search_context_size": "high",
+        "description": "Primary: Premium search with sonar-pro for high quality results",
+        "min_candidates_percentage": 75,
+        "_note": "Stop early if we get 75% of target_row_count (15/20 rows)"
+      },
       {
         "model": "sonar-pro",
         "search_context_size": "high",
@@ -161,7 +168,7 @@
 
   "table_population": {
     "_comment": "Table population phase - Fills in research columns for approved rows (not implemented in current v2.2 architecture)",
-    "model": "claude-sonnet-4-5",
+    "model": "deepseek-v3.2",
     "max_tokens": 16000,
     "batch_size": 10,
     "parallel_batches": 2,
@@ -170,7 +177,7 @@
 
   "config_generation": {
     "_comment": "Config generation phase - Creates validation config for the final table",
-    "model": "claude-sonnet-4-5",
+    "model": "deepseek-v3.2",
     "max_tokens": 8000,
     "parallel_with_row_discovery": true,
     "_note_parallel": "When true, config generation runs in parallel with row discovery to save time"
@@ -178,7 +185,7 @@
 
   "validation": {
     "_comment": "Validation phase - Validates populated table data (legacy, not actively used in v2.2)",
-    "model": "claude-sonnet-4-5",
+    "model": "deepseek-v3.2",
     "max_tokens": 8000,
     "confidence_threshold": 0.7
   },
