@@ -216,6 +216,7 @@ class GeminiProvider:
         1. Does not support array syntax for type: "type": ["string", "null"]
         2. Does not support "items": False for tuple validation
         3. Protobuf-based schema has stricter requirements
+        4. Does not support: $schema, if/then/else conditionals
 
         Returns:
             (converted_schema, conversion_map) where conversion_map tracks what was changed
@@ -225,6 +226,8 @@ class GeminiProvider:
         conversion_map = {
             'null_conversions': [],  # Track fields where null was converted to "NULL"
             'type_array_fixes': [],  # Track fields where type arrays were flattened
+            'stripped_fields': [],  # Track unsupported fields that were removed
+            'has_complex_conditionals': False,  # Flag if schema has if/then/else (can't be fully converted)
         }
 
         def process_schema_node(node, path=""):
@@ -233,6 +236,19 @@ class GeminiProvider:
                 return node
 
             node = copy.deepcopy(node)
+
+            # Fix 0: Strip unsupported JSON Schema meta fields and conditionals
+            unsupported_fields = ['$schema', '$id', '$ref', 'if', 'then', 'else', 'not', 'allOf', 'oneOf']
+            for field in unsupported_fields:
+                if field in node:
+                    conversion_map['stripped_fields'].append(f"{path}.{field}" if path else field)
+
+                    # Flag complex conditionals that can't be properly converted
+                    if field in ['if', 'then', 'else']:
+                        conversion_map['has_complex_conditionals'] = True
+                        logger.warning(f"[GEMINI_SCHEMA] Found conditional '{field}' at {path} - schema may be too complex for Gemini")
+
+                    del node[field]
 
             # Fix 1: Handle "type": ["string", "null"] -> "type": "string" + convert nulls in enum
             if 'type' in node and isinstance(node['type'], list):
@@ -311,8 +327,12 @@ class GeminiProvider:
         converted = process_schema_node(schema)
 
         # Log conversions if any were made
-        if conversion_map['null_conversions'] or conversion_map['type_array_fixes'] or conversion_map.get('prefixItems_conversions'):
+        if conversion_map['null_conversions'] or conversion_map['type_array_fixes'] or conversion_map.get('prefixItems_conversions') or conversion_map['stripped_fields']:
             logger.info(f"[GEMINI_SCHEMA] Applied compatibility fixes:")
+            if conversion_map['stripped_fields']:
+                logger.info(f"  - Stripped {len(conversion_map['stripped_fields'])} unsupported field(s): {conversion_map['stripped_fields'][:5]}")
+                if conversion_map['has_complex_conditionals']:
+                    logger.warning(f"  - WARNING: Schema contains if/then/else conditionals - may need Haiku fallback")
             if conversion_map['type_array_fixes']:
                 logger.info(f"  - Fixed {len(conversion_map['type_array_fixes'])} type array(s)")
             if conversion_map['null_conversions']:
@@ -399,6 +419,13 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
 
                 # Convert schema to Gemini-compatible format
                 converted_schema, conversion_map = self._convert_schema_for_gemini(schema)
+
+                # Check if schema is too complex for Gemini (has conditionals)
+                if conversion_map.get('has_complex_conditionals'):
+                    error_msg = "Schema contains if/then/else conditionals not supported by Gemini - use Haiku/Claude instead"
+                    logger.warning(f"[GEMINI_SCHEMA] {error_msg}")
+                    raise Exception(error_msg)
+
                 request_body["generationConfig"]["responseSchema"] = converted_schema
 
         debug_request = {'model': model, 'prompt': prompt, 'max_tokens': enforced_max_tokens}

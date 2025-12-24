@@ -33,9 +33,33 @@ from .providers.gemini import GeminiProvider
 
 logger = logging.getLogger(__name__)
 
+def _schema_has_conditionals(schema: Dict) -> bool:
+    """
+    Recursively check if schema contains if/then/else conditionals.
+    These are not supported by Gemini and other non-Claude models.
+    """
+    if not isinstance(schema, dict):
+        return False
+
+    # Check for conditional keywords at this level
+    if any(key in schema for key in ['if', 'then', 'else']):
+        return True
+
+    # Recursively check nested structures
+    for value in schema.values():
+        if isinstance(value, dict):
+            if _schema_has_conditionals(value):
+                return True
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict) and _schema_has_conditionals(item):
+                    return True
+
+    return False
+
 class AIAPIClient:
     """Shared AI API client with caching and schema support."""
-    
+
     MODEL_HIERARCHY = MODEL_HIERARCHY
 
     def __init__(self, s3_bucket: str = None):
@@ -119,11 +143,27 @@ class AIAPIClient:
 
         call_start_time = datetime.now()
 
+        # Check if schema has conditionals (if/then/else) that Gemini/non-Claude models can't handle
+        schema_has_conditionals = _schema_has_conditionals(schema) if schema else False
+
         if isinstance(model, str):
             models_to_try = [model]
             backups = self._get_backup_models(model, 2)
             models_to_try.extend(backups)
-            if backups:
+
+            # If schema has conditionals, prioritize Haiku for backup
+            if schema_has_conditionals:
+                # Remove Gemini from backups if present
+                models_to_try = [m for m in models_to_try if 'gemini' not in m.lower()]
+
+                # Ensure Haiku is in the backup chain (add if not already)
+                if 'claude-haiku-4-5' not in models_to_try:
+                    # Insert Haiku as first backup (after primary)
+                    models_to_try.insert(1, 'claude-haiku-4-5')
+
+                logger.warning(f"[SCHEMA_CONDITIONALS] Schema contains if/then/else - prioritizing Haiku")
+                logger.info(f"[BACKUP_MODELS] Primary: {model}, Backups (adjusted for conditionals): {models_to_try[1:]}")
+            elif backups:
                 logger.info(f"[BACKUP_MODELS] Primary: {model}, Backups: {backups}")
         else:
             models_to_try = model
