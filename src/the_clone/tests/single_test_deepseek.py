@@ -1,4 +1,4 @@
-#!/usr/bin/env python.exe
+#!/usr/bin/env python3
 """Single query test using DeepSeek V3.2 for routing, triage, and extraction."""
 import os
 import sys
@@ -9,7 +9,7 @@ from datetime import datetime
 
 # Set environment variables
 os.environ['GOOGLE_CLOUD_PROJECT'] = 'gen-lang-client-0650358146'
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = r'C:\Users\ellio\OneDrive - Eliyahu.AI\Desktop\src\other\gen-lang-client-0650358146-897394b730e6.json'
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = r'/mnt/c/Users/ellio/OneDrive - Eliyahu.AI/Desktop/src/other/gen-lang-client-0650358146-897394b730e6.json'
 os.environ['PERPLEXITY_API_KEY'] = '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'
 
 # Add parent to path
@@ -35,9 +35,18 @@ async def run_deepseek_test(query: str, complexity: str):
     clone = TheClone()
     start_time = time.time()
 
+    # Create timestamped debug directory
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    debug_dir = os.path.join(os.path.dirname(__file__), f'../test_results/debug_logs/test_{timestamp}')
+    os.makedirs(debug_dir, exist_ok=True)
+
     try:
         # Use DeepSeek variant config
-        result = await clone.query(prompt=query, config_variant="deepseek_variant")
+        result = await clone.query(
+            prompt=query, 
+            config_variant="deepseek_variant",
+            debug_dir=debug_dir
+        )
         elapsed = time.time() - start_time
 
         # Extract metadata
@@ -54,7 +63,7 @@ async def run_deepseek_test(query: str, complexity: str):
             "timestamp": datetime.now().isoformat(),
             "decision": metadata.get('decision', 'need_search'),
             "determined_context": metadata.get('search_context'),
-            "synthesis_tier": metadata.get('synthesis_model_tier'),
+            "synthesis_tier": metadata.get('synthesis_tier'),
             "iterations": metadata.get('iterations', 0),
             "time_seconds": round(elapsed, 2),
             "cost": round(metadata['total_cost'], 4),
