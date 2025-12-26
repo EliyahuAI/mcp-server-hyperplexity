@@ -20,6 +20,7 @@ from shared.ai_client.utils import extract_structured_response
 from the_clone.triage_schemas import get_source_triage_schema
 from the_clone.text_labeler import TextLabeler
 from the_clone.strategy_loader import get_model_with_backups
+from the_clone.relevance_scorer import RelevanceScorer
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -43,6 +44,7 @@ class SourceTriage:
         self.ai_client = ai_client or AIAPIClient()
         self.use_labeled_text = use_labeled_text
         self.text_labeler = TextLabeler() if use_labeled_text else None
+        self.relevance_scorer = RelevanceScorer(positive_weight=1.0, negative_weight=5.0)
 
     async def triage_all_searches(
         self,
@@ -50,6 +52,8 @@ class SourceTriage:
         search_terms: List[str],
         query: str,
         existing_snippets: List[Dict],
+        positive_keywords: List[str] = None,
+        negative_keywords: List[str] = None,
         model: str = "claude-haiku-4-5",
         max_sources_per_search: int = 3,
         soft_schema: bool = False,
@@ -91,6 +95,8 @@ class SourceTriage:
                 search_index=i + 1,
                 query=query,
                 existing_snippets=existing_snippets,
+                positive_keywords=positive_keywords or [],
+                negative_keywords=negative_keywords or [],
                 model=model,
                 max_sources=max_sources_per_search,
                 soft_schema=soft_schema,
@@ -128,6 +134,8 @@ class SourceTriage:
         search_index: int,
         query: str,
         existing_snippets: List[Dict],
+        positive_keywords: List[str],
+        negative_keywords: List[str],
         model: str,
         max_sources: int,
         soft_schema: bool = False,
@@ -158,10 +166,18 @@ class SourceTriage:
 
         logger.debug(f"[TRIAGE] Triaging search {search_index}: '{search_term[:60]}...' ({len(results)} results)")
 
-        # Build triage prompt
+        # Score results based on rank + keywords
+        scored_results = self.relevance_scorer.score_search_results(
+            results=results,
+            positive_keywords=positive_keywords,
+            negative_keywords=negative_keywords
+        )
+
+        # Build triage prompt with scoring information
         triage_prompt = self._build_triage_prompt(
             search_term=search_term,
             results=results,
+            scored_results=scored_results,
             query=query,
             existing_snippets=existing_snippets,
             max_sources=max_sources
@@ -227,6 +243,7 @@ class SourceTriage:
         self,
         search_term: str,
         results: List[Dict],
+        scored_results: List[Dict],
         query: str,
         existing_snippets: List[Dict],
         max_sources: int = None
@@ -260,12 +277,16 @@ class SourceTriage:
         # Format existing snippets
         formatted_existing = self._format_existing_snippets(existing_snippets)
 
+        # Format relevance scores
+        relevance_scores = self.relevance_scorer.format_scores_for_triage(scored_results)
+
         # Fill template (max_sources not used in new ranking prompt)
         prompt = template.format(
             query=query,
             search_term=search_term,
             source_count=len(results),
             formatted_sources=formatted_sources,
+            relevance_scores=relevance_scores,
             existing_snippet_count=len(existing_snippets),
             formatted_existing_snippets=formatted_existing or "(No snippets collected yet)"
         )

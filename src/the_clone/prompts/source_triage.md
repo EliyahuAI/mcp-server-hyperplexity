@@ -13,18 +13,23 @@ Existing snippet count: {existing_snippet_count}
 Sources from This Search ({source_count} results):
 {formatted_sources}
 
+{relevance_scores}
+
 Ranking Criteria (Priority Order):
-1) Relevance: EXCLUDE sources that are off-topic or don't address the query
-2) Authority: Assess source authority for the query topic
+1) Relevance Score: Consider the algorithmic relevance score based on search rank + keyword matches
+   - Higher scores indicate better rank AND presence of desired technical/topical keywords
+   - Negative keyword matches (if any) are a strong signal of irrelevant/low-quality content
+2) Relevance: EXCLUDE sources that are off-topic or don't address the query
+3) Authority: Assess source authority for the query topic
    - AU (Authoritative): High general authority + known topic expertise → prioritize
    - UK (Unknown): Unclear/medium authority → neutral
    - LA (Low Authority): Low general authority or lacks topic expertise → deprioritize
-3) Quality Codes: Sources will be coded during extraction. Seek sources likely to yield:
+4) Quality Codes: Sources will be coded during extraction. Seek sources likely to yield:
    - GOOD codes: P (Primary/official), D (Documented), A (Attributed), O (OK/reliable)
    - AVOID sources likely to yield: C (Contradicted), U (Unsourced), PR (Promotional), S (Stale), SL (SEO slop)
-4) Novelty: Prioritize sources likely to add NEW information not in existing snippets
-5) Independence: Prefer diverse origins, avoid echo chambers
-6) Recency: For time-sensitive queries ("latest", "current"), prefer recent sources
+5) Novelty: Prioritize sources likely to add NEW information not in existing snippets
+6) Independence: Prefer diverse origins, avoid echo chambers
+7) Recency: For time-sensitive queries ("latest", "current"), prefer recent sources
 
 Output:
 Rank ONLY RELEVANT sources from best to worst. Exclude off-topic sources.

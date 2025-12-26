@@ -93,8 +93,15 @@ class SearchManager:
             logger.info(f"[SEARCH_MANAGER] Generated {len(data.get('search_terms', []))} search terms")
             logger.debug(f"[SEARCH_MANAGER] Search terms: {data.get('search_terms')}")
 
+            positive_keywords = data.get("positive_keywords", [])
+            negative_keywords = data.get("negative_keywords", [])
+            logger.info(f"[SEARCH_MANAGER] Keywords: {len(positive_keywords)} positive, {len(negative_keywords)} negative")
+            logger.debug(f"[SEARCH_MANAGER] Positive: {positive_keywords}, Negative: {negative_keywords}")
+
             return {
                 "search_terms": data.get("search_terms", []),
+                "positive_keywords": positive_keywords,
+                "negative_keywords": negative_keywords,
                 "search_settings": data.get("search_settings", {"max_results": 20}),
                 "reasoning": data.get("reasoning", ""),
                 "model_response": response

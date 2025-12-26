@@ -67,7 +67,9 @@ Choose based on synthesis complexity only:
 
 ---
 
-## Decision 4: Search Terms
+## Decision 4: Search Terms & Keywords
+
+### Search Terms
 
 **Search Term Quality:**
 - Be SPECIFIC and TARGETED to the query (not overly general)
@@ -83,6 +85,22 @@ Choose based on synthesis complexity only:
 - "GPT-4 vs Claude" → 2 terms: ["GPT-4 performance", "Claude performance"] (different systems)
 - "Gemini features" → 1 term: ["Gemini 2.0 features"] (single domain, specific)
 
+### Keyword Indicators
+
+**Positive Keywords** - Terms that indicate high-quality, relevant results:
+- Include technical terms, methodologies, key concepts NOT in search terms
+- Include common abbreviations and variants (e.g., "LR" for "learning rate")
+- These help prioritize best results AFTER search, without narrowing the search
+- Example for "neural network optimization": ["backpropagation", "gradient descent", "GD", "learning rate", "LR", "convergence"]
+
+**Negative Keywords** - Terms that indicate off-topic/low-quality results:
+- Beginner-focused phrases: "for kids", "beginner tutorial", "ELI5", "simple explanation"
+- Unrelated topics that might appear in broad search results
+- Strong filter - even ONE match suggests the result is likely irrelevant
+- Example for technical query: ["for kids", "beginner", "ELI5", "simple terms"]
+
+**Strategy:** Use BROAD search terms + specific keywords to cast a wide net, then algorithmically prioritize the best matches.
+
 ---
 
 ## Output Format
@@ -94,6 +112,8 @@ Choose based on synthesis complexity only:
   "breadth": "narrow",
   "depth": "shallow",
   "search_terms": [],
+  "positive_keywords": [],
+  "negative_keywords": [],
   "synthesis_tier": "tier2",
   "academic": false,
   "answer": "<your complete answer here - REQUIRED when answering directly>"
@@ -107,6 +127,8 @@ Choose based on synthesis complexity only:
   "breadth": "narrow" | "broad",
   "depth": "shallow" | "deep",
   "search_terms": ["term1"],
+  "positive_keywords": ["technical_term1", "methodology1", "abbreviation1"],
+  "negative_keywords": ["for kids", "beginner", "simple"],
   "synthesis_tier": "tier1" | "tier2" | "tier3" | "tier4",
   "academic": true | false
 }}

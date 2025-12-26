@@ -246,6 +246,8 @@ class TheClone2Refined:
         synthesis_tier = initial_result.get('synthesis_tier', 'tier2')
         strategy = get_strategy(breadth, depth)
         search_terms = initial_result.get('search_terms', [prompt])
+        positive_keywords = initial_result.get('positive_keywords', [])
+        negative_keywords = initial_result.get('negative_keywords', [])
 
         # Get models for synthesis tier (unless overridden)
         if not model_override:
@@ -326,6 +328,8 @@ class TheClone2Refined:
             search_terms=search_terms,
             query=prompt,
             existing_snippets=[],
+            positive_keywords=positive_keywords,
+            negative_keywords=negative_keywords,
             model=models['triage'],
             soft_schema=use_soft_schema,
             clone_logger=clone_logger,
@@ -687,6 +691,8 @@ class TheClone2Refined:
                     search_terms=suggested_search_terms,
                     query=prompt,
                     existing_snippets=all_snippets,
+                    positive_keywords=positive_keywords,
+                    negative_keywords=negative_keywords,
                     model=models['triage'],
                     soft_schema=use_soft_schema,
                     clone_logger=clone_logger,

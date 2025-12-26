@@ -46,6 +46,18 @@ def get_initial_decision_schema(answer_schema: dict = None) -> dict:
                 "minItems": 0,
                 "maxItems": 3
             },
+            "positive_keywords": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Keywords (including abbreviations/variants) that indicate high-quality, relevant search results. NOT in search terms but suggest valuable information. Empty [] if answer_directly. Examples: technical terms, methodologies, key concepts.",
+                "minItems": 0
+            },
+            "negative_keywords": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Keywords indicating off-topic/low-quality results. Empty [] if answer_directly. Examples: 'for kids', 'beginner', 'ELI5', unrelated topics. Strong filter - one match suggests irrelevance.",
+                "minItems": 0
+            },
             "synthesis_tier": {
                 "type": "string",
                 "enum": ["tier1", "tier2", "tier3", "tier4"],
@@ -56,7 +68,7 @@ def get_initial_decision_schema(answer_schema: dict = None) -> dict:
                 "description": "Set true if query requires scholarly/peer-reviewed sources (research papers, academic studies, scientific findings). Prioritizes academic databases over general web."
             }
         },
-        "required": ["decision", "breadth", "depth", "search_terms", "synthesis_tier", "academic"]
+        "required": ["decision", "breadth", "depth", "search_terms", "positive_keywords", "negative_keywords", "synthesis_tier", "academic"]
     }
 
     # If custom answer schema provided, merge it for direct answers

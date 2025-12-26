@@ -20,6 +20,16 @@ def get_search_generation_schema() -> Dict[str, Any]:
                 "items": {"type": "string"},
                 "description": "Optimized search queries for the Perplexity Search API"
             },
+            "positive_keywords": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Keywords (including common abbreviations/variants) that indicate high-quality, relevant results. These are NOT in the search terms themselves but suggest the result contains valuable information. Examples: technical terms, specific methodologies, key concepts."
+            },
+            "negative_keywords": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Keywords that indicate off-topic or low-quality results. Examples: 'for kids', 'beginner tutorial', 'ELI5', completely unrelated topic terms. Strong filter - even one match suggests irrelevant content."
+            },
             "search_settings": {
                 "type": "object",
                 "properties": {
@@ -41,7 +51,7 @@ def get_search_generation_schema() -> Dict[str, Any]:
                 "description": "Explanation of search strategy and term selection"
             }
         },
-        "required": ["search_terms", "search_settings", "reasoning"]
+        "required": ["search_terms", "positive_keywords", "negative_keywords", "search_settings", "reasoning"]
     }
 
 
