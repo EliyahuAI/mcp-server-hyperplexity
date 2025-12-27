@@ -242,6 +242,12 @@ def _add_api_call_to_runs(
         # Format: "Table Generation (Interview, Interview, Preview Generation)"
         call_type_names = {
             'interview': 'Interview',
+            'background_research': 'Background Research',
+            'table_extraction': 'Table Extraction',
+            'column_definition': 'Column Definition',
+            'row_discovery': 'Row Discovery',
+            'qc_review': 'QC Review',
+            'config_generation': 'Config Generation',
             'preview': 'Preview Generation',
             'expansion': 'Expansion',
             'refinement': 'Refinement'
@@ -280,6 +286,12 @@ def _add_api_call_to_runs(
             'enhanced_metrics_aggregated': aggregated,  # Complete aggregated structure
             'table_maker_breakdown': {
                 'interview_calls': len([c for c in existing_call_metrics if c.get('call_type') == 'interview']),
+                'background_research_calls': len([c for c in existing_call_metrics if c.get('call_type') == 'background_research']),
+                'table_extraction_calls': len([c for c in existing_call_metrics if c.get('call_type') == 'table_extraction']),
+                'column_definition_calls': len([c for c in existing_call_metrics if c.get('call_type') == 'column_definition']),
+                'row_discovery_calls': len([c for c in existing_call_metrics if c.get('call_type') == 'row_discovery']),
+                'qc_review_calls': len([c for c in existing_call_metrics if c.get('call_type') == 'qc_review']),
+                'config_generation_calls': len([c for c in existing_call_metrics if c.get('call_type') == 'config_generation']),
                 'preview_calls': len([c for c in existing_call_metrics if c.get('call_type') == 'preview']),
                 'expansion_calls': len([c for c in existing_call_metrics if c.get('call_type') == 'expansion']),
                 'total_calls': len(existing_call_metrics)

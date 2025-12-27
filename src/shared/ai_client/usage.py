@@ -595,19 +595,19 @@ class UsageHandler:
                             'tokens': 0,
                             'cache_efficiency_percent': 0.0
                         }
-                    providers[provider]['cost_actual'] += provider_data.get('cost_actual', 0.0)
-                    providers[provider]['cost_estimated'] += provider_data.get('cost_estimated', 0.0)
-                    providers[provider]['calls'] += provider_data.get('calls', 0)
-                    providers[provider]['tokens'] += provider_data.get('tokens', 0)
-                total_cost_actual += sum(p.get('cost_actual', 0.0) for p in metric.get('provider_metrics', {}).values())
-                total_cost_estimated += sum(p.get('cost_estimated', 0.0) for p in metric.get('provider_metrics', {}).values())
+                    providers[provider]['cost_actual'] += float(provider_data.get('cost_actual', 0.0))
+                    providers[provider]['cost_estimated'] += float(provider_data.get('cost_estimated', 0.0))
+                    providers[provider]['calls'] += int(provider_data.get('calls', 0))
+                    providers[provider]['tokens'] += int(provider_data.get('tokens', 0))
+                total_cost_actual += sum(float(p.get('cost_actual', 0.0)) for p in metric.get('provider_metrics', {}).values())
+                total_cost_estimated += sum(float(p.get('cost_estimated', 0.0)) for p in metric.get('provider_metrics', {}).values())
             else:
                 # Single provider call - extract from costs
                 costs = metric.get('costs', {})
                 actual = costs.get('actual', {})
                 estimated = costs.get('estimated', {})
-                cost_actual = actual.get('total_cost', 0.0)
-                cost_estimated = estimated.get('total_cost', 0.0)
+                cost_actual = float(actual.get('total_cost', 0.0))
+                cost_estimated = float(estimated.get('total_cost', 0.0))
                 total_cost_actual += cost_actual
                 total_cost_estimated += cost_estimated
 
@@ -624,15 +624,15 @@ class UsageHandler:
                 providers[provider]['cost_actual'] += cost_actual
                 providers[provider]['cost_estimated'] += cost_estimated
                 providers[provider]['calls'] += 1
-                providers[provider]['tokens'] += metric.get('token_usage', {}).get('total_tokens', 0)
+                providers[provider]['tokens'] += int(metric.get('token_usage', {}).get('total_tokens', 0))
 
             # Aggregate by model (top-level model name)
             model = metric.get('model', 'unknown')
             if model not in by_model:
                 by_model[model] = {'cost': 0.0, 'calls': 0}
-            metric_cost = metric.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+            metric_cost = float(metric.get('costs', {}).get('actual', {}).get('total_cost', 0.0))
             if 'provider_metrics' in metric:
-                metric_cost = sum(p.get('cost_actual', 0.0) for p in metric.get('provider_metrics', {}).values())
+                metric_cost = sum(float(p.get('cost_actual', 0.0)) for p in metric.get('provider_metrics', {}).values())
             by_model[model]['cost'] += metric_cost
             by_model[model]['calls'] += 1
 
