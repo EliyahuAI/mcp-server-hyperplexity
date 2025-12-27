@@ -1,26 +1,26 @@
 {
     "text_limits": {
-        "max_tokens": 60000,
+        "max_tokens": 120000,
         "tokens_per_word": 1.33,
         "error_message": "Text is too large to process. Please limit to approximately {max_words} words."
     },
     "reference_extraction": {
-        "model": "claude-haiku-4-5",
-        "max_tokens": 60000,
+        "model": "gemeni-2-0-flash",
+        "max_tokens": 120000,
         "temperature": 0.2,
         "timeout_seconds": 120,
         "enabled": true
     },
     "extraction": {
-        "model": "claude-sonnet-4-5",
-        "max_tokens": 16000,
+        "model": "deepseek-v3.2",
+        "max_tokens": 60000,
         "temperature": 0.3,
         "min_claims": 1,
         "max_claims": 50,
         "timeout_seconds": 120
     },
     "validation": {
-        "model": "claude-haiku-4-5",
+        "model": "deepseek-v3.2",
         "max_tokens": 8000,
         "temperature": 0.2,
         "max_parallel_validations": 5,

@@ -627,7 +627,8 @@ class UsageHandler:
                 providers[provider]['tokens'] += int(metric.get('token_usage', {}).get('total_tokens', 0))
 
             # Aggregate by model (top-level model name)
-            model = metric.get('model', 'unknown')
+            # Model is stored in call_info.model (from get_enhanced_call_metrics)
+            model = metric.get('call_info', {}).get('model', metric.get('model', 'unknown'))
             if model not in by_model:
                 by_model[model] = {'cost': 0.0, 'calls': 0}
             metric_cost = float(metric.get('costs', {}).get('actual', {}).get('total_cost', 0.0))
