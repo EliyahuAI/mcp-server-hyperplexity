@@ -74,7 +74,8 @@ class TheClone2Refined:
         exclude_domains: Optional[List[str]] = None,
         provider: str = "deepseek",
         use_baseten: bool = False,
-        use_code_extraction: bool = True
+        use_code_extraction: bool = True,
+        disable_keyword_scoring: bool = False
     ) -> Dict[str, Any]:
         """
         Execute query with strategy-based architecture.
@@ -248,6 +249,18 @@ class TheClone2Refined:
         search_terms = initial_result.get('search_terms', [prompt])
         positive_keywords = initial_result.get('positive_keywords', [])
         negative_keywords = initial_result.get('negative_keywords', [])
+
+        # Allow disabling keyword scoring for comparison tests
+        if disable_keyword_scoring:
+            logger.info("[CLONE] Keyword scoring DISABLED for comparison test")
+            positive_keywords = []
+            negative_keywords = []
+        else:
+            logger.info(f"[CLONE] Keywords generated: {len(positive_keywords)} positive, {len(negative_keywords)} negative")
+            if positive_keywords:
+                logger.info(f"[CLONE] Positive keywords: {positive_keywords}")
+            if negative_keywords:
+                logger.info(f"[CLONE] Negative keywords: {negative_keywords}")
 
         # Get models for synthesis tier (unless overridden)
         if not model_override:

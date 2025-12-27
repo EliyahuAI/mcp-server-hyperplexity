@@ -180,7 +180,9 @@ class SourceTriage:
             scored_results=scored_results,
             query=query,
             existing_snippets=existing_snippets,
-            max_sources=max_sources
+            max_sources=max_sources,
+            positive_keywords=positive_keywords,
+            negative_keywords=negative_keywords
         )
 
         if clone_logger:
@@ -246,7 +248,9 @@ class SourceTriage:
         scored_results: List[Dict],
         query: str,
         existing_snippets: List[Dict],
-        max_sources: int = None
+        max_sources: int = None,
+        positive_keywords: List[str] = None,
+        negative_keywords: List[str] = None
     ) -> str:
         """
         Build triage prompt from template.
@@ -271,24 +275,26 @@ class SourceTriage:
         with open(template_path, 'r', encoding='utf-8') as f:
             template = f.read()
 
-        # Format sources for evaluation
-        formatted_sources = self._format_sources_for_triage(results)
+        # Format keyword info section
+        keyword_info = self._format_keyword_info(positive_keywords or [], negative_keywords or [])
+
+        # Format sources with integrated keyword sentences
+        formatted_sources = self._format_sources_with_keywords(
+            results, scored_results, positive_keywords or [], negative_keywords or []
+        )
 
         # Format existing snippets
         formatted_existing = self._format_existing_snippets(existing_snippets)
 
-        # Format relevance scores
-        relevance_scores = self.relevance_scorer.format_scores_for_triage(scored_results)
-
-        # Fill template (max_sources not used in new ranking prompt)
+        # Fill template
         prompt = template.format(
             query=query,
             search_term=search_term,
+            keyword_info=keyword_info,
             source_count=len(results),
             formatted_sources=formatted_sources,
-            relevance_scores=relevance_scores,
             existing_snippet_count=len(existing_snippets),
-            formatted_existing_snippets=formatted_existing or "(No snippets collected yet)"
+            formatted_existing_snippets=formatted_existing or "(None yet)"
         )
 
         return prompt
@@ -390,6 +396,151 @@ class SourceTriage:
             return f"    - {first}"
         else:
             return f"    - {first}\n    - ... {last}"
+
+    def _format_keyword_info(self, positive_keywords: List[str], negative_keywords: List[str]) -> str:
+        """Format keyword information for triage prompt header."""
+        if not positive_keywords and not negative_keywords:
+            return ""
+
+        lines = ["**Keywords for Relevance Assessment:**"]
+        if positive_keywords:
+            lines.append(f"  Positive: {', '.join(positive_keywords)}")
+        if negative_keywords:
+            lines.append(f"  Negative: {', '.join(negative_keywords)}")
+
+        return '\n'.join(lines)
+
+    def _format_sources_with_keywords(
+        self,
+        results: List[Dict],
+        scored_results: List[Dict],
+        positive_keywords: List[str],
+        negative_keywords: List[str]
+    ) -> str:
+        """Format sources with integrated keyword information and scores."""
+        if not results:
+            return "(No sources)"
+
+        formatted = []
+        for i, result in enumerate(results):
+            score_info = scored_results[i]
+            title = result.get('title', 'No title')[:70]
+            date = result.get('date') or result.get('last_updated', '')
+            snippet = result.get('snippet', '')
+
+            # Build header with score if keywords were used
+            source_text = f"[{i}] {title}"
+            if date:
+                source_text += f" ({date})"
+
+            # Add score info if keyword adjustment exists
+            if score_info['keyword_adjustment'] != 0:
+                source_text += f" | Score: {score_info['relevance_score']:.0f} ({score_info['keyword_adjustment']:+.0f})"
+
+            # Extract first substantive sentence
+            sentences = [s.strip() for s in snippet.split('. ') if s.strip() and len(s.strip()) > 20]
+            preview = sentences[0][:120] + "..." if sentences else "(No preview)"
+            source_text += f"\n    {preview}"
+
+            # Add keyword-matching sentence if exists
+            if score_info['keyword_adjustment'] != 0:
+                # Find best matching sentence
+                for sentence in sentences[1:]:  # Skip first (already shown)
+                    sentence_lower = sentence.lower()
+                    matched_kw = []
+
+                    for kw in positive_keywords:
+                        if kw.lower() in sentence_lower:
+                            matched_kw.append(f"+{kw}")
+                    for kw in negative_keywords:
+                        if kw.lower() in sentence_lower:
+                            matched_kw.append(f"-{kw}")
+
+                    if len(matched_kw) >= 2 or any('-' in k for k in matched_kw):  # Multiple matches or negative
+                        kw_str = ', '.join(matched_kw[:3])
+                        if len(matched_kw) > 3:
+                            kw_str += f" +{len(matched_kw)-3} more"
+                        source_text += f"\n    [{kw_str}] \"{sentence[:100]}...\""
+                        break
+
+            formatted.append(source_text)
+
+        return '\n\n'.join(formatted)
+
+    def _extract_keyword_highlights(
+        self,
+        results: List[Dict],
+        scored_results: List[Dict],
+        positive_keywords: List[str],
+        negative_keywords: List[str]
+    ) -> str:
+        """
+        Show keyword-matched sentences ONLY for sources with non-zero keyword scores.
+        Concise format - 1-2 best matching sentences per source.
+        """
+        if not positive_keywords and not negative_keywords:
+            return ""
+
+        lines = ["**Keyword Highlights:**"]
+
+        # Only show sources with keyword matches
+        sources_with_matches = []
+        for idx, scored in enumerate(scored_results):
+            if scored['keyword_adjustment'] != 0:
+                sources_with_matches.append((idx, scored))
+
+        if not sources_with_matches:
+            return "**Keyword Highlights:** (No keyword matches found)"
+
+        # Sort by absolute keyword impact
+        sources_with_matches.sort(key=lambda x: abs(x[1]['keyword_adjustment']), reverse=True)
+
+        # Show top sources with keyword matches (limit to 5)
+        for idx, score_info in sources_with_matches[:5]:
+            result = results[idx]
+            km = score_info['keyword_matches']
+            adj = score_info['keyword_adjustment']
+            final_score = score_info['relevance_score']
+
+            title = result.get('title', '')[:60]
+            snippet = result.get('snippet', '')
+
+            lines.append(f"\n[{idx}] {title}")
+            lines.append(f"    Score: {final_score:.1f} ({adj:+.1f} from keywords)")
+
+            # Find best matching sentence
+            sentences = [s.strip() for s in snippet.split('. ') if s.strip()]
+            best_match = None
+
+            for sentence in sentences:
+                sentence_lower = sentence.lower()
+                match_count = sum(1 for kw in (positive_keywords + negative_keywords) if kw.lower() in sentence_lower)
+                if match_count > 0:
+                    # Check if negative
+                    has_negative = any(kw.lower() in sentence_lower for kw in negative_keywords)
+                    if has_negative or match_count >= 2:  # Show if negative OR multiple positives
+                        best_match = sentence[:120]
+                        break
+
+            if best_match:
+                # Find which keywords matched
+                matched = []
+                for kw in positive_keywords:
+                    if kw.lower() in best_match.lower():
+                        matched.append(f"+{kw}")
+                for kw in negative_keywords:
+                    if kw.lower() in best_match.lower():
+                        matched.append(f"-{kw}")
+
+                kw_str = ', '.join(matched[:3])
+                if len(matched) > 3:
+                    kw_str += f" (+{len(matched)-3} more)"
+                lines.append(f"    [{kw_str}] \"{best_match}...\"")
+
+        if len(sources_with_matches) > 5:
+            lines.append(f"\n... and {len(sources_with_matches) - 5} more sources with keyword matches")
+
+        return '\n'.join(lines)
 
     def _format_existing_snippets(self, snippets: List[Dict]) -> str:
         """Format existing snippets for triage context."""

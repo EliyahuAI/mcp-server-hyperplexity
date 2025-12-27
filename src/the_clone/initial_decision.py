@@ -136,17 +136,28 @@ class InitialDecision:
 
             logger.info(f"[INITIAL] Decision: {decision}")
 
+            # Extract keywords
+            positive_keywords = data.get('positive_keywords', [])
+            negative_keywords = data.get('negative_keywords', [])
+
             if decision == "answer_directly":
                 logger.info(f"[INITIAL] Answering from model knowledge")
             else:
                 logger.info(f"[INITIAL] Need search - Breadth: {breadth}, Depth: {depth}")
                 logger.info(f"[INITIAL] Generated {len(search_terms)} search terms")
+                logger.info(f"[INITIAL] Keywords: {len(positive_keywords)} positive, {len(negative_keywords)} negative")
+                if positive_keywords:
+                    logger.info(f"[INITIAL] Positive keywords: {positive_keywords}")
+                if negative_keywords:
+                    logger.info(f"[INITIAL] Negative keywords: {negative_keywords}")
 
             return {
                 "decision": decision,
                 "breadth": breadth,
                 "depth": depth,
                 "search_terms": search_terms,
+                "positive_keywords": positive_keywords,
+                "negative_keywords": negative_keywords,
                 "synthesis_tier": synthesis_tier,
                 "direct_answer": direct_answer,  # Include direct answer if provided
                 "model_response": response
