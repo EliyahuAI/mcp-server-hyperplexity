@@ -127,6 +127,7 @@ class RowDiscoveryStream:
                 context = strategy.get('search_context_size', 'high')  # Default to 'high' if not specified
                 max_web_searches = strategy.get('max_web_searches', 3)  # For Claude models
                 min_percentage = strategy.get('min_candidates_percentage')
+                findall = strategy.get('findall', False)  # For the-clone models
 
                 # === GLOBAL COUNTER CHECK (BEFORE executing this level) ===
                 if global_counter:
@@ -174,7 +175,8 @@ class RowDiscoveryStream:
                     context,
                     combined_improvements,  # Pass improvements from other subdomains AND previous rounds
                     max_web_searches,
-                    soft_schema
+                    soft_schema,
+                    findall=findall  # Pass findall flag for the-clone
                 )
 
                 # Tag each candidate with model/context info
@@ -517,6 +519,7 @@ class RowDiscoveryStream:
         search_context_size: str = 'low',
         previous_search_improvements: Optional[List[str]] = None,
         max_web_searches: int = 3,
+        findall: bool = False,
         soft_schema: bool = True
     ) -> Dict[str, Any]:
         """
@@ -600,7 +603,8 @@ class RowDiscoveryStream:
                 search_context_size=search_context_size,  # For Perplexity models
                 soft_schema=soft_schema,  # Use config setting for schema strictness
                 include_domains=include_domains,  # Domain filtering
-                exclude_domains=exclude_domains   # Domain filtering
+                exclude_domains=exclude_domains,   # Domain filtering
+                findall=findall  # For the-clone models
             )
 
             # call_structured_api returns dict with 'response', 'token_usage', etc.

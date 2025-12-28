@@ -77,7 +77,8 @@
       {
         "model": "the-clone",
         "search_context_size": "high",
-        "description": "Primary: Premium search with sonar-pro for high quality results",
+        "findall": true,
+        "description": "Primary: the_clone with findall mode for comprehensive entity identification",
         "min_candidates_percentage": 75,
         "_note": "Stop early if we get 75% of target_row_count (15/20 rows)"
       },

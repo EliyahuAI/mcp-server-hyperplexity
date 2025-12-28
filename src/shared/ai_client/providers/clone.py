@@ -37,7 +37,7 @@ class CloneProvider:
 
         return self._clone_instance
 
-    async def make_structured_call(self, prompt: str, model: str, use_cache: bool, cache_key: str, start_time: datetime, schema: Dict = None, soft_schema: bool = False, debug_name: str = None, include_domains: List[str] = None, exclude_domains: List[str] = None, use_code_extraction: bool = False) -> Dict:
+    async def make_structured_call(self, prompt: str, model: str, use_cache: bool, cache_key: str, start_time: datetime, schema: Dict = None, soft_schema: bool = False, debug_name: str = None, include_domains: List[str] = None, exclude_domains: List[str] = None, use_code_extraction: bool = False, findall: bool = False) -> Dict:
         """
         Execute a call to 'The Clone' agentic pipeline.
         
@@ -60,7 +60,7 @@ class CloneProvider:
                 provider = 'deepseek'
             
             # Execute query
-            logger.info(f"[CLONE_PROVIDER] Executing agentic pipeline for model: {model} (provider={provider})")
+            logger.info(f"[CLONE_PROVIDER] Executing agentic pipeline for model: {model} (provider={provider}, findall={findall})")
             result = await clone.query(
                 prompt=prompt,
                 provider=provider,
@@ -68,7 +68,8 @@ class CloneProvider:
                 debug_dir=f"/tmp/clone_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}", # Temp debug dir
                 include_domains=include_domains,
                 exclude_domains=exclude_domains,
-                use_code_extraction=use_code_extraction
+                use_code_extraction=use_code_extraction,
+                findall=findall  # Pass findall parameter
             )
             
             processing_time = (datetime.now() - start_time).total_seconds()
