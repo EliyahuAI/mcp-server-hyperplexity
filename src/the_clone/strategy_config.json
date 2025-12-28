@@ -49,13 +49,28 @@
       "stop_condition": null,
       "max_tokens_per_page": 2048,
       "batch_extraction": false
+    },
+    "findall_breadth": {
+      "description": "Maximum breadth: Up to 5 searches × 20 results, batch extraction",
+      "breadth": "findall",
+      "depth": "shallow",
+      "sources_per_batch": 20,
+      "extraction_mode": "simple_facts",
+      "max_snippets_per_source": 10,
+      "min_p_threshold": 0.65,
+      "accept_all_quality_levels": true,
+      "stop_condition": null,
+      "max_tokens_per_page": 512,
+      "batch_extraction": true,
+      "max_results_per_search": 20,
+      "bypass_global_source_limit": true
     }
   },
 
   "global_limits": {
     "max_iterations": 2,
     "max_sources_total": 20,
-    "max_search_terms": 3
+    "max_search_terms": 5
   },
 
   "providers": {

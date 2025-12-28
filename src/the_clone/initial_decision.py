@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from shared.ai_api_client import AIAPIClient
 from shared.ai_client.utils import extract_structured_response
-from the_clone.initial_decision_schemas import get_initial_decision_schema
+from the_clone.initial_decision_schemas import get_initial_decision_schema, get_findall_schema
 from the_clone.strategy_loader import get_model_with_backups
 
 # Configure logging
@@ -41,7 +41,8 @@ class InitialDecision:
         debug_dir: str = None,
         custom_schema: Dict = None,
         clone_logger: Any = None,
-        log_prompt_collapsed: bool = False
+        log_prompt_collapsed: bool = False,
+        findall_mode: bool = False
     ) -> Dict[str, Any]:
         """
         Decide: Answer directly or Search? If search, determine context and model tier.
@@ -60,9 +61,12 @@ class InitialDecision:
                 - confidence: high/medium/low
                 - reasoning: explanation
         """
+        if findall_mode:
+            logger.info("[INITIAL] FINDALL mode: Using dedicated prompt and schema for maximum breadth")
+
         logger.info(f"[INITIAL] Making decision: Answer directly or Search?")
 
-        prompt = self._build_prompt(query)
+        prompt = self._build_prompt(query, is_findall=findall_mode)
 
         if clone_logger:
             clone_logger.log_section("Initial Decision Prompt", prompt, level=3, collapse=log_prompt_collapsed)
@@ -76,7 +80,12 @@ class InitialDecision:
                 pass
 
         try:
-            schema_obj = get_initial_decision_schema(answer_schema=custom_schema)
+            # Use dedicated findall schema or regular schema
+            if findall_mode:
+                schema_obj = get_findall_schema()
+                logger.info("[INITIAL] Using dedicated FINDALL schema")
+            else:
+                schema_obj = get_initial_decision_schema(answer_schema=custom_schema)
 
             # Save schema
             if debug_dir:
@@ -107,11 +116,33 @@ class InitialDecision:
             if clone_logger:
                 clone_logger.log_section("Initial Decision Response", data, level=3, collapse=True)
 
-            decision = data.get('decision', 'need_search')
-            breadth = data.get('breadth', 'narrow')
-            depth = data.get('depth', 'shallow')
-            search_terms = data.get('search_terms', [])
-            synthesis_tier = data.get('synthesis_tier', 'default')
+            # Handle findall mode vs regular mode
+            if findall_mode:
+                # Findall mode - simplified response, force tier2
+                decision = 'need_search'
+                breadth = 'findall'
+                depth = 'shallow'
+                search_terms = data.get('search_terms', [])
+                synthesis_tier = 'tier2'  # Always tier2 for findall
+
+                # Validate exactly 5 search terms
+                if len(search_terms) != 5:
+                    logger.warning(f"[INITIAL] FINDALL: Expected 5 search terms but got {len(search_terms)}")
+                    if len(search_terms) > 5:
+                        search_terms = search_terms[:5]
+                        logger.info(f"[INITIAL] FINDALL: Truncated to 5 terms")
+                    elif len(search_terms) < 5:
+                        logger.error(f"[INITIAL] FINDALL: LLM did not generate 5 terms as instructed. Using {len(search_terms)} terms.")
+
+                logger.info(f"[INITIAL] FINDALL: breadth='findall', depth='shallow', tier='tier2', {len(search_terms)} search terms")
+                logger.info(f"[INITIAL] FINDALL search terms: {search_terms}")
+            else:
+                # Regular mode - full response
+                decision = data.get('decision', 'need_search')
+                breadth = data.get('breadth', 'narrow')
+                depth = data.get('depth', 'shallow')
+                search_terms = data.get('search_terms', [])
+                synthesis_tier = data.get('synthesis_tier', 'tier2')
 
             # Extract answer if answering directly (ignore null/empty from routing responses)
             direct_answer = None
@@ -175,12 +206,18 @@ class InitialDecision:
                 "error": str(e)
             }
 
-    def _build_prompt(self, query: str) -> str:
+    def _build_prompt(self, query: str, is_findall: bool = False) -> str:
         """Build initial decision prompt from template."""
+        # Use dedicated findall prompt or regular prompt
+        if is_findall:
+            template_file = 'findall_decision.md'
+        else:
+            template_file = 'initial_decision.md'
+
         template_path = os.path.join(
             os.path.dirname(__file__),
             'prompts',
-            'initial_decision.md'
+            template_file
         )
 
         with open(template_path, 'r', encoding='utf-8') as f:

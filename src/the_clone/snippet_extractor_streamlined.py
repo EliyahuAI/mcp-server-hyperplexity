@@ -476,7 +476,8 @@ class SnippetExtractorStreamlined:
         max_snippets_per_source: int = 3,
         clone_logger: Any = None,
         provider: str = None,
-        start_source_index: int = 1
+        start_source_index: int = 1,
+        accept_all_quality_levels: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Extract quotes from multiple sources in a single API call (batch mode).
@@ -586,16 +587,24 @@ class SnippetExtractorStreamlined:
             for src_id, src_data in quotes_by_source.items():
                 if src_data.get('quotes_by_search'):
                     all_p_scores.add(src_data.get('p', 0.50))
-            
+
             sorted_p = sorted(list(all_p_scores), reverse=True)
-            # Use top 2 levels if available, otherwise just the top 1
-            allowed_levels = sorted_p[:2]
-            dynamic_threshold = allowed_levels[-1] if allowed_levels else 0.0
-            
-            # Effective threshold is dynamic but never below 0.15 (absolute junk)
-            effective_threshold = max(dynamic_threshold, 0.15)
-            
-            logger.info(f"[BATCH EXTRACTOR] Dynamic threshold: p >= {effective_threshold} (Available levels: {sorted_p}, Strategy min: {min_quality_threshold})")
+
+            # For findall mode (accept_all_quality_levels=True), allow ALL levels
+            if accept_all_quality_levels:
+                allowed_levels = sorted_p  # All levels allowed
+                dynamic_threshold = 0.0
+                effective_threshold = 0.0
+                logger.info(f"[BATCH EXTRACTOR] FINDALL mode: Accepting ALL quality levels (Available levels: {sorted_p}, Warning threshold: {min_quality_threshold})")
+            else:
+                # Use top 2 levels if available, otherwise just the top 1
+                allowed_levels = sorted_p[:2]
+                dynamic_threshold = allowed_levels[-1] if allowed_levels else 0.0
+
+                # Effective threshold is dynamic but never below 0.15 (absolute junk)
+                effective_threshold = max(dynamic_threshold, 0.15)
+
+                logger.info(f"[BATCH EXTRACTOR] Dynamic threshold: p >= {effective_threshold} (Available levels: {sorted_p}, Strategy min: {min_quality_threshold})")
 
             # Process each source's quotes
             results = []

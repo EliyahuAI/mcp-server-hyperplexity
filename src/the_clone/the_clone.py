@@ -75,7 +75,8 @@ class TheClone2Refined:
         provider: str = "deepseek",
         use_baseten: bool = False,
         use_code_extraction: bool = True,
-        disable_keyword_scoring: bool = False
+        disable_keyword_scoring: bool = False,
+        findall: bool = False
     ) -> Dict[str, Any]:
         """
         Execute query with strategy-based architecture.
@@ -169,7 +170,8 @@ class TheClone2Refined:
             soft_schema=True,
             debug_dir=debug_dir,
             custom_schema=schema,
-            clone_logger=clone_logger
+            clone_logger=clone_logger,
+            findall_mode=findall
         )
 
         decision = initial_result.get('decision', 'need_search')
@@ -267,6 +269,12 @@ class TheClone2Refined:
             models = get_models_for_tier(provider, synthesis_tier)
             use_soft_schema = 'deepseek' in models['synthesis'] or 'baseten' in models['synthesis']
 
+        # Override global limits for findall mode
+        if strategy.get('bypass_global_source_limit'):
+            max_per_search = strategy.get('max_results_per_search', 10)
+            global_limits['max_sources_total'] = max_per_search * len(search_terms)
+            logger.info(f"[CLONE] FINDALL mode: Overriding max_sources_total to {global_limits['max_sources_total']}")
+
         logger.info(f"[CLONE] Strategy: {strategy['name']} (breadth={breadth}, depth={depth})")
         logger.info(f"[CLONE] Synthesis tier: {synthesis_tier} (model: {models['synthesis']})")
         logger.debug(f"[CLONE] Params: batch={strategy['sources_per_batch']}, mode={strategy['extraction_mode']}, max_snippets={strategy['max_snippets_per_source']}, min_p={strategy['min_p_threshold']}")
@@ -308,7 +316,9 @@ class TheClone2Refined:
             clone_logger.start_step("Search Execution")
 
         # Build search settings with max_tokens_per_page from strategy
-        search_settings = {'max_results': 10}
+        search_settings = {
+            'max_results': strategy.get('max_results_per_search', 10)
+        }
         if 'max_tokens_per_page' in strategy:
             search_settings['max_tokens_per_page'] = strategy['max_tokens_per_page']
 
@@ -429,41 +439,30 @@ class TheClone2Refined:
         first_extraction_prompt_logged = False
         iteration = 0
 
-        for iteration_idx in range(1, global_limits['max_iterations'] + 1):
-            iteration = iteration_idx
-            logger.info(f"\n[CLONE] Iteration {iteration}/{global_limits['max_iterations']}")
-            if clone_logger:
-                clone_logger.log_section(f"Iteration {iteration}", f"Pulling sources from index {sources_pulled}", level=3)
+        # FINDALL MODE: Process sources grouped by search in PARALLEL
+        if strategy.get('bypass_global_source_limit') and strategy.get('batch_extraction'):
+            logger.info(f"[CLONE] FINDALL mode: Processing sources grouped by search in PARALLEL")
 
-            # Determine batch (restrict to same search term)
-            batch_size = strategy['sources_per_batch']
-            current_search_index = ranked_sources[sources_pulled].get('_search_index')
-            
-            # Find end of batch, stopping if search index changes
-            batch_end = sources_pulled
-            for i in range(sources_pulled, min(sources_pulled + batch_size, len(ranked_sources))):
-                if ranked_sources[i].get('_search_index') != current_search_index:
-                    break
-                batch_end = i + 1
-            
-            sources_this_batch = ranked_sources[sources_pulled:batch_end]
+            # Group sources by search index
+            sources_by_search = {}
+            for source in ranked_sources:
+                search_idx = source.get('_search_index', 1)
+                if search_idx not in sources_by_search:
+                    sources_by_search[search_idx] = []
+                sources_by_search[search_idx].append(source)
 
-            if len(sources_this_batch) == 0:
-                logger.info("[CLONE] No more sources to pull")
-                break
+            logger.info(f"[CLONE] FINDALL: Found {len(sources_by_search)} searches with sources")
 
-            logger.debug(f"[CLONE] Pulling sources {sources_pulled}-{batch_end-1} ({len(sources_this_batch)} sources)")
+            # Create extraction tasks for each search (run in PARALLEL)
+            extraction_tasks = []
+            for search_idx in sorted(sources_by_search.keys()):
+                search_sources = sources_by_search[search_idx]
+                snippet_id_prefix = f"S{search_idx}"
 
-            # For code extraction, decide between batch (shallow) or parallel individual (deep)
-            use_batch_single_call = strategy.get('batch_extraction', False) and use_code_extraction
+                logger.info(f"[CLONE] FINDALL Search {search_idx}: Queueing {len(search_sources)} sources for batch extraction")
 
-            if use_batch_single_call:
-                # Batch extraction: ALL sources in SINGLE API call (shallow strategies)
-                logger.debug(f"[CLONE] Using batch extraction (single call) for {len(sources_this_batch)} sources")
-                snippet_id_prefix = f"S{iteration}"
-
-                batch_result = await self.snippet_extractor.extract_from_sources_batch(
-                    sources=sources_this_batch,
+                task = self.snippet_extractor.extract_from_sources_batch(
+                    sources=search_sources,  # All 20 sources for this search
                     query=prompt,
                     snippet_id_prefix=snippet_id_prefix,
                     all_search_terms=search_terms,
@@ -472,113 +471,202 @@ class TheClone2Refined:
                     min_quality_threshold=strategy['min_p_threshold'],
                     extraction_mode=strategy['extraction_mode'],
                     max_snippets_per_source=strategy['max_snippets_per_source'],
-                    clone_logger=clone_logger,
+                    clone_logger=clone_logger if search_idx == 1 else None,  # Log first only
                     provider=provider,
-                    start_source_index=sources_pulled + 1
+                    start_source_index=1,
+                    accept_all_quality_levels=strategy.get('accept_all_quality_levels', False)
                 )
-                results = batch_result
+                extraction_tasks.append((search_idx, task))
 
-                if not first_extraction_prompt_logged: first_extraction_prompt_logged = True
-            elif use_code_extraction:
-                # Parallel individual extraction: Each source in SEPARATE call (deep strategies)
-                # Still uses batch pathway (for source-level assessment) but one source per call
-                logger.debug(f"[CLONE] Using parallel individual extraction ({len(sources_this_batch)} calls) for deep strategy")
-                extraction_tasks = []
-                for idx, source in enumerate(sources_this_batch):
-                    snippet_id_prefix = f"S{iteration}"
-                    # Call batch extractor with single source
-                    task = self.snippet_extractor.extract_from_sources_batch(
-                        sources=[source],  # Single source wrapped in list
-                        query=prompt,
-                        snippet_id_prefix=snippet_id_prefix,
-                        all_search_terms=search_terms,
-                        model=models['extraction'],
-                        soft_schema=use_soft_schema,
-                        min_quality_threshold=strategy['min_p_threshold'],
-                        extraction_mode=strategy['extraction_mode'],
-                        max_snippets_per_source=strategy['max_snippets_per_source'],
-                        clone_logger=clone_logger if idx == 0 else None,  # Only log first
-                        provider=provider,
-                        start_source_index=sources_pulled + idx + 1
-                    )
-                    extraction_tasks.append(task)
+            logger.info(f"[CLONE] FINDALL: Executing {len(extraction_tasks)} batch extractions IN PARALLEL")
 
-                if not first_extraction_prompt_logged: first_extraction_prompt_logged = True
+            # Run all search extractions in PARALLEL
+            results = await asyncio.gather(*[task for _, task in extraction_tasks], return_exceptions=True)
 
-                # Run all extractions in parallel
-                batch_results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
-                # Flatten results (each batch_result is a list with 1 item)
-                results = [r[0] for r in batch_results if isinstance(r, list) and len(r) > 0]
-            else:
-                # Legacy non-code extraction (shouldn't happen)
-                logger.debug(f"[CLONE] Using legacy individual extraction for {len(sources_this_batch)} sources")
-                extraction_tasks = []
-                for idx, source in enumerate(sources_this_batch):
-                    snippet_id_prefix = f"S{iteration}.{source['_search_index']}.{sources_pulled + idx}"
-                    task = self.snippet_extractor.extract_from_source(
-                        source=source,
-                        query=prompt,
-                        snippet_id_prefix=snippet_id_prefix,
-                        all_search_terms=search_terms,
-                        primary_search_index=source['_search_index'],
-                        model=models['extraction'],
-                        soft_schema=use_soft_schema,
-                        min_quality_threshold=strategy['min_p_threshold'],
-                        extraction_mode=strategy['extraction_mode'],
-                        max_snippets_per_source=strategy['max_snippets_per_source'],
-                        use_code_extraction=use_code_extraction,
-                        clone_logger=clone_logger,
-                        log_prompt_collapsed=(first_extraction_prompt_logged),
-                        provider=provider
-                    )
-                    extraction_tasks.append(task)
-
-                if not first_extraction_prompt_logged: first_extraction_prompt_logged = True
-
-                results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
-
-            # Collect snippets and costs by provider
-            new_snippets = []
+            # Collect snippets and costs
             iteration_cost = 0.0
             extract_providers = set()
-            seen_responses = set()  # Track response objects to avoid double-counting
 
-            for result in results:
+            for (search_idx, _), result in zip(extraction_tasks, results):
                 if isinstance(result, Exception):
-                    logger.error(f"[CLONE] Extraction error: {result}")
+                    logger.error(f"[CLONE] FINDALL Search {search_idx} extraction error: {result}")
                     continue
-                new_snippets.extend(result.get('snippets', []))
 
-                # Extract cost, but avoid double-counting shared responses
-                model_response = result.get('model_response', {})
-                response_id = id(model_response)  # Use object ID to detect duplicates
+                # Extract snippets from batch result
+                for source_result in result:
+                    snippets = source_result.get('snippets', [])
+                    all_snippets.extend(snippets)
+                    logger.info(f"[CLONE] FINDALL Search {search_idx}: Extracted {len(snippets)} snippets")
 
-                if response_id not in seen_responses:
+                # Extract cost
+                if result and len(result) > 0:
+                    model_response = result[0].get('model_response', {})
                     extract_cost, extract_provider = self._extract_cost_and_provider(model_response, clone_logger, stats)
                     costs['extraction'] += extract_cost
                     iteration_cost += extract_cost
                     costs_by_provider[extract_provider] = costs_by_provider.get(extract_provider, 0.0) + extract_cost
                     calls_by_provider[extract_provider] = calls_by_provider.get(extract_provider, 0) + 1
                     extract_providers.add(extract_provider)
-                    seen_responses.add(response_id)
 
-            all_snippets.extend(new_snippets)
-            sources_pulled = batch_end
+            sources_pulled = len(ranked_sources)
+            iteration = len(sources_by_search)
 
-            logger.debug(f"[CLONE] Extracted {len(new_snippets)} snippets (total: {len(all_snippets)})")
-            if all_snippets:
-                avg_p = sum(s.get('p', 0.5) for s in all_snippets) / len(all_snippets)
-                high_p = sum(1 for s in all_snippets if s.get('p', 0) >= 0.85)
-                logger.debug(f"[CLONE] Quality: avg_p={avg_p:.2f}, high_quality={high_p}/{len(all_snippets)}")
+            logger.info(f"[CLONE] FINDALL: Extracted total of {len(all_snippets)} snippets from {sources_pulled} sources")
 
-            # Check stop condition
-            if should_stop_iteration(all_snippets, strategy):
-                logger.debug(f"[CLONE] Stop condition met ({strategy.get('stop_condition')})")
-                break
+        else:
+            # EXISTING iteration logic for non-findall strategies
+            for iteration_idx in range(1, global_limits['max_iterations'] + 1):
+                iteration = iteration_idx
+                logger.info(f"\n[CLONE] Iteration {iteration}/{global_limits['max_iterations']}")
+                if clone_logger:
+                    clone_logger.log_section(f"Iteration {iteration}", f"Pulling sources from index {sources_pulled}", level=3)
 
-            if sources_pulled >= len(ranked_sources):
-                logger.debug("[CLONE] All sources exhausted")
-                break
+                # Determine batch (restrict to same search term)
+                batch_size = strategy['sources_per_batch']
+                current_search_index = ranked_sources[sources_pulled].get('_search_index')
+
+                # Find end of batch, stopping if search index changes
+                batch_end = sources_pulled
+                for i in range(sources_pulled, min(sources_pulled + batch_size, len(ranked_sources))):
+                    if ranked_sources[i].get('_search_index') != current_search_index:
+                        break
+                    batch_end = i + 1
+
+                sources_this_batch = ranked_sources[sources_pulled:batch_end]
+
+                if len(sources_this_batch) == 0:
+                    logger.info("[CLONE] No more sources to pull")
+                    break
+
+                logger.debug(f"[CLONE] Pulling sources {sources_pulled}-{batch_end-1} ({len(sources_this_batch)} sources)")
+
+                # For code extraction, decide between batch (shallow) or parallel individual (deep)
+                use_batch_single_call = strategy.get('batch_extraction', False) and use_code_extraction
+
+                if use_batch_single_call:
+                    # Batch extraction: ALL sources in SINGLE API call (shallow strategies)
+                    logger.debug(f"[CLONE] Using batch extraction (single call) for {len(sources_this_batch)} sources")
+                    snippet_id_prefix = f"S{iteration}"
+
+                    batch_result = await self.snippet_extractor.extract_from_sources_batch(
+                        sources=sources_this_batch,
+                        query=prompt,
+                        snippet_id_prefix=snippet_id_prefix,
+                        all_search_terms=search_terms,
+                        model=models['extraction'],
+                        soft_schema=use_soft_schema,
+                        min_quality_threshold=strategy['min_p_threshold'],
+                        extraction_mode=strategy['extraction_mode'],
+                        max_snippets_per_source=strategy['max_snippets_per_source'],
+                        clone_logger=clone_logger,
+                        provider=provider,
+                        start_source_index=sources_pulled + 1,
+                        accept_all_quality_levels=strategy.get('accept_all_quality_levels', False)
+                    )
+                    results = batch_result
+
+                    if not first_extraction_prompt_logged: first_extraction_prompt_logged = True
+                elif use_code_extraction:
+                    # Parallel individual extraction: Each source in SEPARATE call (deep strategies)
+                    # Still uses batch pathway (for source-level assessment) but one source per call
+                    logger.debug(f"[CLONE] Using parallel individual extraction ({len(sources_this_batch)} calls) for deep strategy")
+                    extraction_tasks = []
+                    for idx, source in enumerate(sources_this_batch):
+                        snippet_id_prefix = f"S{iteration}"
+                        # Call batch extractor with single source
+                        task = self.snippet_extractor.extract_from_sources_batch(
+                            sources=[source],  # Single source wrapped in list
+                            query=prompt,
+                            snippet_id_prefix=snippet_id_prefix,
+                            all_search_terms=search_terms,
+                            model=models['extraction'],
+                            soft_schema=use_soft_schema,
+                            min_quality_threshold=strategy['min_p_threshold'],
+                            extraction_mode=strategy['extraction_mode'],
+                            max_snippets_per_source=strategy['max_snippets_per_source'],
+                            clone_logger=clone_logger if idx == 0 else None,  # Only log first
+                            provider=provider,
+                            start_source_index=sources_pulled + idx + 1,
+                            accept_all_quality_levels=strategy.get('accept_all_quality_levels', False)
+                        )
+                        extraction_tasks.append(task)
+
+                    if not first_extraction_prompt_logged: first_extraction_prompt_logged = True
+
+                    # Run all extractions in parallel
+                    batch_results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
+                    # Flatten results (each batch_result is a list with 1 item)
+                    results = [r[0] for r in batch_results if isinstance(r, list) and len(r) > 0]
+                else:
+                    # Legacy non-code extraction (shouldn't happen)
+                    logger.debug(f"[CLONE] Using legacy individual extraction for {len(sources_this_batch)} sources")
+                    extraction_tasks = []
+                    for idx, source in enumerate(sources_this_batch):
+                        snippet_id_prefix = f"S{iteration}.{source['_search_index']}.{sources_pulled + idx}"
+                        task = self.snippet_extractor.extract_from_source(
+                            source=source,
+                            query=prompt,
+                            snippet_id_prefix=snippet_id_prefix,
+                            all_search_terms=search_terms,
+                            primary_search_index=source['_search_index'],
+                            model=models['extraction'],
+                            soft_schema=use_soft_schema,
+                            min_quality_threshold=strategy['min_p_threshold'],
+                            extraction_mode=strategy['extraction_mode'],
+                            max_snippets_per_source=strategy['max_snippets_per_source'],
+                            use_code_extraction=use_code_extraction,
+                            clone_logger=clone_logger,
+                            log_prompt_collapsed=(first_extraction_prompt_logged),
+                            provider=provider
+                        )
+                        extraction_tasks.append(task)
+
+                    if not first_extraction_prompt_logged: first_extraction_prompt_logged = True
+
+                    results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
+
+                # Collect snippets and costs by provider
+                new_snippets = []
+                iteration_cost = 0.0
+                extract_providers = set()
+                seen_responses = set()  # Track response objects to avoid double-counting
+
+                for result in results:
+                    if isinstance(result, Exception):
+                        logger.error(f"[CLONE] Extraction error: {result}")
+                        continue
+                    new_snippets.extend(result.get('snippets', []))
+
+                    # Extract cost, but avoid double-counting shared responses
+                    model_response = result.get('model_response', {})
+                    response_id = id(model_response)  # Use object ID to detect duplicates
+
+                    if response_id not in seen_responses:
+                        extract_cost, extract_provider = self._extract_cost_and_provider(model_response, clone_logger, stats)
+                        costs['extraction'] += extract_cost
+                        iteration_cost += extract_cost
+                        costs_by_provider[extract_provider] = costs_by_provider.get(extract_provider, 0.0) + extract_cost
+                        calls_by_provider[extract_provider] = calls_by_provider.get(extract_provider, 0) + 1
+                        extract_providers.add(extract_provider)
+                        seen_responses.add(response_id)
+
+                all_snippets.extend(new_snippets)
+                sources_pulled = batch_end
+
+                logger.debug(f"[CLONE] Extracted {len(new_snippets)} snippets (total: {len(all_snippets)})")
+                if all_snippets:
+                    avg_p = sum(s.get('p', 0.5) for s in all_snippets) / len(all_snippets)
+                    high_p = sum(1 for s in all_snippets if s.get('p', 0) >= 0.85)
+                    logger.debug(f"[CLONE] Quality: avg_p={avg_p:.2f}, high_quality={high_p}/{len(all_snippets)}")
+
+                # Check stop condition
+                if should_stop_iteration(all_snippets, strategy):
+                    logger.debug(f"[CLONE] Stop condition met ({strategy.get('stop_condition')})")
+                    break
+
+                if sources_pulled >= len(ranked_sources):
+                    logger.debug("[CLONE] All sources exhausted")
+                    break
         
         step_time_phase = time.time() - step_start_phase
         if clone_logger:
@@ -607,12 +695,13 @@ class TheClone2Refined:
         if clone_logger:
             clone_logger.start_step("Synthesis")
 
-        # Map strategy to old context for synthesis guidance (temporary until synthesis updated)
+        # Map strategy to synthesis context
         context_map = {
             'targeted': 'low',
             'focused_deep': 'medium',
             'survey': 'medium',
-            'comprehensive': 'high'
+            'comprehensive': 'high',
+            'findall_breadth': 'findall'  # Entity identification mode
         }
         synthesis_context = context_map.get(strategy['name'], 'medium')
 
@@ -770,7 +859,8 @@ class TheClone2Refined:
                             max_snippets_per_source=strategy['max_snippets_per_source'],
                             clone_logger=clone_logger,
                             provider=provider,
-                            start_source_index=current_global_index
+                            start_source_index=current_global_index,
+                            accept_all_quality_levels=strategy.get('accept_all_quality_levels', False)
                         )
                         extraction_tasks.append(task)
                         

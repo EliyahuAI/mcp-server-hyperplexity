@@ -88,3 +88,52 @@ def get_initial_decision_schema(answer_schema: dict = None) -> dict:
             base_schema['required'].extend(answer_schema['required'])
 
     return base_schema
+
+
+def get_findall_schema() -> dict:
+    """
+    Dedicated schema for FINDALL mode.
+
+    Simplified schema since we already know:
+    - decision: "need_search"
+    - breadth: "findall"
+    - depth: "shallow"
+
+    Only need to determine:
+    - search_terms (exactly 5)
+    - keywords (positive/negative)
+    - synthesis_tier
+    - academic flag
+
+    Returns:
+        JSON schema for findall mode
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "search_terms": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "EXACTLY 5 diverse search terms, each covering a different aspect/angle/dimension of the query",
+                "minItems": 5,
+                "maxItems": 5
+            },
+            "positive_keywords": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Keywords (including abbreviations/variants) that indicate high-quality, relevant search results. NOT in search terms. Domain-specific technical language, methodologies, key concepts.",
+                "minItems": 0
+            },
+            "negative_keywords": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Keywords indicating off-topic/low-quality results. Examples: beginner content for technical queries, unrelated topics. Strong filter - one match suggests irrelevance.",
+                "minItems": 0
+            },
+            "academic": {
+                "type": "boolean",
+                "description": "Set true if query requires scholarly/peer-reviewed sources (research papers, academic studies, scientific findings). Prioritizes academic databases."
+            }
+        },
+        "required": ["search_terms", "positive_keywords", "negative_keywords", "academic"]
+    }

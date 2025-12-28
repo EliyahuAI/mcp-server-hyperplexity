@@ -76,14 +76,17 @@ Choose based on synthesis complexity only:
 - Include relevant qualifiers (dates, versions, specific aspects)
 - Example: "Claude Opus 4.5 MMLU score" NOT just "Claude benchmarks"
 
-**Minimize COUNT (not specificity):**
-- **Default: 1 search term** for single domain
-- **Multiple terms ONLY if:** Different domains need independent investigation
-- **Max: 3 terms** - only for complex multi-domain queries
+**Search Term Count:**
+- **Narrow queries: 1-2 terms** for focused information
+- **Broad queries: 3-5 terms** to cover different aspects or facets
+- **FINDALL queries: EXACTLY 5 terms** - required for maximum breadth coverage
+- **Max: 5 terms** for maximum breadth coverage
+- Each term should capture a distinct angle or facet of the query
 
 **Examples:**
 - "GPT-4 vs Claude" → 2 terms: ["GPT-4 performance", "Claude performance"] (different systems)
 - "Gemini features" → 1 term: ["Gemini 2.0 features"] (single domain, specific)
+- "Comprehensive AI model comparison" → 4-5 terms: ["GPT-4 benchmarks", "Claude capabilities", "Gemini performance", "AI model costs", "LLM latency comparison"]
 
 ### Keyword Indicators
 
@@ -164,8 +167,8 @@ Choose based on synthesis complexity only:
 
 **Search Term Guidelines:**
 - Be SPECIFIC and TARGETED (include versions, dates, qualifiers)
-- Minimize COUNT (default 1 term unless different domains needed)
-- Quality over quantity - one specific term beats multiple vague ones
+- Use 1-2 terms for narrow queries, 3-5 terms for broad comprehensive queries
+- Each term should be specific - quality over quantity
 
 **Academic Field:**
 - Set `academic: true` for queries needing scholarly/peer-reviewed sources

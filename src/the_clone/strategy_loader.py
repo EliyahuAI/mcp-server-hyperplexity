@@ -39,7 +39,8 @@ def get_strategy(breadth: str, depth: str) -> Dict[str, Any]:
         ('narrow', 'shallow'): 'targeted',
         ('narrow', 'deep'): 'focused_deep',
         ('broad', 'shallow'): 'survey',
-        ('broad', 'deep'): 'comprehensive'
+        ('broad', 'deep'): 'comprehensive',
+        ('findall', 'shallow'): 'findall_breadth'
     }
 
     strategy_name = strategy_map.get((breadth, depth), 'targeted')
