@@ -17,16 +17,16 @@
   "background_research": {
     "_comment": "Step 0 - ALWAYS runs before column definition. Finds authoritative sources and starting tables to guide column design. On restructure, cached research is ALWAYS reused (never re-run)",
 
-    "model": "sonar-pro",
-    "_note_model": "Recommended: sonar-pro (fast, cost-effective), claude-sonnet-4-5 (highest quality).",
+    "model": "the-clone",
+    "_note_model": "Uses the-clone for comprehensive research with search + extraction",
     "max_tokens": 8000,
     "_note_max_tokens": "Background research only outputs 15 sample entities max, so 8000 tokens is sufficient. Token boost for large entity counts happens in column_definition instead.",
 
-    "_web_search_params_info": "Web search parameters differ by model family:",
+    "_web_search_params_info": "Web search parameters for the-clone:",
     "search_context_size": "high",
-    "_note_search_context": "FOR PERPLEXITY MODELS ONLY (sonar, sonar-pro). Options: low/medium/high. High = comprehensive research",
+    "_note_search_context": "High = comprehensive research",
     "max_web_searches": 5,
-    "_note_max_web_searches": "FOR ANTHROPIC MODELS ONLY (claude-*). Number of web searches Claude can perform (if model=claude-sonnet-4-5)",
+    "_note_max_web_searches": "Not used by the-clone (it uses internal search strategy)",
 
     "min_starting_tables": 0,
     "_note_min_tables": "Minimum number of starting tables with sample entities required before proceeding to column definition",
