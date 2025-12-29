@@ -375,11 +375,11 @@ Extract ALL table rows you can find in this content. Return them in the specifie
                 }
             }
 
-            # Call Gemini (now fixed!)
+            # Call Gemini 2.5 Flash (higher token limits than 2.0)
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
-                model="gemini-2.0-flash",
+                model="gemini-2.5-flash",
                 max_tokens=max_tokens,
                 use_cache=True,
                 tool_name="search_api_gemini_extraction"
