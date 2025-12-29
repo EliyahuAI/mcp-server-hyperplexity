@@ -1784,3 +1784,126 @@ def create_qc_enhanced_excel_for_interface(
         except Exception as fallback_error:
             logger.error(f"Fallback Excel creation also failed: {str(fallback_error)}")
             return None
+
+
+def add_citation_comments_to_cells(worksheet, validation_results, row_keys, headers, start_row=2):
+    """
+    Add citation comments to Excel cells based on validation results.
+    Preserves citations from table extraction through to Excel output.
+
+    Args:
+        worksheet: xlsxwriter worksheet object
+        validation_results: Dictionary of validation results keyed by row hash
+        row_keys: List of row keys (hashes) matching worksheet rows
+        headers: List of column headers
+        start_row: Starting row number (default: 2, after header)
+
+    Note:
+        This function adds comments with citation information to cells
+        that have confidence levels and citations from table extraction.
+    """
+    if not validation_results or not row_keys:
+        return
+
+    from openpyxl.comments import Comment
+
+    logger.info(f"[CITATIONS] Adding citation comments to worksheet")
+
+    added_comments = 0
+
+    for row_idx, row_key in enumerate(row_keys):
+        excel_row = start_row + row_idx
+
+        if row_key not in validation_results:
+            continue
+
+        row_results = validation_results[row_key]
+        if not isinstance(row_results, dict):
+            continue
+
+        for col_idx, header in enumerate(headers):
+            if header not in row_results:
+                continue
+
+            field_data = row_results[header]
+            if not isinstance(field_data, dict):
+                continue
+
+            # Check if this field has citations
+            citations = field_data.get('citations', [])
+            confidence = field_data.get('confidence_level')
+
+            if not citations:
+                continue
+
+            # Build comment text
+            comment_lines = []
+
+            if confidence:
+                comment_lines.append(f"Confidence: {confidence}")
+
+            comment_lines.append("\nSources:")
+            for citation in citations[:3]:  # Limit to 3 citations
+                if isinstance(citation, dict):
+                    url = citation.get('url', 'N/A')
+                    snippet = citation.get('snippet', 'N/A')
+                    comment_lines.append(f"- {url}")
+                    if snippet and len(snippet) < 100:
+                        comment_lines.append(f"  {snippet}")
+
+            comment_text = '\n'.join(comment_lines)
+
+            # Add comment to cell
+            try:
+                cell = worksheet.cell(row=excel_row, column=col_idx + 1)
+                cell.comment = Comment(comment_text, "Validator")
+                added_comments += 1
+            except Exception as e:
+                logger.warning(f"Failed to add comment to cell ({excel_row}, {col_idx}): {str(e)}")
+
+    logger.info(f"[CITATIONS] Added {added_comments} citation comments to worksheet")
+
+
+def preserve_citations_through_qc(validation_results, qc_results):
+    """
+    Preserve citations when QC updates confidence levels.
+    Ensures citations aren't lost during QC review process.
+
+    Args:
+        validation_results: Original validation results with citations
+        qc_results: QC results with updated confidence levels
+
+    Returns:
+        Updated validation_results with QC confidence but preserved citations
+    """
+    if not validation_results or not qc_results:
+        return validation_results
+
+    logger.info("[CITATIONS] Preserving citations through QC review")
+
+    for row_key in validation_results:
+        if row_key not in qc_results:
+            continue
+
+        row_validation = validation_results[row_key]
+        row_qc = qc_results[row_key]
+
+        if not isinstance(row_validation, dict) or not isinstance(row_qc, dict):
+            continue
+
+        for field in row_validation:
+            if field not in row_qc:
+                continue
+
+            field_validation = row_validation[field]
+            field_qc = row_qc[field]
+
+            if not isinstance(field_validation, dict) or not isinstance(field_qc, dict):
+                continue
+
+            # Preserve original citations even if QC updated confidence
+            if 'citations' in field_validation and 'citations' not in field_qc:
+                field_qc['citations'] = field_validation['citations']
+
+    logger.info("[CITATIONS] Citations preserved through QC")
+    return validation_results

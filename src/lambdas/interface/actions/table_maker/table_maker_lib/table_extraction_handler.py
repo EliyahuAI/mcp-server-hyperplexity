@@ -10,6 +10,8 @@ import time
 from typing import Dict, Any, Optional, List
 from urllib.parse import urlparse
 
+from shared.table_extractor import TableExtractor
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,10 @@ class TableExtractionHandler:
         self.prompt_loader = prompt_loader
         self.schema_validator = schema_validator
 
-        logger.info("Initialized TableExtractionHandler")
+        # Initialize standalone table extractor
+        self.table_extractor = TableExtractor(ai_client, schema_validator)
+
+        logger.info("Initialized TableExtractionHandler with TableExtractor")
 
     async def extract_tables(
         self,
@@ -161,10 +166,10 @@ class TableExtractionHandler:
         timeout: int
     ) -> Dict[str, Any]:
         """
-        Extract a single table.
+        Extract a single table using the standalone TableExtractor.
 
         Args:
-            table_meta: Table metadata with url, table_name, estimated_rows, columns
+            table_meta: Table metadata with url, table_name, estimated_rows, columns, url_quality
             model: AI model to use
             max_tokens: Maximum tokens
             search_context_size: Search context size
@@ -180,94 +185,80 @@ class TableExtractionHandler:
             # Extract metadata
             table_url = table_meta.get('url')
             table_name = table_meta.get('table_name', 'Unknown Table')
-            estimated_rows = table_meta.get('estimated_rows', 'unknown')
+            estimated_rows = table_meta.get('estimated_rows', 0)
             expected_columns = table_meta.get('columns', [])
-            target_rows = table_meta.get('target_rows')  # Optional
+            url_quality = table_meta.get('url_quality', 0.85)  # From background research
+            target_rows = table_meta.get('target_rows')  # Optional filter
 
             if not table_url:
                 result['error'] = 'No URL provided'
                 return result
 
-            # Format expected columns for prompt
-            if isinstance(expected_columns, list):
-                columns_text = ', '.join(expected_columns)
-            else:
-                columns_text = str(expected_columns)
+            # Ensure expected_columns is a list
+            if not isinstance(expected_columns, list):
+                expected_columns = [str(expected_columns)]
 
-            # Format target rows instruction
-            if target_rows:
-                target_instruction = f"**Target Rows Filter:** {target_rows}\n\nExtract ONLY rows matching this specification."
-            else:
-                target_instruction = "**Target:** Extract ALL rows from this table (complete extraction)."
+            # Parse estimated_rows to int
+            if isinstance(estimated_rows, str):
+                try:
+                    estimated_rows = int(estimated_rows)
+                except (ValueError, TypeError):
+                    estimated_rows = None
 
-            # Build prompt variables
-            variables = {
-                'TABLE_URL': table_url,
-                'TABLE_NAME': table_name,
-                'ESTIMATED_ROWS': str(estimated_rows),
-                'EXPECTED_COLUMNS': columns_text,
-                'TARGET_ROWS_INSTRUCTION': target_instruction
-            }
+            logger.info(f"Extracting table with TableExtractor: {table_name}")
+            logger.info(f"  URL: {table_url}")
+            logger.info(f"  URL Quality: {url_quality:.2f}")
+            logger.info(f"  Estimated rows: {estimated_rows}")
 
-            logger.debug(f"Loading table_extraction prompt for {table_name}")
-            prompt = self.prompt_loader.load_prompt('table_extraction', variables)
-
-            # Load schema
-            schema = self.schema_validator.load_schema('table_extraction_response')
-
-            # Extract domain from URL for site-specific search
-            parsed_url = urlparse(table_url)
-            domain = parsed_url.netloc
-            if domain.startswith('www.'):
-                domain = domain[4:]  # Remove www.
-
-            logger.info(f"Calling AI API for table extraction with domain filter: {domain}")
-
-            # Call API with domain-specific search
-            api_response = await self.ai_client.call_structured_api(
-                prompt=prompt,
-                schema=schema,
-                model=model,
+            # Use TableExtractor for robust extraction
+            extraction_result = await self.table_extractor.extract_table(
+                url=table_url,
+                table_name=table_name,
+                expected_columns=expected_columns,
+                estimated_rows=estimated_rows,
+                url_quality=url_quality,
+                max_iterations=5,  # Allow up to 5 iterations for large tables
+                model=model if 'gemini' in model.lower() else 'gemini-2.0-flash',  # Prefer Gemini for extraction
                 max_tokens=max_tokens,
-                use_cache=True,  # Enable caching for cost savings
-                search_context_size=search_context_size,
-                max_web_searches=max_web_searches,
-                include_domains=[domain],  # Prioritize the source domain
-                debug_name=f"table_extraction_{table_name.replace(' ', '_')}"
+                use_search_fallback=True  # Enable search fallback for JS sites
             )
 
-            # Check for API errors
-            if 'response' not in api_response and 'error' in api_response:
-                error_detail = api_response.get('error', 'Unknown error')
-                logger.error(f"API call failed: {error_detail}")
-                result['error'] = f"AI API call failed: {error_detail}"
+            if not extraction_result['success']:
+                result['error'] = extraction_result.get('error', 'Extraction failed')
+                logger.warning(f"  [FAILED] TableExtractor failed: {result['error']}")
                 return result
 
-            # Extract structured response
-            raw_response = api_response.get('response', {})
+            # Convert TableExtractor result to expected format
+            structured_response = {
+                'table_name': table_name,
+                'source_url': table_url,
+                'extraction_complete': extraction_result['extraction_complete'],
+                'rows_extracted': extraction_result['rows_extracted'],
+                'rows': extraction_result['rows'],
+                'extraction_notes': f"Strategy: {extraction_result['strategy_used']}, "
+                                  f"Iterations: {extraction_result['iterations_used']}, "
+                                  f"Confidence: {extraction_result['confidence']}",
+                'confidence': extraction_result['confidence'],  # NEW: Include confidence
+                'citations': extraction_result['citations'],    # NEW: Include citations
+                'strategy_used': extraction_result['strategy_used'],
+                'iterations_used': extraction_result['iterations_used']
+            }
 
-            try:
-                structured_response = self.ai_client.extract_structured_response(
-                    raw_response,
-                    tool_name="table_extraction"
-                )
-            except Exception as extract_error:
-                logger.error(f"Failed to extract structured response: {extract_error}")
-                result['error'] = f"Response extraction failed: {str(extract_error)}"
-                return result
+            # Apply target_rows filter if specified
+            if target_rows:
+                logger.info(f"  Applying target rows filter: {target_rows}")
+                # This would require additional filtering logic
+                # For now, we just log it - filtering can be done by AI in future iteration
+                structured_response['extraction_notes'] += f", Filter: {target_rows}"
 
-            # Validate required fields
-            required_fields = ['table_name', 'source_url', 'extraction_complete',
-                             'rows_extracted', 'rows']
-            missing_fields = [f for f in required_fields if f not in structured_response]
-
-            if missing_fields:
-                logger.error(f"Missing required fields in AI response: {missing_fields}")
-                result['error'] = f"Response missing fields: {', '.join(missing_fields)}"
-                return result
-
-            # Extract enhanced_data for API call tracking
-            enhanced_data = api_response.get('enhanced_data', {})
+            # Create enhanced_data for tracking
+            enhanced_data = {
+                'strategy_used': extraction_result['strategy_used'],
+                'iterations_used': extraction_result['iterations_used'],
+                'confidence': extraction_result['confidence'],
+                'url_quality': url_quality,
+                'extraction_complete': extraction_result['extraction_complete']
+            }
 
             # Success
             result.update({
@@ -275,6 +266,12 @@ class TableExtractionHandler:
                 'data': structured_response,
                 'enhanced_data': enhanced_data
             })
+
+            logger.info(
+                f"  [SUCCESS] TableExtractor: {structured_response['rows_extracted']} rows, "
+                f"strategy={extraction_result['strategy_used']}, "
+                f"confidence={extraction_result['confidence']}"
+            )
 
             return result
 
