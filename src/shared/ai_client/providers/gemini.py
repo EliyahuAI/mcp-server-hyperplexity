@@ -492,7 +492,7 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
 
             # Cache if enabled
             if use_cache and cache_key:
-                await self.cache_handler.cache_response(cache_key, unified_response, 'gemini', token_usage, processing_time)
+                await self.cache_handler.save_to_cache(cache_key, unified_response, token_usage, processing_time, model, 'gemini')
 
             # Generate enhanced metrics
             enhanced_data = self.usage_handler.get_enhanced_call_metrics(

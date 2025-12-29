@@ -14,6 +14,9 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
+# Jina AI Reader endpoint for clean content extraction
+JINA_READER_BASE = "https://r.jina.ai/"
+
 
 class HTMLTableParser:
     """Parser for extracting tables from HTML content."""
@@ -105,7 +108,7 @@ class HTMLTableParser:
         }
 
         try:
-            soup = BeautifulSoup(html, 'html.parser')
+            soup = BeautifulSoup(html, 'lxml')  # Faster C-based parser
 
             # Find all table elements
             html_tables = soup.find_all('table')
@@ -270,7 +273,7 @@ class HTMLTableParser:
         }
 
         try:
-            soup = BeautifulSoup(html, 'html.parser')
+            soup = BeautifulSoup(html, 'lxml')  # Faster C-based parser
 
             # Find all list elements
             lists = soup.find_all(['ul', 'ol'])
@@ -327,7 +330,7 @@ class HTMLTableParser:
         }
 
         try:
-            soup = BeautifulSoup(html, 'html.parser')
+            soup = BeautifulSoup(html, 'lxml')  # Faster C-based parser
 
             # Look for common pagination indicators
             pagination_keywords = ['next', 'pagination', 'page', 'pager', 'nav']
@@ -362,6 +365,162 @@ class HTMLTableParser:
             logger.error(f"Error detecting pagination: {str(e)}")
 
         return result
+
+    async def fetch_via_jina(self, url: str) -> Dict[str, Any]:
+        """
+        Fetch content via Jina AI Reader (handles JS-rendered content).
+
+        Args:
+            url: URL to fetch
+
+        Returns:
+            Dictionary with:
+            {
+                'success': bool,
+                'markdown': str,  # Clean markdown content
+                'title': str,
+                'error': Optional[str]
+            }
+        """
+        result = {
+            'success': False,
+            'markdown': '',
+            'title': '',
+            'error': None
+        }
+
+        try:
+            jina_url = f"{JINA_READER_BASE}{url}"
+            logger.info(f"Fetching via Jina AI Reader: {url}")
+
+            headers = {
+                'Accept': 'text/markdown',
+                'X-Return-Format': 'markdown'
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(jina_url, headers=headers, timeout=self.timeout) as response:
+                    if response.status == 200:
+                        content = await response.text()
+
+                        # Extract title from first line if it's a heading
+                        lines = content.split('\n')
+                        title = ''
+                        if lines and lines[0].startswith('#'):
+                            title = lines[0].lstrip('#').strip()
+
+                        result['success'] = True
+                        result['markdown'] = content
+                        result['title'] = title
+
+                        logger.info(f"  [SUCCESS] Jina returned {len(content)} chars")
+                    else:
+                        result['error'] = f"Jina API returned HTTP {response.status}"
+                        logger.warning(f"  [FAILED] Jina HTTP {response.status}")
+
+        except asyncio.TimeoutError:
+            result['error'] = f"Jina timeout after {self.timeout}s"
+            logger.error(f"  [TIMEOUT] Jina request timed out")
+        except Exception as e:
+            result['error'] = str(e)
+            logger.error(f"  [ERROR] Jina fetch failed: {str(e)}")
+
+        return result
+
+    def parse_markdown_tables(self, markdown: str) -> Dict[str, Any]:
+        """
+        Parse markdown tables from Jina AI Reader output.
+
+        Args:
+            markdown: Markdown content from Jina
+
+        Returns:
+            Dictionary with tables found in markdown format
+        """
+        result = {
+            'success': False,
+            'tables_found': 0,
+            'tables': [],
+            'error': None
+        }
+
+        try:
+            # Find markdown tables (format: | col1 | col2 |)
+            table_pattern = r'\|[^\n]+\|\n\|[-:\s|]+\|\n(\|[^\n]+\|\n)+'
+            table_matches = re.finditer(table_pattern, markdown, re.MULTILINE)
+
+            tables = []
+            for idx, match in enumerate(table_matches):
+                table_text = match.group(0)
+                parsed = self._parse_markdown_table(table_text, idx)
+                if parsed['rows_count'] > 0:
+                    tables.append(parsed)
+
+            result['success'] = len(tables) > 0
+            result['tables_found'] = len(tables)
+            result['tables'] = tables
+
+            if len(tables) == 0:
+                result['error'] = 'No markdown tables found'
+            else:
+                logger.info(f"  Parsed {len(tables)} markdown table(s)")
+
+        except Exception as e:
+            result['error'] = str(e)
+            logger.error(f"  [ERROR] Markdown table parsing failed: {str(e)}")
+
+        return result
+
+    def _parse_markdown_table(self, table_text: str, table_index: int) -> Dict[str, Any]:
+        """
+        Parse a single markdown table.
+
+        Args:
+            table_text: Markdown table text
+            table_index: Index of this table
+
+        Returns:
+            Dictionary with headers and rows
+        """
+        parsed = {
+            'table_index': table_index,
+            'headers': [],
+            'rows': [],
+            'rows_count': 0
+        }
+
+        try:
+            lines = [line.strip() for line in table_text.strip().split('\n') if line.strip()]
+
+            if len(lines) < 3:  # Need header, separator, and at least one row
+                return parsed
+
+            # Extract headers from first line
+            header_line = lines[0]
+            headers = [h.strip() for h in header_line.split('|')[1:-1]]  # Skip empty start/end
+            parsed['headers'] = headers
+
+            # Skip separator line (line 1)
+            # Parse data rows (lines 2+)
+            for row_line in lines[2:]:
+                cells = [c.strip() for c in row_line.split('|')[1:-1]]
+
+                if len(cells) > 0:
+                    # Create row dict
+                    row_dict = {}
+                    for i, header in enumerate(headers):
+                        value = cells[i] if i < len(cells) else ''
+                        row_dict[header] = value
+
+                    parsed['rows'].append(row_dict)
+
+            parsed['rows_count'] = len(parsed['rows'])
+            logger.info(f"    Markdown table {table_index}: {parsed['rows_count']} rows")
+
+        except Exception as e:
+            logger.error(f"Error parsing markdown table {table_index}: {str(e)}")
+
+        return parsed
 
     async def fetch_and_parse(self, url: str, table_name: str = None) -> Dict[str, Any]:
         """

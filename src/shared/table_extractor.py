@@ -118,7 +118,37 @@ class TableExtractor:
             logger.info(f"Starting table extraction: {table_name} from {url}")
             logger.info(f"  URL quality: {url_quality:.2f}, Confidence: {result['confidence']}")
 
-            # Strategy 1: Direct HTML extraction
+            # Strategy 1: Jina AI Reader (handles both static AND JS-rendered)
+            jina_result = await self._try_jina_extraction(
+                url, table_name, expected_columns, estimated_rows
+            )
+
+            if jina_result['success']:
+                rows_count = len(jina_result['rows'])
+
+                # Check completeness
+                is_complete = True
+                if estimated_rows and estimated_rows > 0:
+                    completeness = rows_count / estimated_rows
+                    is_complete = completeness >= 0.8
+                    logger.info(f"  Jina extraction: {rows_count}/{estimated_rows} rows ({completeness*100:.0f}%)")
+                else:
+                    logger.info(f"  Jina extraction: {rows_count} rows")
+
+                if is_complete or rows_count >= 20:  # Accept if complete OR got substantial data
+                    result.update({
+                        'success': True,
+                        'rows': jina_result['rows'],
+                        'rows_extracted': rows_count,
+                        'extraction_complete': is_complete,
+                        'iterations_used': 1,
+                        'strategy_used': 'jina_reader',
+                        'citations': self._build_citations(url, f"Jina AI Reader extraction (handles JS)")
+                    })
+                    logger.info(f"  [SUCCESS] Jina extraction: {rows_count} rows")
+                    return result
+
+            # Strategy 2: Direct HTML extraction (fallback if Jina fails)
             html_result = await self._try_html_extraction(
                 url, table_name, expected_columns, estimated_rows, max_tokens
             )
@@ -247,6 +277,54 @@ class TableExtractor:
         result['processing_time'] = time.time() - start_time
         return result
 
+    async def _try_jina_extraction(
+        self, url: str, table_name: str, expected_columns: List[str],
+        estimated_rows: int
+    ) -> Dict[str, Any]:
+        """
+        Try Jina AI Reader extraction (handles JS-rendered content).
+
+        Returns:
+            Dict with 'success', 'rows', 'error'
+        """
+        result = {'success': False, 'rows': [], 'error': None}
+
+        try:
+            # Fetch via Jina
+            jina_result = await self.html_parser.fetch_via_jina(url)
+
+            if not jina_result['success']:
+                result['error'] = jina_result.get('error', 'Jina fetch failed')
+                return result
+
+            # Parse markdown tables
+            markdown = jina_result['markdown']
+            parse_result = self.html_parser.parse_markdown_tables(markdown)
+
+            if not parse_result['success']:
+                result['error'] = parse_result.get('error', 'No markdown tables found')
+                return result
+
+            # Get the largest table
+            tables = parse_result.get('tables', [])
+            if not tables:
+                result['error'] = 'No tables in Jina markdown'
+                return result
+
+            best_table = max(tables, key=lambda t: t['rows_count'])
+
+            result['success'] = True
+            result['rows'] = best_table['rows']
+            result['headers'] = best_table['headers']
+
+            logger.info(f"    Jina extraction: {len(result['rows'])} rows from markdown table")
+
+        except Exception as e:
+            result['error'] = str(e)
+            logger.error(f"Jina extraction error: {str(e)}")
+
+        return result
+
     async def _try_html_extraction(
         self, url: str, table_name: str, expected_columns: List[str],
         estimated_rows: int, max_tokens: int
@@ -358,14 +436,13 @@ Search the URL and extract the table rows now."""
             if domain.startswith('www.'):
                 domain = domain[4:]
 
-            # Call AI API with soft schema for better compatibility
+            # Call AI API (models auto-switch to soft_schema if needed)
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
                 model=model,
                 max_tokens=max_tokens,
                 use_cache=True,
-                soft_schema=True,  # Enable flexible schema validation & repair
                 include_domains=[domain],
                 tool_name="table_extraction"
             )
@@ -487,14 +564,13 @@ Return only the NEW rows (not the ones already extracted)."""
                 parsed_url = urlparse(url)
                 domain = parsed_url.netloc.replace('www.', '')
 
-                # Call AI with soft schema for iteration
+                # Call AI for iteration (auto-switches to soft_schema if needed)
                 api_response = await self.ai_client.call_structured_api(
                     prompt=prompt,
                     schema=schema,
                     model="gemini-2.0-flash",
                     max_tokens=max_tokens,
                     use_cache=False,  # Don't cache iterative calls
-                    soft_schema=True,  # Enable flexible schema validation & repair
                     include_domains=[domain],
                     tool_name="table_extraction_continuation"
                 )
