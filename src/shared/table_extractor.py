@@ -334,13 +334,15 @@ class TableExtractor:
             columns_str = ', '.join(expected_columns)
             estimated_str = f"{estimated_rows} rows" if estimated_rows else "unknown count"
 
-            prompt = f"""Extract the complete table from this URL: {url}
+            prompt = f"""You have access to web search to retrieve content from URLs.
+
+Search and extract the complete table from: {url}
 
 Table name: {table_name}
 Expected columns: {columns_str}
 Estimated rows: {estimated_str}
 
-Extract ALL rows from the table. If the table has more rows than you can extract in one response, set extraction_complete to false.
+Use your web search capability to access the page content and extract ALL rows from the table. If the table has more rows than you can extract in one response, set extraction_complete to false.
 
 Return the data in JSON format with:
 - rows: array of row objects (each row is an object with column names as keys)
@@ -348,7 +350,7 @@ Return the data in JSON format with:
 - rows_extracted: total count of rows extracted
 - extraction_notes: any relevant notes about the extraction
 
-Extract the rows now."""
+Search the URL and extract the table rows now."""
 
             # Extract domain for focused search
             parsed_url = urlparse(url)
@@ -586,7 +588,7 @@ Focus on the domain: {urlparse(url).netloc}"""
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
-                model="sonar-pro",  # Clone provider auto-wraps this
+                model="the-clone",  # Routes to clone provider for findall support
                 max_tokens=max_tokens,
                 use_cache=True,
                 # NO soft_schema - clone already repairs via DeepSeek
