@@ -336,32 +336,12 @@ class TableExtractor:
 
             logger.info(f"    Search API returned {len(search_results)} results")
 
-            # Combine snippets from top results
-            combined_content = []
-            for i, res in enumerate(search_results[:5], 1):  # Use top 5
-                snippet = res.get('snippet', '')
-                if snippet:
-                    combined_content.append(f"[Source {i}: {res.get('title', 'Unknown')}]\n{snippet}\n")
-
-            content_text = '\n'.join(combined_content)
-            logger.info(f"    Combined content: {len(content_text)} chars from {len(combined_content)} sources")
-
-            # Feed to Gemini for structured extraction
+            # PARALLEL APPROACH: Extract from each source separately, then merge
             columns_str = ', '.join(expected_columns)
-
-            prompt = f"""Extract the table from the following search results content:
-
-Table name: {table_name}
-Expected columns: {columns_str}
-
-Content from search results:
-{content_text}
-
-Extract ALL table rows you can find in this content. Return them in the specified schema format."""
 
             schema = {
                 "type": "object",
-                "required": ["rows", "extraction_complete", "rows_extracted"],
+                "required": ["rows"],
                 "properties": {
                     "rows": {
                         "type": "array",
@@ -369,41 +349,81 @@ Extract ALL table rows you can find in this content. Return them in the specifie
                             "type": "object",
                             "additionalProperties": {"type": "string"}
                         }
-                    },
-                    "extraction_complete": {"type": "boolean"},
-                    "rows_extracted": {"type": "number"}
+                    }
                 }
             }
 
-            # Call Gemini 2.5 Flash (higher token limits than 2.0)
-            api_response = await self.ai_client.call_structured_api(
-                prompt=prompt,
-                schema=schema,
-                model="gemini-2.5-flash",
-                max_tokens=max_tokens,
-                use_cache=True,
-                tool_name="search_api_gemini_extraction"
-            )
+            # Create parallel extraction tasks (one per source)
+            extraction_tasks = []
+            for i, res in enumerate(search_results[:10], 1):  # Process all 10 results
+                snippet = res.get('snippet', '')
+                if not snippet or len(snippet) < 100:  # Skip tiny snippets
+                    continue
 
-            if 'response' not in api_response or 'error' in api_response:
-                result['error'] = api_response.get('error', 'Gemini extraction failed')
-                return result
+                prompt = f"""Extract table rows from this content:
 
-            # Extract structured response
-            raw_response = api_response.get('response', {})
-            structured_response = self.ai_client.extract_structured_response(
-                raw_response,
-                tool_name="search_api_gemini_extraction"
-            )
+Table: {table_name}
+Columns: {columns_str}
 
-            rows = structured_response.get('rows', [])
-            extraction_complete = structured_response.get('extraction_complete', False)
+Source content:
+{snippet}
 
-            result['success'] = len(rows) > 0
-            result['rows'] = rows
-            result['extraction_complete'] = extraction_complete
+Extract ALL complete rows you can find."""
 
-            logger.info(f"    Search API + Gemini: {len(rows)} rows extracted from {len(content_text)} chars")
+                task = self.ai_client.call_structured_api(
+                    prompt=prompt,
+                    schema=schema,
+                    model="gemini-2.5-flash",
+                    max_tokens=8000,
+                    use_cache=True,
+                    tool_name=f"parallel_extraction_{i}"
+                )
+                extraction_tasks.append(task)
+
+            logger.info(f"    Running {len(extraction_tasks)} parallel Gemini extractions")
+
+            # Execute all extractions in parallel
+            import asyncio as aio
+            extraction_responses = await aio.gather(*extraction_tasks, return_exceptions=True)
+
+            # Merge results and deduplicate
+            all_rows = []
+            seen_rows = set()  # For deduplication
+
+            for i, response in enumerate(extraction_responses, 1):
+                if isinstance(response, Exception):
+                    logger.warning(f"    Source {i} extraction failed: {str(response)[:100]}")
+                    continue
+
+                if 'response' not in response or 'error' in response:
+                    continue
+
+                try:
+                    raw_response = response.get('response', {})
+                    structured = self.ai_client.extract_structured_response(
+                        raw_response,
+                        tool_name=f"parallel_extraction_{i}"
+                    )
+
+                    source_rows = structured.get('rows', [])
+
+                    # Deduplicate based on row content
+                    for row in source_rows:
+                        row_key = json.dumps(row, sort_keys=True)
+                        if row_key not in seen_rows:
+                            seen_rows.add(row_key)
+                            all_rows.append(row)
+
+                    logger.info(f"    Source {i}: +{len(source_rows)} rows ({len(all_rows)} total after dedup)")
+
+                except Exception as e:
+                    logger.warning(f"    Source {i} extraction error: {str(e)[:100]}")
+
+            result['success'] = len(all_rows) > 0
+            result['rows'] = all_rows
+            result['extraction_complete'] = len(all_rows) >= (estimated_rows * 0.8 if estimated_rows else 20)
+
+            logger.info(f"    Search API + Gemini 2.5 (parallel): {len(all_rows)} unique rows from {len(extraction_tasks)} sources")
 
         except Exception as e:
             result['error'] = str(e)
