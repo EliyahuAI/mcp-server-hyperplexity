@@ -373,7 +373,7 @@ Extract ALL complete rows you can find."""
                 task = self.ai_client.call_structured_api(
                     prompt=prompt,
                     schema=schema,
-                    model="gemini-2.5-flash",
+                    model="gemini-2.0-flash",
                     max_tokens=8000,
                     use_cache=True,
                     tool_name=f"parallel_extraction_{i}"
