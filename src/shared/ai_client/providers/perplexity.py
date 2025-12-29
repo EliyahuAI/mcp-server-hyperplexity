@@ -89,8 +89,9 @@ class PerplexityProvider:
             "max_tokens": 3000,
             "response_format": get_response_format_schema(is_multiplex=True),
             "web_search_options": {
-                "search_context_size": search_context_size,
-                "max_tokens_per_page": {"low": 2048, "medium": 3072, "high": 4096}.get(search_context_size, 2048)
+                "search_context_size": search_context_size
+                # Note: sonar models don't support max_tokens_per_page
+                # Only search_context_size: "low" | "medium" | "high"
             }
         }
 
@@ -162,8 +163,9 @@ class PerplexityProvider:
             "temperature": 0.1,
             "max_tokens": enforced_max_tokens,
             "web_search_options": {
-                "search_context_size": search_context_size,
-                "max_tokens_per_page": {"low": 2048, "medium": 3072, "high": 4096}.get(search_context_size, 2048)
+                "search_context_size": search_context_size
+                # Note: sonar models don't support max_tokens_per_page
+                # Only search_context_size: "low" | "medium" | "high"
             }
         }
 

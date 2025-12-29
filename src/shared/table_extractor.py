@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Any
 from urllib.parse import urlparse
 
 from shared.html_table_parser import HTMLTableParser
+from the_clone.perplexity_search import PerplexitySearchClient
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,9 @@ class TableExtractor:
         self.ai_client = ai_client
         self.schema_validator = schema_validator
         self.html_parser = HTMLTableParser(timeout=30)
+        self.search_client = PerplexitySearchClient()
 
-        logger.info("Initialized TableExtractor")
+        logger.info("Initialized TableExtractor with Search API support")
 
     def _map_url_quality_to_confidence(self, url_quality: float) -> str:
         """
@@ -148,7 +150,30 @@ class TableExtractor:
                     logger.info(f"  [SUCCESS] Jina extraction: {rows_count} rows")
                     return result
 
-            # Strategy 2: Direct HTML extraction (fallback if Jina fails)
+            # Strategy 2: Search API → Gemini (deep content extraction)
+            search_api_result = await self._try_search_api_extraction(
+                url, table_name, expected_columns, estimated_rows, max_tokens
+            )
+
+            if search_api_result['success']:
+                rows_count = len(search_api_result['rows'])
+                logger.info(f"  Search API extraction: {rows_count} rows")
+
+                # Accept if we got substantial data
+                if rows_count >= 10:
+                    result.update({
+                        'success': True,
+                        'rows': search_api_result['rows'],
+                        'rows_extracted': rows_count,
+                        'extraction_complete': search_api_result.get('extraction_complete', True),
+                        'iterations_used': 1,
+                        'strategy_used': 'search_api_gemini',
+                        'citations': self._build_citations(url, f"Search API (8K tokens/page) + Gemini extraction")
+                    })
+                    logger.info(f"  [SUCCESS] Search API + Gemini: {rows_count} rows")
+                    return result
+
+            # Strategy 3: Direct HTML extraction (fallback)
             html_result = await self._try_html_extraction(
                 url, table_name, expected_columns, estimated_rows, max_tokens
             )
@@ -275,6 +300,115 @@ class TableExtractor:
             result['error'] = str(e)
 
         result['processing_time'] = time.time() - start_time
+        return result
+
+    async def _try_search_api_extraction(
+        self, url: str, table_name: str, expected_columns: List[str],
+        estimated_rows: int, max_tokens: int
+    ) -> Dict[str, Any]:
+        """
+        Try Search API → Gemini extraction (8K tokens/page + structured extraction).
+
+        Returns:
+            Dict with 'success', 'rows', 'extraction_complete', 'error'
+        """
+        result = {'success': False, 'rows': [], 'extraction_complete': False, 'error': None}
+
+        try:
+            # Extract domain
+            parsed_url = urlparse(url)
+            domain = parsed_url.netloc.replace('www.', '')
+
+            # Use Search API with high max_tokens_per_page for deep content
+            logger.info(f"    Using Search API with max_tokens_per_page=8192 for {domain}")
+
+            search_result = await self.search_client.search(
+                query=f'site:{domain} {table_name}',
+                max_results=10,  # Get multiple results
+                max_tokens_per_page=8192,  # 5x more content than default!
+                include_domains=[domain]  # Focus on this domain
+            )
+
+            search_results = search_result.get('results', [])
+            if not search_results:
+                result['error'] = 'No search results found'
+                return result
+
+            logger.info(f"    Search API returned {len(search_results)} results")
+
+            # Combine snippets from top results
+            combined_content = []
+            for i, res in enumerate(search_results[:5], 1):  # Use top 5
+                snippet = res.get('snippet', '')
+                if snippet:
+                    combined_content.append(f"[Source {i}: {res.get('title', 'Unknown')}]\n{snippet}\n")
+
+            content_text = '\n'.join(combined_content)
+            logger.info(f"    Combined content: {len(content_text)} chars from {len(combined_content)} sources")
+
+            # Feed to Gemini for structured extraction
+            columns_str = ', '.join(expected_columns)
+
+            prompt = f"""Extract the table from the following search results content:
+
+Table name: {table_name}
+Expected columns: {columns_str}
+
+Content from search results:
+{content_text}
+
+Extract ALL table rows you can find in this content. Return them in the specified schema format."""
+
+            schema = {
+                "type": "object",
+                "required": ["rows", "extraction_complete", "rows_extracted"],
+                "properties": {
+                    "rows": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": {"type": "string"}
+                        }
+                    },
+                    "extraction_complete": {"type": "boolean"},
+                    "rows_extracted": {"type": "number"}
+                }
+            }
+
+            # Call Gemini (now fixed!)
+            api_response = await self.ai_client.call_structured_api(
+                prompt=prompt,
+                schema=schema,
+                model="gemini-2.0-flash",
+                max_tokens=max_tokens,
+                use_cache=True,
+                tool_name="search_api_gemini_extraction"
+            )
+
+            if 'response' not in api_response or 'error' in api_response:
+                result['error'] = api_response.get('error', 'Gemini extraction failed')
+                return result
+
+            # Extract structured response
+            raw_response = api_response.get('response', {})
+            structured_response = self.ai_client.extract_structured_response(
+                raw_response,
+                tool_name="search_api_gemini_extraction"
+            )
+
+            rows = structured_response.get('rows', [])
+            extraction_complete = structured_response.get('extraction_complete', False)
+
+            result['success'] = len(rows) > 0
+            result['rows'] = rows
+            result['extraction_complete'] = extraction_complete
+
+            logger.info(f"    Search API + Gemini: {len(rows)} rows extracted from {len(content_text)} chars")
+
+        except Exception as e:
+            result['error'] = str(e)
+            logger.error(f"Search API + Gemini extraction error: {str(e)}")
+
         return result
 
     async def _try_jina_extraction(
