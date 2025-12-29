@@ -626,32 +626,39 @@ Return only the NEW rows (not the ones already extracted)."""
         result = {'success': False, 'rows': [], 'extraction_complete': False, 'error': None}
 
         try:
-            # Build search prompt for findall mode
+            # Build focused extraction prompt (triggers focused_deep: narrow + deep)
             columns_str = ', '.join(expected_columns)
 
-            prompt = f"""Find all entities for the table: {table_name}
+            prompt = f"""Extract the complete table from this specific URL: {url}
 
-The table should contain these columns: {columns_str}
+Table name: {table_name}
+Expected columns: {columns_str}
+Estimated rows: {estimated_rows or 'unknown'}
 
-Search comprehensively to find as many entities as possible that match this table structure.
-Focus on the domain: {urlparse(url).netloc}"""
+I need detailed, complete extraction of ALL table rows from this source. Extract deeply to capture the full table with all available data.
 
-            # Schema for entities
+Search this URL and extract every row from the table."""
+
+            # Schema for table extraction
             schema = {
                 "type": "object",
-                "required": ["entities", "entity_count"],
+                "required": ["rows", "rows_extracted", "extraction_complete"],
                 "properties": {
-                    "entities": {
+                    "rows": {
                         "type": "array",
-                        "description": "Found entities",
+                        "description": "Extracted table rows",
                         "items": {
                             "type": "object",
                             "additionalProperties": {"type": "string"}
                         }
                     },
-                    "entity_count": {
+                    "rows_extracted": {
                         "type": "number",
-                        "description": "Total entities found"
+                        "description": "Number of rows extracted"
+                    },
+                    "extraction_complete": {
+                        "type": "boolean",
+                        "description": "Whether all rows were captured"
                     }
                 }
             }
@@ -660,16 +667,16 @@ Focus on the domain: {urlparse(url).netloc}"""
             parsed_url = urlparse(url)
             domain = parsed_url.netloc.replace('www.', '')
 
-            # Call the_clone with findall mode (clone auto-repairs via DeepSeek)
+            # Call the_clone in normal mode (focused extraction from specific URL)
+            # Hint "detailed, complete" + "extract deeply" triggers depth=deep (2048 tokens/page)
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
-                model="the-clone",  # Routes to clone provider for findall support
+                model="the-clone",  # Routes to clone provider
                 max_tokens=max_tokens,
                 use_cache=True,
-                # NO soft_schema - clone already repairs via DeepSeek
                 include_domains=[domain],
-                findall=True,  # Enable findall mode
+                # NO findall - we want focused extraction from specific URL
                 tool_name="search_extraction"
             )
 
@@ -684,13 +691,14 @@ Focus on the domain: {urlparse(url).netloc}"""
                 tool_name="search_extraction"
             )
 
-            entities = structured_response.get('entities', [])
+            rows = structured_response.get('rows', [])
+            extraction_complete = structured_response.get('extraction_complete', False)
 
-            result['success'] = len(entities) > 0
-            result['rows'] = entities
-            result['extraction_complete'] = len(entities) >= (estimated_rows or 0)
+            result['success'] = len(rows) > 0
+            result['rows'] = rows
+            result['extraction_complete'] = extraction_complete
 
-            logger.info(f"    Search extraction: {len(entities)} entities found")
+            logger.info(f"    the_clone extraction: {len(rows)} rows (depth=deep, 2048 tokens/page)")
 
         except Exception as e:
             result['error'] = str(e)
