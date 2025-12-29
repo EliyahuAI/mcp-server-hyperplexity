@@ -752,7 +752,7 @@ Return only the NEW rows (not the ones already extracted)."""
         estimated_rows: int, max_tokens: int
     ) -> Dict[str, Any]:
         """
-        Try search-based extraction using the_clone findall mode.
+        Try the_clone extraction mode (8K tokens/page, parallel, Gemini synthesis).
 
         Returns:
             Dict with 'success', 'rows', 'extraction_complete', 'error'
@@ -760,18 +760,16 @@ Return only the NEW rows (not the ones already extracted)."""
         result = {'success': False, 'rows': [], 'extraction_complete': False, 'error': None}
 
         try:
-            # Build focused extraction prompt (triggers focused_deep: narrow + deep)
+            # Build extraction prompt for the_clone
             columns_str = ', '.join(expected_columns)
 
-            prompt = f"""Extract the complete table from this specific URL: {url}
+            prompt = f"""Extract the complete table from: {url}
 
 Table name: {table_name}
 Expected columns: {columns_str}
 Estimated rows: {estimated_rows or 'unknown'}
 
-I need detailed, complete extraction of ALL table rows from this source. Extract deeply to capture the full table with all available data.
-
-Search this URL and extract every row from the table."""
+Extract ALL rows from this table with complete data."""
 
             # Schema for table extraction
             schema = {
@@ -801,28 +799,28 @@ Search this URL and extract every row from the table."""
             parsed_url = urlparse(url)
             domain = parsed_url.netloc.replace('www.', '')
 
-            # Call the_clone in normal mode (focused extraction from specific URL)
-            # Hint "detailed, complete" + "extract deeply" triggers depth=deep (2048 tokens/page)
+            # Call the_clone with extraction=True
+            # This triggers: 8K tokens/page, parallel extraction, Gemini synthesis
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
-                model="the-clone",  # Routes to clone provider
+                model="the-clone",
                 max_tokens=max_tokens,
                 use_cache=True,
                 include_domains=[domain],
-                # NO findall - we want focused extraction from specific URL
-                tool_name="search_extraction"
+                extraction=True,  # NEW: Triggers extraction strategy
+                tool_name="clone_extraction"
             )
 
             if 'response' not in api_response or 'error' in api_response:
-                result['error'] = api_response.get('error', 'Search extraction failed')
+                result['error'] = api_response.get('error', 'Clone extraction failed')
                 return result
 
             # Extract response
             raw_response = api_response.get('response', {})
             structured_response = self.ai_client.extract_structured_response(
                 raw_response,
-                tool_name="search_extraction"
+                tool_name="clone_extraction"
             )
 
             rows = structured_response.get('rows', [])
@@ -832,11 +830,11 @@ Search this URL and extract every row from the table."""
             result['rows'] = rows
             result['extraction_complete'] = extraction_complete
 
-            logger.info(f"    the_clone extraction: {len(rows)} rows (depth=deep, 2048 tokens/page)")
+            logger.info(f"    the_clone EXTRACTION mode: {len(rows)} rows (8K tokens/page, Gemini)")
 
         except Exception as e:
             result['error'] = str(e)
-            logger.error(f"Search extraction error: {str(e)}")
+            logger.error(f"Clone extraction error: {str(e)}")
 
         return result
 

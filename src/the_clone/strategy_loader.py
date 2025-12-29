@@ -38,6 +38,7 @@ def get_strategy(breadth: str, depth: str) -> Dict[str, Any]:
     strategy_map = {
         ('narrow', 'shallow'): 'targeted',
         ('narrow', 'deep'): 'focused_deep',
+        ('narrow', 'extraction'): 'extraction',  # NEW: Extraction mode
         ('broad', 'shallow'): 'survey',
         ('broad', 'deep'): 'comprehensive',
         ('findall', 'shallow'): 'findall_breadth'
@@ -73,13 +74,14 @@ def get_provider_config(provider: str = "deepseek") -> Dict[str, Any]:
     return config['providers'][provider]
 
 
-def get_models_for_tier(provider: str, synthesis_tier: str) -> Dict[str, str]:
+def get_models_for_tier(provider: str, synthesis_tier: str, strategy: Dict = None) -> Dict[str, str]:
     """
     Get models for specified provider and synthesis tier.
 
     Args:
         provider: Provider name ("deepseek", "claude", or "baseten")
         synthesis_tier: Tier name ("tier1", "tier2", "tier3", or "tier4")
+        strategy: Optional strategy config (can override synthesis model)
 
     Returns:
         Dict with model configuration for all stages
@@ -97,11 +99,17 @@ def get_models_for_tier(provider: str, synthesis_tier: str) -> Dict[str, str]:
     # Use Gemini 2.0 Flash for initial decision across all providers (fast, cost-effective routing)
     routing_model = 'gemini-2.0-flash'
 
+    # Check if strategy overrides synthesis model (for extraction mode)
+    synthesis_model = tier_config['synthesis']
+    if strategy and 'synthesis_model' in strategy:
+        synthesis_model = strategy['synthesis_model']
+        logger.info(f"[STRATEGY] Using strategy-specific synthesis model: {synthesis_model}")
+
     return {
         'initial_decision': routing_model,
         'triage': extraction_model,
         'extraction': extraction_model,
-        'synthesis': tier_config['synthesis']
+        'synthesis': synthesis_model
     }
 
 

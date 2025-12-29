@@ -64,6 +64,22 @@
       "batch_extraction": true,
       "max_results_per_search": 20,
       "bypass_global_source_limit": true
+    },
+    "extraction": {
+      "description": "Structured data extraction: Deep content + parallel processing + Gemini synthesis",
+      "breadth": "narrow",
+      "depth": "extraction",
+      "sources_per_batch": 10,
+      "extraction_mode": "structured",
+      "max_snippets_per_source": 20,
+      "min_p_threshold": 0.50,
+      "stop_condition": null,
+      "max_tokens_per_page": 8192,
+      "batch_extraction": true,
+      "use_search_api": true,
+      "synthesis_model": "gemini-2.0-flash",
+      "parallel_extraction": true,
+      "max_results_per_search": 10
     }
   },
 

@@ -76,7 +76,8 @@ class TheClone2Refined:
         use_baseten: bool = False,
         use_code_extraction: bool = True,
         disable_keyword_scoring: bool = False,
-        findall: bool = False
+        findall: bool = False,
+        extraction: bool = False
     ) -> Dict[str, Any]:
         """
         Execute query with strategy-based architecture.
@@ -247,7 +248,14 @@ class TheClone2Refined:
         breadth = initial_result.get('breadth', 'narrow')
         depth = initial_result.get('depth', 'shallow')
         synthesis_tier = initial_result.get('synthesis_tier', 'tier2')
-        strategy = get_strategy(breadth, depth)
+
+        # Force extraction strategy if extraction=True
+        if extraction:
+            strategy = get_strategy('narrow', 'extraction')
+            logger.info(f"[CLONE] EXTRACTION mode enabled: 8K tokens/page, parallel, Gemini synthesis")
+        else:
+            strategy = get_strategy(breadth, depth)
+
         search_terms = initial_result.get('search_terms', [prompt])
         positive_keywords = initial_result.get('positive_keywords', [])
         negative_keywords = initial_result.get('negative_keywords', [])
@@ -266,7 +274,7 @@ class TheClone2Refined:
 
         # Get models for synthesis tier (unless overridden)
         if not model_override:
-            models = get_models_for_tier(provider, synthesis_tier)
+            models = get_models_for_tier(provider, synthesis_tier, strategy=strategy)
             use_soft_schema = 'deepseek' in models['synthesis'] or 'baseten' in models['synthesis']
 
         # Override global limits for findall mode
@@ -917,7 +925,7 @@ class TheClone2Refined:
             
             if request_upgrade and synthesis_tier != 'tier4':
                 logger.info(f"[CLONE] Upgrading to tier4 (PhD+ capability) as requested")
-                tier4_models = get_models_for_tier(provider, 'tier4')
+                tier4_models = get_models_for_tier(provider, 'tier4', strategy=strategy)
                 target_model = tier4_models['synthesis']
                 target_soft_schema = 'deepseek' in target_model or 'baseten' in target_model
                 synthesis_tier = 'tier4'
