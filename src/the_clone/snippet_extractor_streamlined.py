@@ -380,13 +380,17 @@ class SnippetExtractorStreamlined:
                     snippet["_source_quality"] = mode_p
 
                 # Optimization: If >50% of source words extracted, use entire source instead
+                # OR if extraction_mode='structured', force full extraction for any results
                 if use_code_extraction and text_structure:
                     # Calculate word coverage, not sentence coverage
                     total_words = len(source_text.split())
                     extracted_words = sum(len(s['text'].split()) for s in snippets)
                     coverage = extracted_words / total_words if total_words > 0 else 0
 
-                    if coverage > 0.5:
+                    # Force full extraction for structured/table extraction mode
+                    force_full_extraction = (extraction_mode == "structured" and len(snippets) > 0)
+
+                    if coverage > 0.5 or force_full_extraction:
                         # Calculate median p-score and most common reason
                         p_scores = sorted([s["p"] for s in snippets])
                         median_p = p_scores[len(p_scores) // 2]
@@ -396,7 +400,10 @@ class SnippetExtractorStreamlined:
                         reason_counts = Counter(s["validation_reason"] for s in snippets)
                         most_common_reason = reason_counts.most_common(1)[0][0]
 
-                        logger.info(f"[EXTRACTOR] Coverage {coverage:.1%} >50% - using entire source (median_p={median_p}, reason={most_common_reason})")
+                        if force_full_extraction:
+                            logger.info(f"[EXTRACTOR] EXTRACTION MODE - forcing full source content (p={median_p}, {len(snippets)} snippets found)")
+                        else:
+                            logger.info(f"[EXTRACTOR] Coverage {coverage:.1%} >50% - using entire source (median_p={median_p}, reason={most_common_reason})")
 
                         # Replace all individual snippets with single consolidated snippet
                         snippet_id = f"{snippet_id_prefix}.0-p{median_p:.2f}"
