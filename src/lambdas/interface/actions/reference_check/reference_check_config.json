@@ -1,6 +1,6 @@
 {
     "text_limits": {
-        "max_tokens": 120000,
+        "max_tokens": 128000,
         "tokens_per_word": 1.33,
         "error_message": "Text is too large to process. Please limit to approximately {max_words} words."
     },
@@ -21,7 +21,7 @@
     },
     "extraction": {
         "model": "deepseek-v3.2",
-        "max_tokens": 120000,
+        "max_tokens": 64000,
         "temperature": 0.3,
         "min_claims": 1,
         "max_claims": 50,
