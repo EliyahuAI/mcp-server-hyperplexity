@@ -2403,6 +2403,27 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Check if this is an async delegation request from the smart delegation system
         is_async_request = event.get('async_delegation_request', False)
         session_id = event.get('session_id', 'unknown')
+        email = event.get('email', event.get('email_address', ''))
+
+        # Set session context for memory system (enables memory in the_clone)
+        try:
+            # Create minimal S3 manager object (matches UnifiedS3Manager.get_session_path)
+            def get_session_path(email, session_id):
+                domain = email.split('@')[-1] if '@' in email else 'unknown'
+                email_prefix = email.split('@')[0].replace('.', '_').replace('+', '_plus_')[:20] if '@' in email else 'unknown'
+                return f"results/{domain}/{email_prefix}/{session_id}/"
+
+            # Simple object with required attributes
+            class S3Manager: pass
+            s3_manager = S3Manager()
+            s3_manager.bucket_name = os.environ.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage')
+            s3_manager.s3_client = boto3.client('s3')
+            s3_manager.get_session_path = get_session_path
+
+            ai_client.set_session_context(session_id, email, s3_manager)
+            logger.info(f"[MEMORY_SETUP] Session context set: session={session_id}, email={email}")
+        except Exception as e:
+            logger.error(f"[MEMORY_SETUP] Failed to set session context: {e}", exc_info=True)
 
         # Log how the validator was invoked
         invocation_type = "ASYNC" if is_async_request else "SYNC"

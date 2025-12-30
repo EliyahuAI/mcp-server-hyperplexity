@@ -325,6 +325,9 @@ class TheClone2Refined:
         memory = None  # Initialize memory variable
         search_decision = {'action': 'full_search', 'search_terms': search_terms, 'reasoning': 'Memory not enabled'}
 
+        # Debug memory availability
+        logger.info(f"[MEMORY_CHECK] use_memory={use_memory}, session_id={session_id}, email={email}, s3_manager={type(s3_manager).__name__ if s3_manager else None}")
+
         if use_memory and session_id and email and s3_manager:
             logger.info("\n[CLONE] Step 1.5: Checking memory...")
             step_start_phase = time.time()

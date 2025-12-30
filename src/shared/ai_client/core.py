@@ -109,7 +109,19 @@ class AIAPIClient:
         self.calculate_processing_time_estimate = self.usage_handler.calculate_processing_time_estimate
         self.get_enhanced_call_metrics = self.usage_handler.get_enhanced_call_metrics
         self.extract_token_usage = self.usage_handler.extract_token_usage
-        
+
+        # Session context for memory system (set via set_session_context)
+        self.session_id = None
+        self.email = None
+        self.s3_manager = None
+
+    def set_session_context(self, session_id: str, email: str, s3_manager=None):
+        """Set session context for memory system (call once per lambda invocation)."""
+        self.session_id = session_id
+        self.email = email
+        self.s3_manager = s3_manager
+        logger.info(f"[AI_CLIENT_MEMORY] Session context set: session_id={session_id}, email={email}, s3_manager={type(s3_manager).__name__ if s3_manager else 'None'}")
+
     def _get_backup_models(self, primary_model: str, count: int = 2) -> List[str]:
         try:
             primary_index = self.MODEL_HIERARCHY.index(primary_model)

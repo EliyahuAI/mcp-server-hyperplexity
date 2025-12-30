@@ -75,6 +75,11 @@ class GeminiProvider:
             # Build normalized response
             # Map Gemini's usageMetadata to standard usage format
             usage_metadata = gemini_response.get('usageMetadata', {})
+            # Restore backticks if using hard schema (they were escaped to § before sending)
+            if schema and not soft_schema and '§' in text_content:
+                text_content = text_content.replace('§', '`')
+                logger.debug(f"[GEMINI_BACKTICKS] Restored backticks in hard schema response")
+
             normalized = {
                 'id': gemini_response.get('modelVersion', 'gemini'),
                 'type': 'message',
@@ -237,8 +242,14 @@ class GeminiProvider:
 
             node = copy.deepcopy(node)
 
-            # Fix 0: Strip unsupported JSON Schema meta fields and conditionals
-            unsupported_fields = ['$schema', '$id', '$ref', 'if', 'then', 'else', 'not', 'allOf', 'oneOf']
+            # Fix 0: Strip unsupported JSON Schema meta fields, validation constraints, and conditionals
+            # Gemini's protobuf-based schema only supports basic structure, not validation keywords
+            unsupported_fields = [
+                '$schema', '$id', '$ref', 'if', 'then', 'else', 'not', 'allOf', 'oneOf',
+                'uniqueItems', 'minItems', 'maxItems', 'minLength', 'maxLength',
+                'pattern', 'format', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum',
+                'const', 'dependencies', 'patternProperties', 'minProperties', 'maxProperties'
+            ]
             for field in unsupported_fields:
                 if field in node:
                     conversion_map['stripped_fields'].append(f"{path}.{field}" if path else field)
@@ -415,6 +426,10 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
 {json.dumps(schema)}"""
             else:
                 # Hard schema: Use native Gemini JSON mode with compatibility fixes
+                # Escape backticks in prompt (Gemini treats them as markdown)
+                escaped_prompt = prompt.replace('`', '§')
+                request_body["contents"][0]["parts"][0]["text"] = escaped_prompt
+
                 request_body["generationConfig"]["responseMimeType"] = "application/json"
 
                 # Convert schema to Gemini-compatible format
