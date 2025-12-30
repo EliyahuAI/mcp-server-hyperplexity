@@ -3277,7 +3277,8 @@ def handle_main_processing(event, context):
                         "total_dataset_size": len(excel_rows)
                     },
                     "validation_history": validation_history,  # Properly loaded validation history
-                    "session_id": session_id
+                    "session_id": session_id,
+                    "email": email  # Add email for memory system support
                 }
 
                 logger.debug(f"[PAYLOAD_GENERATION] Complete validation payload created with {len(excel_rows)} rows")
