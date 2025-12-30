@@ -133,7 +133,7 @@ from .table_maker_lib.row_discovery import RowDiscovery
 from .table_maker_lib.qc_reviewer import QCReviewer
 from .table_maker_lib.prompt_loader import PromptLoader
 from .table_maker_lib.schema_validator import SchemaValidator
-from ai_api_client import AIAPIClient
+from ai_api_client import ai_client  # Use singleton, not class
 
 # Import config generation
 from .config_bridge import build_table_analysis_from_conversation
@@ -391,7 +391,7 @@ def _add_api_call_to_runs(
         else:
             # Fallback: regenerate enhanced metrics if not present
             logger.warning(f"[EXECUTION] enhanced_data not found in api_response, regenerating...")
-            new_call_metrics = AIAPIClient().get_enhanced_call_metrics(
+            new_call_metrics = ai_client.get_enhanced_call_metrics(
                 response=api_response.get('response', api_response),
                 model=model,
                 processing_time=processing_time,
@@ -418,7 +418,7 @@ def _add_api_call_to_runs(
         logger.info(f"[EXECUTION] Added new {call_type} call metrics for {model}, total calls: {len(existing_call_metrics)}")
 
         # Step 4: Re-aggregate ALL calls
-        aggregated = AIAPIClient().aggregate_provider_metrics(existing_call_metrics)
+        aggregated = ai_client.aggregate_provider_metrics(existing_call_metrics)
         providers = aggregated.get('providers', {})
         totals = aggregated.get('totals', {})
 

@@ -39,7 +39,7 @@ from .table_maker_lib.schema_validator import SchemaValidator
 from .interview import TableInterviewHandler
 
 # Shared imports
-from ai_api_client import AIAPIClient
+from ai_api_client import ai_client  # Use singleton, not class
 
 # WebSocket client for real-time updates
 try:
@@ -196,7 +196,7 @@ def _add_api_call_to_runs(
         else:
             # Fallback: regenerate enhanced metrics if not present
             logger.warning(f"[TABLE_MAKER] enhanced_data not found in api_response, regenerating...")
-            ai_client = AIAPIClient()
+            # Use module-level singleton (has session context)
             new_call_metrics = ai_client.get_enhanced_call_metrics(
                 response=api_response.get('response', api_response),
                 model=model,
@@ -224,7 +224,7 @@ def _add_api_call_to_runs(
         logger.info(f"[TABLE_MAKER] Added new {call_type} call metrics for {model}, total calls: {len(existing_call_metrics)}")
 
         # Step 4: Re-aggregate ALL calls
-        aggregated = AIAPIClient().aggregate_provider_metrics(existing_call_metrics)
+        aggregated = ai_client.aggregate_provider_metrics(existing_call_metrics)
         providers = aggregated.get('providers', {})
         totals = aggregated.get('totals', {})
 
