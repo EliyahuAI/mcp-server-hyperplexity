@@ -19,12 +19,9 @@ def get_source_triage_schema() -> dict:
                 "type": "array",
                 "items": {
                     "type": "integer",
-                    "minimum": 0,
-                    "maximum": 20
+                    "description": "Source index (0-20)"
                 },
-                "description": "RELEVANT source indices ranked from best to worst. Exclude off-topic sources entirely. (e.g., [0, 5, 2, 7] if only 4 are relevant)",
-                "minItems": 0,
-                "uniqueItems": True
+                "description": "RELEVANT source indices ranked from best to worst. Exclude off-topic sources entirely. Array should contain unique integers. (e.g., [0, 5, 2, 7] if only 4 are relevant)"
             }
         },
         "required": ["ranked_indices"]
