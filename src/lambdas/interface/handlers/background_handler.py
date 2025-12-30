@@ -1221,10 +1221,24 @@ def handle_main_processing(event, context):
         logger.debug(f"[TIMING] SQS MessageId: {sqs_message_id}")
         logger.debug(f"[TIMING] Session: {event.get('session_id')}, RunKey: {event.get('run_key')}")
 
+        # ========== EXTRACT SESSION CONTEXT EARLY FOR MEMORY SYSTEM ==========
+        session_id = event.get('session_id')
+        email = event.get('email', 'unknown@example.com').lower().strip()
+
+        # Set session context for memory system (MUST be before any ai_client usage)
+        logger.info(f"[MEMORY_SETUP] Setting session context EARLY: session={session_id}, email={email}")
+        try:
+            from shared.ai_api_client import ai_client
+            from ..core.unified_s3_manager import UnifiedS3Manager
+            s3_manager = UnifiedS3Manager()
+            ai_client.set_session_context(session_id, email, s3_manager)
+            logger.info(f"[MEMORY_SETUP] Context set successfully")
+        except Exception as e:
+            logger.error(f"[MEMORY_SETUP] Failed: {e}", exc_info=True)
+
         # ========== SQS DEDUPLICATION CHECK ==========
         # Check if this is a duplicate message that we've already processed
         dedup_id = event.get('deduplication_id')
-        session_id = event.get('session_id')
         run_key = event.get('run_key')
 
         if dedup_id and session_id:
@@ -1333,19 +1347,7 @@ def handle_main_processing(event, context):
                 reference_pin = clean_session_id[:6]
         excel_s3_key = event['excel_s3_key']
         config_s3_key = event['config_s3_key']
-        email = event.get('email', 'unknown@example.com').lower().strip()
         preview_email = event.get('preview_email', False)
-
-        # Set session context for memory system (enables memory in the_clone)
-        logger.info(f"[MEMORY_SETUP] Starting session context setup: session={session_id}, email={email}")
-        try:
-            from shared.ai_api_client import ai_client
-            from ..core.unified_s3_manager import UnifiedS3Manager
-            s3_manager = UnifiedS3Manager()
-            ai_client.set_session_context(session_id, email, s3_manager)
-            logger.info(f"[MEMORY_SETUP] Session context set in background: session={session_id}, email={email}")
-        except Exception as e:
-            logger.error(f"[MEMORY_SETUP] Failed in background: {e}", exc_info=True)
 
         # Extract parameters early before using them
         try:
