@@ -808,7 +808,7 @@ async def execute_full_table_generation(
         config = _load_config()
 
         # Initialize LOCAL components (same as local test)
-        ai_client = AIAPIClient()
+        # Use module-level singleton
 
         # Prompts and schemas are in subdirectories
         prompts_dir = str(Path(__file__).parent / 'prompts')

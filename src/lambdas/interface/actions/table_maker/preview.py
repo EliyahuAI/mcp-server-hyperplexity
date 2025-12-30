@@ -518,13 +518,13 @@ async def _generate_table_from_conversation(
         from .table_maker_lib.conversation_handler import TableConversationHandler
         from .table_maker_lib.prompt_loader import PromptLoader
         from .table_maker_lib.schema_validator import SchemaValidator
-        from ai_api_client import AIAPIClient
+        from ai_api_client import ai_client
 
         # Initialize handler
         prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
         schemas_dir = os.path.join(os.path.dirname(__file__), 'schemas')
 
-        ai_client = AIAPIClient()
+        # Use module-level singleton
         prompt_loader = PromptLoader(prompts_dir)
         schema_validator = SchemaValidator(schemas_dir)
 

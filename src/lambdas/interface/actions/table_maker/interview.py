@@ -21,7 +21,7 @@ import os
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from ai_api_client import AIAPIClient
+from ai_api_client import ai_client
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -46,7 +46,7 @@ class TableInterviewHandler:
         """
         self.prompts_dir = prompts_dir
         self.schemas_dir = schemas_dir
-        self.ai_client = AIAPIClient()
+        self.ai_client = ai_client  # Use module-level singleton
 
         # Load interview prompt and schema
         self.interview_prompt = self._load_prompt('interview.md')

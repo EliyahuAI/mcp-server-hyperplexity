@@ -266,7 +266,7 @@ async def handle_column_definition(event: Dict[str, Any], context: Any) -> Dict[
         base_dir = os.path.dirname(__file__)
         prompt_loader = PromptLoader(prompts_dir=os.path.join(base_dir, 'prompts'))
         schema_validator = SchemaValidator(schemas_dir=os.path.join(base_dir, 'schemas'))
-        ai_client = AIAPIClient()
+        # Use module-level singleton
 
         # Initialize column definition handler
         column_handler = ColumnDefinitionHandler(

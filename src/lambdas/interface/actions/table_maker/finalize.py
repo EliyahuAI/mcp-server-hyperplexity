@@ -338,7 +338,7 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                 from .table_maker_lib.row_expander import RowExpander
                 from .table_maker_lib.prompt_loader import PromptLoader
                 from .table_maker_lib.schema_validator import SchemaValidator
-                from ai_api_client import AIAPIClient
+                from ai_api_client import ai_client
 
                 # Initialize components
                 import os
@@ -346,7 +346,7 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                 schemas_dir = os.path.join(os.path.dirname(__file__), 'schemas')
 
                 table_generator = TableGenerator()
-                ai_client = AIAPIClient()
+                # Use module-level singleton
                 prompt_loader = PromptLoader(prompts_dir)
                 schema_validator = SchemaValidator(schemas_dir)
                 row_expander = RowExpander(ai_client, prompt_loader, schema_validator)

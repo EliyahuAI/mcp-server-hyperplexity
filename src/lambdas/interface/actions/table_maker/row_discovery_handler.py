@@ -39,7 +39,7 @@ from .table_maker_lib.prompt_loader import PromptLoader
 from .table_maker_lib.schema_validator import SchemaValidator
 
 # Shared imports
-from ai_api_client import AIAPIClient
+from ai_api_client import ai_client
 
 # WebSocket client for real-time updates
 try:
@@ -112,7 +112,7 @@ def _add_api_call_to_runs(
             new_call_metrics = api_response['enhanced_data']
         else:
             # Fallback: regenerate enhanced metrics
-            ai_client = AIAPIClient()
+            # Use module-level singleton
             new_call_metrics = ai_client.get_enhanced_call_metrics(
                 response=api_response.get('response', api_response),
                 model=model,
@@ -150,7 +150,7 @@ def _add_api_call_to_runs(
         )
 
         # Step 4: Re-aggregate ALL calls
-        aggregated = AIAPIClient().aggregate_provider_metrics(existing_call_metrics)
+        aggregated = ai_client.aggregate_provider_metrics(existing_call_metrics)
         providers = aggregated.get('providers', {})
         totals = aggregated.get('totals', {})
 
