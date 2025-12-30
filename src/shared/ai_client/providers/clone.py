@@ -133,12 +133,8 @@ class CloneProvider:
                 debug_log = metadata.get('debug_log', '')
                 if debug_log:
                     await self.cache_handler.save_markdown_log('clone', model, debug_log, debug_name=debug_name)
-            
-            # Save to cache if enabled
-            if use_cache and cache_key:
-                await self.cache_handler.save_to_cache(cache_key, response_json, token_usage, processing_time, model, 'clone')
-            
-            # Generate enhanced metrics
+
+            # Generate enhanced metrics BEFORE caching (needed for time_estimated preservation)
             # We pass pre_extracted_token_usage because we constructed it manually
             enhanced_data = self.usage_handler.get_enhanced_call_metrics(
                 response_json, model, processing_time, is_cached=False,
@@ -147,6 +143,10 @@ class CloneProvider:
 
             # Inject detailed cost breakdown into enhanced metrics
             enhanced_data['costs']['actual']['breakdown'] = cost_breakdown
+
+            # Save to cache if enabled (with enhanced_data for timing preservation)
+            if use_cache and cache_key:
+                await self.cache_handler.save_to_cache(cache_key, response_json, token_usage, processing_time, model, 'clone', enhanced_data)
 
             # Inject provider-level metrics for DynamoDB aggregation
             enhanced_data['provider_metrics'] = provider_metrics

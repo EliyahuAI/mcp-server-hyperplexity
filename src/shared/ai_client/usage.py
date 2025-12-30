@@ -436,16 +436,16 @@ class UsageHandler:
     def get_enhanced_call_metrics(self, response: Dict, model: str, processing_time: float,
                                   search_context_size: str = None, batch_info: Dict = None,
                                   pre_extracted_token_usage: Dict = None, is_cached: bool = None,
-                                  max_web_searches: int = None) -> Dict[str, Any]:
+                                  max_web_searches: int = None, cached_time_estimated: float = None) -> Dict[str, Any]:
         """Enhanced metrics calculation."""
         if pre_extracted_token_usage:
             token_usage = pre_extracted_token_usage
         else:
             token_usage = self.extract_token_usage(response, model, search_context_size)
-            
+
         api_provider = token_usage.get('api_provider', 'unknown')
         cache_detected = is_cached if is_cached is not None else (pre_extracted_token_usage is not None)
-        
+
         if cache_detected:
             cost_estimated = self.calculate_token_costs(token_usage)
             cost_data = {
@@ -454,9 +454,9 @@ class UsageHandler:
         else:
             cost_data = self.calculate_token_costs(token_usage)
             cost_estimated = self._calculate_cost_without_caching_benefits(token_usage, cost_data)
-            
+
         caching_metrics = self._extract_caching_metrics(token_usage)
-        timing_metrics = self._calculate_comprehensive_timing_metrics(token_usage, processing_time, caching_metrics, cache_detected)
+        timing_metrics = self._calculate_comprehensive_timing_metrics(token_usage, processing_time, caching_metrics, cache_detected, cached_time_estimated)
         per_row_metrics = self._calculate_per_row_metrics(cost_data, cost_estimated, timing_metrics, batch_info)
         
         return {
@@ -530,19 +530,20 @@ class UsageHandler:
             'has_cache_benefit': cache_read > 0
         }
 
-    def _calculate_comprehensive_timing_metrics(self, token_usage: Dict, time_actual: float, caching_metrics: Dict, is_internal_cache: bool) -> Dict:
+    def _calculate_comprehensive_timing_metrics(self, token_usage: Dict, time_actual: float, caching_metrics: Dict, is_internal_cache: bool, cached_time_estimated: float = None) -> Dict:
         total_tokens = token_usage.get('total_tokens', 0)
         tokens_per_sec = total_tokens / max(0.1, time_actual)
-        
+
         if is_internal_cache:
-            time_estimated = time_actual
-            time_actual = 0.001
+            # Use cached time_estimated if available, otherwise fall back to time_actual
+            time_estimated = cached_time_estimated if cached_time_estimated is not None else time_actual
+            time_actual = 0.001  # Instant cache retrieval
         elif caching_metrics['cache_read_tokens'] > 0:
             estimated_cache_time = (caching_metrics['cache_read_tokens'] / tokens_per_sec) * 8.0
             time_estimated = time_actual + estimated_cache_time
         else:
             time_estimated = time_actual
-            
+
         return {
             'time_actual_seconds': time_actual,
             'time_estimated_seconds': time_estimated,

@@ -103,12 +103,18 @@ class CacheHandler:
     async def save_to_cache(self, cache_key: str, response: Dict, token_usage: Dict, processing_time: float, model: str, api_provider: str = 'anthropic', enhanced_metrics: Dict = None):
         """Save response to cache."""
         try:
+            # Extract time_estimated from enhanced_metrics if available (critical for proper timing aggregation)
+            time_estimated = processing_time
+            if enhanced_metrics and 'timing' in enhanced_metrics:
+                time_estimated = enhanced_metrics['timing'].get('time_estimated_seconds', processing_time)
+
             cache_entry = {
                 'api_response': response,
                 'cached_at': datetime.now(timezone.utc).isoformat(),
                 'model': model,
                 'token_usage': token_usage,
                 'processing_time': processing_time,
+                'time_estimated': time_estimated,  # Preserve original estimated time for aggregation
                 'enhanced_data': enhanced_metrics
             }
 

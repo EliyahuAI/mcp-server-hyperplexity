@@ -120,11 +120,9 @@ class TheClone2Refined:
                 'extraction': model_override,
                 'synthesis': model_override
             }
-            use_soft_schema = 'deepseek' in model_override
             logger.info(f"[CLONE] Model override: {model_override}")
         else:
             models = get_default_models(provider)
-            use_soft_schema = True
 
         global_limits = get_global_limits()
 
@@ -280,7 +278,6 @@ class TheClone2Refined:
         # Get models for synthesis tier (unless overridden)
         if not model_override:
             models = get_models_for_tier(provider, synthesis_tier, strategy=strategy)
-            use_soft_schema = 'deepseek' in models['synthesis'] or 'baseten' in models['synthesis']
 
         # Override global limits for findall mode
         if strategy.get('bypass_global_source_limit'):
@@ -568,7 +565,7 @@ class TheClone2Refined:
                 positive_keywords=positive_keywords,
                 negative_keywords=negative_keywords,
                 model=models['triage'],
-                soft_schema=use_soft_schema,
+                soft_schema=False,
                 clone_logger=clone_logger,
                 provider=provider
             )
@@ -681,7 +678,7 @@ class TheClone2Refined:
                     snippet_id_prefix=snippet_id_prefix,
                     all_search_terms=search_terms,
                     model=models['extraction'],
-                    soft_schema=use_soft_schema,
+                    soft_schema=False,
                     min_quality_threshold=strategy['min_p_threshold'],
                     extraction_mode=strategy['extraction_mode'],
                     max_snippets_per_source=strategy['max_snippets_per_source'],
@@ -768,7 +765,7 @@ class TheClone2Refined:
                         snippet_id_prefix=snippet_id_prefix,
                         all_search_terms=search_terms,
                         model=models['extraction'],
-                        soft_schema=use_soft_schema,
+                        soft_schema=False,
                         min_quality_threshold=strategy['min_p_threshold'],
                         extraction_mode=strategy['extraction_mode'],
                         max_snippets_per_source=strategy['max_snippets_per_source'],
@@ -794,7 +791,7 @@ class TheClone2Refined:
                             snippet_id_prefix=snippet_id_prefix,
                             all_search_terms=search_terms,
                             model=models['extraction'],
-                            soft_schema=use_soft_schema,
+                            soft_schema=False,
                             min_quality_threshold=strategy['min_p_threshold'],
                             extraction_mode=strategy['extraction_mode'],
                             max_snippets_per_source=strategy['max_snippets_per_source'],
@@ -824,7 +821,7 @@ class TheClone2Refined:
                             all_search_terms=search_terms,
                             primary_search_index=source['_search_index'],
                             model=models['extraction'],
-                            soft_schema=use_soft_schema,
+                            soft_schema=False,
                             min_quality_threshold=strategy['min_p_threshold'],
                             extraction_mode=strategy['extraction_mode'],
                             max_snippets_per_source=strategy['max_snippets_per_source'],
@@ -929,7 +926,7 @@ class TheClone2Refined:
             model=models['synthesis'],
             search_terms=search_terms,
             debug_dir=debug_dir,
-            soft_schema=use_soft_schema,
+            soft_schema=False,
             clone_logger=clone_logger
         )
 
@@ -1010,7 +1007,7 @@ class TheClone2Refined:
                     positive_keywords=positive_keywords,
                     negative_keywords=negative_keywords,
                     model=models['triage'],
-                    soft_schema=use_soft_schema,
+                    soft_schema=False,
                     clone_logger=clone_logger,
                     provider=provider
                 )
@@ -1067,7 +1064,7 @@ class TheClone2Refined:
                             snippet_id_prefix=f"S{iteration}",  # Use iteration-specific prefix to avoid ID collisions
                             all_search_terms=search_terms + suggested_search_terms,
                             model=models['extraction'],
-                            soft_schema=use_soft_schema,
+                            soft_schema=False,
                             min_quality_threshold=strategy['min_p_threshold'],
                             extraction_mode=strategy['extraction_mode'],
                             max_snippets_per_source=strategy['max_snippets_per_source'],
@@ -1127,13 +1124,14 @@ class TheClone2Refined:
 
             # 2. Determine model for re-synthesis
             target_model = models['synthesis']
-            target_soft_schema = use_soft_schema
-            
+            target_soft_schema = False
+
             if request_upgrade and synthesis_tier != 'tier4':
                 logger.info(f"[CLONE] Upgrading to tier4 (PhD+ capability) as requested")
                 tier4_models = get_models_for_tier(provider, 'tier4', strategy=strategy)
                 target_model = tier4_models['synthesis']
-                target_soft_schema = 'deepseek' in target_model or 'baseten' in target_model
+                # ai_client will handle soft_schema automatically for DeepSeek/Baseten
+                target_soft_schema = False
                 synthesis_tier = 'tier4'
                 models['synthesis'] = target_model # Update current model state
                 upgraded = True

@@ -218,8 +218,13 @@ class AIAPIClient:
                              # Don't return cached data - fall through to make fresh API call
                              cached_data = None
                          else:
-                             # Cached response is valid - return it
-                             enhanced_data = self.usage_handler.get_enhanced_call_metrics(cached_response, current_model, 0.001, pre_extracted_token_usage=token_usage, is_cached=True)
+                             # Cached response is valid - return it with preserved time_estimated
+                             cached_time_estimated = cached_data.get('time_estimated')  # Get original estimated time
+                             enhanced_data = self.usage_handler.get_enhanced_call_metrics(
+                                 cached_response, current_model, 0.001,
+                                 pre_extracted_token_usage=token_usage, is_cached=True,
+                                 cached_time_estimated=cached_time_estimated  # Pass original time for aggregation
+                             )
 
                              return {
                                  'response': cached_response,

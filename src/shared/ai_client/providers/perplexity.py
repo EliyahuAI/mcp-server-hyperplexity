@@ -48,10 +48,12 @@ class PerplexityProvider:
                 }
 
         result = await self.validate(prompt, model, search_context_size, use_cache=False, context="")
-        
+
         if use_cache and cache_key and not result.get('is_cached'):
-            await self.cache_handler.save_to_cache(cache_key, result['response'], result['token_usage'], result['processing_time'], model, 'perplexity')
-        
+            # Pass enhanced_data for timing preservation
+            enhanced_data = result.get('enhanced_data')
+            await self.cache_handler.save_to_cache(cache_key, result['response'], result['token_usage'], result['processing_time'], model, 'perplexity', enhanced_data)
+
         return result
 
     async def validate(self, prompt: str, model: str, search_context_size: str, use_cache: bool,
@@ -114,13 +116,14 @@ class PerplexityProvider:
                         await self.cache_handler.save_debug_data('perplexity', model, debug_request, response_json, context=f"search_context_{search_context_size}")
                         
                         token_usage = self.usage_handler.extract_token_usage(response_json, model, search_context_size)
-                        
-                        if use_cache and cache_key:
-                            await self.cache_handler.save_to_cache(cache_key, response_json, token_usage, processing_time, model, 'perplexity')
-                        
+
+                        # Generate enhanced metrics BEFORE caching (needed for time_estimated preservation)
                         enhanced_data = self.usage_handler.get_enhanced_call_metrics(
                             response_json, model, processing_time, search_context_size=search_context_size, is_cached=False
                         )
+
+                        if use_cache and cache_key:
+                            await self.cache_handler.save_to_cache(cache_key, response_json, token_usage, processing_time, model, 'perplexity', enhanced_data)
                         
                         return {
                             'response': response_json,
@@ -193,21 +196,22 @@ class PerplexityProvider:
 
                         await self.cache_handler.save_debug_data('perplexity', model, debug_request, response_json, context="structured_call_success", debug_name=debug_name)
                         token_usage = self.usage_handler.extract_token_usage(response_json, model, "low")
-                        
-                        if use_cache and cache_key:
-                            await self.cache_handler.save_to_cache(cache_key, response_json, token_usage, processing_time, model, 'perplexity')
-                        
+
+                        # Generate enhanced metrics BEFORE caching (needed for time_estimated preservation)
                         enhanced_data = self.usage_handler.get_enhanced_call_metrics(response_json, model, processing_time, is_cached=False)
-                        
+
                         # Merge repair costs if present
                         if '_repair_meta' in response_json:
                             repair_meta = response_json['_repair_meta']
                             repair_cost = repair_meta.get('cost', 0.0)
-                            
+
                             if 'costs' in enhanced_data and 'actual' in enhanced_data['costs']:
                                 enhanced_data['costs']['actual']['total_cost'] += repair_cost
                                 enhanced_data['repair_info'] = repair_meta
                                 logger.info(f"[COST_UPDATE] Added repair cost ${repair_cost:.4f} to total. New total: ${enhanced_data['costs']['actual']['total_cost']:.4f}")
+
+                        if use_cache and cache_key:
+                            await self.cache_handler.save_to_cache(cache_key, response_json, token_usage, processing_time, model, 'perplexity', enhanced_data)
                         
                         return {
                             'response': response_json,

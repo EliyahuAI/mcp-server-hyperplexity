@@ -773,10 +773,16 @@ async def repair_json_with_haiku(malformed_text: str, schema: Dict, ai_client) -
             enhanced_schema['required'] = []
         enhanced_schema['required'].append('_repair_explanation')
 
+        # Escape backticks to prevent Gemini from interpreting them as markdown code blocks
+        # Use § as 1-char placeholder (rare in JSON, saves tokens vs {{BACKTICK}})
+        escaped_text = malformed_text.replace('`', '§')
+
         cleanup_prompt = f"""Extract and reformat JSON to match schema. Preserve all information.
 
+Replace all § with backtick (`) in output.
+
 Text:
-{malformed_text}
+{escaped_text}
 
 Schema:
 {json.dumps(schema, indent=2)}
@@ -797,6 +803,12 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is)."
 
         # Extract the repaired JSON
         repaired = extract_structured_response(cleanup_result['response'], "structured_response")
+
+        # Restore backticks if Gemini didn't (fallback safety)
+        repaired_str = json.dumps(repaired)
+        if '§' in repaired_str:
+            repaired_str = repaired_str.replace('§', '`')
+            repaired = json.loads(repaired_str)
 
         # Extract and remove the repair explanation
         repair_explanation = repaired.pop('_repair_explanation', 'No explanation provided')
