@@ -109,7 +109,7 @@ import json
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 # Lambda infrastructure imports
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager

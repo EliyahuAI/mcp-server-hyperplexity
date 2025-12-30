@@ -2405,6 +2405,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         session_id = event.get('session_id', 'unknown')
         email = event.get('email', event.get('email_address', ''))
 
+        # Debug: Check what email value we got
+        logger.info(f"[EMAIL_DEBUG] email='{email}', event.email='{event.get('email')}', event.email_address='{event.get('email_address')}'")
+
         # Set session context for memory system (enables memory in the_clone)
         try:
             import boto3 as _boto3  # Import with alias to avoid variable conflicts
