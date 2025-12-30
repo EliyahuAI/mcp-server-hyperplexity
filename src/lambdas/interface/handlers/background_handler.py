@@ -1335,6 +1335,18 @@ def handle_main_processing(event, context):
         config_s3_key = event['config_s3_key']
         email = event.get('email', 'unknown@example.com').lower().strip()
         preview_email = event.get('preview_email', False)
+
+        # Set session context for memory system (enables memory in the_clone)
+        logger.info(f"[MEMORY_SETUP] Starting session context setup: session={session_id}, email={email}")
+        try:
+            from shared.ai_api_client import ai_client
+            from ..core.unified_s3_manager import UnifiedS3Manager
+            s3_manager = UnifiedS3Manager()
+            ai_client.set_session_context(session_id, email, s3_manager)
+            logger.info(f"[MEMORY_SETUP] Session context set in background: session={session_id}, email={email}")
+        except Exception as e:
+            logger.error(f"[MEMORY_SETUP] Failed in background: {e}", exc_info=True)
+
         # Extract parameters early before using them
         try:
             max_rows_str = event.get('max_rows')
