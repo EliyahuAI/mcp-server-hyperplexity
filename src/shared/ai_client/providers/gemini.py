@@ -242,11 +242,24 @@ class GeminiProvider:
 
             node = copy.deepcopy(node)
 
-            # Fix -1: Escape backticks in description fields (Gemini treats them as markdown)
-            if 'description' in node and isinstance(node['description'], str):
-                if '`' in node['description']:
-                    node['description'] = node['description'].replace('`', '§')
-                    logger.debug(f"[GEMINI_SCHEMA] Escaped backticks in description at {path}")
+            # Fix -1: Escape backticks in all string fields (Gemini treats them as markdown)
+            # This includes description, title, examples, default, const, and enum values
+            for key in ['description', 'title', 'default', 'const']:
+                if key in node and isinstance(node[key], str) and '`' in node[key]:
+                    node[key] = node[key].replace('`', '§')
+                    logger.debug(f"[GEMINI_SCHEMA] Escaped backticks in {key} at {path}")
+
+            # Also escape backticks in enum arrays
+            if 'enum' in node and isinstance(node['enum'], list):
+                escaped_enum = []
+                for val in node['enum']:
+                    if isinstance(val, str) and '`' in val:
+                        escaped_enum.append(val.replace('`', '§'))
+                        logger.debug(f"[GEMINI_SCHEMA] Escaped backticks in enum value at {path}")
+                    else:
+                        escaped_enum.append(val)
+                if escaped_enum != node['enum']:
+                    node['enum'] = escaped_enum
 
             # Fix 0: Strip unsupported JSON Schema meta fields, validation constraints, and conditionals
             # Gemini's protobuf-based schema only supports basic structure, not validation keywords
