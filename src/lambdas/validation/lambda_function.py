@@ -2410,20 +2410,24 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.info(f"[EMAIL_DEBUG] email='{email}', event.email='{event.get('email')}', event.email_address='{event.get('email_address')}'")
 
         # Set session context for memory system (enables memory in the_clone)
+        # Note: boto3 already imported at module level - DO NOT re-import to avoid version conflicts
         try:
-            import boto3 as _boto3  # Import with alias to avoid variable conflicts
-
             # Create minimal S3 manager object (matches UnifiedS3Manager.get_session_path)
             def get_session_path(email, session_id):
                 domain = email.split('@')[-1] if '@' in email else 'unknown'
                 email_prefix = email.split('@')[0].replace('.', '_').replace('+', '_plus_')[:20] if '@' in email else 'unknown'
                 return f"results/{domain}/{email_prefix}/{session_id}/"
 
+            # Create S3 client outside class to avoid scoping issues
+            import sys
+            _boto3_module = sys.modules.get('boto3')
+            _s3 = _boto3_module.client('s3') if _boto3_module else None
+
             # Simple object with required attributes
             class S3Manager: pass
             s3_manager = S3Manager()
             s3_manager.bucket_name = os.environ.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage')
-            s3_manager.s3_client = _boto3.client('s3')
+            s3_manager.s3_client = _s3
             s3_manager.get_session_path = get_session_path
 
             ai_client.set_session_context(session_id, email, s3_manager)
