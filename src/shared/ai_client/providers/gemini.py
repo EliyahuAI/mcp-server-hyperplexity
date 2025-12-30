@@ -475,7 +475,7 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
             unified_response = await self._normalize_gemini_response(response_json, soft_schema, schema, model)
 
             # Restore converted values if we made schema conversions (hard schema only)
-            if conversion_map and not soft_schema:
+            if conversion_map and not soft_schema and conversion_map.get('null_conversions'):
                 try:
                     # Extract JSON from response text
                     text_content = ""
@@ -484,22 +484,19 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
                             if content_block.get('type') == 'text':
                                 text_content += content_block.get('text', '')
 
-                    logger.info(f"[GEMINI_SCHEMA] Attempting to restore NULL values in response")
-                    logger.info(f"[GEMINI_SCHEMA] Text content length: {len(text_content)} chars")
+                    logger.debug(f"[GEMINI_SCHEMA] Attempting to restore NULL values in response")
 
                     if text_content:
                         response_data = json.loads(text_content)
-                        logger.info(f"[GEMINI_SCHEMA] Parsed response data successfully")
                         restored_data = self._restore_gemini_response_values(response_data, conversion_map)
-                        logger.info(f"[GEMINI_SCHEMA] Restored values successfully")
                         # Update response with restored values
                         unified_response['content'][0]['text'] = json.dumps(restored_data)
-                        logger.info(f"[GEMINI_SCHEMA] Updated response with restored JSON")
+                        logger.info(f"[GEMINI_SCHEMA] Restored {len(conversion_map['null_conversions'])} NULL value(s)")
+                except json.JSONDecodeError as e:
+                    # If JSON is malformed, skip NULL restoration and let downstream repair handle it
+                    logger.debug(f"[GEMINI_SCHEMA] Skipping NULL restoration - JSON is malformed (will be repaired downstream)")
                 except Exception as e:
-                    logger.error(f"[GEMINI_SCHEMA] Failed to restore converted values: {e}")
-                    logger.error(f"[GEMINI_SCHEMA] Text content preview: {text_content[:500]}")
-                    import traceback
-                    logger.error(f"[GEMINI_SCHEMA] Stack trace: {traceback.format_exc()}")
+                    logger.warning(f"[GEMINI_SCHEMA] Failed to restore NULL values: {e} - continuing without restoration")
 
             # Check for max_tokens truncation
             if unified_response.get('stop_reason') in ['max_tokens', 'length']:
