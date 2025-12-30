@@ -781,7 +781,27 @@ Query: {query}
         # Remove duplicate consecutive citations
         answer_str = re.sub(r'\[(\d+)\](?:\[\1\])+', r'[\1]', answer_str)
 
-        answer_final = json.loads(answer_str)
+        # Parse JSON with repair fallback
+        try:
+            answer_final = json.loads(answer_str)
+        except json.JSONDecodeError as e:
+            logger.error(f"[UNIFIED] JSON parse error at char {e.pos}: {e.msg}")
+            logger.error(f"[UNIFIED] Malformed JSON snippet: ...{answer_str[max(0, e.pos-100):e.pos+100]}...")
+
+            # Try Gemini repair
+            try:
+                from shared.ai_client.utils import repair_json_with_haiku
+                logger.warning(f"[UNIFIED] Attempting Gemini repair for malformed synthesis JSON")
+                answer_final, repair_result, repair_explanation = await repair_json_with_haiku(
+                    answer_str, schema or {}, self.ai_client
+                )
+                if answer_final:
+                    logger.info(f"[UNIFIED] Gemini repair succeeded: {repair_explanation}")
+                else:
+                    raise Exception("Gemini repair failed")
+            except Exception as repair_error:
+                logger.error(f"[UNIFIED] Repair failed: {repair_error}")
+                raise e  # Re-raise original parse error
 
         logger.info(f"[UNIFIED] Converted {len(snippet_ids)} snippet IDs to {len(citations)} citations")
 
