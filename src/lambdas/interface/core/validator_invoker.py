@@ -275,7 +275,7 @@ def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, 
             logger.error(f"[RETRY_TRACKER] NOT_RETRYING - Non-timeout errors are not retried")
             raise
 
-def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S3_CACHE_BUCKET, VALIDATOR_LAMBDA_NAME, preview_first_row=False, preview_max_rows=5, sequential_call=None, session_id=None, update_callback=None, special_request=None, validation_history=None):
+def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S3_CACHE_BUCKET, VALIDATOR_LAMBDA_NAME, preview_first_row=False, preview_max_rows=5, sequential_call=None, session_id=None, update_callback=None, special_request=None, validation_history=None, email=None):
     """Invoke the core validator Lambda with Excel data.
 
     Args:
@@ -517,6 +517,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 },
                 "validation_history": validation_history,  # Use extracted history instead of empty dict
                 "session_id": session_id,
+                "email": email,  # For memory system
                 "is_preview": True,
                 "total_rows": total_rows  # Also add as top-level field for clarity
             }
@@ -601,16 +602,17 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
 
             # Send full dataset to validation lambda - let enhanced batch manager determine optimal batching
             payload = {
-                "test_mode": False, 
-                "config": config_data, 
+                "test_mode": False,
+                "config": config_data,
                 "validation_data": {
                     "rows": rows,  # Send ALL rows at once
                     "max_rows": max_rows,
                     "batch_size": batch_size,  # Pass through the batch_size (may be None)
                     "total_dataset_size": len(rows)
-                }, 
-                "validation_history": validation_history, 
-                "session_id": session_id
+                },
+                "validation_history": validation_history,
+                "session_id": session_id,
+                "email": email  # For memory system
             }
             
             try:
@@ -727,6 +729,7 @@ def _handle_special_request(special_request, excel_s3_key, S3_CACHE_BUCKET, VALI
                 "conversation_id": special_request.get('conversation_id'),
                 "user_message": special_request.get('user_message', ''),
                 "session_id": special_request.get('session_id'),
+                "email": email,  # For memory system
                 "excel_s3_key": excel_s3_key,
                 "s3_cache_bucket": S3_CACHE_BUCKET
             }

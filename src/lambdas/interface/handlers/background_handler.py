@@ -1561,7 +1561,7 @@ def handle_main_processing(event, context):
                 validation_results = invoke_validator_lambda(
                     actual_excel_s3_key, actual_config_s3_key, max_rows, batch_size, S3_UNIFIED_BUCKET, VALIDATOR_LAMBDA_NAME,
                     preview_first_row=True, preview_max_rows=preview_max_rows, sequential_call=sequential_call_num,
-                    session_id=session_id, validation_history=validation_history
+                    session_id=session_id, validation_history=validation_history, email=email
                 )
 
                 # Validate preview results (less strict than full validation)
@@ -3705,7 +3705,8 @@ def handle_main_processing(event, context):
                         session_id=session_id,
                         update_callback=None,
                         special_request=None,
-                        validation_history=validation_history
+                        validation_history=validation_history,
+                        email=email  # For memory system
                     )
 
                     logger.debug(f"[SYNC_VALIDATION] invoke_validator_lambda completed successfully")
