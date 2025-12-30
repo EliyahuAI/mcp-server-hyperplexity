@@ -49,20 +49,11 @@ def get_snippet_extraction_batch_code_schema_v2() -> dict:
                                 "description": "Array of snippets for this search term, each as [code, detail_limitation]",
                                 "items": {
                                     "type": "array",
-                                    "description": "Snippet as [detail_limitation, code]. Position-based: [0]=detail_limitation, [1]=code. HANDLE FIRST, code second.",
-                                    "minItems": 2,
-                                    "maxItems": 2,
-                                    "prefixItems": [
-                                        {
-                                            "type": "string",
-                                            "description": "Snippet handle components: detail_limitation (e.g., 'mortgage-rate_dec-2025', 'weight-loss_if-protocol'). Max 25 chars, unique within source."
-                                        },
-                                        {
-                                            "type": "string",
-                                            "description": "Source-prefixed location code with backtick, e.g., '`S1:1.1', '`S2:2.3-2.5', '`S1:*' (pass-all)"
-                                        }
-                                    ],
-                                    "items": False
+                                    "description": "Snippet as [detail_limitation, code]. Position-based: [0]=detail_limitation, [1]=code. HANDLE FIRST, code second. Always exactly 2 elements.",
+                                    "items": {
+                                        "type": "string",
+                                        "description": "Either detail_limitation (position 0) or location code (position 1). Location codes start with backtick like S1:1.1 or S2:2.3-2.5 or S1:* for pass-all."
+                                    }
                                 }
                             }
                         }
@@ -107,20 +98,11 @@ def get_snippet_extraction_code_schema_v2() -> dict:
                     "description": "Array of snippets, each as [detail_limitation, code]. HANDLE FIRST, code second.",
                     "items": {
                         "type": "array",
-                        "description": "Snippet as [detail_limitation, code]",
-                        "minItems": 2,
-                        "maxItems": 2,
-                        "prefixItems": [
-                            {
-                                "type": "string",
-                                "description": "Snippet handle: detail_limitation (max 25 chars)"
-                            },
-                            {
-                                "type": "string",
-                                "description": "Location code with backtick, e.g., '`1.1', '`2.3-2.5'"
-                            }
-                        ],
-                        "items": False
+                        "description": "Snippet as [detail_limitation, code]. Always exactly 2 elements.",
+                        "items": {
+                            "type": "string",
+                            "description": "Either detail_limitation (position 0) or location code (position 1). Location codes start with backtick like 1.1 or 2.3-2.5."
+                        }
                     }
                 }
             }
