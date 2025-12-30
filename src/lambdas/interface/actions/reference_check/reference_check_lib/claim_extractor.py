@@ -553,6 +553,34 @@ class ClaimExtractor:
         # Aggregate processing time
         total_processing_time = sum(r.get('processing_time', 0) for r in chunk_results)
 
+        # Aggregate token usage across all chunks
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_cache_read_tokens = 0
+        total_cache_creation_tokens = 0
+
+        for result in chunk_results:
+            api_response = result.get('api_response', {})
+            token_usage = api_response.get('token_usage', {})
+
+            total_input_tokens += token_usage.get('input_tokens', 0)
+            total_output_tokens += token_usage.get('output_tokens', 0)
+            total_cache_read_tokens += token_usage.get('cache_read_input_tokens', 0)
+            total_cache_creation_tokens += token_usage.get('cache_creation_input_tokens', 0)
+
+        # Create aggregated API response for cost tracking
+        aggregated_api_response = {
+            'token_usage': {
+                'input_tokens': total_input_tokens,
+                'output_tokens': total_output_tokens,
+                'cache_read_input_tokens': total_cache_read_tokens,
+                'cache_creation_input_tokens': total_cache_creation_tokens
+            },
+            'response': base_result.get('api_response', {}).get('response', {}),
+            'model_used': base_result.get('api_response', {}).get('model_used'),
+            'is_cached': False  # Chunked calls are never fully cached
+        }
+
         # Build merged response
         merged = {
             'is_suitable': True,
@@ -574,16 +602,18 @@ class ClaimExtractor:
                     'char_range': f"{r.get('chunk_start_char')}-{r.get('chunk_end_char')}"
                 }
                 for r in chunk_results
-            ]
+            ],
+            'api_response': aggregated_api_response
         }
-
-        # Use first chunk's API response for metrics
-        if 'api_response' in base_result:
-            merged['api_response'] = base_result['api_response']
 
         logger.info(
             f"[MERGE] Final result: {total_claims} claims "
             f"({claims_with_refs} with refs, {claims_without_refs} without)"
+        )
+        logger.info(
+            f"[MERGE] Aggregated token usage: "
+            f"{total_input_tokens:,} input, {total_output_tokens:,} output, "
+            f"{total_cache_read_tokens:,} cache read, {total_cache_creation_tokens:,} cache creation"
         )
 
         return merged
