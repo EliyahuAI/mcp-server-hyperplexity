@@ -6,6 +6,35 @@ Snippet-level: code, detail_limitation
 """
 
 
+def convert_p_string_to_number(p_value):
+    """
+    Convert p string format (p05, p15, etc.) to number (0.05, 0.15, etc.).
+
+    Args:
+        p_value: Either string format ("p05") or already a number (0.05)
+
+    Returns:
+        float: Probability as a number (0.05-0.95)
+    """
+    # If already a number, return as-is
+    if isinstance(p_value, (int, float)):
+        return float(p_value)
+
+    # If string in pXX format, convert to number
+    if isinstance(p_value, str) and p_value.startswith('p'):
+        try:
+            # Extract number part (05 -> 5, 15 -> 15, etc.)
+            num = int(p_value[1:])
+            # Convert to decimal (5 -> 0.05, 15 -> 0.15, etc.)
+            return num / 100.0
+        except (ValueError, IndexError):
+            # Fallback to 0.50 if conversion fails
+            return 0.50
+
+    # Fallback for any other type
+    return 0.50
+
+
 def get_snippet_extraction_batch_code_schema_v2() -> dict:
     """
     Schema for batch extraction with source-level assessment.

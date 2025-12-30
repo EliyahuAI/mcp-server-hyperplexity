@@ -16,7 +16,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../shared'))
 
 from shared.ai_api_client import AIAPIClient
 from shared.ai_client.utils import extract_structured_response
-from the_clone.snippet_schemas import get_snippet_extraction_schema, get_snippet_extraction_code_schema, get_snippet_extraction_batch_code_schema
+from the_clone.snippet_schemas import (
+    get_snippet_extraction_schema,
+    get_snippet_extraction_code_schema,
+    get_snippet_extraction_batch_code_schema,
+    convert_p_string_to_number
+)
 from the_clone.text_labeler import TextLabeler
 from the_clone.code_resolver import CodeResolver
 from the_clone.code_extraction_debug import CodeExtractionDebugger
@@ -593,7 +598,9 @@ class SnippetExtractorStreamlined:
             all_p_scores = set()
             for src_id, src_data in quotes_by_source.items():
                 if src_data.get('quotes_by_search'):
-                    all_p_scores.add(src_data.get('p', 0.50))
+                    # Convert p from string format (p05, p15, etc.) to number (0.05, 0.15, etc.)
+                    p_value = convert_p_string_to_number(src_data.get('p', 0.50))
+                    all_p_scores.add(p_value)
 
             sorted_p = sorted(list(all_p_scores), reverse=True)
 
@@ -626,7 +633,8 @@ class SnippetExtractorStreamlined:
                 # Extract source-level metadata
                 source_handle = source_data.get('source_handle', f'source{source_num}')
                 source_c = source_data.get('c', 'M/O')  # Classification (e.g., H/P, M/A/O)
-                source_p = source_data.get('p', 0.50)  # Source-level probability
+                # Convert p from string format (p05, p15, etc.) to number (0.05, 0.15, etc.)
+                source_p = convert_p_string_to_number(source_data.get('p', 0.50))
                 source_quotes_by_search = source_data.get('quotes_by_search', {})
 
                 snippets = []

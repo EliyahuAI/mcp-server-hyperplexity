@@ -447,6 +447,9 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
                 # Hard schema: Use native Gemini JSON mode with compatibility fixes
                 # Escape backticks in prompt (Gemini treats them as markdown)
                 escaped_prompt = prompt.replace('`', '§')
+                backtick_count = prompt.count('`')
+                if backtick_count > 0:
+                    logger.info(f"[GEMINI_PROMPT] Escaped {backtick_count} backticks in prompt")
                 request_body["contents"][0]["parts"][0]["text"] = escaped_prompt
 
                 request_body["generationConfig"]["responseMimeType"] = "application/json"
