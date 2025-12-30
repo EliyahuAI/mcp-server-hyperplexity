@@ -289,6 +289,11 @@ Generate a structured comparison answering the query, then self-assess.
 
 **Output Structure:** Use nested objects to avoid repetition.
 
+**CRITICAL - Citation Placement:**
+- **INLINE ONLY**: Citations must be embedded DIRECTLY in the text
+- **NO separate citation fields**: Do NOT create fields like "citations": [...]
+- **Format**: Include [handle, ID] at the END of each claim within the text itself
+
 Example structure:
 ```json
 {{
@@ -299,6 +304,24 @@ Example structure:
   "self_assessment": "A"
 }}
 ```
+
+❌ WRONG - Separate citation fields:
+```json
+{{
+  "feature": {{
+    "description": "Feature description here",
+    "citations": [["handle1, S1.1.1.0-p0.95"]]
+  }}
+}}
+```
+
+✅ CORRECT - Inline citations:
+```json
+{{
+  "feature": "Feature description here [handle1, S1.1.1.0-p0.95]"
+}}
+```
+
 Note: Use FULL 4-part IDs exactly as shown in snippets above.
 
 ## Self-Assessment
