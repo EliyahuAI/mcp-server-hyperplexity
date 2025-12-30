@@ -490,6 +490,20 @@ async def _extract_claims(
 
         extraction_result = await extract_claims(submitted_text, config)
 
+        # Log chunked extraction info if used
+        if extraction_result.get('chunked'):
+            num_chunks = extraction_result.get('num_chunks', 0)
+            chunk_stats = extraction_result.get('chunk_stats', [])
+            logger.info(
+                f"[EXTRACTION] Used chunked parallel extraction: {num_chunks} chunks, "
+                f"total processing time: {extraction_result.get('processing_time', 0):.2f}s"
+            )
+            for stat in chunk_stats:
+                logger.info(
+                    f"[EXTRACTION]   Chunk {stat['chunk_id']+1}: {stat['claims_extracted']} claims, "
+                    f"{stat['processing_time']:.2f}s, range: {stat['char_range']}"
+                )
+
         # Check if extraction was successful
         if not extraction_result.get('is_suitable', True):
             logger.warning(f"[EXTRACTION] Text unsuitable: {extraction_result.get('reason')}")

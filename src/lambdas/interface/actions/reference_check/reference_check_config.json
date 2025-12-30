@@ -4,16 +4,24 @@
         "tokens_per_word": 1.33,
         "error_message": "Text is too large to process. Please limit to approximately {max_words} words."
     },
+    "chunking": {
+        "enabled": true,
+        "threshold_tokens": 40000,
+        "chunk_target_tokens": 30000,
+        "chunk_max_tokens": 35000,
+        "max_chunks": 4,
+        "max_boundary_distance": 2000
+    },
     "reference_extraction": {
-        "model": "gemeni-2-0-flash",
-        "max_tokens": 120000,
+        "model": "gemini-2-5-flash",
+        "max_tokens": 64000,
         "temperature": 0.2,
         "timeout_seconds": 120,
         "enabled": true
     },
     "extraction": {
         "model": "deepseek-v3.2",
-        "max_tokens": 60000,
+        "max_tokens": 120000,
         "temperature": 0.3,
         "min_claims": 1,
         "max_claims": 50,

@@ -3,6 +3,8 @@
 ## TASK
 Extract verifiable claims/statements from the provided text and identify any references cited for each claim.
 
+{{EXTRACTION_RANGE_INSTRUCTIONS}}
+
 ## YOUR ROLE
 You are a research analyst extracting structured information from text for fact-checking. Your goal is to identify discrete, verifiable claims along with their context and any cited references.
 
