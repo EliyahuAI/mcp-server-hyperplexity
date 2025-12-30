@@ -739,14 +739,21 @@ Query: {query}
         # Replace all matched snippet IDs with citation numbers
         # We've already identified all valid snippet IDs above, now replace any occurrence
         for snippet_id, citation_idx in snippet_to_citation.items():
-            # Replace [handle, snippet_id] format
+            # Replace [handle, snippet_id] format (raw JSON arrays)
             answer_str = re.sub(rf'\[[^,\]]+,\s*{re.escape(snippet_id)}\]', f'[{citation_idx}]', answer_str)
+            # Replace "handle, snippet_id" format (strings in JSON arrays)
+            # Keep as string to maintain valid JSON structure
+            answer_str = re.sub(rf'"[^"]*,\s*{re.escape(snippet_id)}"', f'"{citation_idx}"', answer_str)
             # Replace [snippet_id] format
             answer_str = answer_str.replace(f'[{snippet_id}]', f'[{citation_idx}]')
+            # Replace "snippet_id" format (strings) - keep as string
+            answer_str = answer_str.replace(f'"{snippet_id}"', f'"{citation_idx}"')
 
         # Replace handle-only citations
         for handle, citation_idx in handle_to_citation.items():
             answer_str = re.sub(rf'\[{re.escape(handle)}\]', f'[{citation_idx}]', answer_str)
+            # Keep handle-only string citations as strings
+            answer_str = re.sub(rf'"{re.escape(handle)}"', f'"{citation_idx}"', answer_str)
 
         # Remove duplicate consecutive citations
         answer_str = re.sub(r'\[(\d+)\](?:\[\1\])+', r'[\1]', answer_str)
