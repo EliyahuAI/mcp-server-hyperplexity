@@ -184,7 +184,8 @@ class UnifiedSynthesizer:
             if can_answer and answer_raw:
                 answer_final, citations, snippets_used = await self._convert_snippet_ids_to_citations(
                     answer=answer_raw,
-                    snippets=snippets
+                    snippets=snippets,
+                    schema=schema
                 )
 
                 # Post-process for validation format if custom schema is validation_results
@@ -512,7 +513,8 @@ Query: {query}
     async def _convert_snippet_ids_to_citations(
         self,
         answer: Dict[str, Any],
-        snippets: List[Dict]
+        snippets: List[Dict],
+        schema: Dict = None
     ) -> tuple:
         """Convert snippet IDs to citation numbers."""
         answer_str = json.dumps(answer)

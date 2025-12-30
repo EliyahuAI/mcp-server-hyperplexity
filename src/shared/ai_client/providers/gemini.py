@@ -242,6 +242,12 @@ class GeminiProvider:
 
             node = copy.deepcopy(node)
 
+            # Fix -1: Escape backticks in description fields (Gemini treats them as markdown)
+            if 'description' in node and isinstance(node['description'], str):
+                if '`' in node['description']:
+                    node['description'] = node['description'].replace('`', '§')
+                    logger.debug(f"[GEMINI_SCHEMA] Escaped backticks in description at {path}")
+
             # Fix 0: Strip unsupported JSON Schema meta fields, validation constraints, and conditionals
             # Gemini's protobuf-based schema only supports basic structure, not validation keywords
             unsupported_fields = [
