@@ -182,7 +182,7 @@ class UnifiedSynthesizer:
 
             # Convert snippet IDs to citations if answer provided
             if can_answer and answer_raw:
-                answer_final, citations, snippets_used = self._convert_snippet_ids_to_citations(
+                answer_final, citations, snippets_used = await self._convert_snippet_ids_to_citations(
                     answer=answer_raw,
                     snippets=snippets
                 )
@@ -509,7 +509,7 @@ Query: {query}
 
         return '\n'.join(formatted)
 
-    def _convert_snippet_ids_to_citations(
+    async def _convert_snippet_ids_to_citations(
         self,
         answer: Dict[str, Any],
         snippets: List[Dict]

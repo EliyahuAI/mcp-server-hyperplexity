@@ -2362,6 +2362,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for validation requests and config generation."""
     # Log the start of every invocation to detect concurrent runs
     logger.warning(f"VALIDATOR_INVOKED: Starting new invocation for session_id={event.get('session_id')}. AWS_Request_ID={context.aws_request_id if context else 'N/A'}")
+    logger.info(f"[EVENT_DEBUG] Event has email: {event.get('email')}, email_address: {event.get('email_address')}, is_SQS: {'Records' in event}")
 
     progress_thread = None
     progress_queue = None
