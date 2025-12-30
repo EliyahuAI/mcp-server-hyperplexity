@@ -352,24 +352,39 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             result['search_strategy'] = search_strategy
             result['table_name'] = ai_response.get('table_name', '')
             result['rows'] = ai_response.get('rows', [])
+            # NEW: Pass through markdown table format (schema now uses this instead of rows array)
+            result['prepopulated_rows_markdown'] = ai_response.get('prepopulated_rows_markdown', '')
+            result['citations'] = ai_response.get('citations', {})
             result['trigger_row_discovery'] = ai_response.get('trigger_row_discovery', True)
             result['skip_rationale'] = ai_response.get('skip_rationale')
             result['discovery_guidance'] = ai_response.get('discovery_guidance')
 
-            # Log row generation
+            # Log row generation (check both formats)
             row_count = len(result['rows'])
+            has_markdown = bool(result.get('prepopulated_rows_markdown'))
+
+            # If using new markdown format, estimate row count from markdown
+            if has_markdown and row_count == 0:
+                markdown_lines = result['prepopulated_rows_markdown'].split('\n')
+                # Count non-empty lines excluding header and separator
+                data_lines = [line for line in markdown_lines if line.strip() and not line.startswith('|---')]
+                row_count_estimate = max(0, len(data_lines) - 1)  # Subtract header row
+                format_info = f"{row_count_estimate} rows (markdown format)"
+            else:
+                format_info = f"{row_count} rows (array format)"
+
             trigger_discovery = result['trigger_row_discovery']
 
             if trigger_discovery:
                 logger.info(
-                    f"Column definition generated {row_count} rows, "
+                    f"Column definition generated {format_info}, "
                     f"triggering row discovery to find/populate more"
                 )
                 if result.get('discovery_guidance'):
                     logger.info(f"Discovery guidance: {result['discovery_guidance'][:100]}...")
             else:
                 logger.info(
-                    f"Column definition generated {row_count} rows, "
+                    f"Column definition generated {format_info}, "
                     f"skipping row discovery (complete set)"
                 )
                 if result.get('skip_rationale'):
