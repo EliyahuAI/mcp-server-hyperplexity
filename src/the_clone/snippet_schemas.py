@@ -37,9 +37,9 @@ def get_snippet_extraction_batch_code_schema_v2() -> dict:
                             "description": "Classification: Authority + all applicable quality codes (e.g., H/P, M/A/O, L/U/S, H/P/D). Authority (required): H (high), M (medium), L (low). Quality (include all that apply): P, D, A, O, C, U, PR, S, SL, IR. Format: H/P or M/A/O or H/P/D (multiple quality codes allowed)."
                         },
                         "p": {
-                            "type": "number",
-                            "description": "Source-level probability score (expected pass-rate if judge tests all atomic claims)",
-                            "enum": [0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95]
+                            "type": "string",
+                            "description": "Source-level probability score (expected pass-rate if judge tests all atomic claims). Format: p05, p15, p30, p50, p65, p85, p95",
+                            "enum": ["p05", "p15", "p30", "p50", "p65", "p85", "p95"]
                         },
                         "quotes_by_search": {
                             "type": "object",
@@ -86,9 +86,9 @@ def get_snippet_extraction_code_schema_v2() -> dict:
                 "description": "Classification: Authority + all applicable quality codes (e.g., H/P, M/A/O, L/U/S, H/P/D). Authority (required): H (high), M (medium), L (low). Quality (include all that apply): P, D, A, O, C, U, PR, S, SL, IR. Format: H/P or M/A/O or H/P/D (multiple quality codes allowed)."
             },
             "p": {
-                "type": "number",
-                "description": "Source-level probability score",
-                "enum": [0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95]
+                "type": "string",
+                "description": "Source-level probability score. Format: p05, p15, p30, p50, p65, p85, p95",
+                "enum": ["p05", "p15", "p30", "p50", "p65", "p85", "p95"]
             },
             "quotes_by_search": {
                 "type": "object",

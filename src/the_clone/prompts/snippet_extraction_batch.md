@@ -51,7 +51,7 @@ Evaluate ENTIRE source before extracting snippets:
 **Format:** c:H/P (high authority + primary), c:M/A/O (medium + attributed + ok), c:L/U/S (low + unsourced + stale)
 **Can combine multiple quality codes** - include ALL that apply to the source
 
-**p (probability)** - Exact values: 0.05, 0.15, 0.30, 0.50, 0.65, 0.85, 0.95
+**p (probability)** - Exact values: p05, p15, p30, p50, p65, p85, p95
 
 Judge extracts all atomic claims from source and tests each. Pass = precisely accurate. p = expected pass-rate.
 
@@ -123,7 +123,7 @@ Max 25 chars. Must be unique within source (append _2, _3 if needed).
     "S1": {{
       "source_handle": "freddie",
       "c": "H/P",
-      "p": 0.95,
+      "p": "p95",
       "quotes_by_search": {{
         "1": [
           ["mortgage-rate_dec-2025", "`S1:1.1"],
@@ -135,7 +135,7 @@ Max 25 chars. Must be unique within source (append _2, _3 if needed).
     "S2": {{
       "source_handle": "nih",
       "c": "H/D/A",
-      "p": 0.85,
+      "p": "p85",
       "quotes_by_search": {{
         "1": [
           ["weight-loss_if-vs-cer", "[`S2:1.0] `S2:1.5"],
@@ -146,7 +146,7 @@ Max 25 chars. Must be unique within source (append _2, _3 if needed).
     "S3": {{
       "source_handle": "techblog",
       "c": "M/O",
-      "p": 0.65,
+      "p": "p65",
       "quotes_by_search": {{
         "1": [["ai-trends_2025", "`S3:1.1"]]
       }}
@@ -158,7 +158,7 @@ Max 25 chars. Must be unique within source (append _2, _3 if needed).
 **For each source:**
 - **source_handle**: 1-word identifier
 - **c**: Authority + all applicable quality codes (H/P, M/A/O, L/U/S, etc.)
-- **p**: Source-level probability (0.05-0.95)
+- **p**: Source-level probability (p05, p15, p30, p50, p65, p85, p95)
 - **quotes_by_search**: Organized by search term number
   - Each quote: `[detail_limitation, code]` ← **HANDLE FIRST, then code**
 
