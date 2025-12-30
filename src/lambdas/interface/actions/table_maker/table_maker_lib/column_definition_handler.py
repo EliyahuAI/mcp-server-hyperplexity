@@ -803,18 +803,44 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             output.append("**PRIORITY: Use these for JUMP START mode (complete_rows)**\n")
             for table in extracted:
                 output.append(f"\n**{table.get('table_name')}**")
-                output.append(f"- Source: {table.get('source_url')}")
-                output.append(f"- Rows Extracted: {table.get('rows_extracted')}")
-                output.append(f"- Extraction Complete: {table.get('extraction_complete')}")
+                output.append(f"- Primary Source: {table.get('source_url')}")
 
-                # Show ALL rows (column definition needs complete data)
-                rows = table.get('rows', [])
-                if rows and len(rows) > 0:
-                    output.append(f"\n**ALL Extracted Rows ({len(rows)} total):**")
-                    for i, row in enumerate(rows):
-                        output.append(f"  Row {i+1}: {row}")
+                # Handle NEW simple extraction format (markdown_table)
+                if 'markdown_table' in table:
+                    output.append(f"- Extraction Method: {table.get('extraction_method')}")
+                    output.append(f"- Sources Count: {table.get('rows_count')}")  # Number of sources in simple extraction
 
-                output.append("\n**Use these rows - all extracted data is shown above.**")
+                    # List all source URLs
+                    source_urls = table.get('source_urls', [])
+                    if source_urls:
+                        output.append(f"\n**Source URLs ({len(source_urls)} total):**")
+                        for url in source_urls:
+                            output.append(f"  - {url}")
+
+                    # Show markdown table data
+                    markdown = table.get('markdown_table', '')
+                    if markdown:
+                        output.append(f"\n**Extracted Table Data (Markdown):**\n")
+                        output.append("```")
+                        output.append(markdown)
+                        output.append("```")
+
+                    output.append("\n**Parse this markdown to define columns and extract rows.**")
+                    output.append(f"**For each row you extract, populate source_urls with: {source_urls}**")
+
+                # Handle OLD structured extraction format (backward compatibility)
+                elif 'rows' in table:
+                    output.append(f"- Rows Extracted: {table.get('rows_extracted')}")
+                    output.append(f"- Extraction Complete: {table.get('extraction_complete')}")
+
+                    rows = table.get('rows', [])
+                    if rows and len(rows) > 0:
+                        output.append(f"\n**ALL Extracted Rows ({len(rows)} total):**")
+                        for i, row in enumerate(rows):
+                            output.append(f"  Row {i+1}: {row}")
+
+                    output.append("\n**Use these rows - all extracted data is shown above.**")
+
                 output.append("")
 
         # Starting Tables (CRITICAL - for samples or complete enumeration)

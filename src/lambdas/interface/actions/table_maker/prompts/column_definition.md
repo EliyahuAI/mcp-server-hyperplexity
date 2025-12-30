@@ -367,20 +367,14 @@ target_per_subdomain = total_target / subdomain_count
 
   "table_name": "AI Companies Analysis",
 
-  "rows": [
-    {
-      "id_values": {"Company Name": "Anthropic"},
-      "research_values": {"Total Funding": "$7.3B"},
-      "source": "Forbes AI 50 2024",
-      "populated_columns": ["Company Name", "Total Funding"],
-      "missing_columns": ["Employee Count", "Has Job Posting"],
-      "match_score": 0.95,
-      "model_used": "column_definition"
-    }
-  ],
+  "prepopulated_rows_markdown": "| Company Name | Total Funding | Employee Count | Has Job Posting |\n|--------------|---------------|----------------|------------------|\n| Anthropic[1] | $7.3B[1] | | |\n| OpenAI[1] | $11.3B[1] | | |\n| Scale AI[1] | $600M[1] | | |",
+
+  "citations": {
+    "1": "https://forbes.com/ai50/2024"
+  },
 
   "trigger_row_discovery": true,
-  "discovery_guidance": "Have 30 companies from Forbes. Need to: (1) Find 20 more companies from Y Combinator and other sources, (2) Populate Employee Count and Has Job Posting columns"
+  "discovery_guidance": "Have 30 companies from Forbes with names and funding. Need to: (1) Find 20 more companies from Y Combinator and other sources, (2) Populate Employee Count and Has Job Posting columns via web search"
 }
 ```
 
@@ -396,18 +390,13 @@ target_per_subdomain = total_target / subdomain_count
     "requirements": [...]
   },
   "table_name": "US States and Capitals",
-  "rows": [
-    {
-      "id_values": {"State": "Alabama", "Capital": "Montgomery"},
-      "research_values": {"Population": "5.1M", "Region": "Southeast"},
-      "source": "Model Knowledge (as of January 2025)",
-      "populated_columns": ["State", "Capital", "Population", "Region"],
-      "missing_columns": [],
-      "match_score": 1.0,
-      "model_used": "column_definition"
-    }
-    // ... all 50 states
-  ],
+
+  "prepopulated_rows_markdown": "| State | Capital | Population | Region |\n|-------|---------|------------|--------|\n| Alabama[1] | Montgomery[1] | 5.1M[1] | Southeast[1] |\n| Alaska[1] | Juneau[1] | 0.7M[1] | Pacific[1] |\n| Arizona[1] | Phoenix[1] | 7.4M[1] | Southwest[1] |\n... (all 50 states)",
+
+  "citations": {
+    "1": "Model Knowledge (January 2025)"
+  },
+
   "trigger_row_discovery": false,
   "skip_rationale": "Generated complete set of all 50 US states with capitals, population, and regions from model knowledge. No discovery needed."
 }
@@ -415,11 +404,18 @@ target_per_subdomain = total_target / subdomain_count
 
 ### Key Points:
 
-**About rows field:**
-- Generate as many as you can from available sources
-- Populate ALL columns you have reliable data for (not just ID columns)
-- Can combine from multiple sources (extracted_tables + starting_tables + knowledge)
-- Mark populated_columns and missing_columns for each row
+**About prepopulated_rows_markdown:**
+- Create a markdown table with ALL rows you can extract from available sources
+- Use numbered citations [1] [2] [3] after each cell value to indicate source
+- Include header row and separator (| --- |)
+- Empty cells should be blank (no citation needed)
+- Example: `| Walmart[1] | $680B[2] | 24%[3] |`
+
+**About citations:**
+- Map each citation number to its source URL
+- Use the URLs from extracted_tables source_urls
+- Format: `{"1": "https://url1.com", "2": "https://url2.com"}`
+- Reuse citation numbers for the same source across different cells
 
 **About trigger_row_discovery:**
 - false: You have ALL rows with sufficient data

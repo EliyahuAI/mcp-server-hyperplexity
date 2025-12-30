@@ -175,8 +175,8 @@ class RowDiscoveryStream:
                     context,
                     combined_improvements,  # Pass improvements from other subdomains AND previous rounds
                     max_web_searches,
-                    soft_schema,
-                    findall=findall  # Pass findall flag for the-clone
+                    findall,        # Pass findall flag for the-clone (position 9)
+                    soft_schema     # Pass soft_schema flag (position 10)
                 )
 
                 # Tag each candidate with model/context info

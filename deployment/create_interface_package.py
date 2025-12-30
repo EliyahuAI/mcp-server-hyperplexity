@@ -303,6 +303,26 @@ def copy_source_files():
     else:
         logger.warning(f"'ai_api_client.py' not found at {ai_api_client_src}")
 
+    # 6d. Copy table_extractor.py to shared/ directory (imported by table_extraction_handler)
+    table_extractor_src = SHARED_SRC_DIR / "table_extractor.py"
+    if table_extractor_src.exists():
+        shared_pkg_dir = PACKAGE_DIR / "shared"
+        shared_pkg_dir.mkdir(exist_ok=True)
+        shutil.copy(table_extractor_src, shared_pkg_dir / "table_extractor.py")
+        logger.info("Copied 'table_extractor.py' to shared/ directory")
+    else:
+        logger.warning(f"'table_extractor.py' not found at {table_extractor_src}")
+
+    # 6e. Copy html_table_parser.py to shared/ directory (imported by table_extractor)
+    html_table_parser_src = SHARED_SRC_DIR / "html_table_parser.py"
+    if html_table_parser_src.exists():
+        shared_pkg_dir = PACKAGE_DIR / "shared"
+        shared_pkg_dir.mkdir(exist_ok=True)
+        shutil.copy(html_table_parser_src, shared_pkg_dir / "html_table_parser.py")
+        logger.info("Copied 'html_table_parser.py' to shared/ directory")
+    else:
+        logger.warning(f"'html_table_parser.py' not found at {html_table_parser_src}")
+
     # 7. Table Maker prompts and code are in interface_lambda/actions/table_maker/
     # No need to copy root table_maker directory - Lambda uses the local copy
     logger.info("Table Maker prompts/schemas already in interface_lambda/actions/table_maker/ (no root copy needed)")

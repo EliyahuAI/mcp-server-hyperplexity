@@ -109,7 +109,7 @@ class TableExtractionHandler:
 
                     if extraction_result.get('success'):
                         extracted_data = extraction_result.get('data', {})
-                        rows_count = extracted_data.get('rows_extracted', 0)
+                        rows_count = extracted_data.get('rows_count', 0)  # Simple extraction uses rows_count
                         extracted_tables.append(extracted_data)
                         total_rows += rows_count
 
@@ -118,8 +118,9 @@ class TableExtractionHandler:
                             all_enhanced_data.append(extraction_result['enhanced_data'])
 
                         logger.info(
-                            f"  [SUCCESS] Extracted {rows_count} rows from {table_name} "
-                            f"(complete: {extracted_data.get('extraction_complete', False)})"
+                            f"  [SUCCESS] Extracted {rows_count} rows, "
+                            f"{len(extracted_data.get('columns_found', []))} columns from {table_name} "
+                            f"(method: {extracted_data.get('extraction_method', 'unknown')})"
                         )
                     else:
                         error_msg = extraction_result.get('error', 'Unknown error')
@@ -205,59 +206,67 @@ class TableExtractionHandler:
                 except (ValueError, TypeError):
                     estimated_rows = None
 
-            logger.info(f"Extracting table with TableExtractor: {table_name}")
+            logger.info(f"Extracting table with simple schema-free extraction: {table_name}")
             logger.info(f"  URL: {table_url}")
-            logger.info(f"  URL Quality: {url_quality:.2f}")
-            logger.info(f"  Estimated rows: {estimated_rows}")
 
-            # Use TableExtractor for robust extraction
-            extraction_result = await self.table_extractor.extract_table(
-                url=table_url,
-                table_name=table_name,
-                expected_columns=expected_columns,
-                estimated_rows=estimated_rows,
-                url_quality=url_quality,
-                max_iterations=5,  # Allow up to 5 iterations for large tables
-                model=model if 'gemini' in model.lower() else 'gemini-2.0-flash',  # Prefer Gemini for extraction
-                max_tokens=max_tokens,
-                use_search_fallback=True  # Enable search fallback for JS sites
+            # Use SIMPLE extraction (no schema, returns markdown)
+            extraction_result = await self.table_extractor.extract_simple_table(
+                description=table_name,
+                url=table_url
             )
 
             if not extraction_result['success']:
                 result['error'] = extraction_result.get('error', 'Extraction failed')
-                logger.warning(f"  [FAILED] TableExtractor failed: {result['error']}")
+                logger.warning(f"  [FAILED] Simple extraction failed: {result['error']}")
                 return result
 
-            # Convert TableExtractor result to expected format
+            # Extract metadata (including costs) from extraction result
+            extraction_metadata = extraction_result.get('metadata', {})
+
+            # Convert simple extraction result to expected format
+            # Simple extraction returns markdown_table instead of structured rows
+            source_urls = extraction_result.get('source_urls', [])
             structured_response = {
                 'table_name': table_name,
-                'source_url': table_url,
-                'extraction_complete': extraction_result['extraction_complete'],
-                'rows_extracted': extraction_result['rows_extracted'],
-                'rows': extraction_result['rows'],
-                'extraction_notes': f"Strategy: {extraction_result['strategy_used']}, "
-                                  f"Iterations: {extraction_result['iterations_used']}, "
-                                  f"Confidence: {extraction_result['confidence']}",
-                'confidence': extraction_result['confidence'],  # NEW: Include confidence
-                'citations': extraction_result['citations'],    # NEW: Include citations
-                'strategy_used': extraction_result['strategy_used'],
-                'iterations_used': extraction_result['iterations_used']
+                'source_url': extraction_result['url'],  # Primary URL
+                'source_urls': source_urls,  # All URLs that contributed (may be multiple from parallel extraction)
+                'markdown_table': extraction_result['markdown_table'],  # Raw markdown table
+                'rows_count': extraction_result['rows_count'],
+                'columns_found': extraction_result['columns_found'],
+                'extraction_method': extraction_result['extraction_method'],
+                'extraction_notes': f"Method: {extraction_result['extraction_method']}, "
+                                  f"Rows: {extraction_result['rows_count']}, "
+                                  f"Columns: {len(extraction_result['columns_found'])}, "
+                                  f"Sources: {len(source_urls)}, "
+                                  f"Cost: ${extraction_metadata.get('total_cost', 0.0):.4f}",
+                'metadata': extraction_metadata
             }
 
-            # Apply target_rows filter if specified
+            # Apply target_rows filter note if specified
             if target_rows:
-                logger.info(f"  Applying target rows filter: {target_rows}")
-                # This would require additional filtering logic
-                # For now, we just log it - filtering can be done by AI in future iteration
-                structured_response['extraction_notes'] += f", Filter: {target_rows}"
+                logger.info(f"  Note: target_rows filter '{target_rows}' will be applied by column definition")
+                structured_response['target_rows_filter'] = target_rows
 
-            # Create enhanced_data for tracking
+            # Create enhanced_data for tracking (format for usage tracking system)
+            cost_by_provider = extraction_metadata.get('cost_by_provider', {})
+            total_cost = extraction_metadata.get('total_cost', 0.0)
+
+            # Build call_info in the format expected by usage tracking
+            call_info = {
+                'cost': total_cost,
+                'api_provider': extraction_result['extraction_method'],
+                'model': extraction_result['extraction_method'],
+                'processing_time': extraction_metadata.get('processing_time', 0.0),
+                'cost_breakdown': cost_by_provider
+            }
+
             enhanced_data = {
-                'strategy_used': extraction_result['strategy_used'],
-                'iterations_used': extraction_result['iterations_used'],
-                'confidence': extraction_result['confidence'],
-                'url_quality': url_quality,
-                'extraction_complete': extraction_result['extraction_complete']
+                'call_info': call_info,
+                'extraction_method': extraction_result['extraction_method'],
+                'rows_count': extraction_result['rows_count'],
+                'columns_found': extraction_result['columns_found'],
+                # Include full metadata for reference
+                'table_extraction_metadata': extraction_metadata
             }
 
             # Success
@@ -268,9 +277,10 @@ class TableExtractionHandler:
             })
 
             logger.info(
-                f"  [SUCCESS] TableExtractor: {structured_response['rows_extracted']} rows, "
-                f"strategy={extraction_result['strategy_used']}, "
-                f"confidence={extraction_result['confidence']}"
+                f"  [SUCCESS] Simple extraction: {structured_response['rows_count']} rows, "
+                f"method={extraction_result['extraction_method']}, "
+                f"columns={len(extraction_result['columns_found'])}, "
+                f"cost=${extraction_metadata.get('total_cost', 0.0):.4f}"
             )
 
             return result

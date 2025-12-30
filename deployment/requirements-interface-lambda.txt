@@ -17,4 +17,6 @@ pyyaml>=6.0.0
 requests>=2.25.0
 PyMuPDF>=1.24.0
 pymupdf4llm>=0.0.5
-jsonschema>=4.0.0 
+jsonschema>=4.0.0
+beautifulsoup4>=4.9.0  # For HTML table parsing in table_extractor
+lxml>=4.9.0  # HTML parser for BeautifulSoup 
