@@ -524,10 +524,16 @@ class TheClone2Refined:
 
             # Rebuild search_results structure (wrap memory as virtual search 0)
             if memory_sources:
+                # Extract unique original queries from memory sources for extraction context
+                memory_queries = list(set(src.get('_original_query', 'Memory') for src in memory_sources if src.get('_original_query')))
+
+                # Add memory queries as individual search terms (not as a single label)
+                # This provides better context to extraction about what was originally sought
                 memory_search_result = {'results': memory_sources, '_is_memory': True}
                 search_results = [memory_search_result] + search_results
-                search_terms = ["[Memory]"] + list(search_terms)
+                search_terms = memory_queries + list(search_terms) if memory_queries else ["Memory"] + list(search_terms)
                 logger.info(f"[CLONE] Combined: {len(memory_sources)} memory sources + {len(all_search_sources)} search sources")
+                logger.info(f"[CLONE] Memory queries: {memory_queries}")
 
         # Step 3: Triage (rank ALL sources) - SKIP if using memory-only (already ranked by verification)
         memory_only = (search_decision.get('action') == 'skip' and original_search_count == 0)
@@ -539,7 +545,8 @@ class TheClone2Refined:
             ranked_sources = []
             for rank_position, source in enumerate(memory_sources):
                 source_copy = source.copy()
-                source_copy['_search_term'] = "[Memory]"
+                # Use original query from memory instead of generic "[Memory]" label
+                source_copy['_search_term'] = source.get('_original_query', 'Memory')
                 source_copy['_search_index'] = 1
                 source_copy['_search_ref'] = 1
                 source_copy['_rank_position'] = rank_position
