@@ -351,9 +351,11 @@ class ClaimExtractor:
             chunker = TextChunker(self.config)
             chunks = chunker.get_chunk_boundaries(enriched_text)
 
+            # Format chunk sizes for logging
+            chunk_sizes = [f"{c['estimated_tokens']}tok" for c in chunks]
             logger.info(
                 f"[CLAIM EXTRACT CHUNKED] Processing {len(chunks)} chunks in parallel: "
-                f"{[f\"{c['estimated_tokens']}tok\" for c in chunks]}"
+                f"{chunk_sizes}"
             )
 
             # Extract claims from each chunk in parallel
