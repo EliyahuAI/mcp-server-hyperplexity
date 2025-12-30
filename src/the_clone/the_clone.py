@@ -1057,7 +1057,7 @@ class TheClone2Refined:
                         task = self.snippet_extractor.extract_from_sources_batch(
                             sources=sources_this_batch,
                             query=prompt,
-                            snippet_id_prefix="S",  # Use normal S prefix for continuous numbering
+                            snippet_id_prefix=f"S{iteration}",  # Use iteration-specific prefix to avoid ID collisions
                             all_search_terms=search_terms + suggested_search_terms,
                             model=models['extraction'],
                             soft_schema=use_soft_schema,
