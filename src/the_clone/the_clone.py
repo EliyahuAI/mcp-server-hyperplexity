@@ -28,6 +28,7 @@ from the_clone.snippet_extractor_streamlined import SnippetExtractorStreamlined
 from the_clone.unified_synthesizer import UnifiedSynthesizer
 from the_clone.initial_decision import InitialDecision
 from the_clone.clone_logger import CloneLogger
+from the_clone.search_memory import SearchMemory
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -77,7 +78,11 @@ class TheClone2Refined:
         use_code_extraction: bool = True,
         disable_keyword_scoring: bool = False,
         findall: bool = False,
-        extraction: bool = False
+        extraction: bool = False,
+        session_id: Optional[str] = None,
+        email: Optional[str] = None,
+        s3_manager = None,
+        use_memory: bool = True
     ) -> Dict[str, Any]:
         """
         Execute query with strategy-based architecture.
@@ -138,7 +143,7 @@ class TheClone2Refined:
             }, level=2, collapse=False)
 
         # Cost tracking by stage
-        costs = {'initial': 0.0, 'search': 0.0, 'triage': 0.0, 'extraction': 0.0, 'synthesis': 0.0}
+        costs = {'initial': 0.0, 'recall': 0.0, 'search': 0.0, 'triage': 0.0, 'extraction': 0.0, 'synthesis': 0.0}
         
         # Stats tracking
         stats = {'schema_repairs': 0}
@@ -317,86 +322,280 @@ class TheClone2Refined:
             search_exclude_domains = exclude_domains
             logger.debug(f"[CLONE] Using {len(search_exclude_domains)} excluded domains")
 
-        # Step 2: Search
-        logger.info(f"\n[CLONE] Step 2: Executing {len(search_terms)} searches...")
-        step_start_phase = time.time()
-        if clone_logger:
-            clone_logger.start_step("Search Execution")
+        # Step 1.5: Memory Recall
+        memory_sources = []
+        recall_result = None
+        memory = None  # Initialize memory variable
+        search_decision = {'action': 'full_search', 'search_terms': search_terms, 'reasoning': 'Memory not enabled'}
 
-        # Build search settings with max_tokens_per_page from strategy
+        if use_memory and session_id and email and s3_manager:
+            logger.info("\n[CLONE] Step 1.5: Checking memory...")
+            step_start_phase = time.time()
+            if clone_logger:
+                clone_logger.start_step("Memory Recall")
+
+            try:
+                # Restore/initialize memory
+                memory = await SearchMemory.restore(
+                    session_id=session_id,
+                    email=email,
+                    s3_manager=s3_manager,
+                    ai_client=self.ai_client
+                )
+
+                # Log memory statistics
+                if clone_logger:
+                    mem_stats = memory.get_stats()
+                    clone_logger.log_section("Memory Statistics", {
+                        "Total Queries in Memory": mem_stats['total_queries'],
+                        "Total Sources": mem_stats['total_sources'],
+                        "Unique URLs": mem_stats['unique_urls'],
+                        "Last Updated": mem_stats.get('last_updated', 'N/A')
+                    }, level=4, collapse=True)
+
+                # Recall relevant memories
+                recall_result = await memory.recall(
+                    query=prompt,
+                    keywords={'positive': positive_keywords, 'negative': negative_keywords},
+                    max_results=10,
+                    confidence_threshold=0.6,
+                    breadth=breadth,
+                    depth=depth
+                )
+
+                memory_sources = recall_result['memories']
+                confidence = recall_result['confidence']
+                recall_meta = recall_result['recall_metadata']
+
+                logger.info(
+                    f"[CLONE] Memory recall: {len(memory_sources)} sources, "
+                    f"confidence={confidence:.2f}, cost=${recall_meta['recall_cost']:.4f}"
+                )
+
+                # Log recall details
+                if clone_logger:
+                    recall_info = {
+                        "Total Queries Searched": recall_meta['total_queries'],
+                        "Queries After Keyword Filter": recall_meta['filtered_queries'],
+                        "Sources Selected": recall_meta['sources_selected'],
+                        "Confidence": f"{confidence:.2f}",
+                        "Recall Time": f"{recall_meta['recall_time_ms']:.0f}ms",
+                        "Recall Cost": f"${recall_meta['recall_cost']:.4f}"
+                    }
+
+                    # Add verification info if it ran
+                    if recall_meta.get('verification_run'):
+                        recall_info["Verification"] = "Ran with full snippets (2-stage recall)"
+                        # Show recommended searches if any
+                        recommended = recall_result.get('recommended_searches', [])
+                        if recommended:
+                            recall_info["Recommended Searches"] = recommended
+
+                    clone_logger.log_section("Recall Results", recall_info, level=4, collapse=False)
+
+                # Track recall cost
+                recall_cost = recall_meta['recall_cost']
+                costs['recall'] = recall_cost  # Add to stage breakdown
+                costs_by_provider['gemini'] = costs_by_provider.get('gemini', 0.0) + recall_cost
+                calls_by_provider['gemini'] = calls_by_provider.get('gemini', 0) + 1
+
+                # Decide search strategy based on memory
+                search_decision = self._decide_search_strategy(recall_result, prompt, search_terms)
+
+                logger.info(f"[CLONE] Search decision: {search_decision['action']} - {search_decision['reasoning']}")
+
+                # Log search decision
+                if clone_logger:
+                    clone_logger.log_section("Search Decision", {
+                        "Action": search_decision['action'].upper(),
+                        "Reasoning": search_decision['reasoning'],
+                        "Original Search Terms": len(search_terms) if search_decision['action'] == 'full_search' else len(initial_result.get('search_terms', [])),
+                        "Modified Search Terms": len(search_decision['search_terms'])
+                    }, level=4, collapse=False)
+
+                # Log memory sources
+                if clone_logger and memory_sources:
+                    sources_preview = []
+                    for i, src in enumerate(memory_sources[:5], 1):  # Show first 5
+                        sources_preview.append(
+                            f"{i}. **{src['title'][:60]}...**\n"
+                            f"   - URL: {src['url']}\n"
+                            f"   - Original Query: \"{src['_original_query']}\"\n"
+                            f"   - Age: {src['_memory_age_days']} days ({src['_freshness_indicator']})\n"
+                            f"   - Relevance: {src['_memory_relevance']:.1f}"
+                        )
+                    if len(memory_sources) > 5:
+                        sources_preview.append(f"\n... and {len(memory_sources) - 5} more sources")
+
+                    clone_logger.log_section(
+                        f"Memory Sources Retrieved ({len(memory_sources)} total)",
+                        "\n\n".join(sources_preview),
+                        level=4,
+                        collapse=True
+                    )
+
+                # Update search_terms based on decision
+                search_terms = search_decision['search_terms']
+
+                step_time_phase = time.time() - step_start_phase
+                if clone_logger:
+                    clone_logger.record_step_metric(
+                        "Memory Recall", "gemini", "gemini-2.0-flash",
+                        recall_cost, step_time_phase,
+                        f"{len(memory_sources)} sources, confidence={confidence:.2f}"
+                    )
+                    clone_logger.end_step("Memory Recall")
+
+            except Exception as e:
+                logger.warning(f"[CLONE] Memory recall failed, continuing with full search: {e}")
+                search_decision = {'action': 'full_search', 'search_terms': search_terms, 'reasoning': f'Memory error: {str(e)}'}
+        else:
+            if not use_memory:
+                logger.info("[CLONE] Memory disabled (use_memory=False)")
+            elif not session_id or not email or not s3_manager:
+                logger.info("[CLONE] Memory not available (missing session_id, email, or s3_manager)")
+
+        # Build search settings (needed even if skipping, for memory storage)
         search_settings = {
             'max_results': strategy.get('max_results_per_search', 10)
         }
         if 'max_tokens_per_page' in strategy:
             search_settings['max_tokens_per_page'] = strategy['max_tokens_per_page']
 
-        search_results = await self.search_manager.execute_searches(
-            search_terms=search_terms,
-            search_settings=search_settings,
-            include_domains=search_include_domains,
-            exclude_domains=search_exclude_domains,
-            clone_logger=clone_logger
-        )
-        search_cost = len(search_terms) * 0.005  # Perplexity search API cost
-        costs['search'] = search_cost
-        costs_by_provider['perplexity'] += search_cost
-        calls_by_provider['perplexity'] += len(search_terms)
-        
-        step_time_phase = time.time() - step_start_phase
-        if clone_logger:
-            total_results = sum(len(r.get('results', [])) for r in search_results if not isinstance(r, Exception))
-            clone_logger.record_step_metric("Search", "perplexity", "Search API", search_cost, step_time_phase, f"{len(search_terms)} queries, {total_results} results")
-            clone_logger.end_step("Search Execution")
+        # Step 2: Search
+        if search_terms:
+            logger.info(f"\n[CLONE] Step 2: Executing {len(search_terms)} searches...")
+            step_start_phase = time.time()
+            if clone_logger:
+                clone_logger.start_step("Search Execution")
 
-        # Step 3: Triage (rank ALL sources)
-        logger.info(f"\n[CLONE] Step 3: Ranking sources...")
-        step_start_phase = time.time()
-        if clone_logger:
-            clone_logger.start_step("Source Triage")
-
-        ranked_lists, triage_results = await self.source_triage.triage_all_searches(
-            search_results=search_results,
-            search_terms=search_terms,
-            query=prompt,
-            existing_snippets=[],
-            positive_keywords=positive_keywords,
-            negative_keywords=negative_keywords,
-            model=models['triage'],
-            soft_schema=use_soft_schema,
-            clone_logger=clone_logger,
-            provider=provider
-        )
-
-        # Extract triage costs by provider
-        triage_providers = set()
-        for i, result in enumerate(triage_results):
-            if not isinstance(result, Exception):
-                triage_cost, triage_provider = self._extract_cost_and_provider(result.get('model_response', {}), clone_logger, stats)
-                costs['triage'] += triage_cost
-                costs_by_provider[triage_provider] = costs_by_provider.get(triage_provider, 0.0) + triage_cost
-                calls_by_provider[triage_provider] = calls_by_provider.get(triage_provider, 0) + 1
-                triage_providers.add(triage_provider)
-
-            if clone_logger and i == 0: # Log first prompt uncollapsed
-                if not isinstance(result, Exception) and result.get('triage_prompt'):
-                    clone_logger.log_section(f"Triage Prompt (Search {i+1})", result['triage_prompt'], level=3, collapse=False)
-
-        step_time_phase = time.time() - step_start_phase
-        if clone_logger:
-            provider_display = list(triage_providers)[0] if len(triage_providers) == 1 else f"mixed:{','.join(sorted(list(triage_providers)))}"
-            triage_model = models['triage']
-            # Check for backup usage in any result
-            backup_triggered = any(
-                r.get('model_response', {}).get('used_backup_model') 
-                for r in triage_results if not isinstance(r, Exception)
+            search_results = await self.search_manager.execute_searches(
+                search_terms=search_terms,
+                search_settings=search_settings,
+                include_domains=search_include_domains,
+                exclude_domains=search_exclude_domains,
+                clone_logger=clone_logger
             )
-            if backup_triggered: triage_model += " (Backup)"
-                
-            clone_logger.record_step_metric("Triage", provider_display, triage_model, costs['triage'], step_time_phase, f"Ranked {len(ranked_lists)} search groups")
-            clone_logger.end_step("Source Triage")
+            search_cost = len(search_terms) * 0.005  # Perplexity search API cost
+            costs['search'] = search_cost
+            costs_by_provider['perplexity'] += search_cost
+            calls_by_provider['perplexity'] += len(search_terms)
 
-        # Build ranked source pool
-        ranked_sources = self._build_ranked_source_pool(search_results, ranked_lists, search_terms)
+            step_time_phase = time.time() - step_start_phase
+            if clone_logger:
+                total_results = sum(len(r.get('results', [])) for r in search_results if not isinstance(r, Exception))
+                clone_logger.record_step_metric("Search", "perplexity", "Search API", search_cost, step_time_phase, f"{len(search_terms)} queries, {total_results} results")
+                clone_logger.end_step("Search Execution")
+
+            # Store search results in memory
+            if use_memory and session_id and email and s3_manager:
+                try:
+                    for term, result in zip(search_terms, search_results):
+                        if not isinstance(result, Exception):
+                            await memory.store_search(
+                                query=prompt,
+                                search_term=term,
+                                results=result,
+                                parameters=search_settings,
+                                strategy=strategy['name']
+                            )
+                    logger.info(f"[MEMORY] Stored {len(search_terms)} searches")
+                except Exception as e:
+                    logger.warning(f"[MEMORY] Failed to store searches: {e}")
+        else:
+            logger.info(f"\n[CLONE] Step 2: Skipping search (using memory only)")
+            search_results = []
+
+        # Step 2.5: Deduplicate memory vs search
+        original_memory_count = len(memory_sources)
+        original_search_count = len(search_terms) if search_terms else 0
+
+        if memory_sources:
+            # Flatten search results for deduplication
+            all_search_sources = []
+            for result in search_results:
+                if not isinstance(result, Exception):
+                    all_search_sources.extend(result.get('results', []))
+
+            # Deduplicate
+            memory_sources, all_search_sources = self._deduplicate_memory_and_search(
+                memory_sources, all_search_sources
+            )
+
+            # Rebuild search_results structure (wrap memory as virtual search 0)
+            if memory_sources:
+                memory_search_result = {'results': memory_sources, '_is_memory': True}
+                search_results = [memory_search_result] + search_results
+                search_terms = ["[Memory]"] + list(search_terms)
+                logger.info(f"[CLONE] Combined: {len(memory_sources)} memory sources + {len(all_search_sources)} search sources")
+
+        # Step 3: Triage (rank ALL sources) - SKIP if using memory-only (already ranked by verification)
+        memory_only = (search_decision.get('action') == 'skip' and original_search_count == 0)
+
+        if memory_only:
+            logger.info(f"\n[CLONE] Step 3: Skipping triage (memory sources already ranked by verification)")
+            # Memory sources are already ranked by verification
+            # Add metadata fields that extraction layer expects
+            ranked_sources = []
+            for rank_position, source in enumerate(memory_sources):
+                source_copy = source.copy()
+                source_copy['_search_term'] = "[Memory]"
+                source_copy['_search_index'] = 1
+                source_copy['_search_ref'] = 1
+                source_copy['_rank_position'] = rank_position
+                ranked_sources.append(source_copy)
+
+            if clone_logger:
+                clone_logger.log_section("Triage Skipped", f"Using {len(ranked_sources)} memory sources pre-ranked by verification (no triage needed)", level=3, collapse=False)
+        else:
+            logger.info(f"\n[CLONE] Step 3: Ranking sources...")
+            step_start_phase = time.time()
+            if clone_logger:
+                clone_logger.start_step("Source Triage")
+
+            ranked_lists, triage_results = await self.source_triage.triage_all_searches(
+                search_results=search_results,
+                search_terms=search_terms,
+                query=prompt,
+                existing_snippets=[],
+                positive_keywords=positive_keywords,
+                negative_keywords=negative_keywords,
+                model=models['triage'],
+                soft_schema=use_soft_schema,
+                clone_logger=clone_logger,
+                provider=provider
+            )
+
+            # Extract triage costs by provider
+            triage_providers = set()
+            for i, result in enumerate(triage_results):
+                if not isinstance(result, Exception):
+                    triage_cost, triage_provider = self._extract_cost_and_provider(result.get('model_response', {}), clone_logger, stats)
+                    costs['triage'] += triage_cost
+                    costs_by_provider[triage_provider] = costs_by_provider.get(triage_provider, 0.0) + triage_cost
+                    calls_by_provider[triage_provider] = calls_by_provider.get(triage_provider, 0) + 1
+                    triage_providers.add(triage_provider)
+
+                if clone_logger and i == 0: # Log first prompt uncollapsed
+                    if not isinstance(result, Exception) and result.get('triage_prompt'):
+                        clone_logger.log_section(f"Triage Prompt (Search {i+1})", result['triage_prompt'], level=3, collapse=False)
+
+            step_time_phase = time.time() - step_start_phase
+            if clone_logger:
+                provider_display = list(triage_providers)[0] if len(triage_providers) == 1 else f"mixed:{','.join(sorted(list(triage_providers)))}"
+                triage_model = models['triage']
+                # Check for backup usage in any result
+                backup_triggered = any(
+                    r.get('model_response', {}).get('used_backup_model')
+                    for r in triage_results if not isinstance(r, Exception)
+                )
+                if backup_triggered: triage_model += " (Backup)"
+
+                clone_logger.record_step_metric("Triage", provider_display, triage_model, costs['triage'], step_time_phase, f"Ranked {len(ranked_lists)} search groups")
+                clone_logger.end_step("Source Triage")
+
+            # Build ranked source pool
+            ranked_sources = self._build_ranked_source_pool(search_results, ranked_lists, search_terms)
         logger.info(f"[CLONE] Ranked {len(ranked_sources)} relevant sources")
 
         if len(ranked_sources) == 0:
@@ -858,7 +1057,7 @@ class TheClone2Refined:
                         task = self.snippet_extractor.extract_from_sources_batch(
                             sources=sources_this_batch,
                             query=prompt,
-                            snippet_id_prefix="S_fix",
+                            snippet_id_prefix="S",  # Use normal S prefix for continuous numbering
                             all_search_terms=search_terms + suggested_search_terms,
                             model=models['extraction'],
                             soft_schema=use_soft_schema,
@@ -1030,6 +1229,26 @@ class TheClone2Refined:
             "academic": academic
         }
 
+        # Add memory stats if memory was used
+        if recall_result:
+            recall_meta = recall_result['recall_metadata']
+            # Count memory sources in final citations
+            memory_sources_used = sum(1 for c in final_citations if c.get('_from_memory', False))
+
+            metadata['memory_stats'] = {
+                'memory_enabled': True,
+                'sources_recalled': original_memory_count,  # Before deduplication
+                'sources_from_memory_after_dedup': len([s for s in memory_sources if s.get('_from_memory')]) if memory_sources else 0,
+                'sources_from_search': original_search_count,
+                'memory_confidence': recall_result['confidence'],
+                'search_decision': search_decision['action'],
+                'search_decision_reasoning': search_decision['reasoning'],
+                'recall_cost': recall_meta['recall_cost'],
+                'memory_sources_cited': memory_sources_used
+            }
+        else:
+            metadata['memory_stats'] = {'memory_enabled': False}
+
         if clone_logger:
             clone_logger.finalize(metadata, final_answer_data, final_citations)
 
@@ -1060,6 +1279,123 @@ class TheClone2Refined:
                 stats['schema_repairs'] += 1
 
         return cost, provider
+
+    def _decide_search_strategy(
+        self,
+        recall_result: Dict[str, Any],
+        query: str,
+        search_terms: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Decide whether to skip, supplement, or do full search based on Gemini's confidence assessment.
+        Uses Gemini's recommended searches to target specific gaps.
+
+        Args:
+            recall_result: Result from memory.recall()
+            query: Current user query
+            search_terms: Original search terms from initial decision
+
+        Returns:
+            {'action': 'skip' | 'supplement' | 'full_search', 'search_terms': [...], 'reasoning': str}
+        """
+        confidence = recall_result['confidence']
+        num_memories = len(recall_result['memories'])
+        recommended_searches = recall_result.get('recommended_searches', [])
+
+        # High confidence (Gemini assessed completeness) → SKIP search
+        # Trust Gemini's assessment regardless of source count
+        if confidence >= 0.85:
+            return {
+                'action': 'skip',
+                'search_terms': [],
+                'reasoning': f"High confidence ({confidence:.2f}) - Gemini assessed sources as complete"
+            }
+
+        # Medium confidence → SUPPLEMENT with Gemini's recommended searches
+        elif confidence >= 0.6:
+            # Use Gemini's recommended searches if available, otherwise fallback to first 2
+            if recommended_searches:
+                supplemental_terms = recommended_searches[:3]  # Max 3
+                reasoning = f"Medium confidence ({confidence:.2f}), using Gemini's recommended searches to fill gaps"
+            else:
+                supplemental_terms = search_terms[:2]
+                reasoning = f"Medium confidence ({confidence:.2f}), supplementing with first 2 search terms"
+
+            return {
+                'action': 'supplement',
+                'search_terms': supplemental_terms,
+                'reasoning': reasoning
+            }
+
+        # Low confidence → FULL search (use original terms)
+        else:
+            return {
+                'action': 'full_search',
+                'search_terms': search_terms,
+                'reasoning': f"Low confidence ({confidence:.2f}) - need comprehensive search"
+            }
+
+    def _deduplicate_memory_and_search(
+        self,
+        memory_sources: List[Dict],
+        search_sources: List[Dict]
+    ) -> tuple[List[Dict], List[Dict]]:
+        """
+        Deduplicate memory vs search results.
+
+        Rules:
+        - Prefer search if same URL (fresher query context)
+        - Keep both if different source dates (content may have changed)
+
+        Args:
+            memory_sources: Sources from memory recall
+            search_sources: Sources from new searches
+
+        Returns:
+            (deduplicated_memory, deduplicated_search)
+        """
+        memory_by_url = {m['url']: m for m in memory_sources}
+        search_by_url = {s['url']: s for s in search_sources}
+
+        # Find overlapping URLs
+        overlap_urls = set(memory_by_url.keys()) & set(search_by_url.keys())
+
+        deduplicated_memory = []
+        deduplicated_search = []
+
+        # Handle overlaps
+        for url in overlap_urls:
+            mem = memory_by_url[url]
+            search = search_by_url[url]
+
+            # Compare source dates
+            mem_date = mem.get('date')
+            search_date = search.get('date')
+
+            if mem_date and search_date and mem_date != search_date:
+                # Different dates - keep both (content may have changed)
+                deduplicated_memory.append(mem)
+                deduplicated_search.append(search)
+            else:
+                # Same URL, same/no date → prefer search (fresher context)
+                deduplicated_search.append(search)
+                logger.debug(f"[DEDUP] Removed memory duplicate (preferring search): {url}")
+
+        # Add non-overlapping sources
+        for url, mem in memory_by_url.items():
+            if url not in overlap_urls:
+                deduplicated_memory.append(mem)
+
+        for url, search in search_by_url.items():
+            if url not in overlap_urls:
+                deduplicated_search.append(search)
+
+        logger.info(
+            f"[DEDUP] Memory: {len(memory_sources)} → {len(deduplicated_memory)}, "
+            f"Search: {len(search_sources)} → {len(deduplicated_search)}"
+        )
+
+        return deduplicated_memory, deduplicated_search
 
     def _build_ranked_source_pool(
         self,

@@ -91,16 +91,19 @@ Choose based on synthesis complexity only:
 ### Keyword Indicators
 
 **Positive Keywords** - Terms that indicate high-quality, relevant results:
+- Include **proper nouns** from the query (companies, products, people, technologies, places)
 - Include technical terms, methodologies, key concepts NOT in search terms
 - Include common abbreviations and variants (e.g., "LR" for "learning rate")
 - These help prioritize best results AFTER search, without narrowing the search
 - Example for "neural network optimization": ["backpropagation", "gradient descent", "GD", "learning rate", "LR", "convergence"]
+- Example for "Python 3.12 features": ["Python", "3.12", "typing", "performance", "PEP", "release notes"]
 
-**Negative Keywords** - Terms that indicate off-topic/low-quality results:
-- Beginner-focused phrases: "for kids", "beginner tutorial", "ELI5", "simple explanation"
-- Unrelated topics that might appear in broad search results
-- Strong filter - even ONE match suggests the result is likely irrelevant
-- Example for technical query: ["for kids", "beginner", "ELI5", "simple terms"]
+**Negative Keywords** - Terms that indicate off-topic/low-quality results (USE SPARINGLY):
+- **ONLY include if there is a CLEAR exclusionary intent** in the query
+- Examples: Query mentions "not for beginners" → negative: ["beginner", "tutorial"]
+- Examples: Query is highly technical → negative: ["for kids", "ELI5"]
+- **Return empty array [] if no clear exclusions needed**
+- Most queries should have 0-2 negative keywords, not 3-5
 
 **Strategy:** Use BROAD search terms + specific keywords to cast a wide net, then algorithmically prioritize the best matches.
 

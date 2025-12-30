@@ -55,8 +55,9 @@ def get_initial_decision_schema(answer_schema: dict = None) -> dict:
             "negative_keywords": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Keywords indicating off-topic/low-quality results. Empty [] if answer_directly. Examples: 'for kids', 'beginner', 'ELI5', unrelated topics. Strong filter - one match suggests irrelevance.",
-                "minItems": 0
+                "description": "Keywords indicating off-topic/low-quality results. USE SPARINGLY - only include if there's a CLEAR exclusionary intent in the query. Return empty [] if no obvious exclusions needed. Examples: 'for kids', 'beginner', 'ELI5' ONLY for highly technical queries.",
+                "minItems": 0,
+                "default": []
             },
             "synthesis_tier": {
                 "type": "string",
@@ -68,7 +69,7 @@ def get_initial_decision_schema(answer_schema: dict = None) -> dict:
                 "description": "Set true if query requires scholarly/peer-reviewed sources (research papers, academic studies, scientific findings). Prioritizes academic databases over general web."
             }
         },
-        "required": ["decision", "breadth", "depth", "search_terms", "positive_keywords", "negative_keywords", "synthesis_tier", "academic"]
+        "required": ["decision", "breadth", "depth", "search_terms", "positive_keywords", "synthesis_tier", "academic"]
     }
 
     # If custom answer schema provided, merge it for direct answers
@@ -127,13 +128,14 @@ def get_findall_schema() -> dict:
             "negative_keywords": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Keywords indicating off-topic/low-quality results. Examples: beginner content for technical queries, unrelated topics. Strong filter - one match suggests irrelevance.",
-                "minItems": 0
+                "description": "Keywords indicating off-topic/low-quality results. USE SPARINGLY - only include if there's a CLEAR exclusionary intent. Return empty [] if no obvious exclusions. Strong filter - one match suggests irrelevance.",
+                "minItems": 0,
+                "default": []
             },
             "academic": {
                 "type": "boolean",
                 "description": "Set true if query requires scholarly/peer-reviewed sources (research papers, academic studies, scientific findings). Prioritizes academic databases."
             }
         },
-        "required": ["search_terms", "positive_keywords", "negative_keywords", "academic"]
+        "required": ["search_terms", "positive_keywords", "academic"]
     }
