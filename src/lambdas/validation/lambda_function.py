@@ -29,7 +29,7 @@ import threading
 from schema_validator_simplified import SimplifiedSchemaValidator
 from perplexity_schema import get_response_format_schema
 from row_key_utils import generate_row_key
-from ai_api_client import ai_client
+from shared.ai_api_client import ai_client
 
 def find_similar_columns(expected_columns: List[str], actual_columns: List[str], similarity_threshold: float = 0.8) -> Dict[str, str]:
     """
@@ -2447,9 +2447,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.info(f"Validator invoked: type={invocation_type}, mode=INITIAL, session={session_id}, rows={rows_in_event}")
 
         # Time monitoring configuration
-        # ASYNC: Trigger continuation when next batch will take >5 minutes (300000ms)
+        # ASYNC: Trigger continuation when remaining_time < next_batch_time + buffer
+        # Buffer ensures the continuation Lambda has time to start and process remaining work
         # SYNC: Cannot use continuations (should never trigger)
-        CONTINUATION_TRIGGER_THRESHOLD_MS = int(os.environ.get('VALIDATOR_CONTINUATION_THRESHOLD_MS', '300000'))  # 5 minutes (300000ms)
+        CONTINUATION_BUFFER_MS = int(os.environ.get('VALIDATOR_CONTINUATION_BUFFER_MS', '300000'))  # 5 minutes buffer
         MAX_PROCESSING_TIME_MS = int(os.environ.get('VALIDATOR_MAX_PROCESSING_TIME_MS', '900000'))  # 15 minutes default
 
         # Track execution start time
@@ -2467,12 +2468,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         def should_continue_processing(next_batch_estimated_time_ms=None):
             """Check if we have enough time to continue processing.
 
-            For ASYNC mode only: Triggers continuation if next batch will take >5 minutes.
+            For ASYNC mode only: Triggers continuation if remaining_time < next_batch_time + buffer.
             For SYNC mode: Always returns True (no continuation support).
 
             Args:
                 next_batch_estimated_time_ms: Estimated time for next batch in milliseconds.
-                                             If None, just checks remaining time.
+                                             If None, just checks remaining time against buffer.
             """
             # SYNC mode cannot trigger continuations
             if not is_async_request:
@@ -2481,17 +2482,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             remaining_ms = get_remaining_time_ms()
 
             if next_batch_estimated_time_ms:
-                # ASYNC mode: Check if next batch will take longer than threshold (5 minutes)
-                # This gives the continuation Lambda time to start and process remaining work
-                can_continue = next_batch_estimated_time_ms <= CONTINUATION_TRIGGER_THRESHOLD_MS
+                # ASYNC mode: Check if we have enough time for next batch + buffer
+                # Buffer ensures continuation Lambda has time to start and process remaining work
+                required_time_ms = next_batch_estimated_time_ms + CONTINUATION_BUFFER_MS
+                can_continue = remaining_ms > required_time_ms
 
                 if not can_continue:
-                    logger.debug(f"[TIME_CHECK] Next batch estimated at {next_batch_estimated_time_ms/1000:.1f}s exceeds threshold {CONTINUATION_TRIGGER_THRESHOLD_MS/1000:.1f}s - will trigger continuation")
+                    logger.info(f"[TIME_CHECK] Remaining {remaining_ms/1000:.1f}s < required {required_time_ms/1000:.1f}s (batch={next_batch_estimated_time_ms/1000:.1f}s + buffer={CONTINUATION_BUFFER_MS/1000:.1f}s) - will trigger continuation")
 
                 return can_continue
             else:
-                # Simple check: Ensure we have some time left
-                return remaining_ms > 60000  # At least 1 minute remaining
+                # Simple check: Ensure we have at least buffer time remaining
+                return remaining_ms > CONTINUATION_BUFFER_MS
 
         def save_async_progress(chunks_completed=0, chunks_total=0, rows_processed=0, current_cost=0.0):
             """Save progress to DynamoDB for async processing."""
@@ -2683,7 +2685,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.error(f"[COMPLETION_TRIGGER] Failed to trigger interface: {e}")
                 return False
 
-        logger.debug(f"[TIME_MONITORING] Lambda execution started, continuation threshold: {CONTINUATION_TRIGGER_THRESHOLD_MS}ms, remaining: {get_remaining_time_ms()}ms")
+        logger.debug(f"[TIME_MONITORING] Lambda execution started, continuation buffer: {CONTINUATION_BUFFER_MS}ms, remaining: {get_remaining_time_ms()}ms")
 
         # Continue with normal validation logic
         # Test CloudWatch logging - with extreme verbosity for debugging
