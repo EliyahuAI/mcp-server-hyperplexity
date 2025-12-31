@@ -6,29 +6,26 @@
 ## 🚨 CRITICAL DECISION: Read This FIRST
 ═══════════════════════════════════════════════════════════════
 
-**BEFORE you do ANYTHING, answer these 3 questions:**
+**BEFORE you do ANYTHING, answer these 2 questions:**
 
-1. **Did I generate rows that match what the user asked for?**
-   - User asked for "top 5 LLMs" → I generated 5 LLMs? → YES
-   - User asked for "AI companies" → I have 0 rows? → NO
+1. **Did I identify enough ENTITIES (rows)?**
+   - User asked for "top 20 richest" → I identified 20 people by name? → YES
+   - User asked for "AI companies" → I have 0 companies identified? → NO
 
-2. **Are the critical columns populated with data?**
-   - Hallucination Rate, Citation Accuracy populated? → YES
-   - Only minor columns like "Sample Size" empty? → Still YES
-   - Most research columns completely empty? → NO
+2. **Are ID columns populated to uniquely identify each entity?**
+   - Person Name, Company Name filled in? → YES
+   - Cannot identify the entities? → NO
 
-3. **Would the user say "this is what I wanted" if they saw this now?**
-   - I have what they requested with good data? → YES
-   - Missing significant data or quantity? → NO
+**NOTE: Empty research columns (net worth, funding, etc.) are FINE - validator fills those**
 
 **DECISION RULE:**
 ```
-IF all 3 answers are YES:
+IF both answers are YES (have enough entities with ID columns populated):
   → trigger_row_discovery = FALSE
   → Provide skip_rationale
   → DO NOT include subdomains (will cause error)
 
-IF any answer is NO:
+IF any answer is NO (need more entities):
   → trigger_row_discovery = TRUE
   → Provide discovery_guidance
   → MUST include subdomains array (1-10 items) in search_strategy
@@ -105,10 +102,13 @@ If background_research has `extracted_tables`:
 
 ### Source 4: Model Knowledge
 - If well-known finite set (countries, states, etc.) → Enumerate ALL
-- Generate from your knowledge (accurate as of January 2025)
+- Generate from your knowledge
 
-**POPULATE ALL COLUMNS YOU CAN:**
-- Don't just fill ID columns - populate research columns too!
+**🎯 YOUR PRIMARY JOB: IDENTIFY ROWS (ID Columns)**
+- **CRITICAL: Populate ID columns** - these uniquely identify the entity (e.g., Company Name, Person Name)
+- **OPPORTUNISTIC: Populate other columns** - only if you have data from sources
+- **DO NOT infer or guess missing research column values** - leave empty if not in sources
+- Empty research columns are NORMAL - the validator will populate them downstream via web search
 - If extracted_tables has "Funding" and you defined "Funding" column → Include it
 - If you know the US state capitals → Include them
 - Mark populated_columns and missing_columns for each row
@@ -117,29 +117,29 @@ If background_research has `extracted_tables`:
 ## ⚡ DECISION: Trigger Row Discovery?
 ═══════════════════════════════════════════════════════════════
 
-**Set trigger_row_discovery based on:**
+**🚨 CRITICAL: trigger_row_discovery is ONLY about ROW QUANTITY, not column completeness**
 
 ### trigger_row_discovery = false (Skip Discovery)
 
-**When:**
-- You generated ALL rows the user wants (exact count or sufficient set)
-- Critical columns are populated with reliable data (minor columns can be empty)
+**When you have ENOUGH ROWS identified:**
+- You identified ALL entities the user wants (exact count or sufficient set)
+- ID columns are populated to uniquely identify each entity
+- **Research columns can be mostly empty - the validator handles that downstream**
 - Set is complete and finite
-- User would be satisfied with what you've provided
 
 **Examples:**
-- Generated 50 US states with capitals from knowledge → Complete
-- Extracted 54 paper references from conversation → Complete
-- Parsed 50 companies from extracted_tables with funding/description → Complete
-- **User asks for "top 5 LLMs", you provided 5 complete rows with key metrics → Complete (even if 1-2 minor columns empty)**
+- Generated 50 US states with just names → Complete (validator adds population data)
+- Extracted 54 paper references with titles/authors → Complete (validator adds citations)
+- Identified 20 billionaires by name from tables → Complete (validator populates net worth, tax data)
+- **User asks for "top 5 LLMs", you identified 5 by name → Complete (even if ALL research columns empty)**
 
-**"Good Enough" Threshold:**
-- Have you met the user's quantity expectation? (they asked for 5, you have 5)
-- Are the ID columns + most important research columns populated? (core metrics present)
-- Are empty columns truly critical or just nice-to-have? (Sample Size vs Hallucination Rate)
-- Would the user say "this is what I wanted" if they saw it now?
+**"Good Enough" Threshold for ROWS:**
+- Have you identified enough ENTITIES? (they asked for 5, you identified 5)
+- Are the ID columns populated? (can uniquely identify each entity)
+- **Empty research columns are FINE** - validator will populate them
+- Would the user say "you found the right entities" if they saw the row IDs?
 
-**If YES to all → Set trigger_row_discovery=false**
+**If YES → Set trigger_row_discovery=false (even if most columns are empty)**
 
 **Requirements:**
 - Provide skip_rationale explaining why discovery not needed
@@ -147,21 +147,23 @@ If background_research has `extracted_tables`:
 
 ### trigger_row_discovery = true (Run Discovery)
 
-**When:**
-- Need MORE rows than you can generate (quantity gap)
+**When you need MORE ROWS (more entities):**
+- Need MORE entities than you can identify (quantity gap)
 - User explicitly requested "all X" and you only have samples
-- Critical columns are EMPTY across most/all rows and need web search to populate
-- User will NOT be content with what you have
+- You have 0 rows or far fewer than requested
+- Cannot identify enough entities from available sources
 
 **Examples:**
 - Generated 30 companies from starting_tables, user specified 50, need 20 more → Discovery
 - Have 9 City Council winners, user wants all election winners (School Committee too) → Discovery
 - User asks "find AI companies hiring", you have 0 rows → Discovery
+- User asks for 100 researchers, you only identified 20 → Discovery
 
 **Counter-Examples (DO NOT trigger discovery):**
-- Generated 5 complete rows, user asked for "top 5" → Skip (have exactly what user wants)
-- Generated 50 papers with titles/authors, 1 minor column empty → Skip (core data complete)
-- Generated all 50 US states, want to add population data → Skip (can validate later)
+- Identified 5 entities by name, user asked for "top 5" → Skip (have enough rows, even if columns empty)
+- Identified 50 papers by title, most columns empty → Skip (have enough rows, validator fills columns)
+- Identified 20 billionaires by name, missing net worth data → Skip (have enough rows, validator fills data)
+- Generated all 50 US states by name, missing population → Skip (have enough rows, validator fills data)
 
 **🚨 CRITICAL REQUIREMENT - READ CAREFULLY:**
 
@@ -374,7 +376,7 @@ target_per_subdomain = total_target / subdomain_count
   },
 
   "trigger_row_discovery": true,
-  "discovery_guidance": "Have 30 companies from Forbes with names and funding. Need to: (1) Find 20 more companies from Y Combinator and other sources, (2) Populate Employee Count and Has Job Posting columns via web search"
+  "discovery_guidance": "Have 30 companies identified by name from Forbes. Need to find 20 more companies from Y Combinator and other sources to reach 50 total entities."
 }
 ```
 
@@ -418,8 +420,8 @@ target_per_subdomain = total_target / subdomain_count
 - Reuse citation numbers for the same source across different cells
 
 **About trigger_row_discovery:**
-- false: You have ALL rows with sufficient data
-- true: Need discovery to find more rows OR populate missing columns
+- false: Identified enough entities (rows) - validator fills empty columns
+- true: Need to find MORE entities (more rows)
 - Provide appropriate rationale/guidance
 
 **About subdomains:**
@@ -440,8 +442,8 @@ target_per_subdomain = total_target / subdomain_count
 
 **IF trigger_row_discovery = false:**
 - [ ] Provided skip_rationale
-- [ ] Generated ALL rows user wants
-- [ ] Most columns populated with reliable data
+- [ ] Identified ALL entities (rows) user wants
+- [ ] ID columns populated (research columns can be empty - validator handles those)
 - [ ] NO subdomains in search_strategy
 
 **IF trigger_row_discovery = true:**
@@ -460,10 +462,10 @@ if trigger_row_discovery == true AND len(subdomains) == 0:
 ```
 
 **Before setting trigger_row_discovery=true, ask yourself:**
-- Do I already have all the rows the user wants? → If YES, set to false
-- Are critical columns mostly populated? → If YES, set to false
-- Would the user be satisfied with what I have? → If YES, set to false
-- **Only set to true if you genuinely need web search to find more rows**
+- Do I have enough ENTITIES identified (row quantity)? → If YES, set to false
+- Are ID columns populated to uniquely identify entities? → If YES, set to false
+- **Ignore empty research columns** - validator fills those downstream
+- **Only set to true if you need to find MORE ENTITIES (more rows)**
 
 **ALWAYS:**
 - [ ] Populate research_values for columns you have reliable data for
