@@ -61,7 +61,7 @@ class CloneProvider:
             
             # Execute query with session context from ai_client (set via set_session_context)
             logger.info(f"[CLONE_PROVIDER] Executing agentic pipeline for model: {model} (provider={provider}, findall={findall}, extraction={extraction})")
-            logger.info(f"[CLONE_PROVIDER] Memory context: session_id={self.ai_client.session_id}, email={self.ai_client.email}, s3_manager={type(self.ai_client.s3_manager).__name__ if self.ai_client.s3_manager else 'None'}")
+            logger.info(f"[CLONE_PROVIDER] Using ai_client instance {id(self.ai_client)}: session_id={self.ai_client.session_id}, email={self.ai_client.email}, s3_manager={type(self.ai_client.s3_manager).__name__ if self.ai_client.s3_manager else 'None'}")
 
             result = await clone.query(
                 prompt=prompt,

@@ -120,7 +120,7 @@ class AIAPIClient:
         self.session_id = session_id
         self.email = email
         self.s3_manager = s3_manager
-        logger.info(f"[AI_CLIENT_MEMORY] Session context set: session_id={session_id}, email={email}, s3_manager={type(s3_manager).__name__ if s3_manager else 'None'}")
+        logger.info(f"[AI_CLIENT_MEMORY] Session context set on instance {id(self)}: session_id={session_id}, email={email}, s3_manager={type(s3_manager).__name__ if s3_manager else 'None'}")
 
     def _get_backup_models(self, primary_model: str, count: int = 2) -> List[str]:
         try:
