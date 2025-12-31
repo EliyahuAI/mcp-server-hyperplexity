@@ -155,7 +155,7 @@ You must output:
 ### Reason Keywords
 
 * If `p ≥ 0.85` → `PRIMARY`, `DOCUMENTED`, or `ATTRIBUTED`
-* If `p ≤ 0.15` → `CONTRADICTED`, `UNSOURCED`, `ANONYMOUS`, `PROMOTIONAL`, or `STALE`
+* If `p ≤ 0.15` → `CONTRADICTED`, `UNSOURCED`, `ANONYMOUS`, `PROMOTIONAL`, or §STALE`
 * Else → `OK`
 
 > **Do not extract a quote unless you are willing to place a non-trivial bet on its precise accuracy.**

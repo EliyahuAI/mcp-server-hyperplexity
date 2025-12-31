@@ -81,7 +81,7 @@ def get_snippet_extraction_batch_code_schema_v2() -> dict:
                                     "description": "Snippet as [detail_limitation, code]. Position-based: [0]=detail_limitation, [1]=code. HANDLE FIRST, code second. Always exactly 2 elements.",
                                     "items": {
                                         "type": "string",
-                                        "description": "Either detail_limitation (position 0) or location code (position 1). Location codes start with backtick like S1:1.1 or S2:2.3-2.5 or S1:* for pass-all."
+                                        "description": "Either detail_limitation (position 0) or location code (position 1). Location codes start with § like §S1:1.1 or §S2:2.3-2.5 or §S1:* for pass-all."
                                     }
                                 }
                             }
@@ -130,7 +130,7 @@ def get_snippet_extraction_code_schema_v2() -> dict:
                         "description": "Snippet as [detail_limitation, code]. Always exactly 2 elements.",
                         "items": {
                             "type": "string",
-                            "description": "Either detail_limitation (position 0) or location code (position 1). Location codes start with backtick like 1.1 or 2.3-2.5."
+                            "description": "Either detail_limitation (position 0) or location code (position 1). Location codes start with § like §1.1 or §2.3-2.5."
                         }
                     }
                 }

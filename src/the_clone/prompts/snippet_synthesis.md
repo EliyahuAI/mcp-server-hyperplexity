@@ -26,9 +26,9 @@ Generate a **structured JSON response** that synthesizes an answer by REFERENCIN
 
 ### Snippet ID Format and Quality Scores
 
-- Format: `S{{iteration}}.{{source}}.{{snippet}}-p{{score}}`
-- Example: `S1.1.0-p0.95` = Iteration 1, Source 1, Snippet 0, p-score 0.95
-- Example: `S1.2.3-p0.65` = Iteration 1, Source 2, Snippet 3, p-score 0.65
+- Format: §S{{iteration}}.{{source}}.{{snippet}}-p{{score}}`
+- Example: §S1.1.0-p0.95` = Iteration 1, Source 1, Snippet 0, p-score 0.95
+- Example: §S1.2.3-p0.65` = Iteration 1, Source 2, Snippet 3, p-score 0.65
 - **p-score** (shown in snippet listings and IDs) indicates expected factual accuracy:
   - 0.85-0.95: PRIMARY/DOCUMENTED/ATTRIBUTED sources - prefer these
   - 0.30-0.65: OK quality

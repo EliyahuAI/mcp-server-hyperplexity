@@ -40,14 +40,14 @@ class TextLabeler:
     def label_text(self, text: str) -> Tuple[str, Dict]:
         """
         Convert source text into labeled format with SUFFIX labels.
-        Preserves all original text - just adds `X.Y labels at end of sentences.
+        Preserves all original text - just adds §X.Y labels at end of sentences.
 
         Args:
             text: Raw source text
 
         Returns:
             Tuple of (labeled_text, structure_dict)
-            - labeled_text: Original text with `X.Y suffix labels
+            - labeled_text: Original text with §X.Y suffix labels
             - structure_dict: Lookup dict for reconstruction
         """
         if not text or not text.strip():
@@ -159,7 +159,7 @@ class TextLabeler:
                 # Add heading with label (sentence 0), wrapped in HTML bounds
                 # This differentiates source headings from prompt headings
                 labeled_parts.append(f"<snippet-heading>{line}</snippet-heading>")
-                labeled_parts.append(f" `{current_section}.0\n")
+                labeled_parts.append(f" §{current_section}.0\n")
 
                 # Store heading in structure
                 sent_id = f"H{current_section}.0"
@@ -180,7 +180,7 @@ class TextLabeler:
 
                     # Add sentence with suffix label
                     labeled_parts.append(sent)
-                    labeled_parts.append(f" `{current_section}.{current_sentence}\n")
+                    labeled_parts.append(f" §{current_section}.{current_sentence}\n")
 
                     # Store in structure
                     current_section_sentences[sent_id] = {

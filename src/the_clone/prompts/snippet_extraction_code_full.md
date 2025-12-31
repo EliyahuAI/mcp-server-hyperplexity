@@ -22,8 +22,8 @@ This source was found by **Search {primary_search_num}**, but it may contain inf
 ## Labeled Source
 
 The source text below has been labeled with backtick suffixes (`X.Y) at the end of each sentence:
-- Headings end with `X.0 (e.g., `1.0, `2.0)
-- Sentences end with `X.Y (e.g., `1.1, `1.2, `2.1)
+- Headings end with `X.0 (e.g., §1.0, §2.0)
+- Sentences end with `X.Y (e.g., §1.1, §1.2, §2.1)
 - All original text, markdown, and formatting is preserved
 
 {source_full_text}
@@ -160,7 +160,7 @@ You must output:
 ### Reason Keywords
 
 * If `p ≥ 0.85` → `PRIMARY`, `DOCUMENTED`, or `ATTRIBUTED`
-* If `p ≤ 0.15` → `CONTRADICTED`, `UNSOURCED`, `ANONYMOUS`, `PROMOTIONAL`, or `STALE`
+* If `p ≤ 0.15` → `CONTRADICTED`, `UNSOURCED`, `ANONYMOUS`, `PROMOTIONAL`, or §STALE`
 * Else → `OK`
 
 > **Do not extract a quote unless you are willing to place a non-trivial bet on its precise accuracy.**
@@ -171,22 +171,22 @@ You must output:
 
 **Return codes (field `c`) matching the backtick labels in the source above.**
 
-Copy exact labels: `` `1.1 ``, `` `1.2 ``, `` `2.1 ``, etc.
-Ranges: `` `1.1-1.3 `` or `` `1.1-3 ``
-Attribution: `` [`2.w1-4] `1.1 ``
-Context: `` `1.1 [of X] ``
+Copy exact labels: `` §1.1 ``, `` §1.2 ``, `` §2.1 ``, etc.
+Ranges: `` §1.1-1.3 `` or `` §1.1-3 ``
+Attribution: `` [§2.w1-4] §1.1 ``
+Context: `` §1.1 [of X] ``
 
-**Must include section.sentence (`` `1.1 `` NOT `` `1 ``). Only use labels that exist.**
+**Must include section.sentence (`` §1.1 `` NOT `` §1 ``). Only use labels that exist.**
 
 ```json
 {{
   "quotes_by_search": {{
     "1": [
-      {{"c": "`1.1", "p": 0.95, "r": "PRIMARY"}},
-      {{"c": "`1.2-1.3", "p": 0.65, "r": "OK"}}
+      {{"c": "§1.1", "p": 0.95, "r": "PRIMARY"}},
+      {{"c": "§1.2-1.3", "p": 0.65, "r": "OK"}}
     ],
     "2": [
-      {{"c": "[`2.1.w1-4] `1.3", "p": 0.85, "r": "ATTRIBUTED"}}
+      {{"c": "[§2.1.w1-4] §1.3", "p": 0.85, "r": "ATTRIBUTED"}}
     ]
   }}
 }}

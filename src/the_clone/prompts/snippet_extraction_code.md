@@ -26,21 +26,21 @@ Return **codes with backtick prefix** (not full text) for essential quotes.
 - Info that duplicates what's already known
 
 **Code format:** Use backtick `` ` `` before codes
-- `` `1 `` = sentence 1
-- `` `1-3 `` = sentences 1-3
-- `` `1.w5-7 `` = words 5-7 of sentence 1
-- `` [`2.w1-3] `1 `` = pull words 1-3 from s2 as attribution for s1 → `[Dr. Smith] sentence 1`
-- `` `1 [of Gemini] `` = add literal context → `sentence 1 [of Gemini]`
-- `` [re: Topic] `2 `` = off-topic marker → `[re: Topic] sentence 2`
+- `` §1 `` = sentence 1
+- `` §1-3 `` = sentences 1-3
+- `` §1.w5-7 `` = words 5-7 of sentence 1
+- `` [§2.w1-3] §1 `` = pull words 1-3 from s2 as attribution for s1 → `[Dr. Smith] sentence 1`
+- `` §1 [of Gemini] `` = add literal context → `sentence 1 [of Gemini]`
+- `` [re: Topic] §2 `` = off-topic marker → `[re: Topic] sentence 2`
 
 **Examples:**
 ```
 [1] Results were significant.
 [2] Dr. Jane Smith led the study.
 ```
-- Code `` `2 `` → "Dr. Jane Smith led the study."
-- Code `` [`2.w1-4] `1 `` → "[Dr. Jane Smith] Results were significant."
-- Code `` `1 [from study] `` → "Results were significant [from study]"
+- Code `` §2 `` → "Dr. Jane Smith led the study."
+- Code `` [§2.w1-4] §1 `` → "[Dr. Jane Smith] Results were significant."
+- Code `` §1 [from study] `` → "Results were significant [from study]"
 
 ---
 
@@ -66,9 +66,9 @@ Return **codes with backtick prefix** (not full text) for essential quotes.
 {{
   "quotes_by_search": {{
     "1": [
-      {{"c": "`1", "p": 0.95, "r": "PRIMARY"}},
-      {{"c": "[`2.w1-3] `3", "p": 0.85, "r": "ATTRIBUTED"}},
-      {{"c": "`4 [of Gemini]", "p": 0.65, "r": "OK"}}
+      {{"c": "§1", "p": 0.95, "r": "PRIMARY"}},
+      {{"c": "[§2.w1-3] §3", "p": 0.85, "r": "ATTRIBUTED"}},
+      {{"c": "§4 [of Gemini]", "p": 0.65, "r": "OK"}}
     ]
   }}
 }}

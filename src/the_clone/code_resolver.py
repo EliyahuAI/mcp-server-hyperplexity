@@ -23,8 +23,8 @@ class CodeResolver:
 
         Args:
             structure: Structure dict from TextLabeler
-            labeled_text: Labeled text with `X.Y suffixes (for suffix-based resolution)
-            original_text: Original unlabeled text (for `* pass-all code)
+            labeled_text: Labeled text with §X.Y suffixes (for suffix-based resolution)
+            original_text: Original unlabeled text (for §* pass-all code)
         """
         self.structure = structure
         self.sections = {s["id"]: s for s in structure.get("sections", [])}
@@ -73,16 +73,16 @@ class CodeResolver:
             logger.debug(f"[RESOLVER] Stripped trailing backtick from code: {code} -> {code_clean}")
 
         try:
-            # Special case: `* means pass entire source
-            if code_clean == '`*' or code_clean == '*':
+            # Special case: §* means pass entire source
+            if code_clean == '§*' or code_clean == '*':
                 if self.original_text:
-                    logger.info(f"[RESOLVER] Pass-all code `* - returning entire source ({len(self.original_text)} chars)")
+                    logger.info(f"[RESOLVER] Pass-all code §* - returning entire source ({len(self.original_text)} chars)")
                     return self.original_text
                 else:
-                    logger.warning(f"[RESOLVER] Pass-all code `* but no original_text available")
+                    logger.warning(f"[RESOLVER] Pass-all code §* but no original_text available")
                     return ""
 
-            # For simple codes without brackets (e.g., "`1", "`1-3"), directly resolve
+            # For simple codes without brackets (e.g., "§1", "§1-3"), directly resolve
             # Strip backtick prefix if present
             if code_clean.startswith('`'):
                 code_clean = code_clean[1:]

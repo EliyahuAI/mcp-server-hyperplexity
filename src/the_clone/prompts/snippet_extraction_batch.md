@@ -11,7 +11,7 @@ Extract quotable snippets with codes for synthesis. **Synthesis will NOT see ori
 
 ## Labeled Sources
 
-Sentences labeled `` `SX:Y.Z ``, headings labeled `` `SX:Y.0 `` (X=source, Y=section, Z=sentence). Copy exact labels.
+Sentences labeled `` §SX:Y.Z ``, headings labeled `` §SX:Y.0 `` (X=source, Y=section, Z=sentence). Copy exact labels.
 
 {formatted_sources}
 
@@ -66,7 +66,7 @@ Judge extracts all atomic claims from source and tests each. Pass = precisely ac
 - Doesn't need full article to verify
 - Skip AI-generated SEO slop (mark source c:LA/SL if encountered)
 
-**Pass-all flag:** `` `SX:* `` → Use entire source if dense/interconnected or would extract >50%
+**Pass-all flag:** `` §SX:* `` → Use entire source if dense/interconnected or would extract >50%
 
 **Snippet Requirements:**
 - **Self-contained:** [SHORT CONTEXT] + DIRECT FACT (never paraphrase)
@@ -74,20 +74,20 @@ Judge extracts all atomic claims from source and tests each. Pass = precisely ac
 - **Must be testable:** Given only URL, title, and snippet, a judge can verify all claims
 
 **Code Syntax:**
-- Single: `` `S1:1.1 ``
-- **Range (REQUIRED for consecutive sentences):** `` `S1:1.5-1.7 ``
-- Word range: `` `S2:1.1.w5-7 `` (1-indexed)
-- Heading context: `` [`S1:2.0] `S1:2.1 ``
-- Attribution: `` [`S1:2.1.w1-4] `S1:1.3 `` (REQUIRED for c:A sources)
-- Clarification: `` `S1:1.1 [of Gemini] ``
+- Single: `` §S1:1.1 ``
+- **Range (REQUIRED for consecutive sentences):** `` §S1:1.5-1.7 ``
+- Word range: `` §S2:1.1.w5-7 `` (1-indexed)
+- Heading context: `` [§S1:2.0] §S1:2.1 ``
+- Attribution: `` [§S1:2.1.w1-4] §S1:1.3 `` (REQUIRED for c:A sources)
+- Clarification: `` §S1:1.1 [of Gemini] ``
 
 **Consecutive Lines (CRITICAL):**
 - **Consecutive lines within same heading section = ONE snippet**
-- Use ranges to group: `` `S1:2.1-2.4 `` for lines that flow together under one heading
+- Use ranges to group: `` §S1:2.1-2.4 `` for lines that flow together under one heading
 - Don't split related content that belongs together conceptually
 
 **Tables (CRITICAL):**
-- ONE snippet per table: `` `S1:5.0-5.7 `` (header row 0 + data rows 1-7)
+- ONE snippet per table: `` §S1:5.0-5.7 `` (header row 0 + data rows 1-7)
 - NEVER separate rows
 
 **CRITICAL:** Only use codes that exist in sources.
@@ -126,8 +126,8 @@ Max 25 chars. Must be unique within source (append _2, _3 if needed).
       "p": "p95",
       "quotes_by_search": {{
         "1": [
-          ["mortgage-rate_dec-2025", "`S1:1.1"],
-          ["refinance-rate_30yr-fixed", "`S1:2.1"]
+          ["mortgage-rate_dec-2025", "§S1:1.1"],
+          ["refinance-rate_30yr-fixed", "§S1:2.1"]
         ],
         "2": []
       }}
@@ -138,8 +138,8 @@ Max 25 chars. Must be unique within source (append _2, _3 if needed).
       "p": "p85",
       "quotes_by_search": {{
         "1": [
-          ["weight-loss_if-vs-cer", "[`S2:1.0] `S2:1.5"],
-          ["insulin-sensitivity_tre-protocol", "`S2:2.1-2.3"]
+          ["weight-loss_if-vs-cer", "[§S2:1.0] §S2:1.5"],
+          ["insulin-sensitivity_tre-protocol", "§S2:2.1-2.3"]
         ]
       }}
     }},
@@ -148,7 +148,7 @@ Max 25 chars. Must be unique within source (append _2, _3 if needed).
       "c": "M/O",
       "p": "p65",
       "quotes_by_search": {{
-        "1": [["ai-trends_2025", "`S3:1.1"]]
+        "1": [["ai-trends_2025", "§S3:1.1"]]
       }}
     }}
   }}
