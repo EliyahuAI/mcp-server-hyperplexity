@@ -30,6 +30,6 @@ Existing Snippets: {existing_snippet_count} collected
 
 ## Output
 
-Return ranked indices of RELEVANT sources only: `[best, second_best, ...]`
+Return ranked indices of RELEVANT sources only: [best, second_best, ...]
 
-Example: `[5, 0, 8, 2]` means source 5 is best, others excluded as off-topic.
+Example: [5, 0, 8, 2] means source 5 is best, others excluded as off-topic.
