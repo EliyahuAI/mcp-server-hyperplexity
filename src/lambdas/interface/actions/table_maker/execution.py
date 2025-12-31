@@ -133,7 +133,7 @@ from .table_maker_lib.row_discovery import RowDiscovery
 from .table_maker_lib.qc_reviewer import QCReviewer
 from .table_maker_lib.prompt_loader import PromptLoader
 from .table_maker_lib.schema_validator import SchemaValidator
-from ai_api_client import ai_client  # Use singleton, not class
+from shared.ai_api_client import ai_client  # Use singleton, not class
 
 # Import config generation
 from .config_bridge import build_table_analysis_from_conversation
@@ -284,6 +284,7 @@ def _parse_markdown_table_with_citations(
         # Extract values and citations from each cell
         row_data = {}
         row_citations = set()
+        cell_citations = {}  # NEW: Track which citations belong to which cells
 
         for header, cell in zip(headers, cells):
             if not cell:
@@ -300,10 +301,17 @@ def _parse_markdown_table_with_citations(
             if value:
                 row_data[header] = value
 
-            # Track citations
+            # Track citations for this specific cell
+            cell_source_urls = []
             for cite_num in citations_found:
                 if cite_num in citations:
-                    row_citations.add(citations[cite_num])
+                    url = citations[cite_num]
+                    row_citations.add(url)
+                    cell_source_urls.append(url)
+
+            # Store cell-level citations for Excel generation
+            if cell_source_urls:
+                cell_citations[header] = cell_source_urls
 
         # Build row in expected format
         if row_data:
@@ -315,6 +323,7 @@ def _parse_markdown_table_with_citations(
                 'research_values': research_values,
                 'source': 'Column Definition (from extracted tables)',
                 'source_urls': sorted(list(row_citations)),
+                'cell_citations': cell_citations,  # NEW: Per-cell citation URLs
                 'populated_columns': list(row_data.keys()),
                 'missing_columns': [col['name'] for col in columns if col['name'] not in row_data],
                 'match_score': 1.0,
@@ -1119,6 +1128,10 @@ async def execute_full_table_generation(
                 citations = column_result.get('citations', {})
                 initial_rows = _parse_markdown_table_with_citations(markdown_table, citations, columns)
                 logger.info(f"[STEP 1] Parsed {len(initial_rows)} rows from markdown table with {len(citations)} citations")
+
+                # Store citations dictionary in conversation_state for Excel generation
+                conversation_state['citations'] = citations
+                logger.info(f"[STEP 1] Stored {len(citations)} citations in conversation_state for Excel generation")
             else:
                 # OLD: Use rows array directly (backward compatibility)
                 initial_rows = column_result.get('rows', [])
@@ -2224,7 +2237,7 @@ async def execute_full_table_generation(
 
             csv_content = csv_buffer.getvalue()
 
-            # Save CSV to S3
+            # Save CSV to S3 (keep as template since Excel is the primary file)
             csv_filename = f"{table_name.replace(' ', '_')}_template.csv"
             csv_s3_key = storage_manager.get_table_maker_path(
                 email=email,
@@ -2253,20 +2266,149 @@ async def execute_full_table_generation(
                 f"{populated_research_count}/{total_research_cells} research cells populated ({population_pct:.1f}%)"
             )
 
-            # Update session_info.json with table_path
-            try:
-                session_info = storage_manager.load_session_info(email, session_id)
-                session_info['table_path'] = csv_s3_key
-                session_info['table_name'] = table_name
-                session_info['last_updated'] = datetime.now().isoformat()
-                storage_manager.save_session_info(email, session_id, session_info)
-                logger.info(f"[EXECUTION] Updated session_info.json with table_path: {csv_s3_key}")
-            except Exception as e_session:
-                logger.warning(f"[EXECUTION] Failed to update session_info with table_path: {e_session}")
+            # NOTE: session_info will be updated with Excel path after Excel generation
+            # (see below after Excel is created)
 
         except Exception as e:
             logger.error(f"[EXECUTION] Failed to generate CSV: {e}", exc_info=True)
             result['csv_generation_error'] = str(e)
+
+        # ======================================================================
+        # GENERATE EXCEL with sources embedded as comments
+        # ======================================================================
+        try:
+            import xlsxwriter
+            import tempfile
+
+            logger.info("[EXECUTION] Generating Excel file with source URLs embedded as comments...")
+
+            # Get citations dictionary from conversation_state
+            citations = conversation_state.get('citations', {})
+            logger.info(f"[EXECUTION] Found {len(citations)} citations for Excel generation")
+
+            # Create temporary Excel file
+            with tempfile.NamedTemporaryFile(mode='wb', suffix='.xlsx', delete=False) as tmp_file:
+                excel_temp_path = tmp_file.name
+
+            # Create workbook and worksheet
+            workbook = xlsxwriter.Workbook(excel_temp_path)
+            worksheet = workbook.add_worksheet('Data')
+
+            # Write headers
+            for col_idx, col_name in enumerate(all_column_names):
+                worksheet.write(0, col_idx, col_name)
+
+            # Write data rows with source URLs as comments on cells that have citations
+            from urllib.parse import urlparse
+            sources_added = 0
+
+            for row_idx, row in enumerate(approved_rows, start=1):
+                id_values = row.get('id_values', {})
+                research_values = row.get('research_values', {})
+                cell_citations = row.get('cell_citations', {})  # Per-cell citation URLs
+
+                for col_idx, col_name in enumerate(all_column_names):
+                    # Get cell value (already clean, citations were stripped during parsing)
+                    if col_name in id_columns:
+                        cell_value = id_values.get(col_name, '')
+                    elif col_name in research_values:
+                        cell_value = research_values.get(col_name, '')
+                    else:
+                        cell_value = ''
+
+                    # Write cell value
+                    worksheet.write(row_idx, col_idx, cell_value)
+
+                    # Add sources as comment if this cell has citations
+                    cell_source_urls = cell_citations.get(col_name, [])
+                    if cell_source_urls:
+                        # Format sources to match parser expectations (shared_table_parser.py)
+                        # Expected format:
+                        #   Sources:
+                        #   [1] Source Title (URL)
+                        comment_lines = ["Sources:"]
+                        for i, url in enumerate(cell_source_urls, 1):
+                            # Extract domain as title
+                            try:
+                                domain = urlparse(url).netloc or url
+                                # Format: [#] Domain (URL) - parser expects URL in parentheses
+                                comment_lines.append(f"[{i}] {domain} ({url})")
+                            except Exception:
+                                # Fallback: just use URL
+                                comment_lines.append(f"[{i}] Source ({url})")
+
+                        comment_text = '\n'.join(comment_lines)
+
+                        try:
+                            worksheet.write_comment(
+                                row_idx, col_idx, comment_text,
+                                {'width': 300, 'height': 150}
+                            )
+                            sources_added += 1
+                        except Exception as e_comment:
+                            logger.warning(f"[EXECUTION] Failed to add comment to row {row_idx}, col {col_idx}: {e_comment}")
+
+            # Close workbook
+            workbook.close()
+
+            # Read Excel file and upload to S3
+            with open(excel_temp_path, 'rb') as f:
+                excel_content = f.read()
+
+            # Remove '_template' or 'template' from filename for validation compatibility
+            # Clean table name: replace spaces with underscores, remove template suffix
+            clean_table_name = table_name.replace(' ', '_')
+            # Don't add '_template' suffix - validation expects clean names
+            excel_filename = f"{clean_table_name}.xlsx"
+
+            # Store in session folder (not in table_maker subfolder) for validation to find
+            session_path = storage_manager.get_session_path(email, session_id)
+            excel_s3_key = f"{session_path}{excel_filename}"
+
+            storage_manager.s3_client.put_object(
+                Bucket=storage_manager.bucket_name,
+                Key=excel_s3_key,
+                Body=excel_content,
+                ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+
+            result['excel_s3_key'] = excel_s3_key
+            result['excel_filename'] = excel_filename
+
+            # Clean up temp file
+            import os
+            os.unlink(excel_temp_path)
+
+            logger.info(
+                f"[EXECUTION] Excel generated with {len(approved_rows)} rows, "
+                f"{sources_added} cells have source comments (citations embedded per-cell)"
+            )
+
+            # Update session_info.json with Excel path (preferred over CSV for validation)
+            try:
+                session_info = storage_manager.load_session_info(email, session_id)
+                session_info['table_path'] = excel_s3_key  # Use Excel with sources
+                session_info['table_name'] = table_name
+                session_info['last_updated'] = datetime.now().isoformat()
+                storage_manager.save_session_info(email, session_id, session_info)
+                logger.info(f"[EXECUTION] Updated session_info.json with Excel table_path: {excel_s3_key}")
+            except Exception as e_session:
+                logger.warning(f"[EXECUTION] Failed to update session_info with table_path: {e_session}")
+
+        except Exception as e_excel:
+            logger.error(f"[EXECUTION] Failed to generate Excel: {e_excel}", exc_info=True)
+            result['excel_generation_error'] = str(e_excel)
+
+            # Fallback: Update session_info with CSV path if Excel failed
+            try:
+                session_info = storage_manager.load_session_info(email, session_id)
+                session_info['table_path'] = result.get('csv_s3_key')
+                session_info['table_name'] = table_name
+                session_info['last_updated'] = datetime.now().isoformat()
+                storage_manager.save_session_info(email, session_id, session_info)
+                logger.info(f"[EXECUTION] Excel failed, updated session_info.json with CSV fallback")
+            except Exception as e_session:
+                logger.warning(f"[EXECUTION] Failed to update session_info with CSV fallback: {e_session}")
 
         # ======================================================================
         # COMPLETE
@@ -2277,6 +2419,7 @@ async def execute_full_table_generation(
         conversation_state['columns'] = columns
         conversation_state['table_name'] = table_name
         conversation_state['csv_s3_key'] = result.get('csv_s3_key')
+        conversation_state['excel_s3_key'] = result.get('excel_s3_key')  # Store Excel key with sources
         _save_to_s3(
             storage_manager, email, session_id, conversation_id,
             'conversation_state.json', conversation_state
