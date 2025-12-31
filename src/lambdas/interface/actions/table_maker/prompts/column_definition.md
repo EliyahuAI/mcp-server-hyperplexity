@@ -59,7 +59,9 @@ IF any answer is NO (need more entities):
 
 **ALWAYS OUTPUT:**
 1. **columns** (ID + research columns)
-2. **search_strategy** with requirements (hard + soft, minimum 1)
+2. **search_strategy** object with:
+   - `description` (what entities to find)
+   - `requirements` array (hard + soft, minimum 1)
 3. **table_name**
 4. **rows** (generate ALL you can from: extracted_tables, starting_tables, conversation, or model knowledge)
 5. **trigger_row_discovery** (true/false - do we need row discovery to find/populate more?)
