@@ -468,7 +468,7 @@ async def handle_row_discovery(event: Dict[str, Any], context: Any) -> Dict[str,
         prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
         schemas_dir = os.path.join(os.path.dirname(__file__), 'schemas')
 
-        ai_client = AIAPIClient()
+        # Use module-level singleton
         prompt_loader = PromptLoader(prompts_dir)
         schema_validator = SchemaValidator(schemas_dir)
 
