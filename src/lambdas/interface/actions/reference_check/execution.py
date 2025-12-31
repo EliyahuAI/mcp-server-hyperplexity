@@ -78,7 +78,7 @@ from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
 from dynamodb_schemas import update_run_status
 
 # AI API client
-from ai_api_client import AIAPIClient
+from ai_api_client import ai_client
 
 # Import conversation helpers
 from .conversation import _load_conversation_state, _save_conversation_state
@@ -300,7 +300,7 @@ def _add_api_call_to_runs(
         else:
             # Fallback: regenerate enhanced metrics if not present
             logger.warning(f"[EXECUTION] enhanced_data not found in api_response, regenerating...")
-            new_call_metrics = AIAPIClient().get_enhanced_call_metrics(
+            new_call_metrics = ai_client.get_enhanced_call_metrics(
                 response=api_response.get('response', api_response),
                 model=model,
                 processing_time=processing_time,
@@ -327,7 +327,7 @@ def _add_api_call_to_runs(
         logger.info(f"[EXECUTION] Added new {call_type} call metrics for {model}, total calls: {len(existing_call_metrics)}")
 
         # Step 4: Re-aggregate ALL calls
-        aggregated = AIAPIClient().aggregate_provider_metrics(existing_call_metrics)
+        aggregated = ai_client.aggregate_provider_metrics(existing_call_metrics)
         providers = aggregated.get('providers', {})
         totals = aggregated.get('totals', {})
 
@@ -533,7 +533,7 @@ async def _extract_claims(
             enhanced_data = api_response['enhanced_data']
         else:
             # Fallback: regenerate enhanced metrics
-            ai_client = AIAPIClient()
+            # Use module-level singleton
             enhanced_data = ai_client.get_enhanced_call_metrics(
                 response=api_response.get('response', api_response),
                 model=model,
@@ -648,7 +648,7 @@ async def _validate_single_claim(
             enhanced_data = api_response['enhanced_data']
         else:
             # Fallback: regenerate enhanced metrics
-            ai_client = AIAPIClient()
+            # Use module-level singleton
             enhanced_data = ai_client.get_enhanced_call_metrics(
                 response=api_response.get('response', api_response),
                 model=model,

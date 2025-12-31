@@ -9,7 +9,7 @@ import json
 import logging
 import os
 from typing import Dict, Any, List
-from ai_api_client import AIAPIClient
+from ai_api_client import ai_client
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -26,7 +26,7 @@ class ReferenceExtractor:
             config: Reference check configuration dict
         """
         self.config = config
-        self.ai_client = AIAPIClient()
+        self.ai_client = ai_client
 
         # Load prompt template
         prompt_path = os.path.join(
