@@ -1633,7 +1633,8 @@ async def execute_full_table_generation(
                         min_row_count=min_row_count,
                         search_strategy=search_strategy,
                         discovery_result=discovery_result,
-                        retrigger_allowed=retrigger_allowed
+                        retrigger_allowed=retrigger_allowed,
+                        column_result=column_result  # Pass column_definition result for prepopulated rows
                     )
 
                     if not qc_result.get('success'):

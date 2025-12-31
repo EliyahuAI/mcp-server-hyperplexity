@@ -1,269 +1,132 @@
 {
   "type": "object",
-  "required": [],
+  "required": ["action"],
   "properties": {
-    "reviewed_rows": {
-      "type": "array",
-      "description": "All rows after QC review with keep/reject decisions",
-      "items": {
-        "type": "object",
-        "required": ["row_id", "row_score", "qc_score", "keep"],
+    "action": {
+      "type": "string",
+      "enum": ["pass", "filter", "retrigger_discovery", "restructure"],
+      "description": "QC decision: pass=approve all as-is, filter=remove some rows, retrigger_discovery=need more rows, restructure=0 rows need table redesign"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "action": { "const": "pass" } }
+      },
+      "then": {
+        "required": ["action", "rows", "overall_score"],
         "properties": {
-          "row_id": {
-            "type": "string",
-            "description": "Row identifier: row number + first ID column value (e.g., '1-Benchling')"
+          "rows": {
+            "type": "array",
+            "description": "All rows in priority order (best first)",
+            "items": { "type": "object" }
           },
-          "row_score": {
-            "type": "number",
-            "description": "Original discovery score (copied from input)"
-          },
-          "qc_score": {
+          "overall_score": {
             "type": "number",
             "minimum": 0,
             "maximum": 1,
-            "description": "QC assessment score - more flexible than discovery rubric"
-          },
-          "qc_rationale": {
-            "type": "string",
-            "description": "1-2 sentence explanation of QC decision"
-          },
-          "keep": {
-            "type": "boolean",
-            "description": "Whether to include this row in final table"
-          },
-          "priority_adjustment": {
-            "type": "string",
-            "enum": ["promote", "demote", "none"],
-            "description": "Whether to adjust priority vs discovery ranking"
+            "description": "Overall quality score for the set"
           }
         }
       }
     },
-    "rejected_rows": {
-      "type": "array",
-      "description": "Rows that were rejected (keep=false)",
-      "items": {
-        "type": "object",
-        "required": ["row_id", "rejection_reason"],
+    {
+      "if": {
+        "properties": { "action": { "const": "filter" } }
+      },
+      "then": {
+        "required": ["action", "rows", "removed", "overall_score"],
         "properties": {
-          "row_id": {
-            "type": "string",
-            "description": "Row identifier: row number + first ID column value"
+          "rows": {
+            "type": "array",
+            "description": "Approved rows in priority order (best first)",
+            "items": { "type": "object" }
           },
-          "rejection_reason": {
-            "type": "string",
-            "description": "1-2 sentence explanation of why row was rejected"
+          "removed": {
+            "type": "array",
+            "description": "Removed rows with explanations",
+            "items": {
+              "type": "object",
+              "required": ["row_id", "reason"],
+              "properties": {
+                "row_id": { "type": "string" },
+                "reason": { "type": "string", "description": "1 sentence why removed" }
+              }
+            }
+          },
+          "overall_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
           }
         }
       }
     },
-    "qc_summary": {
-      "type": "object",
-      "required": ["total_reviewed", "kept", "rejected"],
-      "properties": {
-        "total_reviewed": {
-          "type": "integer",
-          "description": "Total number of rows reviewed"
-        },
-        "kept": {
-          "type": "integer",
-          "description": "Number of rows marked keep=true"
-        },
-        "rejected": {
-          "type": "integer",
-          "description": "Number of rows marked keep=false"
-        },
-        "promoted": {
-          "type": "integer",
-          "description": "Number of rows with priority_adjustment=promote"
-        },
-        "demoted": {
-          "type": "integer",
-          "description": "Number of rows with priority_adjustment=demote"
-        },
-        "reasoning": {
-          "type": "string",
-          "description": "Overall summary of QC decisions (1-2 sentences)"
-        },
-        "minimum_guarantee_applied": {
-          "type": "boolean",
-          "description": "Whether rejected rows were promoted to meet minimum row count"
-        },
-        "insufficient_rows": {
-          "type": "boolean",
-          "description": "Whether total discovered rows were below minimum threshold"
-        }
-      }
-    },
-    "insufficient_rows_statement": {
-      "type": "string",
-      "description": "Optional: Overall assessment of why so few results were discovered (only if insufficient_rows=true)"
-    },
-    "insufficient_rows_recommendations": {
-      "type": "array",
-      "description": "Optional: Recommendations for improving results (only if insufficient_rows=true)",
-      "items": {
-        "type": "object",
-        "required": ["type", "recommendation"],
+    {
+      "if": {
+        "properties": { "action": { "const": "retrigger_discovery" } }
+      },
+      "then": {
+        "required": ["action", "rows", "discovery_guidance", "new_subdomains", "overall_score"],
         "properties": {
-          "type": {
-            "type": "string",
-            "enum": ["search_broadening", "table_restructuring", "criteria_adjustment"],
-            "description": "Type of recommendation: search_broadening (adjust request wording), table_restructuring (change columns), or criteria_adjustment (relax requirements)"
+          "rows": {
+            "type": "array",
+            "description": "Current approved rows",
+            "items": { "type": "object" }
           },
-          "issue": {
+          "discovery_guidance": {
             "type": "string",
-            "description": "The problem identified"
+            "description": "What discovery needs to find (focus on MORE ROWS, not filling columns)"
           },
-          "recommendation": {
-            "type": "string",
-            "description": "How to address it"
+          "new_subdomains": {
+            "type": "array",
+            "description": "New search subdomains to find more entities",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["name", "focus", "search_queries", "target_rows"],
+              "properties": {
+                "name": { "type": "string" },
+                "focus": { "type": "string" },
+                "search_queries": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "minItems": 2
+                },
+                "target_rows": { "type": "integer", "minimum": 1 }
+              }
+            }
+          },
+          "overall_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
           }
         }
       }
     },
-    "recovery_decision": {
-      "type": "object",
-      "description": "REQUIRED when 0 rows approved: Autonomous decision on whether to restructure or give up",
-      "required": ["decision", "reasoning"],
-      "properties": {
-        "decision": {
-          "type": "string",
-          "enum": ["restructure", "give_up"],
-          "description": "restructure = can fix with column/requirement changes, give_up = fundamentally impossible"
-        },
-        "reasoning": {
-          "type": "string",
-          "description": "2-3 sentences explaining why you chose this decision"
-        },
-        "restructuring_guidance": {
-          "type": "object",
-          "description": "Required if decision=restructure. Instructions for how to restructure the table.",
-          "properties": {
-            "column_changes": {
-              "type": "string",
-              "description": "Specific instructions for column generator to restructure columns"
-            },
-            "requirement_changes": {
-              "type": "string",
-              "description": "How to adjust hard/soft requirements"
-            },
-            "search_broadening": {
-              "type": "string",
-              "description": "How to expand search strategy/domains"
-            }
-          }
-        },
-        "fundamental_problem": {
-          "type": "string",
-          "description": "Required if decision=give_up. Specific issue that makes this impossible."
-        },
-        "user_facing_message": {
-          "type": "string",
-          "description": "Required if decision=restructure. Message shown to user during automatic restructure."
-        },
-        "user_facing_apology": {
-          "type": "string",
-          "description": "Required if decision=give_up. Apology message explaining why it's impossible."
-        }
-      }
-    },
-    "retrigger_discovery": {
-      "type": "object",
-      "description": "Optional: Request to retrigger discovery with new strategy",
-      "properties": {
-        "should_retrigger": {
-          "type": "boolean",
-          "description": "Whether to retrigger discovery"
-        },
-        "reason": {
-          "type": "string",
-          "description": "Why retrigger is needed"
-        },
-        "new_subdomains": {
-          "type": "array",
-          "description": "Completely new subdomain definitions (de-novo, not modifications)",
-          "items": {
+    {
+      "if": {
+        "properties": { "action": { "const": "restructure" } }
+      },
+      "then": {
+        "required": ["action", "restructuring_guidance", "user_message"],
+        "properties": {
+          "restructuring_guidance": {
             "type": "object",
-            "required": ["name", "focus", "search_queries", "target_rows"],
+            "required": ["column_changes", "requirement_changes", "search_broadening"],
             "properties": {
-              "name": {
-                "type": "string",
-                "description": "New subdomain name"
-              },
-              "focus": {
-                "type": "string",
-                "description": "What to search for"
-              },
-              "search_queries": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "target_rows": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "included_domains": {
-                "type": "array",
-                "description": "Optional: Override included domains",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "excluded_domains": {
-                "type": "array",
-                "description": "Optional: Override excluded domains",
-                "items": {
-                  "type": "string"
-                }
-              }
+              "column_changes": { "type": "string" },
+              "requirement_changes": { "type": "string" },
+              "search_broadening": { "type": "string" }
             }
-          }
-        },
-        "updated_requirements": {
-          "type": "array",
-          "description": "Optional: Updated requirements (can relax/tighten)",
-          "items": {
-            "type": "object",
-            "required": ["requirement", "type", "rationale"],
-            "properties": {
-              "requirement": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": ["hard", "soft"]
-              },
-              "rationale": {
-                "type": "string",
-                "description": "Why this change"
-              }
-            }
-          }
-        },
-        "updated_default_domains": {
-          "type": "object",
-          "description": "Optional: Updated default domain filtering",
-          "properties": {
-            "included_domains": {
-              "type": "array",
-              "description": "Add or replace included domains",
-              "items": {
-                "type": "string"
-              }
-            },
-            "excluded_domains": {
-              "type": "array",
-              "description": "Add or replace excluded domains",
-              "items": {
-                "type": "string"
-              }
-            }
+          },
+          "user_message": {
+            "type": "string",
+            "description": "User-facing message explaining the restructure"
           }
         }
       }
     }
-  }
+  ]
 }

@@ -50,7 +50,8 @@ class QCReviewer:
         min_row_count: int = 4,
         search_strategy: Dict = None,
         discovery_result: Dict = None,
-        retrigger_allowed: bool = True
+        retrigger_allowed: bool = True,
+        column_result: Dict = None
     ) -> Dict[str, Any]:
         """
         Review and filter discovered rows using QC criteria.
@@ -124,6 +125,21 @@ class QCReviewer:
                 result['processing_time'] = time.time() - start_time
                 return result
 
+            # Extract prepopulated rows from column_definition (if available)
+            prepopulated_markdown = ""
+            prepopulated_citations = {}
+            pre_row_count = 0
+            if column_result:
+                prepopulated_markdown = column_result.get('prepopulated_rows_markdown', '')
+                prepopulated_citations = column_result.get('citations', {})
+                # Count rows in markdown (lines minus header and separator)
+                if prepopulated_markdown:
+                    lines = [l for l in prepopulated_markdown.split('\n') if l.strip() and not l.startswith('|---')]
+                    pre_row_count = max(0, len(lines) - 1)  # Subtract header row
+
+            if not prepopulated_markdown:
+                prepopulated_markdown = "(No pre-existing rows from column_definition)"
+
             # Build prompt variables with full context
             variables = {
                 'TABLE_NAME': table_name,
@@ -135,6 +151,10 @@ class QCReviewer:
                 'TABLEWIDE_RESEARCH': tablewide_research,  # Research context
                 'ROW_COUNT': str(len(discovered_rows)),
                 'DISCOVERED_ROWS': self._format_rows(discovered_rows, columns),
+                # Prepopulated rows from column_definition
+                'PRE_ROW_COUNT': str(pre_row_count),
+                'PREPOPULATED_ROWS_MARKDOWN': prepopulated_markdown,
+                'PREPOPULATED_CITATIONS': json.dumps(prepopulated_citations, indent=2) if prepopulated_citations else '(None)',
                 # New variables for requirements and retrigger context
                 'HARD_REQUIREMENTS': self._format_requirements_for_prompt(search_strategy, 'hard'),
                 'SOFT_REQUIREMENTS': self._format_requirements_for_prompt(search_strategy, 'soft'),
@@ -181,8 +201,11 @@ class QCReviewer:
             if 'choices' in raw_response and len(raw_response['choices']) > 0:
                 content = raw_response['choices'][0]['message']['content']
                 ai_response = json.loads(content) if isinstance(content, str) else content
+            elif 'action' in raw_response:
+                # New simplified format - convert to old format for backward compatibility
+                ai_response = self._convert_simplified_response(raw_response, discovered_rows)
             elif 'reviewed_rows' in raw_response and 'qc_summary' in raw_response:
-                # Response is already structured
+                # Old format - already structured
                 ai_response = raw_response
             else:
                 logger.error(f"Unexpected response structure: {json.dumps(raw_response, indent=2)[:500]}")
@@ -904,6 +927,88 @@ class QCReviewer:
             f"Output: {output_tokens}, "
             f"Total: {total_tokens}"
         )
+
+    def _convert_simplified_response(self, simplified: Dict[str, Any], discovered_rows: List[Dict]) -> Dict[str, Any]:
+        """
+        Convert new simplified QC response format to old format for backward compatibility.
+
+        New format: {action, rows, overall_score, removed, discovery_guidance, new_subdomains, ...}
+        Old format: {reviewed_rows, qc_summary, rejected_rows, retrigger_discovery, recovery_decision, ...}
+
+        Args:
+            simplified: New simplified response
+            discovered_rows: Original discovered rows for generating row_ids
+
+        Returns:
+            Response in old format
+        """
+        action = simplified.get('action', 'pass')
+        rows = simplified.get('rows', [])
+        overall_score = simplified.get('overall_score', 0.8)
+
+        # Build reviewed_rows with row_ids
+        reviewed_rows = []
+        for idx, row in enumerate(rows, 1):
+            id_vals = row.get('id_values', {})
+            first_id_value = list(id_vals.values())[0] if id_vals else 'Unknown'
+            row_id = f"{idx}-{first_id_value}"
+
+            reviewed_rows.append({
+                'row_id': row_id,
+                'row_score': row.get('row_score', row.get('match_score', overall_score)),
+                'qc_score': overall_score,
+                'qc_rationale': '',  # No verbose rationales in simplified format
+                'keep': True,  # All rows in 'rows' array are kept
+                'priority_adjustment': 'none'
+            })
+
+        # Handle removed rows
+        removed = simplified.get('removed', [])
+        rejected_rows = []
+        for item in removed:
+            rejected_rows.append({
+                'row_id': item.get('row_id', 'unknown'),
+                'rejection_reason': item.get('reason', 'No reason provided')
+            })
+
+        # Build qc_summary
+        total_reviewed = len(rows) + len(removed)
+        qc_summary = {
+            'total_reviewed': total_reviewed,
+            'kept': len(rows),
+            'rejected': len(removed),
+            'promoted': 0,
+            'demoted': 0,
+            'reasoning': f'QC {action}: {len(rows)} rows approved'
+        }
+
+        # Build old format response
+        old_format = {
+            'reviewed_rows': reviewed_rows,
+            'rejected_rows': rejected_rows,
+            'qc_summary': qc_summary
+        }
+
+        # Handle retrigger_discovery action
+        if action == 'retrigger_discovery':
+            old_format['retrigger_discovery'] = {
+                'should_retrigger': True,
+                'reason': simplified.get('discovery_guidance', 'Need more rows'),
+                'new_subdomains': simplified.get('new_subdomains', [])
+            }
+
+        # Handle restructure action
+        if action == 'restructure':
+            old_format['recovery_decision'] = {
+                'decision': 'restructure',
+                'reasoning': 'QC determined table needs restructuring',
+                'restructuring_guidance': simplified.get('restructuring_guidance', {}),
+                'user_facing_message': simplified.get('user_message', 'Restructuring table...')
+            }
+
+        logger.info(f"[QC] Converted simplified response: action={action}, kept={len(rows)}, removed={len(removed)}")
+
+        return old_format
 
     def get_qc_summary_text(self, result: Dict[str, Any]) -> str:
         """
