@@ -2463,22 +2463,27 @@ def handle_main_processing(event, context):
                 
                 # Create search group models tracking string for preview - one entry per search group with validated columns count
                 search_groups_models = []
-                search_groups_count = validation_metrics.get('search_groups_count', 0)
-                enhanced_context_groups = validation_metrics.get('high_context_search_groups_count', 0)
-                claude_groups = validation_metrics.get('claude_search_groups_count', 0)
-                regular_perplexity_groups = search_groups_count - enhanced_context_groups - claude_groups
-                validated_columns_count = validation_metrics.get('validated_columns_count', 0)
-                
-                # Count actual validation targets per search group from config
+
+                # CRITICAL: Count actual validation targets per search group from config FIRST
+                # This determines which groups actually have RESEARCH columns (used for AI call estimates)
                 validation_targets = config_data.get('validation_targets', [])
                 columns_per_search_group = {}
-                
+
                 # Count validation targets assigned to each search group (excluding ID and IGNORED)
                 for target in validation_targets:
                     importance = target.get('importance', '').upper()
                     if importance not in ["ID", "IGNORED"]:
                         search_group_id = target.get('search_group', 0)
                         columns_per_search_group[search_group_id] = columns_per_search_group.get(search_group_id, 0) + 1
+
+                # Use len(columns_per_search_group) for accurate search_groups_count
+                # This fixes the AI call estimate bug where unused search groups were being counted
+                search_groups_count = len(columns_per_search_group)
+                logger.debug(f"[AI_CALLS_FIX] Preview - actual active search groups: {search_groups_count} (groups with RESEARCH columns: {list(columns_per_search_group.keys())})")
+                enhanced_context_groups = validation_metrics.get('high_context_search_groups_count', 0)
+                claude_groups = validation_metrics.get('claude_search_groups_count', 0)
+                regular_perplexity_groups = search_groups_count - enhanced_context_groups - claude_groups
+                validated_columns_count = validation_metrics.get('validated_columns_count', 0)
                 
                 # Build search group models by iterating through actual search groups in config
                 search_groups_list = config_data.get('search_groups', [])
@@ -2685,7 +2690,11 @@ def handle_main_processing(event, context):
 
                 # Update preview_payload validation_metrics for WebSocket logging
                 # Frontend expects: perplexityGroups = searchGroups - claudeGroups, so adjust accordingly
-                total_search_groups = validation_metrics.get('search_groups_count', 0)  # 4 total validation groups
+                # CRITICAL: Use len(columns_per_search_group) instead of validation_metrics.get('search_groups_count')
+                # because columns_per_search_group only counts groups with actual RESEARCH columns assigned
+                # This fixes the AI call estimate bug where unused search groups were being counted
+                total_search_groups = len(columns_per_search_group)  # Only count groups with RESEARCH columns
+                logger.debug(f"[AI_CALLS_FIX] Using actual active search groups: {total_search_groups} (groups with RESEARCH columns: {list(columns_per_search_group.keys())})")
                 perplexity_only_groups = total_search_groups - base_claude_groups  # 4 - 1 = 3 perplexity groups
                 claude_groups_for_frontend = base_claude_groups + (1 if qc_has_calls else 0)  # Include QC as fake Claude group (1 + 1 = 2)
                 # Add fake group to total so frontend math works: perplexity = total - claude = 5 - 2 = 3
@@ -4595,12 +4604,19 @@ def handle_main_processing(event, context):
                 if EMAIL_SENDER_AVAILABLE and email_address:
                     # Calculate summary data for the email
                     # First, determine which fields are ID fields (should not be counted as "validated")
+                    # Also count columns per search group for AI call calculation
                     id_fields = set()
+                    columns_per_search_group = {}
                     if config_data and 'validation_targets' in config_data:
                         for target in config_data['validation_targets']:
-                            if target.get('importance', '').upper() in ['ID', 'IGNORED']:
+                            importance = target.get('importance', '').upper()
+                            if importance in ['ID', 'IGNORED']:
                                 id_fields.add(target.get('column'))
-                    
+                            else:
+                                # Count RESEARCH columns per search group
+                                search_group_id = target.get('search_group', 0)
+                                columns_per_search_group[search_group_id] = columns_per_search_group.get(search_group_id, 0) + 1
+
                     validated_fields = set()  # Only count fields that were actually validated
                     # Ordered dict to maintain display order: HIGH, MEDIUM, LOW, Blank
                     confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "NULL": 0}
@@ -4659,34 +4675,20 @@ def handle_main_processing(event, context):
                     # Ensure enhanced_excel_content is bytes or None (not other types)
                     safe_enhanced_excel_content = enhanced_excel_content if isinstance(enhanced_excel_content, (bytes, type(None))) else None
                     
-                    # Extract API call counts from enhanced_metrics (authoritative source)
-                    # Extract total AI calls (top-level validation + QC calls)
-                    # These are user-facing calls - Clone counts as 1 call even if it makes multiple internal calls
-                    total_ai_calls = 0
-                    qc_calls = 0
+                    # Calculate total AI calls using the same formula as progress counter
+                    # This is more reliable than trying to measure from enhanced_data which can miss memory-cached calls
+                    # Formula: (search_groups_count × rows) + (qc_calls_per_row × rows)
 
-                    if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
-                        totals = enhanced_metrics['aggregated_metrics'].get('totals', {})
-                        # Use total_top_level_calls which correctly counts validation calls (Clone = 1 call)
-                        validation_calls = totals.get('total_top_level_calls', 0)
+                    # Get search_groups_count from validation_metrics (already corrected to only count active groups)
+                    active_search_groups = len(columns_per_search_group) if columns_per_search_group else validation_metrics.get('search_groups_count', 0)
+                    qc_calls_per_row = validation_metrics.get('qc_calls_per_row', 0) if validation_metrics else 0
 
-                        # Extract QC calls from qc_metrics variable (defined around line 3416)
-                        if qc_metrics and isinstance(qc_metrics, dict):
-                            qc_calls = qc_metrics.get('total_qc_calls', 0)
-                            logger.debug(f"[RECEIPT_QC_CALLS] Extracted QC calls for receipt: {qc_calls}")
-                        else:
-                            logger.warning(f"[RECEIPT_QC_CALLS] qc_metrics not available or not a dict: {type(qc_metrics)}")
+                    # Use processed_rows_count for the calculation
+                    validation_calls = active_search_groups * processed_rows_count
+                    qc_calls = qc_calls_per_row * processed_rows_count
+                    total_ai_calls = validation_calls + qc_calls
 
-                        # Total AI calls = validation calls + QC calls
-                        total_ai_calls = validation_calls + qc_calls
-                        logger.debug(f"[API_CALLS_EXTRACT] Total AI Calls: {total_ai_calls} (Validation: {validation_calls}, QC: {qc_calls})")
-                    else:
-                        # Fallback to token_usage if enhanced_metrics not available
-                        by_provider = token_usage.get('by_provider', {})
-                        perplexity_calls_legacy = by_provider.get('perplexity', {}).get('calls', 0)
-                        anthropic_calls_legacy = by_provider.get('anthropic', {}).get('calls', 0)
-                        total_ai_calls = perplexity_calls_legacy + anthropic_calls_legacy
-                        logger.warning(f"[API_CALLS_EXTRACT] Falling back to token_usage: Total={total_ai_calls}")
+                    logger.debug(f"[RECEIPT_AI_CALLS] Calculated total AI calls: {total_ai_calls} = ({active_search_groups} search groups × {processed_rows_count} rows) + ({qc_calls_per_row} QC × {processed_rows_count} rows)")
                     
                     # Extract original table name (remove _input suffix if present)
                     # This is used for receipt and email display - should be clean and user-friendly
@@ -5109,23 +5111,27 @@ def handle_main_processing(event, context):
                     
                         # Create search group models tracking string - one entry per search group with validated columns count
                         search_groups_models = []
-                        # validation_metrics should already be defined from metadata.get('validation_metrics', {})
-                        search_groups_count = validation_metrics.get('search_groups_count', 0)
-                        enhanced_context_groups = validation_metrics.get('high_context_search_groups_count', 0)
-                        claude_groups = validation_metrics.get('claude_search_groups_count', 0)
-                        regular_perplexity_groups = search_groups_count - enhanced_context_groups - claude_groups
-                        validated_columns_count = validation_metrics.get('validated_columns_count', 0)
-                    
-                        # Count actual validation targets per search group from config
+
+                        # Count actual validation targets per search group from config FIRST
+                        # This determines which groups actually have RESEARCH columns
                         validation_targets = config_data.get('validation_targets', [])
                         columns_per_search_group = {}
-                    
+
                         # Count validation targets assigned to each search group (excluding ID and IGNORED)
                         for target in validation_targets:
                             importance = target.get('importance', '').upper()
                             if importance not in ["ID", "IGNORED"]:
                                 search_group_id = target.get('search_group', 0)
                                 columns_per_search_group[search_group_id] = columns_per_search_group.get(search_group_id, 0) + 1
+
+                        # CRITICAL: Use len(columns_per_search_group) for accurate search_groups_count
+                        # This fixes the AI call estimate bug where unused search groups were being counted
+                        search_groups_count = len(columns_per_search_group)  # Only count groups with RESEARCH columns
+                        logger.debug(f"[AI_CALLS_FIX] Full validation - actual active search groups: {search_groups_count} (groups with RESEARCH columns: {list(columns_per_search_group.keys())})")
+                        enhanced_context_groups = validation_metrics.get('high_context_search_groups_count', 0)
+                        claude_groups = validation_metrics.get('claude_search_groups_count', 0)
+                        regular_perplexity_groups = search_groups_count - enhanced_context_groups - claude_groups
+                        validated_columns_count = validation_metrics.get('validated_columns_count', 0)
                     
                         # Build search group models by iterating through actual search groups in config
                         search_groups_list = config_data.get('search_groups', [])
