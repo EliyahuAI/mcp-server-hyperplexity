@@ -103,7 +103,7 @@ def get_models_for_tier(provider: str, synthesis_tier: str, strategy: Dict = Non
     synthesis_model = tier_config['synthesis']
     if strategy and 'synthesis_model' in strategy:
         synthesis_model = strategy['synthesis_model']
-        logger.info(f"[STRATEGY] Using strategy-specific synthesis model: {synthesis_model}")
+        logger.debug(f"[STRATEGY] Using strategy-specific synthesis model: {synthesis_model}")
 
     return {
         'initial_decision': routing_model,
@@ -223,7 +223,7 @@ def should_stop_iteration(snippets: list, strategy: Dict[str, Any]) -> bool:
                               if s.get('p', 0) >= min_p and s.get('search_ref') == 1)
 
         if primary_reliable >= 1:
-            logger.info(f"[STRATEGY] Reliable answer to exact query found: {primary_reliable} snippet(s) with p≥{min_p} for primary search term")
+            logger.debug(f"[STRATEGY] Reliable answer to exact query found: {primary_reliable} snippet(s) with p≥{min_p} for primary search term")
             return True
 
         logger.debug(f"[STRATEGY] No reliable answer yet (found {len([s for s in snippets if s.get('p', 0) >= min_p])} high-p snippets, but {primary_reliable} for primary query)")

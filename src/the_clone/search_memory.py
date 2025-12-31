@@ -91,9 +91,9 @@ class SearchMemory:
 
         try:
             await instance._load_from_s3()
-            logger.info(f"[MEMORY] Restored {len(instance._memory['queries'])} queries from S3")
+            logger.debug(f"[MEMORY] Restored {len(instance._memory['queries'])} queries from S3")
         except Exception as e:
-            logger.info(f"[MEMORY] No existing memory found, initializing empty: {e}")
+            logger.debug(f"[MEMORY] No existing memory found, initializing empty: {e}")
             instance._initialize_empty_memory()
 
         return instance
@@ -332,7 +332,7 @@ class SearchMemory:
         )
 
         if not filtered_queries:
-            logger.info("[MEMORY] No relevant queries found after keyword filter")
+            logger.debug("[MEMORY] No relevant queries found after keyword filter")
             return self._empty_recall_result()
 
         logger.info(
@@ -359,7 +359,7 @@ class SearchMemory:
             # Stage 3: If high confidence, verify with full snippet text
             recommended_searches = []
             if confidence >= 0.75 and len(selected_sources) > 0:
-                logger.info(f"[MEMORY] High confidence ({confidence:.2f}), running verification with full snippets...")
+                logger.debug(f"[MEMORY] High confidence ({confidence:.2f}), running verification with full snippets...")
                 verified_confidence, verification_cost, recommended_searches, ranked_source_indices = await self._verify_with_full_snippets(
                     query=query,
                     selected_sources=selected_sources,
@@ -372,7 +372,7 @@ class SearchMemory:
                     selected_sources = [selected_sources[i] for i in ranked_source_indices if i < len(selected_sources)]
                 llm_cost = selection_cost + verification_cost
                 confidence = verified_confidence
-                logger.info(f"[MEMORY] Verification complete: confidence {confidence:.2f}, recommended_searches={recommended_searches} (cost: ${verification_cost:.4f})")
+                logger.debug(f"[MEMORY] Verification complete: confidence {confidence:.2f}, recommended_searches={recommended_searches} (cost: ${verification_cost:.4f})")
             else:
                 llm_cost = selection_cost
                 recommended_searches = []
@@ -542,7 +542,7 @@ class SearchMemory:
                         source['_gemini_confidence'] = gemini_confidence
                         selected_sources.append(source)
 
-            logger.info(f"[MEMORY] Gemini selected {len(selected_sources)} sources, confidence={gemini_confidence:.2f} (cost: ${cost:.4f})")
+            logger.debug(f"[MEMORY] Gemini selected {len(selected_sources)} sources, confidence={gemini_confidence:.2f} (cost: ${cost:.4f})")
 
             return selected_sources, cost
 

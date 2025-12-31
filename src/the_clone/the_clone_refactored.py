@@ -80,7 +80,7 @@ class TheClone2Refined:
         start_time = datetime.now()
 
         logger.info("=" * 80)
-        logger.info(f"[CLONE] Query: {prompt[:100]}...")
+        logger.debug(f"[CLONE] Query: {prompt[:100]}...")
         logger.info("=" * 80)
 
         # Load configuration
@@ -109,7 +109,7 @@ class TheClone2Refined:
         costs['initial'] = self._extract_cost(initial_result.get('model_response', {}))
 
         if decision == "answer_directly":
-            logger.info("[CLONE] Answered directly - no search needed")
+            logger.debug("[CLONE] Answered directly - no search needed")
             return self._build_direct_answer_response(prompt, initial_result, costs)
 
         # Get strategy
@@ -118,9 +118,9 @@ class TheClone2Refined:
         strategy = get_strategy(breadth, depth)
         search_terms = initial_result.get('search_terms', [prompt])
 
-        logger.info(f"[CLONE] Strategy: {strategy['name']} (breadth={breadth}, depth={depth})")
-        logger.info(f"[CLONE] Params: batch={strategy['sources_per_batch']}, mode={strategy['extraction_mode']}, max_snippets={strategy['max_snippets_per_source']}, min_p={strategy['min_p_threshold']}")
-        logger.info(f"[CLONE] Search terms: {search_terms}")
+        logger.debug(f"[CLONE] Strategy: {strategy['name']} (breadth={breadth}, depth={depth})")
+        logger.debug(f"[CLONE] Params: batch={strategy['sources_per_batch']}, mode={strategy['extraction_mode']}, max_snippets={strategy['max_snippets_per_source']}, min_p={strategy['min_p_threshold']}")
+        logger.debug(f"[CLONE] Search terms: {search_terms}")
 
         # Step 2: Search
         logger.info(f"\n[CLONE] Step 2: Executing {len(search_terms)} searches...")
@@ -148,10 +148,10 @@ class TheClone2Refined:
 
         # Build ranked source pool
         ranked_sources = self._build_ranked_source_pool(search_results, ranked_lists, search_terms)
-        logger.info(f"[CLONE] Ranked {len(ranked_sources)} relevant sources")
+        logger.debug(f"[CLONE] Ranked {len(ranked_sources)} relevant sources")
 
         if len(ranked_sources) == 0:
-            logger.info("[CLONE] No relevant sources found")
+            logger.debug("[CLONE] No relevant sources found")
             return self._build_empty_response(prompt, search_terms, costs)
 
         # Step 4: Iterative Extraction
@@ -168,10 +168,10 @@ class TheClone2Refined:
             sources_this_batch = ranked_sources[sources_pulled:batch_end]
 
             if len(sources_this_batch) == 0:
-                logger.info("[CLONE] No more sources to pull")
+                logger.debug("[CLONE] No more sources to pull")
                 break
 
-            logger.info(f"[CLONE] Pulling sources {sources_pulled}-{batch_end-1} ({len(sources_this_batch)} sources)")
+            logger.debug(f"[CLONE] Pulling sources {sources_pulled}-{batch_end-1} ({len(sources_this_batch)} sources)")
 
             # Extract from batch
             extraction_tasks = []
@@ -205,19 +205,19 @@ class TheClone2Refined:
             all_snippets.extend(new_snippets)
             sources_pulled = batch_end
 
-            logger.info(f"[CLONE] Extracted {len(new_snippets)} snippets (total: {len(all_snippets)})")
+            logger.debug(f"[CLONE] Extracted {len(new_snippets)} snippets (total: {len(all_snippets)})")
             if all_snippets:
                 avg_p = sum(s.get('p', 0.5) for s in all_snippets) / len(all_snippets)
                 high_p = sum(1 for s in all_snippets if s.get('p', 0) >= 0.85)
-                logger.info(f"[CLONE] Quality: avg_p={avg_p:.2f}, high_quality={high_p}/{len(all_snippets)}")
+                logger.debug(f"[CLONE] Quality: avg_p={avg_p:.2f}, high_quality={high_p}/{len(all_snippets)}")
 
             # Check stop condition
             if should_stop_iteration(all_snippets, strategy):
-                logger.info(f"[CLONE] Stop condition met ({strategy.get('stop_condition')})")
+                logger.debug(f"[CLONE] Stop condition met ({strategy.get('stop_condition')})")
                 break
 
             if sources_pulled >= len(ranked_sources):
-                logger.info(f"[CLONE] All sources exhausted")
+                logger.debug(f"[CLONE] All sources exhausted")
                 break
 
         # Step 5: Synthesis
@@ -252,7 +252,7 @@ class TheClone2Refined:
         total_cost = sum(costs.values())
 
         logger.info(f"\n[CLONE] Complete in {total_time:.1f}s, Cost: ${total_cost:.4f}")
-        logger.info(f"[CLONE] Snippets: {len(all_snippets)}, Citations: {len(synthesis_result.get('citations', []))}")
+        logger.debug(f"[CLONE] Snippets: {len(all_snippets)}, Citations: {len(synthesis_result.get('citations', []))}")
 
         return {
             "answer": synthesis_result.get('answer', {}),

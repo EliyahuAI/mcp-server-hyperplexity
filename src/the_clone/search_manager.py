@@ -66,7 +66,7 @@ class SearchManager:
                 - reasoning: Explanation of strategy
                 - model_response: Full model response with metadata
         """
-        logger.info(f"[SEARCH_MANAGER] Generating search terms for: '{prompt[:100]}...'")
+        logger.debug(f"[SEARCH_MANAGER] Generating search terms for: '{prompt[:100]}...'")
 
         # Load prompt template from file
         generation_prompt = self.prompt_loader.load_prompt(
@@ -90,12 +90,12 @@ class SearchManager:
             actual_response = response.get('response', response)
             data = extract_structured_response(actual_response)
 
-            logger.info(f"[SEARCH_MANAGER] Generated {len(data.get('search_terms', []))} search terms")
+            logger.debug(f"[SEARCH_MANAGER] Generated {len(data.get('search_terms', []))} search terms")
             logger.debug(f"[SEARCH_MANAGER] Search terms: {data.get('search_terms')}")
 
             positive_keywords = data.get("positive_keywords", [])
             negative_keywords = data.get("negative_keywords", [])
-            logger.info(f"[SEARCH_MANAGER] Keywords: {len(positive_keywords)} positive, {len(negative_keywords)} negative")
+            logger.debug(f"[SEARCH_MANAGER] Keywords: {len(positive_keywords)} positive, {len(negative_keywords)} negative")
             logger.debug(f"[SEARCH_MANAGER] Positive: {positive_keywords}, Negative: {negative_keywords}")
 
             return {
@@ -130,7 +130,7 @@ class SearchManager:
         Returns:
             List of search results, one dict per search term
         """
-        logger.info(f"[SEARCH_MANAGER] Executing {len(search_terms)} searches "
+        logger.debug(f"[SEARCH_MANAGER] Executing {len(search_terms)} searches "
                    f"(will batch into {(len(search_terms) + 4) // 5} API call(s))")
 
         if clone_logger:
@@ -161,7 +161,7 @@ class SearchManager:
                     logger.error(f"[SEARCH_MANAGER] Search {i+1} failed: {result}")
                 else:
                     result_count = len(result.get('results', []))
-                    logger.info(f"[SEARCH_MANAGER] Search {i+1} returned {result_count} results")
+                    logger.debug(f"[SEARCH_MANAGER] Search {i+1} returned {result_count} results")
 
             if clone_logger:
                  # Create a summary of results
@@ -216,7 +216,7 @@ class SearchManager:
                 - reasoning: Explanation of assessment
                 - model_response: Full model response with metadata
         """
-        logger.info(f"[SEARCH_MANAGER] Evaluating results for iteration {current_iteration}")
+        logger.debug(f"[SEARCH_MANAGER] Evaluating results for iteration {current_iteration}")
 
         # Format current search results (titles + URLs only for quick scanning)
         formatted_current = self._format_search_results_concise(current_search_results)
@@ -258,13 +258,13 @@ class SearchManager:
 
             # Context-aware cap: Limit sources based on context level (8/12/18)
             if len(best_source_indices) > max_sources:
-                logger.info(f"[SEARCH_MANAGER] Capping sources: {len(best_source_indices)} → {max_sources} (context-dependent limit)")
+                logger.debug(f"[SEARCH_MANAGER] Capping sources: {len(best_source_indices)} → {max_sources} (context-dependent limit)")
                 best_source_indices = best_source_indices[:max_sources]
 
             # Map to old format for compatibility
             need_level = "low" if has_sufficient else ("medium" if next_terms else "high")
 
-            logger.info(f"[SEARCH_MANAGER] Evaluation: {relevant_count} relevant, "
+            logger.debug(f"[SEARCH_MANAGER] Evaluation: {relevant_count} relevant, "
                        f"Reliability: {high_reliability}H/{medium_reliability}M/{low_reliability}L, "
                        f"Best sources: {len(best_source_indices)}, Sufficient: {has_sufficient}")
 

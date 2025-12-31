@@ -78,7 +78,7 @@ class UnifiedSynthesizer:
                 - note_to_self: str (optional, from synthesis)
                 - citations: list (final citations with snippet ID conversion)
         """
-        logger.info(f"[UNIFIED] Mode: {'Synthesis' if is_last_iteration else 'Evaluation+Synthesis'}")
+        logger.debug(f"[UNIFIED] Mode: {'Synthesis' if is_last_iteration else 'Evaluation+Synthesis'}")
 
         # Build prompt
         prompt = self._build_prompt(
@@ -161,7 +161,7 @@ class UnifiedSynthesizer:
                 request_upgrade = False
                 new_note = None
 
-            logger.info(f"[UNIFIED] Can answer: {can_answer}, Confidence: {confidence}")
+            logger.debug(f"[UNIFIED] Can answer: {can_answer}, Confidence: {confidence}")
             logger.debug(f"[UNIFIED] answer_raw type: {type(answer_raw)}, content: {str(answer_raw)[:200]}")
 
             # Save response
@@ -643,7 +643,7 @@ Query: {query}
             except Exception as e:
                 logger.warning(f"[CITATIONS] Could not save debug file: {e}")
 
-        logger.info(f"[CITATIONS] Matched {len(snippet_ids)} snippet references from {len(all_brackets)} bracketed items ({len(failed_items)} unmatched)")
+        logger.debug(f"[CITATIONS] Matched {len(snippet_ids)} snippet references from {len(all_brackets)} bracketed items ({len(failed_items)} unmatched)")
 
         # Build citations (deduplicate by URL, aggregate all snippets per URL)
         citations = []
@@ -798,14 +798,14 @@ Query: {query}
                     answer_str, schema or {}, self.ai_client
                 )
                 if answer_final:
-                    logger.info(f"[UNIFIED] Gemini repair succeeded: {repair_explanation}")
+                    logger.debug(f"[UNIFIED] Gemini repair succeeded: {repair_explanation}")
                 else:
                     raise Exception("Gemini repair failed")
             except Exception as repair_error:
                 logger.error(f"[UNIFIED] Repair failed: {repair_error}")
                 raise e  # Re-raise original parse error
 
-        logger.info(f"[UNIFIED] Converted {len(snippet_ids)} snippet IDs to {len(citations)} citations")
+        logger.debug(f"[UNIFIED] Converted {len(snippet_ids)} snippet IDs to {len(citations)} citations")
 
         return answer_final, citations, list(snippet_ids)
 
@@ -837,7 +837,7 @@ Query: {query}
         # Check if answer already has the expected top-level structure
         has_schema_fields = any(prop in answer for prop in schema_properties.keys())
         if has_schema_fields:
-            logger.info("[SCHEMA_TRANSFORM] Answer already in expected format")
+            logger.debug("[SCHEMA_TRANSFORM] Answer already in expected format")
             return answer
 
         # Extract from comparison wrapper
@@ -851,10 +851,10 @@ Query: {query}
         for prop_name in schema_properties.keys():
             if prop_name in comparison:
                 extracted[prop_name] = comparison[prop_name]
-                logger.info(f"[SCHEMA_TRANSFORM] Extracted '{prop_name}' from comparison")
+                logger.debug(f"[SCHEMA_TRANSFORM] Extracted '{prop_name}' from comparison")
 
         if extracted:
-            logger.info(f"[SCHEMA_TRANSFORM] Extracted {len(extracted)} custom schema fields")
+            logger.debug(f"[SCHEMA_TRANSFORM] Extracted {len(extracted)} custom schema fields")
 
             # If schema has single array property, return unwrapped to match Sonar format
             # Sonar returns [{"column": ...}] not {"validation_results": [...]}
@@ -864,7 +864,7 @@ Query: {query}
                 prop_schema = schema_properties.get(prop_name, {})
 
                 if prop_schema.get('type') == 'array' and isinstance(prop_value, list):
-                    logger.info(f"[SCHEMA_TRANSFORM] Unwrapping single array property '{prop_name}' to match Sonar format")
+                    logger.debug(f"[SCHEMA_TRANSFORM] Unwrapping single array property '{prop_name}' to match Sonar format")
                     return prop_value
 
             return extracted
@@ -877,13 +877,13 @@ Query: {query}
 
             # If the property is an array, wrap comparison data as array
             if prop_schema.get('type') == 'array':
-                logger.info(f"[SCHEMA_TRANSFORM] Wrapping comparison data into '{prop_name}' array")
+                logger.debug(f"[SCHEMA_TRANSFORM] Wrapping comparison data into '{prop_name}' array")
                 wrapped_data = [comparison] if not isinstance(comparison, list) else comparison
                 # Return unwrapped to match Sonar format
-                logger.info(f"[SCHEMA_TRANSFORM] Unwrapping to match Sonar format (single array)")
+                logger.debug(f"[SCHEMA_TRANSFORM] Unwrapping to match Sonar format (single array)")
                 return wrapped_data
             else:
-                logger.info(f"[SCHEMA_TRANSFORM] Wrapping comparison data into '{prop_name}' object")
+                logger.debug(f"[SCHEMA_TRANSFORM] Wrapping comparison data into '{prop_name}' object")
                 return {prop_name: comparison}
 
         logger.warning(f"[SCHEMA_TRANSFORM] No custom schema fields found in comparison. Expected: {list(schema_properties.keys())}, Found: {list(comparison.keys())}")

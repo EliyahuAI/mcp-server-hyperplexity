@@ -104,13 +104,13 @@ class TheClone2Refined:
         clone_logger.log_section("Initial Query", prompt, level=1)
 
         logger.info("=" * 80)
-        logger.info(f"[CLONE] Query: {prompt[:100]}...")
+        logger.debug(f"[CLONE] Query: {prompt[:100]}...")
         logger.info("=" * 80)
 
         # Handle backwards compatibility: use_baseten=True → provider="baseten"
         if use_baseten:
             provider = "baseten"
-            logger.info(f"[CLONE] use_baseten=True (backwards compat), setting provider='baseten'")
+            logger.debug(f"[CLONE] use_baseten=True (backwards compat), setting provider='baseten'")
 
         # Load configuration
         if model_override:
@@ -120,13 +120,13 @@ class TheClone2Refined:
                 'extraction': model_override,
                 'synthesis': model_override
             }
-            logger.info(f"[CLONE] Model override: {model_override}")
+            logger.debug(f"[CLONE] Model override: {model_override}")
         else:
             models = get_default_models(provider)
 
         global_limits = get_global_limits()
 
-        logger.info(f"[CLONE] Provider: {provider}")
+        logger.debug(f"[CLONE] Provider: {provider}")
 
         # Log initial settings
         if clone_logger:
@@ -207,7 +207,7 @@ class TheClone2Refined:
             clone_logger.end_step("Initial Decision")
 
         if decision == "answer_directly":
-            logger.info("[CLONE] Answering directly from model knowledge")
+            logger.debug("[CLONE] Answering directly from model knowledge")
             direct_answer = initial_result.get('direct_answer', {})
 
             total_time = time.time() - call_start_time
@@ -255,7 +255,7 @@ class TheClone2Refined:
         # Force extraction strategy if extraction=True
         if extraction:
             strategy = get_strategy('narrow', 'extraction')
-            logger.info(f"[CLONE] EXTRACTION mode enabled: 8K tokens/page, parallel, Gemini synthesis")
+            logger.debug(f"[CLONE] EXTRACTION mode enabled: 8K tokens/page, parallel, Gemini synthesis")
         else:
             strategy = get_strategy(breadth, depth)
 
@@ -265,15 +265,15 @@ class TheClone2Refined:
 
         # Allow disabling keyword scoring for comparison tests
         if disable_keyword_scoring:
-            logger.info("[CLONE] Keyword scoring DISABLED for comparison test")
+            logger.debug("[CLONE] Keyword scoring DISABLED for comparison test")
             positive_keywords = []
             negative_keywords = []
         else:
-            logger.info(f"[CLONE] Keywords generated: {len(positive_keywords)} positive, {len(negative_keywords)} negative")
+            logger.debug(f"[CLONE] Keywords generated: {len(positive_keywords)} positive, {len(negative_keywords)} negative")
             if positive_keywords:
-                logger.info(f"[CLONE] Positive keywords: {positive_keywords}")
+                logger.debug(f"[CLONE] Positive keywords: {positive_keywords}")
             if negative_keywords:
-                logger.info(f"[CLONE] Negative keywords: {negative_keywords}")
+                logger.debug(f"[CLONE] Negative keywords: {negative_keywords}")
 
         # Get models for synthesis tier (unless overridden)
         if not model_override:
@@ -283,10 +283,10 @@ class TheClone2Refined:
         if strategy.get('bypass_global_source_limit'):
             max_per_search = strategy.get('max_results_per_search', 10)
             global_limits['max_sources_total'] = max_per_search * len(search_terms)
-            logger.info(f"[CLONE] FINDALL mode: Overriding max_sources_total to {global_limits['max_sources_total']}")
+            logger.debug(f"[CLONE] FINDALL mode: Overriding max_sources_total to {global_limits['max_sources_total']}")
 
-        logger.info(f"[CLONE] Strategy: {strategy['name']} (breadth={breadth}, depth={depth})")
-        logger.info(f"[CLONE] Synthesis tier: {synthesis_tier} (model: {models['synthesis']})")
+        logger.debug(f"[CLONE] Strategy: {strategy['name']} (breadth={breadth}, depth={depth})")
+        logger.debug(f"[CLONE] Synthesis tier: {synthesis_tier} (model: {models['synthesis']})")
         logger.debug(f"[CLONE] Params: batch={strategy['sources_per_batch']}, mode={strategy['extraction_mode']}, max_snippets={strategy['max_snippets_per_source']}, min_p={strategy['min_p_threshold']}")
         logger.debug(f"[CLONE] Search terms: {search_terms}")
         
@@ -307,11 +307,11 @@ class TheClone2Refined:
         if include_domains and include_domains == ["academic"]:
             from the_clone.academic_domains import get_academic_domains
             search_include_domains = get_academic_domains()
-            logger.info(f"[CLONE] Academic mode (backdoor) - using {len(search_include_domains)} academic domains")
+            logger.debug(f"[CLONE] Academic mode (backdoor) - using {len(search_include_domains)} academic domains")
         elif academic:
             from the_clone.academic_domains import get_academic_domains
             search_include_domains = get_academic_domains()
-            logger.info(f"[CLONE] Academic mode - using {len(search_include_domains)} academic domains")
+            logger.debug(f"[CLONE] Academic mode - using {len(search_include_domains)} academic domains")
         elif include_domains:
             search_include_domains = include_domains
             logger.debug(f"[CLONE] Using {len(search_include_domains)} included domains")
@@ -326,7 +326,7 @@ class TheClone2Refined:
         search_decision = {'action': 'full_search', 'search_terms': search_terms, 'reasoning': 'Memory not enabled'}
 
         # Debug memory availability
-        logger.info(f"[MEMORY_CHECK] use_memory={use_memory}, session_id={session_id}, email={email}, s3_manager={type(s3_manager).__name__ if s3_manager else None}")
+        logger.debug(f"[MEMORY_CHECK] use_memory={use_memory}, session_id={session_id}, email={email}, s3_manager={type(s3_manager).__name__ if s3_manager else None}")
 
         if use_memory and session_id and email and s3_manager:
             logger.info("\n[CLONE] Step 1.5: Checking memory...")
@@ -402,7 +402,7 @@ class TheClone2Refined:
                 # Decide search strategy based on memory
                 search_decision = self._decide_search_strategy(recall_result, prompt, search_terms)
 
-                logger.info(f"[CLONE] Search decision: {search_decision['action']} - {search_decision['reasoning']}")
+                logger.debug(f"[CLONE] Search decision: {search_decision['action']} - {search_decision['reasoning']}")
 
                 # Log search decision
                 if clone_logger:
@@ -451,9 +451,9 @@ class TheClone2Refined:
                 search_decision = {'action': 'full_search', 'search_terms': search_terms, 'reasoning': f'Memory error: {str(e)}'}
         else:
             if not use_memory:
-                logger.info("[CLONE] Memory disabled (use_memory=False)")
+                logger.debug("[CLONE] Memory disabled (use_memory=False)")
             elif not session_id or not email or not s3_manager:
-                logger.info("[CLONE] Memory not available (missing session_id, email, or s3_manager)")
+                logger.debug("[CLONE] Memory not available (missing session_id, email, or s3_manager)")
 
         # Build search settings (needed even if skipping, for memory storage)
         search_settings = {
@@ -499,7 +499,7 @@ class TheClone2Refined:
                                 parameters=search_settings,
                                 strategy=strategy['name']
                             )
-                    logger.info(f"[MEMORY] Stored {len(search_terms)} searches")
+                    logger.debug(f"[MEMORY] Stored {len(search_terms)} searches")
                 except Exception as e:
                     logger.warning(f"[MEMORY] Failed to store searches: {e}")
         else:
@@ -532,8 +532,8 @@ class TheClone2Refined:
                 memory_search_result = {'results': memory_sources, '_is_memory': True}
                 search_results = [memory_search_result] + search_results
                 search_terms = memory_queries + list(search_terms) if memory_queries else ["Memory"] + list(search_terms)
-                logger.info(f"[CLONE] Combined: {len(memory_sources)} memory sources + {len(all_search_sources)} search sources")
-                logger.info(f"[CLONE] Memory queries: {memory_queries}")
+                logger.debug(f"[CLONE] Combined: {len(memory_sources)} memory sources + {len(all_search_sources)} search sources")
+                logger.debug(f"[CLONE] Memory queries: {memory_queries}")
 
         # Step 3: Triage (rank ALL sources) - SKIP if using memory-only (already ranked by verification)
         memory_only = (search_decision.get('action') == 'skip' and original_search_count == 0)
@@ -603,10 +603,10 @@ class TheClone2Refined:
 
             # Build ranked source pool
             ranked_sources = self._build_ranked_source_pool(search_results, ranked_lists, search_terms)
-        logger.info(f"[CLONE] Ranked {len(ranked_sources)} relevant sources")
+        logger.debug(f"[CLONE] Ranked {len(ranked_sources)} relevant sources")
 
         if len(ranked_sources) == 0:
-            logger.info("[CLONE] No relevant sources found")
+            logger.debug("[CLONE] No relevant sources found")
             total_time = time.time() - call_start_time
             metadata = {
                 "query": prompt,
@@ -655,7 +655,7 @@ class TheClone2Refined:
 
         # FINDALL MODE: Process sources grouped by search in PARALLEL
         if strategy.get('bypass_global_source_limit') and strategy.get('batch_extraction'):
-            logger.info(f"[CLONE] FINDALL mode: Processing sources grouped by search in PARALLEL")
+            logger.debug(f"[CLONE] FINDALL mode: Processing sources grouped by search in PARALLEL")
 
             # Group sources by search index
             sources_by_search = {}
@@ -665,7 +665,7 @@ class TheClone2Refined:
                     sources_by_search[search_idx] = []
                 sources_by_search[search_idx].append(source)
 
-            logger.info(f"[CLONE] FINDALL: Found {len(sources_by_search)} searches with sources")
+            logger.debug(f"[CLONE] FINDALL: Found {len(sources_by_search)} searches with sources")
 
             # Create extraction tasks for each search (run in PARALLEL)
             extraction_tasks = []
@@ -673,7 +673,7 @@ class TheClone2Refined:
                 search_sources = sources_by_search[search_idx]
                 snippet_id_prefix = f"S{search_idx}"
 
-                logger.info(f"[CLONE] FINDALL Search {search_idx}: Queueing {len(search_sources)} sources for batch extraction")
+                logger.debug(f"[CLONE] FINDALL Search {search_idx}: Queueing {len(search_sources)} sources for batch extraction")
 
                 task = self.snippet_extractor.extract_from_sources_batch(
                     sources=search_sources,  # All 20 sources for this search
@@ -692,7 +692,7 @@ class TheClone2Refined:
                 )
                 extraction_tasks.append((search_idx, task))
 
-            logger.info(f"[CLONE] FINDALL: Executing {len(extraction_tasks)} batch extractions IN PARALLEL")
+            logger.debug(f"[CLONE] FINDALL: Executing {len(extraction_tasks)} batch extractions IN PARALLEL")
 
             # Run all search extractions in PARALLEL
             results = await asyncio.gather(*[task for _, task in extraction_tasks], return_exceptions=True)
@@ -710,7 +710,7 @@ class TheClone2Refined:
                 for source_result in result:
                     snippets = source_result.get('snippets', [])
                     all_snippets.extend(snippets)
-                    logger.info(f"[CLONE] FINDALL Search {search_idx}: Extracted {len(snippets)} snippets")
+                    logger.debug(f"[CLONE] FINDALL Search {search_idx}: Extracted {len(snippets)} snippets")
 
                 # Extract cost
                 if result and len(result) > 0:
@@ -725,7 +725,7 @@ class TheClone2Refined:
             sources_pulled = len(ranked_sources)
             iteration = len(sources_by_search)
 
-            logger.info(f"[CLONE] FINDALL: Extracted total of {len(all_snippets)} snippets from {sources_pulled} sources")
+            logger.debug(f"[CLONE] FINDALL: Extracted total of {len(all_snippets)} snippets from {sources_pulled} sources")
 
         else:
             # EXISTING iteration logic for non-findall strategies
@@ -749,7 +749,7 @@ class TheClone2Refined:
                 sources_this_batch = ranked_sources[sources_pulled:batch_end]
 
                 if len(sources_this_batch) == 0:
-                    logger.info("[CLONE] No more sources to pull")
+                    logger.debug("[CLONE] No more sources to pull")
                     break
 
                 logger.debug(f"[CLONE] Pulling sources {sources_pulled}-{batch_end-1} ({len(sources_this_batch)} sources)")
@@ -964,7 +964,7 @@ class TheClone2Refined:
                 suggested_search_terms = suggested_search_terms[:2]
                 
                 iteration += 1 # Count self-correction as an additional iteration
-                logger.info(f"[CLONE] Model suggested search terms: {suggested_search_terms}")
+                logger.debug(f"[CLONE] Model suggested search terms: {suggested_search_terms}")
                 if clone_logger:
                     clone_logger.log_section("Self-Correction Search", f"Grade {self_assessment}. Executing suggested searches: {suggested_search_terms}", level=2)
 
@@ -1130,7 +1130,7 @@ class TheClone2Refined:
             target_soft_schema = False
 
             if request_upgrade and synthesis_tier != 'tier4':
-                logger.info(f"[CLONE] Upgrading to tier4 (PhD+ capability) as requested")
+                logger.debug(f"[CLONE] Upgrading to tier4 (PhD+ capability) as requested")
                 tier4_models = get_models_for_tier(provider, 'tier4', strategy=strategy)
                 target_model = tier4_models['synthesis']
                 # ai_client will handle soft_schema automatically for DeepSeek/Baseten
@@ -1140,7 +1140,7 @@ class TheClone2Refined:
                 upgraded = True
                 action_name = "Tier 4 Upgrade & Re-Synthesis"
             else:
-                logger.info(f"[CLONE] Re-synthesizing with current model ({target_model})")
+                logger.debug(f"[CLONE] Re-synthesizing with current model ({target_model})")
                 action_name = "Re-Synthesis (Current Model)"
 
             step_start_phase = time.time()
@@ -1148,7 +1148,7 @@ class TheClone2Refined:
                 clone_logger.start_step(action_name)
                 clone_logger.log_section(action_name, f"Self-assessment: {self_assessment}. Re-running synthesis.", level=2)
 
-            logger.info(f"[CLONE] Retrying synthesis with {target_model}")
+            logger.debug(f"[CLONE] Retrying synthesis with {target_model}")
 
             synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
                 query=prompt,
@@ -1181,7 +1181,7 @@ class TheClone2Refined:
             # Get new self-assessment
             answer_data = synthesis_result.get('answer', {})
             self_assessment = answer_data.get('self_assessment', 'A') if isinstance(answer_data, dict) else 'A'
-            logger.info(f"[CLONE] Final self-assessment: {self_assessment}")
+            logger.debug(f"[CLONE] Final self-assessment: {self_assessment}")
             
         elif self_assessment not in ['A+', 'A']:
             logger.warning(f"[CLONE] Low self-assessment ({self_assessment}) but no search/upgrade improvements requested. Returning best effort.")
@@ -1196,8 +1196,8 @@ class TheClone2Refined:
             logger.warning(f"[CLONE] Cost mismatch! By-stage: ${total_cost:.4f}, By-provider: ${total_cost_by_provider:.4f}")
 
         logger.info(f"\n[CLONE] Complete in {total_time:.1f}s, Cost: ${total_cost:.4f}")
-        logger.info(f"[CLONE] Cost by provider: " + ", ".join(f"{p}=${c:.4f}" for p, c in costs_by_provider.items() if c > 0))
-        logger.info(f"[CLONE] Snippets: {len(all_snippets)}, Citations: {len(synthesis_result.get('citations', []))}")
+        logger.debug(f"[CLONE] Cost by provider: " + ", ".join(f"{p}=${c:.4f}" for p, c in costs_by_provider.items() if c > 0))
+        logger.debug(f"[CLONE] Snippets: {len(all_snippets)}, Citations: {len(synthesis_result.get('citations', []))}")
 
         # Build provider-level cost structure for DynamoDB
         provider_costs = {}

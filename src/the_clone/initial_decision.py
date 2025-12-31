@@ -62,9 +62,9 @@ class InitialDecision:
                 - reasoning: explanation
         """
         if findall_mode:
-            logger.info("[INITIAL] FINDALL mode: Using dedicated prompt and schema for maximum breadth")
+            logger.debug("[INITIAL] FINDALL mode: Using dedicated prompt and schema for maximum breadth")
 
-        logger.info(f"[INITIAL] Making decision: Answer directly or Search?")
+        logger.debug(f"[INITIAL] Making decision: Answer directly or Search?")
 
         prompt = self._build_prompt(query, is_findall=findall_mode)
 
@@ -83,7 +83,7 @@ class InitialDecision:
             # Use dedicated findall schema or regular schema
             if findall_mode:
                 schema_obj = get_findall_schema()
-                logger.info("[INITIAL] Using dedicated FINDALL schema")
+                logger.debug("[INITIAL] Using dedicated FINDALL schema")
             else:
                 schema_obj = get_initial_decision_schema(answer_schema=custom_schema)
 
@@ -130,12 +130,12 @@ class InitialDecision:
                     logger.warning(f"[INITIAL] FINDALL: Expected 5 search terms but got {len(search_terms)}")
                     if len(search_terms) > 5:
                         search_terms = search_terms[:5]
-                        logger.info(f"[INITIAL] FINDALL: Truncated to 5 terms")
+                        logger.debug(f"[INITIAL] FINDALL: Truncated to 5 terms")
                     elif len(search_terms) < 5:
                         logger.error(f"[INITIAL] FINDALL: LLM did not generate 5 terms as instructed. Using {len(search_terms)} terms.")
 
-                logger.info(f"[INITIAL] FINDALL: breadth='findall', depth='shallow', tier='tier2', {len(search_terms)} search terms")
-                logger.info(f"[INITIAL] FINDALL search terms: {search_terms}")
+                logger.debug(f"[INITIAL] FINDALL: breadth='findall', depth='shallow', tier='tier2', {len(search_terms)} search terms")
+                logger.debug(f"[INITIAL] FINDALL search terms: {search_terms}")
             else:
                 # Regular mode - full response
                 decision = data.get('decision', 'need_search')
@@ -165,22 +165,22 @@ class InitialDecision:
                 except:
                     pass
 
-            logger.info(f"[INITIAL] Decision: {decision}")
+            logger.debug(f"[INITIAL] Decision: {decision}")
 
             # Extract keywords
             positive_keywords = data.get('positive_keywords', [])
             negative_keywords = data.get('negative_keywords', [])
 
             if decision == "answer_directly":
-                logger.info(f"[INITIAL] Answering from model knowledge")
+                logger.debug(f"[INITIAL] Answering from model knowledge")
             else:
-                logger.info(f"[INITIAL] Need search - Breadth: {breadth}, Depth: {depth}")
-                logger.info(f"[INITIAL] Generated {len(search_terms)} search terms")
-                logger.info(f"[INITIAL] Keywords: {len(positive_keywords)} positive, {len(negative_keywords)} negative")
+                logger.debug(f"[INITIAL] Need search - Breadth: {breadth}, Depth: {depth}")
+                logger.debug(f"[INITIAL] Generated {len(search_terms)} search terms")
+                logger.debug(f"[INITIAL] Keywords: {len(positive_keywords)} positive, {len(negative_keywords)} negative")
                 if positive_keywords:
-                    logger.info(f"[INITIAL] Positive keywords: {positive_keywords}")
+                    logger.debug(f"[INITIAL] Positive keywords: {positive_keywords}")
                 if negative_keywords:
-                    logger.info(f"[INITIAL] Negative keywords: {negative_keywords}")
+                    logger.debug(f"[INITIAL] Negative keywords: {negative_keywords}")
 
             return {
                 "decision": decision,

@@ -217,7 +217,7 @@ class SnippetExtractorStreamlined:
                             code = q[0]
                             if code == '`*' or code == '*':
                                 has_pass_all = True
-                                logger.info(f"[EXTRACTOR] Found `* pass-all code, using entire source instead of snippets")
+                                logger.debug(f"[EXTRACTOR] Found `* pass-all code, using entire source instead of snippets")
                                 break
 
                 # Merge consecutive table row codes into ranges (if using code extraction)
@@ -355,7 +355,7 @@ class SnippetExtractorStreamlined:
                     snippets.append(snippet)
                     total_quotes += 1
 
-            logger.info(f"[EXTRACTOR] {snippet_id_prefix}: {len(snippets)} quotes across {len(quotes_by_search)} search terms (threshold: {min_quality_threshold})")
+            logger.debug(f"[EXTRACTOR] {snippet_id_prefix}: {len(snippets)} quotes across {len(quotes_by_search)} search terms (threshold: {min_quality_threshold})")
 
             # Log resolved snippets if using code extraction
             if clone_logger and use_code_extraction and snippets:
@@ -378,7 +378,7 @@ class SnippetExtractorStreamlined:
                 p_scores = [s["p"] for s in snippets]
                 mode_p = Counter(p_scores).most_common(1)[0][0] if p_scores else 0.5
 
-                logger.info(f"[EXTRACTOR] Quality: avg_p={avg_p:.2f}, mode_p={mode_p:.2f}, high={high_q}, low={low_q}")
+                logger.debug(f"[EXTRACTOR] Quality: avg_p={avg_p:.2f}, mode_p={mode_p:.2f}, high={high_q}, low={low_q}")
 
                 # Add source quality (mode p-score) to all snippets
                 for snippet in snippets:
@@ -406,9 +406,9 @@ class SnippetExtractorStreamlined:
                         most_common_reason = reason_counts.most_common(1)[0][0]
 
                         if force_full_extraction:
-                            logger.info(f"[EXTRACTOR] EXTRACTION MODE - forcing full source content (p={median_p}, {len(snippets)} snippets found)")
+                            logger.debug(f"[EXTRACTOR] EXTRACTION MODE - forcing full source content (p={median_p}, {len(snippets)} snippets found)")
                         else:
-                            logger.info(f"[EXTRACTOR] Coverage {coverage:.1%} >50% - using entire source (median_p={median_p}, reason={most_common_reason})")
+                            logger.debug(f"[EXTRACTOR] Coverage {coverage:.1%} >50% - using entire source (median_p={median_p}, reason={most_common_reason})")
 
                         # Replace all individual snippets with single consolidated snippet
                         snippet_id = f"{snippet_id_prefix}.0-p{median_p:.2f}"
@@ -515,7 +515,7 @@ class SnippetExtractorStreamlined:
         from datetime import datetime
         current_date = datetime.now().strftime('%Y-%m-%d')
 
-        logger.info(f"[BATCH EXTRACTOR] Processing {len(sources)} sources in single call (starting index {start_source_index})")
+        logger.debug(f"[BATCH EXTRACTOR] Processing {len(sources)} sources in single call (starting index {start_source_index})")
 
         # Label all sources with source-prefixed codes
         labeled_sources = []
@@ -609,7 +609,7 @@ class SnippetExtractorStreamlined:
                 allowed_levels = sorted_p  # All levels allowed
                 dynamic_threshold = 0.0
                 effective_threshold = 0.0
-                logger.info(f"[BATCH EXTRACTOR] FINDALL mode: Accepting ALL quality levels (Available levels: {sorted_p}, Warning threshold: {min_quality_threshold})")
+                logger.debug(f"[BATCH EXTRACTOR] FINDALL mode: Accepting ALL quality levels (Available levels: {sorted_p}, Warning threshold: {min_quality_threshold})")
             else:
                 # Use top 2 levels if available, otherwise just the top 1
                 allowed_levels = sorted_p[:2]
@@ -618,7 +618,7 @@ class SnippetExtractorStreamlined:
                 # Effective threshold is dynamic but never below 0.15 (absolute junk)
                 effective_threshold = max(dynamic_threshold, 0.15)
 
-                logger.info(f"[BATCH EXTRACTOR] Dynamic threshold: p >= {effective_threshold} (Available levels: {sorted_p}, Strategy min: {min_quality_threshold})")
+                logger.debug(f"[BATCH EXTRACTOR] Dynamic threshold: p >= {effective_threshold} (Available levels: {sorted_p}, Strategy min: {min_quality_threshold})")
 
             # Process each source's quotes
             results = []
@@ -656,7 +656,7 @@ class SnippetExtractorStreamlined:
                                 code = q[1]  # Code is now position [1], handle is [0]
                                 if code == f'`{source_id}:*' or code == '`*':
                                     has_pass_all = True
-                                    logger.info(f"[BATCH EXTRACTOR] Found pass-all code for {source_id}, using entire source")
+                                    logger.debug(f"[BATCH EXTRACTOR] Found pass-all code for {source_id}, using entire source")
                                     break
 
                     # If pass-all, create single snippet with entire source
@@ -742,7 +742,7 @@ class SnippetExtractorStreamlined:
                         snippet_counter += 1
 
                 # All snippets from this source have same source-level p (already set above)
-                logger.info(f"[BATCH EXTRACTOR] {source_id} ({source_handle}): {len(snippets)} quotes extracted (dropped {dropped_count} low quality), p={source_p}, c={source_c}")
+                logger.debug(f"[BATCH EXTRACTOR] {source_id} ({source_handle}): {len(snippets)} quotes extracted (dropped {dropped_count} low quality), p={source_p}, c={source_c}")
 
                 # Add result for this source
                 results.append({
@@ -947,7 +947,7 @@ class SnippetExtractorStreamlined:
                 # Create range code (strip backtick if present)
                 code_clean = code[1:] if code.startswith('`') else code
                 range_code = f"`{code_clean}-{consecutive_end}"
-                logger.info(f"[EXTRACTOR] Merged {consecutive_end - sent_num + 1} consecutive table rows into range {range_code}")
+                logger.debug(f"[EXTRACTOR] Merged {consecutive_end - sent_num + 1} consecutive table rows into range {range_code}")
                 merged.append([range_code, p_score, reason])
                 i = j  # Skip all merged quotes
             else:

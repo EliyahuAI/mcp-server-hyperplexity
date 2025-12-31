@@ -80,8 +80,8 @@ class MergedSynthesizer:
                 - suggested_search_terms: list (if can_answer=false)
                 - citations: list (final citations with resolved text)
         """
-        logger.info(f"[MERGED] Mode: {'Synthesis' if is_last_iteration else 'Evaluation+Synthesis'}")
-        logger.info(f"[MERGED] Processing {len(sources)} sources")
+        logger.debug(f"[MERGED] Mode: {'Synthesis' if is_last_iteration else 'Evaluation+Synthesis'}")
+        logger.debug(f"[MERGED] Processing {len(sources)} sources")
 
         # Label all sources and organize by search term
         labeled_sources = self._label_and_organize_sources(sources, search_terms)
@@ -129,7 +129,7 @@ class MergedSynthesizer:
             data = extract_structured_response(actual_response)
 
             # Parse response based on mode
-            logger.info(f"[MERGED DEBUG] data keys: {list(data.keys())}")
+            logger.debug(f"[MERGED DEBUG] data keys: {list(data.keys())}")
             if is_last_iteration:
                 # Synthesis mode - just answer
                 answer_raw = data
@@ -148,7 +148,7 @@ class MergedSynthesizer:
                 missing = data.get('missing_aspects', [])
                 suggested = data.get('suggested_search_terms', [])
 
-            logger.info(f"[MERGED] Can answer: {can_answer}, Confidence: {confidence}")
+            logger.debug(f"[MERGED] Can answer: {can_answer}, Confidence: {confidence}")
 
             # Save raw response
             if debug_dir:
@@ -414,7 +414,7 @@ class MergedSynthesizer:
 
         # Debug: Show sample of answer_str to understand format
         sample = answer_str[:500] if len(answer_str) > 500 else answer_str
-        logger.info(f"[MERGED] answer_str sample: {sample}")
+        logger.debug(f"[MERGED] answer_str sample: {sample}")
 
         # Pattern to match code citations: {`code, p, c:classification}
         # In JSON, this becomes: {`S1:1.1, 0.95, c:H/P}
@@ -423,7 +423,7 @@ class MergedSynthesizer:
 
         # Find all code citations
         matches = re.findall(citation_pattern, answer_str)
-        logger.info(f"[MERGED] Found {len(matches)} code citations in answer")
+        logger.debug(f"[MERGED] Found {len(matches)} code citations in answer")
 
         if matches:
             logger.debug(f"[MERGED] Sample matches: {matches[:3]}")
@@ -572,7 +572,7 @@ class MergedSynthesizer:
 
         answer_final = json.loads(answer_str)
 
-        logger.info(f"[MERGED] Resolved {len(citations_metadata)} code citations to {len(citations)} unique citations")
+        logger.debug(f"[MERGED] Resolved {len(citations_metadata)} code citations to {len(citations)} unique citations")
         if failed_resolutions:
             logger.warning(f"[MERGED] Failed to resolve {len(failed_resolutions)} codes")
 

@@ -306,7 +306,7 @@ class CodeExtractionDebugger:
         with open(summary_path, 'w', encoding='utf-8') as f:
             json.dump(summary, f, indent=2)
 
-        logger.info(f"[DEBUG] Session summary: {successes} success, {errors} errors ({total} total)")
-        logger.info(f"[DEBUG] Summary saved to: {summary_path}")
+        logger.debug(f"[DEBUG] Session summary: {successes} success, {errors} errors ({total} total)")
+        logger.debug(f"[DEBUG] Summary saved to: {summary_path}")
 
         return summary_path

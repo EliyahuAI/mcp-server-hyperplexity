@@ -80,7 +80,7 @@ class SourceTriage:
                      Search 3: no sources (nothing new)
                      Search 4: sources 0,2
         """
-        logger.info(f"[TRIAGE] Starting parallel triage for {len(search_results)} searches")
+        logger.debug(f"[TRIAGE] Starting parallel triage for {len(search_results)} searches")
 
         # Create triage tasks for each search
         triage_tasks = []
@@ -119,7 +119,7 @@ class SourceTriage:
                 indices = result.get('ranked_indices', [])
                 ranked_indices_list.append(indices)
 
-        logger.info(f"[TRIAGE] Parallel triage complete. All sources ranked.")
+        logger.debug(f"[TRIAGE] Parallel triage complete. All sources ranked.")
 
         return ranked_indices_list, triage_results  # Return both indices and full results for cost extraction
 
@@ -161,7 +161,7 @@ class SourceTriage:
         results = search_result.get('results', [])
 
         if not results:
-            logger.info(f"[TRIAGE] Search {search_index} has no results")
+            logger.debug(f"[TRIAGE] Search {search_index} has no results")
             return {"selected_indices": []}
 
         logger.debug(f"[TRIAGE] Triaging search {search_index}: '{search_term[:60]}...' ({len(results)} results)")
@@ -226,7 +226,7 @@ class SourceTriage:
             if clone_logger:
                  clone_logger.log_section(f"Triage Result (Search {search_index})", data, level=4, collapse=True)
 
-            logger.info(f"[TRIAGE] Search {search_index}: Ranked {len(ranked_indices)} sources")
+            logger.debug(f"[TRIAGE] Search {search_index}: Ranked {len(ranked_indices)} sources")
             if len(ranked_indices) == 0:
                 logger.debug(f"[TRIAGE] Model response data: {data}")
 

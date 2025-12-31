@@ -76,7 +76,7 @@ class CodeResolver:
             # Special case: §* means pass entire source
             if code_clean == '§*' or code_clean == '*':
                 if self.original_text:
-                    logger.info(f"[RESOLVER] Pass-all code §* - returning entire source ({len(self.original_text)} chars)")
+                    logger.debug(f"[RESOLVER] Pass-all code §* - returning entire source ({len(self.original_text)} chars)")
                     return self.original_text
                 else:
                     logger.warning(f"[RESOLVER] Pass-all code §* but no original_text available")
@@ -286,7 +286,7 @@ class CodeResolver:
                     if header_id:
                         header_text = section['sentences'].get(header_id, {}).get('text', '')
                         if header_text:
-                            logger.info(f"[RESOLVER] Auto-prepending table header to row {code}")
+                            logger.debug(f"[RESOLVER] Auto-prepending table header to row {code}")
                             return f"{header_text}\n{text}"
 
             return text
@@ -321,7 +321,7 @@ class CodeResolver:
             sent_ids = sorted(sentences.keys(), key=lambda x: int(x.split('.')[-1]))
             all_text = " ".join(sentences[sid]["text"] for sid in sent_ids)
 
-            logger.info(f"[RESOLVER] Heading-only code {code} resolved to entire section ({len(sent_ids)} sentences)")
+            logger.debug(f"[RESOLVER] Heading-only code {code} resolved to entire section ({len(sent_ids)} sentences)")
             return all_text
 
         # Parse H1.2 (with sentence number)
@@ -437,7 +437,7 @@ class CodeResolver:
                         if all_same_table and table_header_id:
                             header_text = section['sentences'].get(table_header_id, {}).get('text', '')
                             if header_text:
-                                logger.info(f"[RESOLVER] Auto-prepending table header to range {code} ({end_sent - start_sent + 1} rows)")
+                                logger.debug(f"[RESOLVER] Auto-prepending table header to range {code} ({end_sent - start_sent + 1} rows)")
                                 return f"{header_text}\n" + "\n".join(sentences)
 
             # Join with newlines (important for table rows)
@@ -483,7 +483,7 @@ class CodeResolver:
                 if all_same_table and table_header_id:
                     header_text = section['sentences'].get(table_header_id, {}).get('text', '')
                     if header_text:
-                        logger.info(f"[RESOLVER] Auto-prepending table header to range {code} ({end_sent - start_sent + 1} rows)")
+                        logger.debug(f"[RESOLVER] Auto-prepending table header to range {code} ({end_sent - start_sent + 1} rows)")
                         return f"{header_text}\n" + "\n".join(sentences)
 
         # Join with newlines (important for table rows)
@@ -554,7 +554,7 @@ class CodeResolver:
                         all_sentences.append(text)
 
             if all_sentences:
-                logger.info(f"[RESOLVER] Resolved cross-section range {original_code} ({len(all_sentences)} sentences across {end_num - start_num + 1} sections)")
+                logger.debug(f"[RESOLVER] Resolved cross-section range {original_code} ({len(all_sentences)} sentences across {end_num - start_num + 1} sections)")
                 return "\n".join(all_sentences)
             else:
                 logger.warning(f"[RESOLVER] No sentences found in cross-section range {original_code}")
@@ -603,7 +603,7 @@ class CodeResolver:
                     all_sentences.append(sent_data["text"])
 
         if all_sentences:
-            logger.info(f"[RESOLVER] Resolved cross-section range {original_code} ({len(all_sentences)} sentences across {end_num - start_num + 1} sections)")
+            logger.debug(f"[RESOLVER] Resolved cross-section range {original_code} ({len(all_sentences)} sentences across {end_num - start_num + 1} sections)")
             return "\n".join(all_sentences)
         else:
             logger.warning(f"[RESOLVER] No sentences found in cross-section range {original_code}")

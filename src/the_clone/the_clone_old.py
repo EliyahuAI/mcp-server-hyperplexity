@@ -90,15 +90,15 @@ class TheClone2Refined:
         start_time = datetime.now()
 
         logger.info("=" * 80)
-        logger.info(f"[CLONE 2 REFINED] Starting query: {prompt[:100]}...")
-        logger.info(f"[CLONE 2 REFINED] Context: {search_context}")
+        logger.debug(f"[CLONE 2 REFINED] Starting query: {prompt[:100]}...")
+        logger.debug(f"[CLONE 2 REFINED] Context: {search_context}")
         logger.info("=" * 80)
 
         # Load models and limits
         models = get_default_models()
         global_limits = get_global_limits()
 
-        logger.info(f"[CLONE 2 REFINED] Using DeepSeek V3.2 for all stages")
+        logger.debug(f"[CLONE 2 REFINED] Using DeepSeek V3.2 for all stages")
 
         # Save debug info if debug_dir provided
         if debug_dir:
@@ -127,12 +127,12 @@ class TheClone2Refined:
         decision = initial_result.get('decision', 'need_search')
         initial_time = (datetime.now() - initial_start).total_seconds()
 
-        logger.info(f"[CLONE 2 REFINED] Initial decision in {initial_time:.1f}s: {decision}")
+        logger.debug(f"[CLONE 2 REFINED] Initial decision in {initial_time:.1f}s: {decision}")
 
         # If can answer directly, return immediately
         if decision == "answer_directly":
             answer = initial_result.get('answer', {})
-            logger.info(f"[CLONE 2 REFINED] Answered from model knowledge - no search needed!")
+            logger.debug(f"[CLONE 2 REFINED] Answered from model knowledge - no search needed!")
 
             end_time = datetime.now()
             total_time = (end_time - start_time).total_seconds()
@@ -171,13 +171,13 @@ class TheClone2Refined:
         depth = initial_result.get('depth', 'shallow')
         strategy = get_strategy(breadth, depth)
 
-        logger.info(f"[CLONE 2 REFINED] Strategy: {strategy['name']} (breadth={breadth}, depth={depth})")
-        logger.info(f"[CLONE 2 REFINED] Batch size: {strategy['sources_per_batch']}, Mode: {strategy['extraction_mode']}, Min p: {strategy['min_p_threshold']}")
+        logger.debug(f"[CLONE 2 REFINED] Strategy: {strategy['name']} (breadth={breadth}, depth={depth})")
+        logger.debug(f"[CLONE 2 REFINED] Batch size: {strategy['sources_per_batch']}, Mode: {strategy['extraction_mode']}, Min p: {strategy['min_p_threshold']}")
 
         # Get search terms from initial decision
         initial_search_terms = initial_result.get('search_terms', [])
-        logger.info(f"[CLONE 2 REFINED] Need search - using {len(initial_search_terms)} initial terms")
-        logger.info(f"[CLONE 2 REFINED] Initial search terms: {initial_search_terms}")
+        logger.debug(f"[CLONE 2 REFINED] Need search - using {len(initial_search_terms)} initial terms")
+        logger.debug(f"[CLONE 2 REFINED] Initial search terms: {initial_search_terms}")
 
         # Initialize tracking
         all_snippets = []  # List of snippets with IDs
@@ -205,18 +205,18 @@ class TheClone2Refined:
         # Iteration loop
         for iteration in range(1, max_iterations + 1):
             logger.info(f"\n{'='*80}")
-            logger.info(f"[CLONE 2 REFINED] Iteration {iteration}/{max_iterations}")
-            logger.info(f"{'='*80}")
+            logger.debug(f"[CLONE 2 REFINED] Iteration {iteration}/{max_iterations}")
+            logger.debug(f"{'='*80}")
 
             # Step 1: Get search terms (use initial terms on iter 1, generate new on iter 2+)
             if iteration == 1:
-                logger.info(f"[CLONE 2 REFINED] Step 1: Using initial search terms")
+                logger.debug(f"[CLONE 2 REFINED] Step 1: Using initial search terms")
                 search_terms = initial_search_terms
                 all_search_terms.extend(search_terms)  # Track all terms
                 search_settings = {'max_results': max_results}
                 step1_time = 0  # Already counted in initial decision
             else:
-                logger.info(f"[CLONE 2 REFINED] Step 1: Generating new search terms...")
+                logger.debug(f"[CLONE 2 REFINED] Step 1: Generating new search terms...")
                 step_start = datetime.now()
                 optimization_guidance = get_optimization_guidance(search_context)
 
@@ -233,23 +233,23 @@ class TheClone2Refined:
                 search_settings['max_results'] = max_results
 
                 step1_time = (datetime.now() - step_start).total_seconds()
-                logger.info(f"[CLONE 2 REFINED] Generated {len(search_terms)} search terms in {step1_time:.1f}s")
+                logger.debug(f"[CLONE 2 REFINED] Generated {len(search_terms)} search terms in {step1_time:.1f}s")
 
             # Step 2: Execute searches
-            logger.info(f"[CLONE 2 REFINED] Step 2: Executing searches...")
+            logger.debug(f"[CLONE 2 REFINED] Step 2: Executing searches...")
             step_start = datetime.now()
             search_results = await self.search_manager.execute_searches(
                 search_terms=search_terms,
                 search_settings=search_settings
             )
             step2_time = (datetime.now() - step_start).total_seconds()
-            logger.info(f"[CLONE 2 REFINED] Searches completed in {step2_time:.1f}s")
+            logger.debug(f"[CLONE 2 REFINED] Searches completed in {step2_time:.1f}s")
 
             # Track search cost (Perplexity charges per search)
             cost_tracker['search'] += len(search_terms) * 0.005
 
             # Step 3: Parallel Triage (NEW!)
-            logger.info(f"[CLONE 2 REFINED] Step 3: Parallel triage (0-{sources_per_search_max} per search)...")
+            logger.debug(f"[CLONE 2 REFINED] Step 3: Parallel triage (0-{sources_per_search_max} per search)...")
             step_start = datetime.now()
 
             selected_indices_per_search, triage_results = await self.source_triage.triage_all_searches(
@@ -300,15 +300,15 @@ class TheClone2Refined:
                 source['_sorted_index'] = new_idx
 
             step3_time = (datetime.now() - step_start).total_seconds()
-            logger.info(f"[CLONE 2 REFINED] Triage selected {len(selected_sources)} sources from {len(search_terms)} searches in {step3_time:.1f}s (sorted by date)")
+            logger.debug(f"[CLONE 2 REFINED] Triage selected {len(selected_sources)} sources from {len(search_terms)} searches in {step3_time:.1f}s (sorted by date)")
 
             # Early exit if no new sources
             if len(selected_sources) == 0:
-                logger.info(f"[CLONE 2 REFINED] No new sources selected - proceeding to synthesis")
+                logger.debug(f"[CLONE 2 REFINED] No new sources selected - proceeding to synthesis")
                 break
 
             # Step 4: Extract quotes with snippet IDs (parallel)
-            logger.info(f"[CLONE 2 REFINED] Step 4: Extracting quotes from {len(selected_sources)} sources (parallel)...")
+            logger.debug(f"[CLONE 2 REFINED] Step 4: Extracting quotes from {len(selected_sources)} sources (parallel)...")
             step_start = datetime.now()
 
             extraction_tasks = []
@@ -351,17 +351,17 @@ class TheClone2Refined:
             all_snippets.extend(new_snippets)
 
             step4_time = (datetime.now() - step_start).total_seconds()
-            logger.info(f"[CLONE 2 REFINED] Extracted {len(new_snippets)} quotes in {step4_time:.1f}s, Total: {len(all_snippets)}")
+            logger.debug(f"[CLONE 2 REFINED] Extracted {len(new_snippets)} quotes in {step4_time:.1f}s, Total: {len(all_snippets)}")
             if len(selected_sources) > 0:
-                logger.info(f"[CLONE 2 REFINED] Average extraction time: {step4_time / len(selected_sources):.1f}s per source")
+                logger.debug(f"[CLONE 2 REFINED] Average extraction time: {step4_time / len(selected_sources):.1f}s per source")
 
             # Step 5/6: Unified Evaluation + Synthesis
             is_last_iteration = (iteration >= max_iterations)
 
             if is_last_iteration:
-                logger.info(f"[CLONE 2 REFINED] Step 5: Synthesis (last iteration)...")
+                logger.debug(f"[CLONE 2 REFINED] Step 5: Synthesis (last iteration)...")
             else:
-                logger.info(f"[CLONE 2 REFINED] Step 5: Evaluation + Synthesis (if sufficient)...")
+                logger.debug(f"[CLONE 2 REFINED] Step 5: Evaluation + Synthesis (if sufficient)...")
 
             step_start = datetime.now()
 
@@ -394,18 +394,18 @@ class TheClone2Refined:
             step5_time = (datetime.now() - step_start).total_seconds()
 
             if is_last_iteration:
-                logger.info(f"[CLONE 2 REFINED] Synthesis complete in {step5_time:.1f}s")
+                logger.debug(f"[CLONE 2 REFINED] Synthesis complete in {step5_time:.1f}s")
                 break
             else:
-                logger.info(f"[CLONE 2 REFINED] Eval+Synthesis complete in {step5_time:.1f}s - Can answer: {can_answer}, Confidence: {confidence}")
+                logger.debug(f"[CLONE 2 REFINED] Eval+Synthesis complete in {step5_time:.1f}s - Can answer: {can_answer}, Confidence: {confidence}")
 
                 if can_answer:
-                    logger.info(f"[CLONE 2 REFINED] Answer provided - stopping")
+                    logger.debug(f"[CLONE 2 REFINED] Answer provided - stopping")
                     break
                 else:
                     missing = unified_result.get('missing_aspects', [])
-                    logger.info(f"[CLONE 2 REFINED] Insufficient - missing: {', '.join(missing[:3])}")
-                    logger.info(f"[CLONE 2 REFINED] Continuing to iteration {iteration + 1}")
+                    logger.debug(f"[CLONE 2 REFINED] Insufficient - missing: {', '.join(missing[:3])}")
+                    logger.debug(f"[CLONE 2 REFINED] Continuing to iteration {iteration + 1}")
 
         end_time = datetime.now()
         total_time = (end_time - start_time).total_seconds()
@@ -414,18 +414,18 @@ class TheClone2Refined:
         total_cost = sum(cost_tracker.values())
 
         logger.info(f"\n[CLONE 2 REFINED] Complete!")
-        logger.info(f"[CLONE 2 REFINED] Total time: {total_time:.1f}s")
-        logger.info(f"[CLONE 2 REFINED] Iterations: {iteration}")
-        logger.info(f"[CLONE 2 REFINED] Snippets: {len(snippets_used)}/{len(all_snippets)}")
-        logger.info(f"[CLONE 2 REFINED] Citations: {len(citations)}")
-        logger.info(f"[CLONE 2 REFINED] Total cost: ${total_cost:.4f}")
+        logger.debug(f"[CLONE 2 REFINED] Total time: {total_time:.1f}s")
+        logger.debug(f"[CLONE 2 REFINED] Iterations: {iteration}")
+        logger.debug(f"[CLONE 2 REFINED] Snippets: {len(snippets_used)}/{len(all_snippets)}")
+        logger.debug(f"[CLONE 2 REFINED] Citations: {len(citations)}")
+        logger.debug(f"[CLONE 2 REFINED] Total cost: ${total_cost:.4f}")
         logger.info(f"\n[CLONE 2 REFINED] COST BREAKDOWN:")
         for component, cost in cost_tracker.items():
             if cost > 0:
                 pct = (cost / total_cost * 100) if total_cost > 0 else 0
                 logger.info(f"  {component:20s}: ${cost:.4f} ({pct:.1f}%)")
 
-        logger.info(f"[CLONE DEBUG] About to return - synthesis_tier={synthesis_tier}, all_search_terms={all_search_terms[:50] if all_search_terms else None}")
+        logger.debug(f"[CLONE DEBUG] About to return - synthesis_tier={synthesis_tier}, all_search_terms={all_search_terms[:50] if all_search_terms else None}")
 
         return {
             "answer": answer,
