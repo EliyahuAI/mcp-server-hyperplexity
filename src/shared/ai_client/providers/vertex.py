@@ -30,8 +30,12 @@ class VertexProvider:
             logger.error(f"Failed to get Vertex access token: {e}")
             raise Exception(f"Vertex authentication failed: {e}")
 
-    async def _normalize_vertex_response(self, vertex_response: Dict, soft_schema: bool = False, schema: Dict = None) -> Dict:
-        """Normalize Vertex AI API response to Anthropic-style format."""
+    async def _normalize_vertex_response(self, vertex_response: Dict, soft_schema: bool = False, schema: Dict = None, model: str = None) -> Dict:
+        """Normalize Vertex AI API response to Anthropic-style format.
+
+        Args:
+            model: Model name (e.g., 'deepseek-v3.2') for logging/debugging
+        """
         try:
             # DeepSeek/OpenAI format
             if 'content' in vertex_response and isinstance(vertex_response['content'], list):
@@ -85,7 +89,7 @@ class VertexProvider:
                             repair_cost = repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
 
                             # Log the repair explanation
-                            logger.info(f"[HAIKU_REPAIR] Provider: vertex, Model: {model}")
+                            logger.info(f"[HAIKU_REPAIR] Original model: {model or 'unknown'}, Repair model: gemini-2.0-flash")
                             logger.info(f"[HAIKU_REPAIR] Explanation: {repair_explanation}")
                             logger.info(f"[HAIKU_REPAIR] Cost: ${repair_cost:.6f}")
 
@@ -132,7 +136,7 @@ class VertexProvider:
                                     repair_cost = repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
 
                                     # Log the repair explanation
-                                    logger.info(f"[HAIKU_REPAIR] Provider: vertex, Model: {model}")
+                                    logger.info(f"[HAIKU_REPAIR] Original model: {model or 'unknown'}, Repair model: gemini-2.0-flash")
                                     logger.info(f"[HAIKU_REPAIR] Explanation: {repair_explanation}")
                                     logger.info(f"[HAIKU_REPAIR] Cost: ${repair_cost:.6f}")
 
@@ -237,7 +241,7 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
                         await self.cache_handler.save_debug_data('vertex', model, debug_request, response_text, error=error, context=f"status_{response.status}", cache_key=cache_key)
                         raise error
 
-            unified_response = await self._normalize_vertex_response(response_dict, soft_schema, schema)
+            unified_response = await self._normalize_vertex_response(response_dict, soft_schema, schema, model)
             
             if unified_response.get('stop_reason') in ['max_tokens', 'length']:
                  await self.cache_handler.save_debug_data('vertex', model, debug_request, unified_response, context="max_tokens_truncated", cache_key=cache_key)
