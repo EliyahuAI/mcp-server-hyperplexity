@@ -1041,6 +1041,14 @@ async def execute_full_table_generation(
                             'table_extraction_result.json', table_extraction_result
                         )
 
+                        # CRITICAL: Update background_research_result in S3 with extracted_tables
+                        # This ensures restructure can access the extracted tables
+                        _save_to_s3(
+                            storage_manager, email, session_id, conversation_id,
+                            'background_research_result.json', background_research_result
+                        )
+                        logger.info("[STEP 0b] Updated background_research_result in S3 with extracted_tables")
+
                         # Track API calls from table extraction
                         # enhanced_data is a list of API call metadata from all extractions
                         for enhanced_data_item in table_extraction_result.get('enhanced_data', []):
