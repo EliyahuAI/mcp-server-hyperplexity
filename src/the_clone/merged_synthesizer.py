@@ -2,7 +2,7 @@
 """
 Merged Synthesizer for Clone 2.
 Combines snippet extraction and synthesis into a single call.
-Uses code-based citations: ["`1.1", 0.95, "P"] that get resolved after synthesis.
+Uses code-based citations: ["§1.1", 0.95, "P"] that get resolved after synthesis.
 """
 
 import sys
@@ -57,7 +57,7 @@ class MergedSynthesizer:
         Merged evaluation + synthesis with code-based citations.
 
         Instead of pre-extracted snippets, receives raw sources with labeled text.
-        Synthesis cites using codes like ["`1.1", 0.95, "P"].
+        Synthesis cites using codes like ["§1.1", 0.95, "P"].
         Post-processing resolves codes to actual text.
 
         Args:
@@ -232,9 +232,9 @@ class MergedSynthesizer:
             # Label the text
             labeled_text, text_structure = self.text_labeler.label_text(source_text)
 
-            # Add source prefix to all codes (e.g., `1.1 -> `S1:1.1)
+            # Add source prefix to all codes (e.g., §1.1 -> §S1:1.1)
             source_prefix = f"S{i + 1}:"
-            labeled_text = re.sub(r'`(\d+\.\d+)', f'`{source_prefix}\\1', labeled_text)
+            labeled_text = re.sub(r'§(\d+\.\d+)', f'§{source_prefix}\\1', labeled_text)
 
             labeled_sources.append({
                 'source_id': i + 1,
@@ -307,11 +307,11 @@ class MergedSynthesizer:
         Format:
         Q1.1: "search term"
           Source 1: URL [DATE, RELIABILITY]
-          Available codes: `S1:1.0-1.25 (26 codes), `S1:2.0-2.8 (9 codes) - Total: 35 codes
+          Available codes: §S1:1.0-1.25 (26 codes), §S1:2.0-2.8 (9 codes) - Total: 35 codes
           <labeled text>
 
           Source 2: URL [DATE, RELIABILITY]
-          Available codes: `S2:1.0-1.15 (16 codes) - Total: 16 codes
+          Available codes: §S2:1.0-1.15 (16 codes) - Total: 16 codes
           <labeled text>
         """
         if not labeled_sources:
@@ -364,8 +364,8 @@ class MergedSynthesizer:
 
     def _extract_code_ranges(self, labeled_text: str, source_id: int) -> str:
         """Extract and format available code ranges from labeled text."""
-        # Find all codes in format `S#:section.sentence
-        codes = re.findall(r'`S\d+:(\d+)\.(\d+)', labeled_text)
+        # Find all codes in format §S#:section.sentence
+        codes = re.findall(r'§S\d+:(\d+)\.(\d+)', labeled_text)
 
         if not codes:
             return "No codes found"
@@ -390,9 +390,9 @@ class MergedSynthesizer:
             total_codes += count
 
             if min_sent == max_sent:
-                ranges.append(f"`S{source_id}:{section}.{min_sent} (1 code)")
+                ranges.append(f"§S{source_id}:{section}.{min_sent} (1 code)")
             else:
-                ranges.append(f"`S{source_id}:{section}.{min_sent}-{section}.{max_sent} ({count} codes)")
+                ranges.append(f"§S{source_id}:{section}.{min_sent}-{section}.{max_sent} ({count} codes)")
 
         return f"{', '.join(ranges)} - Total: {total_codes} codes"
 
@@ -404,7 +404,7 @@ class MergedSynthesizer:
         """
         Extract code citations from answer and resolve to text.
 
-        Looks for patterns like: ["`1.1", 0.95, "P"]
+        Looks for patterns like: ["§1.1", 0.95, "P"]
         Resolves codes to actual text and creates citations.
 
         Returns:
@@ -416,10 +416,10 @@ class MergedSynthesizer:
         sample = answer_str[:500] if len(answer_str) > 500 else answer_str
         logger.debug(f"[MERGED] answer_str sample: {sample}")
 
-        # Pattern to match code citations: {`code, p, c:classification}
-        # In JSON, this becomes: {`S1:1.1, 0.95, c:H/P}
-        # Handles source-prefixed codes with optional context: {`S1:1.1 [context], 0.95, c:H/P}
-        citation_pattern = r'\{`(S\d+:[\d.]+(?:-[\d.]+)?(?:\s*\[[^\]]+\])*),\s*([0-9.]+),\s*c:([^}]+)\}'
+        # Pattern to match code citations: {§code, p, c:classification}
+        # In JSON, this becomes: {§S1:1.1, 0.95, c:H/P}
+        # Handles source-prefixed codes with optional context: {§S1:1.1 [context], 0.95, c:H/P}
+        citation_pattern = r'\{§(S\d+:[\d.]+(?:-[\d.]+)?(?:\s*\[[^\]]+\])*),\s*([0-9.]+),\s*c:([^}]+)\}'
 
         # Find all code citations
         matches = re.findall(citation_pattern, answer_str)
@@ -554,7 +554,7 @@ class MergedSynthesizer:
                 })
 
         # Replace code citations with numeric citations
-        # Pattern: ["`code", p_score, "reason"] or [[\"`code\", p_score, \"reason\"]] -> [citation_num]
+        # Pattern: ["§code", p_score, "reason"] or [[\"§code\", p_score, \"reason\"]] -> [citation_num]
         def replace_citation(match):
             code = match.group(1)
             # Remove escape characters if present

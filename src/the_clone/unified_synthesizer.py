@@ -683,7 +683,7 @@ Query: {query}
                         # Return snippet number as sort key (not true sequentiality, just order)
                         return (0, snippet_num)
 
-                # Extract section.sentence from code like `S1:2.5 or `2.5
+                # Extract section.sentence from code like §S1:2.5 or §2.5
                 import re
                 match = re.search(r'(\d+)\.(\d+)', code)
                 if match:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Schemas for merged synthesis (combines snippet extraction + synthesis).
-Citations use code format with p-scores and reasons: ["`1.1", 0.95, "P"]
+Citations use code format with p-scores and reasons: ["§1.1", 0.95, "P"]
 """
 
 
@@ -13,8 +13,8 @@ def get_merged_evaluation_synthesis_schema(answer_schema: dict = None) -> dict:
     - If can answer: provides answer with code citations
     - If cannot: provides missing aspects and suggested searches
 
-    Citations format: ["`code", p_score, "reason"] inline in answer text
-    Example: "Fact ["`1.1", 0.95, "P"] and another ["`2.3-2.5", 0.85, "A"]"
+    Citations format: ["§code", p_score, "reason"] inline in answer text
+    Example: "Fact ["§1.1", 0.95, "P"] and another ["§2.3-2.5", 0.85, "A"]"
 
     Returns:
         JSON schema
@@ -33,7 +33,7 @@ def get_merged_evaluation_synthesis_schema(answer_schema: dict = None) -> dict:
             },
             "answer_raw": answer_schema if answer_schema else {
                 "type": "object",
-                "description": "Complete answer with code citations when can_answer=true, empty object {} when can_answer=false. Citations format: [\"`code\", p_score, \"reason\"]"
+                "description": "Complete answer with code citations when can_answer=true, empty object {} when can_answer=false. Citations format: [\"§code\", p_score, \"reason\"]"
             },
             "missing_aspects": {
                 "type": "array",
@@ -55,8 +55,8 @@ def get_merged_synthesis_only_schema(answer_schema: dict = None) -> dict:
     Schema for merged synthesis-only (last iteration) with code citations.
     No evaluation, just generate answer with self-assessment.
 
-    Citations format: ["`code", p_score, "reason"] inline in answer text
-    Example: "Fact ["`1.1", 0.95, "P"] and another ["`2.3-2.5", 0.85, "A"]"
+    Citations format: ["§code", p_score, "reason"] inline in answer text
+    Example: "Fact ["§1.1", 0.95, "P"] and another ["§2.3-2.5", 0.85, "A"]"
 
     Returns:
         JSON schema
@@ -67,7 +67,7 @@ def get_merged_synthesis_only_schema(answer_schema: dict = None) -> dict:
     else:
         base_schema = {
             "type": "object",
-            "description": "Nested answer structure with code citations. Citations format: [\"`code\", p_score, \"reason\"]. Avoid repetitive keys."
+            "description": "Nested answer structure with code citations. Citations format: [\"§code\", p_score, \"reason\"]. Avoid repetitive keys."
         }
 
     return {

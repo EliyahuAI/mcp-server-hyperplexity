@@ -67,24 +67,24 @@ class CodeResolver:
 
         code_clean = code.strip()
 
-        # Strip trailing backtick if present (AI sometimes adds it)
-        if code_clean.endswith('`'):
+        # Strip trailing marker if present (AI sometimes adds it)
+        if code_clean.endswith('`') or code_clean.endswith('§'):
             code_clean = code_clean[:-1]
-            logger.debug(f"[RESOLVER] Stripped trailing backtick from code: {code} -> {code_clean}")
+            logger.debug(f"[RESOLVER] Stripped trailing marker from code: {code} -> {code_clean}")
 
         try:
-            # Special case: §* means pass entire source
-            if code_clean == '§*' or code_clean == '*':
+            # Special case: §* or `* means pass entire source
+            if code_clean in ('§*', '`*', '*'):
                 if self.original_text:
-                    logger.debug(f"[RESOLVER] Pass-all code §* - returning entire source ({len(self.original_text)} chars)")
+                    logger.debug(f"[RESOLVER] Pass-all code - returning entire source ({len(self.original_text)} chars)")
                     return self.original_text
                 else:
-                    logger.warning(f"[RESOLVER] Pass-all code §* but no original_text available")
+                    logger.warning(f"[RESOLVER] Pass-all code but no original_text available")
                     return ""
 
             # For simple codes without brackets (e.g., "§1", "§1-3"), directly resolve
-            # Strip backtick prefix if present
-            if code_clean.startswith('`'):
+            # Strip § or backtick prefix if present (support both for backward compat)
+            if code_clean.startswith('§') or code_clean.startswith('`'):
                 code_clean = code_clean[1:]
 
             if not '[' in code_clean and self._is_location_code(code_clean):
@@ -95,10 +95,10 @@ class CodeResolver:
             resolved_parts = []
             current_pos = 0
 
-            # Find all [...] patterns and `code patterns
-            # Pattern: [...] or `code (with backtick prefix)
+            # Find all [...] patterns and §code or `code patterns (support both markers)
+            # Pattern: [...] or §code or `code (with marker prefix)
             # Order matters: match longer patterns first (section.sentence before simple number)
-            pattern = r'\[([^\]]+)\]|`(H\d+(?:\.\d+)?(?:\.w\d+(?:-(?:\d+|H\d+\.\d+(?:\.w\d+)?))?)?(?:-(?:\d+|H\d+\.\d+))?)|`(\d+\.\d+(?:\.w\d+(?:-\d+)?)?(?:-\d+\.\d+)?)|`(\d+(?:\.w\d+(?:-\d+)?)?(?:-\d+)?)'
+            pattern = r'\[([^\]]+)\]|[§`](H\d+(?:\.\d+)?(?:\.w\d+(?:-(?:\d+|H\d+\.\d+(?:\.w\d+)?))?)?(?:-(?:\d+|H\d+\.\d+))?)|[§`](\d+\.\d+(?:\.w\d+(?:-\d+)?)?(?:-\d+\.\d+)?)|[§`](\d+(?:\.w\d+(?:-\d+)?)?(?:-\d+)?)'
 
             for match in re.finditer(pattern, code_clean, re.IGNORECASE):
                 # Add any literal text before this match
@@ -109,8 +109,8 @@ class CodeResolver:
 
                 if match.group(1):  # Bracketed content
                     bracket_content = match.group(1).strip()
-                    # Strip backtick prefix if present
-                    if bracket_content.startswith('`'):
+                    # Strip § or backtick prefix if present
+                    if bracket_content.startswith('§') or bracket_content.startswith('`'):
                         bracket_content = bracket_content[1:]
                     # Try to resolve as location code
                     if self._is_location_code(bracket_content):

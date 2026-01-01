@@ -258,14 +258,14 @@ class CodeExtractionDebugger:
         if not clean_code:
             return False  # Only had brackets, no actual code
 
-        # Strip backtick prefix if present
-        if clean_code.startswith('`'):
+        # Strip § prefix if present
+        if clean_code.startswith('§'):
             clean_code = clean_code[1:].strip()
 
         if not clean_code:
             return False
 
-        # Check for simple pattern (`1, `1-3, `1.w5-7) or full pattern (H1.2, H1.2-4)
+        # Check for simple pattern (§1, §1-3, §1.w5-7) or full pattern (H1.2, H1.2-4)
         simple_pattern = r'^\d+(?:\.w\d+(?:-\d+)?)?(?:-\d+)?$'
         full_pattern = r'^H\d+\.\d+'
 

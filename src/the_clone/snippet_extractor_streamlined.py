@@ -209,15 +209,15 @@ class SnippetExtractorStreamlined:
             for search_num_str, quotes in quotes_by_search.items():
                 search_num = int(search_num_str)
 
-                # Check if any quote uses `* (pass-all) - if so, skip snippet extraction
+                # Check if any quote uses §* (pass-all) - if so, skip snippet extraction
                 has_pass_all = False
                 if isinstance(quotes, list):
                     for q in quotes:
                         if isinstance(q, list) and len(q) > 0:
                             code = q[0]
-                            if code == '`*' or code == '*':
+                            if code == '§*' or code == '*':
                                 has_pass_all = True
-                                logger.debug(f"[EXTRACTOR] Found `* pass-all code, using entire source instead of snippets")
+                                logger.debug(f"[EXTRACTOR] Found §* pass-all code, using entire source instead of snippets")
                                 break
 
                 # Merge consecutive table row codes into ranges (if using code extraction)
@@ -531,9 +531,9 @@ class SnippetExtractorStreamlined:
             # Label the text
             labeled_text, text_structure = self.text_labeler.label_text(source_text)
 
-            # Add source prefix to all codes for display (e.g., `1.1 -> `S1:1.1)
+            # Add source prefix to all codes for display (e.g., §1.1 -> §S1:1.1)
             source_id = f"S{i}"
-            labeled_text_with_prefix = re.sub(r'`(\d+\.\d+)', f'`{source_id}:\\1', labeled_text)
+            labeled_text_with_prefix = re.sub(r'§(\d+\.\d+)', f'§{source_id}:\\1', labeled_text)
 
             # Create resolver with ORIGINAL labeled_text (without source prefix)
             # Model will return codes WITH prefix (S1:1.1), we'll strip before resolving
@@ -654,7 +654,7 @@ class SnippetExtractorStreamlined:
                         for q in quotes:
                             if isinstance(q, list) and len(q) >= 2:
                                 code = q[1]  # Code is now position [1], handle is [0]
-                                if code == f'`{source_id}:*' or code == '`*':
+                                if code == f'§{source_id}:*' or code == '§*':
                                     has_pass_all = True
                                     logger.debug(f"[BATCH EXTRACTOR] Found pass-all code for {source_id}, using entire source")
                                     break
@@ -698,11 +698,11 @@ class SnippetExtractorStreamlined:
                         detail_limitation = quote_array[0]  # Handle components (detail_limitation)
                         code = quote_array[1]  # Location code
 
-                        # Strip source prefix from code before resolving (e.g., `S1:1.1 -> `1.1)
+                        # Strip source prefix from code before resolving (e.g., §S1:1.1 -> §1.1)
                         code_without_prefix = code
                         if ':' in code:
                             # Extract the part after the colon
-                            code_without_prefix = '`' + code.split(':', 1)[1].lstrip('`')
+                            code_without_prefix = '§' + code.split(':', 1)[1].lstrip('§')
 
                         # Resolve code to text
                         quote_text = resolver.resolve(code_without_prefix)
@@ -870,7 +870,7 @@ class SnippetExtractorStreamlined:
             reason = quote[2]
 
             # Check if this is a sentence code (H1.2 or 1.2 format)
-            match = re.match(r'`?(H?\d+)\.(\d+)$', code)
+            match = re.match(r'§?(H?\d+)\.(\d+)$', code)
             if not match:
                 merged.append(quote)
                 i += 1
@@ -918,7 +918,7 @@ class SnippetExtractorStreamlined:
                     break
 
                 # Must be consecutive sentence from same section
-                next_match = re.match(r'`?(H?\d+)\.(\d+)$', next_code)
+                next_match = re.match(r'§?(H?\d+)\.(\d+)$', next_code)
                 if not next_match:
                     break
 
@@ -944,9 +944,9 @@ class SnippetExtractorStreamlined:
 
             # If we found consecutive rows, create a range
             if consecutive_end > sent_num:
-                # Create range code (strip backtick if present)
-                code_clean = code[1:] if code.startswith('`') else code
-                range_code = f"`{code_clean}-{consecutive_end}"
+                # Create range code (strip § if present)
+                code_clean = code[1:] if code.startswith('§') else code
+                range_code = f"§{code_clean}-{consecutive_end}"
                 logger.debug(f"[EXTRACTOR] Merged {consecutive_end - sent_num + 1} consecutive table rows into range {range_code}")
                 merged.append([range_code, p_score, reason])
                 i = j  # Skip all merged quotes
