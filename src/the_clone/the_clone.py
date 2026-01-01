@@ -263,6 +263,37 @@ class TheClone2Refined:
         positive_keywords = initial_result.get('positive_keywords', [])
         negative_keywords = initial_result.get('negative_keywords', [])
 
+        # Extract significant words from search terms and add to positive keywords
+        # This ensures memory recall matches on actual search content, not unrelated context
+        stopwords = {'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+                     'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+                     'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare',
+                     'ought', 'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by',
+                     'from', 'as', 'into', 'through', 'during', 'before', 'after',
+                     'above', 'below', 'between', 'under', 'again', 'further', 'then',
+                     'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all',
+                     'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor',
+                     'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just',
+                     'and', 'but', 'if', 'or', 'because', 'until', 'while', 'although',
+                     'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those',
+                     'am', 'it', 'its', 'they', 'their', 'them', 'we', 'us', 'our',
+                     'you', 'your', 'he', 'him', 'his', 'she', 'her', 'hers', 'i', 'me', 'my'}
+        search_term_words = set()
+        for term in search_terms:
+            words = term.lower().split()
+            for word in words:
+                # Keep words 3+ chars that aren't stopwords
+                clean_word = ''.join(c for c in word if c.isalnum())
+                if len(clean_word) >= 3 and clean_word not in stopwords:
+                    search_term_words.add(clean_word)
+
+        # Merge with existing positive keywords (avoid duplicates)
+        existing_lower = {kw.lower() for kw in positive_keywords}
+        new_keywords = [w for w in search_term_words if w not in existing_lower]
+        if new_keywords:
+            positive_keywords = positive_keywords + new_keywords
+            logger.debug(f"[CLONE] Added {len(new_keywords)} keywords from search terms: {new_keywords}")
+
         # Allow disabling keyword scoring for comparison tests
         if disable_keyword_scoring:
             logger.debug("[CLONE] Keyword scoring DISABLED for comparison test")
@@ -493,7 +524,6 @@ class TheClone2Refined:
                     for term, result in zip(search_terms, search_results):
                         if not isinstance(result, Exception):
                             await memory.store_search(
-                                query=prompt,
                                 search_term=term,
                                 results=result,
                                 parameters=search_settings,

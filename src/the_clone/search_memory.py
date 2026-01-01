@@ -177,7 +177,6 @@ class SearchMemory:
 
     async def store_search(
         self,
-        query: str,
         search_term: str,
         results: Dict[str, Any],
         parameters: Dict[str, Any],
@@ -187,11 +186,10 @@ class SearchMemory:
         Store search results in memory and backup to S3.
 
         Deduplication rules:
-        - Only dedupe within same query (not across queries)
+        - Only dedupe within same search_term (not across terms)
         - Keep both if different max_tokens (preserve richer data)
 
         Args:
-            query: Original user query
             search_term: Specific search term used
             results: Perplexity API response {"results": [...]}
             parameters: Search parameters (max_results, max_tokens_per_page, etc.)
@@ -205,7 +203,7 @@ class SearchMemory:
             self._initialize_empty_memory()
 
         # Generate query ID
-        query_id = self._generate_query_id(query, search_term)
+        query_id = self._generate_query_id(search_term)
 
         # Check if this exact query+search_term already exists
         existing_query = self._memory['queries'].get(query_id)
@@ -230,7 +228,7 @@ class SearchMemory:
 
         # Store query data
         query_data = {
-            "query_text": query,
+            "query_text": search_term,
             "search_term": search_term,
             "query_time": datetime.now(timezone.utc).isoformat(),
             "parameters": parameters,
@@ -268,13 +266,13 @@ class SearchMemory:
 
         return query_id
 
-    def _generate_query_id(self, query: str, search_term: str) -> str:
+    def _generate_query_id(self, search_term: str) -> str:
         """
-        Generate stable query ID based on query + search_term.
-        Same query+term = same ID (enables deduplication).
+        Generate stable query ID based on search_term.
+        Same term = same ID (enables deduplication).
         """
-        # Create hash of query + search_term
-        content = f"{query}|{search_term}".lower().strip()
+        # Create hash of search_term
+        content = search_term.lower().strip()
         hash_hex = hashlib.md5(content.encode()).hexdigest()[:12]
         return f"query_{hash_hex}"
 
