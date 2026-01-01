@@ -2182,105 +2182,27 @@ async def execute_full_table_generation(
             result['config_generated'] = False
 
         # ======================================================================
-        # GENERATE CSV with ID columns filled, other columns empty
+        # GENERATE EXCEL with sources embedded as comments (PRIMARY)
         # ======================================================================
-        logger.info("[EXECUTION] Generating CSV file with ID columns filled...")
+        logger.info("[EXECUTION] Generating Excel file with source URLs embedded as comments...")
 
         send_execution_progress(
             session_id=session_id,
             conversation_id=conversation_id,
             current_step=4,
             total_steps=4,
-            status='Generating CSV file...',
+            status='Generating Excel file with sources...',
             progress_percent=90
         )
 
-        try:
-            # Create CSV with ID columns filled, other columns empty
-            import csv
-            import io
-
-            csv_buffer = io.StringIO()
-
-            # Get ID columns and all column names
-            id_columns = [col['name'] for col in columns if col.get('importance', '').upper() == 'ID']
-            all_column_names = [col['name'] for col in columns]
-
-            writer = csv.DictWriter(csv_buffer, fieldnames=all_column_names)
-            writer.writeheader()
-
-            # Write rows with ID columns and research columns (if available) filled
-            populated_research_count = 0
-            total_research_cells = 0
-
-            for row in approved_rows:
-                csv_row = {}
-                research_values = row.get('research_values', {})
-
-                for col_name in all_column_names:
-                    if col_name in id_columns:
-                        # Fill ID columns from id_values
-                        csv_row[col_name] = row.get('id_values', {}).get(col_name, '')
-                    elif col_name in research_values:
-                        # Fill research columns if populated during discovery
-                        csv_row[col_name] = research_values.get(col_name, '')
-                        populated_research_count += 1
-                    else:
-                        # Leave other columns empty
-                        csv_row[col_name] = ''
-
-                    # Track total research cells for logging
-                    if col_name not in id_columns:
-                        total_research_cells += 1
-
-                writer.writerow(csv_row)
-
-            csv_content = csv_buffer.getvalue()
-
-            # Save CSV to S3 (keep as template since Excel is the primary file)
-            csv_filename = f"{table_name.replace(' ', '_')}_template.csv"
-            csv_s3_key = storage_manager.get_table_maker_path(
-                email=email,
-                session_id=session_id,
-                conversation_id=conversation_id,
-                file_name=csv_filename
-            )
-
-            storage_manager.s3_client.put_object(
-                Bucket=storage_manager.bucket_name,
-                Key=csv_s3_key,
-                Body=csv_content,
-                ContentType='text/csv'
-            )
-
-            result['csv_s3_key'] = csv_s3_key
-            result['csv_filename'] = csv_filename
-
-            # Calculate population statistics
-            research_columns_count = len(all_column_names) - len(id_columns)
-            population_pct = (populated_research_count / total_research_cells * 100) if total_research_cells > 0 else 0
-
-            logger.info(
-                f"[EXECUTION] CSV generated with {len(approved_rows)} rows: "
-                f"{len(id_columns)} ID columns filled, "
-                f"{populated_research_count}/{total_research_cells} research cells populated ({population_pct:.1f}%)"
-            )
-
-            # NOTE: session_info will be updated with Excel path after Excel generation
-            # (see below after Excel is created)
-
-        except Exception as e:
-            logger.error(f"[EXECUTION] Failed to generate CSV: {e}", exc_info=True)
-            result['csv_generation_error'] = str(e)
-
-        # ======================================================================
-        # GENERATE EXCEL with sources embedded as comments
-        # ======================================================================
+        excel_success = False
         try:
             import xlsxwriter
             import tempfile
 
-            logger.info("[EXECUTION] Generating Excel file with source URLs embedded as comments...")
+            # Get ID columns and all column names
+            id_columns = [col['name'] for col in columns if col.get('importance', '').upper() == 'ID']
+            all_column_names = [col['name'] for col in columns]
 
             # Get citations dictionary from conversation_state
             citations = conversation_state.get('citations', {})
@@ -2384,7 +2306,7 @@ async def execute_full_table_generation(
                 f"{sources_added} cells have source comments (citations embedded per-cell)"
             )
 
-            # Update session_info.json with Excel path (preferred over CSV for validation)
+            # Update session_info.json with Excel path
             try:
                 session_info = storage_manager.load_session_info(email, session_id)
                 session_info['table_path'] = excel_s3_key  # Use Excel with sources
@@ -2395,20 +2317,104 @@ async def execute_full_table_generation(
             except Exception as e_session:
                 logger.warning(f"[EXECUTION] Failed to update session_info with table_path: {e_session}")
 
+            # Mark Excel generation as successful
+            excel_success = True
+            logger.info("[EXECUTION] Excel generation successful - skipping CSV generation")
+
         except Exception as e_excel:
             logger.error(f"[EXECUTION] Failed to generate Excel: {e_excel}", exc_info=True)
             result['excel_generation_error'] = str(e_excel)
+            excel_success = False
 
-            # Fallback: Update session_info with CSV path if Excel failed
+        # ======================================================================
+        # GENERATE CSV (FALLBACK - only if Excel failed)
+        # ======================================================================
+        if not excel_success:
+            logger.info("[EXECUTION] Excel generation failed - creating CSV fallback...")
             try:
-                session_info = storage_manager.load_session_info(email, session_id)
-                session_info['table_path'] = result.get('csv_s3_key')
-                session_info['table_name'] = table_name
-                session_info['last_updated'] = datetime.now().isoformat()
-                storage_manager.save_session_info(email, session_id, session_info)
-                logger.info(f"[EXECUTION] Excel failed, updated session_info.json with CSV fallback")
-            except Exception as e_session:
-                logger.warning(f"[EXECUTION] Failed to update session_info with CSV fallback: {e_session}")
+                import csv
+                import io
+
+                csv_buffer = io.StringIO()
+
+                # Get ID columns and all column names (may not be defined if Excel failed early)
+                if 'id_columns' not in locals():
+                    id_columns = [col['name'] for col in columns if col.get('importance', '').upper() == 'ID']
+                if 'all_column_names' not in locals():
+                    all_column_names = [col['name'] for col in columns]
+
+                writer = csv.DictWriter(csv_buffer, fieldnames=all_column_names)
+                writer.writeheader()
+
+                # Write rows with ID columns and research columns (if available) filled
+                populated_research_count = 0
+                total_research_cells = 0
+
+                for row in approved_rows:
+                    csv_row = {}
+                    research_values = row.get('research_values', {})
+
+                    for col_name in all_column_names:
+                        if col_name in id_columns:
+                            # Fill ID columns from id_values
+                            csv_row[col_name] = row.get('id_values', {}).get(col_name, '')
+                        elif col_name in research_values:
+                            # Fill research columns if populated during discovery
+                            csv_row[col_name] = research_values.get(col_name, '')
+                            populated_research_count += 1
+                        else:
+                            # Leave other columns empty
+                            csv_row[col_name] = ''
+
+                        # Track total research cells for logging
+                        if col_name not in id_columns:
+                            total_research_cells += 1
+
+                    writer.writerow(csv_row)
+
+                csv_content = csv_buffer.getvalue()
+
+                # Save CSV to S3
+                csv_filename = f"{table_name.replace(' ', '_')}.csv"  # No _template suffix
+                session_path = storage_manager.get_session_path(email, session_id)
+                csv_s3_key = f"{session_path}{csv_filename}"
+
+                storage_manager.s3_client.put_object(
+                    Bucket=storage_manager.bucket_name,
+                    Key=csv_s3_key,
+                    Body=csv_content,
+                    ContentType='text/csv'
+                )
+
+                result['csv_s3_key'] = csv_s3_key
+                result['csv_filename'] = csv_filename
+
+                # Calculate population statistics
+                research_columns_count = len(all_column_names) - len(id_columns)
+                population_pct = (populated_research_count / total_research_cells * 100) if total_research_cells > 0 else 0
+
+                logger.info(
+                    f"[EXECUTION] CSV fallback generated with {len(approved_rows)} rows: "
+                    f"{len(id_columns)} ID columns filled, "
+                    f"{populated_research_count}/{total_research_cells} research cells populated ({population_pct:.1f}%)"
+                )
+
+                # Update session_info.json with CSV path as fallback
+                try:
+                    session_info = storage_manager.load_session_info(email, session_id)
+                    session_info['table_path'] = csv_s3_key
+                    session_info['table_name'] = table_name
+                    session_info['last_updated'] = datetime.now().isoformat()
+                    storage_manager.save_session_info(email, session_id, session_info)
+                    logger.info(f"[EXECUTION] Updated session_info.json with CSV fallback path: {csv_s3_key}")
+                except Exception as e_session:
+                    logger.warning(f"[EXECUTION] Failed to update session_info with CSV path: {e_session}")
+
+            except Exception as e_csv:
+                logger.error(f"[EXECUTION] Failed to generate CSV fallback: {e_csv}", exc_info=True)
+                result['csv_generation_error'] = str(e_csv)
+        else:
+            logger.info("[EXECUTION] Skipped CSV generation - Excel succeeded")
 
         # ======================================================================
         # COMPLETE
@@ -2418,8 +2424,15 @@ async def execute_full_table_generation(
         conversation_state['approved_rows'] = approved_rows
         conversation_state['columns'] = columns
         conversation_state['table_name'] = table_name
-        conversation_state['csv_s3_key'] = result.get('csv_s3_key')
-        conversation_state['excel_s3_key'] = result.get('excel_s3_key')  # Store Excel key with sources
+
+        # Store file paths (Excel if successful, otherwise CSV fallback)
+        if excel_success and result.get('excel_s3_key'):
+            conversation_state['excel_s3_key'] = result.get('excel_s3_key')
+            conversation_state['primary_file'] = 'excel'
+        elif result.get('csv_s3_key'):
+            conversation_state['csv_s3_key'] = result.get('csv_s3_key')
+            conversation_state['primary_file'] = 'csv'
+
         _save_to_s3(
             storage_manager, email, session_id, conversation_id,
             'conversation_state.json', conversation_state
