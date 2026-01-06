@@ -24,7 +24,7 @@
           },
           "importance": {
             "type": "string",
-            "enum": ["ID", "RESEARCH", "CRITICAL", "IGNORED"],
+            "enum": ["ID", "RESEARCH", "IGNORED"],
             "description": "Column importance level. Use 'ID' for identification columns (simple identifiers like names, dates, URLs). Use 'RESEARCH' for columns requiring validation."
           },
           "validation_strategy": {

@@ -137,14 +137,26 @@ class GeminiProvider:
                         # Check if required fields are present
                         required = schema.get('required', [])
                         missing = [f for f in required if f not in norm]
-                        if missing:
+
+                        # Check for enum validation errors (e.g., "Invalid enum value for 'importance': 'HARD' not in [...]")
+                        enum_errors = [w for w in warnings if 'Invalid enum value' in w]
+
+                        if missing or enum_errors:
                             # Log diagnostic info
-                            logger.error(f"[GEMINI] Found missing required fields: {missing}")
+                            if missing:
+                                logger.error(f"[GEMINI] Found missing required fields: {missing}")
+                            if enum_errors:
+                                logger.error(f"[GEMINI] Found enum validation errors: {enum_errors}")
                             logger.error(f"[GEMINI] repair_attempted={repair_attempted}, ai_client_available={self.ai_client is not None}")
 
                             # Try Haiku repair if we haven't already
                             if not repair_attempted and self.ai_client:
-                                logger.warning(f"[GEMINI] Missing required fields {missing}, attempting Haiku repair")
+                                issues = []
+                                if missing:
+                                    issues.append(f"missing fields {missing}")
+                                if enum_errors:
+                                    issues.append(f"enum errors {enum_errors}")
+                                logger.warning(f"[GEMINI] Schema issues: {', '.join(issues)}, attempting Haiku repair")
                                 repair_attempted = True
                                 parsed, repair_result, repair_explanation = await repair_json_with_haiku(text_content, schema, self.ai_client)
 
@@ -178,11 +190,18 @@ class GeminiProvider:
                                     # Re-validate after repair
                                     norm, warnings = validate_and_normalize_soft_schema(parsed, schema, fuzzy_keys=True)
                                     missing = [f for f in required if f not in norm]
+                                    enum_errors = [w for w in warnings if 'Invalid enum value' in w]
 
-                            # If still missing after repair attempt, raise error
-                            if missing:
-                                logger.error(f"[GEMINI] Missing required fields: {missing}")
-                                raise Exception(f"[SCHEMA_ERROR] Missing required fields: {missing}")
+                            # If still have schema issues after repair attempt, raise error
+                            if missing or enum_errors:
+                                error_parts = []
+                                if missing:
+                                    error_parts.append(f"Missing required fields: {missing}")
+                                if enum_errors:
+                                    error_parts.append(f"Invalid enum values: {enum_errors}")
+                                error_msg = "; ".join(error_parts)
+                                logger.error(f"[GEMINI] {error_msg}")
+                                raise Exception(f"[SCHEMA_ERROR] {error_msg}")
 
                         normalized['content'][0]['text'] = json.dumps(norm)
                     else:

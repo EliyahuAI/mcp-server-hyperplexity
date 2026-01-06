@@ -562,6 +562,12 @@ def validate_and_normalize_soft_schema(data: Dict, schema: Dict, fuzzy_keys: boo
                 if coerced != value:
                     logger.debug(f"[TYPE_COERCE] Coerced '{key}': {value} -> {coerced} ({expected_type})")
                 normalized[key] = coerced
+
+                # Check enum constraint for simple values
+                enum_values = prop_schema.get('enum')
+                if enum_values and coerced not in enum_values:
+                    warnings.append(f"Invalid enum value for '{key}': '{coerced}' not in {enum_values}")
+                    logger.warning(f"[SOFT_SCHEMA] Invalid enum value for '{key}': '{coerced}' not in {enum_values}")
             elif expected_type == 'object' and isinstance(value, dict):
                 nested_normalized, nested_warnings = validate_and_normalize_soft_schema(value, prop_schema, fuzzy_keys)
                 normalized[key] = nested_normalized
