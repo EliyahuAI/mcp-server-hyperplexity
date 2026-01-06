@@ -1,8 +1,8 @@
 # The Clone - Complete Architecture Documentation
 
-**Version:** 4.0
+**Version:** 4.1
 **Status:** Production Ready
-**Date:** 2025-12-22
+**Date:** 2026-01-06
 
 ---
 
@@ -16,7 +16,28 @@ The Clone is an intelligent search and synthesis system that:
 5. **Stops intelligently** - Early termination when reliable answer found
 6. **Tracks costs precisely** - Provider-level cost aggregation
 
-## Latest Updates (v4.0)
+## Latest Updates (v4.1)
+
+### Skip-to-Synthesis Path (New)
+- When direct answer fails validation/repair, skip search entirely
+- Extract URLs from query and fetch from memory or live (Jina)
+- Go directly to synthesis with URL sources
+- Faster fallback than full search when URLs are in query
+
+### URL Detection and Live Fetch (New)
+- `extract_urls_from_text()` detects URLs in user queries
+- `recall_by_urls()` looks up URLs in search memory
+- `fetch_url_content()` fetches missing URLs via Jina AI Reader
+- URL sources get priority in source selection
+
+### Section Symbol Standardization
+- Location codes now use `S` (section symbol) consistently
+- Removed backtick conversion in repair module
+- Prevents markdown interpretation issues
+
+---
+
+## Updates (v4.0)
 
 ### Batch Extraction System
 - **Shallow strategies** process 5-15 sources in single API call
@@ -62,13 +83,14 @@ The Clone is an intelligent search and synthesis system that:
 │    * Initial search terms                   │
 └──────────────────┬──────────────────────────┘
                    ↓
-          ┌────────┴────────┐
-          │                  │
-    Answer Directly      Need Search
-          │                  │
-          ↓                  ↓
-       Return          Iteration Loop
-                       (1-3 times)
+          ┌────────┼────────┐
+          │        │        │
+    Answer     Skip-to-    Need
+    Directly   Synthesis   Search
+          │        │        │
+          ↓        ↓        ↓
+       Return   URL Sources  Iteration Loop
+               + Synthesis   (1-3 times)
                             │
         ┌───────────────────┴───────────────────┐
         │                                       │
@@ -312,6 +334,22 @@ All internal API calls use JSON schemas:
 - Answers ~20% of queries directly (no search)
 - Saves ~$0.10 and 60-120s per direct answer
 
+### 1b. Skip-to-Synthesis Path
+When direct answer fails validation/repair, skip search and go straight to synthesis:
+- Extract URLs from query using `extract_urls_from_text()`
+- Look up URLs in memory via `SearchMemory.recall_by_urls()`
+- Fetch missing URLs live via Jina AI Reader
+- Convert URL sources to snippets and synthesize
+- Faster than full search when URLs are available in query
+
+**Decision Flow:**
+```
+answer_directly + valid answer     → Return answer
+answer_directly + repairable       → Repair, return answer
+answer_directly + unrepairable     → Skip-to-synthesis (with URL sources)
+need_search                        → Full search path
+```
+
 ### 2. Parallel Triage (Step 3)
 - Concurrent evaluation of all searches
 - 5-7x faster than sequential
@@ -334,6 +372,49 @@ All internal API calls use JSON schemas:
 ### 6. Early Stopping
 - Stop when sufficient (don't use all iterations)
 - ~50% of queries stop after iteration 1
+
+---
+
+## URL Extraction and Memory Recall
+
+### URL Detection
+The system automatically detects URLs in user queries using `extract_urls_from_text()`:
+- Matches `http://` and `https://` URLs
+- Extracts domain and path
+- Used for memory lookup and live fetching
+
+### URL-Based Memory Recall
+When URLs are found in the query (via `SearchMemory`):
+
+1. **Memory Lookup** (`recall_by_urls()`):
+   - Checks if URL sources exist in search memory
+   - Returns `{found: [...], not_found: [...]}`
+
+2. **Live Fetch** (`fetch_url_content()`):
+   - URLs not in memory are fetched via Jina AI Reader
+   - Jina converts web pages to clean markdown
+   - Fetched content is converted to source format
+
+3. **Priority Handling**:
+   - URL sources get high priority in Gemini source selection
+   - Always included in verification and synthesis
+   - Bypass keyword filtering for direct relevance
+
+### Implementation
+```python
+# In the_clone.py
+from the_clone.search_memory import SearchMemory, extract_urls_from_text
+
+query_urls = extract_urls_from_text(prompt)
+if query_urls:
+    url_lookup = memory.recall_by_urls(query_urls)
+    url_sources = url_lookup['found']
+
+    # Fetch missing URLs live
+    if url_lookup['not_found']:
+        fetched = await memory.fetch_url_content(url_lookup['not_found'])
+        url_sources.extend(fetched)
+```
 
 ---
 

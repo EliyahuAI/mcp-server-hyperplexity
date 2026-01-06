@@ -73,7 +73,7 @@ def get_initial_decision_schema(answer_schema: dict = None) -> dict:
     }
 
     # If custom answer schema provided, merge it for direct answers
-    # Keep fields REQUIRED to prevent DeepSeek from skipping them
+    # Answer fields are OPTIONAL in routing - validated separately if decision='answer_directly'
     if answer_schema and answer_schema.get('properties'):
         for prop_name, prop_schema in answer_schema['properties'].items():
             # Add description: null/empty OK for routing, required for direct answers
@@ -84,9 +84,10 @@ def get_initial_decision_schema(answer_schema: dict = None) -> dict:
                 prop_schema_copy['description'] = "Provide null/empty if decision='need_search', will be ignored"
             base_schema['properties'][prop_name] = prop_schema_copy
 
-        # Add custom required fields to schema (keeps DeepSeek from skipping)
-        if 'required' in answer_schema:
-            base_schema['required'].extend(answer_schema['required'])
+        # NOTE: We do NOT add answer_schema's required fields to routing schema.
+        # Answer fields are optional during routing - if decision='answer_directly',
+        # we validate/repair them separately. This prevents triggering repairs when
+        # decision='need_search' and answer fields are (correctly) empty.
 
     return base_schema
 

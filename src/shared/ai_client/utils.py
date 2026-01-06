@@ -779,13 +779,13 @@ async def repair_json_with_haiku(malformed_text: str, schema: Dict, ai_client) -
             enhanced_schema['required'] = []
         enhanced_schema['required'].append('_repair_explanation')
 
-        # Escape backticks to prevent Gemini from interpreting them as markdown code blocks
-        # Use § as 1-char placeholder (rare in JSON, saves tokens vs {{BACKTICK}})
-        escaped_text = malformed_text.replace('`', '§')
+        # Escape section symbols to prevent Gemini from misinterpreting them
+        # Use double § as escape sequence during repair
+        escaped_text = malformed_text.replace('§', '{{SECTION}}')
 
         cleanup_prompt = f"""Extract and reformat JSON to match schema. Preserve all information.
 
-Replace all § with backtick (`) in output.
+Replace all {{{{SECTION}}}} with § in output. Keep § symbols as-is (they are location codes).
 
 Text:
 {escaped_text}
@@ -810,10 +810,10 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is)."
         # Extract the repaired JSON
         repaired = extract_structured_response(cleanup_result['response'], "structured_response")
 
-        # Restore backticks if Gemini didn't (fallback safety)
+        # Restore section symbols if Gemini didn't convert escape sequence (fallback safety)
         repaired_str = json.dumps(repaired)
-        if '§' in repaired_str:
-            repaired_str = repaired_str.replace('§', '`')
+        if '{{SECTION}}' in repaired_str or '{SECTION}' in repaired_str:
+            repaired_str = repaired_str.replace('{{SECTION}}', '§').replace('{SECTION}', '§')
             repaired = json.loads(repaired_str)
 
         # Extract and remove the repair explanation

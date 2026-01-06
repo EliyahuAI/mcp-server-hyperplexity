@@ -206,13 +206,13 @@ class TheClone2Refined:
             clone_logger.record_step_metric("Initial Decision", initial_provider, used_model, initial_cost, step_time_phase, f"Decision: {decision}")
             clone_logger.end_step("Initial Decision")
 
-        if decision == "answer_directly":
+        if decision == "answer_directly" and not initial_result.get('skip_to_synthesis'):
             logger.debug("[CLONE] Answering directly from model knowledge")
             direct_answer = initial_result.get('direct_answer', {})
 
             total_time = time.time() - call_start_time
             total_cost = sum(costs.values())
-            
+
             final_citations = [] # No citations for direct answers
             final_answer_data = direct_answer
 
@@ -244,6 +244,139 @@ class TheClone2Refined:
                 "answer": final_answer_data,
                 "citations": final_citations,
                 "synthesis_prompt": "",
+                "metadata": {**metadata, "debug_log": clone_logger.get_log_content()}
+            }
+
+        # Skip-to-synthesis path: Direct answer failed, skip search and go straight to synthesis
+        # with URL sources from memory (if any)
+        if initial_result.get('skip_to_synthesis'):
+            logger.info("[CLONE] Skip-to-synthesis: Direct answer failed, attempting synthesis with URL sources")
+
+            if clone_logger:
+                clone_logger.start_step("Skip-to-Synthesis")
+
+            # Extract URLs from query and fetch from memory or live
+            url_snippets = []
+            query_urls = extract_urls_from_text(prompt)
+
+            if query_urls and use_memory:
+                logger.info(f"[CLONE] Skip-to-synthesis: Found {len(query_urls)} URLs in query")
+                memory = SearchMemory(ai_client=self.ai_client)
+
+                # Look up URLs in memory
+                url_lookup_result = memory.recall_by_urls(query_urls)
+                url_sources = url_lookup_result['found']
+                urls_not_in_memory = url_lookup_result['not_found']
+                fetched_count = 0
+
+                if url_sources:
+                    logger.info(f"[CLONE] Skip-to-synthesis: {len(url_sources)} URLs found in memory")
+
+                # Fetch URLs not in memory via Jina
+                if urls_not_in_memory:
+                    logger.info(f"[CLONE] Skip-to-synthesis: Fetching {len(urls_not_in_memory)} URLs not in memory...")
+                    fetched_sources = await memory.fetch_url_content(urls_not_in_memory)
+                    if fetched_sources:
+                        url_sources.extend(fetched_sources)
+                        fetched_count = len(fetched_sources)
+                        logger.info(f"[CLONE] Skip-to-synthesis: {fetched_count} URLs fetched live")
+
+                # Convert URL sources to snippets format
+                for i, source in enumerate(url_sources):
+                    snippet = {
+                        'id': f'U1.{i+1}.0.0',
+                        'search_ref': 1,
+                        '_source_url': source.get('url', ''),
+                        '_source_date': source.get('date', ''),
+                        'verbal_handle': source.get('title', source.get('url', '')),
+                        'text': source.get('text', source.get('content', ''))[:8000],  # Limit text
+                        'p': 0.85,  # High p-score for direct URL sources
+                        'c': 'H/P',  # High reliability, primary source
+                        'validation_reason': 'URL from query',
+                        '_is_lower_quality': False
+                    }
+                    url_snippets.append(snippet)
+
+                if clone_logger:
+                    clone_logger.log_section("Skip-to-Synthesis URL Sources", {
+                        "URLs in Query": query_urls,
+                        "Found in Memory": len(url_lookup_result['found']),
+                        "Fetched Live": fetched_count,
+                        "Total Snippets": len(url_snippets)
+                    }, level=3)
+
+            # Call synthesis with URL snippets (or empty if no URLs found)
+            synthesis_tier = initial_result.get('synthesis_tier', 'tier2')
+            models = get_model_config(provider, model_override, synthesis_tier)
+
+            step_start_phase = time.time()
+            synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
+                query=prompt,
+                snippets=url_snippets,
+                context='medium',
+                iteration=1,
+                is_last_iteration=True,
+                schema=schema,
+                model=models['synthesis'],
+                search_terms=[prompt],  # Use query as search term
+                debug_dir=debug_dir,
+                soft_schema=False,
+                clone_logger=clone_logger
+            )
+
+            synth_cost, synth_provider = self._extract_cost_and_provider(
+                synthesis_result.get('model_response', {}), clone_logger, stats
+            )
+            costs['synthesis'] = synth_cost
+            costs_by_provider[synth_provider] = costs_by_provider.get(synth_provider, 0.0) + synth_cost
+            calls_by_provider[synth_provider] = calls_by_provider.get(synth_provider, 0) + 1
+
+            step_time_phase = time.time() - step_start_phase
+            if clone_logger:
+                clone_logger.record_step_metric(
+                    "Skip-to-Synthesis", synth_provider, models['synthesis'],
+                    synth_cost, step_time_phase,
+                    f"URL sources: {len(url_snippets)}, Citations: {len(synthesis_result.get('citations', []))}"
+                )
+                clone_logger.end_step("Skip-to-Synthesis")
+
+            # Build final result
+            total_time = time.time() - call_start_time
+            total_cost = sum(costs.values())
+
+            final_answer_data = synthesis_result.get('answer', {})
+            final_citations = synthesis_result.get('citations', [])
+
+            metadata = {
+                "query": prompt,
+                "strategy": "skip_to_synthesis",
+                "breadth": initial_result.get('breadth', 'narrow'),
+                "depth": initial_result.get('depth', 'shallow'),
+                "synthesis_tier": synthesis_tier,
+                "iterations": 1,
+                "total_snippets": len(url_snippets),
+                "citations_count": len(final_citations),
+                "sources_pulled": len(url_snippets),
+                "total_time_seconds": total_time,
+                "total_cost": total_cost,
+                "cost_breakdown": costs,
+                "cost_by_provider": {p: {'cost': c, 'calls': calls_by_provider[p]} for p, c in costs_by_provider.items() if c > 0},
+                "schema_repairs": stats['schema_repairs'],
+                "provider": provider,
+                "model_override": model_override,
+                "schema_provided": bool(schema),
+                "use_code_extraction": use_code_extraction,
+                "academic": academic,
+                "url_sources_used": len(url_snippets)
+            }
+
+            if clone_logger:
+                clone_logger.finalize(metadata, final_answer_data, final_citations)
+
+            return {
+                "answer": final_answer_data,
+                "citations": final_citations,
+                "synthesis_prompt": synthesis_result.get('synthesis_prompt', ''),
                 "metadata": {**metadata, "debug_log": clone_logger.get_log_content()}
             }
 

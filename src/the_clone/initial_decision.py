@@ -14,7 +14,7 @@ from typing import Dict, Any
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from shared.ai_api_client import AIAPIClient
-from shared.ai_client.utils import extract_structured_response
+from shared.ai_client.utils import extract_structured_response, repair_json_with_haiku, validate_and_normalize_soft_schema
 from the_clone.initial_decision_schemas import get_initial_decision_schema, get_findall_schema
 from the_clone.strategy_loader import get_model_with_backups
 
@@ -146,6 +146,8 @@ class InitialDecision:
 
             # Extract answer if answering directly (ignore null/empty from routing responses)
             direct_answer = None
+            answer_valid = False
+            skip_to_synthesis = False
             if decision == "answer_directly":
                 # Extract custom schema fields
                 if custom_schema:
@@ -157,6 +159,45 @@ class InitialDecision:
                             if value and value not in [None, 'null', '', [], {}]:
                                 direct_answer[prop_name] = value
 
+                    # Validate direct answer against custom schema
+                    if direct_answer:
+                        required_fields = custom_schema.get('required', [])
+                        missing_fields = [f for f in required_fields if f not in direct_answer]
+
+                        if missing_fields:
+                            logger.warning(f"[INITIAL] Direct answer missing required fields: {missing_fields}")
+                            # Try to repair the answer
+                            try:
+                                repaired, repair_result, repair_explanation = await repair_json_with_haiku(
+                                    json.dumps(direct_answer),
+                                    custom_schema,
+                                    self.ai_client
+                                )
+                                if repaired:
+                                    logger.info(f"[INITIAL] Repaired direct answer: {repair_explanation}")
+                                    direct_answer = repaired
+                                    answer_valid = True
+                                else:
+                                    # Skip to synthesis instead of full search - faster path
+                                    logger.warning(f"[INITIAL] Failed to repair direct answer, skipping to synthesis")
+                                    skip_to_synthesis = True
+                                    direct_answer = None
+                            except Exception as e:
+                                logger.error(f"[INITIAL] Error repairing direct answer: {e}, skipping to synthesis")
+                                skip_to_synthesis = True
+                                direct_answer = None
+                        else:
+                            # Validate and normalize against schema
+                            normalized, warnings = validate_and_normalize_soft_schema(direct_answer, custom_schema)
+                            if warnings:
+                                logger.warning(f"[INITIAL] Direct answer validation warnings: {warnings}")
+                            direct_answer = normalized
+                            answer_valid = True
+                    else:
+                        # Empty direct answer when decision='answer_directly' - skip to synthesis
+                        logger.warning(f"[INITIAL] Decision was 'answer_directly' but no answer provided, skipping to synthesis")
+                        skip_to_synthesis = True
+
             # Save response
             if debug_dir:
                 try:
@@ -165,14 +206,16 @@ class InitialDecision:
                 except:
                     pass
 
-            logger.debug(f"[INITIAL] Decision: {decision}")
+            logger.debug(f"[INITIAL] Decision: {decision}, skip_to_synthesis: {skip_to_synthesis}")
 
             # Extract keywords
             positive_keywords = data.get('positive_keywords', [])
             negative_keywords = data.get('negative_keywords', [])
 
-            if decision == "answer_directly":
+            if decision == "answer_directly" and not skip_to_synthesis:
                 logger.debug(f"[INITIAL] Answering from model knowledge")
+            elif skip_to_synthesis:
+                logger.debug(f"[INITIAL] Skipping to synthesis (direct answer failed)")
             else:
                 logger.debug(f"[INITIAL] Need search - Breadth: {breadth}, Depth: {depth}")
                 logger.debug(f"[INITIAL] Generated {len(search_terms)} search terms")
@@ -191,6 +234,8 @@ class InitialDecision:
                 "negative_keywords": negative_keywords,
                 "synthesis_tier": synthesis_tier,
                 "direct_answer": direct_answer,  # Include direct answer if provided
+                "answer_valid": answer_valid,  # True if direct answer passed validation
+                "skip_to_synthesis": skip_to_synthesis,  # True if should skip search and go to synthesis
                 "model_response": response
             }
 
