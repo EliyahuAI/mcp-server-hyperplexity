@@ -715,14 +715,24 @@ class QCModule:
             try:
                 structured_data = ai_client.extract_structured_response(qc_response['response'], "qc_validation")
                 # Handle both compact cell array format and legacy dict format
+                # Note: extract_json_from_text wraps arrays in {'items': [...]}
                 if isinstance(structured_data, list):
-                    # New compact format - parse cell arrays to dicts
+                    # Direct array (shouldn't happen due to wrapping, but handle it)
                     qc_results = self.parse_compact_qc_response(structured_data)
-                    logger.info(f"QC returned {len(qc_results)} field results (compact format)")
+                    logger.info(f"QC returned {len(qc_results)} field results (compact format - direct)")
                 elif isinstance(structured_data, dict):
-                    # Legacy dict format
-                    qc_results = structured_data.get('qc_results', [])
-                    logger.info(f"QC returned {len(qc_results)} field modifications (legacy format)")
+                    # Check for wrapped array format (from extract_json_from_text)
+                    if 'items' in structured_data and isinstance(structured_data['items'], list):
+                        # Compact format wrapped in {'items': [...]}
+                        qc_results = self.parse_compact_qc_response(structured_data['items'])
+                        logger.info(f"QC returned {len(qc_results)} field results (compact format)")
+                    elif 'qc_results' in structured_data:
+                        # Legacy dict format with qc_results key
+                        qc_results = structured_data.get('qc_results', [])
+                        logger.info(f"QC returned {len(qc_results)} field modifications (legacy format)")
+                    else:
+                        qc_results = []
+                        logger.warning(f"QC dict missing 'items' or 'qc_results' key: {list(structured_data.keys())}")
                 else:
                     qc_results = []
                     logger.warning(f"QC returned unexpected data type: {type(structured_data)}")
@@ -957,14 +967,24 @@ class QCModule:
             try:
                 structured_data = ai_client.extract_structured_response(qc_response['response'], "qc_validation")
                 # Handle both compact cell array format and legacy dict format
+                # Note: extract_json_from_text wraps arrays in {'items': [...]}
                 if isinstance(structured_data, list):
-                    # New compact format - parse cell arrays to dicts
+                    # Direct array (shouldn't happen due to wrapping, but handle it)
                     qc_results = self.parse_compact_qc_response(structured_data)
-                    logger.info(f"QC returned {len(qc_results)} field results (compact format)")
+                    logger.info(f"QC returned {len(qc_results)} field results (compact format - direct)")
                 elif isinstance(structured_data, dict):
-                    # Legacy dict format
-                    qc_results = structured_data.get('qc_results', [])
-                    logger.info(f"QC returned {len(qc_results)} field modifications (legacy format)")
+                    # Check for wrapped array format (from extract_json_from_text)
+                    if 'items' in structured_data and isinstance(structured_data['items'], list):
+                        # Compact format wrapped in {'items': [...]}
+                        qc_results = self.parse_compact_qc_response(structured_data['items'])
+                        logger.info(f"QC returned {len(qc_results)} field results (compact format)")
+                    elif 'qc_results' in structured_data:
+                        # Legacy dict format with qc_results key
+                        qc_results = structured_data.get('qc_results', [])
+                        logger.info(f"QC returned {len(qc_results)} field modifications (legacy format)")
+                    else:
+                        qc_results = []
+                        logger.warning(f"QC dict missing 'items' or 'qc_results' key: {list(structured_data.keys())}")
                 else:
                     qc_results = []
                     logger.warning(f"QC returned unexpected data type: {type(structured_data)}")
