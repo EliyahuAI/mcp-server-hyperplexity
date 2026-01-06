@@ -49,9 +49,10 @@ def get_qc_response_format_schema():
     Get the QC-only schema that contains only QC-specific fields.
     QC does not duplicate validation fields - it only provides QC overlay data.
 
-    Compact cell array format:
-    [column, answer, confidence, original_confidence, updated_confidence, qc_reasoning, qc_citations, key_citation, update_importance]
-    - Confidence values: "H", "M", "L"
+    Compact cell array format (7 elements):
+    [column, answer, confidence, original_confidence, updated_confidence, key_citation, update_importance]
+    - Confidence values: "H", "M", "L", or null
+    - key_citation: Reference validation citations as [V1], [V2] or new QC citations as [1], [2]
     - update_importance: integer 0-5
 
     Returns:
@@ -67,9 +68,7 @@ def get_qc_response_format_schema():
                 {"type": ["string", "null"], "enum": ["H", "M", "L", None], "description": "Confidence: H(igh), M(edium), L(ow), or null"},
                 {"type": ["string", "null"], "enum": ["H", "M", "L", None], "description": "Original confidence (null if original was blank)"},
                 {"type": ["string", "null"], "enum": ["H", "M", "L", None], "description": "Updated confidence"},
-                {"type": "string", "description": "QC reasoning"},
-                {"type": "string", "description": "QC citations (new sources found during QC)"},
-                {"type": "string", "description": "Key citation supporting the final QC answer (from original or QC citations)"},
+                {"type": "string", "description": "Key citation: use [V1], [V2] for validation citations or [1], [2] for new QC web search citations"},
                 {"type": "integer", "description": "Update importance (0-5)"}
             ]
         }

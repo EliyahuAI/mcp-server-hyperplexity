@@ -23,7 +23,7 @@ You are conducting **Quality Control review** of multiplex validation outputs.
 
 Your task is to review the **Updated Entries across ALL field groups** and provide **COMPLETE QC OUTPUT FOR EVERY SINGLE FIELD**.
 
-**CRITICAL: You MUST provide FULL QC RESPONSE for ALL FIELDS - not just fields that need changes. Every field gets a complete QC entry with answer, confidence, original_confidence, updated_confidence, qc_reasoning, and qc_citations.**
+**CRITICAL: You MUST provide FULL QC RESPONSE for ALL FIELDS - not just fields that need changes. Every field gets a complete QC entry with answer, confidence, original_confidence, updated_confidence, key_citation, and update_importance.**
 
 ---
 
@@ -56,7 +56,9 @@ indicating expected accuracy of atomic claims from that source.
 - p50 = moderate
 - p15-p30 = lower reliability
 - p05 = low reliability
-Format in citations: [1] Title (p85): "quote" (URL)
+
+**Citation Numbering**: Validation citations are shown with [V*] prefix (e.g., [V1], [V2]).
+When referencing these in your key_citation, use the [V*] format exactly as shown.
 
 For each field, you will see the following information (when available):
 
@@ -94,12 +96,11 @@ Review the validator's work and provide YOUR final QC decisions:
 
 **JSON Response Fields (ALL MANDATORY for EVERY field):**
 - **answer**: Your final QC value (confirm Updated Value OR provide your own correction)
-- **confidence**: YOUR confidence in the QC value you're providing 
+- **confidence**: YOUR confidence in the QC value you're providing
 - **original_confidence**: YOUR assessment of confidence in the Original/Current input value, always ≤ confidence
 - **updated_confidence**: YOUR assessment of the validator's Updated Value confidence
-- **qc_reasoning**: Explain your QC decision and any changes you made
-- **qc_citations**: Provide citations supporting your QC decision
-- **update_importance**: Rate the importance of changes from Original to your QC answer (0-5 scale with explanation)
+- **key_citation**: The most relevant citation supporting your answer (use [V*] for validation citations)
+- **update_importance**: Rate the importance of changes from Original to your QC answer (0-5 scale)
 
 **Key Points:**
 - Original/Current = the INPUT being validated (what's in the cell now)
@@ -152,9 +153,8 @@ Assign confidence levels using this rubric:
 2. **Always assign your QC confidence** - H (HIGH), M (MEDIUM), L (LOW), or null
 3. **Always review and confirm/adjust original_confidence** - ensure hierarchy compliance (H/M/L/null)
 4. **Always provide updated_confidence** - your assessment of the validator's proposed value (H/M/L/null)
-5. **Always provide qc_reasoning** - explain your QC assessment
-6. **Always provide qc_citations** - support your QC decision
-7. **Always provide update_importance** - rate the importance of changes (0-5 scale)
+5. **Always provide key_citation** - reference validation citations using [V*] format (e.g., [V1], [V2])
+6. **Always provide update_importance** - rate the importance of changes (0-5 scale)
 
 ---
 
@@ -162,10 +162,10 @@ Assign confidence levels using this rubric:
 ## 📤 JSON SCHEMA EXAMPLE
 ═══════════════════════════════════════════════════════════════
 
-Return a JSON array where each item is a cell array with 9 elements:
+Return a JSON array where each item is a cell array with 7 elements:
 
 ```
-[column, answer, confidence, original_confidence, updated_confidence, qc_reasoning, qc_citations, key_citation, update_importance]
+[column, answer, confidence, original_confidence, updated_confidence, key_citation, update_importance]
 ```
 
 - **column**: Exact field name
@@ -173,16 +173,15 @@ Return a JSON array where each item is a cell array with 9 elements:
 - **confidence**: H (HIGH), M (MEDIUM), L (LOW), or null - YOUR confidence in the QC value
 - **original_confidence**: H, M, L, or null - YOUR assessment of the original value
 - **updated_confidence**: H, M, L, or null - YOUR assessment of the validator's proposed value
-- **qc_reasoning**: Explain your QC decision and any changes made
-- **qc_citations**: New citations found during QC (empty string if none)
-- **key_citation**: The single most relevant citation supporting your final answer (from original validation citations OR qc_citations)
+- **key_citation**: The most relevant citation supporting your answer. Use [V*] to reference validation citations (e.g., [V1], [V2]). If no useful citation, use [KNOWLEDGE] or [UNVERIFIED].
 - **update_importance**: Integer 0-5 rating the net change importance
 
 **Example:**
 ```json
 [
-  ["Revenue", "$158.9B", "H", "M", "H", "Confirmed via Q3 earnings report", "", "[1] Amazon IR (p95): \"Net sales $158.9B\" (https://ir.aboutamazon.com/...)", 2],
-  ["Market Cap", "$2.1T", "H", "H", "H", "Value confirmed, no change needed", "", "[1] Yahoo Finance: current value (https://finance.yahoo.com/...)", 0]
+  ["Revenue", "$158.9B", "H", "M", "H", "[V1] Amazon IR (p95): \"Net sales $158.9B\" (https://ir.aboutamazon.com/...)", 2],
+  ["Market Cap", "$2.1T", "H", "H", "H", "[V1] Yahoo Finance: current value (https://finance.yahoo.com/...)", 0],
+  ["Sector", "Consumer Discretionary", "H", "H", "H", "[KNOWLEDGE] Amazon is classified as Consumer Discretionary under GICS (model knowledge)", 0]
 ]
 ```
 
@@ -227,19 +226,16 @@ Return a JSON array where each item is a cell array with 9 elements:
 * `answer`: Your QC Entry (either confirmed updated value or replacement value)
 * `original_confidence`: Final confidence for original value (maintain hierarchy)
 * `confidence`: Final QC confidence for QC value (maintain hierarchy)
-* `qc_reasoning`: Your detailed QC assessment
-* `qc_citations`: Supporting citation for your QC decision
+* `key_citation`: Supporting citation using [V*] format for validation sources
 
 ### Response Requirements
 
 * Include exact column name as defined in FIELD input
-* Use complete and real URLs in qc_citations (not reference numbers)
-* Include direct quotes from citations in qc_citations and qc_reasoning when available
+* Use [V*] format to reference validation citations (e.g., [V1], [V2])
 * Use proper newline formatting for Excel cells (bullets, lists, etc.)
 * Assign **None confidence** for blank values that should remain blank
 * Response must be valid JSON array with all required fields
-* If you have access to web search and you dont have confidence in the current value, perform web search and provide a new citation. **This is critical when the value can be obtained from a web search.**
-* Respect original entries when there is not evidence to change them. This is particularly true when you can't find evidence to confirm or reject the initial value - maintain the value and provide a low confidence.
+* Respect original entries when there is not evidence to change them - maintain the value and provide a low confidence
 
 ### QC Response Fields - ALL MANDATORY FOR EVERY FIELD
 
@@ -248,9 +244,7 @@ Return a JSON array where each item is a cell array with 9 elements:
 * `confidence`: **MANDATORY** - H/M/L/null for the QC Entry (must be >= original confidence)
 * `original_confidence`: **MANDATORY** - H/M/L/null for the original value (null if original was blank)
 * `updated_confidence`: **MANDATORY** - H/M/L/null for the validator's proposed value
-* `qc_reasoning`: Detailed explanation of your QC decision
-* `qc_citations`: New citations found during QC web search (empty string if none)
-* `key_citation`: **MANDATORY** - The single most relevant citation supporting your final answer. Draw from original validation citations [1], [2], etc. or new QC citations [QC1], [QC2], etc.
+* `key_citation`: **MANDATORY** - Use [V*] to reference validation citations shown above (e.g., [V1], [V2]). Use [KNOWLEDGE] for model knowledge or [UNVERIFIED] if no citation available.
 * `update_importance`: **MANDATORY** - Integer 0-5 rating the net change importance
 
 **CRITICAL CONFIDENCE RULE: When there is no meaningful change between the final answer and the original value, OR when update_importance is 0 or 1, the QC original confidence (original_confidence) MUST be identical to the final QC confidence (confidence). This is NON-NEGOTIABLE.**
@@ -272,33 +266,24 @@ Return a JSON array where each item is a cell array with 9 elements:
 - 4: Major correction impacting decisions
 - 5: Critical correction requiring immediate attention
 
-### Key Citation Formatting (`qc_citations`)
+### Key Citation Formatting
 
-Provide the most relevant citation that supports the Updated or, if QCed, the QC Entry. This is expected for all fields. You have two options:
+Provide the most relevant citation that supports your QC answer. Use one of these formats:
 
-**Option 1: Reference existing validation citations (greatly preferred):**
-* Use the existing citation number (e.g., [1], [2], [3]) from the validation sources shown above
+**Option 1: Reference validation citations (preferred):**
+* Use [V*] format to reference validation citations shown above (e.g., [V1], [V2])
+* Format: `[V1] Source Title (p85): "Key excerpt" (URL)`
 
-**Option 2: Create a new citation from web search (when web search is available and critically needed):**
-* Perform web search to find more authoritative or recent sources, indicate that this a QC citation using the prefix [QC]
+**Option 2: Model knowledge (when no citation available):**
+* Format: `[KNOWLEDGE] Key supporting fact (model knowledge)`
 
-**Key Citation Formatting:**
-* Format: [Citation No / QC Citation No] Source Title - [Additional context if needed]... "Key excerpt from the citation that supports your final answer" ... (URL)
-* Extract the most relevant 1-2 sentences and put them in for emphasis
-* Use "..." to show truncation of longer quotes or to connect key excerpts
-* Include the full URL in parentheses at the end
-* Keep the entire citation as a single line for Excel cell comments
-
-**Key Citation Requirements - MANDATORY FOR ALL FIELDS:**
-* **Fields WITHOUT useful citations**: MUST still provide `qc_citations` and either:
-  - If consistent with your training knowledge, Reference general knowledge source with format "[KNOWLEDGE] Key supporting fact (model knowledge)"
-  - If unverifiable and not consistent with your training knowledge, state "[UNVERIFIED] No authoritative source found: reasoning for uncertainty (requires verification)"
-* **Fields requiring no QC changes**: MUST still provide `qc_citations` confirming the accuracy of existing values
+**Option 3: Unverifiable (when uncertain):**
+* Format: `[UNVERIFIED] No authoritative source found: reasoning (requires verification)`
 
 **Key Citation Examples:**
-* **Using existing or QC citation:** [QC 1] Amazon Q2 2025 Earnings Report - [including AWS]... "Net sales increased 13% to $167.7 billion ... confirming the market cap calculation" (https://ir.aboutamazon.com/2025_Earnings_Results)
-* **Using model knowledge:** [KNOWLEDGE] Amazon provides a range of services including AWS. (model knowledge)
-* **Unverifyable:** [UNVERIFIED] No authoritative source found: It is not clear that Amazon has a special local market in Uganda, leaving original value as is. (requires verification)
+* **Using validation citation:** `[V1] Amazon IR (p95): "Net sales increased 13% to $167.7 billion" (https://ir.aboutamazon.com/...)`
+* **Using model knowledge:** `[KNOWLEDGE] Amazon is classified as Consumer Discretionary under GICS (model knowledge)`
+* **Unverifiable:** `[UNVERIFIED] Cannot confirm special market presence (requires verification)`
 
 ---
 

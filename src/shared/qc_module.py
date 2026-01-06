@@ -407,20 +407,20 @@ class QCModule:
                             cited_text = citation.get('cited_text', '')
                             p_score = citation.get('p', '')  # Reliability score
 
-                            # Format with p score when available: [1] Title (p85): "quote" (URL)
+                            # Format with [V*] prefix and p score when available: [V1] Title (p85): "quote" (URL)
                             p_part = f" ({p_score})" if p_score else ""
                             if cited_text:
-                                citation_text = f"[{i}] {title}{p_part}: \"{cited_text}\" ({url})"
+                                citation_text = f"[V{i}] {title}{p_part}: \"{cited_text}\" ({url})"
                             else:
-                                citation_text = f"[{i}] {title}{p_part} ({url})"
+                                citation_text = f"[V{i}] {title}{p_part} ({url})"
                             field_output.append(f"  - {citation_text}")
                         else:
                             # Plain string citation (fallback)
-                            field_output.append(f"  - [{i}] {citation}")
+                            field_output.append(f"  - [V{i}] {citation}")
                 elif sources:  # If no citations but we have source URLs, format them
                     field_output.append(f"* **Citations:** (URLs only)")
                     for i, source in enumerate(sources, 1):
-                        field_output.append(f"  - [{i}] {source}")
+                        field_output.append(f"  - [V{i}] {source}")
                 else:
                     field_output.append(f"* **Citations:** None")
 
@@ -502,33 +502,36 @@ class QCModule:
 
     def _format_citations_for_qc(self, citations: List[str]) -> str:
         """
-        Format citations for QC prompt to provide full citation text rather than just URLs.
+        Format citations for QC prompt with [V*] prefix for validation citations.
 
         Args:
             citations: List of citation strings (full citation text with titles and snippets)
 
         Returns:
-            Formatted citation string for QC prompt
+            Formatted citation string for QC prompt with [V1], [V2], etc. prefix
         """
         if not citations:
             return 'None'
 
-        # Format all citations with numbers for QC reference
+        # Format all citations with [V*] prefix for validation citations
         formatted_citations = []
         for i, citation in enumerate(citations, 1):
-            formatted_citations.append(f"[{i}] {citation}")
+            formatted_citations.append(f"[V{i}] {citation}")
         return '\n'.join(formatted_citations)
 
     def parse_compact_qc_response(self, qc_response: List) -> List[Dict]:
         """Parse compact QC cell array response to dict format.
 
-        Format: [column, answer, confidence, original_confidence, updated_confidence,
-                 qc_reasoning, qc_citations, key_citation, update_importance]
+        New 7-element format:
+        [column, answer, confidence, original_confidence, updated_confidence, key_citation, update_importance]
+
+        Legacy 9-element format (backward compatibility):
+        [column, answer, confidence, original_confidence, updated_confidence, qc_reasoning, qc_citations, key_citation, update_importance]
         """
         parsed = []
         for item in qc_response:
             if isinstance(item, list) and len(item) >= 9:
-                # New 9-element format with key_citation
+                # Legacy 9-element format with qc_reasoning and qc_citations
                 parsed.append({
                     'column': item[0],
                     'answer': item[1],
@@ -540,18 +543,18 @@ class QCModule:
                     'key_citation': item[7],
                     'update_importance': item[8]
                 })
-            elif isinstance(item, list) and len(item) >= 8:
-                # Legacy 8-element format (backward compatibility)
+            elif isinstance(item, list) and len(item) >= 7:
+                # New 7-element format (no qc_reasoning, no qc_citations)
                 parsed.append({
                     'column': item[0],
                     'answer': item[1],
                     'confidence': self._expand_confidence(item[2]),
                     'original_confidence': self._expand_confidence(item[3]),
                     'updated_confidence': self._expand_confidence(item[4]),
-                    'qc_reasoning': item[5],
-                    'qc_citations': item[6],
-                    'key_citation': '',
-                    'update_importance': item[7]
+                    'key_citation': item[5],
+                    'update_importance': item[6],
+                    'qc_reasoning': '',  # Not in new format
+                    'qc_citations': ''   # Not in new format
                 })
             elif isinstance(item, dict):
                 # Already dict format (legacy)
@@ -564,6 +567,19 @@ class QCModule:
         if val == 'M': return 'MEDIUM'
         if val == 'L': return 'LOW'
         return val
+
+    def _transform_qc_citation_refs(self, text: str) -> str:
+        """Transform [N] references to [QCN] for QC's own web search citations.
+
+        Validation citations use [V*] format and should not be transformed.
+        Only transforms bare [N] references (not [VN] or [KNOWLEDGE] etc.)
+        """
+        import re
+        if not text:
+            return text
+        # Only transform bare [N] patterns (not [VN], [KNOWLEDGE], [UNVERIFIED], etc.)
+        # Matches [1], [2], [10], etc. but not [V1], [KNOWLEDGE], etc.
+        return re.sub(r'\[(\d+)\]', r'[QC\1]', text)
 
     async def process_qc_for_complete_row(
         self,
@@ -743,6 +759,12 @@ class QCModule:
                 else:
                     qc_results = []
                     logger.warning(f"QC returned unexpected data type: {type(structured_data)}")
+
+                # Transform [N] -> [QCN] in key_citation for QC's own web search citations
+                # Validation citations use [V*] format and are left unchanged
+                for qc_result in qc_results:
+                    if 'key_citation' in qc_result and qc_result['key_citation']:
+                        qc_result['key_citation'] = self._transform_qc_citation_refs(qc_result['key_citation'])
 
                 # Apply flexible column matching to QC results
                 if qc_results and validation_targets:
@@ -1002,6 +1024,12 @@ class QCModule:
                 else:
                     qc_results = []
                     logger.warning(f"QC returned unexpected data type: {type(structured_data)}")
+
+                # Transform [N] -> [QCN] in key_citation for QC's own web search citations
+                # Validation citations use [V*] format and are left unchanged
+                for qc_result in qc_results:
+                    if 'key_citation' in qc_result and qc_result['key_citation']:
+                        qc_result['key_citation'] = self._transform_qc_citation_refs(qc_result['key_citation'])
 
                 # Apply flexible column matching to QC results
                 if qc_results and validation_targets:
