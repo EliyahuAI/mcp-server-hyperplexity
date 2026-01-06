@@ -16,7 +16,7 @@ import difflib
 import re
 
 # Import shared modules
-from ai_api_client import ai_client
+from shared.ai_api_client import ai_client
 from perplexity_schema import get_qc_response_format_schema, MULTIPLEX_RESPONSE_SCHEMA, ADDITIONAL_QC_FIELDS
 
 logger = logging.getLogger(__name__)
@@ -167,21 +167,34 @@ class QCModule:
         # First, collect all multiplex sources
         for result in multiplex_results:
             column = result.get('column', '')
+            # Try citations first (from response metadata), then sources (legacy)
+            citations = result.get('citations', [])
             sources = result.get('sources', [])
-            if column:
-                aggregated_sources[column] = list(sources)
 
-        # Then, add QC sources
+            if column:
+                # Extract URLs from citations if available
+                if citations:
+                    aggregated_sources[column] = [c.get('url', c) if isinstance(c, dict) else c for c in citations]
+                else:
+                    aggregated_sources[column] = list(sources)
+
+        # Then, add QC sources (from qc_citations field in compact format)
         for qc_result in qc_results:
             column = qc_result.get('column', '')
-            qc_sources = qc_result.get('sources', [])
+            # Try qc_citations first (new format), then sources (legacy)
+            qc_citations = qc_result.get('qc_citations', '') or qc_result.get('sources', [])
             if column:
                 if column not in aggregated_sources:
                     aggregated_sources[column] = []
-                # Add QC sources, avoiding duplicates
-                for source in qc_sources:
-                    if source not in aggregated_sources[column]:
-                        aggregated_sources[column].append(source)
+                # Add QC citations, avoiding duplicates
+                # qc_citations can be a string (compact format) or list (legacy)
+                if isinstance(qc_citations, str) and qc_citations:
+                    if qc_citations not in aggregated_sources[column]:
+                        aggregated_sources[column].append(qc_citations)
+                elif isinstance(qc_citations, list):
+                    for source in qc_citations:
+                        if source not in aggregated_sources[column]:
+                            aggregated_sources[column].append(source)
 
         return aggregated_sources
 
@@ -392,12 +405,14 @@ class QCModule:
                             title = citation.get('title', 'Untitled')
                             url = citation.get('url', '')
                             cited_text = citation.get('cited_text', '')
+                            p_score = citation.get('p', '')  # Reliability score
 
-                            # Format: [{#}] {Title}: "{quote}" (URL)
+                            # Format with p score when available: [1] Title (p85): "quote" (URL)
+                            p_part = f" ({p_score})" if p_score else ""
                             if cited_text:
-                                citation_text = f"[{i}] {title}: \"{cited_text}\" ({url})"
+                                citation_text = f"[{i}] {title}{p_part}: \"{cited_text}\" ({url})"
                             else:
-                                citation_text = f"[{i}] {title} ({url})"
+                                citation_text = f"[{i}] {title}{p_part} ({url})"
                             field_output.append(f"  - {citation_text}")
                         else:
                             # Plain string citation (fallback)
@@ -504,6 +519,51 @@ class QCModule:
             formatted_citations.append(f"[{i}] {citation}")
         return '\n'.join(formatted_citations)
 
+    def parse_compact_qc_response(self, qc_response: List) -> List[Dict]:
+        """Parse compact QC cell array response to dict format.
+
+        Format: [column, answer, confidence, original_confidence, updated_confidence,
+                 qc_reasoning, qc_citations, key_citation, update_importance]
+        """
+        parsed = []
+        for item in qc_response:
+            if isinstance(item, list) and len(item) >= 9:
+                # New 9-element format with key_citation
+                parsed.append({
+                    'column': item[0],
+                    'answer': item[1],
+                    'confidence': self._expand_confidence(item[2]),
+                    'original_confidence': self._expand_confidence(item[3]),
+                    'updated_confidence': self._expand_confidence(item[4]),
+                    'qc_reasoning': item[5],
+                    'qc_citations': item[6],
+                    'key_citation': item[7],
+                    'update_importance': item[8]
+                })
+            elif isinstance(item, list) and len(item) >= 8:
+                # Legacy 8-element format (backward compatibility)
+                parsed.append({
+                    'column': item[0],
+                    'answer': item[1],
+                    'confidence': self._expand_confidence(item[2]),
+                    'original_confidence': self._expand_confidence(item[3]),
+                    'updated_confidence': self._expand_confidence(item[4]),
+                    'qc_reasoning': item[5],
+                    'qc_citations': item[6],
+                    'key_citation': '',
+                    'update_importance': item[7]
+                })
+            elif isinstance(item, dict):
+                # Already dict format (legacy)
+                parsed.append(item)
+        return parsed
+
+    def _expand_confidence(self, val):
+        """Expand H/M/L to HIGH/MEDIUM/LOW"""
+        if val == 'H': return 'HIGH'
+        if val == 'M': return 'MEDIUM'
+        if val == 'L': return 'LOW'
+        return val
 
     async def process_qc_for_complete_row(
         self,

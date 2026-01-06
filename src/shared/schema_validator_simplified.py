@@ -597,8 +597,26 @@ class SimplifiedSchemaValidator:
             
         return prompt
     
+    def _expand_confidence(self, val):
+        """Expand H/M/L to HIGH/MEDIUM/LOW"""
+        if val == 'H': return 'HIGH'
+        if val == 'M': return 'MEDIUM'
+        if val == 'L': return 'LOW'
+        return val  # Already expanded or null
+
+    def _expand_consistent(self, val):
+        """Expand T/F to YES/NO"""
+        if val == 'T': return 'YES'
+        if val == 'F': return 'NO'
+        return val  # Already expanded or null
+
     def parse_multiplex_result(self, result: Dict, row: Dict[str, Any]) -> Dict[str, Tuple[Any, None, List[str], str, str, str, bool, bool, Optional[str]]]:
-        """Parse the multiplex validation result from API response (normalized to Perplexity format)."""
+        """Parse the multiplex validation result from API response (normalized to Perplexity format).
+
+        Supports both formats for backward compatibility:
+        - Cell array format: [column, answer, confidence, original_confidence, consistent, explanation]
+        - Object array format: [{column, answer, confidence, ...}, ...]
+        """
         try:
             # Extract content from API response
             if not isinstance(result, dict) or 'choices' not in result:
@@ -617,7 +635,7 @@ class SimplifiedSchemaValidator:
             # Only log if content is suspiciously short (likely an error)
             if len(content) < 10:
                 logger.warning(f"[PARSE_WARN] Suspiciously short content ({len(content)} chars): {content}")
-            
+
             # Parse JSON response
             try:
                 validation_results = json.loads(content)
@@ -647,53 +665,114 @@ class SimplifiedSchemaValidator:
             if not isinstance(validation_results, list):
                 logger.error(f"[PARSE_ERROR] Expected list, got {type(validation_results)}")
                 return {}
-            
+
+            # Detect format: cell array (list of lists) vs object array (list of dicts)
+            if validation_results and len(validation_results) > 0:
+                first_item = validation_results[0]
+                is_cell_array = isinstance(first_item, list)
+            else:
+                is_cell_array = False
+
             parsed_results = {}
-            
-            for item in validation_results:
-                if not isinstance(item, dict):
-                    continue
 
-                column = item.get('column', '')
-                if not column:
-                    continue
+            if is_cell_array:
+                # Cell array format: [column, answer, confidence, original_confidence, consistent, explanation]
+                logger.debug(f"[PARSE_FORMAT] Detected cell array format with {len(validation_results)} items")
 
-                # [FIX] Normalize column name to handle Unicode and encoding issues
-                column = unicodedata.normalize('NFC', column).strip()
+                for item in validation_results:
+                    if not isinstance(item, list) or len(item) < 6:
+                        logger.warning(f"[PARSE_WARN] Skipping invalid cell array item: {item}")
+                        continue
 
-                # [DEBUG] Log column parsing for debugging cache mismatches
-                logger.debug(f"[COLUMN_DEBUG] Parsed column: '{column}' (length: {len(column)}, repr: {repr(column)})")
-                
-                answer = item.get('answer', '')
-                confidence_level = item.get('confidence', 'LOW')
-                original_confidence = item.get('original_confidence')
-                sources = item.get('sources', [])
-                supporting_quotes = item.get('supporting_quotes', '')
-                explanation = item.get('explanation', '')
-                consistent_with_model_knowledge = item.get('consistent_with_model_knowledge', '')
+                    # Extract values from array positions
+                    column = item[0] if item[0] else ''
+                    answer = item[1]  # Preserve null - don't convert to empty string
+                    confidence = item[2]  # H/M/L or null
+                    original_confidence = item[3]  # H/M/L or null
+                    consistent = item[4]  # T/F or null
+                    explanation = item[5] if item[5] else ''
 
-                # Keep confidence as string for display (no numeric conversion)
-                confidence_str = confidence_level
+                    if not column:
+                        continue
 
-                # Determine main source
-                main_source = sources[0] if sources else ""
+                    # [FIX] Normalize column name to handle Unicode and encoding issues
+                    column = unicodedata.normalize('NFC', column).strip()
 
-                # Store as tuple: (value, confidence_level, sources, confidence_level, main_source, original_confidence, explanation, consistent_with_model_knowledge, supporting_quotes)
-                # Note: reasoning field removed - use supporting_quotes for quotes and explanation for AI's reasoning
-                parsed_results[column] = (
-                    answer,
-                    confidence_str,  # [0]
-                    sources,  # [1]
-                    confidence_str,  # [2]
-                    main_source,  # [3]
-                    original_confidence,  # [4]
-                    explanation,  # [5]
-                    consistent_with_model_knowledge,  # [6]
-                    supporting_quotes  # [7]
-                )
-            
+                    # [DEBUG] Log column parsing for debugging cache mismatches
+                    logger.debug(f"[COLUMN_DEBUG] Parsed column: '{column}' (length: {len(column)}, repr: {repr(column)})")
+
+                    # Expand compact values to full format (preserve null)
+                    confidence_str = self._expand_confidence(confidence) if confidence else None
+                    original_confidence_str = self._expand_confidence(original_confidence) if original_confidence else None
+                    consistent_with_model_knowledge = self._expand_consistent(consistent) if consistent else ''
+
+                    # Cell array format: sources come from citations metadata, not response
+                    sources = []
+                    main_source = ""
+                    supporting_quotes = ''
+
+                    # Store as tuple with same structure for downstream compatibility
+                    # Indices: 0=answer, 1=confidence, 2=sources, 3=confidence_level, 4=main_source,
+                    #          5=original_confidence, 6=explanation, 7=consistent, 8=supporting_quotes
+                    parsed_results[column] = (
+                        answer if answer is not None else '',  # Convert null to empty for value
+                        confidence_str if confidence_str else 'LOW',  # Default to LOW for display
+                        sources,
+                        confidence_str if confidence_str else 'LOW',
+                        main_source,
+                        original_confidence_str,  # Preserve null for blank originals
+                        explanation,
+                        consistent_with_model_knowledge,
+                        supporting_quotes
+                    )
+            else:
+                # Object array format (legacy): [{column, answer, confidence, ...}, ...]
+                logger.debug(f"[PARSE_FORMAT] Detected object array format with {len(validation_results)} items")
+
+                for item in validation_results:
+                    if not isinstance(item, dict):
+                        continue
+
+                    column = item.get('column', '')
+                    if not column:
+                        continue
+
+                    # [FIX] Normalize column name to handle Unicode and encoding issues
+                    column = unicodedata.normalize('NFC', column).strip()
+
+                    # [DEBUG] Log column parsing for debugging cache mismatches
+                    logger.debug(f"[COLUMN_DEBUG] Parsed column: '{column}' (length: {len(column)}, repr: {repr(column)})")
+
+                    answer = item.get('answer', '')
+                    confidence_level = item.get('confidence', 'LOW')
+                    original_confidence = item.get('original_confidence')
+                    sources = item.get('sources', [])
+                    supporting_quotes = item.get('supporting_quotes', '')
+                    explanation = item.get('explanation', '')
+                    consistent_with_model_knowledge = item.get('consistent_with_model_knowledge', '')
+
+                    # Keep confidence as string for display (no numeric conversion)
+                    confidence_str = confidence_level
+
+                    # Determine main source
+                    main_source = sources[0] if sources else ""
+
+                    # Store as tuple: (value, confidence_level, sources, confidence_level, main_source, original_confidence, explanation, consistent_with_model_knowledge, supporting_quotes)
+                    # Note: reasoning field removed - use supporting_quotes for quotes and explanation for AI's reasoning
+                    parsed_results[column] = (
+                        answer,
+                        confidence_str,  # [0]
+                        sources,  # [1]
+                        confidence_str,  # [2]
+                        main_source,  # [3]
+                        original_confidence,  # [4]
+                        explanation,  # [5]
+                        consistent_with_model_knowledge,  # [6]
+                        supporting_quotes  # [7]
+                    )
+
             return parsed_results
-            
+
         except Exception as e:
             logger.error(f"Error parsing multiplex result: {str(e)}")
             return {}

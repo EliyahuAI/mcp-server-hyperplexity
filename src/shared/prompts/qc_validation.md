@@ -49,6 +49,15 @@ The following ID fields provide context for this row but are NOT being QC'd:
 ## 📖 UNDERSTANDING THE INFORMATION PROVIDED
 ═══════════════════════════════════════════════════════════════
 
+**Source Reliability (p)**: When available, sources include a probability score (p05-p95)
+indicating expected accuracy of atomic claims from that source.
+- p95 = very reliable (authoritative sources)
+- p65-p85 = reliable
+- p50 = moderate
+- p15-p30 = lower reliability
+- p05 = low reliability
+Format in citations: [1] Title (p85): "quote" (URL)
+
 For each field, you will see the following information (when available):
 
 **1. Field Configuration** - Requirements and guidance for this field:
@@ -139,12 +148,13 @@ Assign confidence levels using this rubric:
 
 **YOU MUST PROVIDE QC OUTPUT FOR EVERY SINGLE FIELD** - no exceptions. For each field:
 
-1. **Always provide your QC answer** - either confirm the orignal or updated value or provide a replacement
-2. **Always assign your QC confidence** - your confidence in the QC answer
-3. **Always review and confirm/adjust original_confidence** - ensure hierarchy compliance
-4. **Always provide qc_reasoning** - explain your QC assessment
-5. **Always provide qc_citations** - support your QC decision
-6. **Always provide key_citation** - provide a targeted excerpt or reasoning for your answer.
+1. **Always provide your QC answer** - either confirm the original or updated value or provide a replacement
+2. **Always assign your QC confidence** - H (HIGH), M (MEDIUM), L (LOW), or null
+3. **Always review and confirm/adjust original_confidence** - ensure hierarchy compliance (H/M/L/null)
+4. **Always provide updated_confidence** - your assessment of the validator's proposed value (H/M/L/null)
+5. **Always provide qc_reasoning** - explain your QC assessment
+6. **Always provide qc_citations** - support your QC decision
+7. **Always provide update_importance** - rate the importance of changes (0-5 scale)
 
 ---
 
@@ -152,7 +162,29 @@ Assign confidence levels using this rubric:
 ## 📤 JSON SCHEMA EXAMPLE
 ═══════════════════════════════════════════════════════════════
 
-{json_schema_example}
+Return a JSON array where each item is a cell array with 9 elements:
+
+```
+[column, answer, confidence, original_confidence, updated_confidence, qc_reasoning, qc_citations, key_citation, update_importance]
+```
+
+- **column**: Exact field name
+- **answer**: Your final QC value (string or null for blank)
+- **confidence**: H (HIGH), M (MEDIUM), L (LOW), or null - YOUR confidence in the QC value
+- **original_confidence**: H, M, L, or null - YOUR assessment of the original value
+- **updated_confidence**: H, M, L, or null - YOUR assessment of the validator's proposed value
+- **qc_reasoning**: Explain your QC decision and any changes made
+- **qc_citations**: New citations found during QC (empty string if none)
+- **key_citation**: The single most relevant citation supporting your final answer (from original validation citations OR qc_citations)
+- **update_importance**: Integer 0-5 rating the net change importance
+
+**Example:**
+```json
+[
+  ["Revenue", "$158.9B", "H", "M", "H", "Confirmed via Q3 earnings report", "", "[1] Amazon IR (p95): \"Net sales $158.9B\" (https://ir.aboutamazon.com/...)", 2],
+  ["Market Cap", "$2.1T", "H", "H", "H", "Value confirmed, no change needed", "", "[1] Yahoo Finance: current value (https://finance.yahoo.com/...)", 0]
+]
+```
 
 ---
 
@@ -201,8 +233,8 @@ Assign confidence levels using this rubric:
 ### Response Requirements
 
 * Include exact column name as defined in FIELD input
-* Use complete ad real URLs in sources arrays (not reference numbers)
-* Include direct quotes from citations in key_citation and reasoning when available
+* Use complete and real URLs in qc_citations (not reference numbers)
+* Include direct quotes from citations in qc_citations and qc_reasoning when available
 * Use proper newline formatting for Excel cells (bullets, lists, etc.)
 * Assign **None confidence** for blank values that should remain blank
 * Response must be valid JSON array with all required fields
@@ -213,12 +245,13 @@ Assign confidence levels using this rubric:
 
 * `column`: Field name being QC'd (required)
 * `answer`: The QC Entry **MANDATORY FOR ALL QC RESPONSES**
-* `qc_reasoning`: Detailed explanation of why QC revision was necessary (required)
-* `confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the QC Entry (must be higher than or equal to the original confidence)
-* `original_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the original value (must be lower than or equal to the QC confidence).
-* `updated_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the updated value
-* `qc_citations`: Key supporting citation - **ABSOLUTELY REQUIRED for EVERY SINGLE FIELD** regardless of whether QC changes are made or not (see formatting below). This field is mandatory for all responses.
-* `update_importance`: **MANDATORY FOR ALL QC RESPONSES** - A 0-5 scale rating that measures the NET CHANGE from the original input value to the final QC answer, considering both the significance of the change AND your confidence in it. This is NOT about the QC process itself - it's about the overall impact of the change from what was originally provided to what you're now concluding. High scores require BOTH importance AND confidence. Format: "N - Explanation text" where N is 0-5. Score 0 requires no explanation.
+* `confidence`: **MANDATORY** - H/M/L/null for the QC Entry (must be >= original confidence)
+* `original_confidence`: **MANDATORY** - H/M/L/null for the original value (null if original was blank)
+* `updated_confidence`: **MANDATORY** - H/M/L/null for the validator's proposed value
+* `qc_reasoning`: Detailed explanation of your QC decision
+* `qc_citations`: New citations found during QC web search (empty string if none)
+* `key_citation`: **MANDATORY** - The single most relevant citation supporting your final answer. Draw from original validation citations [1], [2], etc. or new QC citations [QC1], [QC2], etc.
+* `update_importance`: **MANDATORY** - Integer 0-5 rating the net change importance
 
 **CRITICAL CONFIDENCE RULE: When there is no meaningful change between the final answer and the original value, OR when update_importance is 0 or 1, the QC original confidence (original_confidence) MUST be identical to the final QC confidence (confidence). This is NON-NEGOTIABLE.**
 
@@ -232,12 +265,12 @@ Assign confidence levels using this rubric:
 - **5**: Critical net change with very high confidence. Essential difference from original requiring immediate attention and fundamentally changing interpretation or action items.
 
 **Examples:**
-- "0" (no explanation)
-- "1 - Minor formatting correction to match style guide"
-- "2 - Updated revenue estimate based on limited data"
-- "3 - Corrected product category affecting market segmentation"
-- "4 - Volatility in market price for Amazon results in hold investment recommendation"
-- "5 - Company bankruptcy filing changes investment status to immediate sell"
+- 0: No change, original confirmed
+- 1: Minor formatting fix
+- 2: Moderate correction with uncertainty
+- 3: Significant correction affecting understanding
+- 4: Major correction impacting decisions
+- 5: Critical correction requiring immediate attention
 
 ### Key Citation Formatting (`qc_citations`)
 

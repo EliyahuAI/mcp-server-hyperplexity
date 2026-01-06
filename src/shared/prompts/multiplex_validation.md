@@ -104,42 +104,42 @@ Assign confidence levels to both original and updated values:
 ## 📤 RESPONSE FORMAT
 ═══════════════════════════════════════════════════════════════
 
-Return a JSON array with one object per field:
+Return a JSON array where each item is a cell array with 6 elements:
 
-```json
-{json_schema_example}
+```
+[column, answer, confidence, original_confidence, consistent, explanation]
 ```
 
-### REQUIRED FIELDS
-
-Each object in the response array MUST include:
 - **column**: Exact field name from FIELD DETAILS
-- **answer**: The validated value
-- **confidence**: HIGH, MEDIUM, LOW, or None
-- **original_confidence**: HIGH, MEDIUM, LOW, or None (for the original value)
-- **sources**: Array of source URLs
+- **answer**: The validated value (string or null for blank)
+- **confidence**: H (HIGH), M (MEDIUM), L (LOW), or null
+- **original_confidence**: H, M, L, or null (for the original value)
+- **consistent**: T (consistent with model knowledge), F (not consistent), or null
 - **explanation**: Succinct reason you believe the answer is correct
 
-Optional fields:
-- **supporting_quotes**: Direct quotes from sources with citation format '[1] "exact quote"'
-- **consistent_with_model_knowledge**: Whether answer aligns with general knowledge
+**Example:**
+```json
+[
+  ["Revenue", "$158.9B", "H", "M", "T", "Q3 2024 earnings report confirmed"],
+  ["CEO", "Andy Jassy", "H", "H", "T", "Official Amazon leadership page"],
+  ["Founded", null, null, null, null, "No reliable data found"]
+]
+```
 
 ### CRITICAL REQUIREMENTS
 
 - **Do not use quotation marks around your responses** (except in JSON structure itself)
-- **Assess both confidences**: Rate the quality of your updated answer (confidence) AND the quality of the original value (original_confidence) using the same confidence rubric
-- **CRITICAL - Blank original values**: If the original value was blank/empty, set `original_confidence` to `null`. You are assessing what WAS there originally, not what you're adding. Even if you're providing excellent new content with HIGH confidence, the original blank gets `null` confidence.
+- **Assess both confidences**: Rate the quality of your updated answer (confidence) AND the quality of the original value (original_confidence) using H/M/L/null
+- **CRITICAL - Blank original values**: If the original value was blank/empty, set `original_confidence` to `null`. You are assessing what WAS there originally, not what you're adding. Even if you're providing excellent new content with H confidence, the original blank gets `null` confidence.
 - **Only update if significantly better**: Only provide a different validated value if you can improve significantly on the original value
 - **Generally don't degrade confidence**:
-  - If original has HIGH/MEDIUM confidence, don't degrade to LOW or blank without strong justification
-  - If original has LOW confidence false data and no reliable replacement: You CAN leave blank (removing bad data is acceptable)
-  - Hierarchy: HIGH > MEDIUM > LOW > Blank/null
+  - If original has H/M confidence, don't degrade to L or blank without strong justification
+  - If original has L confidence false data and no reliable replacement: You CAN leave blank (removing bad data is acceptable)
+  - Hierarchy: H > M > L > null
   - **Confident absence**: Use text like "N/A" with confidence, not blank (blank = absence of evidence, not evidence of absence)
-- **Use exact column names**: Include the exact column name in each object - exactly as defined in the FIELD DETAILS above
-- **Include sources**: If you used web search, place actual URLs in the sources array. If using knowledge, cite your knowledge cutoff limitations where relevant
-- **Include quotes/evidence**: If you have direct quotes from sources, use the supporting_quotes field with citation format: '[1] "exact quote from source" - context' where [1] refers to the citation number from sources array
-- **Provide explanation**: Always include the explanation field with succinct reasoning for your answer
-- **Handle blanks appropriately**: If you cannot find or determine information for a field that was originally blank, assign None confidence if the field should remain blank
+- **Use exact column names**: Include the exact column name in each cell array - exactly as defined in the FIELD DETAILS above
+- **Provide explanation**: Always include the explanation with succinct reasoning for your answer
+- **Handle blanks appropriately**: If you cannot find or determine information for a field that was originally blank, use null for answer and confidence
 - **Use examples as guides**: Use provided examples to guide your update format and expected values
 - **Format for Excel**: Use newline characters correctly so that they are formatted in an Excel cell, particularly for bullets, lists, and other formatted text
 - **Stay focused**: Do not research the context and guidance - focus only on the fields listed above

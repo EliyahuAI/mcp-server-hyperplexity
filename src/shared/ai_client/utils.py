@@ -213,7 +213,8 @@ def extract_citations_from_response(response: Dict) -> List[Dict]:
                             'url': result_item.get('url', ''),
                             'title': result_item.get('title', ''),
                             'cited_text': '',  # Anthropic provides only encrypted_content (not usable)
-                            'page_age': result_item.get('page_age', '')
+                            'page_age': result_item.get('page_age', ''),
+                            'p': result_item.get('p', '')  # Reliability score like "p85", "p50", etc.
                         }
                         citations.append(citation)
             
@@ -226,13 +227,15 @@ def extract_citations_from_response(response: Dict) -> List[Dict]:
                             citations.append({
                                 'url': citation.get('url', ''),
                                 'title': citation.get('title', ''),
-                                'cited_text': citation.get('cited_text', '')
+                                'cited_text': citation.get('cited_text', ''),
+                                'p': citation.get('p', '')  # Reliability score like "p85", "p50", etc.
                             })
                         elif isinstance(citation, str):
                             citations.append({
                                 'url': '',
                                 'title': citation,
-                                'cited_text': ''
+                                'cited_text': '',
+                                'p': ''
                             })
             
             # Legacy format support - tool_result blocks
@@ -245,13 +248,15 @@ def extract_citations_from_response(response: Dict) -> List[Dict]:
                                 citations.append({
                                     'url': citation.get('url', ''),
                                     'title': citation.get('title', ''),
-                                    'cited_text': citation.get('cited_text', '')
+                                    'cited_text': citation.get('cited_text', ''),
+                                    'p': citation.get('p', '')  # Reliability score like "p85", "p50", etc.
                                 })
                             elif isinstance(citation, str):
                                 citations.append({
                                     'url': '',
                                     'title': citation,
-                                    'cited_text': ''
+                                    'cited_text': '',
+                                    'p': ''
                                 })
         
         return citations
@@ -277,10 +282,11 @@ def extract_citations_from_perplexity_response(response: Dict) -> List[Dict]:
                 'title': result.get('title', ''),
                 'cited_text': result.get('snippet', ''),  # This is the quote/snippet
                 'date': result.get('date', ''),
-                'last_updated': result.get('last_updated', '')
+                'last_updated': result.get('last_updated', ''),
+                'p': result.get('p', '')  # Reliability score like "p85", "p50", etc.
             }
             citations.append(citation)
-        
+
         # Also extract from citations array (just URLs)
         citation_urls = response.get('citations', [])
         existing_urls = {c['url'] for c in citations}
@@ -291,7 +297,8 @@ def extract_citations_from_perplexity_response(response: Dict) -> List[Dict]:
                     'title': '',
                     'cited_text': '',
                     'date': '',
-                    'last_updated': ''
+                    'last_updated': '',
+                    'p': ''
                 })
         
         return citations
