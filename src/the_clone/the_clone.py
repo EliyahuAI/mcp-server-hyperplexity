@@ -28,7 +28,7 @@ from the_clone.snippet_extractor_streamlined import SnippetExtractorStreamlined
 from the_clone.unified_synthesizer import UnifiedSynthesizer
 from the_clone.initial_decision import InitialDecision
 from the_clone.clone_logger import CloneLogger
-from the_clone.search_memory import SearchMemory
+from the_clone.search_memory import SearchMemory, extract_urls_from_text
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -384,14 +384,45 @@ class TheClone2Refined:
                         "Last Updated": mem_stats.get('last_updated', 'N/A')
                     }, level=4, collapse=True)
 
-                # Recall relevant memories
+                # URL-based recall: Look up any URLs mentioned in the original query
+                url_matched_sources = []
+                query_urls = extract_urls_from_text(prompt)
+                if query_urls:
+                    logger.info(f"[CLONE] Found {len(query_urls)} URLs in query, checking memory...")
+                    url_lookup_result = memory.recall_by_urls(query_urls)
+                    url_matched_sources = url_lookup_result['found']
+                    urls_not_in_memory = url_lookup_result['not_found']
+
+                    if url_matched_sources:
+                        logger.info(f"[CLONE] URL lookup: {len(url_matched_sources)} sources found in memory")
+
+                    # Fetch URLs not in memory via Jina
+                    if urls_not_in_memory:
+                        logger.info(f"[CLONE] Fetching {len(urls_not_in_memory)} URLs not in memory...")
+                        fetched_sources = await memory.fetch_url_content(urls_not_in_memory)
+                        if fetched_sources:
+                            url_matched_sources.extend(fetched_sources)
+                            logger.info(f"[CLONE] Live fetch: {len(fetched_sources)} URLs fetched via Jina")
+
+                    if url_matched_sources and clone_logger:
+                        clone_logger.log_section("URL Memory Lookup", {
+                            "URLs in Query": query_urls,
+                            "Found in Memory": len(url_lookup_result['found']),
+                            "Fetched Live": len(urls_not_in_memory) - len([u for u in urls_not_in_memory if u not in [s['url'] for s in url_matched_sources]]),
+                            "Total URL Sources": len(url_matched_sources),
+                            "Matched URLs": [s['url'] for s in url_matched_sources]
+                        }, level=4, collapse=True)
+
+                # Recall relevant memories (keyword-based + URL sources)
+                # URL sources are passed to Gemini for selection and always included in verification
                 recall_result = await memory.recall(
                     query=prompt,
                     keywords={'positive': positive_keywords, 'negative': negative_keywords},
                     max_results=10,
                     confidence_threshold=0.6,
                     breadth=breadth,
-                    depth=depth
+                    depth=depth,
+                    url_sources=url_matched_sources  # Pass URL sources for Gemini consideration
                 )
 
                 memory_sources = recall_result['memories']
@@ -399,7 +430,8 @@ class TheClone2Refined:
                 recall_meta = recall_result['recall_metadata']
 
                 logger.info(
-                    f"[CLONE] Memory recall: {len(memory_sources)} sources, "
+                    f"[CLONE] Memory recall: {len(memory_sources)} sources "
+                    f"(url_sources={recall_meta.get('url_sources_count', 0)}), "
                     f"confidence={confidence:.2f}, cost=${recall_meta['recall_cost']:.4f}"
                 )
 
@@ -409,6 +441,7 @@ class TheClone2Refined:
                         "Total Queries Searched": recall_meta['total_queries'],
                         "Queries After Keyword Filter": recall_meta['filtered_queries'],
                         "Sources Selected": recall_meta['sources_selected'],
+                        "URL Sources (from query)": recall_meta.get('url_sources_count', 0),
                         "Confidence": f"{confidence:.2f}",
                         "Recall Time": f"{recall_meta['recall_time_ms']:.0f}ms",
                         "Recall Cost": f"${recall_meta['recall_cost']:.4f}"
@@ -416,7 +449,7 @@ class TheClone2Refined:
 
                     # Add verification info if it ran
                     if recall_meta.get('verification_run'):
-                        recall_info["Verification"] = "Ran with full snippets (2-stage recall)"
+                        recall_info["Verification"] = "Ran with full snippets (includes URL sources)"
                         # Show recommended searches if any
                         recommended = recall_result.get('recommended_searches', [])
                         if recommended:

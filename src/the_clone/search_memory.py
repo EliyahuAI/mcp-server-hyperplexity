@@ -7,11 +7,45 @@ Session-scoped memory with volatile RAM + S3 persistence.
 import asyncio
 import json
 import logging
+import re
 import time
 import hashlib
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from collections import defaultdict
+
+
+# URL extraction pattern - matches http/https URLs
+URL_PATTERN = re.compile(
+    r'https?://[^\s<>"\')\]\}]+',
+    re.IGNORECASE
+)
+
+
+def extract_urls_from_text(text: str) -> List[str]:
+    """
+    Extract URLs from text.
+
+    Args:
+        text: Text that may contain URLs
+
+    Returns:
+        List of unique URLs found (preserves order)
+    """
+    if not text:
+        return []
+
+    matches = URL_PATTERN.findall(text)
+
+    # Clean trailing punctuation that might have been captured
+    cleaned = []
+    for url in matches:
+        # Remove trailing punctuation that's likely not part of URL
+        url = url.rstrip('.,;:!?')
+        if url and url not in cleaned:
+            cleaned.append(url)
+
+    return cleaned
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -285,7 +319,8 @@ class SearchMemory:
         max_results: int = 10,
         confidence_threshold: float = 0.6,
         breadth: str = "narrow",
-        depth: str = "shallow"
+        depth: str = "shallow",
+        url_sources: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Recall relevant memories using iterative Gemini approach.
@@ -293,12 +328,15 @@ class SearchMemory:
         Strategy:
         1. Keyword pre-filter on queries (fast, free)
         2. Gemini selects relevant sources from filtered queries
+           - URL sources (from query) shown at TOP with note
+        3. Verification with full snippets (URL sources always included)
 
         Args:
             query: Current user query
             keywords: {'positive': [...], 'negative': [...]}
             max_results: Max sources to return
             confidence_threshold: Minimum confidence to trust recall
+            url_sources: Sources from URLs mentioned in query (always included)
 
         Returns:
             {
@@ -309,13 +347,14 @@ class SearchMemory:
             }
         """
         start_time = time.time()
+        url_sources = url_sources or []
 
         # Ensure memory is loaded
         if self._memory is None:
             self._initialize_empty_memory()
 
-        # If no queries in memory, return empty
-        if not self._memory['queries']:
+        # If no queries in memory and no URL sources, return empty
+        if not self._memory['queries'] and not url_sources:
             return self._empty_recall_result()
 
         # Extract keywords
@@ -329,7 +368,11 @@ class SearchMemory:
             negative_keywords=negative_keywords
         )
 
-        if not filtered_queries:
+        # Log URL sources if present
+        if url_sources:
+            logger.info(f"[MEMORY] {len(url_sources)} URL sources from query will be prioritized")
+
+        if not filtered_queries and not url_sources:
             logger.debug("[MEMORY] No relevant queries found after keyword filter")
             return self._empty_recall_result()
 
@@ -339,6 +382,7 @@ class SearchMemory:
         )
 
         # Stage 2: Gemini selects sources from filtered queries
+        # URL sources are shown at top with special note
         if self.ai_client is None:
             logger.warning("[MEMORY] No AI client provided, using keyword-only recall")
             selected_sources = self._keyword_only_recall(filtered_queries, max_results)
@@ -348,21 +392,26 @@ class SearchMemory:
             selected_sources, selection_cost = await self._gemini_select_sources(
                 query=query,
                 filtered_queries=filtered_queries,
-                max_select=max_results
+                max_select=max_results,
+                url_sources=url_sources
             )
 
             # Get initial confidence from Gemini selection
             confidence = self._calculate_confidence(selected_sources, query)
 
-            # Stage 3: If high confidence, verify with full snippet text
+            # Stage 3: Verify with full snippet text
+            # Run if: high confidence OR url_sources present (always verify URL sources)
             recommended_searches = []
-            if confidence >= 0.75 and len(selected_sources) > 0:
-                logger.debug(f"[MEMORY] High confidence ({confidence:.2f}), running verification with full snippets...")
+            should_verify = (confidence >= 0.75 and len(selected_sources) > 0) or len(url_sources) > 0
+
+            if should_verify:
+                logger.debug(f"[MEMORY] Running verification (confidence={confidence:.2f}, url_sources={len(url_sources)})...")
                 verified_confidence, verification_cost, recommended_searches, ranked_source_indices = await self._verify_with_full_snippets(
                     query=query,
                     selected_sources=selected_sources,
                     breadth=breadth,
-                    depth=depth
+                    depth=depth,
+                    url_sources=url_sources
                 )
 
                 # Reorder sources based on Gemini's ranking
@@ -378,6 +427,16 @@ class SearchMemory:
         # Convert to search API format
         memory_results = self._convert_to_search_format(selected_sources)
 
+        # Always include URL sources in final results (even if Gemini didn't select them)
+        # They go to synthesis regardless
+        if url_sources:
+            existing_urls = {m['url'] for m in memory_results}
+            for url_src in url_sources:
+                if url_src.get('url') not in existing_urls:
+                    memory_results.append(url_src)
+                    existing_urls.add(url_src.get('url'))
+            logger.info(f"[MEMORY] Ensured {len(url_sources)} URL sources included in results")
+
         recall_time = (time.time() - start_time) * 1000
 
         return {
@@ -389,9 +448,10 @@ class SearchMemory:
                 'total_queries': len(self._memory['queries']),
                 'filtered_queries': len(filtered_queries),
                 'sources_selected': len(selected_sources),
+                'url_sources_count': len(url_sources),
                 'recall_cost': llm_cost,
                 'recall_time_ms': recall_time,
-                'verification_run': confidence >= 0.75
+                'verification_run': should_verify
             }
         }
 
@@ -458,17 +518,21 @@ class SearchMemory:
         self,
         query: str,
         filtered_queries: List[Dict[str, Any]],
-        max_select: int
+        max_select: int,
+        url_sources: Optional[List[Dict[str, Any]]] = None
     ) -> tuple[List[Dict[str, Any]], float]:
         """
         Use Gemini (via ai_client) to select most relevant sources.
         Also assesses confidence that sources can provide complete, accurate answer.
+        URL sources from query are shown at top with special note.
 
         Returns:
             (selected_sources, cost)
         """
+        url_sources = url_sources or []
+
         # Build prompt with filtered queries and their sources
-        prompt = self._build_recall_prompt(query, filtered_queries, max_select)
+        prompt = self._build_recall_prompt(query, filtered_queries, max_select, url_sources)
 
         # Schema for structured output
         schema = {
@@ -523,11 +587,20 @@ class SearchMemory:
 
             # Map selected indices to actual sources
             selected_sources = []
+            url_sources_selected = 0
             for selection in data.get('selected_sources', [])[:max_select]:
                 query_idx = selection.get('query_index')
                 source_idx = selection.get('source_index')
 
-                if query_idx < len(filtered_queries):
+                # Handle URL sources (query_index=-1)
+                if query_idx == -1 and url_sources:
+                    if source_idx < len(url_sources):
+                        source = url_sources[source_idx].copy()
+                        source['_gemini_confidence'] = gemini_confidence
+                        source['_gemini_selected'] = True
+                        selected_sources.append(source)
+                        url_sources_selected += 1
+                elif query_idx >= 0 and query_idx < len(filtered_queries):
                     query_info = filtered_queries[query_idx]
                     query_data = query_info['query_data']
 
@@ -540,7 +613,7 @@ class SearchMemory:
                         source['_gemini_confidence'] = gemini_confidence
                         selected_sources.append(source)
 
-            logger.debug(f"[MEMORY] Gemini selected {len(selected_sources)} sources, confidence={gemini_confidence:.2f} (cost: ${cost:.4f})")
+            logger.debug(f"[MEMORY] Gemini selected {len(selected_sources)} sources ({url_sources_selected} URL), confidence={gemini_confidence:.2f} (cost: ${cost:.4f})")
 
             return selected_sources, cost
 
@@ -555,7 +628,8 @@ class SearchMemory:
         query: str,
         selected_sources: List[Dict[str, Any]],
         breadth: str = "narrow",
-        depth: str = "shallow"
+        depth: str = "shallow",
+        url_sources: Optional[List[Dict[str, Any]]] = None
     ) -> tuple[float, float, List[str], List[int]]:
         """
         Verify that selected sources can actually answer the query.
@@ -563,18 +637,42 @@ class SearchMemory:
         Considers breadth/depth requirements.
         Returns ranked source indices (replaces triage when using memory only).
 
+        URL sources are always included (user explicitly mentioned them).
+
         Returns:
             (verified_confidence, cost, recommended_searches, ranked_source_indices)
         """
         from datetime import datetime
 
+        url_sources = url_sources or []
+
         # Get today's date
         today = datetime.now().strftime("%Y-%m-%d")
 
+        # Combine URL sources with selected sources for verification
+        # URL sources go first, marked as user-referenced
+        all_sources = []
+        url_source_count = len(url_sources)
+
+        # Add URL sources first (user explicitly mentioned these)
+        for source in url_sources:
+            source_copy = source.copy()
+            source_copy['_user_referenced'] = True
+            all_sources.append(source_copy)
+
+        # Add selected sources (dedupe by URL)
+        existing_urls = {s.get('url') for s in url_sources}
+        for source in selected_sources:
+            if source.get('url') not in existing_urls:
+                all_sources.append(source)
+                existing_urls.add(source.get('url'))
+
         # Build verification prompt with full snippets
         snippets_text = []
-        for i, source in enumerate(selected_sources, 1):
-            snippets_text.append(f"**Source {i}:** {source.get('title', 'No title')}")
+        for i, source in enumerate(all_sources, 1):
+            # Mark user-referenced sources
+            user_ref_note = " [USER REFERENCED THIS URL]" if source.get('_user_referenced') else ""
+            snippets_text.append(f"**Source {i}:{user_ref_note}** {source.get('title', 'No title')}")
             snippets_text.append(f"URL: {source.get('url', 'No URL')}")
             snippets_text.append(f"Date: {source.get('date', 'No date')}")
             snippets_text.append(f"\nContent:\n{source.get('snippet', 'No content')[:2000]}...")
@@ -592,6 +690,11 @@ class SearchMemory:
 
         answer_requirements = f"{requirements_map.get(breadth, 'focused')} and {depth_map.get(depth, 'concise')}"
 
+        # Note about user-referenced sources if any
+        url_note = ""
+        if url_source_count > 0:
+            url_note = f"\n**Note:** Sources 1-{url_source_count} are URLs the user explicitly mentioned in their query. Give these priority consideration.\n"
+
         prompt = f"""# Memory Verification Task
 
 **Today's Date:** {today}
@@ -601,8 +704,8 @@ class SearchMemory:
 **Answer Requirements:**
 - Breadth: {breadth.upper()} - {requirements_map.get(breadth, 'focused')}
 - Depth: {depth.upper()} - {depth_map.get(depth, 'concise')}
-
-**Available Sources ({len(selected_sources)}):**
+{url_note}
+**Available Sources ({len(all_sources)}):**
 
 {chr(10).join(snippets_text)}
 
@@ -662,7 +765,7 @@ Return JSON:
                 "ranked_source_indices": {
                     "type": "array",
                     "items": {"type": "integer"},
-                    "description": f"Indices of USEFUL sources only (0-{len(selected_sources)-1}), ranked best first. Skip irrelevant sources. Replaces triage for memory-only queries.",
+                    "description": f"Indices of USEFUL sources only (0-{len(all_sources)-1}), ranked best first. Skip irrelevant sources. Replaces triage for memory-only queries.",
                     "minItems": 0
                 },
                 "recommended_searches": {
@@ -695,12 +798,13 @@ Return JSON:
 
             verified_confidence = data.get('confidence', 0.5)
             recommended_searches = data.get('recommended_searches', [])
-            ranked_source_indices = data.get('ranked_source_indices', list(range(len(selected_sources))))
+            ranked_source_indices = data.get('ranked_source_indices', list(range(len(all_sources))))
 
             logger.info(
                 f"[MEMORY] Verification: confidence={verified_confidence:.2f}, "
                 f"can_answer={data.get('can_answer', False)}, "
                 f"ranked_sources={len(ranked_source_indices)}, "
+                f"url_sources={url_source_count}, "
                 f"recommended_searches={len(recommended_searches)}"
             )
 
@@ -709,7 +813,7 @@ Return JSON:
         except Exception as e:
             logger.error(f"[MEMORY] Verification failed: {e}")
             # Return original confidence on error, no reordering
-            return self._calculate_confidence(selected_sources, query), 0.0, [], []
+            return self._calculate_confidence(all_sources, query), 0.0, [], []
 
     def _keyword_only_recall(
         self,
@@ -744,13 +848,38 @@ Return JSON:
         self,
         query: str,
         filtered_queries: List[Dict[str, Any]],
-        max_select: int
+        max_select: int,
+        url_sources: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """Build prompt for Gemini source selection with confidence assessment."""
         from datetime import datetime
 
+        url_sources = url_sources or []
+
         # Get today's date
         today = datetime.now().strftime("%Y-%m-%d")
+
+        # Format URL sources at the TOP (user explicitly referenced these)
+        url_section = ""
+        if url_sources:
+            url_lines = []
+            url_lines.append("## USER-REFERENCED URLs (PRIORITY)")
+            url_lines.append("**The user explicitly mentioned these URLs in their query.**")
+            url_lines.append("**Use query_index=-1 to select these sources.**")
+            url_lines.append("")
+            for src_idx, source in enumerate(url_sources):
+                title = source.get('title', 'No title')[:60]
+                url = source.get('url', 'No URL')
+                date = source.get('date', 'No date')
+                snippet_preview = source.get('snippet', '')[:150]
+                original_query = source.get('_original_query', 'Unknown')
+                url_lines.append(f"  [{src_idx}] {title}")
+                url_lines.append(f"      URL: {url}")
+                url_lines.append(f"      Date: {date}")
+                url_lines.append(f"      Originally found via: \"{original_query}\"")
+                url_lines.append(f"      Preview: {snippet_preview}...")
+                url_lines.append("")
+            url_section = chr(10).join(url_lines) + chr(10)
 
         # Format queries with their sources
         formatted_queries = []
@@ -773,20 +902,29 @@ Return JSON:
 
             formatted_queries.append("")
 
+        # Build selection instructions based on whether URL sources exist
+        url_instruction = ""
+        if url_sources:
+            url_instruction = f"""
+**URL Source Selection:**
+- For USER-REFERENCED URLs above, use: {{"query_index": -1, "source_index": <index>}}
+- These are high-priority as the user explicitly mentioned them
+"""
+
         return f"""# Memory Recall Task
 
 **Today's Date:** {today}
 
 **Current Query:** {query}
 
-**Past Queries ({len(filtered_queries)} candidates):**
+{url_section}**Past Queries ({len(filtered_queries)} candidates):**
 
 {chr(10).join(formatted_queries)}
 
 **Task:**
 1. Select up to {max_select} most relevant sources that would help answer the current query
 2. Assess the probability (0.0-1.0) that these selected sources can provide a **factually accurate, up-to-date, and complete** answer to the current query
-
+{url_instruction}
 **Selection Criteria:**
 - **Relevance**: Does the source contain information directly relevant to the query?
 - **Completeness**: Do the sources together provide a comprehensive answer?
@@ -809,6 +947,7 @@ Consider:
 Return JSON:
 {{
   "selected_sources": [
+    {{"query_index": -1, "source_index": 0}},
     {{"query_index": 0, "source_index": 2}},
     ...
   ],
@@ -960,6 +1099,170 @@ Return JSON:
                 'recall_time_ms': 0.0
             }
         }
+
+    # === URL-BASED RECALL ===
+
+    def recall_by_urls(self, urls: List[str]) -> Dict[str, Any]:
+        """
+        Look up sources by exact URL match in memory.
+
+        This is used when the user's query contains URLs that we've
+        previously searched and stored in memory. Unlike keyword-based
+        recall, this is a direct lookup - no AI selection needed.
+
+        Args:
+            urls: List of URLs to look up
+
+        Returns:
+            Dict with:
+            - 'found': List of sources in search API format with _from_memory metadata
+            - 'not_found': List of URLs not in memory (can be fetched live)
+        """
+        result = {'found': [], 'not_found': []}
+
+        if self._memory is None:
+            result['not_found'] = list(urls) if urls else []
+            return result
+
+        if not urls:
+            return result
+
+        by_url_index = self._memory['indexes'].get('by_url', {})
+        queries = self._memory['queries']
+        found_sources = []
+        seen_urls = set()
+        found_target_urls = set()
+
+        for target_url in urls:
+            # Normalize URL for lookup (remove trailing slash)
+            normalized_url = target_url.rstrip('/')
+
+            # Check both with and without trailing slash
+            query_ids = by_url_index.get(target_url, []) or by_url_index.get(normalized_url, [])
+
+            if not query_ids:
+                # Try partial match (URL might have been stored with different query params)
+                base_url = target_url.split('?')[0].rstrip('/')
+                for stored_url, qids in by_url_index.items():
+                    if stored_url.split('?')[0].rstrip('/') == base_url:
+                        query_ids = qids
+                        break
+
+            if not query_ids:
+                logger.debug(f"[MEMORY] URL not found in memory: {target_url}")
+                continue
+
+            # Get the most recent query that has this URL
+            url_found = False
+            for query_id in query_ids:
+                query_data = queries.get(query_id)
+                if not query_data:
+                    continue
+
+                # Find the source with this URL in the query results
+                for idx, res in enumerate(query_data.get('results', [])):
+                    result_url = res.get('url', '')
+
+                    # Match by URL (exact or base URL match)
+                    if result_url == target_url or result_url.rstrip('/') == normalized_url:
+                        if result_url in seen_urls:
+                            continue  # Skip duplicates
+
+                        seen_urls.add(result_url)
+                        found_target_urls.add(target_url)
+                        url_found = True
+
+                        # Build source with metadata (same format as _convert_to_search_format)
+                        source = {
+                            "url": res.get('url'),
+                            "title": res.get('title'),
+                            "snippet": res.get('snippet'),
+                            "date": res.get('date'),
+                            "last_updated": res.get('last_updated'),
+
+                            # Memory-specific metadata
+                            "_from_memory": True,
+                            "_from_url_lookup": True,  # Mark as direct URL lookup
+                            "_original_query": query_data.get('search_term'),
+                            "_query_date": query_data.get('query_time'),
+                            "_memory_age_days": self._calculate_age_days(query_data.get('query_time')),
+                            "_original_rank": idx,
+                            "_memory_relevance": 10.0,  # High relevance for direct URL match
+                            "_freshness_indicator": self._get_freshness_indicator(query_data.get('query_time'))
+                        }
+
+                        found_sources.append(source)
+                        logger.info(f"[MEMORY] Found URL in memory: {target_url} (from query: {query_data.get('search_term', 'unknown')})")
+                        break  # Found this URL, move to next target
+
+                if url_found:
+                    break  # Already found, no need to check other queries
+
+        # Track URLs not found in memory
+        not_found = [url for url in urls if url not in found_target_urls]
+
+        logger.info(f"[MEMORY] URL lookup: {len(urls)} URLs -> {len(found_sources)} found, {len(not_found)} not found")
+        return {'found': found_sources, 'not_found': not_found}
+
+    async def fetch_url_content(self, urls: List[str]) -> List[Dict[str, Any]]:
+        """
+        Fetch content from URLs not in memory using Jina AI Reader.
+
+        This is used when URLs mentioned in the query aren't in memory.
+        Jina handles JS-rendered content and returns clean markdown.
+
+        Args:
+            urls: List of URLs to fetch
+
+        Returns:
+            List of sources in search API format with _from_live_fetch metadata
+        """
+        if not urls:
+            return []
+
+        from shared.html_table_parser import HTMLTableParser
+
+        html_parser = HTMLTableParser(timeout=30)
+        fetched_sources = []
+
+        for url in urls:
+            try:
+                logger.info(f"[MEMORY] Fetching URL content via Jina: {url}")
+                jina_result = await html_parser.fetch_via_jina(url)
+
+                if jina_result['success']:
+                    markdown = jina_result.get('markdown', '')
+                    title = jina_result.get('title', 'Unknown Title')
+
+                    # Truncate markdown to reasonable size for synthesis (first 8000 chars)
+                    snippet = markdown[:8000] if len(markdown) > 8000 else markdown
+
+                    source = {
+                        "url": url,
+                        "title": title,
+                        "snippet": snippet,
+                        "date": None,
+                        "last_updated": None,
+
+                        # Live fetch metadata
+                        "_from_memory": False,
+                        "_from_live_fetch": True,
+                        "_from_url_lookup": True,
+                        "_fetch_method": "jina_reader",
+                        "_memory_relevance": 10.0,  # High relevance - user explicitly mentioned
+                        "_content_length": len(markdown)
+                    }
+
+                    fetched_sources.append(source)
+                    logger.info(f"[MEMORY] Fetched URL: {url} ({len(markdown)} chars, title: {title[:50]})")
+                else:
+                    logger.warning(f"[MEMORY] Failed to fetch URL: {url} - {jina_result.get('error', 'Unknown error')}")
+
+            except Exception as e:
+                logger.error(f"[MEMORY] Error fetching URL {url}: {str(e)}")
+
+        logger.info(f"[MEMORY] Live URL fetch: {len(urls)} URLs -> {len(fetched_sources)} fetched")
+        return fetched_sources
 
     # === STATS ===
 
