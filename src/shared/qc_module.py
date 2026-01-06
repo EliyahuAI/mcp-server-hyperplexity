@@ -714,8 +714,18 @@ class QCModule:
             # Extract structured response using ai_client method
             try:
                 structured_data = ai_client.extract_structured_response(qc_response['response'], "qc_validation")
-                qc_results = structured_data.get('qc_results', []) if isinstance(structured_data, dict) else []
-                logger.info(f"QC returned {len(qc_results)} field modifications across all groups")
+                # Handle both compact cell array format and legacy dict format
+                if isinstance(structured_data, list):
+                    # New compact format - parse cell arrays to dicts
+                    qc_results = self.parse_compact_qc_response(structured_data)
+                    logger.info(f"QC returned {len(qc_results)} field results (compact format)")
+                elif isinstance(structured_data, dict):
+                    # Legacy dict format
+                    qc_results = structured_data.get('qc_results', [])
+                    logger.info(f"QC returned {len(qc_results)} field modifications (legacy format)")
+                else:
+                    qc_results = []
+                    logger.warning(f"QC returned unexpected data type: {type(structured_data)}")
 
                 # Apply flexible column matching to QC results
                 if qc_results and validation_targets:
@@ -946,8 +956,18 @@ class QCModule:
             # Extract structured response using ai_client method
             try:
                 structured_data = ai_client.extract_structured_response(qc_response['response'], "qc_validation")
-                qc_results = structured_data.get('qc_results', []) if isinstance(structured_data, dict) else []
-                logger.info(f"QC returned {len(qc_results)} field modifications")
+                # Handle both compact cell array format and legacy dict format
+                if isinstance(structured_data, list):
+                    # New compact format - parse cell arrays to dicts
+                    qc_results = self.parse_compact_qc_response(structured_data)
+                    logger.info(f"QC returned {len(qc_results)} field results (compact format)")
+                elif isinstance(structured_data, dict):
+                    # Legacy dict format
+                    qc_results = structured_data.get('qc_results', [])
+                    logger.info(f"QC returned {len(qc_results)} field modifications (legacy format)")
+                else:
+                    qc_results = []
+                    logger.warning(f"QC returned unexpected data type: {type(structured_data)}")
 
                 # Apply flexible column matching to QC results
                 if qc_results and validation_targets:
