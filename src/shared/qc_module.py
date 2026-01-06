@@ -725,11 +725,18 @@ class QCModule:
                     if 'items' in structured_data and isinstance(structured_data['items'], list):
                         # Compact format wrapped in {'items': [...]}
                         qc_results = self.parse_compact_qc_response(structured_data['items'])
-                        logger.info(f"QC returned {len(qc_results)} field results (compact format)")
+                        logger.info(f"QC returned {len(qc_results)} field results (compact format - items wrapper)")
                     elif 'qc_results' in structured_data:
-                        # Legacy dict format with qc_results key
-                        qc_results = structured_data.get('qc_results', [])
-                        logger.info(f"QC returned {len(qc_results)} field modifications (legacy format)")
+                        # qc_results key from schema wrapper - check if contents are compact arrays or legacy dicts
+                        raw_results = structured_data.get('qc_results', [])
+                        if raw_results and isinstance(raw_results[0], list):
+                            # Compact array format inside qc_results wrapper
+                            qc_results = self.parse_compact_qc_response(raw_results)
+                            logger.info(f"QC returned {len(qc_results)} field results (compact format)")
+                        else:
+                            # Legacy dict format
+                            qc_results = raw_results
+                            logger.info(f"QC returned {len(qc_results)} field modifications (legacy dict format)")
                     else:
                         qc_results = []
                         logger.warning(f"QC dict missing 'items' or 'qc_results' key: {list(structured_data.keys())}")
@@ -977,11 +984,18 @@ class QCModule:
                     if 'items' in structured_data and isinstance(structured_data['items'], list):
                         # Compact format wrapped in {'items': [...]}
                         qc_results = self.parse_compact_qc_response(structured_data['items'])
-                        logger.info(f"QC returned {len(qc_results)} field results (compact format)")
+                        logger.info(f"QC returned {len(qc_results)} field results (compact format - items wrapper)")
                     elif 'qc_results' in structured_data:
-                        # Legacy dict format with qc_results key
-                        qc_results = structured_data.get('qc_results', [])
-                        logger.info(f"QC returned {len(qc_results)} field modifications (legacy format)")
+                        # qc_results key from schema wrapper - check if contents are compact arrays or legacy dicts
+                        raw_results = structured_data.get('qc_results', [])
+                        if raw_results and isinstance(raw_results[0], list):
+                            # Compact array format inside qc_results wrapper
+                            qc_results = self.parse_compact_qc_response(raw_results)
+                            logger.info(f"QC returned {len(qc_results)} field results (compact format)")
+                        else:
+                            # Legacy dict format
+                            qc_results = raw_results
+                            logger.info(f"QC returned {len(qc_results)} field modifications (legacy dict format)")
                     else:
                         qc_results = []
                         logger.warning(f"QC dict missing 'items' or 'qc_results' key: {list(structured_data.keys())}")
