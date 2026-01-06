@@ -75,10 +75,8 @@ class GeminiProvider:
             # Build normalized response
             # Map Gemini's usageMetadata to standard usage format
             usage_metadata = gemini_response.get('usageMetadata', {})
-            # Restore backticks if using hard schema (they were escaped to § before sending)
-            if schema and not soft_schema and '§' in text_content:
-                text_content = text_content.replace('§', '`')
-                logger.debug(f"[GEMINI_BACKTICKS] Restored backticks in hard schema response")
+            # NOTE: Section symbols (§) are now the standard for location codes
+            # Do NOT convert back to backticks - keep § as-is in the response
 
             normalized = {
                 'id': gemini_response.get('modelVersion', 'gemini'),
@@ -464,11 +462,12 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
 {json.dumps(schema)}"""
             else:
                 # Hard schema: Use native Gemini JSON mode with compatibility fixes
-                # Escape backticks in prompt (Gemini treats them as markdown)
+                # Convert backticks to section symbols (§) - Gemini treats backticks as markdown
+                # Section symbols are now the standard for location codes throughout the system
                 escaped_prompt = prompt.replace('`', '§')
                 backtick_count = prompt.count('`')
                 if backtick_count > 0:
-                    logger.info(f"[GEMINI_PROMPT] Escaped {backtick_count} backticks in prompt")
+                    logger.info(f"[GEMINI_PROMPT] Converted {backtick_count} backticks to section symbols")
                 request_body["contents"][0]["parts"][0]["text"] = escaped_prompt
 
                 request_body["generationConfig"]["responseMimeType"] = "application/json"
