@@ -330,22 +330,23 @@ Note: Use FULL 4-part IDs exactly as shown in snippets above.
 
 ## Self-Assessment
 
-Grade your synthesis (A+ to C-):
-- **A+/A**: Answer is COMPLETE - all requested information is present with citations
-  - Ask: "Is there anything the query asked for that I didn't answer?"
-  - If YES and that info is likely findable online → NOT an A, grade B instead
-- **B**: Answer is PARTIAL - some requested information is missing but could likely be found
-  - Missing information that is probably available on the internet
-  - Or sources were insufficient/conflicting for parts of the query
-  - **Required:** Provide a best-effort answer satisfying the schema.
+Imagine a client paid an expert researcher for this answer. Would they be satisfied?
+
+**Expert answers have:**
+- Direct response to what was asked (no tangents, no gaps)
+- Specific facts (numbers, dates, names - not vague generalities)
+- Claims backed by authoritative sources with citations
+- Complete coverage (nothing important missing that's findable online)
+- Clear and well-organized presentation
+
+**Grade your synthesis (A+ to C-):**
+- **A+/A**: Expert-quality - client would be satisfied, nothing important missing
+- **B**: Acceptable but incomplete - missing information that's likely findable online
   - **Required:** Provide `suggested_search_terms` for the missing information.
-  - **Optional:** If reasoning complexity requires a smarter model, set `request_capability_upgrade=true`.
-  - **Optional:** If needed for next attempt, provide `note_to_self`.
-- **C**: Answer is INSUFFICIENT - cannot meaningfully answer the query
-  - Information not available online, or fundamentally cannot answer
-  - **Required:** Provide a best-effort answer satisfying the schema.
-  - **Optional:** If additional search would help, provide `suggested_search_terms`.
-  - **Optional:** If reasoning complexity requires a smarter model, set `request_capability_upgrade=true`.
+  - **Optional:** `request_capability_upgrade=true` if reasoning is too complex.
+  - **Optional:** `note_to_self` for next attempt.
+- **C**: Insufficient - cannot meaningfully answer, or information not available
+  - **Optional:** Provide `suggested_search_terms` if more search would help.
 
 **CRITICAL:**
 - You MUST always provide an answer that satisfies the schema structure, even if incomplete.
