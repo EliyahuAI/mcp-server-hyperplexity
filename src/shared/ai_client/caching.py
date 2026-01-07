@@ -100,7 +100,7 @@ class CacheHandler:
             logger.error(f"Cache check failed: {e}")
             return None
 
-    async def save_to_cache(self, cache_key: str, response: Dict, token_usage: Dict, processing_time: float, model: str, api_provider: str = 'anthropic', enhanced_metrics: Dict = None):
+    async def save_to_cache(self, cache_key: str, response: Dict, token_usage: Dict, processing_time: float, model: str, api_provider: str = 'anthropic', enhanced_metrics: Dict = None, citations: List = None):
         """Save response to cache."""
         try:
             # Extract time_estimated from enhanced_metrics if available (critical for proper timing aggregation)
@@ -115,7 +115,8 @@ class CacheHandler:
                 'token_usage': token_usage,
                 'processing_time': processing_time,
                 'time_estimated': time_estimated,  # Preserve original estimated time for aggregation
-                'enhanced_data': enhanced_metrics
+                'enhanced_data': enhanced_metrics,
+                'citations': citations or []  # Store citations directly for clone/other providers
             }
 
             s3_key = self._get_cache_s3_key(cache_key, api_provider)

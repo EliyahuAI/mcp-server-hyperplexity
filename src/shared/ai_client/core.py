@@ -33,6 +33,7 @@ from .providers.gemini import GeminiProvider
 
 logger = logging.getLogger(__name__)
 
+
 def _schema_has_conditionals(schema: Dict) -> bool:
     """
     Recursively check if schema contains if/then/else conditionals.
@@ -61,6 +62,12 @@ class AIAPIClient:
     """Shared AI API client with caching and schema support."""
 
     MODEL_HIERARCHY = MODEL_HIERARCHY
+
+    # Class-level session context (shared across ALL instances)
+    # This ensures memory system works even if multiple AIAPIClient instances exist
+    _session_id = None
+    _email = None
+    _s3_manager = None
 
     def __init__(self, s3_bucket: str = None):
         # Cache bucket logic
@@ -110,17 +117,34 @@ class AIAPIClient:
         self.get_enhanced_call_metrics = self.usage_handler.get_enhanced_call_metrics
         self.extract_token_usage = self.usage_handler.extract_token_usage
 
-        # Session context for memory system (set via set_session_context)
-        self.session_id = None
-        self.email = None
-        self.s3_manager = None
+        # NOTE: Session context now uses CLASS VARIABLES (see _session_id, _email, _s3_manager above)
+        # This ensures all instances share the same context, fixing multi-instance bugs
+
+    @property
+    def session_id(self):
+        """Get session_id from class variable (shared across all instances)."""
+        return AIAPIClient._session_id
+
+    @property
+    def email(self):
+        """Get email from class variable (shared across all instances)."""
+        return AIAPIClient._email
+
+    @property
+    def s3_manager(self):
+        """Get s3_manager from class variable (shared across all instances)."""
+        return AIAPIClient._s3_manager
 
     def set_session_context(self, session_id: str, email: str, s3_manager=None):
-        """Set session context for memory system (call once per lambda invocation)."""
-        self.session_id = session_id
-        self.email = email
-        self.s3_manager = s3_manager
-        logger.info(f"[AI_CLIENT_MEMORY] Session context set on instance {id(self)}: session_id={session_id}, email={email}, s3_manager={type(s3_manager).__name__ if s3_manager else 'None'}")
+        """Set session context for memory system (call once per lambda invocation).
+
+        Uses CLASS variables so all AIAPIClient instances share the same context.
+        This fixes bugs where multiple instances exist due to import path differences.
+        """
+        AIAPIClient._session_id = session_id
+        AIAPIClient._email = email
+        AIAPIClient._s3_manager = s3_manager
+        logger.info(f"[AI_CLIENT_MEMORY] Session context set on CLASS (instance {id(self)}): session_id={session_id}, email={email}, s3_manager={type(s3_manager).__name__ if s3_manager else 'None'}")
 
     def _get_backup_models(self, primary_model: str, count: int = 2) -> List[str]:
         try:
@@ -238,13 +262,18 @@ class AIAPIClient:
                                  cached_time_estimated=cached_time_estimated  # Pass original time for aggregation
                              )
 
+                             # Use stored citations if available (clone provider), otherwise extract from response
+                             cached_citations = cached_data.get('citations', [])
+                             if not cached_citations:
+                                 cached_citations = extract_citations_from_response(cached_response) if api_provider=='anthropic' else extract_citations_from_perplexity_response(cached_response)
+
                              return {
                                  'response': cached_response,
                                  'token_usage': token_usage,
                                  'processing_time': cached_data.get('processing_time', 0),
                                  'is_cached': True,
                                  'model_used': current_model,
-                                 'citations': extract_citations_from_response(cached_response) if api_provider=='anthropic' else extract_citations_from_perplexity_response(cached_response),
+                                 'citations': cached_citations,
                                  'enhanced_data': enhanced_data
                              }
 

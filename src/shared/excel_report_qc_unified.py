@@ -923,17 +923,17 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 else:
                                     comment_parts.append(f'Original Value: {original_value}')
 
-                                # Add Key Citation
+                                # Add Key Citation - from QC's key_citation field
                                 key_citation = None
                                 row_qc_data = get_qc_data_for_row(row_key, row_idx)
                                 if row_qc_data and col_name in row_qc_data:
                                     field_qc_data = row_qc_data[col_name]
                                     if isinstance(field_qc_data, dict):
-                                        qc_citations = field_qc_data.get('qc_citations', '')
-                                        if qc_citations and str(qc_citations).strip():
-                                            key_citation = qc_citations
+                                        qc_key_citation = field_qc_data.get('key_citation', '')
+                                        if qc_key_citation and str(qc_key_citation).strip():
+                                            key_citation = qc_key_citation
 
-                                # If no QC citation, use first validation citation
+                                # If no QC key_citation, use first validation citation
                                 if not key_citation:
                                     citations = field_data.get('citations', [])
                                     if citations and len(citations) > 0:
@@ -1130,17 +1130,17 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 else:
                                     comment_parts.append(f'Updated Value: {validated_value}')
 
-                                # Add Key Citation
+                                # Add Key Citation - from QC's key_citation field
                                 key_citation = None
                                 row_qc_data = get_qc_data_for_row(row_key, row_idx)
                                 if row_qc_data and col_name in row_qc_data:
                                     field_qc_data = row_qc_data.get(col_name)
                                     if isinstance(field_qc_data, dict):
-                                        qc_citations = field_qc_data.get('qc_citations', '')
-                                        if qc_citations and str(qc_citations).strip():
-                                            key_citation = qc_citations
+                                        qc_key_citation = field_qc_data.get('key_citation', '')
+                                        if qc_key_citation and str(qc_key_citation).strip():
+                                            key_citation = qc_key_citation
 
-                                # If no QC citation, use first validation citation
+                                # If no QC key_citation, use first validation citation
                                 if not key_citation:
                                     citations = field_data.get('citations', [])
                                     if citations and len(citations) > 0:
@@ -1261,8 +1261,8 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
             if INCLUDE_QC_COLUMNS:
                 detail_headers.extend(["Column", "Original Value", "Updated Value", "QC Value",
                                 "QC Original Confidence", "QC Updated Confidence", "QC Confidence",
-                                "QC Applied", "QC Reasoning", "Update Importance", "QC Sources", "QC Citations",
-                                "Final Value", "Sources", "Citations", "Supporting Quotes",
+                                "QC Applied", "QC Reasoning", "Update Importance", "Key Citation",
+                                "Final Value", "Citations",
                                 "Explanation", "Consistent with Model", "Model", "Timestamp"])
             else:
                 detail_headers.extend(["Column", "Original Value", "Original Confidence", "Validated Value",
@@ -1374,8 +1374,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             qc_value = ''
                             qc_confidence = ''
                             qc_reasoning = ''
-                            qc_sources = []
-                            qc_citations = ''
+                            key_citation = ''
                             qc_original_confidence = ''
                             qc_updated_confidence = ''
 
@@ -1396,16 +1395,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                             raw_qc_reasoning = field_qc_data.get('qc_reasoning') or ''
                                             qc_reasoning = safe_for_excel(str(raw_qc_reasoning))
 
-                                            # Handle QC sources with null safety
-                                            raw_qc_sources = field_qc_data.get('qc_sources', [])
-                                            if isinstance(raw_qc_sources, list):
-                                                qc_sources = [safe_for_excel(str(s)) for s in raw_qc_sources if s is not None and str(s).strip()]
-                                            else:
-                                                qc_sources = []
-
-                                            # Safely extract QC citations with enhanced cleaning
-                                            raw_qc_citations = field_qc_data.get('qc_citations') or ''
-                                            qc_citations = safe_for_excel(raw_qc_citations)
+                                            # Extract key_citation from QC data
+                                            raw_key_citation = field_qc_data.get('key_citation') or ''
+                                            key_citation = safe_for_excel(str(raw_key_citation))
 
                                             qc_original_confidence = str(field_qc_data.get('qc_original_confidence') or '')
                                             qc_updated_confidence = str(field_qc_data.get('qc_updated_confidence') or '')
@@ -1505,19 +1497,8 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             details_sheet.write(detail_row, col_idx, safe_for_excel(update_importance))  # Update Importance
                             col_idx += 1
 
-                            # QC Sources column with safe joining
-                            try:
-                                # Filter out empty sources and ensure all are strings
-                                safe_qc_sources = [str(s).strip() for s in qc_sources if s and str(s).strip()]
-                                qc_sources_str = '; '.join(safe_qc_sources) if safe_qc_sources else ''
-                            except Exception as e:
-                                logger.warning(f"QC sources processing failed: {e}")
-                                qc_sources_str = ''
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(qc_sources_str))  # QC Sources
-                            col_idx += 1
-
-                            # QC Citations column
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(qc_citations))  # QC Citations
+                            # Key Citation column - QC's key citation that references validation citations as [V1], [V2]
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(key_citation))  # Key Citation
                             col_idx += 1
 
                             # Final Value should use QC confidence format if QC applied, otherwise updated confidence format
@@ -1538,31 +1519,13 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 details_sheet.write(detail_row, col_idx, safe_for_excel(final_value, should_preserve_formulas(field_name)), final_format)  # Final Value
                             col_idx += 1
 
-                            # Sources column - blend validation and QC sources when QC is applied
-                            try:
-                                validation_sources = field_data.get('sources', []) or []
-                                if qc_applied and qc_sources:
-                                    # Combine validation sources with QC sources (avoid duplicates)
-                                    all_sources = [str(s) for s in validation_sources if s]  # Clean validation sources
-                                    for qc_source in qc_sources:
-                                        if qc_source and str(qc_source) not in all_sources:
-                                            all_sources.append(str(qc_source))
-                                    sources_text = ', '.join(all_sources)
-                                else:
-                                    clean_validation_sources = [str(s) for s in validation_sources if s]
-                                    sources_text = ', '.join(clean_validation_sources)
-                            except Exception as e:
-                                logger.warning(f"Sources blending failed: {e}")
-                                sources_text = ''
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(sources_text))  # Sources
-                            col_idx += 1
-                            
-                            # Citations column - blend validation and QC citations when QC is applied
+                            # Citations column - validation citations numbered [1], [2], etc.
+                            # Key Citation column above uses [V1], [V2] to reference these
                             try:
                                 citations = field_data.get('citations', []) or []
                                 citation_texts = []
 
-                                # Add validation citations first
+                                # Add validation citations
                                 if citations:
                                     for i, citation in enumerate(citations, 1):
                                         if isinstance(citation, dict):
@@ -1571,27 +1534,16 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                             cite_snippet = citation.get('cited_text', '')
                                             # Format: [{#}] {Title}: "{quote}" (URL)
                                             if cite_snippet:
-                                                # Show full citation content - no truncation
                                                 cite_text += f": \"{cite_snippet}\""
                                             if cite_url:
                                                 cite_text += f" ({cite_url})"
                                             citation_texts.append(cite_text)
 
-                                # Add QC citations if QC is applied and has citations
-                                if qc_applied and qc_citations and str(qc_citations).strip():
-                                    if citation_texts:
-                                        citation_texts.append("")  # Add blank line separator
-                                    citation_texts.append("--- QC CITATIONS ---")
-                                    citation_texts.append(str(qc_citations).strip())
-
                                 citations_text = '\n'.join(citation_texts) if citation_texts else ''
                             except Exception as e:
-                                logger.warning(f"Citations blending failed: {e}")
+                                logger.warning(f"Citations formatting failed: {e}")
                                 citations_text = ''
                             details_sheet.write(detail_row, col_idx, safe_for_excel(citations_text))  # Citations
-                            col_idx += 1
-
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('supporting_quotes', ''))))  # Supporting Quotes
                             col_idx += 1
 
                             details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('explanation', ''))))  # Explanation

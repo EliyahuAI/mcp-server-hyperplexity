@@ -149,9 +149,9 @@ class CloneProvider:
             # Inject detailed cost breakdown into enhanced metrics
             enhanced_data['costs']['actual']['breakdown'] = cost_breakdown
 
-            # Save to cache if enabled (with enhanced_data for timing preservation)
+            # Save to cache if enabled (with enhanced_data for timing preservation and citations)
             if use_cache and cache_key:
-                await self.cache_handler.save_to_cache(cache_key, response_json, token_usage, processing_time, model, 'clone', enhanced_data)
+                await self.cache_handler.save_to_cache(cache_key, response_json, token_usage, processing_time, model, 'clone', enhanced_data, citations)
 
             # Inject provider-level metrics for DynamoDB aggregation
             enhanced_data['provider_metrics'] = provider_metrics
