@@ -1276,8 +1276,7 @@ class QCModule:
                     'qc_entry': qc_entry,
                     'qc_confidence': qc_confidence,
                     'qc_reasoning': qc_reasoning,
-                    'qc_sources': qc_result.get('qc_sources', []),  # QC sources from AI API client
-                    'qc_citations': qc_result.get('qc_citations', ''),  # QC citations for cell comments
+                    'key_citation': qc_result.get('key_citation', ''),  # QC key citation (uses [V*] format)
                     'qc_original_confidence': merged_result.get('qc_original_confidence', ''),  # QC-revised original confidence
                     'qc_updated_confidence': merged_result.get('qc_updated_confidence', ''),     # QC-revised updated confidence
                     'update_importance': update_importance_raw,  # Full string with explanation

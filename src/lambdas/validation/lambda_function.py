@@ -4099,8 +4099,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 row_results[field_name]['qc_confidence'] = qc_field_data.get('qc_confidence', '')  # Fixed: use qc_confidence instead of updated_confidence
                                 row_results[field_name]['qc_reasoning'] = qc_field_data.get('qc_reasoning', '')
                                 row_results[field_name]['qc_action_taken'] = qc_field_data.get('qc_action_taken', '')
-                                row_results[field_name]['qc_citations'] = qc_field_data.get('qc_citations', '')
-                                row_results[field_name]['qc_sources'] = qc_field_data.get('qc_sources', [])
+                                row_results[field_name]['key_citation'] = qc_field_data.get('key_citation', '')
                                 row_results[field_name]['qc_original_confidence'] = qc_field_data.get('qc_original_confidence', '')
                                 row_results[field_name]['qc_updated_confidence'] = qc_field_data.get('qc_updated_confidence', '')
 
