@@ -468,6 +468,11 @@ class SearchMemory:
         # Calculate overall confidence from vector
         confidence = sum(confidence_vector) / len(confidence_vector) if confidence_vector else 0.0
 
+        # Post-selection filter: Validate individual sources match required keywords
+        # This catches sources that slipped through query-level filter (e.g., Amazon source in MSFT query)
+        if required_keywords:
+            selected_sources = self._filter_sources_by_required_keywords(selected_sources, required_keywords)
+
         # Convert to search API format
         memory_results = self._convert_to_search_format(selected_sources)
 
@@ -598,6 +603,57 @@ class SearchMemory:
         # Sort by score and return top k
         scored_queries.sort(key=lambda x: x['relevance_score'], reverse=True)
         return scored_queries[:top_k]
+
+    def _filter_sources_by_required_keywords(
+        self,
+        sources: List[Dict[str, Any]],
+        required_keywords: List[str]
+    ) -> List[Dict[str, Any]]:
+        """
+        Post-selection filter: Validate individual sources match required keywords.
+
+        The query-level filter lets through queries where ANY source matches keywords.
+        This filter ensures each INDIVIDUAL source matches all required keyword groups.
+
+        Args:
+            sources: List of source dicts with 'snippet' and 'title'
+            required_keywords: List of keyword groups with | for OR variants
+                Example: ["MSFT|Microsoft", "analyst"] = (MSFT OR Microsoft) AND analyst
+
+        Returns:
+            Filtered list of sources where each source matches all keyword groups
+        """
+        if not required_keywords:
+            return sources
+
+        filtered = []
+        for source in sources:
+            # Build searchable text for this individual source
+            searchable = f"{source.get('title', '')} {source.get('snippet', '')}".lower()
+
+            # Check all keyword groups (AND logic between groups)
+            all_groups_match = True
+            for keyword_group in required_keywords:
+                # Split by | for variants (OR within group)
+                variants = [v.strip().lower() for v in keyword_group.split('|')]
+                if not any(variant in searchable for variant in variants):
+                    all_groups_match = False
+                    break
+
+            if all_groups_match:
+                filtered.append(source)
+            else:
+                logger.debug(
+                    f"[MEMORY] Source-level filter removed: {source.get('title', 'No title')[:50]}... "
+                    f"(missing required keywords: {required_keywords})"
+                )
+
+        if len(filtered) < len(sources):
+            logger.info(
+                f"[MEMORY] Source-level keyword filter: {len(sources)} -> {len(filtered)} sources"
+            )
+
+        return filtered
 
     async def _gemini_select_sources(
         self,
@@ -857,11 +913,11 @@ class SearchMemory:
                 if idx not in seen_indices:
                     verified_sources.append(source)
 
-            # Determine which terms need fresh search (confidence < 0.6)
+            # Determine which terms need fresh search (confidence < 0.8)
             terms_to_search = []
             for i, term in enumerate(search_terms_list):
                 conf = confidence_vector[i] if i < len(confidence_vector) else 0.0
-                if conf < 0.6:
+                if conf < 0.8:
                     # Use refined term if provided, else original
                     refined = refined_terms[i] if i < len(refined_terms) and refined_terms[i] else term
                     terms_to_search.append(refined)
