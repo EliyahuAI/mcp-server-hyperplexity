@@ -46,6 +46,12 @@ def get_initial_decision_schema(answer_schema: dict = None) -> dict:
                 "minItems": 0,
                 "maxItems": 3
             },
+            "required_keywords": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "MANDATORY entity identifiers. Use | for variants (OR), ALL groups must match (AND). Format: ['entity1|variant1', 'entity2|variant2']. Example: ['Apple|AAPL', 'stock|shares'] means (Apple OR AAPL) AND (stock OR shares). Empty [] for general queries.",
+                "minItems": 0
+            },
             "positive_keywords": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -69,7 +75,7 @@ def get_initial_decision_schema(answer_schema: dict = None) -> dict:
                 "description": "Set true if query requires scholarly/peer-reviewed sources (research papers, academic studies, scientific findings). Prioritizes academic databases over general web."
             }
         },
-        "required": ["decision", "breadth", "depth", "search_terms", "positive_keywords", "synthesis_tier", "academic"]
+        "required": ["decision", "breadth", "depth", "search_terms", "required_keywords", "positive_keywords", "synthesis_tier", "academic"]
     }
 
     # If custom answer schema provided, merge it for direct answers
@@ -120,6 +126,12 @@ def get_findall_schema() -> dict:
                 "minItems": 5,
                 "maxItems": 5
             },
+            "required_keywords": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "MANDATORY entity identifiers. Use | for variants (OR), ALL groups must match (AND). Format: ['entity1|variant1', 'entity2|variant2']. Example: ['Apple|AAPL'] means (Apple OR AAPL). Empty [] for general queries.",
+                "minItems": 0
+            },
             "positive_keywords": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -138,5 +150,5 @@ def get_findall_schema() -> dict:
                 "description": "Set true if query requires scholarly/peer-reviewed sources (research papers, academic studies, scientific findings). Prioritizes academic databases."
             }
         },
-        "required": ["search_terms", "positive_keywords", "academic"]
+        "required": ["search_terms", "required_keywords", "positive_keywords", "academic"]
     }

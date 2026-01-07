@@ -61,6 +61,14 @@ class SearchMemory:
     - S3 backup/restore for persistence
     - Optimistic concurrency for parallel lambda writes
 
+    Recall Flow:
+    1. Keyword pre-filter: Filter stored queries by required/positive/negative keywords
+    2. Gemini selection: Select sources + per-search-term confidence vector
+       - If ALL confidence < threshold: Skip verification, search all terms
+       - If ANY confidence >= threshold: Run verification
+    3. Snippet verification: Full snippet review, returns refined search terms for low-conf domains
+    4. URL sources: Always included at top of results regardless of selection
+
     Deduplication Rules:
     - Only dedupe within same query (not across queries)
     - Keep both if different max_tokens (preserve richer data)
@@ -320,29 +328,42 @@ class SearchMemory:
         confidence_threshold: float = 0.6,
         breadth: str = "narrow",
         depth: str = "shallow",
-        url_sources: Optional[List[Dict[str, Any]]] = None
+        url_sources: Optional[List[Dict[str, Any]]] = None,
+        search_terms: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
-        Recall relevant memories using iterative Gemini approach.
+        Recall relevant memories with per-search-term confidence assessment.
 
-        Strategy:
-        1. Keyword pre-filter on queries (fast, free)
-        2. Gemini selects relevant sources from filtered queries
-           - URL sources (from query) shown at TOP with note
-        3. Verification with full snippets (URL sources always included)
+        Flow:
+        1. Keyword pre-filter: Filter stored queries by required/positive/negative keywords
+           - Required keywords use | for OR variants, AND between groups
+           - Example: ["Apple|AAPL", "stock|shares"] = (Apple OR AAPL) AND (stock OR shares)
+        2. Gemini selection: Select sources + per-search-term confidence vector
+           - If ALL confidence < threshold: Skip verification, return all search terms for fresh search
+           - If ANY confidence >= threshold: Run verification for refined terms
+        3. Snippet verification (if any high conf): Full snippet review
+           - Returns refined search terms for low-confidence domains
+        4. URL sources: Always included at top of results regardless of selection
 
         Args:
             query: Current user query
-            keywords: {'positive': [...], 'negative': [...]}
+            keywords: {'required': [...], 'positive': [...], 'negative': [...]}
+                - required: Entity identifiers with | for variants (AND between groups)
+                - positive: Terms that boost relevance
+                - negative: Terms that penalize relevance
             max_results: Max sources to return
-            confidence_threshold: Minimum confidence to trust recall
-            url_sources: Sources from URLs mentioned in query (always included)
+            confidence_threshold: Minimum confidence (default 0.6) - terms below trigger fresh search
+            url_sources: Sources from URLs mentioned in query (always included at top)
+            search_terms: List of search terms for per-term confidence assessment
 
         Returns:
             {
-                'memories': List[dict],  # Search API format with _from_memory metadata
-                'confidence': float,
-                'should_search': bool,
+                'memories': List[dict],           # Sources in search API format
+                'confidence': float,              # Overall confidence (mean of vector)
+                'confidence_vector': List[float], # Per-search-term confidence
+                'should_search': bool,            # True if any terms need fresh search
+                'recommended_searches': List[str],# Terms needing search (refined or original)
+                'search_term_confidence': dict,   # {term: confidence} for logging
                 'recall_metadata': {...}
             }
         """
@@ -355,15 +376,17 @@ class SearchMemory:
 
         # If no queries in memory and no URL sources, return empty
         if not self._memory['queries'] and not url_sources:
-            return self._empty_recall_result()
+            return self._empty_recall_result(search_terms)
 
         # Extract keywords
+        required_keywords = keywords.get('required', []) if keywords else []
         positive_keywords = keywords.get('positive', []) if keywords else []
         negative_keywords = keywords.get('negative', []) if keywords else []
 
         # Stage 1: Keyword pre-filter on queries
         filtered_queries = self._filter_queries_by_keywords(
             query=query,
+            required_keywords=required_keywords,
             positive_keywords=positive_keywords,
             negative_keywords=negative_keywords
         )
@@ -374,76 +397,99 @@ class SearchMemory:
 
         if not filtered_queries and not url_sources:
             logger.debug("[MEMORY] No relevant queries found after keyword filter")
-            return self._empty_recall_result()
+            return self._empty_recall_result(search_terms)
 
         logger.info(
             f"[MEMORY] Keyword filter: {len(self._memory['queries'])} → "
             f"{len(filtered_queries)} candidate queries"
         )
 
-        # Stage 2: Gemini selects sources from filtered queries
-        # URL sources are shown at top with special note
+        # Stage 2: Gemini selects sources + per-term confidence
+        search_terms_list = search_terms or []
+        num_terms = len(search_terms_list)
+        verification_run = False
+
         if self.ai_client is None:
             logger.warning("[MEMORY] No AI client provided, using keyword-only recall")
             selected_sources = self._keyword_only_recall(filtered_queries, max_results)
             llm_cost = 0.0
-            confidence = self._calculate_confidence(selected_sources, query)
+            confidence_vector = [0.0] * num_terms  # No confidence without AI
+            search_term_confidence = {term: 0.0 for term in search_terms_list}
+            recommended_searches = search_terms_list[:]  # Search all terms
         else:
-            selected_sources, selection_cost = await self._gemini_select_sources(
+            selected_sources, confidence_vector, selection_cost = await self._gemini_select_sources(
                 query=query,
                 filtered_queries=filtered_queries,
                 max_select=max_results,
-                url_sources=url_sources
+                url_sources=url_sources,
+                search_terms=search_terms_list
             )
 
-            # Get initial confidence from Gemini selection
-            confidence = self._calculate_confidence(selected_sources, query)
+            # Build per-term confidence dict
+            search_term_confidence = {}
+            for i, term in enumerate(search_terms_list):
+                search_term_confidence[term] = confidence_vector[i] if i < len(confidence_vector) else 0.0
 
-            # Stage 3: Verify with full snippet text
-            # Run if: high confidence OR url_sources present (always verify URL sources)
-            recommended_searches = []
-            should_verify = (confidence >= 0.75 and len(selected_sources) > 0) or len(url_sources) > 0
+            # Check if ALL confidences are low -> skip verification, go straight to search
+            all_low = all(c < confidence_threshold for c in confidence_vector) if confidence_vector else True
+            any_high = any(c >= confidence_threshold for c in confidence_vector) if confidence_vector else False
 
-            if should_verify:
-                logger.debug(f"[MEMORY] Running verification (confidence={confidence:.2f}, url_sources={len(url_sources)})...")
-                verified_confidence, verification_cost, recommended_searches, ranked_source_indices = await self._verify_with_full_snippets(
+            if all_low:
+                # ALL terms have low confidence -> skip verification, search all terms
+                # URL sources will still be included in final results regardless
+                logger.info(f"[MEMORY] All {num_terms} terms have low confidence, skipping verification")
+                llm_cost = selection_cost
+                recommended_searches = search_terms_list[:]  # Search all terms
+            else:
+                # ANY term has high confidence -> run verification for refined terms
+                verification_run = True
+                logger.debug(f"[MEMORY] Running verification (any_high={any_high}, search_terms={num_terms})...")
+                verified_sources, verification_cost, recommended_searches, verified_confidence_vector = await self._verify_with_full_snippets(
                     query=query,
                     selected_sources=selected_sources,
                     breadth=breadth,
                     depth=depth,
-                    url_sources=url_sources
+                    url_sources=url_sources,
+                    search_terms=search_terms_list
                 )
 
-                # Reorder sources based on Gemini's ranking
-                if ranked_source_indices:
-                    selected_sources = [selected_sources[i] for i in ranked_source_indices if i < len(selected_sources)]
+                # Update with verified results
+                selected_sources = verified_sources
                 llm_cost = selection_cost + verification_cost
-                confidence = verified_confidence
-                logger.debug(f"[MEMORY] Verification complete: confidence {confidence:.2f}, recommended_searches={recommended_searches} (cost: ${verification_cost:.4f})")
-            else:
-                llm_cost = selection_cost
-                recommended_searches = []
+
+                # Update per-term confidence with verified values
+                if verified_confidence_vector:
+                    confidence_vector = verified_confidence_vector
+                    for i, term in enumerate(search_terms_list):
+                        search_term_confidence[term] = confidence_vector[i] if i < len(confidence_vector) else 0.0
+
+                logger.debug(f"[MEMORY] Verification complete: conf_vector={confidence_vector}, recommended_searches={recommended_searches} (cost: ${verification_cost:.4f})")
+
+        # Calculate overall confidence from vector
+        confidence = sum(confidence_vector) / len(confidence_vector) if confidence_vector else 0.0
 
         # Convert to search API format
         memory_results = self._convert_to_search_format(selected_sources)
 
-        # Always include URL sources in final results (even if Gemini didn't select them)
-        # They go to synthesis regardless
+        # URL sources ALWAYS included (independent of ranking/selection)
         if url_sources:
-            existing_urls = {m['url'] for m in memory_results}
+            existing_urls = {m.get('url') for m in memory_results}
             for url_src in url_sources:
                 if url_src.get('url') not in existing_urls:
-                    memory_results.append(url_src)
+                    # Add at the BEGINNING (high priority)
+                    memory_results.insert(0, url_src)
                     existing_urls.add(url_src.get('url'))
-            logger.info(f"[MEMORY] Ensured {len(url_sources)} URL sources included in results")
+            logger.info(f"[MEMORY] URL sources always included: {len(url_sources)} sources")
 
         recall_time = (time.time() - start_time) * 1000
 
         return {
             'memories': memory_results,
             'confidence': confidence,
-            'should_search': confidence < confidence_threshold,
+            'confidence_vector': confidence_vector,
+            'should_search': len(recommended_searches) > 0,
             'recommended_searches': recommended_searches,
+            'search_term_confidence': search_term_confidence,
             'recall_metadata': {
                 'total_queries': len(self._memory['queries']),
                 'filtered_queries': len(filtered_queries),
@@ -451,13 +497,14 @@ class SearchMemory:
                 'url_sources_count': len(url_sources),
                 'recall_cost': llm_cost,
                 'recall_time_ms': recall_time,
-                'verification_run': should_verify
+                'verification_run': verification_run
             }
         }
 
     def _filter_queries_by_keywords(
         self,
         query: str,
+        required_keywords: List[str],
         positive_keywords: List[str],
         negative_keywords: List[str],
         top_k: int = 30
@@ -465,6 +512,9 @@ class SearchMemory:
         """
         Filter queries by keyword match and query similarity.
         Keywords are matched against FULL TEXT (snippets), not just queries.
+
+        Required keywords: Source must contain AT LEAST ONE (case-insensitive substring).
+        This is "ANY" logic because keywords are entity variants (e.g., "Apple", "AAPL").
 
         Returns:
             List of {query_id, query_data, relevance_score}
@@ -483,6 +533,32 @@ class SearchMemory:
                 for result in query_data['results']
             ).lower()
 
+            # Full searchable text for keyword matching
+            searchable_text = f"{past_query} {search_term} {all_snippets}"
+
+            # REQUIRED KEYWORD CHECK: ALL keyword groups must match (AND logic)
+            # Each group can have variants separated by | (OR within group)
+            # Format: ["Apple|AAPL", "stock|shares"] = (Apple OR AAPL) AND (stock OR shares)
+            # If required_keywords is empty, all sources pass this check
+            if required_keywords:
+                all_groups_match = True
+                for keyword_group in required_keywords:
+                    # Split by | for variants within this group
+                    variants = [v.strip().lower() for v in keyword_group.split('|')]
+                    # Check if ANY variant in this group matches (OR logic within group)
+                    group_matches = any(variant in searchable_text for variant in variants)
+                    if not group_matches:
+                        all_groups_match = False
+                        break
+
+                if not all_groups_match:
+                    # Skip this query - doesn't match all required keyword groups
+                    logger.debug(
+                        f"[MEMORY] Skipping query '{query_data['search_term']}' - "
+                        f"required keywords not matched (needed: {required_keywords})"
+                    )
+                    continue
+
             # Calculate query overlap (Jaccard similarity)
             past_tokens = set(past_query.split()) | set(search_term.split())
             intersection = len(query_tokens & past_tokens)
@@ -490,13 +566,22 @@ class SearchMemory:
             query_overlap = intersection / union if union > 0 else 0
 
             # Keyword scoring in FULL TEXT (query + snippets)
-            searchable_text = f"{past_query} {search_term} {all_snippets}"
             pos_matches = sum(1 for kw in positive_keywords if kw.lower() in searchable_text)
             neg_matches = sum(1 for kw in negative_keywords if kw.lower() in searchable_text)
+
+            # Count required keyword group matches (for relevance boost)
+            # Each group counts as 1 if any variant matches
+            req_matches = 0
+            if required_keywords:
+                for keyword_group in required_keywords:
+                    variants = [v.strip().lower() for v in keyword_group.split('|')]
+                    if any(variant in searchable_text for variant in variants):
+                        req_matches += 1
 
             # Combined score (removed recency - doesn't always matter)
             relevance_score = (
                 query_overlap * 10.0 +  # Query match most important
+                req_matches * 3.0 +     # Required keyword matches get strong boost
                 pos_matches * 1.0 -     # Positive keyword matches
                 neg_matches * 5.0       # Strong penalty for negative keywords
             )
@@ -519,22 +604,26 @@ class SearchMemory:
         query: str,
         filtered_queries: List[Dict[str, Any]],
         max_select: int,
-        url_sources: Optional[List[Dict[str, Any]]] = None
-    ) -> tuple[List[Dict[str, Any]], float]:
+        url_sources: Optional[List[Dict[str, Any]]] = None,
+        search_terms: Optional[List[str]] = None
+    ) -> tuple[List[Dict[str, Any]], List[float], float]:
         """
         Use Gemini (via ai_client) to select most relevant sources.
-        Also assesses confidence that sources can provide complete, accurate answer.
+        Assesses per-search-term confidence for granular search decisions.
         URL sources from query are shown at top with special note.
 
         Returns:
-            (selected_sources, cost)
+            (selected_sources, confidence_vector, cost)
+            - confidence_vector: Per-search-term confidence matched to search_terms order
         """
         url_sources = url_sources or []
+        search_terms = search_terms or []
+        num_terms = len(search_terms)
 
         # Build prompt with filtered queries and their sources
-        prompt = self._build_recall_prompt(query, filtered_queries, max_select, url_sources)
+        prompt = self._build_recall_prompt(query, filtered_queries, max_select, url_sources, search_terms)
 
-        # Schema for structured output
+        # Schema for structured output - now with per-term confidence
         schema = {
             "type": "object",
             "properties": {
@@ -550,18 +639,17 @@ class SearchMemory:
                     },
                     "description": f"Up to {max_select} most relevant sources (query_index, source_index pairs)"
                 },
-                "confidence": {
-                    "type": "number",
-                    "minimum": 0.0,
-                    "maximum": 1.0,
-                    "description": "Probability (0.0-1.0) that selected sources can provide a factually accurate, up-to-date, and complete answer to the query"
+                "confidence_vector": {
+                    "type": "array",
+                    "items": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    "description": f"Confidence per search term (length={num_terms}), matched to search term order. 0.9+=complete, 0.7-0.9=good, 0.5-0.7=partial, <0.5=insufficient"
                 },
                 "reasoning": {
                     "type": "string",
                     "description": "Brief explanation of selection and confidence assessment"
                 }
             },
-            "required": ["selected_sources", "confidence"]
+            "required": ["selected_sources", "confidence_vector"]
         }
 
         try:
@@ -582,8 +670,13 @@ class SearchMemory:
             # Extract cost
             cost = self._extract_cost_from_response(response)
 
-            # Extract Gemini's confidence assessment
-            gemini_confidence = data.get('confidence', 0.5)
+            # Extract per-term confidence vector
+            confidence_vector = data.get('confidence_vector', [])
+            # Pad with 0.0 if vector is shorter than search_terms
+            while len(confidence_vector) < num_terms:
+                confidence_vector.append(0.0)
+            # Calculate overall for logging
+            overall_confidence = sum(confidence_vector) / len(confidence_vector) if confidence_vector else 0.5
 
             # Map selected indices to actual sources
             selected_sources = []
@@ -596,7 +689,6 @@ class SearchMemory:
                 if query_idx == -1 and url_sources:
                     if source_idx < len(url_sources):
                         source = url_sources[source_idx].copy()
-                        source['_gemini_confidence'] = gemini_confidence
                         source['_gemini_selected'] = True
                         selected_sources.append(source)
                         url_sources_selected += 1
@@ -610,18 +702,17 @@ class SearchMemory:
                         source['_query_text'] = query_data['query_text']
                         source['_query_time'] = query_data['query_time']
                         source['_relevance_score'] = query_info['relevance_score']
-                        source['_gemini_confidence'] = gemini_confidence
                         selected_sources.append(source)
 
-            logger.debug(f"[MEMORY] Gemini selected {len(selected_sources)} sources ({url_sources_selected} URL), confidence={gemini_confidence:.2f} (cost: ${cost:.4f})")
+            logger.debug(f"[MEMORY] Gemini selected {len(selected_sources)} sources ({url_sources_selected} URL), conf_vector={confidence_vector}, overall={overall_confidence:.2f} (cost: ${cost:.4f})")
 
-            return selected_sources, cost
+            return selected_sources, confidence_vector, cost
 
         except Exception as e:
             logger.error(f"[MEMORY] Gemini selection failed, using keyword fallback: {e}")
-            # Fallback to keyword-only
+            # Fallback to keyword-only with zero confidence
             selected = self._keyword_only_recall(filtered_queries, max_select)
-            return selected, 0.0
+            return selected, [0.0] * num_terms, 0.0
 
     async def _verify_with_full_snippets(
         self,
@@ -629,22 +720,26 @@ class SearchMemory:
         selected_sources: List[Dict[str, Any]],
         breadth: str = "narrow",
         depth: str = "shallow",
-        url_sources: Optional[List[Dict[str, Any]]] = None
-    ) -> tuple[float, float, List[str], List[int]]:
+        url_sources: Optional[List[Dict[str, Any]]] = None,
+        search_terms: Optional[List[str]] = None
+    ) -> tuple[List[Dict[str, Any]], float, List[str], List[float]]:
         """
         Verify that selected sources can actually answer the query.
         Provides full snippet text to Gemini for assessment.
-        Considers breadth/depth requirements.
-        Returns ranked source indices (replaces triage when using memory only).
-
-        URL sources are always included (user explicitly mentioned them).
+        Returns ranked sources directly (not indices) and updated confidence.
 
         Returns:
-            (verified_confidence, cost, recommended_searches, ranked_source_indices)
+            (verified_sources, cost, recommended_searches, confidence_vector)
+            - verified_sources: Sources reordered by Gemini's ranking
+            - cost: LLM cost
+            - recommended_searches: Refined terms for low-confidence domains
+            - confidence_vector: Updated per-term confidence
         """
         from datetime import datetime
 
         url_sources = url_sources or []
+        search_terms_list = search_terms or []
+        num_terms = len(search_terms_list)
 
         # Get today's date
         today = datetime.now().strftime("%Y-%m-%d")
@@ -668,118 +763,64 @@ class SearchMemory:
                 existing_urls.add(source.get('url'))
 
         # Build verification prompt with full snippets
+        # FIX: Use 0-indexed display to match schema (was 1-indexed causing off-by-one)
         snippets_text = []
-        for i, source in enumerate(all_sources, 1):
+        for i, source in enumerate(all_sources):
             # Mark user-referenced sources
-            user_ref_note = " [USER REFERENCED THIS URL]" if source.get('_user_referenced') else ""
-            snippets_text.append(f"**Source {i}:{user_ref_note}** {source.get('title', 'No title')}")
+            user_ref_note = " [USER REFERENCED]" if source.get('_user_referenced') else ""
+            snippets_text.append(f"**[{i}]{user_ref_note}** {source.get('title', 'No title')}")
             snippets_text.append(f"URL: {source.get('url', 'No URL')}")
             snippets_text.append(f"Date: {source.get('date', 'No date')}")
-            snippets_text.append(f"\nContent:\n{source.get('snippet', 'No content')[:2000]}...")
-            snippets_text.append("\n" + "="*80 + "\n")
+            snippets_text.append(f"Content: {source.get('snippet', 'No content')[:2000]}...")
+            snippets_text.append("---")
 
-        # Define answer requirements based on breadth/depth
-        requirements_map = {
-            "narrow": "focused on a specific aspect or single question",
-            "broad": "comprehensive, covering multiple aspects and perspectives"
-        }
-        depth_map = {
-            "shallow": "factual, concise (lists, definitions, quick facts)",
-            "deep": "detailed with context, explanations, methodology, trade-offs, and examples"
-        }
+        # Build search terms section
+        search_terms_section = ""
+        if search_terms_list:
+            numbered_terms = [f'{i}. "{term}"' for i, term in enumerate(search_terms_list)]
+            search_terms_section = f"""
+**Search Terms ({num_terms}, indexed 0-{num_terms-1}):**
+{chr(10).join(numbered_terms)}
+"""
 
-        answer_requirements = f"{requirements_map.get(breadth, 'focused')} and {depth_map.get(depth, 'concise')}"
+        prompt = f"""# Memory Verification
 
-        # Note about user-referenced sources if any
-        url_note = ""
-        if url_source_count > 0:
-            url_note = f"\n**Note:** Sources 1-{url_source_count} are URLs the user explicitly mentioned in their query. Give these priority consideration.\n"
-
-        prompt = f"""# Memory Verification Task
-
-**Today's Date:** {today}
-
+**Date:** {today}
 **Query:** {query}
-
-**Answer Requirements:**
-- Breadth: {breadth.upper()} - {requirements_map.get(breadth, 'focused')}
-- Depth: {depth.upper()} - {depth_map.get(depth, 'concise')}
-{url_note}
-**Available Sources ({len(all_sources)}):**
+**Requirements:** {breadth}/{depth}
+{search_terms_section}
+**Sources ({len(all_sources)}, indexed 0-{len(all_sources)-1}):**
 
 {chr(10).join(snippets_text)}
 
-**Tasks:**
-1. Assess the probability (0.0-1.0) that you can provide a **{answer_requirements}** answer using ONLY these sources
-2. Rank the sources by usefulness (return indices from best to worst)
-3. If sources are incomplete for the required breadth/depth, recommend 1-3 specific search terms to fill the gaps
+**Task:** Assess how well sources cover each search term.
 
-**Assessment Guidelines:**
-- **0.9-1.0**: Can definitely provide complete, accurate, up-to-date answer
-- **0.7-0.9**: Can likely provide good answer, may have minor gaps
-- **0.5-0.7**: Can provide partial answer, missing important information
-- **0.3-0.5**: Sources tangentially related, significant gaps exist
-- **0.0-0.3**: Insufficient to answer properly
-
-**Consider:**
-- Completeness: Do sources cover all aspects of the query?
-- Accuracy: Are sources authoritative and reliable?
-- Recency: If query requires current info, are sources up-to-date?
-- Depth: Is there enough detail to provide a substantive answer?
-
-**Source Selection & Ranking:**
-- Select ONLY the sources that are useful for answering this query
-- Rank selected sources by usefulness (best first)
-- Return indices of USEFUL sources only (0-indexed), skip irrelevant sources
-- Example: If only Sources 3, 1, 5 are useful (in that order) → [2, 0, 4]
-- This selection replaces triage when using memory-only
-
-**Recommended Searches:**
-- If confidence < 0.85, identify specific gaps and recommend targeted search terms
-- Example: Sources cover syntax but miss performance → ["Python 3.12 performance benchmarks"]
-- Return empty array [] if sources are complete
-
-Return JSON:
-{{
-  "confidence": 0.85,
-  "can_answer": true,
-  "ranked_source_indices": [2, 0, 1, 3],
-  "recommended_searches": ["specific search term 1"],
-  "reasoning": "Brief explanation of confidence, ranking, and any gaps"
-}}
+**Output (arrays matched to search term order):**
+- `confidence_vector`: [{num_terms} floats] confidence per term. 0.9+=complete, 0.7-0.9=good, 0.5-0.7=partial, <0.5=insufficient
+- `refined_terms`: [{num_terms} strings] refined search term or "" to keep original
+- `ranked_source_indices`: [ints] source indices (0-{len(all_sources)-1}) ranked by usefulness, best first
 """
 
         schema = {
             "type": "object",
             "properties": {
-                "confidence": {
-                    "type": "number",
-                    "minimum": 0.0,
-                    "maximum": 1.0,
-                    "description": "Probability that sources provide complete, accurate answer for required breadth/depth"
+                "confidence_vector": {
+                    "type": "array",
+                    "items": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    "description": f"Confidence per search term, length={num_terms}"
                 },
-                "can_answer": {
-                    "type": "boolean",
-                    "description": "True if confident sources can answer the query"
+                "refined_terms": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": f"Refined terms, length={num_terms}. '' to keep original."
                 },
                 "ranked_source_indices": {
                     "type": "array",
-                    "items": {"type": "integer"},
-                    "description": f"Indices of USEFUL sources only (0-{len(all_sources)-1}), ranked best first. Skip irrelevant sources. Replaces triage for memory-only queries.",
-                    "minItems": 0
-                },
-                "recommended_searches": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "1-3 specific search terms to fill identified gaps (empty if sources are complete)",
-                    "maxItems": 3
-                },
-                "reasoning": {
-                    "type": "string",
-                    "description": "Brief explanation of confidence level, source ranking, and any gaps"
+                    "items": {"type": "integer", "minimum": 0},
+                    "description": f"Source indices 0-{len(all_sources)-1}, best first"
                 }
             },
-            "required": ["confidence", "can_answer", "ranked_source_indices", "recommended_searches"]
+            "required": ["confidence_vector", "refined_terms", "ranked_source_indices"]
         }
 
         try:
@@ -796,24 +837,51 @@ Return JSON:
             data = extract_structured_response(response.get('response', response))
             cost = self._extract_cost_from_response(response)
 
-            verified_confidence = data.get('confidence', 0.5)
-            recommended_searches = data.get('recommended_searches', [])
+            confidence_vector = data.get('confidence_vector', [])
+            refined_terms = data.get('refined_terms', [])
             ranked_source_indices = data.get('ranked_source_indices', list(range(len(all_sources))))
 
-            logger.info(
-                f"[MEMORY] Verification: confidence={verified_confidence:.2f}, "
-                f"can_answer={data.get('can_answer', False)}, "
-                f"ranked_sources={len(ranked_source_indices)}, "
-                f"url_sources={url_source_count}, "
-                f"recommended_searches={len(recommended_searches)}"
-            )
+            # Pad confidence_vector if shorter than num_terms
+            while len(confidence_vector) < num_terms:
+                confidence_vector.append(0.0)
 
-            return verified_confidence, cost, recommended_searches, ranked_source_indices
+            # FIX: Reorder all_sources based on ranking, returning actual sources (not indices)
+            verified_sources = []
+            seen_indices = set()
+            for idx in ranked_source_indices:
+                if 0 <= idx < len(all_sources) and idx not in seen_indices:
+                    verified_sources.append(all_sources[idx])
+                    seen_indices.add(idx)
+            # Add any sources not included in ranking
+            for idx, source in enumerate(all_sources):
+                if idx not in seen_indices:
+                    verified_sources.append(source)
+
+            # Determine which terms need fresh search (confidence < 0.6)
+            terms_to_search = []
+            for i, term in enumerate(search_terms_list):
+                conf = confidence_vector[i] if i < len(confidence_vector) else 0.0
+                if conf < 0.6:
+                    # Use refined term if provided, else original
+                    refined = refined_terms[i] if i < len(refined_terms) and refined_terms[i] else term
+                    terms_to_search.append(refined)
+
+            low_conf_count = len(terms_to_search)
+            overall = sum(confidence_vector) / len(confidence_vector) if confidence_vector else 0.0
+
+            logger.info(
+                f"[MEMORY] Verification: overall={overall:.2f}, "
+                f"low_conf={low_conf_count}/{num_terms}, "
+                f"sources={len(verified_sources)}"
+            )
+            logger.debug(f"[MEMORY] conf_vector={confidence_vector}, terms_to_search={terms_to_search}")
+
+            return verified_sources, cost, terms_to_search, confidence_vector
 
         except Exception as e:
             logger.error(f"[MEMORY] Verification failed: {e}")
-            # Return original confidence on error, no reordering
-            return self._calculate_confidence(all_sources, query), 0.0, [], []
+            # Return sources unchanged on error
+            return all_sources, 0.0, search_terms_list, [0.0] * num_terms
 
     def _keyword_only_recall(
         self,
@@ -849,15 +917,27 @@ Return JSON:
         query: str,
         filtered_queries: List[Dict[str, Any]],
         max_select: int,
-        url_sources: Optional[List[Dict[str, Any]]] = None
+        url_sources: Optional[List[Dict[str, Any]]] = None,
+        search_terms: Optional[List[str]] = None
     ) -> str:
-        """Build prompt for Gemini source selection with confidence assessment."""
+        """Build prompt for Gemini source selection with per-term confidence assessment."""
         from datetime import datetime
 
         url_sources = url_sources or []
+        search_terms = search_terms or []
+        num_terms = len(search_terms)
 
         # Get today's date
         today = datetime.now().strftime("%Y-%m-%d")
+
+        # Build search terms section
+        search_terms_section = ""
+        if search_terms:
+            numbered_terms = [f'{i}. "{term}"' for i, term in enumerate(search_terms)]
+            search_terms_section = f"""**Search Terms ({num_terms} total, indexed 0-{num_terms-1}):**
+{chr(10).join(numbered_terms)}
+
+"""
 
         # Format URL sources at the TOP (user explicitly referenced these)
         url_section = ""
@@ -917,13 +997,13 @@ Return JSON:
 
 **Current Query:** {query}
 
-{url_section}**Past Queries ({len(filtered_queries)} candidates):**
+{search_terms_section}{url_section}**Past Queries ({len(filtered_queries)} candidates):**
 
 {chr(10).join(formatted_queries)}
 
 **Task:**
 1. Select up to {max_select} most relevant sources that would help answer the current query
-2. Assess the probability (0.0-1.0) that these selected sources can provide a **factually accurate, up-to-date, and complete** answer to the current query
+2. Assess confidence **per search term** - how well do selected sources cover each search term?
 {url_instruction}
 **Selection Criteria:**
 - **Relevance**: Does the source contain information directly relevant to the query?
@@ -932,17 +1012,12 @@ Return JSON:
 - **Recency** (when applicable): For time-sensitive queries (e.g., "latest", "new", "current", specific years), prioritize recent sources
 - **Diversity**: Avoid redundant sources covering the same information
 
-**Confidence Assessment Guidelines:**
-- **0.9-1.0**: Sources definitely provide complete, accurate, up-to-date answer
-- **0.7-0.9**: Sources likely provide good answer, may have minor gaps
-- **0.5-0.7**: Sources provide partial answer, missing some important information
-- **0.3-0.5**: Sources tangentially related, significant gaps exist
-- **0.0-0.3**: Sources insufficient to answer query properly
-
-Consider:
-- Does the query require current information? Check source dates against today's date ({today})
-- Are the sources comprehensive enough to fully address all aspects of the query?
-- Are there any obvious gaps in coverage that would require new search?
+**Per-Term Confidence Guidelines:**
+- **0.9-1.0**: Sources definitely cover this search term completely
+- **0.7-0.9**: Sources likely cover this term, minor gaps possible
+- **0.5-0.7**: Partial coverage, missing some information for this term
+- **0.3-0.5**: Sources tangentially cover this term, significant gaps
+- **0.0-0.3**: Sources insufficient to answer this search term
 
 Return JSON:
 {{
@@ -951,9 +1026,11 @@ Return JSON:
     {{"query_index": 0, "source_index": 2}},
     ...
   ],
-  "confidence": 0.85,
-  "reasoning": "Brief explanation of selection and why this confidence level"
+  "confidence_vector": [0.85, 0.45, 0.92],
+  "reasoning": "Brief explanation"
 }}
+
+**confidence_vector must have exactly {num_terms} values, one per search term in order.**
 """
 
     def _convert_to_search_format(
@@ -1085,18 +1162,24 @@ Return JSON:
         except:
             return 0.0
 
-    def _empty_recall_result(self) -> Dict[str, Any]:
+    def _empty_recall_result(self, search_terms: List[str] = None) -> Dict[str, Any]:
         """Return empty recall result."""
+        search_terms = search_terms or []
         return {
             'memories': [],
             'confidence': 0.0,
+            'confidence_vector': [0.0] * len(search_terms),
             'should_search': True,
+            'recommended_searches': search_terms[:],  # Search all terms
+            'search_term_confidence': {term: 0.0 for term in search_terms},
             'recall_metadata': {
                 'total_queries': len(self._memory['queries']) if self._memory else 0,
                 'filtered_queries': 0,
                 'sources_selected': 0,
+                'url_sources_count': 0,
                 'recall_cost': 0.0,
-                'recall_time_ms': 0.0
+                'recall_time_ms': 0.0,
+                'verification_run': False
             }
         }
 

@@ -97,6 +97,13 @@ Domain Independence Strategy:
 
 ## Keyword Indicators
 
+**Required Keywords** - MANDATORY entity identifiers (CRITICAL for entity-specific queries):
+- Use `|` to separate variants of the same entity (ANY variant matches)
+- ALL keyword groups must match (AND logic between groups)
+- Format: `["entity1|variant1", "entity2|variant2"]`
+- Example for oncology drugs: `["cancer|oncology", "phase 3|phase III|P3"]`
+- Empty `[]` for general/conceptual queries without specific entities
+
 **Positive Keywords** - Terms that indicate high-quality, relevant results:
 - Technical terms, methodologies, key concepts NOT already in search terms
 - Common abbreviations and variants
@@ -134,6 +141,7 @@ When true, search prioritizes academic databases over general web.
     "term4 covering dimension 4",
     "term5 covering dimension 5"
   ],
+  "required_keywords": ["entity1|variant1", "entity2|variant2"],
   "positive_keywords": ["technical_term1", "methodology1", "abbreviation1"],
   "negative_keywords": ["irrelevant_term1", "off_topic_term2"],
   "academic": true | false

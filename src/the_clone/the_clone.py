@@ -393,6 +393,7 @@ class TheClone2Refined:
             strategy = get_strategy(breadth, depth)
 
         search_terms = initial_result.get('search_terms', [prompt])
+        required_keywords = initial_result.get('required_keywords', [])
         positive_keywords = initial_result.get('positive_keywords', [])
         negative_keywords = initial_result.get('negative_keywords', [])
 
@@ -430,10 +431,13 @@ class TheClone2Refined:
         # Allow disabling keyword scoring for comparison tests
         if disable_keyword_scoring:
             logger.debug("[CLONE] Keyword scoring DISABLED for comparison test")
+            required_keywords = []
             positive_keywords = []
             negative_keywords = []
         else:
-            logger.debug(f"[CLONE] Keywords generated: {len(positive_keywords)} positive, {len(negative_keywords)} negative")
+            logger.debug(f"[CLONE] Keywords generated: {len(required_keywords)} required, {len(positive_keywords)} positive, {len(negative_keywords)} negative")
+            if required_keywords:
+                logger.debug(f"[CLONE] Required keywords: {required_keywords}")
             if positive_keywords:
                 logger.debug(f"[CLONE] Positive keywords: {positive_keywords}")
             if negative_keywords:
@@ -548,14 +552,21 @@ class TheClone2Refined:
 
                 # Recall relevant memories (keyword-based + URL sources)
                 # URL sources are passed to Gemini for selection and always included in verification
+                # Required keywords: entities that MUST appear in sources (ANY match, case-insensitive)
+                # search_terms passed for per-term confidence assessment
                 recall_result = await memory.recall(
                     query=prompt,
-                    keywords={'positive': positive_keywords, 'negative': negative_keywords},
+                    keywords={
+                        'required': required_keywords,
+                        'positive': positive_keywords,
+                        'negative': negative_keywords
+                    },
                     max_results=10,
                     confidence_threshold=0.6,
                     breadth=breadth,
                     depth=depth,
-                    url_sources=url_matched_sources  # Pass URL sources for Gemini consideration
+                    url_sources=url_matched_sources,  # Pass URL sources for Gemini consideration
+                    search_terms=search_terms  # Pass for per-term confidence assessment
                 )
 
                 memory_sources = recall_result['memories']
@@ -587,6 +598,10 @@ class TheClone2Refined:
                         recommended = recall_result.get('recommended_searches', [])
                         if recommended:
                             recall_info["Recommended Searches"] = recommended
+                        # Show per-term confidence
+                        per_term_conf = recall_result.get('search_term_confidence', {})
+                        if per_term_conf:
+                            recall_info["Per-Term Confidence"] = per_term_conf
 
                     clone_logger.log_section("Recall Results", recall_info, level=4, collapse=False)
 
@@ -597,7 +612,10 @@ class TheClone2Refined:
                 calls_by_provider['gemini'] = calls_by_provider.get('gemini', 0) + 1
 
                 # Decide search strategy based on memory
-                search_decision = self._decide_search_strategy(recall_result, prompt, search_terms)
+                # Per-search-term confidence filtering: only low confidence terms get fresh searches
+                search_decision = self._decide_search_strategy(
+                    recall_result, prompt, search_terms, force_min_searches=0
+                )
 
                 logger.debug(f"[CLONE] Search decision: {search_decision['action']} - {search_decision['reasoning']}")
 
@@ -1488,55 +1506,77 @@ class TheClone2Refined:
         self,
         recall_result: Dict[str, Any],
         query: str,
-        search_terms: List[str]
+        search_terms: List[str],
+        force_min_searches: int = 0
     ) -> Dict[str, Any]:
         """
-        Decide whether to skip, supplement, or do full search based on Gemini's confidence assessment.
-        Uses Gemini's recommended searches to target specific gaps.
+        Decide which search terms need fresh searches based on memory recall.
+
+        Memory recall returns per-search-term confidence:
+        - recommended_searches: Terms needing fresh search (refined if verification ran, else original)
+        - search_term_confidence: Per-term confidence dict for logging
+
+        Decision logic:
+        - If recommended_searches has all terms -> 'full_search'
+        - If recommended_searches has some terms -> 'supplement' (search only those)
+        - If recommended_searches is empty -> 'skip' (use memory sources only)
 
         Args:
             recall_result: Result from memory.recall()
             query: Current user query
             search_terms: Original search terms from initial decision
+            force_min_searches: Deprecated, kept for compatibility
 
         Returns:
             {'action': 'skip' | 'supplement' | 'full_search', 'search_terms': [...], 'reasoning': str}
         """
-        confidence = recall_result['confidence']
+        overall_confidence = recall_result['confidence']
         num_memories = len(recall_result['memories'])
-        recommended_searches = recall_result.get('recommended_searches', [])
+        # recommended_searches now contains the terms to search (refined or original for low-conf)
+        terms_to_search = recall_result.get('recommended_searches', [])
+        search_term_confidence = recall_result.get('search_term_confidence', {})
 
-        # High confidence (Gemini assessed completeness) → SKIP search
-        # Trust Gemini's assessment regardless of source count
-        if confidence >= 0.85:
+        # If verification provided specific terms to search, use them
+        if terms_to_search:
+            if len(terms_to_search) == len(search_terms):
+                return {
+                    'action': 'full_search',
+                    'search_terms': terms_to_search,
+                    'reasoning': f"All {len(search_terms)} terms have low memory confidence"
+                }
+            else:
+                return {
+                    'action': 'supplement',
+                    'search_terms': terms_to_search,
+                    'reasoning': f"{len(terms_to_search)}/{len(search_terms)} terms need fresh search"
+                }
+
+        # No terms to search - all have high confidence
+        if search_term_confidence:
             return {
                 'action': 'skip',
                 'search_terms': [],
-                'reasoning': f"High confidence ({confidence:.2f}) - Gemini assessed sources as complete"
+                'reasoning': f"All {len(search_terms)} terms have high memory confidence"
             }
 
-        # Medium confidence → SUPPLEMENT with Gemini's recommended searches
-        elif confidence >= 0.6:
-            # Use Gemini's recommended searches if available, otherwise fallback to first 2
-            if recommended_searches:
-                supplemental_terms = recommended_searches[:3]  # Max 3
-                reasoning = f"Medium confidence ({confidence:.2f}), using Gemini's recommended searches to fill gaps"
-            else:
-                supplemental_terms = search_terms[:2]
-                reasoning = f"Medium confidence ({confidence:.2f}), supplementing with first 2 search terms"
-
+        # Fallback: No per-term data, use overall confidence
+        if overall_confidence >= 0.85:
+            return {
+                'action': 'skip',
+                'search_terms': [],
+                'reasoning': f"High overall confidence ({overall_confidence:.2f})"
+            }
+        elif overall_confidence >= 0.6:
             return {
                 'action': 'supplement',
-                'search_terms': supplemental_terms,
-                'reasoning': reasoning
+                'search_terms': search_terms[:2],
+                'reasoning': f"Medium confidence ({overall_confidence:.2f}), no per-term data"
             }
-
-        # Low confidence → FULL search (use original terms)
         else:
             return {
                 'action': 'full_search',
                 'search_terms': search_terms,
-                'reasoning': f"Low confidence ({confidence:.2f}) - need comprehensive search"
+                'reasoning': f"Low overall confidence ({overall_confidence:.2f})"
             }
 
     def _deduplicate_memory_and_search(

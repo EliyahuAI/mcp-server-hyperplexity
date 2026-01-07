@@ -209,6 +209,7 @@ class InitialDecision:
             logger.debug(f"[INITIAL] Decision: {decision}, skip_to_synthesis: {skip_to_synthesis}")
 
             # Extract keywords
+            required_keywords = data.get('required_keywords', [])
             positive_keywords = data.get('positive_keywords', [])
             negative_keywords = data.get('negative_keywords', [])
 
@@ -219,7 +220,9 @@ class InitialDecision:
             else:
                 logger.debug(f"[INITIAL] Need search - Breadth: {breadth}, Depth: {depth}")
                 logger.debug(f"[INITIAL] Generated {len(search_terms)} search terms")
-                logger.debug(f"[INITIAL] Keywords: {len(positive_keywords)} positive, {len(negative_keywords)} negative")
+                logger.debug(f"[INITIAL] Keywords: {len(required_keywords)} required, {len(positive_keywords)} positive, {len(negative_keywords)} negative")
+                if required_keywords:
+                    logger.debug(f"[INITIAL] Required keywords: {required_keywords}")
                 if positive_keywords:
                     logger.debug(f"[INITIAL] Positive keywords: {positive_keywords}")
                 if negative_keywords:
@@ -230,6 +233,7 @@ class InitialDecision:
                 "breadth": breadth,
                 "depth": depth,
                 "search_terms": search_terms,
+                "required_keywords": required_keywords,
                 "positive_keywords": positive_keywords,
                 "negative_keywords": negative_keywords,
                 "synthesis_tier": synthesis_tier,

@@ -90,13 +90,27 @@ Choose based on synthesis complexity only:
 
 ### Keyword Indicators
 
+**Required Keywords** - MANDATORY entity identifiers (CRITICAL for entity-specific queries):
+- Use `|` to separate variants of the same entity (ANY variant matches)
+- ALL keyword groups must match (AND logic between groups)
+- Matching is case-insensitive substring matching
+- **Format:** `["entity1_variant1|entity1_variant2", "entity2_variant1|entity2_variant2"]`
+- Examples:
+  - Apple stock query: `["Apple|AAPL", "stock|shares|price"]`
+    - Matches sources containing (Apple OR AAPL) AND (stock OR shares OR price)
+  - Compare Tesla and Ford: `["Tesla|TSLA", "Ford|F"]`
+    - Matches sources containing (Tesla OR TSLA) AND (Ford OR F)
+  - Single entity: `["iPhone|Apple"]`
+    - Matches sources containing (iPhone OR Apple)
+- **Empty array []** for general queries without specific entities
+- **REQUIRED for any query about specific entities** - prevents mixing up companies/products
+
 **Positive Keywords** - Terms that indicate high-quality, relevant results:
-- Include **proper nouns** from the query (companies, products, people, technologies, places)
 - Include technical terms, methodologies, key concepts NOT in search terms
 - Include common abbreviations and variants (e.g., "LR" for "learning rate")
 - These help prioritize best results AFTER search, without narrowing the search
 - Example for "neural network optimization": ["backpropagation", "gradient descent", "GD", "learning rate", "LR", "convergence"]
-- Example for "Python 3.12 features": ["Python", "3.12", "typing", "performance", "PEP", "release notes"]
+- Example for "Python 3.12 features": ["typing", "performance", "PEP", "release notes"]
 
 **Negative Keywords** - Terms that indicate off-topic/low-quality results (USE SPARINGLY):
 - **ONLY include if there is a CLEAR exclusionary intent** in the query
@@ -118,6 +132,7 @@ Choose based on synthesis complexity only:
   "breadth": "narrow",
   "depth": "shallow",
   "search_terms": [],
+  "required_keywords": [],
   "positive_keywords": [],
   "negative_keywords": [],
   "synthesis_tier": "tier2",
@@ -133,6 +148,7 @@ Choose based on synthesis complexity only:
   "breadth": "narrow" | "broad",
   "depth": "shallow" | "deep",
   "search_terms": ["term1"],
+  "required_keywords": ["EntityName", "TICKER", "variant"],
   "positive_keywords": ["technical_term1", "methodology1", "abbreviation1"],
   "negative_keywords": ["for kids", "beginner", "simple"],
   "synthesis_tier": "tier1" | "tier2" | "tier3" | "tier4",
