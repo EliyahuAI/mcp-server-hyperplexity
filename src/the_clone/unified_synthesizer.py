@@ -147,6 +147,7 @@ class UnifiedSynthesizer:
                 suggested = data.get('suggested_search_terms', [])
                 request_upgrade = data.get('request_capability_upgrade', False)
                 new_note = data.get('note_to_self')
+                self_assessment = data.get('self_assessment', 'A')  # Extract before transform loses it
             else:
                 # Evaluation mode - may have answer
                 can_answer = data.get('can_answer', False)
@@ -160,6 +161,7 @@ class UnifiedSynthesizer:
                 suggested = data.get('suggested_search_terms', [])
                 request_upgrade = False
                 new_note = None
+                self_assessment = 'A'  # Evaluation mode doesn't use self-assessment
 
             logger.debug(f"[UNIFIED] Can answer: {can_answer}, Confidence: {confidence}")
             logger.debug(f"[UNIFIED] answer_raw type: {type(answer_raw)}, content: {str(answer_raw)[:200]}")
@@ -206,6 +208,7 @@ class UnifiedSynthesizer:
                 "suggested_search_terms": suggested,
                 "request_capability_upgrade": request_upgrade,
                 "note_to_self": new_note,
+                "self_assessment": self_assessment,  # Preserve for iteration logic
                 "synthesis_prompt": prompt,  # Return actual prompt sent to model
                 "model_response": response
             }

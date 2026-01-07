@@ -512,14 +512,25 @@ class TheClone2Refined:
                 )
 
                 # Log memory statistics
+                mem_stats = memory.get_stats()
                 if clone_logger:
-                    mem_stats = memory.get_stats()
                     clone_logger.log_section("Memory Statistics", {
                         "Total Queries in Memory": mem_stats['total_queries'],
                         "Total Sources": mem_stats['total_sources'],
                         "Unique URLs": mem_stats['unique_urls'],
                         "Last Updated": mem_stats.get('last_updated', 'N/A')
                     }, level=4, collapse=True)
+
+                # Skip expensive recall if memory is empty
+                if mem_stats['total_queries'] == 0:
+                    logger.info("[CLONE] Memory is empty, skipping recall (no Gemini cost)")
+                    if clone_logger:
+                        clone_logger.log_section("Memory Recall Skipped", "No queries in memory - proceeding directly to search", level=3)
+                        step_time_phase = time.time() - step_start_phase
+                        clone_logger.record_step_metric("Memory Recall", "skipped", "N/A", 0.0, step_time_phase, "Empty memory")
+                        clone_logger.end_step("Memory Recall")
+                    # Fall through to search with default search_decision
+                    raise Exception("SKIP_MEMORY")  # Use exception to jump to search
 
                 # URL-based recall: Look up any URLs mentioned in the original query
                 url_matched_sources = []
@@ -632,12 +643,14 @@ class TheClone2Refined:
                 if clone_logger and memory_sources:
                     sources_preview = []
                     for i, src in enumerate(memory_sources[:5], 1):  # Show first 5
+                        snippet_preview = src.get('snippet', '')[:80] if src.get('snippet') else '[EMPTY]'
                         sources_preview.append(
                             f"{i}. **{src['title'][:60]}...**\n"
                             f"   - URL: {src['url']}\n"
                             f"   - Original Query: \"{src['_original_query']}\"\n"
                             f"   - Age: {src['_memory_age_days']} days ({src['_freshness_indicator']})\n"
-                            f"   - Relevance: {src['_memory_relevance']:.1f}"
+                            f"   - Relevance: {src['_memory_relevance']:.1f}\n"
+                            f"   - Snippet: {snippet_preview}"
                         )
                     if len(memory_sources) > 5:
                         sources_preview.append(f"\n... and {len(memory_sources) - 5} more sources")
@@ -662,8 +675,12 @@ class TheClone2Refined:
                     clone_logger.end_step("Memory Recall")
 
             except Exception as e:
-                logger.warning(f"[CLONE] Memory recall failed, continuing with full search: {e}")
-                search_decision = {'action': 'full_search', 'search_terms': search_terms, 'reasoning': f'Memory error: {str(e)}'}
+                if str(e) == "SKIP_MEMORY":
+                    # Intentional skip - memory was empty, no warning needed
+                    search_decision = {'action': 'full_search', 'search_terms': search_terms, 'reasoning': 'Memory empty - skipped'}
+                else:
+                    logger.warning(f"[CLONE] Memory recall failed, continuing with full search: {e}")
+                    search_decision = {'action': 'full_search', 'search_terms': search_terms, 'reasoning': f'Memory error: {str(e)}'}
         else:
             if not use_memory:
                 logger.debug("[CLONE] Memory disabled (use_memory=False)")
@@ -817,6 +834,15 @@ class TheClone2Refined:
 
             # Build ranked source pool
             ranked_sources = self._build_ranked_source_pool(search_results, ranked_lists, search_terms)
+
+        # Filter out sources with empty snippets (can't extract from nothing)
+        original_count = len(ranked_sources)
+        ranked_sources = [s for s in ranked_sources if s.get('snippet', '').strip()]
+        if original_count != len(ranked_sources):
+            logger.warning(f"[CLONE] Filtered {original_count - len(ranked_sources)} sources with empty snippets")
+            if clone_logger:
+                clone_logger.log_section("Empty Snippet Filter", f"Removed {original_count - len(ranked_sources)} sources with empty snippets (cannot extract from empty content)", level=3)
+
         logger.debug(f"[CLONE] Ranked {len(ranked_sources)} relevant sources")
 
         if len(ranked_sources) == 0:
@@ -1161,8 +1187,8 @@ class TheClone2Refined:
             clone_logger.end_step("Synthesis")
 
         # Check self-assessment and upgrade to tier4 if needed
-        answer_data = synthesis_result.get('answer', {})
-        self_assessment = answer_data.get('self_assessment', 'A') if isinstance(answer_data, dict) else 'A'
+        # self_assessment is now extracted in unified_synthesizer before transform loses it
+        self_assessment = synthesis_result.get('self_assessment', 'A')
         suggested_search_terms = synthesis_result.get('suggested_search_terms', [])
         request_upgrade = synthesis_result.get('request_capability_upgrade', False)
         note_to_self = synthesis_result.get('note_to_self')
@@ -1535,6 +1561,14 @@ class TheClone2Refined:
         # recommended_searches now contains the terms to search (refined or original for low-conf)
         terms_to_search = recall_result.get('recommended_searches', [])
         search_term_confidence = recall_result.get('search_term_confidence', {})
+
+        # CRITICAL: If no memories returned, always do full search regardless of confidence
+        if num_memories == 0:
+            return {
+                'action': 'full_search',
+                'search_terms': search_terms,
+                'reasoning': f"No memory sources available (0 memories despite confidence {overall_confidence:.2f})"
+            }
 
         # If verification provided specific terms to search, use them
         if terms_to_search:
