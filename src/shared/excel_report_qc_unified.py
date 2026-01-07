@@ -177,7 +177,7 @@ def should_update_value(original_confidence, validation_confidence):
     # Only update if validation confidence is higher than or equal to original
     return validation_level >= original_level
 
-def calculate_confidence_distribution(validation_results, qc_results):
+def calculate_confidence_distribution(validation_results, qc_results, excluded_fields=None):
     """
     Calculate percentage distribution of confidence levels.
     Uses QC-adjusted confidences when QC was applied.
@@ -185,6 +185,7 @@ def calculate_confidence_distribution(validation_results, qc_results):
     Args:
         validation_results: Dictionary of validation results keyed by row hash
         qc_results: Optional dictionary of QC results keyed by row hash
+        excluded_fields: Optional set of field names to exclude (e.g., ID and IGNORED columns)
 
     Returns:
         Tuple of (original_str, updated_str, original_dict, updated_dict) with percentage distributions
@@ -193,6 +194,7 @@ def calculate_confidence_distribution(validation_results, qc_results):
     original_counts = {'LOW': 0, 'MEDIUM': 0, 'HIGH': 0, 'NULL': 0}
     updated_counts = {'LOW': 0, 'MEDIUM': 0, 'HIGH': 0, 'NULL': 0}
     total_fields = 0
+    excluded_fields = excluded_fields or set()
 
     for row_key, row_results in validation_results.items():
         if not isinstance(row_results, dict):
@@ -200,6 +202,10 @@ def calculate_confidence_distribution(validation_results, qc_results):
 
         for field, field_data in row_results.items():
             if not isinstance(field_data, dict):
+                continue
+
+            # Skip ID and IGNORED columns - they don't have confidence scores
+            if field in excluded_fields:
                 continue
 
             total_fields += 1
@@ -281,7 +287,8 @@ def calculate_confidence_distribution(validation_results, qc_results):
 
 def create_validation_record_sheet(workbook, header_format, validation_results, qc_results,
                                    session_id, config_s3_key, rows_data, headers,
-                                   existing_validation_record=None, is_preview=False, run_key=None):
+                                   existing_validation_record=None, is_preview=False, run_key=None,
+                                   excluded_fields=None):
     """
     Create Validation Record sheet with run-level metadata.
 
@@ -292,6 +299,7 @@ def create_validation_record_sheet(workbook, header_format, validation_results, 
         qc_results: QC results dictionary (optional)
         session_id: Session ID
         config_s3_key: S3 key for configuration file
+        excluded_fields: Set of field names to exclude from confidence stats (ID/IGNORED columns)
         rows_data: List of row dictionaries
         headers: List of column headers
         existing_validation_record: Existing validation record data (list of dicts)
@@ -319,9 +327,9 @@ def create_validation_record_sheet(workbook, header_format, validation_results, 
         validation_record_sheet.write(0, col_idx, header, header_format)
         validation_record_sheet.set_column(col_idx, col_idx, 20)
 
-    # Calculate confidence distributions
+    # Calculate confidence distributions (excluding ID/IGNORED columns that don't have confidence)
     original_conf_str, updated_conf_str, original_conf_dict, updated_conf_dict = calculate_confidence_distribution(
-        validation_results, qc_results
+        validation_results, qc_results, excluded_fields=excluded_fields
     )
 
     # Generate run metadata
@@ -546,6 +554,11 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                 column_importance[field_name] = importance
                 if importance == 'ID':
                     id_fields.append(field_name)
+
+        # Build set of excluded fields for confidence statistics (ID and IGNORED columns)
+        # These columns don't have confidence scores and shouldn't count as "Blank" in stats
+        excluded_fields = {field for field, imp in column_importance.items() if imp in ['ID', 'IGNORED']}
+        logger.debug(f"[CONFIDENCE_STATS] Excluding {len(excluded_fields)} fields from stats: {excluded_fields}")
 
         def should_preserve_formulas(column_name):
             """Check if formulas should be preserved for this column (IGNORED and ID columns)."""
@@ -1279,7 +1292,8 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                 headers=headers,
                 existing_validation_record=existing_validation_record,
                 is_preview=is_preview,
-                run_key=run_key
+                run_key=run_key,
+                excluded_fields=excluded_fields
             )
 
             # SHEET 4: Details (comprehensive view)

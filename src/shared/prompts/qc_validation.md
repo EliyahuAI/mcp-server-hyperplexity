@@ -162,26 +162,35 @@ Assign confidence levels using this rubric:
 ## 📤 JSON SCHEMA EXAMPLE
 ═══════════════════════════════════════════════════════════════
 
-Return a JSON array where each item is a cell array with 7 elements:
+Return a JSON array where each item is a cell array with 8 elements:
 
 ```
-[column, answer, confidence, original_confidence, updated_confidence, key_citation, update_importance]
+[column, answer, confidence, original_confidence, updated_confidence, key_citation, update_importance, qc_reasoning]
 ```
 
 - **column**: Exact field name
-- **answer**: Your final QC value (string or null for blank)
+- **answer**: Your final QC value. Use `=` if accepting the Updated Value unchanged (saves tokens). Use string value for corrections, or null for blank.
 - **confidence**: H (HIGH), M (MEDIUM), L (LOW), or null - YOUR confidence in the QC value
 - **original_confidence**: H, M, L, or null - YOUR assessment of the original value
 - **updated_confidence**: H, M, L, or null - YOUR assessment of the validator's proposed value
-- **key_citation**: The most relevant citation supporting your answer. Use [V*] to reference validation citations (e.g., [V1], [V2]). If no useful citation, use [KNOWLEDGE] or [UNVERIFIED].
+- **key_citation**: Use `=` to accept the validator's first citation [V1] unchanged. Or use [V*] reference (e.g., [V1], [V2]), [KNOWLEDGE], or [UNVERIFIED].
 - **update_importance**: Integer 0-5 rating the net change importance
+- **qc_reasoning**: Use `=` if the validator's explanation is adequate (will be left blank). Only provide reasoning when you change a value or need to correct the explanation.
+
+**TOKEN-SAVING CODEWORD `=`:**
+- Use `=` for **answer** when accepting the Updated Value unchanged (update_importance 0 or 1)
+- Use `=` for **key_citation** when the validator's first citation [V1] is the best supporting evidence
+- Use `=` for **qc_reasoning** when the validator's explanation is adequate (leaves field blank)
+- This saves output tokens by not repeating long values, citations, or explanations
+- Only provide actual qc_reasoning text when you change a value or correct the explanation
 
 **Example:**
 ```json
 [
-  ["Revenue", "$158.9B", "H", "M", "H", "[V1] Amazon IR (p95): \"Net sales $158.9B\" (https://ir.aboutamazon.com/...)", 2],
-  ["Market Cap", "$2.1T", "H", "H", "H", "[V1] Yahoo Finance: current value (https://finance.yahoo.com/...)", 0],
-  ["Sector", "Consumer Discretionary", "H", "H", "H", "[KNOWLEDGE] Amazon is classified as Consumer Discretionary under GICS (model knowledge)", 0]
+  ["Revenue", "$158.9B", "H", "M", "H", "[V1] Amazon IR: \"Net sales $158.9B\"", 2, "Corrected from validator's estimate"],
+  ["Market Cap", "=", "H", "H", "H", "=", 0, "="],
+  ["Sector", "=", "H", "H", "H", "=", 0, "="],
+  ["PE_Ratio", "34.18", "M", "M", "M", "[V5]", 1, "Updated to more recent value from MarketBeat"]
 ]
 ```
 

@@ -522,16 +522,19 @@ class QCModule:
     def parse_compact_qc_response(self, qc_response: List) -> List[Dict]:
         """Parse compact QC cell array response to dict format.
 
-        New 7-element format:
-        [column, answer, confidence, original_confidence, updated_confidence, key_citation, update_importance]
+        Current 8-element format:
+        [column, answer, confidence, original_confidence, updated_confidence, key_citation, update_importance, qc_reasoning]
 
         Legacy 9-element format (backward compatibility):
         [column, answer, confidence, original_confidence, updated_confidence, qc_reasoning, qc_citations, key_citation, update_importance]
+
+        Legacy 7-element format (backward compatibility):
+        [column, answer, confidence, original_confidence, updated_confidence, key_citation, update_importance]
         """
         parsed = []
         for item in qc_response:
             if isinstance(item, list) and len(item) >= 9:
-                # Legacy 9-element format with qc_reasoning and qc_citations
+                # Legacy 9-element format with qc_reasoning and qc_citations in old positions
                 parsed.append({
                     'column': item[0],
                     'answer': item[1],
@@ -543,8 +546,8 @@ class QCModule:
                     'key_citation': item[7],
                     'update_importance': item[8]
                 })
-            elif isinstance(item, list) and len(item) >= 7:
-                # New 7-element format (no qc_reasoning, no qc_citations)
+            elif isinstance(item, list) and len(item) == 8:
+                # Current 8-element format with qc_reasoning as last element
                 parsed.append({
                     'column': item[0],
                     'answer': item[1],
@@ -553,8 +556,21 @@ class QCModule:
                     'updated_confidence': self._expand_confidence(item[4]),
                     'key_citation': item[5],
                     'update_importance': item[6],
-                    'qc_reasoning': '',  # Not in new format
-                    'qc_citations': ''   # Not in new format
+                    'qc_reasoning': item[7],
+                    'qc_citations': ''  # Not in current format
+                })
+            elif isinstance(item, list) and len(item) >= 7:
+                # Legacy 7-element format (no qc_reasoning)
+                parsed.append({
+                    'column': item[0],
+                    'answer': item[1],
+                    'confidence': self._expand_confidence(item[2]),
+                    'original_confidence': self._expand_confidence(item[3]),
+                    'updated_confidence': self._expand_confidence(item[4]),
+                    'key_citation': item[5],
+                    'update_importance': item[6],
+                    'qc_reasoning': '',  # Not in legacy 7-element format
+                    'qc_citations': ''
                 })
             elif isinstance(item, dict):
                 # Already dict format (legacy)
@@ -681,6 +697,31 @@ class QCModule:
 
         logger.info(f"Running QC for complete row with {non_id_fields} non-ID fields across {len(all_group_results)} groups, token limit {token_limit}")
         logger.info(f"QC context being used: '{enhanced_context}'")
+
+        # Build lookup of column -> updated value and first citation for "=" codeword expansion
+        updated_values_lookup = {}
+        first_citations_lookup = {}
+        for group_results in all_group_results.values():
+            for result in group_results:
+                col = result.get('column', '')
+                if col:
+                    updated_values_lookup[col] = result.get('answer', '')
+                    # Get first citation for this column (will be [V1] in QC context)
+                    citations = result.get('citations', [])
+                    if citations and len(citations) > 0:
+                        first_citation = citations[0]
+                        if isinstance(first_citation, dict):
+                            title = first_citation.get('title', '')
+                            url = first_citation.get('url', '')
+                            cited_text = first_citation.get('cited_text', '')
+                            p_score = first_citation.get('p', '')
+                            p_part = f" ({p_score})" if p_score else ""
+                            if cited_text:
+                                first_citations_lookup[col] = f'[V1] {title}{p_part}: "{cited_text}" ({url})'
+                            else:
+                                first_citations_lookup[col] = f'[V1] {title}{p_part} ({url})'
+                        else:
+                            first_citations_lookup[col] = f'[V1] {first_citation}'
 
         try:
             # Make QC API call using ai_api_client
@@ -821,6 +862,35 @@ class QCModule:
 
                 # Debug QC API response
                 logger.info(f"QC API structured extraction successful: found {len(qc_results)} QC responses (comprehensive)")
+
+                # Expand "=" codeword in answer, key_citation, and qc_reasoning (token-saving optimization)
+                equals_expanded_answer = 0
+                equals_expanded_citation = 0
+                equals_expanded_reasoning = 0
+                for qc_result in qc_results:
+                    column = qc_result.get('column', '')
+                    # Expand "=" in answer to actual updated value
+                    if qc_result.get('answer') == '=':
+                        if column in updated_values_lookup:
+                            qc_result['answer'] = updated_values_lookup[column]
+                            equals_expanded_answer += 1
+                        else:
+                            logger.warning(f"[QC_CODEWORD_EXPAND] {column}: Cannot expand answer '=' - column not in lookup")
+                    # Expand "=" in key_citation to first validation citation [V1]
+                    if qc_result.get('key_citation') == '=':
+                        if column in first_citations_lookup:
+                            qc_result['key_citation'] = first_citations_lookup[column]
+                            equals_expanded_citation += 1
+                        else:
+                            # Fallback to just [V1] reference if no citation available
+                            qc_result['key_citation'] = '[V1]'
+                            equals_expanded_citation += 1
+                    # Clear "=" in qc_reasoning (means validator's explanation is adequate, no QC reasoning needed)
+                    if qc_result.get('qc_reasoning') == '=':
+                        qc_result['qc_reasoning'] = ''
+                        equals_expanded_reasoning += 1
+                if equals_expanded_answer > 0 or equals_expanded_citation > 0 or equals_expanded_reasoning > 0:
+                    logger.info(f"[QC_CODEWORD_EXPAND] Expanded {equals_expanded_answer} answer, {equals_expanded_citation} key_citation, {equals_expanded_reasoning} qc_reasoning '=' codewords")
 
                 # ENFORCE: Blank cells must have null confidence (don't rely on AI)
                 for qc_result in qc_results:
