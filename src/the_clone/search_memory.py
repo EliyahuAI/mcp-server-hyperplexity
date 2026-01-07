@@ -849,10 +849,10 @@ class SearchMemory:
 
 {chr(10).join(snippets_text)}
 
-**Task:** Assess how well sources cover each search term.
+**Task:** For each search term, ask: "Could I write a complete answer to '[search term]' using ONLY these sources?"
 
 **Output (arrays matched to search term order):**
-- `confidence_vector`: [{num_terms} floats] confidence per term. 0.9+=complete, 0.7-0.9=good, 0.5-0.7=partial, <0.5=insufficient
+- `confidence_vector`: [{num_terms} floats] confidence per term. 0.9+=yes fully, 0.7-0.9=mostly yes, 0.5-0.7=partially, <0.5=no
 - `refined_terms`: [{num_terms} strings] refined search term or "" to keep original
 - `ranked_source_indices`: [ints] source indices (0-{len(all_sources)-1}) ranked by usefulness, best first
 """
@@ -1069,11 +1069,12 @@ class SearchMemory:
 - **Diversity**: Avoid redundant sources covering the same information
 
 **Per-Term Confidence Guidelines:**
-- **0.9-1.0**: Sources definitely cover this search term completely
-- **0.7-0.9**: Sources likely cover this term, minor gaps possible
-- **0.5-0.7**: Partial coverage, missing some information for this term
-- **0.3-0.5**: Sources tangentially cover this term, significant gaps
-- **0.0-0.3**: Sources insufficient to answer this search term
+Ask yourself: "Could I write a complete answer to '[search term]' using ONLY these sources?"
+- **0.9-1.0**: Yes, sources contain enough information to fully answer this search term
+- **0.7-0.9**: Mostly yes, could write a good answer with minor gaps
+- **0.5-0.7**: Partially, could write a partial answer but missing key information
+- **0.3-0.5**: Barely, sources only tangentially help with this search term
+- **0.0-0.3**: No, cannot write a meaningful answer using these sources
 
 Return JSON:
 {{

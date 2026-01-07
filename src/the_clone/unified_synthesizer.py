@@ -331,17 +331,21 @@ Note: Use FULL 4-part IDs exactly as shown in snippets above.
 ## Self-Assessment
 
 Grade your synthesis (A+ to C-):
-- **A+/A**: Provided EXACT and SUFFICIENT answer to the query with high-quality sources
-- **B**: Partial answer provided, or struggled with complexity/conflicting sources
+- **A+/A**: Answer is COMPLETE - all requested information is present with citations
+  - Ask: "Is there anything the query asked for that I didn't answer?"
+  - If YES and that info is likely findable online → NOT an A, grade B instead
+- **B**: Answer is PARTIAL - some requested information is missing but could likely be found
+  - Missing information that is probably available on the internet
+  - Or sources were insufficient/conflicting for parts of the query
+  - **Required:** Provide a best-effort answer satisfying the schema.
+  - **Required:** Provide `suggested_search_terms` for the missing information.
+  - **Optional:** If reasoning complexity requires a smarter model, set `request_capability_upgrade=true`.
+  - **Optional:** If needed for next attempt, provide `note_to_self`.
+- **C**: Answer is INSUFFICIENT - cannot meaningfully answer the query
+  - Information not available online, or fundamentally cannot answer
   - **Required:** Provide a best-effort answer satisfying the schema.
   - **Optional:** If additional search would help, provide `suggested_search_terms`.
   - **Optional:** If reasoning complexity requires a smarter model, set `request_capability_upgrade=true`.
-  - **Optional:** If needed for next attempt, provide `note_to_self`.
-- **C**: Cannot provide sufficient answer, info not available, or insufficient capability
-  - **Required:** Provide a best-effort answer satisfying the schema.
-  - **Optional:** If additional search would help, provide `suggested_search_terms`.
-  - **Optional:** If reasoning complexity requires a smarter model, set `request_capability_upgrade=true`.
-  - **Optional:** If needed for next attempt, provide `note_to_self`.
 
 **CRITICAL:**
 - You MUST always provide an answer that satisfies the schema structure, even if incomplete.
