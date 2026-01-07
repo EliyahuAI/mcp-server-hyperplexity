@@ -923,9 +923,28 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 else:
                                     comment_parts.append(f'Original Value: {original_value}')
 
+                                # Add Validator Explanation
+                                explanation = field_data.get('explanation', '')
+                                if explanation and str(explanation).strip():
+                                    comment_parts.append(f'Validator Explanation: {explanation}')
+
+                                # Add QC Reasoning (with override prefix if QC changed the value)
+                                row_qc_data = get_qc_data_for_row(row_key, row_idx)
+                                if row_qc_data and col_name in row_qc_data:
+                                    field_qc_data = row_qc_data[col_name]
+                                    if isinstance(field_qc_data, dict):
+                                        qc_entry = field_qc_data.get('qc_entry', '')
+                                        qc_reasoning = field_qc_data.get('qc_reasoning', '')
+                                        # Check if QC changed the value from validator
+                                        qc_overrode = str(qc_entry).strip() != str(validated_value).strip() if qc_entry else False
+                                        if qc_reasoning and str(qc_reasoning).strip():
+                                            if qc_overrode:
+                                                comment_parts.append(f'QC Reasoning: (Validation Override) {qc_reasoning}')
+                                            else:
+                                                comment_parts.append(f'QC Reasoning: {qc_reasoning}')
+
                                 # Add Key Citation - from QC's key_citation field
                                 key_citation = None
-                                row_qc_data = get_qc_data_for_row(row_key, row_idx)
                                 if row_qc_data and col_name in row_qc_data:
                                     field_qc_data = row_qc_data[col_name]
                                     if isinstance(field_qc_data, dict):
@@ -1130,9 +1149,28 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 else:
                                     comment_parts.append(f'Updated Value: {validated_value}')
 
+                                # Add Validator Explanation
+                                explanation = field_data.get('explanation', '')
+                                if explanation and str(explanation).strip():
+                                    comment_parts.append(f'Validator Explanation: {explanation}')
+
+                                # Add QC Reasoning (with override prefix if QC changed the value)
+                                row_qc_data = get_qc_data_for_row(row_key, row_idx)
+                                if row_qc_data and col_name in row_qc_data:
+                                    field_qc_data = row_qc_data.get(col_name)
+                                    if isinstance(field_qc_data, dict):
+                                        qc_entry = field_qc_data.get('qc_entry', '')
+                                        qc_reasoning = field_qc_data.get('qc_reasoning', '')
+                                        # Check if QC changed the value from validator
+                                        qc_overrode = str(qc_entry).strip() != str(validated_value).strip() if qc_entry else False
+                                        if qc_reasoning and str(qc_reasoning).strip():
+                                            if qc_overrode:
+                                                comment_parts.append(f'QC Reasoning: (Validation Override) {qc_reasoning}')
+                                            else:
+                                                comment_parts.append(f'QC Reasoning: {qc_reasoning}')
+
                                 # Add Key Citation - from QC's key_citation field
                                 key_citation = None
-                                row_qc_data = get_qc_data_for_row(row_key, row_idx)
                                 if row_qc_data and col_name in row_qc_data:
                                     field_qc_data = row_qc_data.get(col_name)
                                     if isinstance(field_qc_data, dict):
