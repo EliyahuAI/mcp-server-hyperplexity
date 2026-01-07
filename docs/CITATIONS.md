@@ -217,6 +217,86 @@ if field_history.get('original_sources_full'):
 - `: "..."` - Colon followed by quoted snippet
 - `(https://...)` - Full URL in parentheses at the end
 
+## QC Citation Disambiguation
+
+### The Problem
+
+When the QC module reviews validation results, it needs to reference citations from two different sources:
+1. **Validation citations**: Sources from the original validation run (shown in the QC prompt)
+2. **QC's own citations**: New sources from QC's web search (if available)
+
+Both use numbered format `[1]`, `[2]`, etc., creating ambiguity. Additionally, when using the_clone snippets, citations are converted to numbers in code, so the AI doesn't know what numbers will be assigned.
+
+### The Solution: Prefixed Citation References
+
+#### Validation Citations: `[V*]` Prefix
+Validation citations shown in the QC prompt use `[V1]`, `[V2]`, etc.:
+```
+* **Citations:**
+  - [V1] Amazon Q3 2024 Earnings Report (p95): "Sales increased 11%..." (https://ir.aboutamazon.com/...)
+  - [V2] SEC Filing (p85): "Company reported revenue of..." (https://sec.gov/...)
+```
+
+The AI references these using the exact `[V*]` format in its `key_citation` field.
+
+#### QC Web Search Citations: `[QC*]` Transformation
+If QC performs its own web search and references new sources with bare `[1]`, `[2]` format, these are automatically transformed to `[QC1]`, `[QC2]` in post-processing.
+
+#### Special Citation Markers
+When no validation citation applies, the AI uses:
+- `[KNOWLEDGE]` - For facts based on model knowledge (e.g., `[KNOWLEDGE] Amazon is classified as Consumer Discretionary under GICS`)
+- `[UNVERIFIED]` - When uncertain and no authoritative source found
+
+### QC Response Format (7 Elements)
+
+The compact QC response format:
+```
+[column, answer, confidence, original_confidence, updated_confidence, key_citation, update_importance]
+```
+
+Example:
+```json
+[
+  ["Revenue", "$158.9B", "H", "M", "H", "[V1] Amazon IR (p95): \"Net sales $158.9B\" (https://ir.aboutamazon.com/...)", 2],
+  ["Market Cap", "$2.1T", "H", "H", "H", "[V1] Yahoo Finance: current value (https://finance.yahoo.com/...)", 0],
+  ["Sector", "Consumer Discretionary", "H", "H", "H", "[KNOWLEDGE] Amazon is classified as Consumer Discretionary under GICS (model knowledge)", 0]
+]
+```
+
+### Source Reliability Indicator (p)
+
+When available, citations include a probability score indicating expected accuracy:
+- `p95` = Very reliable (authoritative sources like official filings)
+- `p65-p85` = Reliable
+- `p50` = Moderate
+- `p15-p30` = Lower reliability
+- `p05` = Low reliability
+
+Format in citations: `[V1] Title (p85): "quote" (URL)`
+
+### Implementation Files
+
+**Citation Formatting for QC:**
+- `src/shared/qc_module.py`:
+  - `_format_citations_for_qc()` - Adds `[V*]` prefix to validation citations
+  - `format_all_multiplex_outputs_for_qc()` - Formats citations with `[V{i}]` prefix
+  - `_transform_qc_citation_refs()` - Transforms `[1]` to `[QC1]` for QC's own citations
+  - `parse_compact_qc_response()` - Parses 7-element format with citation handling
+
+**QC Prompt:**
+- `src/shared/prompts/qc_validation.md` - Documents `[V*]` format and special markers
+
+**QC Schema:**
+- `src/shared/perplexity_schema.py` - `get_qc_response_format_schema()` defines 7-element format
+
+### Citation Flow in QC
+
+1. **Validation runs** - Citations captured from AI API response metadata
+2. **QC prompt built** - Citations formatted with `[V*]` prefix
+3. **QC AI responds** - References `[V1]`, `[KNOWLEDGE]`, or uses bare `[1]` for new searches
+4. **Post-processing** - Bare `[1]` references transformed to `[QC1]`
+5. **Excel report** - `key_citation` field shows final disambiguated citation
+
 ## Troubleshooting
 
 ### Missing Citations
@@ -233,3 +313,8 @@ if field_history.get('original_sources_full'):
 - Verify row keys match between validation and QC
 - Check citation parsing from Excel comments
 - Ensure proper field mapping in results
+
+### QC Citation Issues
+- If QC references `[1]` instead of `[V1]`, check prompt formatting in `qc_module.py`
+- If `[QC*]` transformation not working, check `_transform_qc_citation_refs()`
+- If model fabricates citations, verify it has actual web search access (DeepSeek does not)
