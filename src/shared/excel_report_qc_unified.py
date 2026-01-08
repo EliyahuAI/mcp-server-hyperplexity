@@ -201,6 +201,9 @@ def calculate_confidence_distribution(validation_results, qc_results, excluded_f
             continue
 
         for field, field_data in row_results.items():
+            # Skip metadata fields (e.g., _qc, _row_key) - they start with underscore
+            if field.startswith('_'):
+                continue
             if not isinstance(field_data, dict):
                 continue
 

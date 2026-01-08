@@ -4624,6 +4624,9 @@ def handle_main_processing(event, context):
 
                     for row_data in real_results.values():
                         for field_name, field_data in row_data.items():
+                            # Skip metadata fields (e.g., _qc, _row_key) - they start with underscore
+                            if field_name.startswith('_'):
+                                continue
                             if isinstance(field_data, dict):
                                 # Only count as validated if it's not an ID/IGNORED field
                                 if field_name not in id_fields:
