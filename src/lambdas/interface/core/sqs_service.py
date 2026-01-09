@@ -126,6 +126,33 @@ def send_table_finalization_request(message_data):
     message_body_cleaned = {k: v for k, v in message_body.items() if v is not None}
     return _send_sqs_message(STANDARD_QUEUE_URL, message_body_cleaned)
 
+async def send_upload_interview_request(session_id: str, email: str, conversation_id: str, user_message: str = "", action: str = "startUploadInterview"):
+    """Send an upload interview request to the standard SQS queue."""
+    if not STANDARD_QUEUE_URL:
+        logger.error("Standard SQS queue URL is not configured.")
+        return {'success': False, 'error': 'Standard SQS queue URL is not configured'}
+
+    message_body = {
+        'request_type': 'upload_interview',
+        'action': action,
+        'session_id': session_id,
+        'email': email,
+        'conversation_id': conversation_id,
+        'user_message': user_message,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'deployment_environment': os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod'),
+    }
+
+    # Clean out None values so they don't get serialized
+    message_body_cleaned = {k: v for k, v in message_body.items() if v is not None}
+
+    result = _send_sqs_message(STANDARD_QUEUE_URL, message_body_cleaned)
+
+    if result:
+        return {'success': True, 'message_id': result}
+    else:
+        return {'success': False, 'error': 'Failed to send SQS message'}
+
 def _send_sqs_message(queue_url, message_body, is_fifo=False):
     """Helper function to send a message to a specified SQS queue."""
     try:

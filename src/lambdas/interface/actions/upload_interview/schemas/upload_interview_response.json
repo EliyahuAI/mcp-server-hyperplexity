@@ -1,0 +1,78 @@
+{
+  "type": "object",
+  "required": ["mode", "trigger_config_generation", "ai_message", "inferred_context"],
+  "properties": {
+    "mode": {
+      "type": "integer",
+      "enum": [1, 2, 3],
+      "description": "Which mode you're using: 1=Ask Questions, 2=Show Understanding & Confirm, 3=User Approved (Generate Config). REQUIRED."
+    },
+    "trigger_config_generation": {
+      "type": "boolean",
+      "description": "Set to true ONLY when user has explicitly approved (said 'yes', 'go for it', 'looks good', or pressed button with empty input). Set to false when asking questions OR when showing understanding for approval."
+    },
+    "ai_message": {
+      "type": "string",
+      "minLength": 20,
+      "description": "Your response to the user. NEVER EMPTY. ALWAYS has content. MODE 1: Your questions. MODE 2: Your understanding and confirmation request with details (ID columns, skipped columns, assumptions). MODE 3: Confirmation message with timing. Use markdown formatting."
+    },
+    "inferred_context": {
+      "type": "object",
+      "description": "Your understanding of the table. Empty in MODE 1. Populated in MODE 2 and 3.",
+      "properties": {
+        "table_purpose": {
+          "type": "string",
+          "description": "Brief description of what this table tracks"
+        },
+        "id_columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Column names that uniquely identify each row"
+        },
+        "research_columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Column names that require web research or validation"
+        },
+        "skipped_columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Column names that should not be validated (e.g., internal notes, metadata)"
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Key assumptions being made about the data or validation approach"
+        }
+      }
+    },
+    "confirmation_response": {
+      "type": "object",
+      "description": "Pre-generated confirmation response to use if user approves (mode=2 only). Contains fields needed to skip redundant AI round-trip when user clicks button or sends empty message.",
+      "properties": {
+        "ai_message": {
+          "type": "string",
+          "minLength": 20,
+          "description": "Confirmation message to show when user approves (e.g., 'Analyzing table structure and divining column meanings...')"
+        },
+        "config_instructions": {
+          "type": "string",
+          "minLength": 50,
+          "description": "Detailed instructions for config generation. Must include: table purpose, ID columns (with reasons), research columns (with specific validation methods for each), skipped columns (with reasons), assumptions, and validation approach."
+        }
+      }
+    },
+    "config_instructions": {
+      "type": "string",
+      "description": "Detailed instructions for config generation (MODE 3 only). Must include: table purpose, ID columns (with reasons), research columns (with specific validation methods for each), skipped columns (with reasons), assumptions, and validation approach."
+    }
+  }
+}
