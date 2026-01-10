@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Email Card Test</title>
+</head>
+<body>
+    <h1>Open Browser Console (F12) to see debug output</h1>
+    <div id="cardContainer"></div>
+
+    <script>
+        console.log('[TEST] Starting diagnostic...');
+        console.log('[TEST] DOM loaded:', document.readyState);
+        console.log('[TEST] cardContainer exists:', document.getElementById('cardContainer'));
+
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('[TEST] DOMContentLoaded fired');
+            console.log('[TEST] cardContainer after load:', document.getElementById('cardContainer'));
+        });
+    </script>
+</body>
+</html>

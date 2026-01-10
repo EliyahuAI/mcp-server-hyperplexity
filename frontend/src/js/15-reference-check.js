@@ -1,0 +1,491 @@
+/* ========================================
+ * 15-reference-check.js - Reference Checking
+ *
+ * Handles reference checking for text and PDF uploads,
+ * claim extraction, and validation processing.
+ *
+ * Dependencies: 00-config.js, 03-websocket.js, 04-cards.js, 05-chat.js
+ * ======================================== */
+
+function createReferenceCheckCard() {
+    const cardId = generateCardId();
+    referenceCheckState.cardId = cardId;
+
+    const content = `
+        <input type="file" id="${cardId}-pdf-input" accept=".pdf" style="display: none;">
+        <div id="${cardId}-form">
+            <div id="${cardId}-input-container">
+                <textarea id="${cardId}-input" class="reference-check-textarea"
+                    placeholder="Paste AI output or literature with citations to verify..."
+                    maxlength="300000"
+                    rows="12"
+                    style="width: 100%; resize: vertical; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 0.75rem; font-family: var(--font-family); font-size: var(--font-size-base); line-height: 1.5; color: var(--text-color); box-shadow: inset 0 1px 2px rgba(0,0,0,0.04); transition: var(--transition);"></textarea>
+                <style>
+                    .reference-check-textarea:hover {
+                        border-color: #D1D5DB;
+                    }
+                    .reference-check-textarea:focus {
+                        outline: none;
+                        background: #FFFFFF;
+                        border-color: var(--primary-color);
+                        box-shadow: inset 0 1px 2px rgba(0,0,0,0.05), 0 0 0 3px rgba(76, 175, 80, 0.2);
+                    }
+                    .reference-check-textarea::placeholder {
+                        color: #9CA3AF;
+                    }
+                </style>
+            </div>
+            <div id="${cardId}-messages"></div>
+        </div>
+        <div id="${cardId}-success" style="display: none;">
+            <div class="message message-success">
+                <span class="message-icon">✓</span>
+                <div id="${cardId}-success-text"></div>
+            </div>
+        </div>
+    `;
+
+    const card = createCard({
+        id: cardId,
+        icon: '🔍',
+        title: 'Reference Check',
+        subtitle: 'Verify AI output or literature with citations',
+        content,
+        buttons: [
+            {
+                text: 'Submit Text',
+                variant: 'primary',
+                callback: async (e) => {
+                    const input = document.getElementById(`${cardId}-input`);
+                    const submittedText = input.value.trim();
+
+                    // Validate before hiding form
+                    if (!submittedText) {
+                        showMessage(`${cardId}-messages`, 'Please enter text with citations to verify', 'error');
+                        return;
+                    }
+
+                    if (submittedText.length < 50) {
+                        showMessage(`${cardId}-messages`, 'Submitted text must have at least 50 characters', 'error');
+                        return;
+                    }
+
+                    // Hide buttons and form immediately
+                    const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                    const formEl = document.getElementById(`${cardId}-form`);
+                    if (buttonsContainer) buttonsContainer.style.display = 'none';
+                    if (formEl) formEl.style.display = 'none';
+
+                    // Show progress indicator immediately
+                    showThinkingInCard(cardId, 'Submitting text...', true);
+
+                    await startReferenceCheck(cardId);
+                }
+            },
+            {
+                text: 'or Upload PDF',
+                icon: '📄',
+                variant: 'secondary',
+                callback: async (e) => {
+                    // Hide buttons and form
+                    const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                    const formEl = document.getElementById(`${cardId}-form`);
+                    if (buttonsContainer) buttonsContainer.style.display = 'none';
+                    if (formEl) formEl.style.display = 'none';
+
+                    // Show progress indicator while waiting for file selection
+                    showThinkingInCard(cardId, 'Select a PDF file to upload...', true);
+
+                    // Store flag that we're waiting for file
+                    referenceCheckState.awaitingPdfSelection = true;
+
+                    const pdfInput = document.getElementById(`${cardId}-pdf-input`);
+                    if (pdfInput) {
+                        pdfInput.click();
+                    }
+                }
+            }
+        ]
+    });
+
+    // Setup PDF upload handler
+    setTimeout(() => {
+        const pdfInput = document.getElementById(`${cardId}-pdf-input`);
+        if (pdfInput) {
+            pdfInput.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    // Clear awaiting flag
+                    referenceCheckState.awaitingPdfSelection = false;
+
+                    // Update progress message now that file is selected
+                    updateThinkingInCard(cardId, 'Uploading PDF...');
+
+                    await handlePdfUpload(cardId, file);
+                }
+                // Reset input so same file can be selected again
+                e.target.value = '';
+            });
+        }
+    }, 100);
+
+    return card;
+}
+
+// Handle PDF upload (async with WebSocket)
+async function handlePdfUpload(cardId, file) {
+    const messagesDiv = document.getElementById(`${cardId}-messages`);
+
+    try {
+        // Validate file type
+        if (!file.name.toLowerCase().endsWith('.pdf')) {
+            completeThinkingInCard(cardId, 'Invalid file type');
+            showMessage(messagesDiv.id, 'Please select a PDF file', 'error');
+            return;
+        }
+
+        // Validate file size (50MB max - no longer limited by API Gateway!)
+        const maxSize = 50 * 1024 * 1024;
+        if (file.size > maxSize) {
+            completeThinkingInCard(cardId, 'File too large');
+            showMessage(messagesDiv.id, `PDF file too large. Maximum size is ${maxSize / 1024 / 1024}MB`, 'error');
+            return;
+        }
+
+        // Show initial progress
+        showThinkingInCard(cardId, `Preparing to upload ${file.name}...`, true);
+
+        // Step 1: Request presigned URL from backend
+        const presignedResponse = await fetch(`${API_BASE}/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'requestPresignedUrl',
+                file_type: 'pdf',
+                filename: file.name,
+                file_size: file.size,
+                email: globalState.email,
+                session_id: globalState.sessionId || ''
+            })
+        });
+
+        const presignedData = await presignedResponse.json();
+
+        if (!presignedResponse.ok || !presignedData.success) {
+            throw new Error(presignedData.message || 'Failed to get upload URL');
+        }
+
+        // Store upload ID and session ID
+        const uploadId = presignedData.upload_id;
+        const s3Key = presignedData.s3_key;
+        const sessionId = presignedData.session_id;
+
+        // Store session_id if backend generated one
+        if (sessionId && !globalState.sessionId) {
+            globalState.sessionId = sessionId;
+            localStorage.setItem('sessionId', sessionId);
+        }
+
+        referenceCheckState.pdfId = uploadId;
+        referenceCheckState.pdfFilename = file.name;
+
+        // Update progress
+        showThinkingInCard(cardId, `Uploading ${file.name} to secure storage...`, true);
+
+        // Step 2: Upload file directly to S3 using presigned URL
+        // IMPORTANT: Include metadata as x-amz-meta-* headers to match presigned URL params
+        const uploadResponse = await fetch(presignedData.presigned_url, {
+            method: 'PUT',
+            body: file,
+            headers: {
+                'Content-Type': presignedData.content_type,  // Use content type from backend
+                'x-amz-meta-upload_id': uploadId,
+                'x-amz-meta-original_filename': file.name,
+                'x-amz-meta-email': globalState.email,
+                'x-amz-meta-session_id': sessionId,
+                'x-amz-meta-file_type': 'pdf',
+                'x-amz-meta-file_size': file.size.toString(),
+                'x-amz-meta-uploaded_at': new Date().toISOString()
+            }
+        });
+
+        if (!uploadResponse.ok) {
+            throw new Error(`Upload failed with status ${uploadResponse.status}`);
+        }
+
+        console.log('[PDF_UPLOAD] File uploaded to S3 successfully');
+
+        // Step 3: Confirm upload complete and trigger processing
+        const confirmResponse = await fetch(`${API_BASE}/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'confirmUploadComplete',
+                upload_id: uploadId,
+                s3_key: s3Key,
+                session_id: sessionId,
+                file_type: 'pdf',
+                filename: file.name,
+                email: globalState.email
+            })
+        });
+
+        const confirmData = await confirmResponse.json();
+
+        if (!confirmResponse.ok || !confirmData.success) {
+            throw new Error(confirmData.message || 'Failed to confirm upload');
+        }
+
+        // Show progress indicator and wait for WebSocket updates
+        showThinkingInCard(cardId, `${file.name} uploaded successfully. Reading PDF...`, true);
+
+        // Connect to WebSocket to receive conversion result
+        connectToSession(sessionId);
+
+        // Register WebSocket handler for PDF conversion
+        unregisterCardHandler(cardId);
+        registerCardHandler(cardId, ['pdf_conversion_progress', 'pdf_conversion_complete', 'pdf_conversion_error'], (wsData) => {
+            handlePdfConversionMessage(cardId, wsData, file.name);
+        });
+
+    } catch (error) {
+        console.error('[PDF_UPLOAD] Error:', error);
+        completeThinkingInCard(cardId, 'Upload failed');
+        showMessage(messagesDiv.id,
+            `Error uploading PDF: ${error.message}`,
+            'error'
+        );
+    }
+}
+
+// Handle file picker cancel for PDF upload
+document.addEventListener('focus', () => {
+    if (referenceCheckState.awaitingPdfSelection) {
+        // User may have cancelled file picker - check after a short delay
+        setTimeout(() => {
+            if (referenceCheckState.awaitingPdfSelection) {
+                // File picker was cancelled (no file selected)
+                const cardId = referenceCheckState.cardId;
+                referenceCheckState.awaitingPdfSelection = false;
+
+                // Recreate the card to restore buttons
+                createReferenceCheckCard();
+            }
+        }, 500);
+    }
+}, true);
+
+// Handle PDF conversion WebSocket messages
+function handlePdfConversionMessage(cardId, message, filename) {
+    console.log('[PDF_CONVERSION] Received message:', message.type);
+
+    if (message.type === 'pdf_conversion_progress') {
+        // Update progress indicator (like table maker)
+        const progressMsg = message.message || 'Converting PDF...';
+        updateThinkingInCard(cardId, progressMsg);
+
+        // Update progress bar if percentage provided
+        if (message.progress !== undefined) {
+            updateThinkingProgress(cardId, message.progress, progressMsg);
+        }
+    }
+    else if (message.type === 'pdf_conversion_complete') {
+        // PDF converted and claim extraction started automatically
+        updateThinkingInCard(cardId, `${filename} converted. Extracting claims from text (this may take a minute)...`);
+
+        // Store conversation ID for reference check tracking
+        referenceCheckState.conversationId = message.conversation_id;
+
+        // Unregister PDF conversion handler, now listen for reference check progress
+        unregisterCardHandler(cardId);
+        registerCardHandler(cardId, ['reference_check_progress', 'reference_check_complete', 'reference_check_error'], (wsData) => {
+            if (wsData.type === 'reference_check_progress') {
+                handleReferenceCheckProgress(wsData, cardId);
+            } else if (wsData.type === 'reference_check_complete') {
+                handleReferenceCheckComplete(wsData, cardId);
+            } else if (wsData.type === 'reference_check_error') {
+                handleReferenceCheckError(wsData, cardId);
+            }
+        });
+    }
+    else if (message.type === 'pdf_conversion_error') {
+        // Show error
+        completeThinkingInCard(cardId, `Error: ${message.message}`);
+
+        // Clean up WebSocket handler
+        unregisterCardHandler(cardId);
+    }
+}
+
+// Start reference check
+async function startReferenceCheck(cardId) {
+    const input = document.getElementById(`${cardId}-input`);
+    const submittedText = input.value.trim();
+
+    // Store submitted text (validation already done in button callback)
+    referenceCheckState.submittedText = submittedText;
+
+    // Update thinking indicator (already shown by callback as "Submitting text...")
+    updateThinkingInCard(cardId, 'Text submitted. Extracting claims from text (this may take a minute)...');
+
+    // Register WebSocket handler
+    registerCardHandler(cardId, ['reference_check_progress', 'reference_check_complete', 'reference_check_error'], (data) => {
+        if (data.type === 'reference_check_progress') {
+            handleReferenceCheckProgress(data, cardId);
+        } else if (data.type === 'reference_check_complete') {
+            handleReferenceCheckComplete(data, cardId);
+        } else if (data.type === 'reference_check_error') {
+            handleReferenceCheckError(data, cardId);
+        }
+    });
+
+    // Send API request
+    try {
+        const response = await fetch(`${API_BASE}/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'startReferenceCheck',
+                email: globalState.email,
+                session_id: globalState.sessionId || null,
+                submitted_text: submittedText
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.status === 'processing') {
+            // Request queued successfully
+            referenceCheckState.conversationId = data.conversation_id;
+
+            // Store session_id if backend generated one
+            if (data.session_id && !globalState.sessionId) {
+                globalState.sessionId = data.session_id;
+                localStorage.setItem('sessionId', data.session_id);
+            }
+
+            // Connect to WebSocket session
+            connectToSession(globalState.sessionId);
+        } else if (data.error === 'text_too_large') {
+            // Handle text too large error
+            completeThinkingInCard(cardId, 'Text too large');
+            showMessage(`${cardId}-messages`,
+                `Text is too large (${data.char_count} characters). Maximum allowed is ${data.max_chars} characters (approximately ${data.max_words} words).`,
+                'error');
+
+            // Re-enable textarea
+            input.value = submittedText;
+            input.rows = 12;
+            input.disabled = false;
+            input.style.cursor = 'text';
+        } else {
+            completeThinkingInCard(cardId, 'Failed to start');
+            showMessage(`${cardId}-messages`,
+                'Failed to start reference check: ' + (data.error || data.message || 'Unknown error'),
+                'error');
+
+            // Re-enable textarea
+            input.value = submittedText;
+            input.rows = 12;
+            input.disabled = false;
+            input.style.cursor = 'text';
+        }
+    } catch (error) {
+        console.error('Error starting reference check:', error);
+        completeThinkingInCard(cardId, 'Error');
+        showMessage(`${cardId}-messages`,
+            'Failed to start reference check. Please try again.',
+            'error');
+
+        // Re-enable textarea
+        input.value = submittedText;
+        input.rows = 12;
+        input.disabled = false;
+        input.style.cursor = 'text';
+    }
+}
+
+// Handle reference check progress updates
+function handleReferenceCheckProgress(data, cardId) {
+    // Use cardId from referenceCheckState if not provided
+    if (!cardId) {
+        cardId = referenceCheckState.cardId;
+    }
+    if (!cardId) return;
+
+    // Update progress bar
+    if (data.progress !== undefined) {
+        const message = data.message || data.status || 'Processing...';
+        updateThinkingProgress(cardId, data.progress, message);
+    }
+
+    // Show claims found if available
+    if (data.claims_found !== undefined) {
+        updateThinkingInCard(cardId, `Found ${data.claims_found} claims to validate...`);
+    }
+
+    // Show validation progress if available
+    if (data.claims_validated !== undefined && data.total_claims !== undefined) {
+        updateThinkingInCard(cardId, `Validated ${data.claims_validated} of ${data.total_claims} claims...`);
+    }
+}
+
+// Handle reference check complete
+function handleReferenceCheckComplete(data, cardId) {
+    // Use cardId from referenceCheckState if not provided
+    if (!cardId) {
+        cardId = referenceCheckState.cardId;
+    }
+    if (!cardId) return;
+
+    // Store data in global state (like table_maker does)
+    if (data.csv_s3_key) globalState.csvS3Key = data.csv_s3_key;
+    if (data.config_s3_key) globalState.configS3Key = data.config_s3_key;
+    if (data.session_id) {
+        globalState.sessionId = data.session_id;
+        localStorage.setItem('sessionId', data.session_id);
+    }
+
+    // Mark files as ready for validation
+    globalState.configValidated = true;
+    globalState.configStored = true;
+    globalState.excelFileUploaded = true;
+
+    // Mark as reference check session (config is static, cannot be refined)
+    globalState.isReferenceCheck = true;
+
+    // Show claims info box (orange ID box with extracted claims)
+    if (data.claims && data.claims.length > 0) {
+        showClaimsInfoBox(cardId, data.claims, data.summary.total_claims);
+    }
+
+    // Update progress indicator with completion message
+    const total = data.summary.total_claims;
+    const withRefs = data.summary.claims_with_references;
+    const withoutRefs = data.summary.claims_without_references;
+
+    let claimSummary;
+    if (withoutRefs === 0) {
+        claimSummary = `${total} claim${total !== 1 ? 's' : ''} (all referenced)`;
+    } else if (withRefs === 0) {
+        claimSummary = `${total} claim${total !== 1 ? 's' : ''} (none referenced)`;
+    } else {
+        claimSummary = `${total} claim${total !== 1 ? 's' : ''} (${withRefs} referenced, ${withoutRefs} not)`;
+    }
+
+    // Update thinking indicator to show extraction complete with summary
+    updateThinkingInCard(cardId, `Extraction complete! Found ${claimSummary}.`);
+
+    // Complete thinking indicator immediately
+    setTimeout(() => {
+        completeThinkingInCard(cardId, `Extraction complete! Found ${claimSummary}.`);
+
+        // Wait 1 second, then open preview
+        setTimeout(() => {
+            globalState.activePreviewCard = null;
+            createPreviewCard();
+        }, 1000);
+    }, 300);
+}
+
+// Handle reference check error

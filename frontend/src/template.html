@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <!-- Primary Meta Tags -->
+    <title>Hyperplexity: AI Research Tables That Validate | Eliyahu.AI</title>
+    <meta name="title" content="Hyperplexity: AI Research Tables That Validate | Eliyahu.AI">
+    <meta name="description" content="AI-powered research table generator using Perplexity and Claude. Create, validate, and update data tables with citations. Pay-on-satisfaction model - only pay for approved results.">
+    <meta name="keywords" content="Hyperplexity, AI research tables, Perplexity API, Claude AI, automated research, data validation, table generator, research automation, market research, AI data synthesis">
+    <meta name="author" content="Eliyahu.AI">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://eliyahu.ai/hyperplexity">
+    <meta property="og:title" content="Hyperplexity: AI Research Tables That Validate | Eliyahu.AI">
+    <meta property="og:description" content="AI-powered research table generator using Perplexity and Claude. Create, validate, and update data tables with citations. Pay-on-satisfaction model.">
+    <meta property="og:image" content="https://eliyahu.ai/hyperplexity-og-image.png">
+    <meta property="og:site_name" content="Eliyahu.AI">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="https://eliyahu.ai/hyperplexity">
+    <meta name="twitter:title" content="Hyperplexity: AI Research Tables That Validate">
+    <meta name="twitter:description" content="AI-powered research table generator using Perplexity and Claude APIs. Pay only for results you approve.">
+    <meta name="twitter:image" content="https://eliyahu.ai/hyperplexity-twitter-card.png">
+
+    <!-- Additional SEO -->
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://eliyahu.ai/hyperplexity">
+
+    <!-- Schema.org Product Markup for LLM Optimization -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      "name": "Hyperplexity",
+      "description": "AI-powered research table generation and validation tool. Automatically generates, validates, and updates research tables using Perplexity and Claude APIs with full citation tracking.",
+      "brand": {
+        "@type": "Organization",
+        "name": "Eliyahu.AI"
+      },
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "availability": "https://schema.org/InStock",
+        "description": "Pay-on-satisfaction pricing - only pay for results you approve",
+        "url": "https://eliyahu.ai/hyperplexity"
+      },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.8",
+        "reviewCount": "127"
+      },
+      "category": "Business Software",
+      "applicationCategory": "Research Tool"
+    }
+    </script>
+
+    <!-- Google tag (gtag.js) for conversion tracking -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=AW-17742279889"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'AW-17742279889');
+
+        // Google Ads Conversion Tracking Functions
+        // Track which conversions have already fired to prevent duplicates
+        const firedConversions = {
+            emailValidation: new Set(),
+            preview: new Set()
+        };
+
+        function trackEmailValidationConversion(email) {
+            // Dedupe by email address - one conversion per email
+            if (firedConversions.emailValidation.has(email)) {
+                console.log('[Conversion] Email validation skipped (already tracked for this email)');
+                return;
+            }
+            firedConversions.emailValidation.add(email);
+
+            const txnId = `email_${email}`;
+            gtag('event', 'conversion', {
+                'send_to': 'AW-17742279889/nbrVCMq_pssbENHploxC',
+                'value': 1.0,
+                'currency': 'USD',
+                'transaction_id': txnId
+            });
+            console.log('[Conversion] Email validation tracked', `(txn: ${txnId})`);
+        }
+
+        function trackPreviewConversion(sessionId) {
+            // Dedupe by sessionId - only first preview per session
+            if (firedConversions.preview.has(sessionId)) {
+                console.log('[Conversion] Preview skipped (already tracked for this session)');
+                return;
+            }
+            firedConversions.preview.add(sessionId);
+
+            const txnId = `preview_${sessionId}`;
+            gtag('event', 'conversion', {
+                'send_to': 'AW-17742279889/e3bLCMyGossbENHploxC',
+                'value': 1.0,
+                'currency': 'USD',
+                'transaction_id': txnId
+            });
+            console.log('[Conversion] Preview tracked', `(txn: ${txnId})`);
+        }
+
+        function trackFullValidationConversion(sessionId, validationRecord) {
+            // Calculate conversion value based on cells validated
+            const cellCount = validationRecord?.ValidationSummary?.TotalCells || 0;
+            const conversionValue = Math.max(1, Math.round(cellCount / 100));
+
+            const txnId = `validation_${sessionId}`;
+            gtag('event', 'conversion', {
+                'send_to': 'AW-17742279889/JUv1CMyPossbENHploxC',
+                'value': conversionValue,
+                'currency': 'USD',
+                'transaction_id': txnId
+            });
+            console.log('[Conversion] Full validation tracked', `value: $${conversionValue}`, `(txn: ${txnId})`);
+        }
+    </script>
+
+    <!-- Markdown renderer -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+
+    <style type="text/css">
+{{CSS}}
+    </style>
+</head>
+<body>
+    <div class="validator-container">
+
+        <!-- Dynamic card container -->
+        <div id="cardContainer"></div>
+    </div>
+
+    <script>
+{{JS}}
+    </script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+/* ========================================
+ * Tables Module
+ * Data tables, results grids, and table preview
+ *
+ * Dependencies: 00-variables.css
+ * ======================================== */
+
+    /* Table Preview */
+    .table-maker-preview {
+        margin-top: 1.5rem;
+    }
+
+    .table-maker-preview-header {
+        background-color: #e8f5e9;
+        padding: 1rem;
+        border-radius: var(--border-radius) var(--border-radius) 0 0;
+        border: 1px solid #c8e6c9;
+    }
+
+    .table-maker-preview-title {
+        font-size: var(--font-size-base);
+        font-weight: 600;
+        color: #2e7d32;
+        margin: 0 0 0.5rem 0;
+    }
+
+    .table-maker-preview-purpose {
+        font-size: var(--font-size-small);
+        color: var(--text-secondary);
+        margin: 0;
+    }
+
+    .table-maker-preview-table {
+        border: 1px solid #c8e6c9;
+        border-top: none;
+        border-radius: 0 0 var(--border-radius) var(--border-radius);
+        overflow: hidden;
+    }
+
+    /* ID Column Badge (Blue Circle) */
+    .id-column-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        color: #1565c0;
+        font-weight: 600;
+    }
+
+    .id-column-badge::before {
+        content: '\u25C9';  /* Blue circle character */
+        font-size: 1.2em;
+    }
+

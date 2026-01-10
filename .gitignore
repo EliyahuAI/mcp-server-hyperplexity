@@ -159,3 +159,11 @@ pitch/**/*.xlsx
 
 # Frontend - ignore large font packages
 frontend/chex_add_generator/IBM_Plex_Sans.zip
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

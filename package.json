@@ -1,0 +1,27 @@
+{
+  "name": "perplexityvalidator",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "test:frontend": "playwright test frontend.spec.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "ssh://git-codecommit.us-east-1.amazonaws.com/v1/repos/perplexity-validator"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@types/node": "^25.0.5"
+  }
+}
