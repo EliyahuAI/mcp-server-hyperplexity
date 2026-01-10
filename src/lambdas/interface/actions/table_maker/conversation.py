@@ -39,7 +39,7 @@ from .table_maker_lib.schema_validator import SchemaValidator
 from .interview import TableInterviewHandler
 
 # Shared imports
-from ai_api_client import ai_client  # Use singleton, not class
+from shared.ai_api_client import ai_client  # Use singleton, not class
 
 # WebSocket client for real-time updates
 try:

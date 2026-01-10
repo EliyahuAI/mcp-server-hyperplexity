@@ -31,6 +31,7 @@ class SearchManager:
     """
     Manages search term generation, execution, and result evaluation.
     Uses AI models to intelligently generate and refine search queries.
+    Integrates memory lookup with fresh search on a per-search-term basis.
     """
 
     def __init__(self, ai_client: AIAPIClient = None, search_client: PerplexitySearchClient = None):
@@ -44,6 +45,143 @@ class SearchManager:
         self.ai_client = ai_client or AIAPIClient()
         self.search_client = search_client or PerplexitySearchClient()
         self.prompt_loader = PromptLoader()
+
+    async def search_with_memory(
+        self,
+        search_terms: List[str],
+        search_settings: Dict[str, Any],
+        memory: Any,
+        required_keywords: List[str] = None,
+        positive_keywords: List[str] = None,
+        negative_keywords: List[str] = None,
+        confidence_threshold: float = 0.75,
+        include_domains: Optional[List[str]] = None,
+        exclude_domains: Optional[List[str]] = None,
+        clone_logger: Any = None
+    ) -> Dict[str, Any]:
+        """
+        Integrated memory+search: Check memory per search term, fresh search if needed.
+
+        For each search term:
+        1. Check if memory has confident results for this specific term
+        2. If memory confidence >= threshold, use memory results
+        3. Otherwise, execute fresh search and store in memory
+
+        Args:
+            search_terms: List of search queries
+            search_settings: Dict with max_results, search_recency_filter
+            memory: SearchMemory instance (or None to skip memory)
+            required_keywords: Entity keywords that must match (pipe-separated variants)
+            positive_keywords: Keywords that boost relevance
+            negative_keywords: Keywords that penalize relevance
+            confidence_threshold: Min confidence to use memory (default 0.75)
+            include_domains: Domains to include in search
+            exclude_domains: Domains to exclude from search
+            clone_logger: Optional logger for debugging
+
+        Returns:
+            {
+                'results': List of search results (mixed memory + fresh),
+                'sources': {term: 'memory' | 'search' for each term},
+                'memory_hits': int,
+                'fresh_searches': int,
+                'search_cost': float
+            }
+        """
+        results = []
+        sources = {}
+        memory_hits = 0
+        fresh_search_terms = []
+        fresh_search_indices = []
+
+        keywords = {
+            'required': required_keywords or [],
+            'positive': positive_keywords or [],
+            'negative': negative_keywords or []
+        }
+
+        # Phase 1: Check memory for each search term
+        for i, term in enumerate(search_terms):
+            if memory:
+                # Check memory for this specific search term
+                memory_result = await memory.recall_for_term(
+                    search_term=term,
+                    keywords=keywords,
+                    confidence_threshold=confidence_threshold
+                )
+
+                if memory_result['confident']:
+                    # Memory has confident results for this term
+                    logger.debug(f"[SEARCH_MANAGER] Memory hit for '{term}' (confidence: {memory_result['confidence']:.2f})")
+                    results.append({
+                        'results': memory_result['sources'],
+                        '_from_memory': True,
+                        '_search_term': term,
+                        '_confidence': memory_result['confidence']
+                    })
+                    sources[term] = 'memory'
+                    memory_hits += 1
+                else:
+                    # Need fresh search for this term
+                    logger.debug(f"[SEARCH_MANAGER] Memory miss for '{term}' (confidence: {memory_result['confidence']:.2f})")
+                    fresh_search_terms.append(term)
+                    fresh_search_indices.append(i)
+                    results.append(None)  # Placeholder
+                    sources[term] = 'search'
+            else:
+                # No memory - all terms need fresh search
+                fresh_search_terms.append(term)
+                fresh_search_indices.append(i)
+                results.append(None)
+                sources[term] = 'search'
+
+        # Phase 2: Execute fresh searches for terms not in memory
+        search_cost = 0.0
+        if fresh_search_terms:
+            logger.debug(f"[SEARCH_MANAGER] Executing {len(fresh_search_terms)} fresh searches")
+
+            fresh_results = await self.execute_searches(
+                search_terms=fresh_search_terms,
+                search_settings=search_settings,
+                include_domains=include_domains,
+                exclude_domains=exclude_domains,
+                clone_logger=clone_logger
+            )
+
+            search_cost = len(fresh_search_terms) * 0.005  # Perplexity API cost
+
+            # Fill in placeholders with fresh results
+            for idx, fresh_result in zip(fresh_search_indices, fresh_results):
+                term = search_terms[idx]
+                results[idx] = fresh_result
+
+                # Store in memory for future use
+                if memory and not isinstance(fresh_result, Exception):
+                    try:
+                        await memory.store_search(
+                            search_term=term,
+                            results=fresh_result,
+                            parameters=search_settings
+                        )
+                    except Exception as e:
+                        logger.warning(f"[SEARCH_MANAGER] Failed to store search in memory: {e}")
+
+        if clone_logger:
+            clone_logger.log_section("Memory+Search Results", {
+                "Total Terms": len(search_terms),
+                "Memory Hits": memory_hits,
+                "Fresh Searches": len(fresh_search_terms),
+                "Search Cost": f"${search_cost:.4f}",
+                "Sources": sources
+            }, level=3, collapse=False)
+
+        return {
+            'results': results,
+            'sources': sources,
+            'memory_hits': memory_hits,
+            'fresh_searches': len(fresh_search_terms),
+            'search_cost': search_cost
+        }
 
     async def generate_search_terms(
         self,

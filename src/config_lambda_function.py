@@ -19,7 +19,7 @@ logging.basicConfig(
 )
 
 # Import after logging setup
-from ai_api_client import ai_client
+from shared.ai_api_client import ai_client
 
 # Get logger for this module
 logger = logging.getLogger(__name__)

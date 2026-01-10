@@ -534,13 +534,40 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
                         logger.error(f"Error searching for matching configs: {e}")
                         matching_configs = {'success': False, 'matches': []}
 
+                    # Analyze table structure for upload interview
+                    table_analysis = {}
+                    try:
+                        if s3_table_parser:
+                            parser = s3_table_parser.S3TableParser(enable_cleaning_log=False)
+                            bucket_name = storage_manager.bucket_name
+
+                            # Get table sample for analysis
+                            sample = parser.get_table_sample(bucket_name, excel_s3_key, max_rows=3)
+
+                            table_analysis = {
+                                'columns': sample.get('column_names', []),
+                                'row_count': sample.get('total_rows', 0),
+                                'sample_rows': sample.get('sample_data', [])
+                            }
+                            logger.info(f"Table analysis extracted: {len(table_analysis.get('columns', []))} columns, {table_analysis.get('row_count', 0)} rows")
+                    except Exception as e:
+                        logger.warning(f"Failed to extract table analysis: {e}")
+                        # Continue without table analysis - interview can still work with column names only
+                        table_analysis = {}
+
+                    # Generate conversation ID for upload interview
+                    conversation_id = f"upload_interview_{base_session_id}"
+
                     return create_response(200, {
                         'success': True,
                         'message': 'Excel file uploaded successfully for config generation',
                         'session_id': session_id,
                         'excel_s3_key': excel_s3_key,
                         'storage_path': storage_manager.get_session_path(email_address, base_session_id),
-                        'matching_configs': matching_configs
+                        'matching_configs': matching_configs,
+                        'table_analysis': table_analysis,
+                        'conversation_id': conversation_id,
+                        'action': 'start_interview'  # Signal to frontend to start interview
                     })
                 else:
                     # No Excel file and no config - invalid state
@@ -561,13 +588,40 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
                         logger.error(f"Error searching for matching configs: {e}")
                         matching_configs = {'success': False, 'matches': []}
 
+                    # Analyze table structure for upload interview
+                    table_analysis = {}
+                    try:
+                        if s3_table_parser:
+                            parser = s3_table_parser.S3TableParser(enable_cleaning_log=False)
+                            bucket_name = storage_manager.bucket_name
+
+                            # Get table sample for analysis
+                            sample = parser.get_table_sample(bucket_name, excel_s3_key, max_rows=3)
+
+                            table_analysis = {
+                                'columns': sample.get('column_names', []),
+                                'row_count': sample.get('total_rows', 0),
+                                'sample_rows': sample.get('sample_data', [])
+                            }
+                            logger.info(f"Table analysis extracted: {len(table_analysis.get('columns', []))} columns, {table_analysis.get('row_count', 0)} rows")
+                    except Exception as e:
+                        logger.warning(f"Failed to extract table analysis: {e}")
+                        # Continue without table analysis - interview can still work with column names only
+                        table_analysis = {}
+
+                    # Generate conversation ID for upload interview
+                    conversation_id = f"upload_interview_{base_session_id}"
+
                     return create_response(200, {
                         'success': True,
                         'message': 'Excel file uploaded successfully for config generation',
                         'session_id': session_id,
                         'excel_s3_key': excel_s3_key,
                         'storage_path': storage_manager.get_session_path(email_address, base_session_id),
-                        'matching_configs': matching_configs
+                        'matching_configs': matching_configs,
+                        'table_analysis': table_analysis,
+                        'conversation_id': conversation_id,
+                        'action': 'start_interview'  # Signal to frontend to start interview
                     })
 
                 # Config found and this is validation/preview request - log details

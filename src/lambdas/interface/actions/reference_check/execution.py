@@ -78,7 +78,7 @@ from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
 from dynamodb_schemas import update_run_status
 
 # AI API client
-from ai_api_client import ai_client
+from shared.ai_api_client import ai_client
 
 # Import conversation helpers
 from .conversation import _load_conversation_state, _save_conversation_state

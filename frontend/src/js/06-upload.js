@@ -590,3 +590,274 @@ async function handleConfigUpload(event, cardId) {
         }
     }
 }
+function createSelectDemoCard() {
+    const cardId = generateCardId();
+    const content = `
+<div id="${cardId}-options" style="text-align: center; padding: 20px;">
+    <div id="${cardId}-demos-list" style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="text-align: center; color: var(--text-secondary);">
+            <span>Loading available demos...</span>
+        </div>
+    </div>
+</div>
+<div id="${cardId}-messages"></div>
+    `;
+
+    const card = createCard({
+id: cardId,
+icon: '🎯',
+title: 'Select Demo Table',
+subtitle: 'Choose from pre-configured examples',
+content
+    });
+
+    // Load available demos
+    loadAvailableDemos(cardId);
+
+    return card;
+}
+
+async function loadAvailableDemos(cardId) {
+    try {
+const response = await fetch(`${API_BASE}/validate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+        action: 'listDemos'
+    })
+});
+
+const result = await response.json();
+
+if (!result.success) {
+    throw new Error(result.error || 'Failed to load demos');
+}
+
+const demosList = document.getElementById(`${cardId}-demos-list`);
+if (!demosList) return;
+
+if (!result.demos || result.demos.length === 0) {
+    demosList.innerHTML = `
+        <div style="text-align: center; color: #666; padding: 20px;">
+            <p>No demos available at this time.</p>
+            <p>Please upload your own table file.</p>
+        </div>
+    `;
+    return;
+}
+
+// Create demo buttons with cycling colors (last button always green)
+const colorCycle = ['primary', 'secondary', 'tertiary', 'quaternary', 'quinary'];
+const demosHtml = result.demos.map((demo, index) => {
+    // Calculate position from the end so last demo is always green
+    const positionFromEnd = result.demos.length - 1 - index;
+    const colorIndex = positionFromEnd % 5;
+    return `
+    <button class="std-button ${colorCycle[colorIndex]}" style="width: 100%; text-align: left; padding: 16px;"
+            onclick="selectDemo('${cardId}', '${demo.name}', this)">
+        <div style="display: flex; flex-direction: column; gap: 4px; text-align: left; align-items: flex-start; width: 100%;">
+            <div style="font-weight: bold; font-size: var(--font-size-base); text-align: left; width: 100%;">
+                ${demo.display_name}
+            </div>
+            <div style="font-size: var(--font-size-small); color: var(--text-secondary); font-weight: normal; text-align: left; width: 100%;">
+                ${demo.description.length > 100 ?
+                    demo.description.substring(0, 100) + '...' :
+                    demo.description}
+            </div>
+        </div>
+    </button>
+    `;
+}).join('');
+
+demosList.innerHTML = demosHtml;
+
+    } catch (error) {
+console.error('Error loading demos:', error);
+const demosList = document.getElementById(`${cardId}-demos-list`);
+if (demosList) {
+    demosList.innerHTML = `
+        <div style="text-align: center; color: #d32f2f; padding: 20px;">
+            <p>Failed to load demos: ${error.message}</p>
+            <button class="std-button secondary" onclick="loadAvailableDemos('${cardId}')">
+                🔄 Try Again
+            </button>
+        </div>
+    `;
+}
+    }
+}
+
+async function selectDemo(cardId, demoName, buttonElement) {
+    markButtonSelected(buttonElement, '🚀 Loading Demo...');
+
+    try {
+// Make sure we have email (sessionId will be created/updated by backend)
+if (!globalState.email) {
+    // Try to get email from localStorage if not in globalState
+    const storedEmail = localStorage.getItem('validatedEmail');
+    if (storedEmail && storedEmail.includes('@')) {
+        globalState.email = storedEmail;
+    } else {
+        throw new Error('Email not provided - please enter your email first');
+    }
+}
+
+const requestBody = {
+    action: 'selectDemo',
+    demo_name: demoName,
+    email: globalState.email
+};
+
+// Only include session_id if we actually have one (not null/undefined/empty)
+if (globalState.sessionId) {
+    requestBody.session_id = globalState.sessionId;
+}
+
+
+const response = await fetch(`${API_BASE}/validate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody)
+});
+
+const result = await response.json();
+
+if (!result.success) {
+    // Check if it's a session-related error
+    const errorMsg = result.error || 'Failed to load demo';
+
+    // Only clear session data for actual session errors, not other backend errors
+    if (errorMsg.toLowerCase().includes('session') && (errorMsg.toLowerCase().includes('expired') || errorMsg.toLowerCase().includes('invalid'))) {
+        // Clear stale session data
+        localStorage.removeItem('sessionId');
+        localStorage.removeItem('validatedEmail');
+        globalState.sessionId = null;
+        globalState.email = '';
+        throw new Error('Session expired - please refresh the page');
+    }
+    throw new Error(errorMsg);
+}
+
+// Update session ID with new one from demo (like table uploads)
+if (result.session_id) {
+    globalState.sessionId = result.session_id;
+    // Store new session ID in localStorage for persistence
+    localStorage.setItem('sessionId', result.session_id);
+}
+
+// Set global state as if user uploaded files
+globalState.excelFileUploaded = true;
+globalState.configStored = true;
+globalState.currentConfig = result.config_data;
+
+// Show success message with demo details
+const successMessage = `
+    <div style="text-align: left;">
+        <div style="font-weight: bold; margin-bottom: 8px; font-size: var(--font-size-base);">
+            ${result.demo.display_name}
+        </div>
+        <div style="color: var(--text-secondary); line-height: 1.4; font-size: var(--font-size-base);">
+            ${result.demo.description}
+        </div>
+    </div>
+`;
+
+showFinalCardState(cardId, successMessage, 'success');
+
+// Auto-proceed to preview after short delay
+setTimeout(() => {
+    createPreviewCard();
+}, 1500);
+
+    } catch (error) {
+console.error('Error selecting demo:', error);
+markButtonUnselected(buttonElement, buttonElement.innerHTML);
+showMessage(`${cardId}-messages`, `Failed to load demo: ${error.message}`, 'error');
+    }
+}
+
+// Make demo functions globally available for onclick handlers
+window.proceedWithDemo = proceedWithDemo;
+window.proceedWithUpload = proceedWithUpload;
+window.selectDemo = selectDemo;
+window.loadAvailableDemos = loadAvailableDemos;
+
+// ============================================
+
+// selectUploadConfig function removed - now handled inline in button callback
+
+async function selectRecentConfig(cardId, button) {
+    markButtonSelected(button, '🔄 Searching for Recent Configs...');
+    
+    try {
+// Search for matching configs
+const response = await fetch(`${API_BASE}/validate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+        action: 'findMatchingConfig',
+        email: globalState.email,
+        session_id: globalState.sessionId || '',
+        limit: 5
+    })
+});
+
+const result = await response.json();
+
+
+if (!result.success) {
+    throw new Error(result.error || 'Failed to search for matching configs');
+}
+
+// Filter for good matches (>= 80% - backend already does this but double-check)
+const goodMatches = result.matches ? result.matches.filter(match => match.match_score >= 0.8) : [];
+
+if (goodMatches && goodMatches.length > 0) {
+    await showRecentConfigOptions(cardId, goodMatches, result.table_columns);
+} else {
+    const totalFound = result.matches ? result.matches.length : 0;
+    const message = totalFound > 0 ?
+                  `Found ${totalFound} previous configs but none match well enough (need ≥80% match). Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.` :
+                  'No matching configurations found from your previous sessions. Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.';
+
+    showMessage(`${cardId}-messages`, message, 'info');
+    // Reset button
+    markButtonUnselected(button);
+}
+
+    } catch (error) {
+console.error('Error finding recent configs:', error);
+showMessage(`${cardId}-messages`, `Error searching for recent configs: ${error.message}`, 'error');
+markButtonUnselected(button);
+    }
+}
+
+async function selectRecentConfigFromStored(cardId, button) {
+    markButtonSelected(button, '🔄 Loading Recent Configs...');
+    
+    try {
+// Use already-found matching configs from upload (only show good matches)
+const goodMatches = globalState.matchingConfigs && 
+                   globalState.matchingConfigs.matches &&
+                   globalState.matchingConfigs.matches.filter(match => match.match_score >= 0.8);
+
+if (goodMatches && goodMatches.length > 0) {
+    await showRecentConfigOptions(cardId, goodMatches, globalState.matchingConfigs.table_columns);
+} else {
+    const totalMatches = (globalState.matchingConfigs && globalState.matchingConfigs.matches) ?
+                       globalState.matchingConfigs.matches.length : 0;
+    const message = totalMatches > 0 ?
+                   `Found ${totalMatches} previous configs but none match well enough (need ≥80% match). Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.` :
+                   'No matching configurations available. Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.';
+
+    showMessage(`${cardId}-messages`, message, 'info');
+    // Reset button
+    markButtonUnselected(button);
+}
+
+    } catch (error) {
+        console.error('Error displaying stored recent configs:', error);
+        showMessage(`${cardId}-messages`, `Error displaying recent configs: ${error.message}`, 'error');
+        markButtonUnselected(button);
+    }
+}

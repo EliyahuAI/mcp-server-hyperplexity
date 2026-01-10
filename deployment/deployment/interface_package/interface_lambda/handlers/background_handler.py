@@ -1289,10 +1289,14 @@ def handle_main_processing(event, context):
         preview_email = event.get('preview_email', False)
 
         # Set session context for memory system (enables memory in the_clone)
+        logger.info(f"[MEMORY_SETUP] Starting session context setup in background: session={session_id}, email={email}")
         try:
             from shared.ai_api_client import ai_client
+            logger.info(f"[MEMORY_SETUP] ai_client imported successfully")
             from ..core.unified_s3_manager import UnifiedS3Manager
+            logger.info(f"[MEMORY_SETUP] UnifiedS3Manager imported successfully")
             s3_manager = UnifiedS3Manager()
+            logger.info(f"[MEMORY_SETUP] S3Manager created: bucket={s3_manager.bucket_name}")
             ai_client.set_session_context(session_id, email, s3_manager)
             logger.info(f"[MEMORY_SETUP] Session context set in background: session={session_id}, email={email}")
         except Exception as e:

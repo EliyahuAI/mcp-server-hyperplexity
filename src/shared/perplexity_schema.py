@@ -1,21 +1,25 @@
 """
 JSON schemas for Perplexity API requests and responses.
+
+NOTE: Schemas use uniform 2D string arrays (not tuple arrays) for compatibility
+with all providers (Perplexity, Gemini, Anthropic) in strict schema mode.
+Parsing code handles "null" -> None and string -> int conversions.
 """
 
 # Schema for multiplex validation responses (multiple fields at once)
 # Compact cell array format: [column, answer, confidence, original_confidence, consistent, explanation]
+# Element positions:
+#   0: Column name (string)
+#   1: Answer value (string or "null")
+#   2: Confidence: "H", "M", "L", or "null"
+#   3: Original confidence: "H", "M", "L", or "null"
+#   4: Consistent with model knowledge: "T", "F", or "null"
+#   5: Explanation (string)
 MULTIPLEX_RESPONSE_SCHEMA = {
     "type": "array",
     "items": {
         "type": "array",
-        "items": [
-            {"type": "string", "description": "Column name"},
-            {"type": ["string", "null"], "description": "Answer value"},
-            {"type": ["string", "null"], "enum": ["H", "M", "L", None], "description": "Confidence: H(igh), M(edium), L(ow), or null"},
-            {"type": ["string", "null"], "enum": ["H", "M", "L", None], "description": "Original confidence"},
-            {"type": ["string", "null"], "enum": ["T", "F", None], "description": "Consistent with model knowledge: T(rue), F(alse), or null"},
-            {"type": "string", "description": "Explanation"}
-        ]
+        "items": {"type": "string"}
     }
 }
 
@@ -51,10 +55,16 @@ def get_qc_response_format_schema():
 
     Compact cell array format (8 elements):
     [column, answer, confidence, original_confidence, updated_confidence, key_citation, update_importance, qc_reasoning]
-    - Confidence values: "H", "M", "L", or null
-    - key_citation: Reference validation citations as [V1], [V2] or new QC citations as [1], [2], or "=" for first citation
-    - update_importance: integer 0-5
-    - qc_reasoning: "=" if validator's explanation is adequate, otherwise provide updated reasoning
+
+    Element positions:
+      0: Column name (string)
+      1: Answer value, or "=" to keep updated value (string or "null")
+      2: Confidence: "H", "M", "L", or "null"
+      3: Original confidence: "H", "M", "L", or "null" (null if original was blank)
+      4: Updated confidence: "H", "M", "L", or "null"
+      5: Key citation: [V1], [V2], "=" for first citation, [KNOWLEDGE], or [UNVERIFIED]
+      6: Update importance: "0"-"5" (string, parsed to int)
+      7: QC reasoning: "=" if validator's explanation adequate, otherwise updated reasoning
 
     Returns:
         The JSON schema for QC-only response formatting
@@ -63,16 +73,7 @@ def get_qc_response_format_schema():
         "type": "array",
         "items": {
             "type": "array",
-            "items": [
-                {"type": "string", "description": "Column name"},
-                {"type": ["string", "null"], "description": "Answer value, or '=' to keep updated value"},
-                {"type": ["string", "null"], "enum": ["H", "M", "L", None], "description": "Confidence: H(igh), M(edium), L(ow), or null"},
-                {"type": ["string", "null"], "enum": ["H", "M", "L", None], "description": "Original confidence (null if original was blank)"},
-                {"type": ["string", "null"], "enum": ["H", "M", "L", None], "description": "Updated confidence"},
-                {"type": "string", "description": "Key citation: [V1], [V2], '=' for first citation, [KNOWLEDGE], or [UNVERIFIED]"},
-                {"type": "integer", "description": "Update importance (0-5)"},
-                {"type": "string", "description": "QC reasoning: '=' if validator's explanation adequate, otherwise updated reasoning"}
-            ]
+            "items": {"type": "string"}
         }
     }
 

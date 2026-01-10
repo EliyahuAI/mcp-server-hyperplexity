@@ -195,6 +195,16 @@ const globalState = {
     }
 };
 
+// Reference check state for managing reference validation workflow
+const referenceCheckState = {
+    cardId: null,
+    conversationId: null,
+    submittedText: null,
+    pdfId: null,
+    pdfFilename: null,
+    awaitingPdfSelection: false
+};
+
 // Helper function to ensure processingState is always properly initialized
 function ensureProcessingState() {
     if (!globalState.processingState || typeof globalState.processingState !== 'object') {

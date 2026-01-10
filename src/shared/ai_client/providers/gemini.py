@@ -462,13 +462,7 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
 {json.dumps(schema)}"""
             else:
                 # Hard schema: Use native Gemini JSON mode with compatibility fixes
-                # Convert backticks to section symbols (§) - Gemini treats backticks as markdown
-                # Section symbols are now the standard for location codes throughout the system
-                escaped_prompt = prompt.replace('`', '§')
-                backtick_count = prompt.count('`')
-                if backtick_count > 0:
-                    logger.info(f"[GEMINI_PROMPT] Converted {backtick_count} backticks to section symbols")
-                request_body["contents"][0]["parts"][0]["text"] = escaped_prompt
+                request_body["contents"][0]["parts"][0]["text"] = prompt
 
                 request_body["generationConfig"]["responseMimeType"] = "application/json"
 

@@ -21,7 +21,7 @@ import os
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from ai_api_client import ai_client
+from shared.ai_api_client import ai_client
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

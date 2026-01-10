@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
 
-from ai_api_client import ai_client
+from shared.ai_api_client import ai_client
 from shared_table_parser import s3_table_parser
 from config_validator import validate_config_complete
 

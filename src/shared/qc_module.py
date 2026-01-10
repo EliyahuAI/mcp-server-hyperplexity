@@ -537,38 +537,38 @@ class QCModule:
                 # Legacy 9-element format with qc_reasoning and qc_citations in old positions
                 parsed.append({
                     'column': item[0],
-                    'answer': item[1],
+                    'answer': self._parse_nullable_string(item[1]),
                     'confidence': self._expand_confidence(item[2]),
                     'original_confidence': self._expand_confidence(item[3]),
                     'updated_confidence': self._expand_confidence(item[4]),
-                    'qc_reasoning': item[5],
-                    'qc_citations': item[6],
-                    'key_citation': item[7],
-                    'update_importance': item[8]
+                    'qc_reasoning': item[5] if item[5] != 'null' else '',
+                    'qc_citations': item[6] if item[6] != 'null' else '',
+                    'key_citation': item[7] if item[7] != 'null' else '',
+                    'update_importance': self._parse_update_importance(item[8])
                 })
             elif isinstance(item, list) and len(item) == 8:
                 # Current 8-element format with qc_reasoning as last element
                 parsed.append({
                     'column': item[0],
-                    'answer': item[1],
+                    'answer': self._parse_nullable_string(item[1]),
                     'confidence': self._expand_confidence(item[2]),
                     'original_confidence': self._expand_confidence(item[3]),
                     'updated_confidence': self._expand_confidence(item[4]),
-                    'key_citation': item[5],
-                    'update_importance': item[6],
-                    'qc_reasoning': item[7],
+                    'key_citation': item[5] if item[5] != 'null' else '',
+                    'update_importance': self._parse_update_importance(item[6]),
+                    'qc_reasoning': item[7] if item[7] != 'null' else '',
                     'qc_citations': ''  # Not in current format
                 })
             elif isinstance(item, list) and len(item) >= 7:
                 # Legacy 7-element format (no qc_reasoning)
                 parsed.append({
                     'column': item[0],
-                    'answer': item[1],
+                    'answer': self._parse_nullable_string(item[1]),
                     'confidence': self._expand_confidence(item[2]),
                     'original_confidence': self._expand_confidence(item[3]),
                     'updated_confidence': self._expand_confidence(item[4]),
-                    'key_citation': item[5],
-                    'update_importance': item[6],
+                    'key_citation': item[5] if item[5] != 'null' else '',
+                    'update_importance': self._parse_update_importance(item[6]),
                     'qc_reasoning': '',  # Not in legacy 7-element format
                     'qc_citations': ''
                 })
@@ -578,11 +578,28 @@ class QCModule:
         return parsed
 
     def _expand_confidence(self, val):
-        """Expand H/M/L to HIGH/MEDIUM/LOW"""
+        """Expand H/M/L to HIGH/MEDIUM/LOW, handle 'null' string -> None"""
+        if val is None or val == 'null' or val == '':
+            return None
         if val == 'H': return 'HIGH'
         if val == 'M': return 'MEDIUM'
         if val == 'L': return 'LOW'
         return val
+
+    def _parse_nullable_string(self, val):
+        """Convert 'null' string to None, empty string to None"""
+        if val is None or val == 'null' or val == '':
+            return None
+        return val
+
+    def _parse_update_importance(self, val):
+        """Parse update_importance from string to int"""
+        if val is None or val == 'null' or val == '':
+            return 0
+        try:
+            return int(str(val).strip())
+        except (ValueError, TypeError):
+            return 0
 
     def _transform_qc_citation_refs(self, text: str) -> str:
         """Transform [N] references to [QCN] for QC's own web search citations.

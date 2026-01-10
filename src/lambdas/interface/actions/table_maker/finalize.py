@@ -338,7 +338,7 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                 from .table_maker_lib.row_expander import RowExpander
                 from .table_maker_lib.prompt_loader import PromptLoader
                 from .table_maker_lib.schema_validator import SchemaValidator
-                from ai_api_client import ai_client
+                from shared.ai_api_client import ai_client
 
                 # Initialize components
                 import os

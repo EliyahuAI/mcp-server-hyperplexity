@@ -598,17 +598,27 @@ class SimplifiedSchemaValidator:
         return prompt
     
     def _expand_confidence(self, val):
-        """Expand H/M/L to HIGH/MEDIUM/LOW"""
+        """Expand H/M/L to HIGH/MEDIUM/LOW, handle 'null' string -> None"""
+        if val is None or val == 'null' or val == '':
+            return None
         if val == 'H': return 'HIGH'
         if val == 'M': return 'MEDIUM'
         if val == 'L': return 'LOW'
-        return val  # Already expanded or null
+        return val  # Already expanded
 
     def _expand_consistent(self, val):
-        """Expand T/F to YES/NO"""
+        """Expand T/F to YES/NO, handle 'null' string -> None"""
+        if val is None or val == 'null' or val == '':
+            return None
         if val == 'T': return 'YES'
         if val == 'F': return 'NO'
-        return val  # Already expanded or null
+        return val  # Already expanded
+
+    def _parse_nullable_string(self, val):
+        """Convert 'null' string to None, empty string to None"""
+        if val is None or val == 'null' or val == '':
+            return None
+        return val
 
     def parse_multiplex_result(self, result: Dict, row: Dict[str, Any]) -> Dict[str, Tuple[Any, None, List[str], str, str, str, bool, bool, Optional[str]]]:
         """Parse the multiplex validation result from API response (normalized to Perplexity format).
@@ -685,12 +695,13 @@ class SimplifiedSchemaValidator:
                         continue
 
                     # Extract values from array positions
-                    column = item[0] if item[0] else ''
-                    answer = item[1]  # Preserve null - don't convert to empty string
-                    confidence = item[2]  # H/M/L or null
-                    original_confidence = item[3]  # H/M/L or null
-                    consistent = item[4]  # T/F or null
-                    explanation = item[5] if item[5] else ''
+                    # Note: With uniform 2D string arrays, "null" comes as string, not None
+                    column = item[0] if item[0] and item[0] != 'null' else ''
+                    answer = self._parse_nullable_string(item[1])  # Handle "null" string -> None
+                    confidence = item[2]  # H/M/L or "null" string
+                    original_confidence = item[3]  # H/M/L or "null" string
+                    consistent = item[4]  # T/F or "null" string
+                    explanation = item[5] if item[5] and item[5] != 'null' else ''
 
                     if not column:
                         continue
@@ -701,10 +712,10 @@ class SimplifiedSchemaValidator:
                     # [DEBUG] Log column parsing for debugging cache mismatches
                     logger.debug(f"[COLUMN_DEBUG] Parsed column: '{column}' (length: {len(column)}, repr: {repr(column)})")
 
-                    # Expand compact values to full format (preserve null)
-                    confidence_str = self._expand_confidence(confidence) if confidence else None
-                    original_confidence_str = self._expand_confidence(original_confidence) if original_confidence else None
-                    consistent_with_model_knowledge = self._expand_consistent(consistent) if consistent else ''
+                    # Expand compact values to full format (handles "null" string -> None)
+                    confidence_str = self._expand_confidence(confidence)
+                    original_confidence_str = self._expand_confidence(original_confidence)
+                    consistent_with_model_knowledge = self._expand_consistent(consistent) or ''
 
                     # Cell array format: sources come from citations metadata, not response
                     sources = []
