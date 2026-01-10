@@ -4773,11 +4773,97 @@ function showInsufficientBalanceError(errorData, cardId = null) {
     }
 }
 
+// ============================================
+// TICKER UPDATE HANDLING
+// ============================================
+
+function handleTickerUpdate(data) {
+    if (!data || typeof data !== 'object') {
+        return;
+    }
+
+    // Extract ticker information
+    const rowIds = data.row_ids || '';
+    const column = data.column || '';
+    const confidence = data.confidence || '';
+    const confidenceEmoji = data.confidence_emoji || '';
+    const finalValue = data.final_value || '';
+    const explanation = data.explanation || '';
+
+    // Create ticker message
+    let tickerMessage = '';
+    if (rowIds && column) {
+        tickerMessage = `${confidenceEmoji} ${rowIds} - ${column}`;
+
+        // Add truncated value if present
+        if (finalValue && finalValue.length > 50) {
+            tickerMessage += `: ${finalValue.substring(0, 50)}...`;
+        } else if (finalValue) {
+            tickerMessage += `: ${finalValue}`;
+        }
+    } else {
+        tickerMessage = data.message || 'Processing...';
+    }
+
+    // Display ticker message if we have an active validation card
+    if (globalState.activeCardId) {
+        const tickerContainer = document.querySelector(`#${globalState.activeCardId} .ticker-message`);
+        if (tickerContainer) {
+            tickerContainer.textContent = tickerMessage;
+        }
+    }
+
+    // Also update progress text with confidence info
+    if (explanation) {
+        const progressText = document.querySelector('.progress-text');
+        if (progressText) {
+            const currentText = progressText.textContent;
+            // Only update if not showing more important information
+            if (!currentText.includes('Completing') && !currentText.includes('Processing')) {
+                progressText.textContent = explanation;
+            }
+        }
+    }
+}
+
+function hideTicker() {
+    // Hide all ticker containers
+    const tickers = document.querySelectorAll('.ticker-container');
+    tickers.forEach(ticker => {
+        ticker.style.display = 'none';
+    });
+
+    // Clear ticker message
+    const tickerMessages = document.querySelectorAll('.ticker-message');
+    tickerMessages.forEach(msg => {
+        msg.textContent = '';
+    });
+
+    // Clear global ticker state
+    if (globalState) {
+        globalState.tickerMessages = [];
+        globalState.currentTickerIndex = 0;
+    }
+}
+
+function showTicker() {
+    // Show ticker container
+    const tickers = document.querySelectorAll('.ticker-container');
+    tickers.forEach(ticker => {
+        ticker.style.display = 'block';
+    });
+}
+
 function handleProcessingWebSocketMessage(data, cardId) {
     if (data.status === 'PROCESSING') {
         // Handle processing status
     }
 }
+
+// Export ticker functions globally
+window.hideTicker = hideTicker;
+window.showTicker = showTicker;
+window.handleTickerUpdate = handleTickerUpdate;
 
 
 /* ========== 04-cards.js ========== */
