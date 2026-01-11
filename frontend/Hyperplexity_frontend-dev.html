@@ -6341,10 +6341,24 @@ function proceedWithUpload(cardId) {
                             // Update completion message to show upload success
                             showFinalCardState(cardId, `File uploaded: ${globalState.excelFileName}`, 'success');
 
-                            // Go directly to configuration
-                            setTimeout(() => {
-                                createConfigurationCard();
-                            }, 1000);
+                            // Check if we should start upload interview
+                            if (data.action === 'start_interview' && data.conversation_id) {
+                                console.log('[UPLOAD_INTERVIEW] Starting interview (FormData path) for', data.conversation_id);
+
+                                // Store conversation info
+                                globalState.uploadInterviewConversationId = data.conversation_id;
+                                globalState.tableAnalysis = data.table_analysis;
+
+                                // Show interview UI instead of going to config
+                                setTimeout(() => {
+                                    createUploadInterviewCard(cardId, data);
+                                }, 500);
+                            } else {
+                                // Go directly to configuration (old flow)
+                                setTimeout(() => {
+                                    createConfigurationCard();
+                                }, 1000);
+                            }
                         } else {
                             throw new Error(data.error || 'Failed to upload file');
                         }
@@ -6523,11 +6537,14 @@ async function handleFileSelect(event, cardId) {
 
     // Immediately upload Excel file to establish session
     try {
-        await uploadExcelFile(cardId, file);
-        // Create configuration card after successful upload
-        setTimeout(() => {
-            createConfigurationCard();
-        }, 500);
+        const interviewTriggered = await uploadExcelFile(cardId, file);
+
+        // Only create configuration card if upload interview was NOT triggered
+        if (!interviewTriggered) {
+            setTimeout(() => {
+                createConfigurationCard();
+            }, 500);
+        }
     } catch (error) {
         // Reset UI on failure
         dropZone.style.pointerEvents = 'auto';
@@ -6650,7 +6667,7 @@ async function uploadExcelFile(cardId, file) {
                 createUploadInterviewCard(cardId, confirmData);
             }, 500);
 
-            return; // Don't proceed to normal config flow
+            return true; // Interview triggered - signal to caller
         }
 
         // Show upload completion
@@ -6664,6 +6681,8 @@ async function uploadExcelFile(cardId, file) {
             `${file.name} uploaded and analyzed`,
             'success'
         );
+
+        return false; // Interview not triggered - caller should create config card
 
     } catch (error) {
         throw error;
