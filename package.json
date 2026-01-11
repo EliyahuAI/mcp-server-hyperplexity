@@ -11,7 +11,16 @@
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:debug": "playwright test --debug",
-    "test:frontend": "playwright test frontend.spec.js"
+    "test:frontend": "playwright test frontend.spec.js",
+    "test:e2e": "playwright test e2e-all-paths.spec.js",
+    "test:e2e:headed": "playwright test e2e-all-paths.spec.js --headed",
+    "test:demo": "playwright test e2e-all-paths.spec.js -g 'Path 1'",
+    "test:upload": "playwright test e2e-all-paths.spec.js -g 'Path 2'",
+    "test:tablemaker": "playwright test e2e-all-paths.spec.js -g 'Path 3'",
+    "test:refcheck": "playwright test e2e-all-paths.spec.js -g 'Path 4'",
+    "test:cross-cutting": "playwright test e2e-all-paths.spec.js -g 'Cross-Cutting'",
+    "test:quick": "SKIP_BACKEND_TESTS=true playwright test e2e-all-paths.spec.js",
+    "test:report": "playwright show-report"
   },
   "repository": {
     "type": "git",

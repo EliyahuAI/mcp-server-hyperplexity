@@ -59,11 +59,14 @@ function detectEnvironmentFromPageName() {
     const pathname = window.location.pathname;
     const pageName = pathname.split('/').pop() || pathname;
 
-    if (pageName.endsWith('-dev')) {
+    // Strip file extension to check the base name
+    const baseNameWithoutExt = pageName.replace(/\.[^/.]+$/, '');
+
+    if (baseNameWithoutExt.endsWith('-dev')) {
         return 'dev';
-    } else if (pageName.endsWith('-test')) {
+    } else if (baseNameWithoutExt.endsWith('-test')) {
         return 'test';
-    } else if (pageName.endsWith('-staging')) {
+    } else if (baseNameWithoutExt.endsWith('-staging')) {
         return 'staging';
     }
     return null;
@@ -194,6 +197,9 @@ const globalState = {
         lastBalanceCheck: null
     }
 };
+
+// Expose globalState to window for testing and debugging
+window.globalState = globalState;
 
 // Reference check state for managing reference validation workflow
 const referenceCheckState = {

@@ -7,6 +7,14 @@
  * Dependencies: 00-config.js, 03-websocket.js, 04-cards.js, 05-chat.js
  * ======================================== */
 
+// Table Maker state management
+const tableMakerState = {
+    cardId: null,
+    conversationId: null,
+    messages: [],
+    confirmationResponse: null
+};
+
 function handleTableExecutionUpdate(message) {
     const conversationId = message.conversation_id;
     const phase = message.phase;
