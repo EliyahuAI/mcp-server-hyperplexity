@@ -20,6 +20,7 @@ SCHEMAS_DIR = os.path.join(CURRENT_DIR, 'schemas')
 
 # Import the interview handler
 from .interview import UploadInterviewHandler
+from ..utils.helpers import create_response
 
 
 async def handle_upload_interview_start_async(request_data, context):
@@ -39,10 +40,7 @@ async def handle_upload_interview_start_async(request_data, context):
         user_message = request_data.get('user_message', '')
 
         if not session_id or not email:
-            return {
-                'statusCode': 400,
-                'body': {'error': 'Missing required fields: session_id, email'}
-            }
+            return create_response(400, {'error': 'Missing required fields: session_id, email'})
 
         logger.info(f"[UPLOAD_INTERVIEW] Starting interview for session {session_id}")
 
@@ -56,28 +54,19 @@ async def handle_upload_interview_start_async(request_data, context):
         )
 
         if not sqs_result.get('success'):
-            return {
-                'statusCode': 500,
-                'body': {'error': f"Failed to queue interview request: {sqs_result.get('error')}"}
-            }
+            return create_response(500, {'error': f"Failed to queue interview request: {sqs_result.get('error')}"})
 
-        return {
-            'statusCode': 200,
-            'body': {
-                'success': True,
-                'message': 'Upload interview started',
-                'conversation_id': conversation_id
-            }
-        }
+        return create_response(200, {
+            'success': True,
+            'message': 'Upload interview started',
+            'conversation_id': conversation_id
+        })
 
     except Exception as e:
         logger.error(f"[UPLOAD_INTERVIEW] Error starting interview: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        return {
-            'statusCode': 500,
-            'body': {'error': f'Failed to start upload interview: {str(e)}'}
-        }
+        return create_response(500, {'error': f'Failed to start upload interview: {str(e)}'})
 
 
 async def handle_upload_interview_continue_async(request_data, context):
@@ -96,10 +85,7 @@ async def handle_upload_interview_continue_async(request_data, context):
         user_message = request_data.get('user_message', '')
 
         if not session_id or not email or not conversation_id:
-            return {
-                'statusCode': 400,
-                'body': {'error': 'Missing required fields: session_id, email, conversation_id'}
-            }
+            return create_response(400, {'error': 'Missing required fields: session_id, email, conversation_id'})
 
         logger.info(f"[UPLOAD_INTERVIEW] Continuing interview for conversation {conversation_id}")
 
@@ -113,28 +99,19 @@ async def handle_upload_interview_continue_async(request_data, context):
         )
 
         if not sqs_result.get('success'):
-            return {
-                'statusCode': 500,
-                'body': {'error': f"Failed to queue interview continuation: {sqs_result.get('error')}"}
-            }
+            return create_response(500, {'error': f"Failed to queue interview continuation: {sqs_result.get('error')}"})
 
-        return {
-            'statusCode': 200,
-            'body': {
-                'success': True,
-                'message': 'Upload interview continued',
-                'conversation_id': conversation_id
-            }
-        }
+        return create_response(200, {
+            'success': True,
+            'message': 'Upload interview continued',
+            'conversation_id': conversation_id
+        })
 
     except Exception as e:
         logger.error(f"[UPLOAD_INTERVIEW] Error continuing interview: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        return {
-            'statusCode': 500,
-            'body': {'error': f'Failed to continue upload interview: {str(e)}'}
-        }
+        return create_response(500, {'error': f'Failed to continue upload interview: {str(e)}'})
 
 
 # Action routing dictionary
@@ -160,10 +137,7 @@ def route_upload_interview_action(action, request_data, context):
 
     if not handler:
         logger.error(f"Unknown upload interview action: {action}")
-        return {
-            'statusCode': 400,
-            'body': {'error': f'Unknown upload interview action: {action}'}
-        }
+        return create_response(400, {'error': f'Unknown upload interview action: {action}'})
 
     logger.info(f"Routing upload interview action: {action}")
 
@@ -177,10 +151,7 @@ def route_upload_interview_action(action, request_data, context):
             logger.error(f"Error running async handler {action}: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
-            return {
-                'statusCode': 500,
-                'body': {'error': f'Handler execution failed: {str(e)}'}
-            }
+            return create_response(500, {'error': f'Handler execution failed: {str(e)}'})
     else:
         logger.info(f"Handler {action} is sync, calling directly")
         return handler(request_data, context)
