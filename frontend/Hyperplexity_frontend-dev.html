@@ -11507,7 +11507,12 @@ const card = createCard({
     thinking: true
 });
 
-globalState.cardsContainer.appendChild(card);
+const cardContainer = document.getElementById('cardContainer');
+if (cardContainer) {
+    cardContainer.appendChild(card);
+} else {
+    console.error('[UPLOAD_INTERVIEW] cardContainer element not found');
+}
 
 // Add initial message using existing chat function
 await addChatMessage(cardId, 'ai', 'Analyzing your table...');
