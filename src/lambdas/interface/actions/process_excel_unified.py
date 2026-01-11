@@ -20,9 +20,9 @@ from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
 
 # Optional imports - will be handled conditionally in functions
 try:
-    from shared_table_parser import s3_table_parser
+    from shared_table_parser import S3TableParser
 except ImportError:
-    s3_table_parser = None
+    S3TableParser = None
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -537,8 +537,8 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
                     # Analyze table structure for upload interview
                     table_analysis = {}
                     try:
-                        if s3_table_parser:
-                            parser = s3_table_parser.S3TableParser(enable_cleaning_log=False)
+                        if S3TableParser:
+                            parser = S3TableParser(enable_cleaning_log=False)
                             bucket_name = storage_manager.bucket_name
 
                             # Get table sample for analysis
@@ -591,8 +591,8 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
                     # Analyze table structure for upload interview
                     table_analysis = {}
                     try:
-                        if s3_table_parser:
-                            parser = s3_table_parser.S3TableParser(enable_cleaning_log=False)
+                        if S3TableParser:
+                            parser = S3TableParser(enable_cleaning_log=False)
                             bucket_name = storage_manager.bucket_name
 
                             # Get table sample for analysis

@@ -69,11 +69,11 @@ async def handle_upload_interview_start(event: Dict[str, Any], context: Any) -> 
             # Try to extract table analysis if not available
             logger.warning("[UPLOAD_INTERVIEW] No table analysis in session info, attempting to extract")
             try:
-                from shared_table_parser import s3_table_parser
-                if s3_table_parser:
+                from shared_table_parser import S3TableParser
+                if S3TableParser:
                     excel_content, excel_s3_key = storage_manager.get_excel_file(email, session_id)
                     if excel_s3_key:
-                        parser = s3_table_parser.S3TableParser(enable_cleaning_log=False)
+                        parser = S3TableParser(enable_cleaning_log=False)
                         sample = parser.get_table_sample(storage_manager.bucket_name, excel_s3_key, max_rows=3)
                         table_analysis = {
                             'columns': sample.get('column_names', []),
