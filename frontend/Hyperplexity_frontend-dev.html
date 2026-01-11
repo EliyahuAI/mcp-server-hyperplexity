@@ -12181,48 +12181,29 @@ function handleProcessingWebSocketMessage(data, cardId) {
                 }
 
                 // Handle download preparation
+                // Enable download button after a short delay (file is generated during validation)
                 if (downloadBtn && balanceInfo) {
-                    // Poll for download readiness
-                    const checkDownloadReady = async () => {
-                        try {
-                            const response = await fetch(`${API_BASE}/download/${globalState.sessionId}/status`);
-                            if (response.ok) {
-                                const result = await response.json();
-                                if (result.ready) {
-                                    downloadBtn.disabled = false;
-                                    downloadBtn.querySelector('.button-text').textContent = '📥 Download Results';
+                    setTimeout(() => {
+                        if (downloadBtn) {
+                            downloadBtn.disabled = false;
+                            downloadBtn.querySelector('.button-text').textContent = '📥 Download Results';
 
-                                    downloadBtn.addEventListener('click', async function() {
-                                        try {
-                                            markDownloadStart();
-                                            await window.downloadValidationResults();
-                                        } catch (error) {
-                                            console.error('Download error:', error);
-                                            alert('Download failed: ' + error.message);
-                                        }
-                                    });
+                            downloadBtn.addEventListener('click', async function() {
+                                try {
+                                    markDownloadStart();
+                                    await window.downloadValidationResults();
+                                } catch (error) {
+                                    console.error('Download error:', error);
+                                    alert('Download failed: ' + error.message);
                                 }
-                            }
-                        } catch (error) {
-                            console.error('Error checking download status:', error);
+                            });
                         }
-                    };
 
-                    // Check every 1 second for up to 10 seconds
-                    let attempts = 0;
-                    const maxAttempts = 10;
-                    const intervalId = setInterval(async () => {
-                        attempts++;
-                        await checkDownloadReady();
-                        if (attempts >= maxAttempts || !downloadBtn.disabled) {
-                            clearInterval(intervalId);
+                        // Update balance display
+                        if (balanceInfo && globalState.accountBalance !== undefined) {
+                            balanceInfo.textContent = `• Remaining balance: $${globalState.accountBalance.toFixed(2)}`;
                         }
-                    }, 1000);
-                }
-
-                // Update balance display
-                if (balanceInfo && globalState.accountBalance !== undefined) {
-                    balanceInfo.textContent = `• Remaining balance: $${globalState.accountBalance.toFixed(2)}`;
+                    }, 3000); // 3 second delay for download to be ready
                 }
             }, 0);
             }
