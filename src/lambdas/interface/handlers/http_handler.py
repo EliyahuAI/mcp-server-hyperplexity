@@ -202,6 +202,9 @@ def handle(event, context):
             elif action in ['startReferenceCheck']:
                 route_reference_check_action = lazy_import('interface_lambda.actions.reference_check', 'route_reference_check_action')
                 return route_reference_check_action(action, request_data, context)
+            elif action in ['startUploadInterview', 'continueUploadInterview']:
+                route_upload_interview_action = lazy_import('interface_lambda.actions.upload_interview', 'route_upload_interview_action')
+                return route_upload_interview_action(action, request_data, context)
             else:
                 logger.warning(f"Unknown action in JSON body: {action}")
                 return create_response(400, {'error': f'Unknown or unsupported action: {action}'})
