@@ -1098,6 +1098,11 @@ async def handle_table_conversation_start(request_data, context):
             'trigger_execution': result['trigger_execution']
         }
 
+        # Store confirmation_response for quick approval bypass (skips redundant AI call)
+        if interview_result.get('confirmation_response'):
+            conversation_state['confirmation_response'] = interview_result['confirmation_response']
+            logger.info(f"[TABLE_MAKER] Storing confirmation_response in conversation state for quick approval")
+
         # Save conversation state to S3
         save_result = _save_conversation_state_to_s3(
             storage_manager=storage_manager,
@@ -1298,6 +1303,99 @@ async def handle_table_conversation_continue(request_data, context):
 
         logger.info(f"[TABLE_MAKER] Restored interview with {len(interview_handler.messages)} messages")
 
+        # Check if user is confirming with a pre-generated response (skip redundant AI call)
+        is_simple_confirmation = (
+            user_message.strip().lower() in ['', 'yes', 'yeah', 'yep', 'yup', 'sure', 'ok', 'okay',
+                                              'good', 'great', 'perfect', 'sounds good', 'looks good',
+                                              'go', 'go for it', 'start', 'proceed'] or
+            user_message.strip().lower().startswith('yes,') or
+            user_message.strip().lower().startswith('yes ') or
+            'looks good' in user_message.lower() or
+            'please generate' in user_message.lower()
+        )
+        confirmation_response = conversation_state.get('confirmation_response')
+
+        if is_simple_confirmation and confirmation_response:
+            logger.info(f"[TABLE_MAKER] Using pre-generated confirmation response (skipping AI call)")
+
+            # Use the pre-generated response
+            result['success'] = True
+            result['mode'] = 3  # Execution mode
+            result['trigger_execution'] = True
+            result['show_structure'] = False
+            result['ai_message'] = confirmation_response.get('ai_message', 'Starting table generation...')
+            result['context_web_research'] = confirmation_response.get('context_web_research', [])
+            result['processing_steps'] = confirmation_response.get('processing_steps', [])
+            result['table_name'] = confirmation_response.get('table_name', conversation_state.get('table_name', ''))
+            result['turn_count'] = conversation_state['turn_count'] + 1
+
+            # Update conversation state
+            conversation_state['last_updated'] = datetime.utcnow().isoformat() + 'Z'
+            conversation_state['status'] = 'execution_ready'
+            conversation_state['turn_count'] = result['turn_count']
+            conversation_state['trigger_execution'] = True
+            # Clear the confirmation_response since we've used it
+            conversation_state.pop('confirmation_response', None)
+
+            # Save updated conversation state to S3
+            save_result = _save_conversation_state_to_s3(
+                storage_manager=storage_manager,
+                email=email,
+                session_id=session_id,
+                conversation_id=conversation_id,
+                conversation_state=conversation_state
+            )
+
+            if not save_result['success']:
+                logger.error(f"[TABLE_MAKER] CRITICAL: Failed to save conversation state: {save_result['error']}")
+            else:
+                logger.info(f"[TABLE_MAKER] Saved conversation state to {save_result['s3_key']}")
+
+            # Send WebSocket update
+            if websocket_client and session_id:
+                try:
+                    websocket_client.send_to_session(session_id, {
+                        'type': 'table_conversation_update',
+                        'conversation_id': conversation_id,
+                        'progress': 100,
+                        'status': 'Confirmation received - starting execution',
+                        'mode': result['mode'],
+                        'trigger_execution': result['trigger_execution'],
+                        'show_structure': result['show_structure'],
+                        'ai_message': result['ai_message'],
+                        'context_web_research': result['context_web_research'],
+                        'processing_steps': result['processing_steps'],
+                        'table_name': result['table_name'],
+                        'turn_count': result['turn_count']
+                    })
+                except Exception as e:
+                    logger.warning(f"[TABLE_MAKER] Failed to send WebSocket update: {e}")
+
+            # Start execution pipeline
+            logger.info(f"[TABLE_MAKER] Quick confirmation - starting execution immediately")
+            await asyncio.sleep(0.5)  # Brief delay for UI to update
+
+            # Trigger execution (same logic as normal flow)
+            execution_event = {
+                'session_id': session_id,
+                'email': email,
+                'conversation_id': conversation_id,
+                'table_name': result['table_name'],
+                'context_web_research': result['context_web_research']
+            }
+
+            try:
+                from interface_lambda.core.sqs_service import send_table_execution_request
+                queue_result = send_table_execution_request(execution_event)
+                if queue_result:
+                    logger.info(f"[TABLE_MAKER] Queued execution request: {queue_result}")
+                else:
+                    logger.error(f"[TABLE_MAKER] Failed to queue execution request")
+            except Exception as e:
+                logger.error(f"[TABLE_MAKER] Error queuing execution: {e}")
+
+            return create_response(200, result)
+
         # Check if we're in recovery mode (zero rows found, awaiting user guidance)
         conversation_status = conversation_state.get('status', 'in_progress')
         recovery_context = conversation_state.get('recovery_context', {})
@@ -1418,6 +1516,13 @@ Recommendations that were provided to user:
         conversation_state['interview_context'] = interview_handler.get_interview_context()
         conversation_state['context_web_research'] = result['context_web_research']  # Update research items
         conversation_state['trigger_execution'] = result['trigger_execution']
+
+        # Store confirmation_response for quick approval bypass (skips redundant AI call)
+        # Clear old one first, then add new one if provided
+        conversation_state.pop('confirmation_response', None)
+        if interview_result.get('confirmation_response'):
+            conversation_state['confirmation_response'] = interview_result['confirmation_response']
+            logger.info(f"[TABLE_MAKER] Storing confirmation_response in conversation state for quick approval")
 
         # Clear recovery context if we're moving forward (either retry or restructure)
         if conversation_status == 'recovery':

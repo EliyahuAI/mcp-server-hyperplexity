@@ -948,7 +948,7 @@ async def execute_full_table_generation(
             logger.info(
                 f"[STEP 0] Background research complete: "
                 f"{sources_count} authoritative sources, "
-                f"{tables_count} starting tables, "
+                f"{rows_count} starting entities, "
                 f"time: {background_research_result.get('processing_time', 0):.2f}s"
             )
 
