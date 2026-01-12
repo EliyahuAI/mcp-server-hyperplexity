@@ -93,7 +93,14 @@
       "Bash(sudo apt-get update:*)",
       "Bash(sudo apt-get install:*)",
       "Bash(npx playwright install-deps chromium)",
-      "Bash(sudo rm:*)"
+      "Bash(sudo rm:*)",
+      "Bash(cd /mnt/c/Users/ellio/OneDrive - Eliyahu.AI/Desktop/src/perplexityValidator:*)",
+      "Bash(npm run test:quick:*)",
+      "Bash(timeout 90 npx playwright test e2e-all-paths.spec.js -g \"1.1|2.1|S.2\")",
+      "Bash(npm run test:e2e -- tests/debug-demo.spec.js)",
+      "Bash(TEST_URL=https://eliyahu.ai/hyperplexity-dev npm run test:e2e:*)",
+      "Bash(TEST_URL=https://eliyahu.ai/hyperplexity-dev npx playwright test:*)",
+      "Bash(npm run test:e2e:*)"
     ],
     "deny": []
   }

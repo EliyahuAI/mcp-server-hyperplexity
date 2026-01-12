@@ -41,11 +41,11 @@ IF any answer is NO (need more entities):
 
 **From Background Research (Step 0 + Step 0b):**
 
-1. **tablewide_research** - Domain overview (already researched)
+1. **tablewide_research** - Domain overview (includes discovery patterns, key facts)
 2. **extracted_tables** - Complete tables from Step 0b (if available)
-3. **starting_tables** - Sample entities (5-15) or complete enumeration
-4. **authoritative_sources** - Databases/directories
-5. **discovery_patterns** - How entities are found
+3. **starting_tables_markdown** - Markdown table with entities and citations
+4. **citations** - Map of citation numbers to source URLs
+5. **authoritative_sources** - Databases/directories (name, url, description)
 
 **From Conversation:**
 - User's requirements
@@ -63,7 +63,7 @@ IF any answer is NO (need more entities):
    - `description` (what entities to find)
    - `requirements` array (hard + soft, minimum 1)
 3. **table_name**
-4. **rows** (generate ALL you can from: extracted_tables, starting_tables, conversation, or model knowledge)
+4. **rows** (generate ALL you can from: extracted_tables, starting_tables_markdown, conversation, or model knowledge)
 5. **trigger_row_discovery** (true/false - do we need row discovery to find/populate more?)
 
 **CONDITIONAL OUTPUT:**
@@ -93,10 +93,11 @@ If background_research has `extracted_tables`:
 - Map source columns to your defined columns
 - Populate ID columns + any research columns present in source
 
-### Source 2: starting_tables
-- If `is_complete_enumeration: true` → Parse ALL sample_entities
-- Otherwise → Parse 5-15 samples from sample_entities
-- Map entity strings to your ID columns
+### Source 2: starting_tables_markdown
+- Parse the markdown table with citations
+- If `is_complete_enumeration: true` → Use ALL rows
+- Otherwise → Use sample rows for ID column reference
+- Preserve citations [1] [2] from the markdown
 
 ### Source 3: Conversation
 - If user pasted document with entity list → Extract ALL
@@ -156,7 +157,7 @@ If background_research has `extracted_tables`:
 - Cannot identify enough entities from available sources
 
 **Examples:**
-- Generated 30 companies from starting_tables, user specified 50, need 20 more → Discovery
+- Generated 30 companies from starting_tables_markdown, user specified 50, need 20 more → Discovery
 - Have 9 City Council winners, user wants all election winners (School Committee too) → Discovery
 - User asks "find AI companies hiring", you have 0 rows → Discovery
 - User asks for 100 researchers, you only identified 20 → Discovery
@@ -317,7 +318,7 @@ Provide 1-2 sentences of overall guidance.
 
 **Optional:**
 - `discovered_list_url`: URL from authoritative_sources
-- `candidates`: 3-10 sample entities from starting_tables
+- `candidates`: 3-10 sample entities from starting_tables_markdown
 
 **Search Queries Must Find LISTS:**
 - ❌ BAD: "AI researcher Stanford" → individuals
@@ -429,7 +430,7 @@ target_per_subdomain = total_target / subdomain_count
 **About subdomains:**
 - ONLY include in search_strategy if trigger_row_discovery=true
 - Required: 2-10 subdomains with search queries
-- Use starting_tables and authoritative_sources to structure them
+- Use starting_tables_markdown and authoritative_sources to structure them
 
 ═══════════════════════════════════════════════════════════════
 ## 🎯 FINAL CHECKLIST

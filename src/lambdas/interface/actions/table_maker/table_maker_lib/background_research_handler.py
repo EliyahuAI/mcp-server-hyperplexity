@@ -56,11 +56,11 @@ class BackgroundResearchHandler:
             Dictionary with results:
             {
                 'success': bool,
-                'tablewide_research': str,  # 2-3 paragraph overview
-                'authoritative_sources': List[Dict],  # Databases, directories, APIs
-                'starting_tables': List[Dict],  # Tables with sample entities (≤15 rows)
-                'discovery_patterns': Dict,  # How entities are found
-                'domain_specific_context': Dict,  # Key facts and identifiers
+                'tablewide_research': str,  # 2-3 paragraph overview (includes discovery patterns, domain context)
+                'authoritative_sources': List[Dict],  # Databases, directories, APIs (name, url, description)
+                'starting_tables_markdown': str,  # Markdown table with citations
+                'citations': Dict,  # Citation number -> URL mapping
+                'is_complete_enumeration': bool,  # True if all entities provided
                 'identified_tables': List[Dict],  # Tables for Step 0b extraction (>15 rows)
                 'processing_time': float,  # Seconds
                 'enhanced_data': Dict,  # API call metadata
@@ -71,10 +71,10 @@ class BackgroundResearchHandler:
             'success': False,
             'tablewide_research': '',
             'authoritative_sources': [],
-            'starting_tables': [],
-            'discovery_patterns': {},
-            'domain_specific_context': {},
-            'identified_tables': [],  # NEW - for Step 0b triggering
+            'starting_tables_markdown': '',  # New markdown format with citations
+            'citations': {},  # Citation number -> URL mapping
+            'is_complete_enumeration': False,
+            'identified_tables': [],  # For Step 0b triggering
             'processing_time': 0.0,
             'enhanced_data': {},
             'error': None
@@ -166,24 +166,19 @@ class BackgroundResearchHandler:
                 logger.error(f"Response format: {json.dumps(raw_response, indent=2)[:1000]}")
                 raise
 
-            # Validate required fields
-            required_fields = ['tablewide_research', 'authoritative_sources', 'starting_tables',
-                             'discovery_patterns', 'domain_specific_context']
+            # Validate required fields (simplified schema)
+            required_fields = ['tablewide_research', 'authoritative_sources', 'starting_tables_markdown', 'citations']
             missing_fields = [f for f in required_fields if f not in structured_response]
 
             if missing_fields:
                 logger.error(f"Missing required fields in AI response: {missing_fields}")
                 raise Exception(f"AI response missing fields: {', '.join(missing_fields)}")
 
-            # Validate starting tables have sample entities
-            starting_tables = structured_response.get('starting_tables', [])
-            for idx, table in enumerate(starting_tables):
-                sample_entities = table.get('sample_entities', [])
-                if len(sample_entities) < 5:
-                    logger.warning(
-                        f"Starting table {idx} '{table.get('source_name', 'unknown')}' "
-                        f"has only {len(sample_entities)} sample entities (minimum 5 required)"
-                    )
+            # Log markdown table info
+            starting_markdown = structured_response.get('starting_tables_markdown', '')
+            citations = structured_response.get('citations', {})
+            row_count = len([line for line in starting_markdown.split('\n') if line.strip().startswith('|') and not line.strip().startswith('|-')])
+            logger.info(f"Starting tables markdown has ~{row_count} rows, {len(citations)} citations")
 
             # Extract enhanced_data for API call tracking
             enhanced_data = api_response.get('enhanced_data', {})
@@ -193,10 +188,10 @@ class BackgroundResearchHandler:
                 'success': True,
                 'tablewide_research': structured_response['tablewide_research'],
                 'authoritative_sources': structured_response['authoritative_sources'],
-                'starting_tables': structured_response['starting_tables'],
-                'discovery_patterns': structured_response['discovery_patterns'],
-                'domain_specific_context': structured_response['domain_specific_context'],
-                'identified_tables': structured_response.get('identified_tables', []),  # NEW - for Step 0b
+                'starting_tables_markdown': starting_markdown,
+                'citations': citations,
+                'is_complete_enumeration': structured_response.get('is_complete_enumeration', False),
+                'identified_tables': structured_response.get('identified_tables', []),
                 'enhanced_data': enhanced_data,
                 'processing_time': time.time() - start_time
             })
@@ -204,17 +199,10 @@ class BackgroundResearchHandler:
             logger.info(
                 f"Background research complete: "
                 f"{len(result['authoritative_sources'])} sources, "
-                f"{len(result['starting_tables'])} starting tables, "
+                f"{row_count} starting table rows, "
                 f"{len(result.get('identified_tables', []))} identified tables, "
                 f"time: {result['processing_time']:.2f}s"
             )
-
-            # Log summary of starting tables
-            for table in result['starting_tables']:
-                logger.info(
-                    f"  Starting table: {table.get('source_name')} "
-                    f"({len(table.get('sample_entities', []))} sample entities)"
-                )
 
             # Log summary of identified tables
             for table in result.get('identified_tables', []):
@@ -311,80 +299,40 @@ class BackgroundResearchHandler:
 
         output = []
 
-        # Tablewide Research
+        # Tablewide Research (now includes discovery patterns and domain context)
         output.append("## Background Research Summary\n")
         output.append(research_result['tablewide_research'])
         output.append("\n")
 
-        # Authoritative Sources
+        # Authoritative Sources (simplified format)
         sources = research_result.get('authoritative_sources', [])
         if sources:
             output.append("\n## Authoritative Sources Found\n")
             for source in sources:
-                output.append(f"**{source.get('name')}** ({source.get('type')})")
+                output.append(f"**{source.get('name')}**")
                 output.append(f"- URL: {source.get('url')}")
-                output.append(f"- Coverage: {source.get('coverage')}")
-                output.append(f"- Access: {source.get('access')}")
                 output.append(f"- {source.get('description')}")
                 output.append("")
 
-        # Starting Tables (MOST IMPORTANT)
-        tables = research_result.get('starting_tables', [])
-        if tables:
-            output.append("\n## Starting Tables with Sample Entities\n")
-            output.append("**CRITICAL: Use these sample entities as reference when designing ID columns and subdomains.**\n")
-            for table in tables:
-                output.append(f"\n**{table.get('source_name')}**")
-                output.append(f"- Source: {table.get('source_url')}")
-                output.append(f"- Entity Type: {table.get('entity_type')}")
-                output.append(f"- Count: {table.get('entity_count_estimate')}")
-                output.append(f"- Completeness: {table.get('completeness')}")
-                output.append(f"\nSample Entities:")
-                for entity in table.get('sample_entities', []):
-                    output.append(f"  - {entity}")
-                if table.get('discovery_notes'):
-                    output.append(f"\nNotes: {table.get('discovery_notes')}")
-                output.append("")
+        # Starting Tables (markdown format with citations)
+        starting_markdown = research_result.get('starting_tables_markdown', '')
+        citations = research_result.get('citations', {})
+        is_complete = research_result.get('is_complete_enumeration', False)
 
-        # Discovery Patterns
-        patterns = research_result.get('discovery_patterns', {})
-        if patterns:
-            output.append("\n## Discovery Strategy Recommendations\n")
-            output.append(f"**Primary Pattern:** {patterns.get('primary_pattern')}")
-            output.append(f"\n{patterns.get('description')}\n")
-
-            challenges = patterns.get('challenges', [])
-            if challenges:
-                output.append("\n**Challenges:**")
-                for challenge in challenges:
-                    output.append(f"- {challenge}")
-
-            recommendations = patterns.get('recommendations', [])
-            if recommendations:
-                output.append("\n**Recommendations:**")
-                for rec in recommendations:
-                    output.append(f"- {rec}")
+        if starting_markdown:
+            output.append("\n## Starting Entities from Research\n")
+            if is_complete:
+                output.append("**COMPLETE ENUMERATION: This is an exhaustive list - ALL entities are included.**\n")
+            else:
+                output.append("**CRITICAL: Use these entities as reference when designing ID columns. Add to prepopulated_rows_markdown.**\n")
+            output.append(starting_markdown)
             output.append("")
 
-        # Domain Context
-        context = research_result.get('domain_specific_context', {})
-        if context:
-            output.append("\n## Domain-Specific Context\n")
-
-            key_facts = context.get('key_facts', [])
-            if key_facts:
-                output.append("**Key Facts:**")
-                for fact in key_facts:
-                    output.append(f"- {fact}")
-
-            identifiers = context.get('common_identifiers', [])
-            if identifiers:
-                output.append("\n**Common Identifiers:**")
-                for identifier in identifiers:
-                    output.append(f"- {identifier}")
-
-            availability = context.get('data_availability')
-            if availability:
-                output.append(f"\n**Data Availability:** {availability}")
+            # Add citations below the table
+            if citations:
+                output.append("\n### Source Citations\n")
+                for num, url in sorted(citations.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 0):
+                    output.append(f"[{num}] {url}")
+                output.append("")
 
         return "\n".join(output)

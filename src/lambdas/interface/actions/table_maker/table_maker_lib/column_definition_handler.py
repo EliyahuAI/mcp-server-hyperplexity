@@ -89,20 +89,16 @@ class ColumnDefinitionHandler:
                 logger.info("[RESEARCH] Injected background research into prompt")
 
                 # Log entity count for visibility
-                starting_tables = background_research_result.get('starting_tables', [])
+                starting_markdown = background_research_result.get('starting_tables_markdown', '')
                 extracted_tables = background_research_result.get('extracted_tables', [])
 
-                import re
                 total_entities = 0
 
-                # Count from starting_tables
-                for table in starting_tables:
-                    count_str = table.get('entity_count_estimate', '')
-                    numbers = re.findall(r'\d+', count_str)
-                    if numbers:
-                        total_entities += int(numbers[0])
-                    else:
-                        total_entities += len(table.get('sample_entities', []))
+                # Count from starting_tables_markdown (exclude header and separator lines)
+                if starting_markdown:
+                    rows = [line for line in starting_markdown.split('\n')
+                           if line.strip().startswith('|') and not line.strip().startswith('|-')]
+                    total_entities = max(0, len(rows) - 1)  # -1 for header
 
                 # Count from extracted_tables
                 for table in extracted_tables:
@@ -858,38 +854,25 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
 
                 output.append("")
 
-        # Starting Tables (CRITICAL - for samples or complete enumeration)
-        tables = research_result.get('starting_tables', [])
-        if tables:
-            output.append("\n### Starting Tables (Sample Entities)\n")
-            if not extracted:
-                output.append("**Use these for row discovery or complete enumeration (if is_complete_enumeration=true)**\n")
-            for table in tables:
-                output.append(f"\n**{table.get('source_name')}**")
-                output.append(f"- Source: {table.get('source_url')}")
-                output.append(f"- Entity Type: {table.get('entity_type')}")
-                output.append(f"- Count: {table.get('entity_count_estimate')}")
+        # Starting Tables (markdown format with citations)
+        starting_markdown = research_result.get('starting_tables_markdown', '')
+        citations = research_result.get('citations', {})
+        is_complete = research_result.get('is_complete_enumeration', False)
 
-                # Note if complete enumeration
-                if table.get('is_complete_enumeration'):
-                    output.append(f"- **Complete Enumeration: YES** (all entities extracted)")
+        if starting_markdown:
+            output.append("\n### Starting Entities from Research\n")
+            if is_complete:
+                output.append("**COMPLETE ENUMERATION: This is an exhaustive list - ALL entities are included.**\n")
+            else:
+                output.append("**Use these entities as reference when designing ID columns. Add to prepopulated_rows_markdown.**\n")
+            output.append(starting_markdown)
+            output.append("")
 
-                output.append(f"\nSample Entities (extract as sample_rows or complete_rows if enumeration):")
-                for entity in table.get('sample_entities', []):
-                    output.append(f"  - {entity}")
+            # Add citations below the table
+            if citations:
+                output.append("\n### Source Citations\n")
+                for num, url in sorted(citations.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 0):
+                    output.append(f"[{num}] {url}")
                 output.append("")
-
-        # Discovery Patterns
-        patterns = research_result.get('discovery_patterns', {})
-        if patterns:
-            output.append("\n### Discovery Recommendations\n")
-            output.append(f"**Pattern:** {patterns.get('primary_pattern')}")
-            output.append(f"\n{patterns.get('description')}\n")
-
-            recs = patterns.get('recommendations', [])
-            if recs:
-                output.append("\n**Recommendations:**")
-                for rec in recs:
-                    output.append(f"- {rec}")
 
         return "\n".join(output)

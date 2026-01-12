@@ -49,8 +49,8 @@ def validate_config_structure(config_data: Dict) -> Tuple[bool, List[str], List[
                     errors.append(f"search_groups[{i}] must be an object")
                     continue
                 
-                # Required fields in search group
-                required_group_fields = ['group_id', 'group_name', 'description', 'model']
+                # Required fields in search group (model is optional - defaults to 'the-clone')
+                required_group_fields = ['group_id', 'group_name', 'description']
                 for field in required_group_fields:
                     if field not in group:
                         errors.append(f"search_groups[{i}] missing required field: {field}")
@@ -68,10 +68,14 @@ def validate_config_structure(config_data: Dict) -> Tuple[bool, List[str], List[
                 if 'search_context' in group and group['search_context'] not in ['low', 'medium', 'high']:
                     errors.append(f"search_groups[{i}].search_context must be 'low', 'medium', or 'high'")
                 
-                # Validate string fields
-                for field in ['group_name', 'description', 'model']:
+                # Validate string fields (model is optional - defaults to 'the-clone')
+                for field in ['group_name', 'description']:
                     if field in group and (not isinstance(group[field], str) or not group[field].strip()):
                         errors.append(f"search_groups[{i}].{field} must be a non-empty string")
+
+                # Validate optional model field if present
+                if 'model' in group and (not isinstance(group['model'], str) or not group['model'].strip()):
+                    errors.append(f"search_groups[{i}].model must be a non-empty string")
                 
                 # Validate optional anthropic_max_web_searches
                 if 'anthropic_max_web_searches' in group:

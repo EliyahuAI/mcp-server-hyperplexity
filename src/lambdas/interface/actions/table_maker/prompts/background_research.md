@@ -1,8 +1,6 @@
-# Background Research - Tablewide Context and Discovery Patterns
+# Background Research - Tablewide Context and Entity Discovery
 
-═══════════════════════════════════════════════════════════════
-## 🔍 YOUR RESEARCH TASK
-═══════════════════════════════════════════════════════════════
+## YOUR RESEARCH TASK
 
 **SEARCH FOR:**
 
@@ -12,124 +10,104 @@
 
 **Your research will inform column design and row discovery strategy.**
 
-═══════════════════════════════════════════════════════════════
-## 📋 YOUR DELIVERABLES
-═══════════════════════════════════════════════════════════════
+## YOUR DELIVERABLES
 
-1. **Tablewide research** - Domain overview (2-3 paragraphs) for the topics you searched for.
-2. **Discovery patterns** - How entities are typically found
-3. **Authoritative sources** - Databases/directories containing entities
-4. **Starting tables** - Extract 5-15 sample entities from lists you find
-5. **Identified tables** (optional) - Larger tables that should be fully extracted by an additional step (more than 15 entities)
+1. **Tablewide research** - Domain overview (2-3 paragraphs) covering: how entities are identified, what authoritative sources exist, discovery challenges and recommendations, domain-specific key facts
+2. **Authoritative sources** - Databases/directories/APIs containing entities (name, URL, description only)
+3. **Starting tables markdown** - Markdown table with entities you found, using citations
+4. **Citations** - Map of citation numbers to source URLs
+5. **Identified tables** (optional) - Larger tables (>15 entities) that need full extraction
 
-═══════════════════════════════════════════════════════════════
-## 📚 USER CONTEXT
-═══════════════════════════════════════════════════════════════
+## USER CONTEXT
 
 **Conversation History:**
 {{CONVERSATION_CONTEXT}}
 
-═══════════════════════════════════════════════════════════════
-## 🎯 DETAILED GUIDANCE
-═══════════════════════════════════════════════════════════════
+## DETAILED GUIDANCE
 
 ### 1. Tablewide Research (Required)
-Synthesise your research into each of these search items:
+
+Synthesize your research into 2-3 paragraphs covering:
+
 {{CONTEXT_RESEARCH_ITEMS}}
 
-- Be concise but comprehensive.
-
-### 2. Discovery Patterns (Required)
-
-Provide 2-3 paragraph overview covering:
+Include in your summary:
 - How entities are typically identified/catalogued in this domain
 - What authoritative sources exist (databases, directories, rankings)
+- Primary discovery pattern: complete_list / searchable_database / aggregator / distributed
 - Discovery challenges and recommended approaches
-- Domain-specific considerations
+- Domain-specific key facts and common identifiers
+- Assessment of data availability
 
-Identify the primary pattern:
-- **complete_list**: Finite, well-defined sets (countries, states, specific paper references)
-- **searchable_database**: Queryable databases (NIH RePORTER, USPTO, PubMed)
-- **aggregator**: Curated lists/rankings (Forbes, TechCrunch lists)
-- **distributed**: No central source, requires broad web search
+### 2. Authoritative Sources (Required)
 
-Provide challenges and recommendations for successful discovery.
+List databases/directories/APIs where entities can be found. Keep simple:
+- Name
+- URL
+- Description (what it contains and why it's valuable)
 
-### 3. Authoritative Sources (Required)
+### 3. Starting Tables Markdown (Required)
 
-List databases/directories/APIs where entities can be found:
-- Name, URL, type (database/directory/list/api)
-- What it contains, coverage, access level
-- Update frequency
+Create a **markdown table** with entities you discovered. Use numbered citations [1] [2] to indicate sources.
 
-### 4. Starting Tables (Required)
+**SIZE-BASED DECISION:**
 
-**SIZE-BASED DECISION:** How many entities does the table have?
-
-**Small Tables (≤15 rows):**
-- Extract ALL entities inline (not just 5-15 samples)
-- Put complete list in `sample_entities`
+**Small Tables (<=15 rows):**
+- Include ALL entities in the markdown table
 - Set `is_complete_enumeration: true`
-- Set exact count: "12 entities" (not "~10-15")
-- Example: User wants "all 12 Zodiac signs" → Extract all 12
+- Example: "All 12 Zodiac signs" -> Include all 12 rows
 
 **Large Tables (>15 rows):**
-- Extract 5-15 samples only
-- Note the table in `identified_tables` instead (see Section 5)
+- Include 5-15 sample rows
+- Add the full table to `identified_tables` for extraction
 - Set `is_complete_enumeration: false`
-- Example: Forbes AI 50 has 50 companies → Extract 5-15 samples, add to identified_tables
 
 **Format:**
-- Extract ACTUAL entity names with details
-- Example: "Dr. Jane Smith - Stanford - Neural Networks for Medical Imaging"
-- NOT just "See Forbes list" - extract actual names
+```markdown
+| Source | Entity | Details |
+|--------|--------|---------|
+| Forbes AI 50[1] | Anthropic | AI safety, $7.3B funding |
+| Forbes AI 50[1] | OpenAI | GPT models, $13B funding |
+| NIH RePORTER[2] | Dr. Jane Smith | Stanford, Neural Networks |
+```
+
+Each cell should have a citation number in brackets [1] linking to the citations object.
+
+### 4. Citations (Required)
+
+Map citation numbers to source URLs:
+```json
+{
+  "1": "https://forbes.com/ai-50-2024",
+  "2": "https://reporter.nih.gov"
+}
+```
 
 ### 5. Identified Tables (Optional - Trigger Step 0b Extraction)
 
-**SIZE-BASED DECISION:** Use identified_tables for large datasets (>15 entities) or multiple sources
-
-**NOTE: "Table" means any page/article/document with entity information (not just HTML tables)**
+**Use for large datasets (>15 entities) or multiple sources that need complete extraction.**
 
 **When to set extract_table=true:**
 
-✅ **Trigger if source has >15 entities:**
-- Article/page with 20+ candidates/companies/people → Too large for inline extraction
-- Examples:
-  - Election results article with 20 candidates
-  - Forbes AI 50 list article (50 companies)
-  - Faculty directory page (30+ professors)
-  - News article covering 25+ entities
-- Extract 5-15 samples for starting_tables, add URL to identified_tables
-
-✅ **Trigger if multiple sources:**
-- Found 3 different articles/pages to extract from → Use identified_tables for all
-- Each source gets its own entry with extract_table=true
-
-✅ **Trigger if user explicitly requested specific URL:**
-- User said "extract from this document" with URL
-- Even if small, use identified_tables to ensure complete extraction
-
-❌ **Don't trigger if:**
-- Source has ≤15 entities → Extract ALL inline in starting_tables
-- Just a database/directory without specific page URL
-- Searchable/queryable source (not static content)
+- Source has >15 entities that should be fully extracted
+- User explicitly requested a specific URL
+- Multiple sources to extract from
 
 **What to provide:**
-- `url`: URL of the page/article/document (doesn't need to be HTML table)
+- `url`: URL of the page/article/document
 - `table_name`: Descriptive name
+- `description`: Short description of what this table contains and why it should be extracted
 - `estimated_rows`: How many entities at this URL
-- `columns`: Expected data fields (from your research, not literal table columns)
+- `columns`: Expected data fields
 - `extract_table: true`
-- `target_rows`: Optional filter (e.g., "only winners", "School Committee only")
+- `target_rows`: Optional filter (e.g., "only winners")
 - `extraction_priority`: "high" if user requested, "medium" otherwise
 
-═══════════════════════════════════════════════════════════════
-## 💡 RESEARCH METHODOLOGY
-═══════════════════════════════════════════════════════════════
+## RESEARCH METHODOLOGY
 
 ### Step 1: Understand the Domain
 
-Read the research questions above. What domain is this?
+Read the research questions above:
 - Entity type (companies, researchers, references, locations, etc.)
 - Characteristics (AI companies, NIH-funded, from specific paper, etc.)
 - Geography, time period, constraints
@@ -139,7 +117,6 @@ Read the research questions above. What domain is this?
 Search for:
 - "[Entity type] list [year]"
 - "[Database name] [entity type]"
-- "site:[domain] [entity type]"
 - Specific document URLs if user provided them
 
 Look for:
@@ -148,94 +125,56 @@ Look for:
 - Official directories (faculty lists, member rosters)
 - Academic sources (paper references, citations)
 
-### Step 3: Extract Sample Entities
+### Step 3: Extract Entities into Markdown Table
 
-**CRITICAL:** For starting_tables, extract REAL entity names with details
+**CRITICAL:** Extract REAL entity names with details into the markdown table with citations.
 
-✅ **Good extraction:**
-- "Dr. Jane Smith - Stanford - Neural Networks"
-- "Anthropic - $7.3B funding - AI safety"
-- "[1] Vaswani et al. - Attention Is All You Need - arXiv:1706.03762"
+**Good:**
+| Source | Entity | Details |
+|--------|--------|---------|
+| Forbes[1] | Anthropic | AI safety startup, $7.3B funding |
+| Paper[2] | Vaswani et al. | Attention Is All You Need, arXiv:1706.03762 |
 
-❌ **Bad extraction:**
+**Bad:**
 - "See Forbes list" (no actual entities)
 - "Various companies" (vague)
-- Just URLs (need names)
+- Just URLs without entity names
 
-### Step 4: Identify Tables for Step 0b (Optional)
-
-If you found a specific table URL that needs complete extraction:
-- User specifically requested this URL
-- Clear table structure visible
-- Need more than 5-15 samples (need complete extraction)
-- Example: Election results table, ranked company list with details
-
-Add to `identified_tables` with extract_table=true
-
-═══════════════════════════════════════════════════════════════
-## 📤 OUTPUT FORMAT
-═══════════════════════════════════════════════════════════════
+## OUTPUT FORMAT
 
 Return JSON matching this structure:
 
 ```json
 {
-  "tablewide_research": "2-3 paragraph overview of domain, identification patterns, sources, challenges, recommendations",
+  "tablewide_research": "2-3 paragraph overview covering: how entities are identified, authoritative sources, discovery pattern (complete_list/searchable_database/aggregator/distributed), challenges, recommendations, key facts, common identifiers, data availability assessment.",
 
   "authoritative_sources": [
     {
       "name": "Source name",
       "url": "https://...",
-      "type": "database|directory|list|api|index|aggregator",
-      "description": "What it contains",
-      "coverage": "How comprehensive",
-      "access": "public|requires_auth|paid",
-      "update_frequency": "real-time|daily|weekly|monthly|annual|static"
+      "description": "What it contains and why it's valuable"
     }
   ],
 
-  "starting_tables": [
-    {
-      "source_name": "Name of list/table",
-      "source_url": "https://...",
-      "entity_type": "What entities are these",
-      "entity_count_estimate": "50 entities" or "~150 entities",
-      "is_complete_enumeration": false,
-      "sample_entities": [
-        "Entity 1 with full details",
-        "Entity 2 with full details",
-        "Entity 3 with full details",
-        "... (5-15 for normal, ALL for complete enumeration)"
-      ],
-      "completeness": "How complete this source is",
-      "update_frequency": "static|weekly|monthly|annual",
-      "discovery_notes": "How to use this source"
-    }
-  ],
+  "starting_tables_markdown": "| Source | Entity | Details |\n|--------|--------|--------|\n| Forbes AI 50[1] | Anthropic | AI safety, $7.3B funding |\n| Forbes AI 50[1] | OpenAI | GPT models |\n| NIH RePORTER[2] | Dr. Jane Smith | Stanford, Neural Networks |",
 
-  "discovery_patterns": {
-    "primary_pattern": "complete_list|searchable_database|aggregator|distributed",
-    "description": "How entities are found",
-    "challenges": ["Challenge 1", "Challenge 2"],
-    "recommendations": ["Rec 1", "Rec 2"]
+  "citations": {
+    "1": "https://forbes.com/ai-50-2024",
+    "2": "https://reporter.nih.gov"
   },
 
-  "domain_specific_context": {
-    "key_facts": ["Fact 1", "Fact 2"],
-    "common_identifiers": ["ID type 1", "ID type 2"],
-    "data_availability": "Assessment of findability"
-  },
+  "is_complete_enumeration": false,
 
   "identified_tables": [
     {
       "url": "https://specific-table-url.com",
       "table_name": "Descriptive name",
+      "description": "Short description of what this table contains",
       "estimated_rows": 50,
-      "columns": ["Column 1", "Column 2", "Column 3"],
+      "columns": ["Column 1", "Column 2"],
       "extract_table": true,
-      "target_rows": "only winners" or "School Committee only",
-      "extraction_priority": "high|medium|low",
-      "notes": "Optional notes about structure/pagination"
+      "target_rows": "optional filter",
+      "extraction_priority": "high|medium|low"
     }
   ]
 }
@@ -244,42 +183,38 @@ Return JSON matching this structure:
 ### Field Requirements:
 
 **Required:**
-- `tablewide_research` - 2-3 paragraphs
-- `authoritative_sources` - At least 1 source
-- `starting_tables` - At least 1 table with 5+ sample entities
-- `discovery_patterns` - Primary pattern with recommendations
-- `domain_specific_context` - Key facts and identifiers
+- `tablewide_research` - 2-3 paragraphs (includes discovery patterns, domain context)
+- `authoritative_sources` - At least 1 source (simplified: name, url, description)
+- `starting_tables_markdown` - Markdown table with citations
+- `citations` - Map of citation numbers to URLs
 
 **Optional:**
-- `identified_tables` - Only if you found specific extractable table URLs
+- `is_complete_enumeration` - Set true if markdown contains ALL entities (default false)
+- `identified_tables` - Only if you found specific URLs needing extraction
 
 **Complete Enumeration:**
-- Set `is_complete_enumeration: true` in starting_tables
-- Provide ALL entities in sample_entities (not just 5-15)
-- Set exact count in entity_count_estimate
+- Set `is_complete_enumeration: true`
+- Include ALL entities in starting_tables_markdown (not just samples)
 
 **Identified Tables:**
-- Only include if: specific URL, clear table structure, extraction needed
-- Don't include if: just a database/directory without specific table URL
+- Only include if: specific URL, clear structure, >15 entities
+- Include `description` field for extraction context
 - Set `extract_table: true` to trigger Step 0b
 
-═══════════════════════════════════════════════════════════════
-## 🎯 FINAL REMINDER
-═══════════════════════════════════════════════════════════════
+## FINAL REMINDER
 
 **YOUR RESEARCH QUESTIONS:** {{CONTEXT_RESEARCH_ITEMS}}
 
 **CRITICAL REQUIREMENTS:**
-1. ✅ Focus on RESEARCH and PATTERNS (primary goal)
-2. ✅ Extract ACTUAL entity names in starting_tables (not just URLs)
-3. ✅ For complete enumeration: Extract ALL entities if user pasted document text
-4. ✅ For identified_tables: Only include specific URLs with extractable tables
-5. ✅ Provide at least 5-15 sample entities per starting_table
-6. ✅ Return valid JSON matching format above
+1. Extract ACTUAL entity names with citations into markdown table
+2. Use citation numbers [1] [2] linking to the citations object
+3. For complete enumeration: Include ALL entities if <=15
+4. For identified_tables: Only include specific URLs with extractable tables
+5. Return valid JSON matching format above
 
 **What happens next:**
-- Your research → Used by column definition (Step 1)
-- Your starting_tables → Converted to sample_rows
-- Your identified_tables → Passed to table extraction (Step 0b)
+- Your tablewide_research -> Guides column definition
+- Your starting_tables_markdown + citations -> Passed to column definition for prepopulated_rows
+- Your identified_tables -> Passed to table extraction (Step 0b)
 
 **Return your research as valid JSON.**

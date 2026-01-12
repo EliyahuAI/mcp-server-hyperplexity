@@ -928,17 +928,21 @@ async def execute_full_table_generation(
 
             # Send completion update
             sources_count = len(background_research_result.get('authoritative_sources', []))
-            tables_count = len(background_research_result.get('starting_tables', []))
+            # Count rows from markdown table (exclude header and separator lines)
+            starting_markdown = background_research_result.get('starting_tables_markdown', '')
+            rows_count = len([line for line in starting_markdown.split('\n')
+                            if line.strip().startswith('|') and not line.strip().startswith('|-')]) - 1  # -1 for header
+            rows_count = max(0, rows_count)  # Ensure non-negative
 
             send_execution_progress(
                 session_id=session_id,
                 conversation_id=conversation_id,
                 current_step=0,
                 total_steps=4,
-                status=f'Background research complete ({sources_count} sources, {tables_count} starting tables)',
+                status=f'Background research complete ({sources_count} sources, {rows_count} starting entities)',
                 progress_percent=25,
                 research_sources_count=sources_count,
-                starting_tables_count=tables_count
+                starting_tables_count=rows_count
             )
 
             logger.info(
