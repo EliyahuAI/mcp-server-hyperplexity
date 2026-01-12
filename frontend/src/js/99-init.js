@@ -47,7 +47,19 @@ const hasHandledState = attemptStateRestore();
 setTimeout(() => {
     // Only create initial card if we're not restoring from saved state and haven't shown modal
     if (!window.isRestoringState && !hasHandledState) {
-        createEmailCard();
+        const pageType = detectPageType();
+
+        if (pageType === 'reference-check') {
+            // Reference check mode - go directly to reference check card
+            // Email will be validated when user tries to submit
+            createReferenceCheckCard();
+        } else if (DEFER_EMAIL_VALIDATION) {
+            // Show Get Started first, email will be requested on action
+            createUploadOrDemoCard();
+        } else {
+            // Traditional flow: require email upfront
+            createEmailCard();
+        }
     } else {
     }
 

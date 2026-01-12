@@ -161,6 +161,13 @@ const API_BASE = ENV_CONFIG.apiBase;
 const WEBSOCKET_API_URL = ENV_CONFIG.websocketUrl;
 
 // ============================================
+// DEFERRED EMAIL VALIDATION
+// ============================================
+// If true, show Get Started first and validate email when user selects an action
+// If false, require email validation upfront (original behavior)
+const DEFER_EMAIL_VALIDATION = true;
+
+// ============================================
 // GLOBAL STATE (Minimal)
 // ============================================
 const globalState = {
@@ -185,6 +192,10 @@ const globalState = {
     userAttemptedProcessing: false, // Track if user tried to process but was blocked by insufficient balance
     pendingProcessingTrigger: null, // Store function to trigger processing when balance is sufficient
     isReferenceCheck: false, // Track if current session is reference check mode (affects button display)
+
+    // Deferred email validation state
+    pendingActionAfterEmail: null,    // Callback to execute after email validation
+    pendingActionDescription: null,   // Description for UI feedback (e.g., "create your table")
 
     // Workflow state tracking
     workflowPhase: 'initial', // initial, upload, config, preview, validating, completed
@@ -224,6 +235,39 @@ function ensureProcessingState() {
             lastBalanceCheck: null
         };
     }
+}
+
+// ============================================
+// EMAIL VALIDATION HELPERS
+// ============================================
+
+/**
+ * Execute action after ensuring email is validated.
+ * If email already validated, executes immediately.
+ * If not validated, shows email card and stores action for later.
+ *
+ * @param {Function} action - Callback to execute after email validation
+ * @param {string} description - Description for UI (e.g., "create your table")
+ */
+function requireEmailThen(action, description = 'continue') {
+    // If email already validated, execute immediately
+    const storedEmail = localStorage.getItem('validatedEmail');
+    if (globalState.email || (storedEmail && storedEmail.includes('@'))) {
+        if (!globalState.email && storedEmail) {
+            globalState.email = storedEmail;
+        }
+        action();
+        return;
+    }
+
+    // Store pending action for after email validation
+    globalState.pendingActionAfterEmail = action;
+    globalState.pendingActionDescription = description;
+
+    console.log(`[EMAIL] Deferring action until email validated: ${description}`);
+
+    // Show email validation card
+    createEmailCard();
 }
 
 // ============================================

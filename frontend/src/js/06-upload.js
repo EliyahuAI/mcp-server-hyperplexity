@@ -36,7 +36,11 @@ function createUploadOrDemoCard() {
                 icon: '',
                 variant: 'primary',
                 callback: async function() {
-                    proceedWithTableMaker(cardId);
+                    if (DEFER_EMAIL_VALIDATION) {
+                        requireEmailThen(() => proceedWithTableMaker(cardId), 'create your table');
+                    } else {
+                        proceedWithTableMaker(cardId);
+                    }
                 }
             },
             {
@@ -44,7 +48,11 @@ function createUploadOrDemoCard() {
                 icon: '',
                 variant: 'secondary',
                 callback: async function() {
-                    proceedWithUpload(cardId);
+                    if (DEFER_EMAIL_VALIDATION) {
+                        requireEmailThen(() => proceedWithUpload(cardId), 'upload your table');
+                    } else {
+                        proceedWithUpload(cardId);
+                    }
                 }
             },
             {
@@ -52,7 +60,11 @@ function createUploadOrDemoCard() {
                 icon: '',
                 variant: 'tertiary',
                 callback: async function() {
-                    proceedWithDemo(cardId);
+                    if (DEFER_EMAIL_VALIDATION) {
+                        requireEmailThen(() => proceedWithDemo(cardId), 'explore the demo');
+                    } else {
+                        proceedWithDemo(cardId);
+                    }
                 }
             },
             {
@@ -60,7 +72,11 @@ function createUploadOrDemoCard() {
                 icon: '',
                 variant: 'quaternary',
                 callback: async function() {
-                    proceedWithReferenceCheck(cardId);
+                    if (DEFER_EMAIL_VALIDATION) {
+                        requireEmailThen(() => proceedWithReferenceCheck(cardId), 'check your references');
+                    } else {
+                        proceedWithReferenceCheck(cardId);
+                    }
                 }
             }
         ]

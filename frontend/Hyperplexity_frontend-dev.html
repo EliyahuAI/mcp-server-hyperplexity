@@ -3424,6 +3424,13 @@ const API_BASE = ENV_CONFIG.apiBase;
 const WEBSOCKET_API_URL = ENV_CONFIG.websocketUrl;
 
 // ============================================
+// DEFERRED EMAIL VALIDATION
+// ============================================
+// If true, show Get Started first and validate email when user selects an action
+// If false, require email validation upfront (original behavior)
+const DEFER_EMAIL_VALIDATION = true;
+
+// ============================================
 // GLOBAL STATE (Minimal)
 // ============================================
 const globalState = {
@@ -3448,6 +3455,10 @@ const globalState = {
     userAttemptedProcessing: false, // Track if user tried to process but was blocked by insufficient balance
     pendingProcessingTrigger: null, // Store function to trigger processing when balance is sufficient
     isReferenceCheck: false, // Track if current session is reference check mode (affects button display)
+
+    // Deferred email validation state
+    pendingActionAfterEmail: null,    // Callback to execute after email validation
+    pendingActionDescription: null,   // Description for UI feedback (e.g., "create your table")
 
     // Workflow state tracking
     workflowPhase: 'initial', // initial, upload, config, preview, validating, completed
@@ -3487,6 +3498,39 @@ function ensureProcessingState() {
             lastBalanceCheck: null
         };
     }
+}
+
+// ============================================
+// EMAIL VALIDATION HELPERS
+// ============================================
+
+/**
+ * Execute action after ensuring email is validated.
+ * If email already validated, executes immediately.
+ * If not validated, shows email card and stores action for later.
+ *
+ * @param {Function} action - Callback to execute after email validation
+ * @param {string} description - Description for UI (e.g., "create your table")
+ */
+function requireEmailThen(action, description = 'continue') {
+    // If email already validated, execute immediately
+    const storedEmail = localStorage.getItem('validatedEmail');
+    if (globalState.email || (storedEmail && storedEmail.includes('@'))) {
+        if (!globalState.email && storedEmail) {
+            globalState.email = storedEmail;
+        }
+        action();
+        return;
+    }
+
+    // Store pending action for after email validation
+    globalState.pendingActionAfterEmail = action;
+    globalState.pendingActionDescription = description;
+
+    console.log(`[EMAIL] Deferring action until email validated: ${description}`);
+
+    // Show email validation card
+    createEmailCard();
 }
 
 // ============================================
@@ -6221,7 +6265,11 @@ function createUploadOrDemoCard() {
                 icon: '',
                 variant: 'primary',
                 callback: async function() {
-                    proceedWithTableMaker(cardId);
+                    if (DEFER_EMAIL_VALIDATION) {
+                        requireEmailThen(() => proceedWithTableMaker(cardId), 'create your table');
+                    } else {
+                        proceedWithTableMaker(cardId);
+                    }
                 }
             },
             {
@@ -6229,7 +6277,11 @@ function createUploadOrDemoCard() {
                 icon: '',
                 variant: 'secondary',
                 callback: async function() {
-                    proceedWithUpload(cardId);
+                    if (DEFER_EMAIL_VALIDATION) {
+                        requireEmailThen(() => proceedWithUpload(cardId), 'upload your table');
+                    } else {
+                        proceedWithUpload(cardId);
+                    }
                 }
             },
             {
@@ -6237,7 +6289,11 @@ function createUploadOrDemoCard() {
                 icon: '',
                 variant: 'tertiary',
                 callback: async function() {
-                    proceedWithDemo(cardId);
+                    if (DEFER_EMAIL_VALIDATION) {
+                        requireEmailThen(() => proceedWithDemo(cardId), 'explore the demo');
+                    } else {
+                        proceedWithDemo(cardId);
+                    }
                 }
             },
             {
@@ -6245,7 +6301,11 @@ function createUploadOrDemoCard() {
                 icon: '',
                 variant: 'quaternary',
                 callback: async function() {
-                    proceedWithReferenceCheck(cardId);
+                    if (DEFER_EMAIL_VALIDATION) {
+                        requireEmailThen(() => proceedWithReferenceCheck(cardId), 'check your references');
+                    } else {
+                        proceedWithReferenceCheck(cardId);
+                    }
                 }
             }
         ]
@@ -7266,6 +7326,42 @@ function handleEmailValidated(cardId) {
 
     // Track email validation conversion
     trackEmailValidationConversion(globalState.email);
+
+    // Check for pending action (deferred email validation mode)
+    if (globalState.pendingActionAfterEmail) {
+        const pendingAction = globalState.pendingActionAfterEmail;
+        const description = globalState.pendingActionDescription || 'continuing';
+
+        // Clear pending action
+        globalState.pendingActionAfterEmail = null;
+        globalState.pendingActionDescription = null;
+
+        console.log(`[EMAIL] Email validated, executing pending action: ${description}`);
+
+        // Hide email form (showFinalCardState doesn't hide ${cardId}-form)
+        const formEl = document.getElementById(`${cardId}-form`);
+        if (formEl) formEl.style.display = 'none';
+
+        // Update status badge to show validated
+        const card = document.getElementById(cardId);
+        if (card) {
+            const statusBadge = card.querySelector('.status-badge');
+            if (statusBadge) {
+                statusBadge.className = 'status-badge completed';
+                statusBadge.innerHTML = '<span>Validated</span>';
+            }
+        }
+
+        // Show success message briefly
+        showFinalCardState(cardId, `Email verified! Now ${description}...`, 'success');
+
+        // Execute pending action after brief delay
+        setTimeout(() => {
+            pendingAction();
+        }, 500);
+
+        return; // Skip normal card flow
+    }
 
     // Update card UI with error checking
     const formEl = document.getElementById(`${cardId}-form`);
@@ -13962,6 +14058,16 @@ function handlePdfConversionMessage(cardId, message, filename) {
 
 // Start reference check
 async function startReferenceCheck(cardId) {
+    // Check if email is validated (for deferred validation mode)
+    if (DEFER_EMAIL_VALIDATION && !globalState.email) {
+        const storedEmail = localStorage.getItem('validatedEmail');
+        if (!storedEmail || !storedEmail.includes('@')) {
+            requireEmailThen(() => startReferenceCheck(cardId), 'check your references');
+            return;
+        }
+        globalState.email = storedEmail;
+    }
+
     const input = document.getElementById(`${cardId}-input`);
     const submittedText = input.value.trim();
 
@@ -14185,7 +14291,19 @@ const hasHandledState = attemptStateRestore();
 setTimeout(() => {
     // Only create initial card if we're not restoring from saved state and haven't shown modal
     if (!window.isRestoringState && !hasHandledState) {
-        createEmailCard();
+        const pageType = detectPageType();
+
+        if (pageType === 'reference-check') {
+            // Reference check mode - go directly to reference check card
+            // Email will be validated when user tries to submit
+            createReferenceCheckCard();
+        } else if (DEFER_EMAIL_VALIDATION) {
+            // Show Get Started first, email will be requested on action
+            createUploadOrDemoCard();
+        } else {
+            // Traditional flow: require email upfront
+            createEmailCard();
+        }
     } else {
     }
 

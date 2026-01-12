@@ -319,6 +319,16 @@ function handlePdfConversionMessage(cardId, message, filename) {
 
 // Start reference check
 async function startReferenceCheck(cardId) {
+    // Check if email is validated (for deferred validation mode)
+    if (DEFER_EMAIL_VALIDATION && !globalState.email) {
+        const storedEmail = localStorage.getItem('validatedEmail');
+        if (!storedEmail || !storedEmail.includes('@')) {
+            requireEmailThen(() => startReferenceCheck(cardId), 'check your references');
+            return;
+        }
+        globalState.email = storedEmail;
+    }
+
     const input = document.getElementById(`${cardId}-input`);
     const submittedText = input.value.trim();
 

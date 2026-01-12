@@ -197,6 +197,42 @@ function handleEmailValidated(cardId) {
     // Track email validation conversion
     trackEmailValidationConversion(globalState.email);
 
+    // Check for pending action (deferred email validation mode)
+    if (globalState.pendingActionAfterEmail) {
+        const pendingAction = globalState.pendingActionAfterEmail;
+        const description = globalState.pendingActionDescription || 'continuing';
+
+        // Clear pending action
+        globalState.pendingActionAfterEmail = null;
+        globalState.pendingActionDescription = null;
+
+        console.log(`[EMAIL] Email validated, executing pending action: ${description}`);
+
+        // Hide email form (showFinalCardState doesn't hide ${cardId}-form)
+        const formEl = document.getElementById(`${cardId}-form`);
+        if (formEl) formEl.style.display = 'none';
+
+        // Update status badge to show validated
+        const card = document.getElementById(cardId);
+        if (card) {
+            const statusBadge = card.querySelector('.status-badge');
+            if (statusBadge) {
+                statusBadge.className = 'status-badge completed';
+                statusBadge.innerHTML = '<span>Validated</span>';
+            }
+        }
+
+        // Show success message briefly
+        showFinalCardState(cardId, `Email verified! Now ${description}...`, 'success');
+
+        // Execute pending action after brief delay
+        setTimeout(() => {
+            pendingAction();
+        }, 500);
+
+        return; // Skip normal card flow
+    }
+
     // Update card UI with error checking
     const formEl = document.getElementById(`${cardId}-form`);
     const successEl = document.getElementById(`${cardId}-success`);
