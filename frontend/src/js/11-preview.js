@@ -63,6 +63,13 @@ async function startPreview(cardId) {
     // Track preview conversion
     trackPreviewConversion(globalState.sessionId);
 
+    // Reset completion state for new preview (fixes hang on repeated previews)
+    if (typeof resetCompletionState === 'function') {
+        resetCompletionState();
+    } else {
+        validationCompletionHandled = false;
+    }
+
     // Show thinking indicators
     showThinkingInCard(cardId, 'Preparing preview...', true);
     // Start dummy progress animation for preview
