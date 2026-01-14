@@ -372,9 +372,23 @@
                 return `rgb(${r}, ${g}, ${b})`;
             }
 
+            // Track last message per card to prevent duplicates
+            const cardLastProgressMessage = new Map();
+
             function updateThinkingProgress(cardId, progress, message = null) {
                 const indicator = document.getElementById(`${cardId}-thinking`);
                 if (!indicator || !indicator.classList.contains('with-progress')) return;
+
+                // Deduplicate: skip if same message as last time for this card
+                if (message) {
+                    const lastMessage = cardLastProgressMessage.get(cardId);
+                    if (lastMessage === message) {
+                        // Same message, only update progress position, not text
+                        message = null;
+                    } else {
+                        cardLastProgressMessage.set(cardId, message);
+                    }
+                }
 
                 // Mark that we got a real update
                 markRealProgressUpdate(cardId);
@@ -422,6 +436,7 @@
                 // Stop any dummy progress and clean up progress tracking
                 stopDummyProgress(cardId);
                 cardCurrentProgress.delete(cardId);
+                cardLastProgressMessage.delete(cardId); // Clean up message deduplication
 
                 // Reset confidence score and history for next validation (return to green default)
                 globalState.currentConfidenceScore = null;

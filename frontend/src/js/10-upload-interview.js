@@ -400,8 +400,7 @@ const cardId = globalState.uploadInterviewCardId;
 if (!cardId) return;
 
 const chatContainer = document.getElementById(`${cardId}-chat`);
-const inputArea = document.getElementById(`${cardId}-input-area`);
-const buttonRow = document.getElementById(`${cardId}-button-row`);
+const inputContainer = document.getElementById(`${cardId}-input-container`);
 
 if (!chatContainer) return;
 
@@ -410,18 +409,26 @@ await addChatMessage(cardId, 'ai', data.ai_message);
 
 if (data.mode === 1) {
     // Mode 1: AI is asking questions
-    inputArea.style.display = 'block';
-    buttonRow.innerHTML = '';
+    if (inputContainer) inputContainer.style.display = 'block';
 
-    const sendButton = createInterviewButton('Send Response', 'primary', async () => {
-        const userMessage = document.getElementById(`${cardId}-interview-input`).value;
-        if (userMessage.trim()) {
-            await addChatMessage(cardId, 'user', userMessage);
-            sendInterviewMessage(conversationId, userMessage);
-            document.getElementById(`${cardId}-interview-input`).value = '';
+    // Use createButtonRow in card's standard buttons container
+    createButtonRow(`${cardId}-buttons`, [
+        {
+            text: 'Submit',
+            variant: 'primary',
+            width: 'full',
+            callback: async (e) => {
+                const button = e.target.closest('button');
+                const userMessage = document.getElementById(`${cardId}-input`).value;
+                if (userMessage.trim()) {
+                    markButtonSelected(button, 'Thinking...');
+                    await addChatMessage(cardId, 'user', userMessage);
+                    sendInterviewMessage(conversationId, userMessage);
+                    document.getElementById(`${cardId}-input`).value = '';
+                }
+            }
         }
-    });
-    buttonRow.appendChild(sendButton);
+    ]);
 
 } else if (data.mode === 2) {
     // Mode 2: AI showing understanding, requesting confirmation
@@ -429,35 +436,43 @@ if (data.mode === 1) {
     // Store confirmation response for later use
     window[`${cardId}_confirmation`] = data.confirmation_response;
 
-    inputArea.style.display = 'block';
-    buttonRow.innerHTML = '';
+    if (inputContainer) inputContainer.style.display = 'block';
 
-    // Primary button: Confirm and generate config
-    const confirmButton = createInterviewButton('Looks Good - Generate Config', 'primary', async () => {
-        const confirmation = window[`${cardId}_confirmation`];
-        if (confirmation) {
-            // Show confirmation message immediately
-            await addChatMessage(cardId, 'ai', confirmation.ai_message);
+    // Use createButtonRow in card's standard buttons container
+    createButtonRow(`${cardId}-buttons`, [
+        {
+            text: 'Looks Good - Generate Config',
+            variant: 'primary',
+            callback: async (e) => {
+                const button = e.target.closest('button');
+                const confirmation = window[`${cardId}_confirmation`];
+                if (confirmation) {
+                    markButtonSelected(button, 'Generating...');
 
-            // Hide input area and show thinking indicator
-            inputArea.style.display = 'none';
-            showThinkingInCard(cardId, 'Starting configuration generation...');
+                    // Show confirmation message immediately
+                    await addChatMessage(cardId, 'ai', confirmation.ai_message);
 
-            // Send empty message to trigger config generation
-            await sendInterviewMessage(conversationId, '');
+                    // Hide input container and show thinking indicator
+                    if (inputContainer) inputContainer.style.display = 'none';
+                    showThinkingInCard(cardId, 'Starting configuration generation...');
+
+                    // Send empty message to trigger config generation
+                    await sendInterviewMessage(conversationId, '');
+                }
+            }
+        },
+        {
+            text: 'Add More Context',
+            variant: 'secondary',
+            callback: () => {
+                document.getElementById(`${cardId}-input`).focus();
+            }
         }
-    });
-    buttonRow.appendChild(confirmButton);
-
-    // Secondary button: Add more context
-    const contextButton = createInterviewButton('Add More Context', 'secondary', () => {
-        document.getElementById(`${cardId}-interview-input`).focus();
-    });
-    buttonRow.appendChild(contextButton);
+    ]);
 
 } else if (data.mode === 3) {
     // Mode 3: Config generation starting
-    inputArea.style.display = 'none';
+    if (inputContainer) inputContainer.style.display = 'none';
     await addChatMessage(cardId, 'ai', data.ai_message);
     showThinkingInCard(cardId, 'Generating configuration...');
 }
@@ -471,6 +486,46 @@ if (!cardId) return;
 
 // Update progress message
 updateThinkingProgress(cardId, 0, data.message || 'Generating validation configuration...');
+        }
+
+        // Handle config generation completion for upload interview - auto-proceeds to preview
+        async function handleUploadInterviewConfigComplete(data, cardId) {
+if (data.type === 'config_generation_progress') {
+    // Update progress indicator with message from backend
+    const progressPercent = data.progress || 0;
+    const message = data.message || data.status || 'Processing...';
+    updateThinkingProgress(cardId, progressPercent, message);
+    return;
+}
+
+if (data.type === 'config_generation_complete') {
+    console.log('[UPLOAD_INTERVIEW] Config generation complete, proceeding to preview');
+    completeThinkingInCard(cardId, 'Configuration generated!');
+
+    globalState.currentConfig = data;
+    globalState.excelFileUploaded = true;
+    globalState.configValidated = true;
+    globalState.configStored = true;
+
+    // Save clarifying questions for later use in refinement
+    if (data.clarifying_questions) {
+        globalState.savedQuestions = data.clarifying_questions;
+    }
+
+    let aiMessage = data.ai_summary || data.ai_response || 'Configuration generated successfully!';
+    await addChatMessage(cardId, 'ai', aiMessage);
+
+    // Auto-proceed to preview after brief delay
+    setTimeout(() => {
+        globalState.activePreviewCard = null;
+        createPreviewCard();
+    }, 1000);
+
+} else if (data.type === 'config_generation_failed' || data.error || data.type === 'error') {
+    completeThinkingInCard(cardId, 'Generation failed');
+    const errorMessage = data.error || data.message || 'Configuration generation failed';
+    showMessage(`${cardId}-messages`, `Error: ${errorMessage}`, 'error');
+}
         }
 
         async function handleUploadInterviewError(data) {
@@ -496,35 +551,31 @@ const cardId = generateCardId();
 globalState.uploadInterviewCardId = cardId;
 
 const content = `
-    <div id="${cardId}-chat" class="interview-conversation"></div>
-    <div id="${cardId}-input-area" class="interview-input-container" style="display: none;">
-        <textarea id="${cardId}-interview-input" class="interview-input"
-            placeholder="Type your response..." rows="3"></textarea>
-        <div id="${cardId}-button-row" class="button-row"></div>
+    <div id="${cardId}-messages"></div>
+    <div id="${cardId}-chat" class="chat-container"></div>
+    <div id="${cardId}-input-container" style="display: none; margin-top: 16px;">
+        <textarea id="${cardId}-input" class="table-maker-textarea"
+            placeholder="Type your response..."
+            style="width: 100%; min-height: 80px; resize: vertical;"
+            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();const btn=document.querySelector('#${cardId}-buttons button.primary');if(btn){btn.focus();btn.classList.add('hover');setTimeout(()=>btn.classList.remove('hover'),1500);}}"></textarea>
     </div>
 `;
 
 const card = createCard({
     id: cardId,
+    icon: '📊',
     title: 'Table Upload Configuration',
-    content: content,
-    thinking: true
+    subtitle: 'Analyzing your table structure',
+    content: content
 });
 
-const cardContainer = document.getElementById('cardContainer');
-if (cardContainer) {
-    cardContainer.appendChild(card);
-} else {
-    console.error('[UPLOAD_INTERVIEW] cardContainer element not found');
-}
-
-// Add initial message using existing chat function
-await addChatMessage(cardId, 'ai', 'Analyzing your table...');
+// Show thinking indicator immediately with initial message
+showThinkingInCard(cardId, 'Analyzing your table...', true);
 
 // Register card handler for config generation completion
 // This ensures when config generation finishes, it flows to preview
 registerCardHandler(cardId, ['config_generation_complete', 'config_generation_progress'],
-    (data) => handleConfigWebSocketMessage(data, cardId));
+    (data) => handleUploadInterviewConfigComplete(data, cardId));
 
 // Start the interview (use isStart=true for first message)
 await sendInterviewMessage(uploadData.conversation_id, '', true);

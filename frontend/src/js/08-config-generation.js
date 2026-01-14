@@ -1402,7 +1402,69 @@ async function startConfigRepair(cardId) {
     ]);
 }
 
-// This duplicate handleConfigWebSocketMessage removed - using the first definition
+// Handle WebSocket messages for config generation
+async function handleConfigWebSocketMessage(data, cardId) {
+    if (data.type === 'config_generation_progress') {
+        // Update progress indicator with message from backend
+        const progressPercent = data.progress || 0;
+        const message = data.message || data.status || 'Processing...';
+        updateThinkingProgress(cardId, progressPercent, message);
+        return;
+    }
+
+    if (data.type === 'config_generation_complete') {
+        completeThinkingInCard(cardId, 'Configuration generated!');
+
+        globalState.currentConfig = data;
+        globalState.excelFileUploaded = true;
+        globalState.configValidated = true;
+        globalState.configStored = true;
+
+        // Save clarifying questions for later use in refinement
+        if (data.clarifying_questions) {
+            globalState.savedQuestions = data.clarifying_questions;
+        }
+
+        let aiMessage = data.ai_summary || data.ai_response || 'Configuration generated successfully!';
+        await addChatMessage(cardId, 'ai', aiMessage);
+
+        // Add config ID display if available
+        if (data.config_id || data.session_id) {
+            const chatContainer = document.getElementById(`${cardId}-chat`);
+            if (chatContainer) {
+                const configIdDiv = document.createElement('div');
+                configIdDiv.className = 'chat-message ai';
+                const version = data.config_version || 1;
+                const configId = data.config_id || `${data.session_id}_v${version}`;
+                configIdDiv.innerHTML = `
+                    <div class="config-id-display" style="margin-top: 16px; padding: 16px; background: linear-gradient(135deg, #f0f8ff 0%, #e8f4fd 100%); border-radius: 8px; border: 1px solid #b3d9ff;">
+                        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                            <span style="font-size: 18px; margin-right: 8px;">🆔</span>
+                            <strong style="color: #2c5530;">Configuration ID Generated</strong>
+                        </div>
+                        <div style="background: white; padding: 12px; border-radius: 4px; border: 1px solid #ddd; margin-bottom: 8px;">
+                            <code style="font-size: 16px; font-weight: bold; color: #1a472a; font-family: 'Courier New', monospace;">${configId}</code>
+                        </div>
+                        <div style="font-size: 14px; color: #555; line-height: 1.4;">
+                            <div style="margin-bottom: 4px;">💾 <strong>Save this ID</strong> - it will be included in your validation results email</div>
+                            <div style="margin-bottom: 4px;">🔄 <strong>Reuse anywhere</strong> - enter this ID to apply the same configuration to future validations</div>
+                            <div>🔒 <strong>Secure</strong> - share this ID safely without exposing configuration details</div>
+                        </div>
+                    </div>
+                `;
+                chatContainer.appendChild(configIdDiv);
+            }
+        }
+
+        // Show config actions
+        showConfigActions(cardId);
+
+    } else if (data.type === 'config_generation_failed' || data.error || data.type === 'error') {
+        completeThinkingInCard(cardId, 'Generation failed');
+        const errorMessage = data.error || data.message || 'Configuration generation failed';
+        showMessage(`${cardId}-messages`, `Error: ${errorMessage}`, 'error');
+    }
+}
 
 async function addChatMessage(cardId, type, content, isUrgent = false, streamingType = 'normal') {
     const chatContainer = document.getElementById(`${cardId}-chat`);
