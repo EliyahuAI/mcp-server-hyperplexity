@@ -4781,25 +4781,26 @@ function routeMessage(data, sessionId) {
 
     // Cancel timeout if we receive a completion message
     if (data.status === 'COMPLETED') {
-        // Check if already handled to prevent duplicate UI updates
+        // Check if already handled to prevent duplicate timeout clearing
+        // BUT still route the message - the card handler will handle deduplication
         if (validationCompletionHandled) {
-            console.log('[ROUTE] COMPLETED already handled, skipping duplicate');
-            return;
-        }
+            console.log('[ROUTE] COMPLETED already handled, skipping timeout cleanup but still routing');
+            // Don't return - let the message still route to the card handler
+        } else {
+            // Mark as handled to prevent duplicate timeout processing
+            validationCompletionHandled = true;
 
-        // Mark as handled to prevent duplicate processing
-        validationCompletionHandled = true;
+            // Stop fallback polling
+            stopFallbackPolling();
 
-        // Stop fallback polling
-        stopFallbackPolling();
-
-        // Clear async timeouts (Bug fix: access .inactivityTimer property)
-        if (window.asyncTimeouts && window.asyncTimeouts.has(sessionId)) {
-            const timeoutInfo = window.asyncTimeouts.get(sessionId);
-            if (timeoutInfo && timeoutInfo.inactivityTimer) {
-                clearTimeout(timeoutInfo.inactivityTimer);
+            // Clear async timeouts (Bug fix: access .inactivityTimer property)
+            if (window.asyncTimeouts && window.asyncTimeouts.has(sessionId)) {
+                const timeoutInfo = window.asyncTimeouts.get(sessionId);
+                if (timeoutInfo && timeoutInfo.inactivityTimer) {
+                    clearTimeout(timeoutInfo.inactivityTimer);
+                }
+                window.asyncTimeouts.delete(sessionId);
             }
-            window.asyncTimeouts.delete(sessionId);
         }
     }
 
@@ -12556,6 +12557,12 @@ function handleProcessingWebSocketMessage(data, cardId) {
         // Progress routed to card level;
 
     } else if (data.status === 'COMPLETED') {
+        // Guard against duplicate completion processing
+        if (globalState.processingState?.validationCompleted) {
+            console.log('[PROCESSING] COMPLETED already processed for this card, skipping duplicate');
+            return;
+        }
+
         // Stop fallback polling since we received completion via WebSocket
         if (typeof stopFallbackPolling === 'function') {
             stopFallbackPolling();
