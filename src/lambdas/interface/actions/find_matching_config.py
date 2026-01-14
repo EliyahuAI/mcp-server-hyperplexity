@@ -1227,8 +1227,8 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
         else:
             final_matches = []
             logger.info("No perfect matches found - returning empty list")
-        
-        return {
+
+        result = {
             'success': True,
             'matches': final_matches,
             'table_columns': table_columns,
@@ -1237,6 +1237,16 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
             'regular_matches_found': len(matches),
             'total_available_configs': len(successfully_used_configs)
         }
+
+        # Add perfect_match flag for frontend/backend to detect
+        if final_matches:
+            result['perfect_match'] = True
+            result['auto_select_config'] = final_matches[0]
+            logger.info(f"[FIND_CONFIG] Setting perfect_match=True, auto_select_config={final_matches[0].get('config_id')}")
+        else:
+            result['perfect_match'] = False
+
+        return result
         
     except Exception as e:
         logger.error(f"Error in optimized config matching: {e}")
