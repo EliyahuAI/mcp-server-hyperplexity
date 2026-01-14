@@ -18,10 +18,11 @@ import os
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Get paths for prompts and schemas
+# Get paths for prompts, schemas, and config
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROMPTS_DIR = os.path.join(CURRENT_DIR, 'prompts')
 SCHEMAS_DIR = os.path.join(CURRENT_DIR, 'schemas')
+CONFIG_FILE = os.path.join(CURRENT_DIR, 'upload_interview_config.json')
 
 # Only import lightweight utilities - NO heavy AI/ML imports here!
 # Use absolute import since relative path would be incorrect (..utils -> actions/utils, not interface_lambda/utils)
@@ -172,4 +173,5 @@ __all__ = [
     'handle_upload_interview_continue_async',
     'PROMPTS_DIR',
     'SCHEMAS_DIR',
+    'CONFIG_FILE',
 ]

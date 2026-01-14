@@ -325,6 +325,13 @@ class GeminiProvider:
                         new_enum.append(val)
                 node['enum'] = new_enum
 
+            # Fix 2b: Convert integer enums to string enums (Gemini requires string enums)
+            if 'enum' in node and any(isinstance(val, int) for val in node['enum']):
+                conversion_map['integer_enum_conversions'] = conversion_map.get('integer_enum_conversions', [])
+                conversion_map['integer_enum_conversions'].append(path)
+                node['enum'] = [str(val) if isinstance(val, int) else val for val in node['enum']]
+                logger.debug(f"[GEMINI_SCHEMA] Converted integer enum to strings at {path}")
+
             # Fix 3: Remove "items": False (not supported in Gemini)
             if 'items' in node and node['items'] is False:
                 logger.debug(f"[GEMINI_SCHEMA] Removing 'items': False at {path} (tuple validation not supported)")
@@ -374,7 +381,7 @@ class GeminiProvider:
         converted = process_schema_node(schema)
 
         # Log conversions if any were made
-        if conversion_map['null_conversions'] or conversion_map['type_array_fixes'] or conversion_map.get('prefixItems_conversions') or conversion_map['stripped_fields']:
+        if conversion_map['null_conversions'] or conversion_map['type_array_fixes'] or conversion_map.get('prefixItems_conversions') or conversion_map['stripped_fields'] or conversion_map.get('integer_enum_conversions'):
             logger.info(f"[GEMINI_SCHEMA] Applied compatibility fixes:")
             if conversion_map['stripped_fields']:
                 logger.info(f"  - Stripped {len(conversion_map['stripped_fields'])} unsupported field(s): {conversion_map['stripped_fields'][:5]}")
@@ -384,6 +391,8 @@ class GeminiProvider:
                 logger.info(f"  - Fixed {len(conversion_map['type_array_fixes'])} type array(s)")
             if conversion_map['null_conversions']:
                 logger.info(f"  - Converted null to 'NULL' in {len(conversion_map['null_conversions'])} field(s): {conversion_map['null_conversions']}")
+            if conversion_map.get('integer_enum_conversions'):
+                logger.info(f"  - Converted integer enums to strings in {len(conversion_map['integer_enum_conversions'])} field(s): {conversion_map['integer_enum_conversions']}")
             if conversion_map.get('prefixItems_conversions'):
                 logger.info(f"  - Converted prefixItems to items in {len(conversion_map['prefixItems_conversions'])} field(s): {conversion_map['prefixItems_conversions']}")
 
@@ -394,19 +403,30 @@ class GeminiProvider:
         Restore converted values in Gemini response back to original intent.
 
         Converts "NULL" strings back to None/null based on conversion_map.
+        Converts string integer enum values back to integers.
         """
-        if not conversion_map.get('null_conversions'):
+        if not conversion_map.get('null_conversions') and not conversion_map.get('integer_enum_conversions'):
             return response_data  # No conversions to restore
 
+        integer_enum_paths = conversion_map.get('integer_enum_conversions', [])
+        null_paths = conversion_map.get('null_conversions', [])
+
         def restore_node(data, path=""):
-            """Recursively restore NULL strings to null."""
+            """Recursively restore NULL strings to null and string integers to integers."""
             if isinstance(data, dict):
                 restored = {}
                 for key, value in data.items():
                     current_path = f"{path}.{key}" if path else key
 
+                    # Check if this field had integer enum conversions
+                    if current_path in integer_enum_paths:
+                        # Convert string integer back to int
+                        if isinstance(value, str) and value.isdigit():
+                            restored[key] = int(value)
+                        else:
+                            restored[key] = restore_node(value, current_path)
                     # Check if this field had null conversions
-                    if current_path in conversion_map['null_conversions']:
+                    elif current_path in null_paths:
                         # Convert "NULL" string back to None
                         if value == "NULL":
                             restored[key] = None
@@ -428,8 +448,13 @@ class GeminiProvider:
 
         restored = restore_node(response_data)
 
-        if restored != response_data:
-            logger.info(f"[GEMINI_SCHEMA] Restored {len(conversion_map['null_conversions'])} NULL string(s) to null")
+        restorations = []
+        if null_paths and restored != response_data:
+            restorations.append(f"{len(null_paths)} NULL string(s) to null")
+        if integer_enum_paths:
+            restorations.append(f"{len(integer_enum_paths)} string integer(s) to int")
+        if restorations:
+            logger.info(f"[GEMINI_SCHEMA] Restored: {', '.join(restorations)}")
 
         return restored
 
@@ -503,7 +528,7 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
             unified_response = await self._normalize_gemini_response(response_json, soft_schema, schema, model)
 
             # Restore converted values if we made schema conversions (hard schema only)
-            if conversion_map and not soft_schema and conversion_map.get('null_conversions'):
+            if conversion_map and not soft_schema and (conversion_map.get('null_conversions') or conversion_map.get('integer_enum_conversions')):
                 try:
                     # Extract JSON from response text
                     text_content = ""
@@ -519,7 +544,14 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
                         restored_data = self._restore_gemini_response_values(response_data, conversion_map)
                         # Update response with restored values
                         unified_response['content'][0]['text'] = json.dumps(restored_data)
-                        logger.info(f"[GEMINI_SCHEMA] Restored {len(conversion_map['null_conversions'])} NULL value(s)")
+                        # Log what was restored
+                        restorations = []
+                        if conversion_map.get('null_conversions'):
+                            restorations.append(f"{len(conversion_map['null_conversions'])} NULL value(s)")
+                        if conversion_map.get('integer_enum_conversions'):
+                            restorations.append(f"{len(conversion_map['integer_enum_conversions'])} integer enum(s)")
+                        if restorations:
+                            logger.info(f"[GEMINI_SCHEMA] Restored: {', '.join(restorations)}")
                 except json.JSONDecodeError as e:
                     # If JSON is malformed, skip NULL restoration and let downstream repair handle it
                     logger.debug(f"[GEMINI_SCHEMA] Skipping NULL restoration - JSON is malformed (will be repaired downstream)")

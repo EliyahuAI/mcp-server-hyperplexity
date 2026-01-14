@@ -23,6 +23,32 @@ from shared.ai_api_client import ai_client
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# Load config file
+def _load_config() -> Dict[str, Any]:
+    """Load upload interview config from JSON file."""
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'upload_interview_config.json')
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning(f"[UPLOAD_INTERVIEW] Failed to load config from {config_path}: {e}, using defaults")
+        return {}
+
+# Load config at module level
+_CONFIG = _load_config()
+
+def get_interview_model() -> list:
+    """Get the model(s) to use for interview from config. Returns list of models."""
+    model = _CONFIG.get('interview', {}).get('model', ['gemini-2.0-flash', 'claude-haiku-4-5'])
+    # Ensure it's always a list
+    if isinstance(model, str):
+        model = [model]
+    return model
+
+def get_interview_max_tokens() -> int:
+    """Get max tokens for interview from config."""
+    return _CONFIG.get('interview', {}).get('max_tokens', 4000)
+
 
 class UploadInterviewHandler:
     """
@@ -76,8 +102,8 @@ class UploadInterviewHandler:
         self,
         table_analysis: Dict[str, Any],
         user_message: str = "",
-        model: str = "gemini-2.0-flash-exp",
-        max_tokens: int = 4000
+        model: str = None,
+        max_tokens: int = None
     ) -> Dict[str, Any]:
         """
         Start a new interview with table analysis.
@@ -102,6 +128,14 @@ class UploadInterviewHandler:
             }
         """
         try:
+            # Use config defaults if not provided
+            if model is None:
+                model = get_interview_model()  # Returns list
+            elif isinstance(model, str):
+                model = [model]  # Ensure it's a list
+            if max_tokens is None:
+                max_tokens = get_interview_max_tokens()
+
             logger.info(f"[UPLOAD_INTERVIEW] Starting interview for table upload")
             logger.info(f"[UPLOAD_INTERVIEW] User message: '{user_message[:100]}...'")
 
@@ -125,7 +159,7 @@ class UploadInterviewHandler:
                 })
 
             # Call AI with structured output (NO web search for interview)
-            logger.info(f"[UPLOAD_INTERVIEW] Calling AI with model: {model} (web search disabled)")
+            logger.info(f"[UPLOAD_INTERVIEW] Calling AI with model chain: {model} (web search disabled)")
             response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=self.interview_schema,
@@ -255,8 +289,8 @@ class UploadInterviewHandler:
     async def continue_interview(
         self,
         user_message: str,
-        model: str = "gemini-2.0-flash-exp",
-        max_tokens: int = 4000
+        model: str = None,
+        max_tokens: int = None
     ) -> Dict[str, Any]:
         """
         Continue an existing interview with user's response.

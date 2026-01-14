@@ -1,0 +1,15 @@
+{
+  "_DOCUMENTATION": {
+    "_purpose": "This config controls the upload interview system's AI behavior",
+    "_usage": "Loaded by interview.py and used for model selection and settings"
+  },
+
+  "interview": {
+    "_comment": "Interview phase - AI interacts with user to understand table structure and validation requirements",
+    "model": ["gemini-2.0-flash", "claude-haiku-4-5"],
+    "_note_model": "Primary: gemini-2.0-flash (stable production), Backup: claude-haiku-4-5 (fast fallback)",
+    "max_tokens": 4000,
+    "use_web_search": false,
+    "_note_web_search": "Web search is disabled for interview phase - fast local analysis only"
+  }
+}
