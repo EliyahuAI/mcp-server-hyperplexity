@@ -325,11 +325,14 @@ class GeminiProvider:
                         new_enum.append(val)
                 node['enum'] = new_enum
 
-            # Fix 2b: Convert integer enums to string enums (Gemini requires string enums)
+            # Fix 2b: Convert integer enums to string enums (Gemini requires string enums AND type: string)
             if 'enum' in node and any(isinstance(val, int) for val in node['enum']):
                 conversion_map['integer_enum_conversions'] = conversion_map.get('integer_enum_conversions', [])
                 conversion_map['integer_enum_conversions'].append(path)
                 node['enum'] = [str(val) if isinstance(val, int) else val for val in node['enum']]
+                # Gemini also requires type to be "string" when using enums
+                if node.get('type') == 'integer':
+                    node['type'] = 'string'
                 logger.debug(f"[GEMINI_SCHEMA] Converted integer enum to strings at {path}")
 
             # Fix 3: Remove "items": False (not supported in Gemini)
