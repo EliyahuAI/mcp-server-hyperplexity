@@ -384,8 +384,10 @@
                     const lastMessage = cardLastProgressMessage.get(cardId);
                     if (lastMessage === message) {
                         // Same message, only update progress position, not text
+                        console.log('[PROGRESS] Skipping duplicate message:', message.substring(0, 50));
                         message = null;
                     } else {
+                        console.log('[PROGRESS] New message:', message.substring(0, 50));
                         cardLastProgressMessage.set(cardId, message);
                     }
                 }

@@ -438,34 +438,57 @@ if (data.mode === 1) {
 
     if (inputContainer) inputContainer.style.display = 'block';
 
-    // Use createButtonRow in card's standard buttons container
+    // Update placeholder to indicate blank = confirm (like table maker)
+    const input = document.getElementById(`${cardId}-input`);
+    if (input) {
+        input.placeholder = 'Confirm or ask for changes (blank to confirm)...';
+        input.value = '';
+        input.focus();
+    }
+
+    // Single Submit button - blank/affirmatives trigger immediate confirmation
     createButtonRow(`${cardId}-buttons`, [
         {
-            text: 'Looks Good - Generate Config',
+            text: 'Submit',
             variant: 'primary',
+            width: 'full',
             callback: async (e) => {
                 const button = e.target.closest('button');
+                const userMessage = document.getElementById(`${cardId}-input`).value.trim();
+
+                // Check if this is a simple confirmation (blank, "yes", "looks good", etc.)
+                const isSimpleConfirmation = !userMessage ||
+                    /^(yes|yeah|yep|yup|sure|ok|okay|good|great|perfect|sounds good|looks good|go|go for it|start|proceed|confirm)\.?$/i.test(userMessage);
+
                 const confirmation = window[`${cardId}_confirmation`];
-                if (confirmation) {
+
+                if (isSimpleConfirmation && confirmation) {
+                    // Use pre-generated confirmation - skip a round trip
                     markButtonSelected(button, 'Generating...');
 
-                    // Show confirmation message immediately
+                    // Show user confirmation
+                    const displayMessage = userMessage || '✓ Confirmed';
+                    await addChatMessage(cardId, 'user', displayMessage);
+
+                    // Show AI confirmation message
                     await addChatMessage(cardId, 'ai', confirmation.ai_message);
 
-                    // Hide input container and show thinking indicator
+                    // Hide input and show thinking
                     if (inputContainer) inputContainer.style.display = 'none';
                     showThinkingInCard(cardId, 'Starting configuration generation...');
 
+                    // Clear confirmation (used once)
+                    window[`${cardId}_confirmation`] = null;
+
                     // Send empty message to trigger config generation
                     await sendInterviewMessage(conversationId, '');
+                } else {
+                    // User wants changes - send their message
+                    markButtonSelected(button, 'Thinking...');
+                    await addChatMessage(cardId, 'user', userMessage);
+                    sendInterviewMessage(conversationId, userMessage);
+                    document.getElementById(`${cardId}-input`).value = '';
                 }
-            }
-        },
-        {
-            text: 'Add More Context',
-            variant: 'secondary',
-            callback: () => {
-                document.getElementById(`${cardId}-input`).focus();
             }
         }
     ]);
@@ -489,15 +512,8 @@ updateThinkingProgress(cardId, 0, data.message || 'Generating validation configu
         }
 
         // Handle config generation completion for upload interview - auto-proceeds to preview
+        // Note: config_generation_progress is handled by websocket.js routeMessage, not here
         async function handleUploadInterviewConfigComplete(data, cardId) {
-if (data.type === 'config_generation_progress') {
-    // Update progress indicator with message from backend
-    const progressPercent = data.progress || 0;
-    const message = data.message || data.status || 'Processing...';
-    updateThinkingProgress(cardId, progressPercent, message);
-    return;
-}
-
 if (data.type === 'config_generation_complete') {
     console.log('[UPLOAD_INTERVIEW] Config generation complete, proceeding to preview');
     completeThinkingInCard(cardId, 'Configuration generated!');
@@ -572,9 +588,9 @@ const card = createCard({
 // Show thinking indicator immediately with initial message
 showThinkingInCard(cardId, 'Analyzing your table...', true);
 
-// Register card handler for config generation completion
-// This ensures when config generation finishes, it flows to preview
-registerCardHandler(cardId, ['config_generation_complete', 'config_generation_progress'],
+// Register card handler for config generation completion only
+// Progress messages are handled by websocket.js routeMessage
+registerCardHandler(cardId, ['config_generation_complete'],
     (data) => handleUploadInterviewConfigComplete(data, cardId));
 
 // Start the interview (use isStart=true for first message)
