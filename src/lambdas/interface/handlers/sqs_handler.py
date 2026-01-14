@@ -96,6 +96,16 @@ def handle(event, context):
                     **message_body
                 }
 
+            # Handle upload interview requests
+            elif request_type == 'upload_interview':
+                logger.info(f"Processing upload interview request for session {message_body.get('session_id')}, conversation_id: {message_body.get('conversation_id')}")
+                # Pass the entire message body for upload interview
+                background_event = {
+                    "background_processing": True,
+                    "request_type": "upload_interview",
+                    **message_body
+                }
+
             else:
                 # Handle regular validation requests
                 background_event = {
