@@ -4,6 +4,11 @@ Upload Interview action handlers for conversational table upload configuration.
 This module provides the routing and handlers for the upload interview feature,
 which allows users to engage in a brief conversation after uploading a table
 to clarify validation requirements before generating a config.
+
+NOTE: This module is loaded by the LIGHTWEIGHT Lambda for HTTP routing.
+Heavy imports (interview.py, processing.py) are NOT imported here to prevent
+cold start crashes. They are only imported by the BACKGROUND Lambda in
+background_handler.py when processing SQS messages.
 """
 import asyncio
 import inspect
@@ -18,9 +23,9 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROMPTS_DIR = os.path.join(CURRENT_DIR, 'prompts')
 SCHEMAS_DIR = os.path.join(CURRENT_DIR, 'schemas')
 
-# Import the interview handler
-from .interview import UploadInterviewHandler
-from ..utils.helpers import create_response
+# Only import lightweight utilities - NO heavy AI/ML imports here!
+# Use absolute import since relative path would be incorrect (..utils -> actions/utils, not interface_lambda/utils)
+from interface_lambda.utils.helpers import create_response
 
 
 async def handle_upload_interview_start_async(request_data, context):
@@ -31,7 +36,7 @@ async def handle_upload_interview_start_async(request_data, context):
     with actual processing happening in background via SQS.
     """
     try:
-        from ..core.sqs_service import send_upload_interview_request
+        from interface_lambda.core.sqs_service import send_upload_interview_request
 
         # Extract request data
         session_id = request_data.get('session_id')
@@ -76,7 +81,7 @@ async def handle_upload_interview_continue_async(request_data, context):
     This is called when user responds to interview questions.
     """
     try:
-        from ..core.sqs_service import send_upload_interview_request
+        from interface_lambda.core.sqs_service import send_upload_interview_request
 
         # Extract request data
         session_id = request_data.get('session_id')
@@ -157,15 +162,14 @@ def route_upload_interview_action(action, request_data, context):
         return handler(request_data, context)
 
 
-from .processing import handle_upload_interview_start, handle_upload_interview_continue
+# NOTE: Heavy processing imports (handle_upload_interview_start, handle_upload_interview_continue)
+# are NOT imported here to keep the lightweight Lambda fast.
+# They are only needed by the background Lambda and are imported directly in background_handler.py
 
 __all__ = [
     'route_upload_interview_action',
     'handle_upload_interview_start_async',
     'handle_upload_interview_continue_async',
-    'handle_upload_interview_start',
-    'handle_upload_interview_continue',
-    'UploadInterviewHandler',
     'PROMPTS_DIR',
     'SCHEMAS_DIR',
 ]

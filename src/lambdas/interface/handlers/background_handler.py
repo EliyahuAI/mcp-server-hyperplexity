@@ -1221,7 +1221,38 @@ def handle_main_processing(event, context):
         logger.debug(f"[TIMING] SQS MessageId: {sqs_message_id}")
         logger.debug(f"[TIMING] Session: {event.get('session_id')}, RunKey: {event.get('run_key')}")
 
+        # ========== EARLY REQUEST TYPE ROUTING ==========
+        # Route specialized request types BEFORE any heavy initialization (memory, AI, etc.)
+        # This prevents unnecessary config/file lookups for requests that don't need them
+        request_type = event.get('request_type')
+
+        if request_type == 'upload_interview':
+            logger.info("Detected upload interview request, forwarding to upload interview handler")
+            return handle_upload_interview(event, context)
+
+        if request_type == 'table_conversation':
+            logger.info("Detected table conversation request, forwarding to table maker handler")
+            return handle_table_conversation(event, context)
+
+        if request_type == 'reference_check':
+            logger.info("Detected reference check request, forwarding to reference check handler")
+            return handle_reference_check(event, context)
+
+        if request_type == 'pdf_conversion':
+            logger.info("Detected PDF conversion request, forwarding to PDF conversion handler")
+            return handle_pdf_conversion(event, context)
+
+        if request_type == 'table_finalization':
+            logger.info("Detected table finalization request, forwarding to table finalization handler")
+            return handle_table_finalization(event, context)
+
+        if request_type == 'config_generation':
+            logger.info("Detected config generation request, processing with merged config module")
+            import asyncio
+            return asyncio.run(handle_config_generation_async(event, context))
+
         # ========== EXTRACT SESSION CONTEXT EARLY FOR MEMORY SYSTEM ==========
+        # Only do heavy initialization for validation requests (preview/full)
         session_id = event.get('session_id')
         email = event.get('email', 'unknown@example.com').lower().strip()
 
@@ -1294,35 +1325,13 @@ def handle_main_processing(event, context):
             EMAIL_SENDER_AVAILABLE = False
 
         logger.info("--- Background Handler Started ---")
-        
+
         # Record when background handler actually starts processing
         background_start_time = datetime.now(timezone.utc).isoformat()
-        
-        # Check if this is a config generation request
-        if event.get('request_type') == 'config_generation':
-            logger.info("Detected config generation request, processing with merged config module")
-            import asyncio
-            return asyncio.run(handle_config_generation_async(event, context))
 
-        # Check if this is a table conversation request
-        if event.get('request_type') == 'table_conversation':
-            logger.info("Detected table conversation request, forwarding to table maker handler")
-            return handle_table_conversation(event, context)
-
-        # Check if this is a reference check request
-        if event.get('request_type') == 'reference_check':
-            logger.info("Detected reference check request, forwarding to reference check handler")
-            return handle_reference_check(event, context)
-
-        # Check if this is a PDF conversion request
-        if event.get('request_type') == 'pdf_conversion':
-            logger.info("Detected PDF conversion request, forwarding to PDF conversion handler")
-            return handle_pdf_conversion(event, context)
-
-        # Check if this is a table finalization request (preview generation or accept and validate)
-        if event.get('request_type') == 'table_finalization':
-            logger.info("Detected table finalization request, forwarding to table finalization handler")
-            return handle_table_finalization(event, context)
+        # NOTE: Request type routing (upload_interview, table_conversation, etc.)
+        # is now handled EARLY at the top of this function, before memory setup.
+        # This prevents unnecessary config/file lookups for specialized requests.
 
         # Extract parameters from event, ensuring correct types
         # Check both preview_mode and request_type for compatibility
@@ -6649,4 +6658,64 @@ def handle_pdf_conversion(event, context):
         return {
             'statusCode': 500,
             'body': {'error': f'PDF conversion failed: {str(e)}'}
+        }
+
+
+def handle_upload_interview(event, context):
+    """
+    Handle upload interview requests from SQS.
+    Routes to the appropriate interview handler based on action.
+    """
+    import asyncio
+    from interface_lambda.actions.upload_interview.processing import (
+        handle_upload_interview_start,
+        handle_upload_interview_continue
+    )
+
+    try:
+        action = event.get('action')
+        session_id = event.get('session_id')
+        conversation_id = event.get('conversation_id')
+
+        logger.info(f"[UPLOAD_INTERVIEW] Processing {action} for session {session_id}, conversation {conversation_id}")
+
+        # Route based on action
+        if action == 'startUploadInterview':
+            # Call the async handler
+            try:
+                loop = asyncio.get_running_loop()
+                result = asyncio.create_task(handle_upload_interview_start(event, context))
+                result = asyncio.get_event_loop().run_until_complete(result)
+            except RuntimeError:
+                result = asyncio.run(handle_upload_interview_start(event, context))
+
+            logger.info(f"[UPLOAD_INTERVIEW] Completed start for conversation {conversation_id}")
+            return result
+
+        elif action == 'continueUploadInterview':
+            # Call the async handler
+            try:
+                loop = asyncio.get_running_loop()
+                result = asyncio.create_task(handle_upload_interview_continue(event, context))
+                result = asyncio.get_event_loop().run_until_complete(result)
+            except RuntimeError:
+                result = asyncio.run(handle_upload_interview_continue(event, context))
+
+            logger.info(f"[UPLOAD_INTERVIEW] Completed continue for conversation {conversation_id}")
+            return result
+
+        else:
+            logger.error(f"[UPLOAD_INTERVIEW] Unknown action: {action}")
+            return {
+                'statusCode': 400,
+                'body': {'error': f'Unknown upload interview action: {action}'}
+            }
+
+    except Exception as e:
+        logger.error(f"[UPLOAD_INTERVIEW] Error processing upload interview: {e}")
+        import traceback
+        logger.error(f"[UPLOAD_INTERVIEW] Traceback: {traceback.format_exc()}")
+        return {
+            'statusCode': 500,
+            'body': {'error': f'Upload interview failed: {str(e)}'}
         }
