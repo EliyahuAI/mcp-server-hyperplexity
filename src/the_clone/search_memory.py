@@ -308,6 +308,126 @@ class SearchMemory:
 
         return query_id
 
+    async def store_url_content(
+        self,
+        url: str,
+        content: str,
+        title: str = None,
+        source_type: str = "table_extraction",
+        metadata: Dict[str, Any] = None
+    ) -> str:
+        """
+        Store directly fetched/extracted URL content in memory.
+
+        This is used for Table Maker extractions where we have full table
+        content that should be available for future validation lookups.
+        Unlike store_search(), this stores content for a SPECIFIC URL
+        with potentially richer/more complete data than search snippets.
+
+        Args:
+            url: The source URL
+            content: Full content (e.g., markdown table, extracted text)
+            title: Optional title for the content
+            source_type: Type of content (table_extraction, background_research, etc.)
+            metadata: Optional additional metadata (columns_found, rows_count, etc.)
+
+        Returns:
+            query_id: Unique identifier for stored content
+        """
+        # Ensure memory is loaded
+        if self._memory is None:
+            self._initialize_empty_memory()
+
+        # Generate query ID based on URL (not search term)
+        query_id = self._generate_url_content_id(url, source_type)
+
+        # Check if we already have content for this URL
+        existing_query = self._memory['queries'].get(query_id)
+
+        if existing_query:
+            # Compare content length - keep richer data
+            existing_content_len = len(existing_query.get('results', [{}])[0].get('snippet', ''))
+            new_content_len = len(content)
+
+            if new_content_len <= existing_content_len:
+                logger.info(
+                    f"[MEMORY] Skipping URL content storage - existing content is richer "
+                    f"({existing_content_len} vs {new_content_len} chars)"
+                )
+                return query_id
+            else:
+                logger.info(
+                    f"[MEMORY] Updating URL content with richer data "
+                    f"({existing_content_len} -> {new_content_len} chars)"
+                )
+
+        # Build result in search API format
+        result_entry = {
+            "url": url,
+            "title": title or f"Extracted content from {url}",
+            "snippet": content,
+            "date": datetime.now(timezone.utc).isoformat(),
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "_source_type": source_type,
+            "_is_full_content": True,  # Flag that this is complete content, not truncated
+        }
+
+        # Add any additional metadata
+        if metadata:
+            result_entry["_extraction_metadata"] = metadata
+
+        # Store as query data (compatible with existing recall system)
+        query_data = {
+            "query_text": f"[URL_CONTENT] {url}",
+            "search_term": f"[URL_CONTENT] {url}",
+            "query_time": datetime.now(timezone.utc).isoformat(),
+            "parameters": {
+                "source_type": source_type,
+                "content_length": len(content),
+                "is_url_content": True
+            },
+            "results": [result_entry],
+            "metadata": {
+                "cost": 0.0,  # No API cost for stored content
+                "num_results": 1,
+                "strategy": source_type,
+                "is_url_content": True
+            }
+        }
+
+        # Add to queries
+        self._memory['queries'][query_id] = query_data
+
+        # Update time index
+        if query_id in self._memory['indexes']['by_time']:
+            self._memory['indexes']['by_time'].remove(query_id)
+        self._memory['indexes']['by_time'].insert(0, query_id)
+
+        # Update URL index - this is critical for recall_by_urls
+        if query_id not in self._memory['indexes']['by_url'][url]:
+            self._memory['indexes']['by_url'][url].append(query_id)
+
+        # Backup to S3
+        try:
+            await self.backup()
+        except Exception as e:
+            logger.error(f"[MEMORY] Failed to backup URL content, continuing anyway: {e}")
+
+        logger.info(
+            f"[MEMORY] Stored URL content: {url} ({len(content)} chars, type={source_type})"
+        )
+
+        return query_id
+
+    def _generate_url_content_id(self, url: str, source_type: str) -> str:
+        """
+        Generate stable ID for URL content storage.
+        Different source_types for same URL get different IDs (allows multiple snippets).
+        """
+        content = f"{url}|{source_type}".lower().strip()
+        hash_hex = hashlib.md5(content.encode()).hexdigest()[:12]
+        return f"url_content_{hash_hex}"
+
     def _generate_query_id(self, search_term: str) -> str:
         """
         Generate stable query ID based on search_term.
@@ -1242,23 +1362,39 @@ Return JSON:
 
     # === URL-BASED RECALL ===
 
-    def recall_by_urls(self, urls: List[str]) -> Dict[str, Any]:
+    def recall_by_urls(
+        self,
+        urls: List[str],
+        required_keywords: List[str] = None
+    ) -> Dict[str, Any]:
         """
-        Look up sources by exact URL match in memory.
+        Look up sources by exact URL match in memory with keyword validation.
 
         This is used when the user's query contains URLs that we've
-        previously searched and stored in memory. Unlike keyword-based
-        recall, this is a direct lookup - no AI selection needed.
+        previously searched and stored in memory. Returns ALL snippets
+        for each URL (not just the first), with keyword validation to
+        determine if stored content is sufficient or needs live fetch.
 
         Args:
             urls: List of URLs to look up
+            required_keywords: Optional list of keyword groups for validation.
+                Each group can have variants separated by '|' (OR logic).
+                ALL groups must match (AND logic between groups).
+                If provided and content doesn't match, URL goes to needs_fetch.
 
         Returns:
             Dict with:
-            - 'found': List of sources in search API format with _from_memory metadata
-            - 'not_found': List of URLs not in memory (can be fetched live)
+            - 'found': List of sources that pass keyword validation (or no keywords specified)
+            - 'not_found': List of URLs not in memory at all
+            - 'needs_fetch': List of URLs found but failed keyword validation (should fetch fresh)
+            - 'all_snippets': Dict mapping URL -> list of all snippets (for debugging/extraction)
         """
-        result = {'found': [], 'not_found': []}
+        result = {
+            'found': [],
+            'not_found': [],
+            'needs_fetch': [],
+            'all_snippets': {}
+        }
 
         if self._memory is None:
             result['not_found'] = list(urls) if urls else []
@@ -1269,8 +1405,6 @@ Return JSON:
 
         by_url_index = self._memory['indexes'].get('by_url', {})
         queries = self._memory['queries']
-        found_sources = []
-        seen_urls = set()
         found_target_urls = set()
 
         for target_url in urls:
@@ -1290,59 +1424,152 @@ Return JSON:
 
             if not query_ids:
                 logger.debug(f"[MEMORY] URL not found in memory: {target_url}")
+                result['not_found'].append(target_url)
                 continue
 
-            # Get the most recent query that has this URL
-            url_found = False
+            # Collect ALL snippets for this URL from ALL queries
+            url_snippets = []
+            seen_snippet_hashes = set()
+
             for query_id in query_ids:
                 query_data = queries.get(query_id)
                 if not query_data:
                     continue
 
-                # Find the source with this URL in the query results
+                # Find ALL results with this URL in the query
                 for idx, res in enumerate(query_data.get('results', [])):
                     result_url = res.get('url', '')
 
                     # Match by URL (exact or base URL match)
                     if result_url == target_url or result_url.rstrip('/') == normalized_url:
-                        if result_url in seen_urls:
-                            continue  # Skip duplicates
+                        snippet_text = res.get('snippet', '')
 
-                        seen_urls.add(result_url)
-                        found_target_urls.add(target_url)
-                        url_found = True
+                        # Dedupe by snippet content hash
+                        snippet_hash = hashlib.md5(snippet_text.encode()).hexdigest()[:16]
+                        if snippet_hash in seen_snippet_hashes:
+                            continue
+                        seen_snippet_hashes.add(snippet_hash)
 
-                        # Build source with metadata (same format as _convert_to_search_format)
+                        # Check if this is full content (from store_url_content)
+                        is_full_content = res.get('_is_full_content', False)
+                        source_type = res.get('_source_type', 'search_result')
+
+                        # Build source with metadata
                         source = {
                             "url": res.get('url'),
                             "title": res.get('title'),
-                            "snippet": res.get('snippet'),
+                            "snippet": snippet_text,
                             "date": res.get('date'),
                             "last_updated": res.get('last_updated'),
 
                             # Memory-specific metadata
                             "_from_memory": True,
-                            "_from_url_lookup": True,  # Mark as direct URL lookup
+                            "_from_url_lookup": True,
                             "_original_query": query_data.get('search_term'),
                             "_query_date": query_data.get('query_time'),
                             "_memory_age_days": self._calculate_age_days(query_data.get('query_time')),
                             "_original_rank": idx,
-                            "_memory_relevance": 10.0,  # High relevance for direct URL match
-                            "_freshness_indicator": self._get_freshness_indicator(query_data.get('query_time'))
+                            "_memory_relevance": 10.0,
+                            "_freshness_indicator": self._get_freshness_indicator(query_data.get('query_time')),
+                            "_is_full_content": is_full_content,
+                            "_source_type": source_type,
+                            "_snippet_length": len(snippet_text)
                         }
 
-                        found_sources.append(source)
-                        logger.info(f"[MEMORY] Found URL in memory: {target_url} (from query: {query_data.get('search_term', 'unknown')})")
-                        break  # Found this URL, move to next target
+                        # Add extraction metadata if present
+                        if '_extraction_metadata' in res:
+                            source['_extraction_metadata'] = res['_extraction_metadata']
 
-                if url_found:
-                    break  # Already found, no need to check other queries
+                        url_snippets.append(source)
 
-        # Track URLs not found in memory
-        not_found = [url for url in urls if url not in found_target_urls]
+            if not url_snippets:
+                logger.debug(f"[MEMORY] URL in index but no snippets found: {target_url}")
+                result['not_found'].append(target_url)
+                continue
 
-        logger.info(f"[MEMORY] URL lookup: {len(urls)} URLs -> {len(found_sources)} found, {len(not_found)} not found")
-        return {'found': found_sources, 'not_found': not_found}
+            found_target_urls.add(target_url)
+            result['all_snippets'][target_url] = url_snippets
+
+            # Sort snippets: full_content first (table extractions), then by length (longer = richer)
+            url_snippets.sort(
+                key=lambda s: (
+                    not s.get('_is_full_content', False),  # Full content first (False sorts before True)
+                    -s.get('_snippet_length', 0)  # Longer snippets first
+                )
+            )
+
+            # Keyword validation: check if ANY snippet passes all required keywords
+            if required_keywords:
+                passes_validation = False
+                passing_snippets = []
+
+                for source in url_snippets:
+                    if self._snippet_matches_keywords(source.get('snippet', ''), source.get('title', ''), required_keywords):
+                        passes_validation = True
+                        passing_snippets.append(source)
+
+                if passes_validation:
+                    # Use ALL passing snippets (for extraction to pull from)
+                    result['found'].extend(passing_snippets)
+                    logger.info(
+                        f"[MEMORY] URL passes keyword validation: {target_url} "
+                        f"({len(passing_snippets)}/{len(url_snippets)} snippets match)"
+                    )
+                else:
+                    # No snippets pass - need to fetch fresh content
+                    result['needs_fetch'].append(target_url)
+                    logger.info(
+                        f"[MEMORY] URL found but FAILS keyword validation: {target_url} "
+                        f"(keywords: {required_keywords}, snippets checked: {len(url_snippets)})"
+                    )
+            else:
+                # No keyword validation - use all snippets (prefer full content)
+                result['found'].extend(url_snippets)
+                logger.info(
+                    f"[MEMORY] Found URL in memory: {target_url} "
+                    f"({len(url_snippets)} snippets, full_content: {any(s.get('_is_full_content') for s in url_snippets)})"
+                )
+
+        logger.info(
+            f"[MEMORY] URL lookup: {len(urls)} URLs -> "
+            f"{len(result['found'])} found (passing), "
+            f"{len(result['needs_fetch'])} needs_fetch (failed keywords), "
+            f"{len(result['not_found'])} not_found"
+        )
+        return result
+
+    def _snippet_matches_keywords(
+        self,
+        snippet: str,
+        title: str,
+        required_keywords: List[str]
+    ) -> bool:
+        """
+        Check if snippet/title contains all required keyword groups.
+
+        Args:
+            snippet: The snippet text to check
+            title: The title to check
+            required_keywords: List of keyword groups. Each group can have
+                variants separated by '|'. ALL groups must match.
+
+        Returns:
+            True if all keyword groups are found, False otherwise
+        """
+        if not required_keywords:
+            return True
+
+        searchable = (snippet + ' ' + title).lower()
+
+        for keyword_group in required_keywords:
+            # Split group into variants (OR logic within group)
+            variants = [v.strip().lower() for v in keyword_group.split('|')]
+
+            # Check if ANY variant is found
+            if not any(variant in searchable for variant in variants):
+                return False  # This required group not found
+
+        return True  # All groups matched
 
     async def fetch_url_content(self, urls: List[str]) -> List[Dict[str, Any]]:
         """

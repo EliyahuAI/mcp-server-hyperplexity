@@ -4,6 +4,8 @@
 
 The Search Memory System is a session-scoped memory layer for the Perplexity Search API that stores all search results and intelligently recalls them to avoid redundant searches, reduce costs, and improve response times.
 
+The system also supports **direct URL content storage** for Table Maker extractions, enabling full table data to be stored and recalled during validation - ensuring extracted tables are available even when Perplexity search snippets are truncated.
+
 ## Architecture
 
 ### Storage Design
@@ -58,6 +60,50 @@ The Search Memory System is a session-scoped memory layer for the Perplexity Sea
 }
 ```
 
+### URL Content Storage (Table Maker Integration)
+
+In addition to search results, the memory can store **full URL content** directly:
+
+```json
+{
+  "url_content_abc123": {
+    "query_text": "[URL_CONTENT] https://census.gov/data/tables/...",
+    "search_term": "[URL_CONTENT] https://census.gov/data/tables/...",
+    "query_time": "2025-12-30T14:30:22Z",
+    "parameters": {
+      "source_type": "table_extraction",
+      "content_length": 15000,
+      "is_url_content": true
+    },
+    "results": [
+      {
+        "url": "https://census.gov/data/tables/...",
+        "title": "US Population by State 1920-2020",
+        "snippet": "| State | 2000 | 2010 | 2020 |\n|-------|------|------|------|\n| Wyoming | 493,782 | 563,626 | 576,851 |\n...",
+        "_source_type": "table_extraction",
+        "_is_full_content": true,
+        "_extraction_metadata": {
+          "rows_count": 50,
+          "columns_found": ["State", "2000", "2010", "2020"]
+        }
+      }
+    ],
+    "metadata": {
+      "cost": 0.0,
+      "num_results": 1,
+      "strategy": "table_extraction",
+      "is_url_content": true
+    }
+  }
+}
+```
+
+**Key Differences from Search Results:**
+- `_is_full_content: true` - Marks this as complete content (not truncated)
+- `_source_type` - Identifies the content type (table_extraction, background_research, etc.)
+- `_extraction_metadata` - Contains table-specific metadata (rows, columns)
+- Multiple snippets per URL supported (different source_types get different IDs)
+
 ## Recall Algorithm
 
 The recall process uses a **3-stage hybrid approach** to find relevant memories:
@@ -102,6 +148,72 @@ The recall process uses a **3-stage hybrid approach** to find relevant memories:
 ```
 
 **Total Recall Cost:** ~$0.0005 (all 3 stages)
+
+## URL-Based Recall (with Keyword Validation)
+
+When URLs are detected in the query (e.g., from Excel comments containing source references), the system uses **direct URL lookup** with keyword validation:
+
+### `recall_by_urls(urls, required_keywords)`
+
+```python
+url_lookup_result = memory.recall_by_urls(
+    urls=["https://census.gov/data/tables/..."],
+    required_keywords=["Wyoming", "population"]  # Entity validation
+)
+```
+
+**Returns:**
+```json
+{
+  "found": [...],        // Sources that pass keyword validation
+  "not_found": [...],    // URLs not in memory at all
+  "needs_fetch": [...],  // URLs found but FAILED keyword validation
+  "all_snippets": {...}  // All snippets per URL (for debugging)
+}
+```
+
+### Keyword Validation Logic
+
+When `required_keywords` is provided:
+1. Each keyword group uses OR logic within (e.g., `"Wyoming|WY"`)
+2. ALL keyword groups must match (AND logic between groups)
+3. Searches both `snippet` and `title` (case-insensitive)
+
+**Example:**
+```python
+required_keywords = ["Wyoming|WY", "population|census"]
+# Matches if (Wyoming OR WY) AND (population OR census) found in snippet/title
+```
+
+### Multiple Snippets Per URL
+
+The system returns **ALL snippets** for each URL:
+- Search results (truncated by Perplexity)
+- Table extractions (full content)
+- Background research (authoritative sources)
+
+**Priority Order:**
+1. `_is_full_content=True` sources first (table extractions)
+2. Longer snippets before shorter ones
+
+### Handling Failed Keyword Validation
+
+When stored snippets don't contain required entities:
+1. URL goes to `needs_fetch` list
+2. Clone fetches fresh content via Jina
+3. Fresh content used for extraction
+
+**Example Flow:**
+```
+Query: "Wyoming population 2020"
+URL in prompt: census.gov/data/tables/...
+
+1. recall_by_urls(["census.gov/..."], keywords=["Wyoming"])
+2. Memory has truncated search snippet (Indiana, Texas... NOT Wyoming)
+3. Keyword check fails → URL goes to needs_fetch
+4. Jina fetches fresh census.gov content
+5. Fresh content contains Wyoming → extraction succeeds
+```
 
 ## Search Decision Logic
 
@@ -278,6 +390,75 @@ result = await clone.query(
 **Table Maker Integration:**
 - Table Maker already has session_id and email
 - Easy integration - pass to the_clone.query() if using clone for research
+- **Table Maker now stores extracted tables to agent_memory automatically**
+
+## Table Maker Memory Integration
+
+Table Maker automatically stores extracted content to agent_memory during execution:
+
+### What Gets Stored
+
+**Step 0 (Background Research):**
+- Authoritative sources with descriptions
+- Source type: `background_research_{type}`
+
+**Step 0b (Table Extraction):**
+- Full markdown tables extracted from URLs
+- Source type: `table_extraction`
+- Includes all source URLs (primary and alternates)
+
+### Storage Flow
+
+```
+Table Maker Pipeline:
+  ↓
+Step 0: Background Research
+  └─> store_url_content(source_url, description, "background_research_...")
+  ↓
+Step 0b: Table Extraction
+  └─> store_url_content(source_url, markdown_table, "table_extraction")
+  └─> store_url_content(alt_urls..., markdown_table, "table_extraction_alt")
+  ↓
+Excel Generated (with source URLs in cell comments)
+  ↓
+Validation runs later...
+  └─> recall_by_urls(urls_from_comments, required_keywords)
+  └─> Finds full table content in memory
+  └─> Extraction pulls specific data (e.g., Wyoming row)
+```
+
+### API: `store_url_content()`
+
+```python
+from the_clone.search_memory import SearchMemory
+
+memory = SearchMemory(ai_client=ai_client)
+
+await memory.store_url_content(
+    url="https://census.gov/data/tables/...",
+    content="| State | 2000 | 2010 | 2020 |\n|Wyoming|493,782|...",
+    title="US Population by State",
+    source_type="table_extraction",
+    metadata={
+        "rows_count": 50,
+        "columns_found": ["State", "2000", "2010", "2020"],
+        "session_id": "session_123"
+    }
+)
+```
+
+**Parameters:**
+- `url`: Source URL (used for lookup)
+- `content`: Full content (markdown table, text, etc.)
+- `title`: Display title
+- `source_type`: Content type identifier (allows multiple snippets per URL)
+- `metadata`: Optional extraction metadata
+
+**Behavior:**
+- Generates unique ID based on URL + source_type
+- Deduplicates by content length (keeps richer data)
+- Sets `_is_full_content=True` flag
+- Updates `by_url` index for recall
 
 ## Deduplication Rules
 
@@ -378,6 +559,11 @@ When `debug_dir` is specified, memory operations are fully logged in `FULL_LOG.m
 - Deduplication (same query + memory vs search)
 - Proper nouns in keywords
 - Sparse negative keywords (only when needed)
+- **Direct URL content storage** (`store_url_content()`)
+- **URL-based recall with keyword validation** (`recall_by_urls(required_keywords)`)
+- **Multiple snippets per URL** (search results + table extractions)
+- **Table Maker integration** (auto-stores extracted tables)
+- **Full content prioritization** (`_is_full_content` sources ranked first)
 
 ### 📊 Performance Metrics
 - Recall time: ~500-750ms
@@ -395,9 +581,11 @@ When `debug_dir` is specified, memory operations are fully logged in `FULL_LOG.m
 - `docs/SEARCH_MEMORY_SYSTEM.md` - This documentation
 
 ### Modified Files
-- `src/the_clone/the_clone.py` - Full integration (Step 1.5, search decision, triage skip)
+- `src/the_clone/the_clone.py` - Full integration (Step 1.5, search decision, triage skip, URL keyword validation)
+- `src/the_clone/search_memory.py` - Added `store_url_content()`, enhanced `recall_by_urls()` with keyword validation
 - `src/the_clone/prompts/initial_decision.md` - Proper nouns, sparse negative keywords
 - `src/the_clone/initial_decision_schemas.py` - Negative keywords optional
+- `src/lambdas/interface/actions/table_maker/execution.py` - Stores extracted tables to agent_memory
 
 ## Future Enhancements
 

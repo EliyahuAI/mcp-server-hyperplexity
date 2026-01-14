@@ -140,6 +140,15 @@ from .config_bridge import build_table_analysis_from_conversation
 from ..generate_config_unified import handle_generate_config_unified
 from .table_maker_lib.config_generator import ConfigGenerator
 
+# Import SearchMemory for storing extracted tables to agent_memory
+try:
+    from the_clone.search_memory import SearchMemory
+    SEARCH_MEMORY_AVAILABLE = True
+except ImportError:
+    SEARCH_MEMORY_AVAILABLE = False
+    logger = logging.getLogger()
+    logger.warning("[EXECUTION] SearchMemory not available - extracted tables won't be stored to agent_memory")
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -914,6 +923,57 @@ async def execute_full_table_generation(
                 'background_research_result.json', background_research_result
             )
 
+            # Store background research sources to agent_memory for validation
+            # This makes authoritative sources available when validation looks up URLs
+            if SEARCH_MEMORY_AVAILABLE:
+                try:
+                    memory = SearchMemory(ai_client=ai_client)
+                    sources_stored = 0
+
+                    # Store authoritative sources
+                    for source in background_research_result.get('authoritative_sources', []):
+                        source_url = source.get('url', '')
+                        source_title = source.get('name', source.get('title', 'Authoritative Source'))
+                        source_description = source.get('description', '')
+                        source_type_name = source.get('type', 'authoritative')
+
+                        if source_url and source_description:
+                            await memory.store_url_content(
+                                url=source_url,
+                                content=source_description,
+                                title=source_title,
+                                source_type=f'background_research_{source_type_name}',
+                                metadata={
+                                    'relevance': source.get('relevance', 'HIGH'),
+                                    'session_id': session_id,
+                                    'conversation_id': conversation_id
+                                }
+                            )
+                            sources_stored += 1
+
+                    # Store tablewide_research with a synthetic URL
+                    tablewide_research = background_research_result.get('tablewide_research', '')
+                    if tablewide_research:
+                        await memory.store_url_content(
+                            url=f'internal://tablewide_research/{session_id}',
+                            content=tablewide_research,
+                            title='Tablewide Research Summary',
+                            source_type='tablewide_research',
+                            metadata={
+                                'session_id': session_id,
+                                'conversation_id': conversation_id
+                            }
+                        )
+
+                    if sources_stored > 0:
+                        logger.info(
+                            f"[STEP 0] Stored {sources_stored} authoritative sources to agent_memory"
+                        )
+                except Exception as mem_error:
+                    logger.warning(
+                        f"[STEP 0] Failed to store research to memory (non-fatal): {mem_error}"
+                    )
+
             # Track API call
             _add_api_call_to_runs(
                 session_id=session_id,
@@ -1061,6 +1121,60 @@ async def execute_full_table_generation(
                             'background_research_result.json', background_research_result
                         )
                         logger.info("[STEP 0b] Updated background_research_result in S3 with extracted_tables")
+
+                        # CRITICAL: Store extracted tables to agent_memory for validation
+                        # This makes the full table content available when validation looks up source URLs
+                        if SEARCH_MEMORY_AVAILABLE and extracted_tables:
+                            try:
+                                memory = SearchMemory(ai_client=ai_client)
+                                tables_stored = 0
+
+                                for table_data in extracted_tables:
+                                    source_url = table_data.get('source_url', '')
+                                    markdown_table = table_data.get('markdown_table', '')
+                                    table_name = table_data.get('table_name', 'Extracted Table')
+
+                                    if source_url and markdown_table:
+                                        # Store the markdown table content with metadata
+                                        await memory.store_url_content(
+                                            url=source_url,
+                                            content=markdown_table,
+                                            title=table_name,
+                                            source_type='table_extraction',
+                                            metadata={
+                                                'rows_count': table_data.get('rows_count', 0),
+                                                'columns_found': table_data.get('columns_found', []),
+                                                'extraction_method': table_data.get('extraction_method', 'unknown'),
+                                                'session_id': session_id,
+                                                'conversation_id': conversation_id
+                                            }
+                                        )
+                                        tables_stored += 1
+
+                                        # Also store for each source_url in source_urls (multi-source extractions)
+                                        for alt_url in table_data.get('source_urls', []):
+                                            if alt_url and alt_url != source_url:
+                                                await memory.store_url_content(
+                                                    url=alt_url,
+                                                    content=markdown_table,
+                                                    title=f"{table_name} (via {alt_url})",
+                                                    source_type='table_extraction_alt',
+                                                    metadata={
+                                                        'primary_url': source_url,
+                                                        'rows_count': table_data.get('rows_count', 0),
+                                                        'columns_found': table_data.get('columns_found', [])
+                                                    }
+                                                )
+
+                                logger.info(
+                                    f"[STEP 0b] Stored {tables_stored} extracted tables to agent_memory "
+                                    f"(for validation URL lookup)"
+                                )
+                            except Exception as mem_error:
+                                logger.warning(
+                                    f"[STEP 0b] Failed to store tables to memory (non-fatal): {mem_error}"
+                                )
+                                # Continue anyway - memory storage is enhancement, not critical path
 
                         # Track API calls from table extraction
                         # enhanced_data is a list of API call metadata from all extractions

@@ -259,23 +259,36 @@ class TheClone2Refined:
             url_snippets = []
             query_urls = extract_urls_from_text(prompt)
 
+            # Get required_keywords for URL validation (from initial decision)
+            skip_required_keywords = initial_result.get('required_keywords', [])
+
             if query_urls and use_memory:
                 logger.info(f"[CLONE] Skip-to-synthesis: Found {len(query_urls)} URLs in query")
                 memory = SearchMemory(ai_client=self.ai_client)
 
-                # Look up URLs in memory
-                url_lookup_result = memory.recall_by_urls(query_urls)
+                # Look up URLs in memory with keyword validation
+                url_lookup_result = memory.recall_by_urls(
+                    query_urls,
+                    required_keywords=skip_required_keywords
+                )
                 url_sources = url_lookup_result['found']
                 urls_not_in_memory = url_lookup_result['not_found']
+                urls_need_fetch = url_lookup_result.get('needs_fetch', [])  # URLs that failed keyword validation
                 fetched_count = 0
 
                 if url_sources:
-                    logger.info(f"[CLONE] Skip-to-synthesis: {len(url_sources)} URLs found in memory")
+                    logger.info(f"[CLONE] Skip-to-synthesis: {len(url_sources)} URLs found in memory (passing keywords)")
 
-                # Fetch URLs not in memory via Jina
-                if urls_not_in_memory:
-                    logger.info(f"[CLONE] Skip-to-synthesis: Fetching {len(urls_not_in_memory)} URLs not in memory...")
-                    fetched_sources = await memory.fetch_url_content(urls_not_in_memory)
+                if urls_need_fetch:
+                    logger.info(f"[CLONE] Skip-to-synthesis: {len(urls_need_fetch)} URLs need fresh fetch (failed keyword validation)")
+
+                # Combine URLs that need fetching: not in memory + failed keyword validation
+                urls_to_fetch = list(set(urls_not_in_memory + urls_need_fetch))
+
+                # Fetch URLs via Jina
+                if urls_to_fetch:
+                    logger.info(f"[CLONE] Skip-to-synthesis: Fetching {len(urls_to_fetch)} URLs...")
+                    fetched_sources = await memory.fetch_url_content(urls_to_fetch)
                     if fetched_sources:
                         url_sources.extend(fetched_sources)
                         fetched_count = len(fetched_sources)
@@ -283,26 +296,44 @@ class TheClone2Refined:
 
                 # Convert URL sources to snippets format
                 for i, source in enumerate(url_sources):
+                    # Use 'snippet' field (memory format) or 'text'/'content' (live fetch format)
+                    raw_content = source.get('snippet', source.get('text', source.get('content', '')))
+
+                    # Full content sources (table extractions) get higher limit to preserve table data
+                    # Regular sources truncated at 8000 chars to fit in context
+                    if source.get('_is_full_content'):
+                        text_content = raw_content[:32000]  # 32K for table extractions
+                    else:
+                        text_content = raw_content[:8000]
+
+                    # Higher p-score for full content (table extractions)
+                    p_score = 0.95 if source.get('_is_full_content') else 0.85
+
                     snippet = {
                         'id': f'U1.{i+1}.0.0',
                         'search_ref': 1,
                         '_source_url': source.get('url', ''),
                         '_source_date': source.get('date', ''),
                         'verbal_handle': source.get('title', source.get('url', '')),
-                        'text': source.get('text', source.get('content', ''))[:8000],  # Limit text
-                        'p': 0.85,  # High p-score for direct URL sources
+                        'text': text_content,
+                        'p': p_score,
                         'c': 'H/P',  # High reliability, primary source
                         'validation_reason': 'URL from query',
-                        '_is_lower_quality': False
+                        '_is_lower_quality': False,
+                        '_is_full_content': source.get('_is_full_content', False),
+                        '_source_type': source.get('_source_type', 'url_lookup')
                     }
                     url_snippets.append(snippet)
 
                 if clone_logger:
                     clone_logger.log_section("Skip-to-Synthesis URL Sources", {
                         "URLs in Query": query_urls,
-                        "Found in Memory": len(url_lookup_result['found']),
+                        "Found in Memory (passing)": len(url_lookup_result['found']),
+                        "Needs Fetch (failed keywords)": len(urls_need_fetch),
+                        "Not in Memory": len(urls_not_in_memory),
                         "Fetched Live": fetched_count,
-                        "Total Snippets": len(url_snippets)
+                        "Total Snippets": len(url_snippets),
+                        "Full Content Snippets": sum(1 for s in url_snippets if s.get('_is_full_content'))
                     }, level=3)
 
             # Call synthesis with URL snippets (or empty if no URLs found)
@@ -533,21 +564,32 @@ class TheClone2Refined:
                     raise Exception("SKIP_MEMORY")  # Use exception to jump to search
 
                 # URL-based recall: Look up any URLs mentioned in the original query
+                # Pass required_keywords so memory can validate if stored content is sufficient
                 url_matched_sources = []
                 query_urls = extract_urls_from_text(prompt)
                 if query_urls:
                     logger.info(f"[CLONE] Found {len(query_urls)} URLs in query, checking memory...")
-                    url_lookup_result = memory.recall_by_urls(query_urls)
+                    url_lookup_result = memory.recall_by_urls(
+                        query_urls,
+                        required_keywords=required_keywords
+                    )
                     url_matched_sources = url_lookup_result['found']
                     urls_not_in_memory = url_lookup_result['not_found']
+                    urls_need_fetch = url_lookup_result.get('needs_fetch', [])  # URLs that failed keyword validation
 
                     if url_matched_sources:
-                        logger.info(f"[CLONE] URL lookup: {len(url_matched_sources)} sources found in memory")
+                        logger.info(f"[CLONE] URL lookup: {len(url_matched_sources)} sources found in memory (passing keywords)")
 
-                    # Fetch URLs not in memory via Jina
-                    if urls_not_in_memory:
-                        logger.info(f"[CLONE] Fetching {len(urls_not_in_memory)} URLs not in memory...")
-                        fetched_sources = await memory.fetch_url_content(urls_not_in_memory)
+                    if urls_need_fetch:
+                        logger.info(f"[CLONE] URL lookup: {len(urls_need_fetch)} URLs need fresh fetch (failed keyword validation)")
+
+                    # Combine URLs that need fetching: not in memory + failed keyword validation
+                    urls_to_fetch = list(set(urls_not_in_memory + urls_need_fetch))
+
+                    # Fetch URLs via Jina
+                    if urls_to_fetch:
+                        logger.info(f"[CLONE] Fetching {len(urls_to_fetch)} URLs...")
+                        fetched_sources = await memory.fetch_url_content(urls_to_fetch)
                         if fetched_sources:
                             url_matched_sources.extend(fetched_sources)
                             logger.info(f"[CLONE] Live fetch: {len(fetched_sources)} URLs fetched via Jina")
@@ -555,10 +597,13 @@ class TheClone2Refined:
                     if url_matched_sources and clone_logger:
                         clone_logger.log_section("URL Memory Lookup", {
                             "URLs in Query": query_urls,
-                            "Found in Memory": len(url_lookup_result['found']),
-                            "Fetched Live": len(urls_not_in_memory) - len([u for u in urls_not_in_memory if u not in [s['url'] for s in url_matched_sources]]),
+                            "Found in Memory (passing)": len(url_lookup_result['found']),
+                            "Needs Fetch (failed keywords)": len(urls_need_fetch),
+                            "Not in Memory": len(urls_not_in_memory),
+                            "Fetched Live": len(fetched_sources) if 'fetched_sources' in dir() else 0,
                             "Total URL Sources": len(url_matched_sources),
-                            "Matched URLs": [s['url'] for s in url_matched_sources]
+                            "Matched URLs": [s['url'] for s in url_matched_sources],
+                            "Full Content Sources": sum(1 for s in url_matched_sources if s.get('_is_full_content'))
                         }, level=4, collapse=True)
 
                 # Recall relevant memories (keyword-based + URL sources)
