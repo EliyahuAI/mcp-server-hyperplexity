@@ -501,7 +501,25 @@ async function uploadExcelFile(cardId, file) {
             return true; // Interview triggered - signal to caller
         }
 
-        // Show upload completion
+        // Check if a matching config was found - go directly to config card
+        if (confirmData.action === 'use_matching_config' && globalState.matchingConfigs) {
+            console.log('[MATCHING_CONFIG] Found matching config, skipping interview');
+
+            // Show success with match info
+            showFinalCardState(cardId,
+                `${file.name} uploaded - matching configuration found!`,
+                'success'
+            );
+
+            // Go directly to configuration card where user can use the match
+            setTimeout(() => {
+                createConfigurationCard();
+            }, 500);
+
+            return true; // Config flow handled - signal to caller
+        }
+
+        // Show upload completion (fallback for legacy flow)
         showMessage(`${cardId}-messages`,
             `File uploaded: ${file.name}`,
             'success'

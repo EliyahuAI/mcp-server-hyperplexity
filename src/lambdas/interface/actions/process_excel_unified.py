@@ -555,20 +555,40 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
                         # Continue without table analysis - interview can still work with column names only
                         table_analysis = {}
 
-                    # Generate conversation ID for upload interview
-                    conversation_id = f"upload_interview_{base_session_id}"
+                    # Check if we have a perfect matching config - skip interview if so
+                    has_perfect_match = (
+                        matching_configs.get('success') and
+                        matching_configs.get('perfect_match') and
+                        matching_configs.get('matches')
+                    )
 
-                    return create_response(200, {
-                        'success': True,
-                        'message': 'Excel file uploaded successfully for config generation',
-                        'session_id': session_id,
-                        'excel_s3_key': excel_s3_key,
-                        'storage_path': storage_manager.get_session_path(email_address, base_session_id),
-                        'matching_configs': matching_configs,
-                        'table_analysis': table_analysis,
-                        'conversation_id': conversation_id,
-                        'action': 'start_interview'  # Signal to frontend to start interview
-                    })
+                    if has_perfect_match:
+                        # Perfect match found - skip interview and let frontend use the matching config
+                        logger.info(f"Perfect config match found - skipping upload interview")
+                        return create_response(200, {
+                            'success': True,
+                            'message': 'Excel file uploaded - matching configuration found',
+                            'session_id': session_id,
+                            'excel_s3_key': excel_s3_key,
+                            'storage_path': storage_manager.get_session_path(email_address, base_session_id),
+                            'matching_configs': matching_configs,
+                            'table_analysis': table_analysis,
+                            'action': 'use_matching_config'  # Signal to frontend to use matching config
+                        })
+                    else:
+                        # No perfect match - start interview to create new config
+                        conversation_id = f"upload_interview_{base_session_id}"
+                        return create_response(200, {
+                            'success': True,
+                            'message': 'Excel file uploaded successfully for config generation',
+                            'session_id': session_id,
+                            'excel_s3_key': excel_s3_key,
+                            'storage_path': storage_manager.get_session_path(email_address, base_session_id),
+                            'matching_configs': matching_configs,
+                            'table_analysis': table_analysis,
+                            'conversation_id': conversation_id,
+                            'action': 'start_interview'  # Signal to frontend to start interview
+                        })
                 else:
                     # No Excel file and no config - invalid state
                     return create_response(400, {'error': 'No files provided. Please upload an Excel file or config file.'})
@@ -609,20 +629,40 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
                         # Continue without table analysis - interview can still work with column names only
                         table_analysis = {}
 
-                    # Generate conversation ID for upload interview
-                    conversation_id = f"upload_interview_{base_session_id}"
+                    # Check if we have a perfect matching config - skip interview if so
+                    has_perfect_match = (
+                        matching_configs.get('success') and
+                        matching_configs.get('perfect_match') and
+                        matching_configs.get('matches')
+                    )
 
-                    return create_response(200, {
-                        'success': True,
-                        'message': 'Excel file uploaded successfully for config generation',
-                        'session_id': session_id,
-                        'excel_s3_key': excel_s3_key,
-                        'storage_path': storage_manager.get_session_path(email_address, base_session_id),
-                        'matching_configs': matching_configs,
-                        'table_analysis': table_analysis,
-                        'conversation_id': conversation_id,
-                        'action': 'start_interview'  # Signal to frontend to start interview
-                    })
+                    if has_perfect_match:
+                        # Perfect match found - skip interview and let frontend use the matching config
+                        logger.info(f"Perfect config match found (re-upload) - skipping upload interview")
+                        return create_response(200, {
+                            'success': True,
+                            'message': 'Excel file uploaded - matching configuration found',
+                            'session_id': session_id,
+                            'excel_s3_key': excel_s3_key,
+                            'storage_path': storage_manager.get_session_path(email_address, base_session_id),
+                            'matching_configs': matching_configs,
+                            'table_analysis': table_analysis,
+                            'action': 'use_matching_config'  # Signal to frontend to use matching config
+                        })
+                    else:
+                        # No perfect match - start interview to create new config
+                        conversation_id = f"upload_interview_{base_session_id}"
+                        return create_response(200, {
+                            'success': True,
+                            'message': 'Excel file uploaded successfully for config generation',
+                            'session_id': session_id,
+                            'excel_s3_key': excel_s3_key,
+                            'storage_path': storage_manager.get_session_path(email_address, base_session_id),
+                            'matching_configs': matching_configs,
+                            'table_analysis': table_analysis,
+                            'conversation_id': conversation_id,
+                            'action': 'start_interview'  # Signal to frontend to start interview
+                        })
 
                 # Config found and this is validation/preview request - log details
                 config_source = existing_config.get('storage_metadata', {}).get('source', 'unknown')

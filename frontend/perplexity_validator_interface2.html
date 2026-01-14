@@ -7659,7 +7659,25 @@
                         return; // Don't proceed to normal config flow
                     }
 
-                    // Show upload completion
+                    // Check if a matching config was found - go directly to config card
+                    if (confirmData.action === 'use_matching_config' && globalState.matchingConfigs) {
+                        console.log('[MATCHING_CONFIG] Found matching config, skipping interview');
+
+                        // Show success with match info
+                        showFinalCardState(cardId,
+                            `${file.name} uploaded - matching configuration found!`,
+                            'success'
+                        );
+
+                        // Go directly to configuration card where user can use the match
+                        setTimeout(() => {
+                            createConfigurationCard();
+                        }, 500);
+
+                        return; // Don't proceed to default flow
+                    }
+
+                    // Show upload completion (fallback for legacy flow)
                     showMessage(`${cardId}-messages`,
                         `File uploaded: ${file.name}`,
                         'success'
@@ -7670,6 +7688,11 @@
                         `${file.name} uploaded and analyzed`,
                         'success'
                     );
+
+                    // Proceed to configuration card
+                    setTimeout(() => {
+                        createConfigurationCard();
+                    }, 500);
 
                 } catch (error) {
                     throw error;
