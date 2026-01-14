@@ -49,6 +49,8 @@ class CloneLogger:
         """Starts a top-level collapsible section for a major step."""
         self.step_start_times[step_name] = time.time()
         timestamp = datetime.now().strftime('%H:%M:%S')
+        # Note: Status shown as [SUCCESS] initially, but this is just placeholder
+        # The actual step content should indicate success/failure
         self._write(f"\n<details>\n<summary><b>[SUCCESS] Step: {step_name}</b> <small>({timestamp})</small></summary>\n\n")
 
     def end_step(self, step_name: str):

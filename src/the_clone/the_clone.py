@@ -610,6 +610,15 @@ class TheClone2Refined:
                 # URL sources are passed to Gemini for selection and always included in verification
                 # Required keywords: entities that MUST appear in sources (ANY match, case-insensitive)
                 # search_terms passed for per-term confidence assessment
+                if clone_logger:
+                    clone_logger.log_section("Starting Recall", {
+                        "Search Terms": search_terms,
+                        "Required Keywords": required_keywords,
+                        "Positive Keywords": positive_keywords[:5] if positive_keywords else [],  # Truncate for readability
+                        "Breadth": breadth,
+                        "Depth": depth,
+                        "URL Sources Found": len(url_matched_sources)
+                    }, level=4, collapse=True)
                 recall_result = await memory.recall(
                     query=prompt,
                     keywords={
@@ -642,22 +651,35 @@ class TheClone2Refined:
                         "Queries After Keyword Filter": recall_meta['filtered_queries'],
                         "Sources Selected": recall_meta['sources_selected'],
                         "URL Sources (from query)": recall_meta.get('url_sources_count', 0),
-                        "Confidence": f"{confidence:.2f}",
+                        "Overall Confidence": f"{confidence:.2f}",
                         "Recall Time": f"{recall_meta['recall_time_ms']:.0f}ms",
-                        "Recall Cost": f"${recall_meta['recall_cost']:.4f}"
+                        "Recall Cost": f"${recall_meta['recall_cost']:.4f}",
+                        "Verification Run": recall_meta.get('verification_run', False)
                     }
+
+                    # Always show per-term confidence if available
+                    per_term_conf = recall_result.get('search_term_confidence', {})
+                    if per_term_conf:
+                        recall_info["Per-Term Confidence"] = per_term_conf
+
+                    # Show recommended searches (terms that need fresh search)
+                    recommended = recall_result.get('recommended_searches', [])
+                    if recommended:
+                        recall_info["Terms Needing Search"] = recommended
+                    else:
+                        recall_info["Terms Needing Search"] = "None (all covered by memory)"
 
                     # Add verification info if it ran
                     if recall_meta.get('verification_run'):
-                        recall_info["Verification"] = "Ran with full snippets (includes URL sources)"
-                        # Show recommended searches if any
-                        recommended = recall_result.get('recommended_searches', [])
-                        if recommended:
-                            recall_info["Recommended Searches"] = recommended
-                        # Show per-term confidence
-                        per_term_conf = recall_result.get('search_term_confidence', {})
-                        if per_term_conf:
-                            recall_info["Per-Term Confidence"] = per_term_conf
+                        recall_info["Verification Note"] = "Full snippet verification completed"
+
+                    # Add confidence interpretation
+                    if confidence >= 0.85:
+                        recall_info["Confidence Level"] = "HIGH (>=0.85) - Can skip search"
+                    elif confidence >= 0.6:
+                        recall_info["Confidence Level"] = "MEDIUM (0.6-0.85) - Supplement search recommended"
+                    else:
+                        recall_info["Confidence Level"] = "LOW (<0.6) - Full search needed"
 
                     clone_logger.log_section("Recall Results", recall_info, level=4, collapse=False)
 
@@ -677,12 +699,29 @@ class TheClone2Refined:
 
                 # Log search decision
                 if clone_logger:
-                    clone_logger.log_section("Search Decision", {
+                    decision_info = {
                         "Action": search_decision['action'].upper(),
                         "Reasoning": search_decision['reasoning'],
-                        "Original Search Terms": len(search_terms) if search_decision['action'] == 'full_search' else len(initial_result.get('search_terms', [])),
-                        "Modified Search Terms": len(search_decision['search_terms'])
-                    }, level=4, collapse=False)
+                        "Original Search Terms Count": len(initial_result.get('search_terms', [])),
+                        "Final Search Terms Count": len(search_decision['search_terms'])
+                    }
+                    # Show actual search terms that will be executed
+                    if search_decision['search_terms']:
+                        decision_info["Search Terms to Execute"] = search_decision['search_terms']
+                    else:
+                        decision_info["Search Terms to Execute"] = "NONE (using memory only)"
+
+                    # Add cost savings info for skip/supplement
+                    if search_decision['action'] == 'skip':
+                        decision_info["Cost Savings"] = "~$0.005 (search skipped)"
+                    elif search_decision['action'] == 'supplement':
+                        original_count = len(initial_result.get('search_terms', []))
+                        final_count = len(search_decision['search_terms'])
+                        savings = (original_count - final_count) * 0.005
+                        if savings > 0:
+                            decision_info["Cost Savings"] = f"~${savings:.3f} ({original_count - final_count} searches avoided)"
+
+                    clone_logger.log_section("Search Decision", decision_info, level=4, collapse=False)
 
                 # Log memory sources
                 if clone_logger and memory_sources:
@@ -720,17 +759,50 @@ class TheClone2Refined:
                     clone_logger.end_step("Memory Recall")
 
             except Exception as e:
+                step_time_phase = time.time() - step_start_phase
                 if str(e) == "SKIP_MEMORY":
                     # Intentional skip - memory was empty, no warning needed
                     search_decision = {'action': 'full_search', 'search_terms': search_terms, 'reasoning': 'Memory empty - skipped'}
+                    # Note: end_step already called in the empty memory check above
                 else:
                     logger.warning(f"[CLONE] Memory recall failed, continuing with full search: {e}")
                     search_decision = {'action': 'full_search', 'search_terms': search_terms, 'reasoning': f'Memory error: {str(e)}'}
+                    # Log the error and close the step
+                    if clone_logger:
+                        clone_logger.log_section("Memory Recall Error", {
+                            "Error": str(e),
+                            "Error Type": type(e).__name__,
+                            "Action": "Proceeding with full search"
+                        }, level=4, collapse=False)
+                        clone_logger.record_step_metric(
+                            "Memory Recall", "error", "N/A",
+                            0.0, step_time_phase,
+                            f"Error: {type(e).__name__}"
+                        )
+                        clone_logger.end_step("Memory Recall")
         else:
+            # Memory not available - log why
+            reason = None
             if not use_memory:
+                reason = "Memory disabled (use_memory=False)"
                 logger.debug("[CLONE] Memory disabled (use_memory=False)")
             elif not session_id or not email or not s3_manager:
-                logger.debug("[CLONE] Memory not available (missing session_id, email, or s3_manager)")
+                missing = []
+                if not session_id:
+                    missing.append("session_id")
+                if not email:
+                    missing.append("email")
+                if not s3_manager:
+                    missing.append("s3_manager")
+                reason = f"Missing required parameters: {', '.join(missing)}"
+                logger.debug(f"[CLONE] Memory not available ({reason})")
+
+            if clone_logger and reason:
+                clone_logger.log_section("Memory Status", {
+                    "Status": "NOT AVAILABLE",
+                    "Reason": reason,
+                    "Action": "Proceeding with full search"
+                }, level=4, collapse=True)
 
         # Build search settings (needed even if skipping, for memory storage)
         search_settings = {
