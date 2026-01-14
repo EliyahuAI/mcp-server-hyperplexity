@@ -194,15 +194,23 @@ class UploadInterviewHandler:
             if 'choices' in raw_response and len(raw_response['choices']) > 0:
                 content = raw_response['choices'][0]['message'].get('content', [])
 
-                # Find the structured output content block
+                # Handle both string (normalized format) and list (raw format) content
                 structured_content = None
-                for block in content:
-                    if isinstance(block, dict) and block.get('type') == 'text':
-                        try:
-                            structured_content = json.loads(block.get('text', '{}'))
-                            break
-                        except json.JSONDecodeError:
-                            continue
+                if isinstance(content, str):
+                    # Normalized format: content is a JSON string
+                    try:
+                        structured_content = json.loads(content)
+                    except json.JSONDecodeError:
+                        logger.error(f"[UPLOAD_INTERVIEW] Failed to parse string content as JSON")
+                elif isinstance(content, list):
+                    # Raw format: content is a list of content blocks
+                    for block in content:
+                        if isinstance(block, dict) and block.get('type') == 'text':
+                            try:
+                                structured_content = json.loads(block.get('text', '{}'))
+                                break
+                            except json.JSONDecodeError:
+                                continue
 
                 if not structured_content:
                     logger.error(f"[UPLOAD_INTERVIEW] No structured content found in response")
