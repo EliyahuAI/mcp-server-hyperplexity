@@ -4134,6 +4134,118 @@ const sessionWebSockets = new Map(); // sessionId -> WebSocket
 const cardHandlers = new Map(); // cardId -> {handler: function, messageTypes: [], registrationOrder: number}
 let registrationCounter = 0;
 
+// Fallback polling state - stored globally so we can manage it
+let activeFallbackPolling = null; // { sessionId, intervalId, startTime }
+
+// Track if we've already completed to prevent duplicate handling
+let validationCompletionHandled = false;
+
+// Track pending visibility check to prevent queued duplicates
+let pendingVisibilityCheck = null;
+
+// ============================================
+// STATUS RECOVERY SYSTEM
+// ============================================
+
+/**
+ * Check validation status via API and handle completion if detected.
+ * This is called on WebSocket reconnect and when tab becomes visible.
+ * @param {string} sessionId - The session to check
+ * @param {boolean} isPreview - Whether this is a preview check
+ * @returns {Promise<boolean>} - True if validation was found complete
+ */
+async function checkValidationStatus(sessionId, isPreview = false) {
+    if (!sessionId) return false;
+
+    // Prevent duplicate completion handling
+    if (validationCompletionHandled && !isPreview) {
+        console.log('[STATUS_CHECK] Completion already handled, skipping');
+        return true;
+    }
+
+    try {
+        console.log(`[STATUS_CHECK] Checking status for session ${sessionId} (preview: ${isPreview})`);
+
+        const response = await fetch(`${API_BASE}/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'checkStatus',
+                session_id: sessionId,
+                preview_mode: isPreview
+            })
+        });
+
+        if (!response.ok) {
+            console.warn(`[STATUS_CHECK] Status check failed with HTTP ${response.status}`);
+            return false;
+        }
+
+        const data = await response.json();
+        console.log('[STATUS_CHECK] Status response:', data.status || 'unknown');
+
+        // Check for completion - handle both string 'COMPLETED' and case variations
+        const status = (data.status || '').toUpperCase();
+        if (status === 'COMPLETED') {
+            console.log('[STATUS_CHECK] Validation completed - triggering UI update');
+            validationCompletionHandled = true;
+
+            // Stop fallback polling since we're handling completion
+            stopFallbackPolling();
+
+            // Ensure processing state exists
+            if (typeof ensureProcessingState === 'function') {
+                ensureProcessingState();
+            }
+
+            if (globalState.processingState) {
+                globalState.processingState.validationCompleted = true;
+            }
+            globalState.workflowPhase = 'completed';
+
+            // Route the completion message through the normal handler
+            routeMessage({
+                status: 'COMPLETED',
+                ...data
+            }, sessionId);
+
+            return true;
+        }
+
+        return false;
+    } catch (error) {
+        console.error(`[STATUS_CHECK] Error checking status:`, error);
+        return false;
+    }
+}
+
+/**
+ * Stop the fallback polling if it's active
+ */
+function stopFallbackPolling() {
+    if (activeFallbackPolling) {
+        console.log(`[FALLBACK] Stopping polling for session ${activeFallbackPolling.sessionId}`);
+        clearInterval(activeFallbackPolling.intervalId);
+        activeFallbackPolling = null;
+    }
+}
+
+/**
+ * Reset completion handled flag - call this when starting a new validation.
+ * This should be called ONCE when validation transitions to PROCESSING state,
+ * not on every PROCESSING message.
+ */
+function resetCompletionState() {
+    validationCompletionHandled = false;
+    stopFallbackPolling();
+
+    // Clear any pending visibility check
+    if (pendingVisibilityCheck) {
+        clearTimeout(pendingVisibilityCheck);
+        pendingVisibilityCheck = null;
+    }
+}
+
 function connectToSession(sessionId, reconnectAttempt = 0) {
     // Return existing connection if available and truly healthy
     if (sessionWebSockets.has(sessionId)) {
@@ -4170,6 +4282,17 @@ function connectToSession(sessionId, reconnectAttempt = 0) {
                     sessionId: sessionId
                 }));
                 console.log(`[WEBSOCKET] Subscribed to session ${sessionId}`);
+
+                // On reconnection during full validation, immediately check status
+                // This catches cases where validation completed while we were disconnected
+                if (reconnectAttempt > 0 && globalState.currentValidationState === 'full') {
+                    console.log('[WEBSOCKET] Reconnected during full validation - checking status');
+                    checkValidationStatus(sessionId, false).then(completed => {
+                        if (completed) {
+                            console.log('[WEBSOCKET] Validation was completed during disconnect - UI updated');
+                        }
+                    });
+                }
 
                 // Track last message time for health monitoring
                 ws._lastMessageTime = Date.now();
@@ -4316,48 +4439,62 @@ function ensureWebSocketHealth(sessionId) {
     return ws;
 }
 
-function setupWebSocketFallback(sessionId) {
+function setupWebSocketFallback(sessionId, options = {}) {
+    // Stop any existing fallback polling first
+    stopFallbackPolling();
+
+    const {
+        pollInterval = 10000,  // Check every 10 seconds (reduced frequency to be lighter)
+        maxDuration = 20 * 60 * 1000,  // 20 minutes max (covers most validations)
+        isPreview = false
+    } = options;
+
+    console.log(`[FALLBACK] Starting polling for session ${sessionId} (preview: ${isPreview}, duration: ${maxDuration / 60000}min)`);
+
+    const startTime = Date.now();
+
     // Poll for completion if WebSocket messages aren't coming through
     const fallbackInterval = setInterval(async () => {
-        if (!sessionWebSockets.has(sessionId)) {
-            clearInterval(fallbackInterval);
+        // Check if validation has already been handled
+        if (validationCompletionHandled && !isPreview) {
+            console.log('[FALLBACK] Completion already handled, stopping polling');
+            stopFallbackPolling();
             return;
         }
 
-        try {
-            const response = await fetch(`${API_BASE}/validate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'checkStatus',
-                    session_id: sessionId
-                })
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                if (data.status === 'completed' || data.preview_data) {
-                    ensureProcessingState();
-                    globalState.processingState.validationCompleted = true;
-                    globalState.workflowPhase = 'completed';
-
-                    routeMessage({
-                        status: 'COMPLETED',
-                        preview_data: data.preview_data,
-                        ...data
-                    }, sessionId);
-                    clearInterval(fallbackInterval);
-                }
-            }
-        } catch (error) {
-            console.error(`Fallback check failed for session ${sessionId}:`, error);
+        // Check if we're in a stable state (no active validation)
+        // Only stop if validation state is explicitly NOT 'full' (for full validation polling)
+        // or NOT 'preview' (for preview polling)
+        const expectedState = isPreview ? 'preview' : 'full';
+        if (globalState.currentValidationState !== expectedState) {
+            // Validation finished, failed, or was cancelled - stop polling
+            console.log(`[FALLBACK] Validation state changed from '${expectedState}' to '${globalState.currentValidationState}', stopping polling`);
+            stopFallbackPolling();
+            return;
         }
-    }, 5000); // Check every 5 seconds
 
-    // Stop checking after 3 minutes
-    setTimeout(() => {
-        clearInterval(fallbackInterval);
-    }, 180000);
+        // Check max duration
+        if (Date.now() - startTime > maxDuration) {
+            console.log('[FALLBACK] Max polling duration reached, stopping');
+            stopFallbackPolling();
+            return;
+        }
+
+        // Use the centralized status check function
+        const completed = await checkValidationStatus(sessionId, isPreview);
+        if (completed) {
+            console.log('[FALLBACK] Validation completed via polling');
+            stopFallbackPolling();
+        }
+    }, pollInterval);
+
+    // Store the polling state
+    activeFallbackPolling = {
+        sessionId,
+        intervalId: fallbackInterval,
+        startTime,
+        isPreview
+    };
 }
 
 // ============================================
@@ -4643,9 +4780,27 @@ function routeMessage(data, sessionId) {
     }
 
     // Cancel timeout if we receive a completion message
-    if (data.status === 'COMPLETED' && window.asyncTimeouts && window.asyncTimeouts.has(sessionId)) {
-        clearTimeout(window.asyncTimeouts.get(sessionId));
-        window.asyncTimeouts.delete(sessionId);
+    if (data.status === 'COMPLETED') {
+        // Check if already handled to prevent duplicate UI updates
+        if (validationCompletionHandled) {
+            console.log('[ROUTE] COMPLETED already handled, skipping duplicate');
+            return;
+        }
+
+        // Mark as handled to prevent duplicate processing
+        validationCompletionHandled = true;
+
+        // Stop fallback polling
+        stopFallbackPolling();
+
+        // Clear async timeouts (Bug fix: access .inactivityTimer property)
+        if (window.asyncTimeouts && window.asyncTimeouts.has(sessionId)) {
+            const timeoutInfo = window.asyncTimeouts.get(sessionId);
+            if (timeoutInfo && timeoutInfo.inactivityTimer) {
+                clearTimeout(timeoutInfo.inactivityTimer);
+            }
+            window.asyncTimeouts.delete(sessionId);
+        }
     }
 
     // Route ALL messages to the last registered card
@@ -4914,6 +5069,73 @@ function handleProcessingWebSocketMessage(data, cardId) {
 window.hideTicker = hideTicker;
 window.showTicker = showTicker;
 window.handleTickerUpdate = handleTickerUpdate;
+
+// Export status recovery functions
+window.checkValidationStatus = checkValidationStatus;
+window.resetCompletionState = resetCompletionState;
+window.stopFallbackPolling = stopFallbackPolling;
+
+// Export polling state check (useful for debugging and preventing duplicate starts)
+window.isPollingActive = () => activeFallbackPolling !== null;
+window.getPollingState = () => activeFallbackPolling ? { ...activeFallbackPolling } : null;
+
+// ============================================
+// PAGE VISIBILITY API - Check status when tab becomes visible
+// ============================================
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        // Tab became visible - check if we're in full validation and need to sync
+        if (globalState.currentValidationState === 'full' && globalState.sessionId) {
+            console.log('[VISIBILITY] Tab became visible during full validation - checking status');
+
+            // Cancel any pending visibility check to prevent duplicates
+            if (pendingVisibilityCheck) {
+                clearTimeout(pendingVisibilityCheck);
+                pendingVisibilityCheck = null;
+            }
+
+            // Small delay to allow WebSocket to potentially reconnect first
+            pendingVisibilityCheck = setTimeout(async () => {
+                pendingVisibilityCheck = null;
+
+                // Double-check we're still in full validation state
+                if (globalState.currentValidationState !== 'full' || validationCompletionHandled) {
+                    console.log('[VISIBILITY] State changed or completed, skipping check');
+                    return;
+                }
+
+                const completed = await checkValidationStatus(globalState.sessionId, false);
+                if (completed) {
+                    console.log('[VISIBILITY] Validation completed while tab was hidden');
+                }
+            }, 1000);
+        }
+    } else {
+        // Tab became hidden - cancel any pending check
+        if (pendingVisibilityCheck) {
+            clearTimeout(pendingVisibilityCheck);
+            pendingVisibilityCheck = null;
+        }
+    }
+});
+
+// ============================================
+// ONLINE/OFFLINE HANDLING
+// ============================================
+
+window.addEventListener('online', () => {
+    console.log('[NETWORK] Browser came online');
+    if (globalState.currentValidationState === 'full' && globalState.sessionId) {
+        console.log('[NETWORK] Reconnecting WebSocket and checking status');
+        ensureWebSocketHealth(globalState.sessionId);
+
+        // Check status after a short delay
+        setTimeout(async () => {
+            await checkValidationStatus(globalState.sessionId, false);
+        }, 2000);
+    }
+});
 
 
 /* ========== 04-cards.js ========== */
@@ -12135,11 +12357,32 @@ function handleProcessingWebSocketMessage(data, cardId) {
     if (data.status === 'PROCESSING') {
         // Set this card as active for ticker display
         globalState.activeCardId = cardId;
+
+        // Only initialize polling on FIRST PROCESSING message (when state changes to 'full')
+        // This prevents restarting the fallback polling on every progress update
+        const isFirstProcessingMessage = globalState.currentValidationState !== 'full';
+
         globalState.currentValidationState = 'full';
 
-        // Clear confidence scores for fresh running average
-        globalState.confidenceScores = [];
-        globalState.currentConfidenceScore = null;
+        if (isFirstProcessingMessage) {
+            // Reset completion state and start fallback polling for robustness
+            if (typeof resetCompletionState === 'function') {
+                resetCompletionState();
+            }
+
+            // Start fallback polling in case WebSocket drops during validation
+            if (typeof setupWebSocketFallback === 'function' && globalState.sessionId) {
+                setupWebSocketFallback(globalState.sessionId, {
+                    pollInterval: 15000,  // Check every 15 seconds
+                    maxDuration: 25 * 60 * 1000,  // 25 minutes max
+                    isPreview: false
+                });
+            }
+
+            // Clear confidence scores for fresh running average
+            globalState.confidenceScores = [];
+            globalState.currentConfidenceScore = null;
+        }
 
         let message = data.verbose_status || 'Processing...';
 
@@ -12160,6 +12403,11 @@ function handleProcessingWebSocketMessage(data, cardId) {
         // Progress routed to card level;
 
     } else if (data.status === 'COMPLETED') {
+        // Stop fallback polling since we received completion via WebSocket
+        if (typeof stopFallbackPolling === 'function') {
+            stopFallbackPolling();
+        }
+
         // Hide ticker but KEEP messages for next validation
         globalState.currentValidationState = null;
         hideTicker(cardId);
@@ -12330,6 +12578,12 @@ function handleProcessingWebSocketMessage(data, cardId) {
         }, showResultsDelay);
 
     } else if (data.status === 'FAILED' || data.status === 'ERROR') {
+        // Stop fallback polling on error
+        if (typeof stopFallbackPolling === 'function') {
+            stopFallbackPolling();
+        }
+
+        globalState.currentValidationState = null;
         completeThinkingInCard(cardId, 'Validation failed');
 
         const errorMessage = data.error_message || data.verbose_status || 'Validation failed';

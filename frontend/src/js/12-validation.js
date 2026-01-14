@@ -29,11 +29,32 @@ function handleProcessingWebSocketMessage(data, cardId) {
     if (data.status === 'PROCESSING') {
         // Set this card as active for ticker display
         globalState.activeCardId = cardId;
+
+        // Only initialize polling on FIRST PROCESSING message (when state changes to 'full')
+        // This prevents restarting the fallback polling on every progress update
+        const isFirstProcessingMessage = globalState.currentValidationState !== 'full';
+
         globalState.currentValidationState = 'full';
 
-        // Clear confidence scores for fresh running average
-        globalState.confidenceScores = [];
-        globalState.currentConfidenceScore = null;
+        if (isFirstProcessingMessage) {
+            // Reset completion state and start fallback polling for robustness
+            if (typeof resetCompletionState === 'function') {
+                resetCompletionState();
+            }
+
+            // Start fallback polling in case WebSocket drops during validation
+            if (typeof setupWebSocketFallback === 'function' && globalState.sessionId) {
+                setupWebSocketFallback(globalState.sessionId, {
+                    pollInterval: 15000,  // Check every 15 seconds
+                    maxDuration: 25 * 60 * 1000,  // 25 minutes max
+                    isPreview: false
+                });
+            }
+
+            // Clear confidence scores for fresh running average
+            globalState.confidenceScores = [];
+            globalState.currentConfidenceScore = null;
+        }
 
         let message = data.verbose_status || 'Processing...';
 
@@ -54,6 +75,11 @@ function handleProcessingWebSocketMessage(data, cardId) {
         // Progress routed to card level;
 
     } else if (data.status === 'COMPLETED') {
+        // Stop fallback polling since we received completion via WebSocket
+        if (typeof stopFallbackPolling === 'function') {
+            stopFallbackPolling();
+        }
+
         // Hide ticker but KEEP messages for next validation
         globalState.currentValidationState = null;
         hideTicker(cardId);
@@ -224,6 +250,12 @@ function handleProcessingWebSocketMessage(data, cardId) {
         }, showResultsDelay);
 
     } else if (data.status === 'FAILED' || data.status === 'ERROR') {
+        // Stop fallback polling on error
+        if (typeof stopFallbackPolling === 'function') {
+            stopFallbackPolling();
+        }
+
+        globalState.currentValidationState = null;
         completeThinkingInCard(cardId, 'Validation failed');
 
         const errorMessage = data.error_message || data.verbose_status || 'Validation failed';
