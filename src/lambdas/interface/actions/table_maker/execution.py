@@ -923,56 +923,10 @@ async def execute_full_table_generation(
                 'background_research_result.json', background_research_result
             )
 
-            # Store background research sources to agent_memory for validation
-            # This makes authoritative sources available when validation looks up URLs
-            if SEARCH_MEMORY_AVAILABLE:
-                try:
-                    memory = SearchMemory(ai_client=ai_client)
-                    sources_stored = 0
-
-                    # Store authoritative sources
-                    for source in background_research_result.get('authoritative_sources', []):
-                        source_url = source.get('url', '')
-                        source_title = source.get('name', source.get('title', 'Authoritative Source'))
-                        source_description = source.get('description', '')
-                        source_type_name = source.get('type', 'authoritative')
-
-                        if source_url and source_description:
-                            await memory.store_url_content(
-                                url=source_url,
-                                content=source_description,
-                                title=source_title,
-                                source_type=f'background_research_{source_type_name}',
-                                metadata={
-                                    'relevance': source.get('relevance', 'HIGH'),
-                                    'session_id': session_id,
-                                    'conversation_id': conversation_id
-                                }
-                            )
-                            sources_stored += 1
-
-                    # Store tablewide_research with a synthetic URL
-                    tablewide_research = background_research_result.get('tablewide_research', '')
-                    if tablewide_research:
-                        await memory.store_url_content(
-                            url=f'internal://tablewide_research/{session_id}',
-                            content=tablewide_research,
-                            title='Tablewide Research Summary',
-                            source_type='tablewide_research',
-                            metadata={
-                                'session_id': session_id,
-                                'conversation_id': conversation_id
-                            }
-                        )
-
-                    if sources_stored > 0:
-                        logger.info(
-                            f"[STEP 0] Stored {sources_stored} authoritative sources to agent_memory"
-                        )
-                except Exception as mem_error:
-                    logger.warning(
-                        f"[STEP 0] Failed to store research to memory (non-fatal): {mem_error}"
-                    )
+            # NOTE: We intentionally do NOT store background research sources to agent_memory here.
+            # authoritative_sources contains brief descriptions, not actual URL content.
+            # Storing them would pollute memory with snippets that pass keyword validation
+            # but don't contain actual data. Table extractions (Step 0b) store full content.
 
             # Track API call
             _add_api_call_to_runs(

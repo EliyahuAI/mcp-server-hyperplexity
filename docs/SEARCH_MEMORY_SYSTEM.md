@@ -398,14 +398,14 @@ Table Maker automatically stores extracted content to agent_memory during execut
 
 ### What Gets Stored
 
-**Step 0 (Background Research):**
-- Authoritative sources with descriptions
-- Source type: `background_research_{type}`
-
-**Step 0b (Table Extraction):**
+**Step 0b (Table Extraction) - ONLY full table content:**
 - Full markdown tables extracted from URLs
 - Source type: `table_extraction`
 - Includes all source URLs (primary and alternates)
+
+**NOT stored:**
+- Background research descriptions (brief summaries, not actual URL content)
+- Storing brief descriptions would pollute memory with snippets that pass keyword validation but don't contain actual data
 
 ### Storage Flow
 
@@ -413,7 +413,7 @@ Table Maker automatically stores extracted content to agent_memory during execut
 Table Maker Pipeline:
   ↓
 Step 0: Background Research
-  └─> store_url_content(source_url, description, "background_research_...")
+  └─> Finds authoritative sources (NOT stored to memory - just descriptions)
   ↓
 Step 0b: Table Extraction
   └─> store_url_content(source_url, markdown_table, "table_extraction")
@@ -423,7 +423,8 @@ Excel Generated (with source URLs in cell comments)
   ↓
 Validation runs later...
   └─> recall_by_urls(urls_from_comments, required_keywords)
-  └─> Finds full table content in memory
+  └─> Finds full table content in memory (if extracted)
+  └─> If not in memory OR fails keywords → Jina fetches fresh
   └─> Extraction pulls specific data (e.g., Wyoming row)
 ```
 
