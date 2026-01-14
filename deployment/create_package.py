@@ -41,7 +41,7 @@ OUTPUT_ZIP = SCRIPT_DIR / "lambda_package.zip"
 # Lambda configuration
 LAMBDA_CONFIG = {
     "FunctionName": "perplexity-validator",
-    "Runtime": "python3.9",
+    "Runtime": "python3.11",
     "Handler": "lambda_function.lambda_handler", # This will be created in the package root
     "Timeout": 870,  # 14.5 minutes in seconds (14m 30s)
     "MemorySize": 512,  # Optimized: was 1024MB, max used 334MB
@@ -1032,7 +1032,7 @@ def main():
         # Deploy
         test_lambda_config = {
             "FunctionName": function_name,
-            "Runtime": "python3.9",
+            "Runtime": "python3.11",
             "Handler": "lambda_function.lambda_handler",
             "Timeout": 30,
             "MemorySize": 512,

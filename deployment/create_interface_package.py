@@ -54,7 +54,7 @@ OUTPUT_ZIP = SCRIPT_DIR / "interface_lambda_package.zip"
 # Lambda configuration for interface function
 LAMBDA_CONFIG = {
     "FunctionName": "perplexity-validator-interface",
-    "Runtime": "python3.9",
+    "Runtime": "python3.11",
     "Handler": "interface_lambda_function.lambda_handler", # This will be created in the package root
     "Timeout": 900,  # 15 minutes for file uploads and processing
     "MemorySize": 128,  # Lightweight mode: API routing only (background Lambda uses 512MB)
@@ -98,7 +98,7 @@ API_GATEWAY_CONFIG = {
 
 WEBSOCKET_LAMBDA_CONFIG = {
     "FunctionName": "perplexity-validator-ws-handler",
-    "Runtime": "python3.9",
+    "Runtime": "python3.11",
     "Handler": "websocket_handler.handle",
     "Timeout": 60,
     "MemorySize": 128,
