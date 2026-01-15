@@ -1,10 +1,11 @@
 """
 Copy a matching configuration to the current session with proper source tracking.
+Also copies agent_memory.json if it exists, with a caution note about dynamic content.
 """
 import logging
 import json
-from datetime import datetime
-from typing import Dict, Any
+from datetime import datetime, timezone
+from typing import Dict, Any, Optional
 from pathlib import Path
 
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
@@ -12,6 +13,102 @@ from interface_lambda.utils.helpers import create_response
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+
+def copy_agent_memory(
+    storage_manager: UnifiedS3Manager,
+    source_email: str,
+    source_session: str,
+    target_email: str,
+    target_session: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Copy agent_memory.json from source session to target session if it exists.
+    Adds a system note about being careful with dynamic content.
+
+    Args:
+        storage_manager: UnifiedS3Manager instance
+        source_email: Source user email
+        source_session: Source session ID
+        target_email: Target user email
+        target_session: Target session ID
+
+    Returns:
+        Dict with copy result or None if no memory exists
+    """
+    try:
+        # Construct source and target memory paths
+        source_path = storage_manager.get_session_path(source_email, source_session)
+        target_path = storage_manager.get_session_path(target_email, target_session)
+
+        source_memory_key = f"{source_path}agent_memory.json"
+        target_memory_key = f"{target_path}agent_memory.json"
+
+        # Try to load source memory
+        try:
+            response = storage_manager.s3_client.get_object(
+                Bucket=storage_manager.bucket_name,
+                Key=source_memory_key
+            )
+            memory_data = json.loads(response['Body'].read().decode('utf-8'))
+            logger.info(f"Found source agent_memory.json with {len(memory_data.get('queries', {}))} queries")
+        except storage_manager.s3_client.exceptions.NoSuchKey:
+            logger.info(f"No agent_memory.json found in source session {source_session}")
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to read source agent_memory.json: {e}")
+            return None
+
+        # Add system caution note about dynamic content
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        caution_note = {
+            "type": "system_caution",
+            "message": (
+                f"Memory copied from session {source_session} on {today}. "
+                f"Contains data from both original and current session. "
+                f"For dynamic content, check query_time for freshness."
+            ),
+            "copied_from_session": source_session,
+            "copied_on": today
+        }
+
+        # Add caution note to memory metadata
+        if 'system_notes' not in memory_data:
+            memory_data['system_notes'] = []
+        memory_data['system_notes'].append(caution_note)
+
+        # Update memory metadata for new session
+        memory_data['session_id'] = target_session
+        memory_data['email'] = target_email
+        memory_data['copied_from'] = {
+            'session_id': source_session,
+            'email': source_email,
+            'copied_at': datetime.now(timezone.utc).isoformat()
+        }
+        memory_data['last_updated'] = datetime.now(timezone.utc).isoformat()
+
+        # Save to target session
+        storage_manager.s3_client.put_object(
+            Bucket=storage_manager.bucket_name,
+            Key=target_memory_key,
+            Body=json.dumps(memory_data, indent=2),
+            ContentType='application/json'
+        )
+
+        query_count = len(memory_data.get('queries', {}))
+        logger.info(f"Copied agent_memory.json to {target_session} ({query_count} queries, caution note added)")
+
+        return {
+            'success': True,
+            'queries_copied': query_count,
+            'source_session': source_session,
+            'target_session': target_session,
+            'caution_note_added': True
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to copy agent_memory.json: {e}")
+        return {'success': False, 'error': str(e)}
 
 def copy_config_to_session(email: str, session_id: str, config_data: Dict[str, Any], source_info: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -78,13 +175,43 @@ def copy_config_to_session(email: str, session_id: str, config_data: Dict[str, A
         
         if storage_result['success']:
             logger.info(f"Auto-copied config to {email}/{session_id} v{version}, preserving original_name: {original_name}")
+
+            # Also copy agent_memory.json if it exists and source_session is known
+            memory_copy_result = None
+            if source_session:
+                source_email = source_info.get('source_email', email)  # Default to same email if not specified
+                memory_copy_result = copy_agent_memory(
+                    storage_manager=storage_manager,
+                    source_email=source_email,
+                    source_session=source_session,
+                    target_email=email,
+                    target_session=session_id
+                )
+
+            # Record memory copy in session_info.json
+            if memory_copy_result and memory_copy_result.get('success'):
+                try:
+                    session_info = storage_manager.load_session_info(email, session_id)
+                    session_info['agent_memory_copied'] = {
+                        'copied_from_session': source_session,
+                        'copied_from_email': source_email,
+                        'copied_at': datetime.now(timezone.utc).isoformat(),
+                        'queries_copied': memory_copy_result.get('queries_copied', 0),
+                        'caution_note_added': True
+                    }
+                    storage_manager.save_session_info(email, session_id, session_info)
+                    logger.info(f"Recorded agent_memory copy in session_info.json (auto-copy)")
+                except Exception as e:
+                    logger.warning(f"Failed to record memory copy in session_info.json: {e}")
+
             return {
                 'success': True,
                 'version': version,
                 'config_s3_key': storage_result.get('s3_key'),
                 'config_id': storage_result.get('config_id'),
                 'source_info': source_info,
-                'original_name': original_name
+                'original_name': original_name,
+                'memory_copied': memory_copy_result
             }
         else:
             return {'success': False, 'error': storage_result.get('error', 'Storage failed')}
@@ -267,8 +394,9 @@ def handle_copy_config(event_data, context=None):
         
         # Skip old session info creation - use clean structure only
         table_name = f"table_{session_id.split('_')[-1]}"
-        
+
         # Update session_info.json with comprehensive tracking
+        update_success = False  # Initialize before try block
         try:
             # Update session config tracking
             # Ensure session has table_name set by adding it to session_info first
@@ -301,7 +429,36 @@ def handle_copy_config(event_data, context=None):
             logger.warning(f"Failed to update session_info.json (will fall back to messy logic): {e}")
         
         logger.info(f"Successfully copied config from {source_config_key} to session {session_id}")
-        
+
+        # Also copy agent_memory.json if it exists in the source session
+        memory_copy_result = None
+        if source_session:
+            # Extract source email from config metadata or use current email
+            source_email = source_metadata.get('email', email)
+            memory_copy_result = copy_agent_memory(
+                storage_manager=storage_manager,
+                source_email=source_email,
+                source_session=source_session,
+                target_email=email,
+                target_session=session_id
+            )
+
+            # Record memory copy in session_info.json
+            if memory_copy_result and memory_copy_result.get('success'):
+                try:
+                    session_info = storage_manager.load_session_info(email, session_id)
+                    session_info['agent_memory_copied'] = {
+                        'copied_from_session': source_session,
+                        'copied_from_email': source_email,
+                        'copied_at': datetime.now(timezone.utc).isoformat(),
+                        'queries_copied': memory_copy_result.get('queries_copied', 0),
+                        'caution_note_added': True
+                    }
+                    storage_manager.save_session_info(email, session_id, session_info)
+                    logger.info(f"Recorded agent_memory copy in session_info.json")
+                except Exception as e:
+                    logger.warning(f"Failed to record memory copy in session_info.json: {e}")
+
         return create_response(200, {
             'success': True,
             'config_data': clean_config_data,
@@ -309,6 +466,7 @@ def handle_copy_config(event_data, context=None):
             'config_s3_key': storage_result['s3_key'],
             'config_id': storage_result.get('config_id'),
             'session_tracking_updated': update_success,
+            'memory_copied': memory_copy_result,
             'source_info': {
                 'source_session': source_session,
                 'source_key': source_config_key,

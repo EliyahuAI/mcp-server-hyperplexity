@@ -703,11 +703,18 @@ class SearchMemory:
                     if any(variant in searchable_text for variant in variants):
                         req_matches += 1
 
-            # Combined score (removed recency - doesn't always matter)
+            # Calculate recency score - more recent memories get priority
+            # This is important for dynamic content (stock prices, weather, news)
+            query_time = query_data.get('query_time', '')
+            recency_score = self._recency_score(query_time)
+
+            # Combined score with recency priority
+            # Recency acts as a tiebreaker and slight boost for fresher data
             relevance_score = (
                 query_overlap * 10.0 +  # Query match most important
                 req_matches * 3.0 +     # Required keyword matches get strong boost
-                pos_matches * 1.0 -     # Positive keyword matches
+                pos_matches * 1.0 +     # Positive keyword matches
+                recency_score * 0.5 -   # Recent memories get priority bonus (0-2.5 points)
                 neg_matches * 5.0       # Strong penalty for negative keywords
             )
 
@@ -717,7 +724,9 @@ class SearchMemory:
                     'query_id': query_id,
                     'query_data': query_data,
                     'relevance_score': relevance_score,
-                    'query_overlap': query_overlap
+                    'query_overlap': query_overlap,
+                    'recency_score': recency_score,
+                    'query_time': query_time
                 })
 
         # Sort by score and return top k
@@ -944,9 +953,12 @@ class SearchMemory:
         for i, source in enumerate(all_sources):
             # Mark user-referenced sources
             user_ref_note = " [USER REFERENCED]" if source.get('_user_referenced') else ""
+            # Calculate relative time for memory age
+            query_time = source.get('_query_time', '')
+            relative_time = self._get_relative_time(query_time) if query_time else "unknown age"
             snippets_text.append(f"**[{i}]{user_ref_note}** {source.get('title', 'No title')}")
             snippets_text.append(f"URL: {source.get('url', 'No URL')}")
-            snippets_text.append(f"Date: {source.get('date', 'No date')}")
+            snippets_text.append(f"Content Date: {source.get('date', 'No date')} | Memory Age: {relative_time}")
             snippets_text.append(f"Content: {source.get('snippet', 'No content')[:2000]}...")
             snippets_text.append("---")
 
@@ -965,16 +977,25 @@ class SearchMemory:
 **Query:** {query}
 **Requirements:** {breadth}/{depth}
 {search_terms_section}
+
+**IMPORTANT - Data Freshness Warning:**
+These sources are from MEMORY (previous searches). Check "Memory Age" for each source.
+For DYNAMIC content (stock prices, weather, news, sports scores, current events):
+- Sources older than 1 day may be STALE - reduce confidence accordingly
+- Prefer recent sources over older ones for time-sensitive queries
+- If query needs current data and sources are old, recommend fresh search
+
 **Sources ({len(all_sources)}, indexed 0-{len(all_sources)-1}):**
 
 {chr(10).join(snippets_text)}
 
 **Task:** For each search term, ask: "Could I write a complete answer to '[search term]' using ONLY these sources?"
+Consider data freshness - old memories about dynamic topics should lower confidence.
 
 **Output (arrays matched to search term order):**
 - `confidence_vector`: [{num_terms} floats] confidence per term. 0.9+=yes fully, 0.7-0.9=mostly yes, 0.5-0.7=partially, <0.5=no
 - `refined_terms`: [{num_terms} strings] refined search term or "" to keep original
-- `ranked_source_indices`: [ints] source indices (0-{len(all_sources)-1}) ranked by usefulness, best first
+- `ranked_source_indices`: [ints] source indices (0-{len(all_sources)-1}) ranked by usefulness, best first. Prefer recent sources.
 """
 
         schema = {
@@ -1231,7 +1252,7 @@ Return JSON:
                 # Memory-specific metadata
                 "_from_memory": True,
                 "_original_query": source.get('_query_text'),
-                "_query_date": source.get('_query_time'),
+                "_query_time": source.get('_query_time'),  # When this memory was stored
                 "_memory_age_days": self._calculate_age_days(source.get('_query_time')),
                 "_original_rank": source.get('_source_rank', 0),
                 "_memory_relevance": source.get('_relevance_score', 0),
@@ -1328,6 +1349,48 @@ Return JSON:
             return "recent"
         else:
             return "older"
+
+    def _get_relative_time(self, timestamp: str) -> str:
+        """Convert timestamp to human-readable relative time (e.g., '2 days ago')."""
+        if not timestamp:
+            return "unknown"
+        try:
+            query_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            now = datetime.now(timezone.utc)
+            delta = now - query_time
+
+            seconds = delta.total_seconds()
+            minutes = seconds / 60
+            hours = minutes / 60
+            days = delta.days
+
+            if seconds < 60:
+                return "just now"
+            elif minutes < 60:
+                m = int(minutes)
+                return f"{m} minute{'s' if m != 1 else ''} ago"
+            elif hours < 24:
+                h = int(hours)
+                return f"{h} hour{'s' if h != 1 else ''} ago"
+            elif days == 1:
+                return "1 day ago"
+            elif days < 7:
+                return f"{days} days ago"
+            elif days < 14:
+                return "1 week ago"
+            elif days < 30:
+                w = days // 7
+                return f"{w} weeks ago"
+            elif days < 60:
+                return "1 month ago"
+            elif days < 365:
+                m = days // 30
+                return f"{m} months ago"
+            else:
+                y = days // 365
+                return f"{y} year{'s' if y != 1 else ''} ago"
+        except:
+            return "unknown"
 
     def _extract_cost_from_response(self, response: Dict[str, Any]) -> float:
         """Extract cost from AI client response (same method as the_clone.py)."""

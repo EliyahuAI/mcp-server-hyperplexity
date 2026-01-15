@@ -547,6 +547,44 @@ When `debug_dir` is specified, memory operations are fully logged in `FULL_LOG.m
 </details>
 ```
 
+## Memory Copying (Config Match)
+
+When a matching configuration is copied to a new session, `agent_memory.json` is also copied if it exists:
+
+### What Gets Copied
+- All stored queries and their results
+- URL indexes for fast lookup
+- A system caution note about data freshness
+
+### Caution Note Added
+```json
+{
+  "type": "system_caution",
+  "message": "Memory copied from session X on 2025-01-15. Contains data from both original and current session. For dynamic content, check query_time for freshness.",
+  "copied_from_session": "session_20250110_...",
+  "copied_on": "2025-01-15"
+}
+```
+
+### Session Info Tracking
+The memory copy is recorded in `session_info.json`:
+```json
+{
+  "agent_memory_copied": {
+    "copied_from_session": "session_20250110_...",
+    "copied_at": "2025-01-15T10:30:00Z",
+    "queries_copied": 15,
+    "caution_note_added": true
+  }
+}
+```
+
+### Data Freshness Handling
+- Each memory stores `query_time` (when it was captured)
+- Verification prompts show **relative time** (e.g., "2 days ago", "1 week ago")
+- Dynamic content warning in verification prompts alerts LLM to check freshness
+- Recency scoring gives priority to fresher memories in recall
+
 ## Key Features
 
 ### ✅ Implemented
@@ -565,6 +603,9 @@ When `debug_dir` is specified, memory operations are fully logged in `FULL_LOG.m
 - **Multiple snippets per URL** (search results + table extractions)
 - **Table Maker integration** (auto-stores extracted tables)
 - **Full content prioritization** (`_is_full_content` sources ranked first)
+- **Memory copying on config match** (copies agent_memory.json with caution note)
+- **Recency priority scoring** (fresher memories get priority in recall)
+- **Relative time display** (verification shows "2 days ago" not timestamps)
 
 ### 📊 Performance Metrics
 - Recall time: ~500-750ms
@@ -583,10 +624,11 @@ When `debug_dir` is specified, memory operations are fully logged in `FULL_LOG.m
 
 ### Modified Files
 - `src/the_clone/the_clone.py` - Full integration (Step 1.5, search decision, triage skip, URL keyword validation)
-- `src/the_clone/search_memory.py` - Added `store_url_content()`, enhanced `recall_by_urls()` with keyword validation
+- `src/the_clone/search_memory.py` - Added `store_url_content()`, enhanced `recall_by_urls()` with keyword validation, recency scoring, relative time display
 - `src/the_clone/prompts/initial_decision.md` - Proper nouns, sparse negative keywords
 - `src/the_clone/initial_decision_schemas.py` - Negative keywords optional
 - `src/lambdas/interface/actions/table_maker/execution.py` - Stores extracted tables to agent_memory
+- `src/lambdas/interface/actions/copy_config.py` - Copies agent_memory.json when copying config, adds caution note, records in session_info
 
 ## Future Enhancements
 
