@@ -453,16 +453,43 @@ def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=Fal
             function_exists = False
             logger.info(f"Lambda function {LAMBDA_CONFIG['FunctionName']} does not exist. Creating new function...")
         
-        # Read deployment package
-        with open(OUTPUT_ZIP, 'rb') as zip_file:
-            zip_content = zip_file.read()
-        
+        # Read deployment package and check size
+        zip_size = OUTPUT_ZIP.stat().st_size
+        zip_size_mb = zip_size / (1024 * 1024)
+        logger.info(f"Deployment package size: {zip_size_mb:.2f} MB")
+
+        # AWS Lambda direct upload limit is ~50MB, use S3 for larger packages
+        USE_S3_THRESHOLD = 50 * 1024 * 1024  # 50MB
+
+        if zip_size > USE_S3_THRESHOLD:
+            logger.info(f"Package exceeds {USE_S3_THRESHOLD / (1024*1024):.0f}MB limit, uploading to S3 first...")
+            s3_client = boto3.client('s3', region_name=region)
+            s3_bucket_name = LAMBDA_CONFIG["Environment"]["Variables"].get("S3_UNIFIED_BUCKET", "hyperplexity-storage")
+            s3_key = f"lambda-deployments/{LAMBDA_CONFIG['FunctionName']}/lambda_package.zip"
+
+            logger.info(f"Uploading to s3://{s3_bucket_name}/{s3_key}...")
+            s3_client.upload_file(str(OUTPUT_ZIP), s3_bucket_name, s3_key)
+            logger.info("Upload to S3 complete.")
+
+            use_s3 = True
+        else:
+            with open(OUTPUT_ZIP, 'rb') as zip_file:
+                zip_content = zip_file.read()
+            use_s3 = False
+
         if function_exists:
             # Update function code
-            update_code_args = {
-                'FunctionName': LAMBDA_CONFIG["FunctionName"],
-                'ZipFile': zip_content,
-            }
+            if use_s3:
+                update_code_args = {
+                    'FunctionName': LAMBDA_CONFIG["FunctionName"],
+                    'S3Bucket': s3_bucket_name,
+                    'S3Key': s3_key,
+                }
+            else:
+                update_code_args = {
+                    'FunctionName': LAMBDA_CONFIG["FunctionName"],
+                    'ZipFile': zip_content,
+                }
             
             # Retry logic for ResourceConflictException on code update
             max_retries = 5
@@ -535,18 +562,23 @@ def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=Fal
                         raise
         else:
             # Create new function
+            if use_s3:
+                code_config = {'S3Bucket': s3_bucket_name, 'S3Key': s3_key}
+            else:
+                code_config = {'ZipFile': zip_content}
+
             create_function_args = {
                 'FunctionName': LAMBDA_CONFIG["FunctionName"],
                 'Runtime': LAMBDA_CONFIG["Runtime"],
                 'Role': LAMBDA_CONFIG["Role"],
                 'Handler': LAMBDA_CONFIG["Handler"],
-                'Code': {'ZipFile': zip_content},
+                'Code': code_config,
                 'Timeout': LAMBDA_CONFIG["Timeout"],
                 'MemorySize': LAMBDA_CONFIG["MemorySize"],
                 'Environment': LAMBDA_CONFIG["Environment"],
                 'TracingConfig': LAMBDA_CONFIG.get("TracingConfig", {'Mode': 'PassThrough'})
             }
-            
+
             response = lambda_client.create_function(**create_function_args)
             logger.info(f"New function created successfully. ARN: {response.get('FunctionArn')}")
 
