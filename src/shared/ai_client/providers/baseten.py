@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Dict, Any
 
 from ..utils import extract_json_from_text, validate_and_normalize_soft_schema, repair_json_with_haiku
+from ..config import get_model_timeout, get_timeout_tier
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ class BasetenProvider:
         self.ai_client = ai_client  # For Haiku JSON repair
         self.base_url = "https://inference.baseten.co/v1"
 
-    async def _normalize_baseten_response(self, response: Dict, soft_schema: bool = False, schema: Dict = None) -> Dict:
+    async def _normalize_baseten_response(self, response: Dict, soft_schema: bool = False, schema: Dict = None, model: str = None) -> Dict:
         """Normalize Baseten API response to Anthropic-style format."""
         try:
             # Baseten returns standard OpenAI format
@@ -128,8 +129,8 @@ class BasetenProvider:
                                     normalized['_repair_meta'] = {
                                         'repaired': True,
                                         'cost': repair_cost,
-                                        'model': 'claude-haiku-4-5',
-                                        'provider': 'anthropic',
+                                        'model': 'gemini-2.0-flash',
+                                        'provider': 'gemini',
                                         'explanation': repair_explanation
                                     }
 
@@ -179,7 +180,7 @@ class BasetenProvider:
             logger.error(f"Baseten normalization failed: {e}")
             return {'id': 'error', 'type': 'message', 'role': 'assistant', 'content': [{'type': 'text', 'text': str(response)}], 'stop_reason': 'error', 'usage': {}}
 
-    async def make_single_call(self, prompt: str, schema: Dict, model: str, use_cache: bool, cache_key: str, start_time: datetime, max_tokens: int = 8000, soft_schema: bool = False) -> Dict:
+    async def make_single_call(self, prompt: str, schema: Dict, model: str, use_cache: bool, cache_key: str, start_time: datetime, max_tokens: int = 8000, soft_schema: bool = False, timeout_override: int = None) -> Dict:
         enforced_max_tokens = self.usage_handler.enforce_provider_token_limit(model, max_tokens)
         
         final_prompt = prompt
@@ -223,8 +224,12 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
                     }
                 }
 
+            # Get model-specific timeout (with optional override)
+            timeout_seconds = get_model_timeout(model, timeout_override)
+            logger.debug(f"[BASETEN] Using timeout {get_timeout_tier(model)} for {model}{' (override)' if timeout_override else ''}")
+
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as response:
+                async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=timeout_seconds)) as response:
                     processing_time = (datetime.now() - start_time).total_seconds()
                     response_text = await response.text()
                     
@@ -235,7 +240,7 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
                         await self.cache_handler.save_debug_data('baseten', model, debug_request, response_text, error=error, context=f"status_{response.status}", cache_key=cache_key)
                         raise error
 
-            unified_response = await self._normalize_baseten_response(response_json, soft_schema, schema)
+            unified_response = await self._normalize_baseten_response(response_json, soft_schema, schema, model)
             
             if unified_response.get('stop_reason') in ['max_tokens', 'length']:
                  await self.cache_handler.save_debug_data('baseten', model, debug_request, unified_response, context="max_tokens_truncated", cache_key=cache_key)

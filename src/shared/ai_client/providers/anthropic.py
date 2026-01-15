@@ -14,6 +14,7 @@ from ..utils import (
     extract_json_from_text,
     repair_json_with_haiku
 )
+from ..config import get_model_timeout, get_timeout_tier
 
 logger = logging.getLogger(__name__)
 
@@ -73,16 +74,20 @@ class AnthropicProvider:
         start_time = datetime.now()
         return await self._make_api_call_with_retry("https://api.anthropic.com/v1/messages", headers, data, normalized_model, use_cache, cache_key, start_time)
 
-    async def make_single_call(self, url: str, headers: dict, data: dict, normalized_model: str, use_cache: bool, cache_key: str, start_time: datetime, max_web_searches: int, soft_schema: bool, schema: dict):
+    async def make_single_call(self, url: str, headers: dict, data: dict, normalized_model: str, use_cache: bool, cache_key: str, start_time: datetime, max_web_searches: int, soft_schema: bool, schema: dict, timeout_override: int = None):
         debug_request = {
             'url': url,
             'headers': {k: v if k != 'X-API-Key' else 'REDACTED' for k, v in headers.items()},
             'data': data
         }
-        
+
+        # Get model-specific timeout (with optional override)
+        timeout_seconds = get_model_timeout(normalized_model, timeout_override)
+        logger.debug(f"[ANTHROPIC] Using timeout {get_timeout_tier(normalized_model)} for {normalized_model}{' (override)' if timeout_override else ''}")
+
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as response:
+                async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=timeout_seconds)) as response:
                     processing_time = (datetime.now() - start_time).total_seconds()
                     response_text = await response.text()
                     
@@ -148,10 +153,13 @@ class AnthropicProvider:
         base_delay = 2.0
         debug_request = {'url': url, 'headers': {k: 'REDACTED' if k=='X-API-Key' else v for k,v in headers.items()}, 'data': data}
 
+        # Get model-specific timeout
+        timeout_seconds = get_model_timeout(normalized_model)
+
         for attempt in range(max_retries + 1):
             try:
                 async with aiohttp.ClientSession() as session:
-                    async with session.post(url, headers=headers, json=data) as response:
+                    async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=timeout_seconds)) as response:
                         processing_time = (datetime.now() - start_time).total_seconds()
                         response_text = await response.text()
 

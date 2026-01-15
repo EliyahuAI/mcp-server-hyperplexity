@@ -176,7 +176,8 @@ class AIAPIClient:
                                  context: str = "", max_tokens: int = None, max_web_searches: int = 3,
                                  search_context_size: str = "low", debug_name: str = None, soft_schema: bool = False,
                                  include_domains: Optional[List[str]] = None, exclude_domains: Optional[List[str]] = None,
-                                 use_code_extraction: bool = None, findall: bool = False, extraction: bool = False) -> Dict:
+                                 use_code_extraction: bool = None, findall: bool = False, extraction: bool = False,
+                                 timeout: Optional[int] = None) -> Dict:
 
         call_start_time = datetime.now()
 
@@ -286,23 +287,23 @@ class AIAPIClient:
                     result = await self.anthropic.make_single_call("https://api.anthropic.com/v1/messages",
                          {'Content-Type': 'application/json', 'X-API-Key': self.anthropic.api_key, 'anthropic-version': '2023-06-01'},
                          self._build_anthropic_data(current_model_normalized, prompt, schema, tool_name, max_tokens, max_web_searches, soft_schema),
-                         current_model_normalized, use_cache, cache_key, call_start_time, max_web_searches, soft_schema, schema)
+                         current_model_normalized, use_cache, cache_key, call_start_time, max_web_searches, soft_schema, schema, timeout)
                 elif api_provider == 'perplexity':
                     result = await self.perplexity.make_single_structured_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, search_context_size, debug_name, max_tokens or 8000, soft_schema, include_domains, exclude_domains)
                 elif api_provider == 'gemini':
                     if not self.gemini.project_id: continue
                     # Gemini has native JSON mode support, use soft_schema parameter as-is
-                    result = await self.gemini.make_single_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 8000, soft_schema)
+                    result = await self.gemini.make_single_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 8000, soft_schema, timeout)
                 elif api_provider == 'vertex':
                     if not self.vertex.project_id: continue
                     # Force soft_schema for all Vertex models (DeepSeek) as hard schema support is experimental/flaky
                     use_soft_schema_for_vertex = True
-                    result = await self.vertex.make_single_call(prompt, schema, current_model_normalized, use_cache, cache_key, call_start_time, max_tokens or 8000, use_soft_schema_for_vertex)
+                    result = await self.vertex.make_single_call(prompt, schema, current_model_normalized, use_cache, cache_key, call_start_time, max_tokens or 8000, use_soft_schema_for_vertex, timeout)
                 elif api_provider == 'baseten':
                     if not self.baseten: continue
                     # Force soft_schema for Baseten DeepSeek V3.2 due to potential native JSON issues or consistency
                     use_soft_schema_for_baseten = True
-                    result = await self.baseten.make_single_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 8000, use_soft_schema_for_baseten)
+                    result = await self.baseten.make_single_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 8000, use_soft_schema_for_baseten, timeout)
                 elif api_provider == 'clone':
                     result = await self.clone.make_structured_call(prompt, current_model, use_cache, cache_key, call_start_time, schema, soft_schema, debug_name, include_domains, exclude_domains, use_code_extraction, findall, extraction)
                 else:

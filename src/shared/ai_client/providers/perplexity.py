@@ -300,8 +300,8 @@ class PerplexityProvider:
                                 response_json['_repair_meta'] = {
                                     'repaired': True,
                                     'cost': repair_cost,
-                                    'model': 'claude-haiku-4-5',
-                                    'provider': 'anthropic',
+                                    'model': 'gemini-2.0-flash',
+                                    'provider': 'gemini',
                                     'explanation': repair_explanation
                                 }
 

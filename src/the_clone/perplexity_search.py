@@ -9,8 +9,82 @@ import aiohttp
 import json
 import os
 import time
+import random
+import logging
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
+from collections import deque
+from threading import Lock
+
+logger = logging.getLogger(__name__)
+
+# Global semaphore to limit concurrent Perplexity API requests
+# Prevents rate limit saturation when multiple clones run in parallel
+# 15 concurrent ≈ 3-5 completing/sec, staying under 3 QPS limit
+PERPLEXITY_SEARCH_SEMAPHORE = asyncio.Semaphore(15)
+
+# Threshold for high 429 rate alerting (429s per second)
+HIGH_429_RATE_THRESHOLD = 0.5
+
+
+class RateMetrics:
+    """Thread-safe rate metrics tracker for calls/sec and 429s/sec."""
+
+    def __init__(self, window_seconds: int = 10):
+        self.window_seconds = window_seconds
+        self._calls: deque = deque()
+        self._rate_limits: deque = deque()
+        self._lock = Lock()
+
+    def record_call(self):
+        """Record a successful API call."""
+        now = time.time()
+        with self._lock:
+            self._calls.append(now)
+            self._cleanup(now)
+
+    def record_rate_limit(self):
+        """Record a 429 rate limit response and log if rate is high."""
+        now = time.time()
+        with self._lock:
+            self._rate_limits.append(now)
+            self._cleanup(now)
+            # Check if 429 rate is high and log at INFO level
+            rate_limits_per_sec = len(self._rate_limits) / self.window_seconds
+            if rate_limits_per_sec >= HIGH_429_RATE_THRESHOLD:
+                calls_per_sec = len(self._calls) / self.window_seconds
+                logger.info(f"[PERPLEXITY_HIGH_429] 429s/sec: {rate_limits_per_sec:.2f} (threshold: {HIGH_429_RATE_THRESHOLD}), calls/sec: {calls_per_sec:.2f}")
+
+    def _cleanup(self, now: float):
+        """Remove entries older than window."""
+        cutoff = now - self.window_seconds
+        while self._calls and self._calls[0] < cutoff:
+            self._calls.popleft()
+        while self._rate_limits and self._rate_limits[0] < cutoff:
+            self._rate_limits.popleft()
+
+    def get_rates(self) -> Dict[str, float]:
+        """Get current calls/sec and 429s/sec."""
+        now = time.time()
+        with self._lock:
+            self._cleanup(now)
+            calls_per_sec = len(self._calls) / self.window_seconds
+            rate_limits_per_sec = len(self._rate_limits) / self.window_seconds
+        return {
+            'calls_per_sec': round(calls_per_sec, 2),
+            'rate_limits_per_sec': round(rate_limits_per_sec, 2),
+            'window_seconds': self.window_seconds
+        }
+
+    def log_rates(self, prefix: str = "[PERPLEXITY_RATE]"):
+        """Log current rates."""
+        rates = self.get_rates()
+        logger.info(f"{prefix} calls/sec: {rates['calls_per_sec']:.2f}, 429s/sec: {rates['rate_limits_per_sec']:.2f}")
+        return rates
+
+
+# Global rate metrics instance
+RATE_METRICS = RateMetrics(window_seconds=10)
 
 
 class PerplexitySearchClient:
@@ -19,6 +93,12 @@ class PerplexitySearchClient:
 
     Rate Limit: 3 requests per second (sustained)
     Pricing: $5 per 1,000 requests (flat, no token costs)
+
+    Features:
+    - Global semaphore (15 concurrent) prevents rate limit saturation
+    - Jittered exponential backoff prevents convoy effect
+    - Fast retries (0.5s base) for quick recovery
+    - Rate metrics logging (calls/sec, 429s/sec)
     """
 
     def __init__(self, api_key: Optional[str] = None):
@@ -37,7 +117,6 @@ class PerplexitySearchClient:
                     raise ValueError(f"PERPLEXITY_API_KEY not set and failed to load from SSM: {e}")
 
         self.base_url = "https://api.perplexity.ai"
-        # Reactive rate limiting - only throttle when hitting 429 errors
 
     async def search(
         self,
@@ -47,12 +126,15 @@ class PerplexitySearchClient:
         include_domains: Optional[List[str]] = None,
         exclude_domains: Optional[List[str]] = None,
         max_tokens_per_page: Optional[int] = None,
-        max_retries: int = 3,
-        base_delay: float = 2.0
+        max_retries: int = 5,
+        base_delay: float = 0.5
     ) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """
         Execute a search query with automatic retry logic.
         Supports single query or multi-query (up to 5 queries per call).
+
+        Uses global semaphore to prevent rate limit saturation.
+        Uses jittered exponential backoff to prevent convoy effect.
 
         Args:
             query: Single search query string OR array of up to 5 queries
@@ -61,8 +143,8 @@ class PerplexitySearchClient:
             include_domains: Whitelist of domains to search (prefer over exclude if both given)
             exclude_domains: Blacklist of domains to exclude
             max_tokens_per_page: Control content extraction size (512=faster/shallow, 2048=comprehensive/deep)
-            max_retries: Maximum retry attempts for rate limits
-            base_delay: Base delay in seconds for exponential backoff
+            max_retries: Maximum retry attempts for rate limits (default: 5)
+            base_delay: Base delay in seconds for exponential backoff (default: 0.5s)
 
         Returns:
             Single query: Dict with structure {"results": [...]}
@@ -96,54 +178,63 @@ class PerplexitySearchClient:
 
         last_error = None
 
-        for attempt in range(max_retries + 1):
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, headers=headers, json=payload) as response:
-                        response_text = await response.text()
+        # Use global semaphore to limit concurrent requests
+        async with PERPLEXITY_SEARCH_SEMAPHORE:
+            for attempt in range(max_retries + 1):
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                            response_text = await response.text()
 
-                        # Success
-                        if response.status == 200:
-                            result = json.loads(response_text)
-                            return result
+                            # Success
+                            if response.status == 200:
+                                result = json.loads(response_text)
+                                RATE_METRICS.record_call()
+                                return result
 
-                        # Rate limit hit
-                        elif response.status == 429:
-                            if attempt < max_retries:
-                                delay = base_delay * (2 ** attempt)
-                                print(f"[WARNING] Rate limit hit (429). Retrying in {delay:.1f}s... (attempt {attempt + 1}/{max_retries + 1})")
-                                await asyncio.sleep(delay)
-                                continue
+                            # Rate limit hit
+                            elif response.status == 429:
+                                RATE_METRICS.record_rate_limit()
+                                if attempt < max_retries:
+                                    # Jittered exponential backoff: base * 2^attempt + random(0, 1)
+                                    delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                                    logger.warning(f"[PERPLEXITY] Rate limit 429, retry {attempt + 1}/{max_retries + 1} in {delay:.1f}s")
+                                    # Log rates every few retries
+                                    if attempt % 2 == 0:
+                                        RATE_METRICS.log_rates()
+                                    await asyncio.sleep(delay)
+                                    continue
+                                else:
+                                    RATE_METRICS.log_rates("[PERPLEXITY_EXHAUSTED]")
+                                    raise Exception(f"Rate limit exceeded after {max_retries + 1} attempts: {response_text}")
+
+                            # Server errors
+                            elif response.status in [502, 503, 529]:
+                                if attempt < max_retries:
+                                    delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                                    logger.warning(f"[PERPLEXITY] Server error {response.status}, retry {attempt + 1}/{max_retries + 1} in {delay:.1f}s")
+                                    await asyncio.sleep(delay)
+                                    continue
+                                else:
+                                    raise Exception(f"Server error ({response.status}) after {max_retries + 1} attempts")
+
+                            # Other errors
                             else:
-                                raise Exception(f"Rate limit exceeded after {max_retries + 1} attempts: {response_text}")
+                                raise Exception(f"API error ({response.status}): {response_text}")
 
-                        # Server errors
-                        elif response.status in [502, 503, 529]:
-                            if attempt < max_retries:
-                                delay = base_delay * (2 ** attempt)
-                                print(f"[WARNING] Server error ({response.status}). Retrying in {delay:.1f}s...")
-                                await asyncio.sleep(delay)
-                                continue
-                            else:
-                                raise Exception(f"Server error ({response.status}) after {max_retries + 1} attempts")
+                except aiohttp.ClientError as e:
+                    last_error = e
+                    if attempt < max_retries:
+                        delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                        logger.warning(f"[PERPLEXITY] Network error: {str(e)}, retry {attempt + 1}/{max_retries + 1} in {delay:.1f}s")
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        raise Exception(f"Network error after {max_retries + 1} attempts: {str(e)}")
 
-                        # Other errors
-                        else:
-                            raise Exception(f"API error ({response.status}): {response_text}")
-
-            except aiohttp.ClientError as e:
-                last_error = e
-                if attempt < max_retries:
-                    delay = base_delay * (2 ** attempt)
-                    print(f"[WARNING] Network error: {str(e)}. Retrying in {delay:.1f}s...")
-                    await asyncio.sleep(delay)
-                    continue
-                else:
-                    raise Exception(f"Network error after {max_retries + 1} attempts: {str(e)}")
-
-        if last_error:
-            raise last_error
-        raise Exception("All retry attempts failed")
+            if last_error:
+                raise last_error
+            raise Exception("All retry attempts failed")
 
     async def batch_search(
         self,
@@ -161,6 +252,8 @@ class PerplexitySearchClient:
         but it has a critical bug - only returns results for the first query.
         Therefore, we make separate API calls for each query (confirmed working).
 
+        Uses global semaphore (15 concurrent) to prevent rate limit saturation.
+
         Args:
             queries: List of search queries
             max_results: Max results per query
@@ -172,14 +265,40 @@ class PerplexitySearchClient:
         Returns:
             List of search result dicts, one per query
         """
+        start_time = time.time()
+        logger.info(f"[PERPLEXITY] Starting batch of {len(queries)} searches (semaphore limit: 15)")
+
         tasks = []
         for query in queries:
             task = self.search(query, max_results, search_recency_filter, include_domains, exclude_domains, max_tokens_per_page)
             tasks.append(task)
 
-        # Run with rate limiting built into each search call
+        # Run with semaphore limiting concurrent requests
         results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        elapsed = time.time() - start_time
+        success_count = sum(1 for r in results if not isinstance(r, Exception))
+        error_count = len(results) - success_count
+
+        logger.info(f"[PERPLEXITY] Batch complete: {success_count}/{len(queries)} success, {error_count} errors in {elapsed:.1f}s")
+        RATE_METRICS.log_rates("[PERPLEXITY_BATCH_END]")
+
         return results
+
+
+def get_semaphore_status() -> Dict[str, Any]:
+    """Get current semaphore and rate metrics status for debugging."""
+    # Note: asyncio.Semaphore doesn't expose current count directly
+    # We can only check if it's locked
+    return {
+        'semaphore_limit': 15,
+        'rate_metrics': RATE_METRICS.get_rates()
+    }
+
+
+def get_rate_metrics() -> Dict[str, float]:
+    """Get current rate metrics (calls/sec, 429s/sec)."""
+    return RATE_METRICS.get_rates()
 
 
 async def test_single_search():

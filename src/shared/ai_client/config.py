@@ -3,9 +3,102 @@ import os
 import logging
 import boto3
 import tempfile
-from typing import Optional
+from typing import Optional, Dict
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# Model Timeout Configuration
+# =============================================================================
+# Timeouts in seconds for different model tiers
+# These can be overridden via environment variables or at runtime
+
+TIMEOUT_FAST = 60      # Fast models: Haiku, Gemini 2.0 Flash
+TIMEOUT_MEDIUM = 240   # Medium models: Sonar, Sonar Pro (4 mins)
+TIMEOUT_SLOW = 300     # Slow models: DeepSeek, Anthropic, Gemini 2.5 (5 mins)
+TIMEOUT_DEFAULT = 300  # Default timeout for unknown models
+
+# Model-specific timeout mapping
+# Models not listed here will use TIMEOUT_DEFAULT
+MODEL_TIMEOUTS: Dict[str, int] = {
+    # Fast models (60s)
+    'claude-haiku-4-5': TIMEOUT_FAST,
+    'claude-3-5-haiku-20241022': TIMEOUT_FAST,
+    'gemini-2.0-flash': TIMEOUT_FAST,
+    'gemini-2.0-flash-exp': TIMEOUT_FAST,
+
+    # Medium models (4 mins)
+    'sonar': TIMEOUT_MEDIUM,
+    'sonar-pro': TIMEOUT_MEDIUM,
+    'sonar-reasoning': TIMEOUT_MEDIUM,
+
+    # Slow models (5 mins) - explicitly listed for clarity
+    'deepseek-v3.2': TIMEOUT_SLOW,
+    'deepseek-v3.2-baseten': TIMEOUT_SLOW,
+    'claude-sonnet-4-5': TIMEOUT_SLOW,
+    'claude-3-5-sonnet-20241022': TIMEOUT_SLOW,
+    'claude-opus-4-5': TIMEOUT_SLOW,
+    'gemini-2.5-flash': TIMEOUT_SLOW,
+    'gemini-1.5-pro': TIMEOUT_SLOW,
+}
+
+def get_model_timeout(model: str, override: Optional[int] = None) -> int:
+    """
+    Get the timeout for a specific model.
+
+    Args:
+        model: Model name/identifier
+        override: Optional timeout override (takes precedence)
+
+    Returns:
+        Timeout in seconds
+    """
+    # Check for override
+    if override is not None:
+        return override
+
+    # Check environment variable override (AI_CLIENT_TIMEOUT_<MODEL>)
+    env_key = f"AI_CLIENT_TIMEOUT_{model.upper().replace('-', '_').replace('.', '_')}"
+    env_timeout = os.environ.get(env_key)
+    if env_timeout:
+        try:
+            return int(env_timeout)
+        except ValueError:
+            logger.warning(f"Invalid timeout in {env_key}: {env_timeout}, using default")
+
+    # Check global environment override
+    global_override = os.environ.get('AI_CLIENT_TIMEOUT_DEFAULT')
+    if global_override:
+        try:
+            return int(global_override)
+        except ValueError:
+            pass
+
+    # Look up model-specific timeout
+    # Try exact match first
+    if model in MODEL_TIMEOUTS:
+        return MODEL_TIMEOUTS[model]
+
+    # Try partial match (for model variants)
+    model_lower = model.lower()
+    for known_model, timeout in MODEL_TIMEOUTS.items():
+        if known_model.lower() in model_lower or model_lower in known_model.lower():
+            return timeout
+
+    # Default timeout
+    return TIMEOUT_DEFAULT
+
+
+def get_timeout_tier(model: str) -> str:
+    """Get human-readable timeout tier for logging."""
+    timeout = get_model_timeout(model)
+    if timeout <= TIMEOUT_FAST:
+        return f"fast ({timeout}s)"
+    elif timeout <= TIMEOUT_MEDIUM:
+        return f"medium ({timeout}s)"
+    else:
+        return f"slow ({timeout}s)"
+
 
 # Model hierarchy from best to most basic
 MODEL_HIERARCHY = [

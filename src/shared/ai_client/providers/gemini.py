@@ -8,6 +8,7 @@ from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 
 from ..utils import extract_json_from_text, validate_and_normalize_soft_schema, repair_json_with_haiku
+from ..config import get_model_timeout, get_timeout_tier
 
 logger = logging.getLogger(__name__)
 
@@ -461,7 +462,7 @@ class GeminiProvider:
 
         return restored
 
-    async def make_single_call(self, prompt: str, schema: Dict, model: str, use_cache: bool, cache_key: str, start_time: datetime, max_tokens: int = 8000, soft_schema: bool = False) -> Dict:
+    async def make_single_call(self, prompt: str, schema: Dict, model: str, use_cache: bool, cache_key: str, start_time: datetime, max_tokens: int = 8000, soft_schema: bool = False, timeout_override: int = None) -> Dict:
         """Make a single call to Gemini via Vertex AI."""
         enforced_max_tokens = self.usage_handler.enforce_provider_token_limit(model, max_tokens)
 
@@ -507,6 +508,10 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
 
         debug_request = {'model': model, 'prompt': prompt, 'max_tokens': enforced_max_tokens}
 
+        # Get model-specific timeout (with optional override)
+        timeout_seconds = get_model_timeout(model, timeout_override)
+        logger.debug(f"[GEMINI] Using timeout {get_timeout_tier(model)} for {model}{' (override)' if timeout_override else ''}")
+
         try:
             access_token = await self._get_access_token()
             url = f"https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{model}:generateContent"
@@ -516,7 +521,7 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=request_body) as response:
+                async with session.post(url, headers=headers, json=request_body, timeout=aiohttp.ClientTimeout(total=timeout_seconds)) as response:
                     processing_time = (datetime.now() - start_time).total_seconds()
                     response_text = await response.text()
 

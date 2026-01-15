@@ -63,20 +63,29 @@ class CloneProvider:
             logger.info(f"[CLONE_PROVIDER] Executing agentic pipeline for model: {model} (provider={provider}, findall={findall}, extraction={extraction})")
             logger.info(f"[CLONE_PROVIDER] Using ai_client instance {id(self.ai_client)}: session_id={self.ai_client.session_id}, email={self.ai_client.email}, s3_manager={type(self.ai_client.s3_manager).__name__ if self.ai_client.s3_manager else 'None'}")
 
-            result = await clone.query(
-                prompt=prompt,
-                provider=provider,
-                schema=schema,  # Pass schema to Clone for structured output
-                debug_dir=f"/tmp/clone_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}", # Temp debug dir
-                include_domains=include_domains,
-                exclude_domains=exclude_domains,
-                use_code_extraction=use_code_extraction,
-                findall=findall,  # Pass findall parameter
-                extraction=extraction,  # Pass extraction parameter
-                session_id=self.ai_client.session_id,  # From ai_client instance
-                email=self.ai_client.email,  # From ai_client instance
-                s3_manager=self.ai_client.s3_manager  # From ai_client instance
-            )
+            # Wrap clone.query() with 5-minute timeout to prevent Lambda hangs
+            CLONE_TIMEOUT_SECONDS = 300  # 5 minutes
+            try:
+                result = await asyncio.wait_for(
+                    clone.query(
+                        prompt=prompt,
+                        provider=provider,
+                        schema=schema,  # Pass schema to Clone for structured output
+                        debug_dir=f"/tmp/clone_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}", # Temp debug dir
+                        include_domains=include_domains,
+                        exclude_domains=exclude_domains,
+                        use_code_extraction=use_code_extraction,
+                        findall=findall,  # Pass findall parameter
+                        extraction=extraction,  # Pass extraction parameter
+                        session_id=self.ai_client.session_id,  # From ai_client instance
+                        email=self.ai_client.email,  # From ai_client instance
+                        s3_manager=self.ai_client.s3_manager  # From ai_client instance
+                    ),
+                    timeout=CLONE_TIMEOUT_SECONDS
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"[CLONE_PROVIDER] Clone query timed out after {CLONE_TIMEOUT_SECONDS}s - possible resource exhaustion or network hang")
+                raise Exception(f"Clone query timed out after {CLONE_TIMEOUT_SECONDS} seconds. This may indicate connection pool exhaustion or network issues.")
             
             processing_time = (datetime.now() - start_time).total_seconds()
             

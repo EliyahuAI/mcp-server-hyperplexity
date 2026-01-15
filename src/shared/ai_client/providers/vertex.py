@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict, Any
 
 from ..utils import normalize_vertex_model, extract_json_from_text, validate_and_normalize_soft_schema, repair_json_with_haiku
+from ..config import get_model_timeout, get_timeout_tier
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +205,7 @@ class VertexProvider:
             logger.error(f"Vertex normalization failed: {e}")
             return {'id': 'error', 'type': 'message', 'role': 'assistant', 'content': [{'type': 'text', 'text': str(vertex_response)}], 'stop_reason': 'error', 'usage': {}}
 
-    async def make_single_call(self, prompt: str, schema: Dict, model: str, use_cache: bool, cache_key: str, start_time: datetime, max_tokens: int = 8000, soft_schema: bool = False) -> Dict:
+    async def make_single_call(self, prompt: str, schema: Dict, model: str, use_cache: bool, cache_key: str, start_time: datetime, max_tokens: int = 8000, soft_schema: bool = False, timeout_override: int = None) -> Dict:
         enforced_max_tokens = self.usage_handler.enforce_provider_token_limit(model, max_tokens)
         
         final_prompt = prompt
@@ -233,8 +234,12 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
             if schema and not soft_schema:
                 data["response_format"] = {"type": "json_schema", "json_schema": {"name": "response_schema", "strict": True, "schema": schema}}
 
+            # Get model-specific timeout (with optional override)
+            timeout_seconds = get_model_timeout(model, timeout_override)
+            logger.debug(f"[VERTEX] Using timeout {get_timeout_tier(model)} for {model}{' (override)' if timeout_override else ''}")
+
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as response:
+                async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=timeout_seconds)) as response:
                     processing_time = (datetime.now() - start_time).total_seconds()
                     response_text = await response.text()
                     
