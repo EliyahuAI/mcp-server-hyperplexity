@@ -286,19 +286,30 @@ function connectToSession(sessionId, reconnectAttempt = 0) {
         } else if (isUnexpectedClose) {
             console.error(`[WEBSOCKET] Max reconnection attempts (${maxReconnectAttempts}) reached for session ${sessionId}`);
 
-            // Special handling for full validation disconnections
-            if (globalState.currentValidationState === 'full' && globalState.activeCardId) {
+            // Special handling for validation disconnections (both full and preview)
+            if ((globalState.currentValidationState === 'full' || globalState.currentValidationState === 'preview') && globalState.activeCardId) {
                 const messageContainer = `${globalState.activeCardId}-messages`;
                 const emailAddress = globalState.currentEmail || 'your registered email';
+                const isPreview = globalState.currentValidationState === 'preview';
+                const validationType = isPreview ? 'preview' : 'validation';
+
+                // Different messages for preview vs full validation
+                const resultInfo = isPreview
+                    ? 'Refresh this page to check if preview completed.'
+                    : `Results will be emailed to <strong>${emailAddress}</strong> when complete.`;
 
                 showMessage(
                     messageContainer,
                     `<strong>Connection Lost</strong><br><br>
-                    Don't worry - your validation is still running on our servers and will be emailed to <strong>${emailAddress}</strong> when complete.<br><br>
-                    If you don't receive it within 30 minutes, please contact <a href="mailto:eliyahu@eliyahu.ai?subject=Validation%20${sessionId}">eliyahu@eliyahu.ai</a> with session ID: <code>${sessionId}</code>`,
+                    Don't worry - your ${validationType} is still running on our servers.<br><br>
+                    ${resultInfo}<br><br>
+                    If issues persist, please contact <a href="mailto:eliyahu@eliyahu.ai?subject=Validation%20${sessionId}">eliyahu@eliyahu.ai</a> with session ID: <code>${sessionId}</code>`,
                     'warning',
                     false
                 );
+
+                // Fallback polling should still be running - it will detect completion
+                console.log(`[WEBSOCKET] Fallback polling should handle completion detection for ${validationType}`);
             }
         }
     };

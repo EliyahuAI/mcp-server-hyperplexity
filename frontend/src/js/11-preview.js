@@ -148,11 +148,86 @@ function handlePreviewWebSocketMessage(data, cardId) {
     if (data.status === 'PROCESSING') {
         // Set this card as active for ticker display
         globalState.activeCardId = cardId;
+
+        // Only initialize polling on FIRST PROCESSING message (when state changes to 'preview')
+        const isFirstProcessingMessage = globalState.currentValidationState !== 'preview';
+
         globalState.currentValidationState = 'preview';
 
-        // Clear confidence scores for fresh running average
-        globalState.confidenceScores = [];
-        globalState.currentConfidenceScore = null;
+        if (isFirstProcessingMessage) {
+            // Reset completion state and start fallback polling for robustness
+            if (typeof resetCompletionState === 'function') {
+                resetCompletionState();
+            }
+
+            // Start fallback polling in case WebSocket drops during preview validation
+            if (typeof setupWebSocketFallback === 'function' && globalState.sessionId) {
+                setupWebSocketFallback(globalState.sessionId, {
+                    pollInterval: 10000,  // Check every 10 seconds for preview (shorter duration)
+                    maxDuration: 10 * 60 * 1000,  // 10 minutes max for preview
+                    isPreview: true
+                });
+            }
+
+            // Start inactivity timer for preview (shows warning if no updates for 3 minutes)
+            const sessionId = globalState.sessionId;
+            const inactivityTimeoutMs = 3 * 60 * 1000; // 3 minutes
+            if (!window.asyncTimeouts) window.asyncTimeouts = new Map();
+
+            const startInactivityTimer = () => {
+                const existing = window.asyncTimeouts.get(sessionId);
+                if (existing && existing.inactivityTimer) {
+                    clearTimeout(existing.inactivityTimer);
+                }
+
+                const inactivityTimer = setTimeout(() => {
+                    const timeoutInfo = window.asyncTimeouts.get(sessionId);
+                    if (timeoutInfo && timeoutInfo.activeProcessing) {
+                        if (typeof showValidatorDeathWarning === 'function') {
+                            showValidatorDeathWarning(cardId, sessionId);
+                        }
+                    }
+                    window.asyncTimeouts.delete(sessionId);
+                }, inactivityTimeoutMs);
+
+                if (window.asyncTimeouts.has(sessionId)) {
+                    window.asyncTimeouts.get(sessionId).inactivityTimer = inactivityTimer;
+                } else {
+                    window.asyncTimeouts.set(sessionId, { inactivityTimer });
+                }
+            };
+
+            startInactivityTimer();
+            window.asyncTimeouts.get(sessionId).restartInactivityTimer = startInactivityTimer;
+            window.asyncTimeouts.get(sessionId).activeProcessing = true;
+
+            // Clear confidence scores for fresh running average
+            globalState.confidenceScores = [];
+            globalState.currentConfidenceScore = null;
+        } else {
+            // Not first message - restart inactivity timer if it exists
+            const sessionId = globalState.sessionId;
+            if (window.asyncTimeouts && window.asyncTimeouts.has(sessionId)) {
+                const timeoutInfo = window.asyncTimeouts.get(sessionId);
+                if (timeoutInfo && timeoutInfo.restartInactivityTimer) {
+                    timeoutInfo.restartInactivityTimer();
+                    timeoutInfo.activeProcessing = true;
+
+                    // Recovery: If we previously showed a warning, clear it
+                    if (timeoutInfo.warningShown) {
+                        const progressText = document.querySelector(`#${cardId} .progress-text`);
+                        if (progressText) {
+                            progressText.style.color = '#666';
+                        }
+                        const progressSquare = document.querySelector(`#${cardId} .progress-square, #${cardId} .thinking-square`);
+                        if (progressSquare) {
+                            progressSquare.classList.remove('fast-heartbeat');
+                        }
+                        timeoutInfo.warningShown = false;
+                    }
+                }
+            }
+        }
 
         const message = data.verbose_status || 'Processing...';
         // Update both text and progress if we have percent_complete
@@ -163,6 +238,21 @@ function handlePreviewWebSocketMessage(data, cardId) {
         }
         // Progress routed to card level;
     } else if (data.status === 'COMPLETED') {
+        // Stop fallback polling since we received completion via WebSocket
+        if (typeof stopFallbackPolling === 'function') {
+            stopFallbackPolling();
+        }
+
+        // Clear inactivity timer
+        const sessionId = globalState.sessionId;
+        if (window.asyncTimeouts && window.asyncTimeouts.has(sessionId)) {
+            const timeoutInfo = window.asyncTimeouts.get(sessionId);
+            if (timeoutInfo && timeoutInfo.inactivityTimer) {
+                clearTimeout(timeoutInfo.inactivityTimer);
+            }
+            window.asyncTimeouts.delete(sessionId);
+        }
+
         // Hide ticker but KEEP messages for full validation
         globalState.currentValidationState = null;
         hideTicker(cardId);

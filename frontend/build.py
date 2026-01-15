@@ -17,7 +17,7 @@ from pathlib import Path
 
 FRONTEND_DIR = Path(__file__).parent
 SRC_DIR = FRONTEND_DIR / 'src'
-OUTPUT_FILE = FRONTEND_DIR / 'Hyperplexity_frontend-dev.html'
+OUTPUT_FILE = FRONTEND_DIR / 'Hyperplexity_FullScript_Temp-dev.html'
 
 def load_sorted_files(directory: Path, extension: str) -> str:
     """Load and concatenate files sorted by numeric prefix."""
