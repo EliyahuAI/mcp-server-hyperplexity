@@ -303,8 +303,13 @@ function openAddCreditsPage(recommendedAmount = null, messageContainer = 'messag
             }, 1500);
         }, 1000);
 
+        // IMPORTANT: Also set up balance refresh when using product component
+        // This was missing and caused auto-processing not to trigger on return
+        globalState.awaitingBalanceRefresh = true;
+        setupBalanceRefreshOnReturn(messageContainer);
+
     } else {
-        // Fall back to opening store page manually
+        // Fall back to opening store page manually (product component not available)
         showMessage(messageContainer, `💳 You need ${creditsText} credits. Opening store in new tab...`, 'info', false, 'store-opening');
 
         // Build store URL - use environment-specific URL
@@ -454,6 +459,52 @@ function setupBalanceRefreshOnReturn(messageContainer = 'messages') {
                             updatePreviewBalanceDisplay();
                         }, 500);
                     }
+                }
+            }
+
+            // ALSO check for auto-processing when balance is already sufficient (webhook processed before user returned)
+            // This handles the case where oldBalance === newBalance but user has pending processing
+            if (globalState.userAttemptedProcessing && globalState.pendingProcessingTrigger) {
+                const finalBalance = globalState.accountBalance || 0;
+                const estCost = globalState.estimatedCost || 0;
+                const effCost = globalState.effectiveCost ?? estCost;
+                const canProcessNow = finalBalance >= effCost;
+
+                if (canProcessNow) {
+                    // Balance is sufficient and user was waiting for credits - auto-trigger!
+                    globalState.hasInsufficientBalance = false;
+
+                    // Clear blue message and show green success message
+                    const messageContainers = document.querySelectorAll('[id$="-messages"]');
+                    if (messageContainers.length > 0) {
+                        const lastContainer = messageContainers[messageContainers.length - 1];
+                        const containerId = lastContainer.id;
+
+                        const container = document.getElementById(containerId);
+                        if (container) {
+                            container.innerHTML = '';
+                        }
+
+                        showMessage(containerId, `🎉 Credits detected! Auto-starting validation...`, 'success', false, 'auto-process');
+                    }
+
+                    // Disable all Process Table buttons immediately
+                    const allButtons = document.querySelectorAll('button');
+                    allButtons.forEach(button => {
+                        const buttonText = button.querySelector('.button-text, span');
+                        if (buttonText && buttonText.textContent.includes('Process Table')) {
+                            button.disabled = true;
+                            buttonText.textContent = 'Processing...';
+                        }
+                    });
+
+                    // Trigger the pending processing
+                    setTimeout(() => {
+                        const triggerFunc = globalState.pendingProcessingTrigger;
+                        globalState.pendingProcessingTrigger = null;
+                        globalState.userAttemptedProcessing = false;
+                        triggerFunc();
+                    }, 2000);
                 }
             }
         }
