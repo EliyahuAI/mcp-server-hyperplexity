@@ -174,7 +174,7 @@ class InitialDecision:
                                     self.ai_client
                                 )
                                 if repaired:
-                                    logger.info(f"[INITIAL] Repaired direct answer: {repair_explanation}")
+                                    logger.debug(f"[INITIAL] Repaired direct answer: {repair_explanation}")
                                     direct_answer = repaired
                                     answer_valid = True
                                 else:

@@ -79,9 +79,9 @@ class TheClone2Refined:
         """
         start_time = datetime.now()
 
-        logger.info("=" * 80)
+        logger.debug("=" * 80)
         logger.debug(f"[CLONE] Query: {prompt[:100]}...")
-        logger.info("=" * 80)
+        logger.debug("=" * 80)
 
         # Load configuration
         models = get_default_models()
@@ -97,7 +97,7 @@ class TheClone2Refined:
         costs = {'initial': 0.0, 'search': 0.0, 'triage': 0.0, 'extraction': 0.0, 'synthesis': 0.0}
 
         # Step 1: Initial Decision
-        logger.info("\n[CLONE] Step 1: Initial Decision...")
+        logger.debug("\n[CLONE] Step 1: Initial Decision...")
         initial_result = await self.initial_decision.make_decision(
             query=prompt,
             model=models['initial_decision'],
@@ -123,7 +123,7 @@ class TheClone2Refined:
         logger.debug(f"[CLONE] Search terms: {search_terms}")
 
         # Step 2: Search
-        logger.info(f"\n[CLONE] Step 2: Executing {len(search_terms)} searches...")
+        logger.debug(f"\n[CLONE] Step 2: Executing {len(search_terms)} searches...")
         search_results = await self.search_manager.execute_searches(
             search_terms=search_terms,
             search_settings={'max_results': 10}
@@ -131,7 +131,7 @@ class TheClone2Refined:
         costs['search'] = len(search_terms) * 0.005  # Perplexity cost per search
 
         # Step 3: Triage (rank ALL sources)
-        logger.info(f"\n[CLONE] Step 3: Ranking sources...")
+        logger.debug(f"\n[CLONE] Step 3: Ranking sources...")
         ranked_lists, triage_results = await self.source_triage.triage_all_searches(
             search_results=search_results,
             search_terms=search_terms,
@@ -155,12 +155,12 @@ class TheClone2Refined:
             return self._build_empty_response(prompt, search_terms, costs)
 
         # Step 4: Iterative Extraction
-        logger.info(f"\n[CLONE] Step 4: Iterative extraction (max {global_limits['max_iterations']} iterations)...")
+        logger.debug(f"\n[CLONE] Step 4: Iterative extraction (max {global_limits['max_iterations']} iterations)...")
         all_snippets = []
         sources_pulled = 0
 
         for iteration in range(1, global_limits['max_iterations'] + 1):
-            logger.info(f"\n[CLONE] Iteration {iteration}/{global_limits['max_iterations']}")
+            logger.debug(f"\n[CLONE] Iteration {iteration}/{global_limits['max_iterations']}")
 
             # Determine batch
             batch_size = strategy['sources_per_batch']
@@ -221,7 +221,7 @@ class TheClone2Refined:
                 break
 
         # Step 5: Synthesis
-        logger.info(f"\n[CLONE] Step 5: Synthesis from {len(all_snippets)} snippets...")
+        logger.debug(f"\n[CLONE] Step 5: Synthesis from {len(all_snippets)} snippets...")
 
         # Map strategy to old context for synthesis guidance (temporary until synthesis updated)
         context_map = {

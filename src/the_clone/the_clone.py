@@ -103,9 +103,9 @@ class TheClone2Refined:
         
         clone_logger.log_section("Initial Query", prompt, level=1)
 
-        logger.info("=" * 80)
+        logger.debug("=" * 80)
         logger.debug(f"[CLONE] Query: {prompt[:100]}...")
-        logger.info("=" * 80)
+        logger.debug("=" * 80)
 
         # Handle backwards compatibility: use_baseten=True → provider="baseten"
         if use_baseten:
@@ -163,7 +163,7 @@ class TheClone2Refined:
         }
 
         # Step 1: Initial Decision
-        logger.info("\n[CLONE] Step 1: Initial Decision...")
+        logger.debug("\n[CLONE] Step 1: Initial Decision...")
         step_start_phase = time.time()
         if clone_logger:
             clone_logger.start_step("Initial Decision")
@@ -250,7 +250,7 @@ class TheClone2Refined:
         # Skip-to-synthesis path: Direct answer failed, skip search and go straight to synthesis
         # with URL sources from memory (if any)
         if initial_result.get('skip_to_synthesis'):
-            logger.info("[CLONE] Skip-to-synthesis: Direct answer failed, attempting synthesis with URL sources")
+            logger.debug("[CLONE] Skip-to-synthesis: Direct answer failed, attempting synthesis with URL sources")
 
             if clone_logger:
                 clone_logger.start_step("Skip-to-Synthesis")
@@ -263,7 +263,7 @@ class TheClone2Refined:
             skip_required_keywords = initial_result.get('required_keywords', [])
 
             if query_urls and use_memory:
-                logger.info(f"[CLONE] Skip-to-synthesis: Found {len(query_urls)} URLs in query")
+                logger.debug(f"[CLONE] Skip-to-synthesis: Found {len(query_urls)} URLs in query")
                 memory = SearchMemory(ai_client=self.ai_client)
 
                 # Look up URLs in memory with keyword validation
@@ -277,22 +277,22 @@ class TheClone2Refined:
                 fetched_count = 0
 
                 if url_sources:
-                    logger.info(f"[CLONE] Skip-to-synthesis: {len(url_sources)} URLs found in memory (passing keywords)")
+                    logger.debug(f"[CLONE] Skip-to-synthesis: {len(url_sources)} URLs found in memory (passing keywords)")
 
                 if urls_need_fetch:
-                    logger.info(f"[CLONE] Skip-to-synthesis: {len(urls_need_fetch)} URLs need fresh fetch (failed keyword validation)")
+                    logger.debug(f"[CLONE] Skip-to-synthesis: {len(urls_need_fetch)} URLs need fresh fetch (failed keyword validation)")
 
                 # Combine URLs that need fetching: not in memory + failed keyword validation
                 urls_to_fetch = list(set(urls_not_in_memory + urls_need_fetch))
 
                 # Fetch URLs via Jina
                 if urls_to_fetch:
-                    logger.info(f"[CLONE] Skip-to-synthesis: Fetching {len(urls_to_fetch)} URLs...")
+                    logger.debug(f"[CLONE] Skip-to-synthesis: Fetching {len(urls_to_fetch)} URLs...")
                     fetched_sources = await memory.fetch_url_content(urls_to_fetch)
                     if fetched_sources:
                         url_sources.extend(fetched_sources)
                         fetched_count = len(fetched_sources)
-                        logger.info(f"[CLONE] Skip-to-synthesis: {fetched_count} URLs fetched live")
+                        logger.debug(f"[CLONE] Skip-to-synthesis: {fetched_count} URLs fetched live")
 
                 # Convert URL sources to snippets format
                 for i, source in enumerate(url_sources):
@@ -528,7 +528,7 @@ class TheClone2Refined:
         logger.debug(f"[MEMORY_CHECK] use_memory={use_memory}, session_id={session_id}, email={email}, s3_manager={type(s3_manager).__name__ if s3_manager else None}")
 
         if use_memory and session_id and email and s3_manager:
-            logger.info("\n[CLONE] Step 1.5: Checking memory...")
+            logger.debug("\n[CLONE] Step 1.5: Checking memory...")
             step_start_phase = time.time()
             if clone_logger:
                 clone_logger.start_step("Memory Recall")
@@ -554,7 +554,7 @@ class TheClone2Refined:
 
                 # Skip expensive recall if memory is empty
                 if mem_stats['total_queries'] == 0:
-                    logger.info("[CLONE] Memory is empty, skipping recall (no Gemini cost)")
+                    logger.debug("[CLONE] Memory is empty, skipping recall (no Gemini cost)")
                     if clone_logger:
                         clone_logger.log_section("Memory Recall Skipped", "No queries in memory - proceeding directly to search", level=3)
                         step_time_phase = time.time() - step_start_phase
@@ -568,7 +568,7 @@ class TheClone2Refined:
                 url_matched_sources = []
                 query_urls = extract_urls_from_text(prompt)
                 if query_urls:
-                    logger.info(f"[CLONE] Found {len(query_urls)} URLs in query, checking memory...")
+                    logger.debug(f"[CLONE] Found {len(query_urls)} URLs in query, checking memory...")
                     url_lookup_result = memory.recall_by_urls(
                         query_urls,
                         required_keywords=required_keywords
@@ -578,21 +578,21 @@ class TheClone2Refined:
                     urls_need_fetch = url_lookup_result.get('needs_fetch', [])  # URLs that failed keyword validation
 
                     if url_matched_sources:
-                        logger.info(f"[CLONE] URL lookup: {len(url_matched_sources)} sources found in memory (passing keywords)")
+                        logger.debug(f"[CLONE] URL lookup: {len(url_matched_sources)} sources found in memory (passing keywords)")
 
                     if urls_need_fetch:
-                        logger.info(f"[CLONE] URL lookup: {len(urls_need_fetch)} URLs need fresh fetch (failed keyword validation)")
+                        logger.debug(f"[CLONE] URL lookup: {len(urls_need_fetch)} URLs need fresh fetch (failed keyword validation)")
 
                     # Combine URLs that need fetching: not in memory + failed keyword validation
                     urls_to_fetch = list(set(urls_not_in_memory + urls_need_fetch))
 
                     # Fetch URLs via Jina
                     if urls_to_fetch:
-                        logger.info(f"[CLONE] Fetching {len(urls_to_fetch)} URLs...")
+                        logger.debug(f"[CLONE] Fetching {len(urls_to_fetch)} URLs...")
                         fetched_sources = await memory.fetch_url_content(urls_to_fetch)
                         if fetched_sources:
                             url_matched_sources.extend(fetched_sources)
-                            logger.info(f"[CLONE] Live fetch: {len(fetched_sources)} URLs fetched via Jina")
+                            logger.debug(f"[CLONE] Live fetch: {len(fetched_sources)} URLs fetched via Jina")
 
                     if url_matched_sources and clone_logger:
                         clone_logger.log_section("URL Memory Lookup", {
@@ -638,7 +638,7 @@ class TheClone2Refined:
                 confidence = recall_result['confidence']
                 recall_meta = recall_result['recall_metadata']
 
-                logger.info(
+                logger.debug(
                     f"[CLONE] Memory recall: {len(memory_sources)} sources "
                     f"(url_sources={recall_meta.get('url_sources_count', 0)}), "
                     f"confidence={confidence:.2f}, cost=${recall_meta['recall_cost']:.4f}"
@@ -813,7 +813,7 @@ class TheClone2Refined:
 
         # Step 2: Search
         if search_terms:
-            logger.info(f"\n[CLONE] Step 2: Executing {len(search_terms)} searches...")
+            logger.debug(f"\n[CLONE] Step 2: Executing {len(search_terms)} searches...")
             step_start_phase = time.time()
             if clone_logger:
                 clone_logger.start_step("Search Execution")
@@ -851,7 +851,7 @@ class TheClone2Refined:
                 except Exception as e:
                     logger.warning(f"[MEMORY] Failed to store searches: {e}")
         else:
-            logger.info(f"\n[CLONE] Step 2: Skipping search (using memory only)")
+            logger.debug(f"\n[CLONE] Step 2: Skipping search (using memory only)")
             search_results = []
 
         # Step 2.5: Deduplicate memory vs search
@@ -883,7 +883,7 @@ class TheClone2Refined:
         memory_only = (search_decision.get('action') == 'skip' and original_search_count == 0)
 
         if memory_only:
-            logger.info(f"\n[CLONE] Step 3: Skipping triage (memory sources already ranked by verification)")
+            logger.debug(f"\n[CLONE] Step 3: Skipping triage (memory sources already ranked by verification)")
             # Memory sources are already ranked by verification
             # Add metadata fields that extraction layer expects
             ranked_sources = []
@@ -899,7 +899,7 @@ class TheClone2Refined:
             if clone_logger:
                 clone_logger.log_section("Triage Skipped", f"Using {len(ranked_sources)} memory sources pre-ranked by verification (no triage needed)", level=3, collapse=False)
         else:
-            logger.info(f"\n[CLONE] Step 3: Ranking sources...")
+            logger.debug(f"\n[CLONE] Step 3: Ranking sources...")
             step_start_phase = time.time()
             if clone_logger:
                 clone_logger.start_step("Source Triage")
@@ -959,7 +959,7 @@ class TheClone2Refined:
         logger.debug(f"[CLONE] Ranked {len(ranked_sources)} relevant sources")
 
         if len(ranked_sources) == 0:
-            logger.info("[CLONE] No relevant sources found from triage - proceeding to synthesis for self-correction")
+            logger.debug("[CLONE] No relevant sources found from triage - proceeding to synthesis for self-correction")
             if clone_logger:
                 clone_logger.log_section("Triage Result", "No relevant sources passed triage - synthesis will attempt answer from model knowledge and may suggest new search terms", level=3)
 
@@ -971,11 +971,11 @@ class TheClone2Refined:
 
         # Skip extraction if no sources (will proceed to synthesis for self-correction)
         if len(ranked_sources) == 0:
-            logger.info(f"\n[CLONE] Step 4: Skipping extraction (no sources) - will proceed to synthesis")
+            logger.debug(f"\n[CLONE] Step 4: Skipping extraction (no sources) - will proceed to synthesis")
             if clone_logger:
                 clone_logger.log_section("Extraction Skipped", "No sources to extract from - synthesis will use model knowledge", level=3)
         else:
-            logger.info(f"\n[CLONE] Step 4: Iterative extraction (max {global_limits['max_iterations']} iterations)...")
+            logger.debug(f"\n[CLONE] Step 4: Iterative extraction (max {global_limits['max_iterations']} iterations)...")
             step_start_phase = time.time()
             if clone_logger:
                 clone_logger.start_step("Extraction")
@@ -1058,7 +1058,11 @@ class TheClone2Refined:
                 # EXISTING iteration logic for non-findall strategies
                 for iteration_idx in range(1, global_limits['max_iterations'] + 1):
                     iteration = iteration_idx
-                    logger.info(f"\n[CLONE] Iteration {iteration}/{global_limits['max_iterations']}")
+                    # Log at INFO for iteration > 1 to show progress
+                    if iteration > 1:
+                        logger.info(f"\n[CLONE] Iteration {iteration}/{global_limits['max_iterations']}")
+                    else:
+                        logger.debug(f"\n[CLONE] Iteration {iteration}/{global_limits['max_iterations']}")
                     if clone_logger:
                         clone_logger.log_section(f"Iteration {iteration}", f"Pulling sources from index {sources_pulled}", level=3)
 
@@ -1231,7 +1235,7 @@ class TheClone2Refined:
                     used_handles[handle] = 1
 
         # Step 5: Synthesis
-        logger.info(f"\n[CLONE] Step 5: Synthesis from {len(all_snippets)} snippets...")
+        logger.debug(f"\n[CLONE] Step 5: Synthesis from {len(all_snippets)} snippets...")
         step_start_phase = time.time()
         if clone_logger:
             clone_logger.start_step("Synthesis")
@@ -1755,7 +1759,7 @@ class TheClone2Refined:
             if url not in overlap_urls:
                 deduplicated_search.append(search)
 
-        logger.info(
+        logger.debug(
             f"[DEDUP] Memory: {len(memory_sources)} → {len(deduplicated_memory)}, "
             f"Search: {len(search_sources)} → {len(deduplicated_search)}"
         )

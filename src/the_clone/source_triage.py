@@ -206,7 +206,11 @@ class SourceTriage:
             # Save first triage prompt for debugging (search_index==1 only)
             if search_index == 1:
                 try:
-                    debug_dir = os.path.join(os.path.dirname(__file__), '../test_results/debug')
+                    # Use /tmp in Lambda (read-only filesystem), else local test_results
+                    if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+                        debug_dir = '/tmp/debug'
+                    else:
+                        debug_dir = os.path.join(os.path.dirname(__file__), '../test_results/debug')
                     os.makedirs(debug_dir, exist_ok=True)
                     with open(os.path.join(debug_dir, 'last_triage_prompt.md'), 'w', encoding='utf-8') as f:
                         f.write(triage_prompt)

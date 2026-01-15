@@ -89,10 +89,10 @@ class TheClone2Refined:
         """
         start_time = datetime.now()
 
-        logger.info("=" * 80)
+        logger.debug("=" * 80)
         logger.debug(f"[CLONE 2 REFINED] Starting query: {prompt[:100]}...")
         logger.debug(f"[CLONE 2 REFINED] Context: {search_context}")
-        logger.info("=" * 80)
+        logger.debug("=" * 80)
 
         # Load models and limits
         models = get_default_models()
@@ -114,7 +114,7 @@ class TheClone2Refined:
                 pass
 
         # Step 0: Initial Decision - Answer or Search?
-        logger.info(f"\n[CLONE 2 REFINED] Step 0: Initial decision (Answer or Search?)...")
+        logger.debug(f"\n[CLONE 2 REFINED] Step 0: Initial decision (Answer or Search?)...")
         initial_start = datetime.now()
 
         initial_result = await self.initial_decision.make_decision(
@@ -204,7 +204,7 @@ class TheClone2Refined:
 
         # Iteration loop
         for iteration in range(1, max_iterations + 1):
-            logger.info(f"\n{'='*80}")
+            logger.debug(f"\n{'='*80}")
             logger.debug(f"[CLONE 2 REFINED] Iteration {iteration}/{max_iterations}")
             logger.debug(f"{'='*80}")
 
@@ -413,17 +413,15 @@ class TheClone2Refined:
         # Calculate total cost
         total_cost = sum(cost_tracker.values())
 
-        logger.info(f"\n[CLONE 2 REFINED] Complete!")
-        logger.debug(f"[CLONE 2 REFINED] Total time: {total_time:.1f}s")
+        logger.info(f"\n[CLONE 2 REFINED] Complete in {total_time:.1f}s, Cost: ${total_cost:.4f}")
         logger.debug(f"[CLONE 2 REFINED] Iterations: {iteration}")
         logger.debug(f"[CLONE 2 REFINED] Snippets: {len(snippets_used)}/{len(all_snippets)}")
         logger.debug(f"[CLONE 2 REFINED] Citations: {len(citations)}")
-        logger.debug(f"[CLONE 2 REFINED] Total cost: ${total_cost:.4f}")
-        logger.info(f"\n[CLONE 2 REFINED] COST BREAKDOWN:")
+        logger.debug(f"[CLONE 2 REFINED] COST BREAKDOWN:")
         for component, cost in cost_tracker.items():
             if cost > 0:
                 pct = (cost / total_cost * 100) if total_cost > 0 else 0
-                logger.info(f"  {component:20s}: ${cost:.4f} ({pct:.1f}%)")
+                logger.debug(f"  {component:20s}: ${cost:.4f} ({pct:.1f}%)")
 
         logger.debug(f"[CLONE DEBUG] About to return - synthesis_tier={synthesis_tier}, all_search_terms={all_search_terms[:50] if all_search_terms else None}")
 

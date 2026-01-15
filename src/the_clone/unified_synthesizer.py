@@ -639,17 +639,21 @@ Query: {query}
                     p_score = snippet.get('p', 0)
                     debug_output.append(f"[{handle}, {sid}]\n")
 
-            # Write to file in test results directory
+            # Write to file (use /tmp in Lambda, test_results locally)
             try:
                 import os
-                debug_dir = os.path.join(os.path.dirname(__file__), 'test_results')
+                # Use /tmp for Lambda (read-only file system), else local test_results
+                if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+                    debug_dir = '/tmp'
+                else:
+                    debug_dir = os.path.join(os.path.dirname(__file__), 'test_results')
                 os.makedirs(debug_dir, exist_ok=True)
                 debug_file = os.path.join(debug_dir, 'citation_debug.txt')
                 with open(debug_file, 'w') as f:
                     f.writelines(debug_output)
-                logger.warning(f"[CITATIONS] Debug info saved to {debug_file}")
+                logger.debug(f"[CITATIONS] Debug info saved to {debug_file}")
             except Exception as e:
-                logger.warning(f"[CITATIONS] Could not save debug file: {e}")
+                logger.debug(f"[CITATIONS] Could not save debug file: {e}")
 
         logger.debug(f"[CITATIONS] Matched {len(snippet_ids)} snippet references from {len(all_brackets)} bracketed items ({len(failed_items)} unmatched)")
 

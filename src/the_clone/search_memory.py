@@ -257,13 +257,13 @@ class SearchMemory:
 
             if new_max_tokens <= existing_max_tokens:
                 # Don't overwrite richer data with poorer data
-                logger.info(
+                logger.debug(
                     f"[MEMORY] Skipping storage - existing result has higher max_tokens "
                     f"({existing_max_tokens} vs {new_max_tokens})"
                 )
                 return query_id
             else:
-                logger.info(
+                logger.debug(
                     f"[MEMORY] Updating with richer data "
                     f"(max_tokens: {existing_max_tokens} → {new_max_tokens})"
                 )
@@ -302,7 +302,7 @@ class SearchMemory:
         except Exception as e:
             logger.error(f"[MEMORY] Failed to backup, continuing anyway: {e}")
 
-        logger.info(
+        logger.debug(
             f"[MEMORY] Stored query '{search_term}' with {len(results.get('results', []))} results"
         )
 
@@ -350,13 +350,13 @@ class SearchMemory:
             new_content_len = len(content)
 
             if new_content_len <= existing_content_len:
-                logger.info(
+                logger.debug(
                     f"[MEMORY] Skipping URL content storage - existing content is richer "
                     f"({existing_content_len} vs {new_content_len} chars)"
                 )
                 return query_id
             else:
-                logger.info(
+                logger.debug(
                     f"[MEMORY] Updating URL content with richer data "
                     f"({existing_content_len} -> {new_content_len} chars)"
                 )
@@ -413,7 +413,7 @@ class SearchMemory:
         except Exception as e:
             logger.error(f"[MEMORY] Failed to backup URL content, continuing anyway: {e}")
 
-        logger.info(
+        logger.debug(
             f"[MEMORY] Stored URL content: {url} ({len(content)} chars, type={source_type})"
         )
 
@@ -513,13 +513,13 @@ class SearchMemory:
 
         # Log URL sources if present
         if url_sources:
-            logger.info(f"[MEMORY] {len(url_sources)} URL sources from query will be prioritized")
+            logger.debug(f"[MEMORY] {len(url_sources)} URL sources from query will be prioritized")
 
         if not filtered_queries and not url_sources:
             logger.debug("[MEMORY] No relevant queries found after keyword filter")
             return self._empty_recall_result(search_terms)
 
-        logger.info(
+        logger.debug(
             f"[MEMORY] Keyword filter: {len(self._memory['queries'])} → "
             f"{len(filtered_queries)} candidate queries"
         )
@@ -557,7 +557,7 @@ class SearchMemory:
             if all_low:
                 # ALL terms have low confidence -> skip verification, search all terms
                 # URL sources will still be included in final results regardless
-                logger.info(f"[MEMORY] All {num_terms} terms have low confidence, skipping verification")
+                logger.debug(f"[MEMORY] All {num_terms} terms have low confidence, skipping verification")
                 llm_cost = selection_cost
                 recommended_searches = search_terms_list[:]  # Search all terms
             else:
@@ -604,7 +604,7 @@ class SearchMemory:
                     # Add at the BEGINNING (high priority)
                     memory_results.insert(0, url_src)
                     existing_urls.add(url_src.get('url'))
-            logger.info(f"[MEMORY] URL sources always included: {len(url_sources)} sources")
+            logger.debug(f"[MEMORY] URL sources always included: {len(url_sources)} sources")
 
         recall_time = (time.time() - start_time) * 1000
 
@@ -769,7 +769,7 @@ class SearchMemory:
                 )
 
         if len(filtered) < len(sources):
-            logger.info(
+            logger.debug(
                 f"[MEMORY] Source-level keyword filter: {len(sources)} -> {len(filtered)} sources"
             )
 
@@ -1045,7 +1045,7 @@ class SearchMemory:
             low_conf_count = len(terms_to_search)
             overall = sum(confidence_vector) / len(confidence_vector) if confidence_vector else 0.0
 
-            logger.info(
+            logger.debug(
                 f"[MEMORY] Verification: overall={overall:.2f}, "
                 f"low_conf={low_conf_count}/{num_terms}, "
                 f"sources={len(verified_sources)}"
@@ -1511,26 +1511,26 @@ Return JSON:
                 if passes_validation:
                     # Use ALL passing snippets (for extraction to pull from)
                     result['found'].extend(passing_snippets)
-                    logger.info(
+                    logger.debug(
                         f"[MEMORY] URL passes keyword validation: {target_url} "
                         f"({len(passing_snippets)}/{len(url_snippets)} snippets match)"
                     )
                 else:
                     # No snippets pass - need to fetch fresh content
                     result['needs_fetch'].append(target_url)
-                    logger.info(
+                    logger.debug(
                         f"[MEMORY] URL found but FAILS keyword validation: {target_url} "
                         f"(keywords: {required_keywords}, snippets checked: {len(url_snippets)})"
                     )
             else:
                 # No keyword validation - use all snippets (prefer full content)
                 result['found'].extend(url_snippets)
-                logger.info(
+                logger.debug(
                     f"[MEMORY] Found URL in memory: {target_url} "
                     f"({len(url_snippets)} snippets, full_content: {any(s.get('_is_full_content') for s in url_snippets)})"
                 )
 
-        logger.info(
+        logger.debug(
             f"[MEMORY] URL lookup: {len(urls)} URLs -> "
             f"{len(result['found'])} found (passing), "
             f"{len(result['needs_fetch'])} needs_fetch (failed keywords), "
@@ -1594,7 +1594,7 @@ Return JSON:
 
         for url in urls:
             try:
-                logger.info(f"[MEMORY] Fetching URL content via Jina: {url}")
+                logger.debug(f"[MEMORY] Fetching URL content via Jina: {url}")
                 jina_result = await html_parser.fetch_via_jina(url)
 
                 if jina_result['success']:
@@ -1621,14 +1621,14 @@ Return JSON:
                     }
 
                     fetched_sources.append(source)
-                    logger.info(f"[MEMORY] Fetched URL: {url} ({len(markdown)} chars, title: {title[:50]})")
+                    logger.debug(f"[MEMORY] Fetched URL: {url} ({len(markdown)} chars, title: {title[:50]})")
                 else:
                     logger.warning(f"[MEMORY] Failed to fetch URL: {url} - {jina_result.get('error', 'Unknown error')}")
 
             except Exception as e:
                 logger.error(f"[MEMORY] Error fetching URL {url}: {str(e)}")
 
-        logger.info(f"[MEMORY] Live URL fetch: {len(urls)} URLs -> {len(fetched_sources)} fetched")
+        logger.debug(f"[MEMORY] Live URL fetch: {len(urls)} URLs -> {len(fetched_sources)} fetched")
         return fetched_sources
 
     # === STATS ===

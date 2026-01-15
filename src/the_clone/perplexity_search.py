@@ -104,9 +104,13 @@ class RateMetrics:
         }
 
     def log_rates(self, prefix: str = "[PERPLEXITY_RATE]"):
-        """Log current rates."""
+        """Log current rates. Use INFO if 429s > 0, else DEBUG."""
         rates = self.get_rates()
-        logger.info(f"{prefix} calls/sec: {rates['calls_per_sec']:.2f}, 429s/sec: {rates['rate_limits_per_sec']:.2f}")
+        msg = f"{prefix} calls/sec: {rates['calls_per_sec']:.2f}, 429s/sec: {rates['rate_limits_per_sec']:.2f}"
+        if rates['rate_limits_per_sec'] > 0:
+            logger.info(msg)
+        else:
+            logger.debug(msg)
         return rates
 
 
@@ -206,6 +210,7 @@ class PerplexitySearchClient:
         last_error = None
 
         # Use per-loop semaphore to limit concurrent requests
+        search_start = time.time()
         async with _get_semaphore():
             for attempt in range(max_retries + 1):
                 try:
@@ -217,6 +222,11 @@ class PerplexitySearchClient:
                             if response.status == 200:
                                 result = json.loads(response_text)
                                 RATE_METRICS.record_call()
+                                # Log slow searches (> 10 seconds)
+                                search_elapsed = time.time() - search_start
+                                if search_elapsed > 10:
+                                    query_preview = query[:50] if isinstance(query, str) else str(query)[:50]
+                                    logger.info(f"[PERPLEXITY_SLOW] Search took {search_elapsed:.1f}s: {query_preview}...")
                                 return result
 
                             # Rate limit hit
@@ -293,7 +303,7 @@ class PerplexitySearchClient:
             List of search result dicts, one per query
         """
         start_time = time.time()
-        logger.info(f"[PERPLEXITY] Starting batch of {len(queries)} searches (semaphore limit: 15)")
+        logger.debug(f"[PERPLEXITY] Starting batch of {len(queries)} searches (semaphore limit: 15)")
 
         tasks = []
         for query in queries:
@@ -307,7 +317,7 @@ class PerplexitySearchClient:
         success_count = sum(1 for r in results if not isinstance(r, Exception))
         error_count = len(results) - success_count
 
-        logger.info(f"[PERPLEXITY] Batch complete: {success_count}/{len(queries)} success, {error_count} errors in {elapsed:.1f}s")
+        logger.debug(f"[PERPLEXITY] Batch complete: {success_count}/{len(queries)} success, {error_count} errors in {elapsed:.1f}s")
         RATE_METRICS.log_rates("[PERPLEXITY_BATCH_END]")
 
         return results
