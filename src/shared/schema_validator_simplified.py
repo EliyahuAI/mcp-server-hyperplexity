@@ -70,12 +70,10 @@ class SimplifiedSchemaValidator:
         """Parse validation targets from simplified config."""
         targets = []
         validation_targets = self.config.get('validation_targets', [])
-        # logger.debug(f"VALIDATOR_PARSE: Found {len(validation_targets)} validation targets in config")
-        logger.info(f"VALIDATOR_PARSE: Found {len(validation_targets)} validation targets in config")
-        
+        logger.debug(f"VALIDATOR_PARSE: Found {len(validation_targets)} validation targets in config")
+
         for i, target_config in enumerate(validation_targets):
-            # logger.debug(f"VALIDATOR_PARSE: Processing target {i}: {target_config.get('column', 'NO_COLUMN')} with importance {target_config.get('importance', 'NO_IMPORTANCE')}")
-            logger.info(f"VALIDATOR_PARSE: Processing target {i}: {target_config.get('column', 'NO_COLUMN')} with importance {target_config.get('importance', 'NO_IMPORTANCE')}")
+            logger.debug(f"VALIDATOR_PARSE: Processing target {i}: {target_config.get('column', 'NO_COLUMN')} with importance {target_config.get('importance', 'NO_IMPORTANCE')}")
             
             target = ValidationTarget(
                 column=target_config['column'],
@@ -90,8 +88,7 @@ class SimplifiedSchemaValidator:
             )
             targets.append(target)
         
-        # logger.debug(f"VALIDATOR_PARSE: Created {len(targets)} ValidationTarget objects")
-        logger.info(f"VALIDATOR_PARSE: Created {len(targets)} ValidationTarget objects")
+        logger.debug(f"VALIDATOR_PARSE: Created {len(targets)} ValidationTarget objects")
         return targets
     
     def _generate_primary_key(self) -> List[str]:

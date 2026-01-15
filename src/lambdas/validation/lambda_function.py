@@ -4213,9 +4213,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             """
             nonlocal total_cache_hits, total_cache_misses
 
-            # CRITICAL FIX: Create a local validator instance for thread safety
-            # This prevents race conditions when multiple rows are processed in parallel
-            local_validator = SimplifiedSchemaValidator(config)
+            # NOTE: The validator is immutable after initialization (all state set in __init__)
+            # so it's safe to share across async calls - no need for per-row instantiation
 
             # Track missing columns to return to caller
             missing_column_info = {}
@@ -4244,10 +4243,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             else:
                 logger.debug(f"Processing {len(validation_targets)} fields together using multiplex format")
 
-            # Get model configuration (use local_validator instead of shared validator)
-            model, warnings = resolve_search_group_model(validation_targets, local_validator)
-            search_context_size = resolve_search_group_context_size(validation_targets, local_validator)
-            max_web_searches = resolve_search_group_max_web_searches(validation_targets, local_validator)
+            # Get model configuration (use validator instead of shared validator)
+            model, warnings = resolve_search_group_model(validation_targets, validator)
+            search_context_size = resolve_search_group_context_size(validation_targets, validator)
+            max_web_searches = resolve_search_group_max_web_searches(validation_targets, validator)
             api_provider = determine_api_provider(model)
 
             # Track which model is being used for this row
@@ -4288,7 +4287,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             has_web_search = api_provider == 'perplexity' or (api_provider == 'anthropic' and max_web_searches > 0)
             logger.debug(f"Web search available: {has_web_search}")
 
-            prompt = local_validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history, has_web_search=has_web_search)
+            prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history, has_web_search=has_web_search)
 
             # Append proactive guidance if provided
             if proactive_guidance:
@@ -4324,8 +4323,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 
                 # Get the search group name for better debug identification
                 group_name = None
-                if group_id is not None and hasattr(local_validator, 'search_groups') and local_validator.search_groups:
-                    for group_def in local_validator.search_groups:
+                if group_id is not None and hasattr(validator, 'search_groups') and validator.search_groups:
+                    for group_def in validator.search_groups:
                         if isinstance(group_def, dict) and group_def.get('group_id') == group_id:
                             group_name = group_def.get('group_name')
                             break
@@ -4408,7 +4407,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
             
             # Parse the API response (now normalized to Perplexity format)
-            parsed_results = local_validator.parse_multiplex_result(api_response, row)
+            parsed_results = validator.parse_multiplex_result(api_response, row)
             
             # CRITICAL CACHE VALIDATION LOGIC: Check that response contains all required columns
             # [FIX] Normalize expected columns to match normalized parsing in schema_validator_simplified.py
@@ -4531,7 +4530,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     processing_time = time.time() - start_time
                     
                     # Re-parse the fresh API response (now normalized to Perplexity format)
-                    parsed_results = local_validator.parse_multiplex_result(api_response, row)
+                    parsed_results = validator.parse_multiplex_result(api_response, row)
                     fresh_actual_columns = list(parsed_results.keys())
                     
                     # Check again for missing columns in fresh response with flexible matching

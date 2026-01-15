@@ -18,10 +18,37 @@ from threading import Lock
 
 logger = logging.getLogger(__name__)
 
-# Global semaphore to limit concurrent Perplexity API requests
-# Prevents rate limit saturation when multiple clones run in parallel
-# 15 concurrent ≈ 3-5 completing/sec, staying under 3 QPS limit
-PERPLEXITY_SEARCH_SEMAPHORE = asyncio.Semaphore(15)
+# Semaphore management for concurrent Perplexity API requests
+# IMPORTANT: asyncio.Semaphore is bound to the event loop when first used.
+# In Lambda, asyncio.new_event_loop() creates a new loop each invocation,
+# so we must create the semaphore lazily for the current loop.
+_SEMAPHORE_LOCK = Lock()
+_SEMAPHORE_BY_LOOP: Dict[int, asyncio.Semaphore] = {}
+_SEMAPHORE_LIMIT = 15  # 15 concurrent ≈ 3-5 completing/sec, staying under 3 QPS limit
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    """Get or create a semaphore for the current event loop.
+
+    This prevents the bug where a semaphore bound to an old event loop
+    hangs forever when used with a new event loop (Lambda warm start issue).
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        loop_id = id(loop)
+    except RuntimeError:
+        # No running loop - return a new semaphore (will bind when used)
+        return asyncio.Semaphore(_SEMAPHORE_LIMIT)
+
+    with _SEMAPHORE_LOCK:
+        if loop_id not in _SEMAPHORE_BY_LOOP:
+            logger.debug(f"[PERPLEXITY_SEMAPHORE] Creating new semaphore for loop {loop_id}")
+            _SEMAPHORE_BY_LOOP[loop_id] = asyncio.Semaphore(_SEMAPHORE_LIMIT)
+            # Clean up old loop semaphores (keep only last 2 to prevent memory leak)
+            if len(_SEMAPHORE_BY_LOOP) > 2:
+                oldest_key = min(_SEMAPHORE_BY_LOOP.keys())
+                del _SEMAPHORE_BY_LOOP[oldest_key]
+        return _SEMAPHORE_BY_LOOP[loop_id]
 
 # Threshold for high 429 rate alerting (429s per second)
 HIGH_429_RATE_THRESHOLD = 0.5
@@ -178,8 +205,8 @@ class PerplexitySearchClient:
 
         last_error = None
 
-        # Use global semaphore to limit concurrent requests
-        async with PERPLEXITY_SEARCH_SEMAPHORE:
+        # Use per-loop semaphore to limit concurrent requests
+        async with _get_semaphore():
             for attempt in range(max_retries + 1):
                 try:
                     async with aiohttp.ClientSession() as session:
