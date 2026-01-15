@@ -4932,8 +4932,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             aggregated_metrics = None
             full_validation_estimates = None
 
-        # Collect all raw responses from all rows and aggregate token usage and processing time
-        all_raw_responses = {}
+        # Aggregate token usage and processing time from raw responses
         total_processing_time = 0.0  # This will be the sum of all batch times (parallel processing)
         total_token_usage = {
             'total_tokens': 0,
@@ -4973,12 +4972,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 
                 # Track the total processing time for this row
                 row_processing_time = 0.0
-                
-                # Add a row prefix to each response ID to avoid collisions
+
                 for response_id, response_data in row_result['_raw_responses'].items():
-                    new_response_id = f"row{row_key}_{response_id}"
-                    all_raw_responses[new_response_id] = response_data
-                    
                     # Count API calls (move this OUTSIDE token usage check)
                     is_cached = response_data.get('is_cached', False)
                     if is_cached:
@@ -5147,14 +5142,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         })
         response_size_kb = len(response_json) / 1024
-        logger.debug(f"Response size without raw responses: approximately {response_size_kb:.2f} KB")
-        
-        # Estimate size with raw responses
-        raw_responses_json = json.dumps(all_raw_responses)
-        raw_size_kb = len(raw_responses_json) / 1024
-        logger.debug(f"Raw responses size: approximately {raw_size_kb:.2f} KB")
-        logger.debug(f"Total estimated response size: {response_size_kb + raw_size_kb:.2f} KB")
-        
+        logger.debug(f"Response size: approximately {response_size_kb:.2f} KB")
+
         # Calculate batch timing statistics using parallel processing time calculation
         num_batches = len(batch_processing_times_calculated)
         if num_batches > 0:
