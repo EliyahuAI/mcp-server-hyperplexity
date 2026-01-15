@@ -338,6 +338,21 @@ def handle_copy_config(event_data, context=None):
         source_metadata = source_config_data.get('storage_metadata', {})
         original_name = source_metadata.get('original_name') or source_metadata.get('config_id')
         source_description = source_metadata.get('description', source_config_data.get('general_notes', ''))
+
+        # Ensure source_session is set - extract from metadata or S3 key if not provided
+        if not source_session:
+            # Try to get from config metadata
+            source_session = source_metadata.get('session_id')
+            if source_session:
+                logger.info(f"Extracted source_session from config metadata: {source_session}")
+
+        if not source_session and source_config_key:
+            # Try to extract from S3 key path (e.g., results/domain/user/session_xxx/config.json)
+            import re
+            session_match = re.search(r'(session_(?:demo_)?\d{8}_\d{6}_[a-f0-9]{8})', source_config_key)
+            if session_match:
+                source_session = session_match.group(1)
+                logger.info(f"Extracted source_session from S3 key: {source_session}")
         
         # Extract original filename from S3 key for preservation
         original_filename = Path(source_config_key).name if source_config_key else None
@@ -433,6 +448,7 @@ def handle_copy_config(event_data, context=None):
         # Also copy agent_memory.json if it exists in the source session
         memory_copy_result = None
         if source_session:
+            logger.info(f"Attempting to copy agent_memory from {source_session} to {session_id}")
             # Extract source email from config metadata or use current email
             source_email = source_metadata.get('email', email)
             memory_copy_result = copy_agent_memory(
@@ -458,6 +474,8 @@ def handle_copy_config(event_data, context=None):
                     logger.info(f"Recorded agent_memory copy in session_info.json")
                 except Exception as e:
                     logger.warning(f"Failed to record memory copy in session_info.json: {e}")
+        else:
+            logger.warning(f"Cannot copy agent_memory - source_session not available (metadata: {source_metadata.get('session_id')}, key: {source_config_key})")
 
         return create_response(200, {
             'success': True,
