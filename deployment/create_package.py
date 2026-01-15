@@ -44,7 +44,7 @@ LAMBDA_CONFIG = {
     "Runtime": "python3.11",
     "Handler": "lambda_function.lambda_handler", # This will be created in the package root
     "Timeout": 870,  # 14.5 minutes in seconds (14m 30s)
-    "MemorySize": 512,  # Optimized: was 1024MB, max used 334MB
+    "MemorySize": 2048,  # Increased for large table processing (Search Memory System)
     "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
     "Environment": {
         "Variables": {
@@ -1067,7 +1067,7 @@ def main():
             "Runtime": "python3.11",
             "Handler": "lambda_function.lambda_handler",
             "Timeout": 30,
-            "MemorySize": 512,
+            "MemorySize": 2048,
             "Role": LAMBDA_CONFIG["Role"],
             "Environment": {"Variables": {}},
             "TracingConfig": {"Mode": "Active"}
