@@ -874,6 +874,8 @@ if (data.progress === 100 && aiMessage && !isGenerating && !previewGenerated) {
     } else if (isReady) {
         // MODE 3: Don't complete the indicator, keep it running for table generation
         // Execution starting
+        // Enable leave page warning - interview is done, table generation starting
+        window.leaveWarningEnabled = true;
         updateThinkingInCard(cardId, 'Starting table generation...');
 
         // Add AI message with streaming

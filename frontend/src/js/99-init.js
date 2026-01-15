@@ -1166,12 +1166,18 @@ try {
         // Flag to prevent auto-save during reset
         window.isResetting = false;
 
+        // Flag to control leave page warning - only enable once significant work is done
+        // (when preview card is created or table maker interview completes)
+        window.leaveWarningEnabled = false;
+
         // Reset page functionality - clears saved state and reloads
         window.resetPage = function() {
 try {
     // Set reset flag to prevent auto-save
     window.isResetting = true;
     window.isRestoringState = false;
+    // Disable leave warning since user is intentionally resetting
+    window.leaveWarningEnabled = false;
 
     // Clear saved state multiple times to ensure it's gone
     sessionStorage.removeItem('hyperplexity_app_state');
@@ -1244,10 +1250,16 @@ if (saved) {
         // ============================================
 
         // Track if we have valuable data that shouldn't be lost
+        // Only returns true if leaveWarningEnabled flag is set
+        // (flag is enabled when preview card is created or table maker interview completes)
         function hasValuableData() {
-return globalState.excelFileUploaded ||
-       globalState.currentConfig ||
-       document.querySelectorAll('[id^="card-"]').length > 1;
+            // Only warn if the warning has been explicitly enabled
+            if (!window.leaveWarningEnabled) {
+                return false;
+            }
+            return globalState.excelFileUploaded ||
+                   globalState.currentConfig ||
+                   document.querySelectorAll('[id^="card-"]').length > 1;
         }
 
         // Track download operations to avoid triggering warnings

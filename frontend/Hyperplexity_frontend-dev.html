@@ -4781,26 +4781,25 @@ function routeMessage(data, sessionId) {
 
     // Cancel timeout if we receive a completion message
     if (data.status === 'COMPLETED') {
-        // Check if already handled to prevent duplicate timeout clearing
-        // BUT still route the message - the card handler will handle deduplication
+        // Check if already handled to prevent duplicate UI updates
         if (validationCompletionHandled) {
-            console.log('[ROUTE] COMPLETED already handled, skipping timeout cleanup but still routing');
-            // Don't return - let the message still route to the card handler
-        } else {
-            // Mark as handled to prevent duplicate timeout processing
-            validationCompletionHandled = true;
+            console.log('[ROUTE] COMPLETED already handled, skipping duplicate');
+            return;
+        }
 
-            // Stop fallback polling
-            stopFallbackPolling();
+        // Mark as handled to prevent duplicate processing
+        validationCompletionHandled = true;
 
-            // Clear async timeouts (Bug fix: access .inactivityTimer property)
-            if (window.asyncTimeouts && window.asyncTimeouts.has(sessionId)) {
-                const timeoutInfo = window.asyncTimeouts.get(sessionId);
-                if (timeoutInfo && timeoutInfo.inactivityTimer) {
-                    clearTimeout(timeoutInfo.inactivityTimer);
-                }
-                window.asyncTimeouts.delete(sessionId);
+        // Stop fallback polling
+        stopFallbackPolling();
+
+        // Clear async timeouts (Bug fix: access .inactivityTimer property)
+        if (window.asyncTimeouts && window.asyncTimeouts.has(sessionId)) {
+            const timeoutInfo = window.asyncTimeouts.get(sessionId);
+            if (timeoutInfo && timeoutInfo.inactivityTimer) {
+                clearTimeout(timeoutInfo.inactivityTimer);
             }
+            window.asyncTimeouts.delete(sessionId);
         }
     }
 
@@ -10771,6 +10770,8 @@ if (data.progress === 100 && aiMessage && !isGenerating && !previewGenerated) {
     } else if (isReady) {
         // MODE 3: Don't complete the indicator, keep it running for table generation
         // Execution starting
+        // Enable leave page warning - interview is done, table generation starting
+        window.leaveWarningEnabled = true;
         updateThinkingInCard(cardId, 'Starting table generation...');
 
         // Add AI message with streaming
@@ -12143,6 +12144,9 @@ function createPreviewCard() {
 
     console.log('[CREATE_PREVIEW] No existing preview card, creating new one');
 
+    // Enable leave page warning now that significant work has been done
+    window.leaveWarningEnabled = true;
+
     // Generate the card ID FIRST
     const cardId = generateCardId();
     console.log('[CREATE_PREVIEW] Generated cardId:', cardId);
@@ -12575,12 +12579,6 @@ function handleProcessingWebSocketMessage(data, cardId) {
         // Progress routed to card level;
 
     } else if (data.status === 'COMPLETED') {
-        // Guard against duplicate completion processing
-        if (globalState.processingState?.validationCompleted) {
-            console.log('[PROCESSING] COMPLETED already processed for this card, skipping duplicate');
-            return;
-        }
-
         // Stop fallback polling since we received completion via WebSocket
         if (typeof stopFallbackPolling === 'function') {
             stopFallbackPolling();
@@ -15842,12 +15840,18 @@ try {
         // Flag to prevent auto-save during reset
         window.isResetting = false;
 
+        // Flag to control leave page warning - only enable once significant work is done
+        // (when preview card is created or table maker interview completes)
+        window.leaveWarningEnabled = false;
+
         // Reset page functionality - clears saved state and reloads
         window.resetPage = function() {
 try {
     // Set reset flag to prevent auto-save
     window.isResetting = true;
     window.isRestoringState = false;
+    // Disable leave warning since user is intentionally resetting
+    window.leaveWarningEnabled = false;
 
     // Clear saved state multiple times to ensure it's gone
     sessionStorage.removeItem('hyperplexity_app_state');
@@ -15920,10 +15924,16 @@ if (saved) {
         // ============================================
 
         // Track if we have valuable data that shouldn't be lost
+        // Only returns true if leaveWarningEnabled flag is set
+        // (flag is enabled when preview card is created or table maker interview completes)
         function hasValuableData() {
-return globalState.excelFileUploaded ||
-       globalState.currentConfig ||
-       document.querySelectorAll('[id^="card-"]').length > 1;
+            // Only warn if the warning has been explicitly enabled
+            if (!window.leaveWarningEnabled) {
+                return false;
+            }
+            return globalState.excelFileUploaded ||
+                   globalState.currentConfig ||
+                   document.querySelectorAll('[id^="card-"]').length > 1;
         }
 
         // Track download operations to avoid triggering warnings

@@ -19,6 +19,9 @@ function createPreviewCard() {
 
     console.log('[CREATE_PREVIEW] No existing preview card, creating new one');
 
+    // Enable leave page warning now that significant work has been done
+    window.leaveWarningEnabled = true;
+
     // Generate the card ID FIRST
     const cardId = generateCardId();
     console.log('[CREATE_PREVIEW] Generated cardId:', cardId);
