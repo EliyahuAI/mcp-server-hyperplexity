@@ -71,7 +71,7 @@ class CloneProvider:
                         prompt=prompt,
                         provider=provider,
                         schema=schema,  # Pass schema to Clone for structured output
-                        debug_dir=f"/tmp/clone_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}", # Temp debug dir
+                        debug_dir=None,  # No debug files on Lambda - saves memory and disk
                         include_domains=include_domains,
                         exclude_domains=exclude_domains,
                         use_code_extraction=use_code_extraction,
