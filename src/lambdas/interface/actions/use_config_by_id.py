@@ -105,13 +105,16 @@ def copy_agent_memory(
 def handle_use_config_by_id(event_data, context=None):
     """
     Use a configuration by its config ID
-    
+
     Args:
         event_data: {
             'email': 'user@example.com',
             'session_id': 'current_session_id',
             'config_id': 'session_20250819_201314_d8363961_v1_financial_portfolio'
         }
+    """
+    logger.info("========== USE_CONFIG_BY_ID ACTION CALLED ==========")
+    """
     
     Returns:
         {

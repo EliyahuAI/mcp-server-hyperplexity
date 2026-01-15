@@ -223,7 +223,7 @@ def copy_config_to_session(email: str, session_id: str, config_data: Dict[str, A
 def handle_copy_config(event_data, context=None):
     """
     Copy a config from another session to the current session
-    
+
     Args:
         event_data: {
             'email': 'user@example.com',
@@ -232,6 +232,9 @@ def handle_copy_config(event_data, context=None):
             'source_config_id': 'session_20250918_170524_c4b7eba7_config_v1_ai_generated',  # NEW: Config ID lookup
             'source_session': 'source_session_id'
         }
+    """
+    logger.info("========== COPY_CONFIG ACTION CALLED ==========")
+    """
     
     Returns:
         {
