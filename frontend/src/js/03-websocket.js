@@ -21,9 +21,35 @@ let activeFallbackPolling = null; // { sessionId, intervalId, startTime }
 
 // Track if we've already completed to prevent duplicate handling
 let validationCompletionHandled = false;
+let completionHandledBy = null; // Track which source handled completion (for debugging)
 
 // Track pending visibility check to prevent queued duplicates
 let pendingVisibilityCheck = null;
+
+/**
+ * Central completion handler - THE ONLY place that should mark completion as handled.
+ * This ensures atomic check-and-set regardless of whether completion comes from
+ * WebSocket or API polling.
+ *
+ * @param {string} source - Where the completion was detected ('websocket', 'api_poll', 'visibility_check', etc.)
+ * @returns {boolean} - True if this call handled completion, false if already handled
+ */
+function tryHandleCompletion(source) {
+    if (validationCompletionHandled) {
+        console.log(`[COMPLETION] Already handled by '${completionHandledBy}', ignoring duplicate from '${source}'`);
+        return false;
+    }
+
+    // Atomically mark as handled
+    validationCompletionHandled = true;
+    completionHandledBy = source;
+    console.log(`[COMPLETION] Marked as handled by '${source}' at ${new Date().toISOString()}`);
+
+    // Stop fallback polling since completion is being handled
+    stopFallbackPolling();
+
+    return true;
+}
 
 // ============================================
 // STATUS RECOVERY SYSTEM
@@ -34,19 +60,20 @@ let pendingVisibilityCheck = null;
  * This is called on WebSocket reconnect and when tab becomes visible.
  * @param {string} sessionId - The session to check
  * @param {boolean} isPreview - Whether this is a preview check
+ * @param {string} source - Where this check originated from (for debugging)
  * @returns {Promise<boolean>} - True if validation was found complete
  */
-async function checkValidationStatus(sessionId, isPreview = false) {
+async function checkValidationStatus(sessionId, isPreview = false, source = 'api_poll') {
     if (!sessionId) return false;
 
-    // Prevent duplicate completion handling
+    // Early exit if already completed (avoid unnecessary API calls)
     if (validationCompletionHandled && !isPreview) {
-        console.log('[STATUS_CHECK] Completion already handled, skipping');
+        console.log(`[STATUS_CHECK] Already completed (by '${completionHandledBy}'), skipping API call`);
         return true;
     }
 
     try {
-        console.log(`[STATUS_CHECK] Checking status for session ${sessionId} (preview: ${isPreview})`);
+        console.log(`[STATUS_CHECK] Checking status for session ${sessionId} (preview: ${isPreview}, source: ${source})`);
 
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
@@ -69,13 +96,9 @@ async function checkValidationStatus(sessionId, isPreview = false) {
         // Check for completion - handle both string 'COMPLETED' and case variations
         const status = (data.status || '').toUpperCase();
         if (status === 'COMPLETED') {
-            console.log('[STATUS_CHECK] Validation completed - triggering UI update');
-            validationCompletionHandled = true;
+            console.log(`[STATUS_CHECK] API reports COMPLETED - routing to handler (source: ${source})`);
 
-            // Stop fallback polling since we're handling completion
-            stopFallbackPolling();
-
-            // Ensure processing state exists
+            // Ensure processing state exists before routing
             if (typeof ensureProcessingState === 'function') {
                 ensureProcessingState();
             }
@@ -85,9 +108,11 @@ async function checkValidationStatus(sessionId, isPreview = false) {
             }
             globalState.workflowPhase = 'completed';
 
-            // Route the completion message through the normal handler
+            // Route through routeMessage which handles deduplication via tryHandleCompletion
+            // The source is passed through the data so routeMessage knows where it came from
             routeMessage({
                 status: 'COMPLETED',
+                _completionSource: source,
                 ...data
             }, sessionId);
 
@@ -119,6 +144,7 @@ function stopFallbackPolling() {
  */
 function resetCompletionState() {
     validationCompletionHandled = false;
+    completionHandledBy = null;
     stopFallbackPolling();
 
     // Clear any pending visibility check
@@ -126,6 +152,7 @@ function resetCompletionState() {
         clearTimeout(pendingVisibilityCheck);
         pendingVisibilityCheck = null;
     }
+    console.log('[COMPLETION] State reset for new validation');
 }
 
 function connectToSession(sessionId, reconnectAttempt = 0) {
@@ -169,7 +196,7 @@ function connectToSession(sessionId, reconnectAttempt = 0) {
                 // This catches cases where validation completed while we were disconnected
                 if (reconnectAttempt > 0 && globalState.currentValidationState === 'full') {
                     console.log('[WEBSOCKET] Reconnected during full validation - checking status');
-                    checkValidationStatus(sessionId, false).then(completed => {
+                    checkValidationStatus(sessionId, false, 'websocket_reconnect').then(completed => {
                         if (completed) {
                             console.log('[WEBSOCKET] Validation was completed during disconnect - UI updated');
                         }
@@ -373,10 +400,11 @@ function setupWebSocketFallback(sessionId, options = {}) {
             return;
         }
 
-        // Use the centralized status check function
-        const completed = await checkValidationStatus(sessionId, isPreview);
+        // Use the centralized status check function with source tracking
+        const completed = await checkValidationStatus(sessionId, isPreview, 'fallback_poll');
         if (completed) {
             console.log('[FALLBACK] Validation completed via polling');
+            // stopFallbackPolling() is called by tryHandleCompletion, but call again to be safe
             stopFallbackPolling();
         }
     }, pollInterval);
@@ -672,21 +700,18 @@ function routeMessage(data, sessionId) {
         globalState.isProcessingConfig = false;
     }
 
-    // Cancel timeout if we receive a completion message
+    // Handle completion messages - use central tryHandleCompletion for atomic deduplication
     if (data.status === 'COMPLETED') {
-        // Check if already handled to prevent duplicate UI updates
-        if (validationCompletionHandled) {
-            console.log('[ROUTE] COMPLETED already handled, skipping duplicate');
+        // Determine the source: WebSocket (no _completionSource) or API poll (has _completionSource)
+        const source = data._completionSource || 'websocket';
+
+        // Try to handle completion - returns false if already handled
+        if (!tryHandleCompletion(source)) {
+            // Already handled by another path, skip to prevent duplicate UI updates
             return;
         }
 
-        // Mark as handled to prevent duplicate processing
-        validationCompletionHandled = true;
-
-        // Stop fallback polling
-        stopFallbackPolling();
-
-        // Clear async timeouts (Bug fix: access .inactivityTimer property)
+        // We're the first to handle completion - clear async timeouts
         if (window.asyncTimeouts && window.asyncTimeouts.has(sessionId)) {
             const timeoutInfo = window.asyncTimeouts.get(sessionId);
             if (timeoutInfo && timeoutInfo.inactivityTimer) {
@@ -694,6 +719,9 @@ function routeMessage(data, sessionId) {
             }
             window.asyncTimeouts.delete(sessionId);
         }
+
+        // Continue to dispatch to card handler below
+        console.log(`[ROUTE] Dispatching COMPLETED to card handler (source: ${source})`);
     }
 
     // Route ALL messages to the last registered card
@@ -972,6 +1000,12 @@ window.stopFallbackPolling = stopFallbackPolling;
 window.isPollingActive = () => activeFallbackPolling !== null;
 window.getPollingState = () => activeFallbackPolling ? { ...activeFallbackPolling } : null;
 
+// Export completion state (useful for debugging)
+window.getCompletionState = () => ({
+    handled: validationCompletionHandled,
+    handledBy: completionHandledBy
+});
+
 // ============================================
 // PAGE VISIBILITY API - Check status when tab becomes visible
 // ============================================
@@ -998,7 +1032,7 @@ document.addEventListener('visibilitychange', () => {
                     return;
                 }
 
-                const completed = await checkValidationStatus(globalState.sessionId, false);
+                const completed = await checkValidationStatus(globalState.sessionId, false, 'visibility_change');
                 if (completed) {
                     console.log('[VISIBILITY] Validation completed while tab was hidden');
                 }
@@ -1025,7 +1059,7 @@ window.addEventListener('online', () => {
 
         // Check status after a short delay
         setTimeout(async () => {
-            await checkValidationStatus(globalState.sessionId, false);
+            await checkValidationStatus(globalState.sessionId, false, 'network_online');
         }, 2000);
     }
 });
