@@ -201,6 +201,56 @@ class SearchMemory:
         except self.s3_manager.s3_client.exceptions.NoSuchKey:
             raise FileNotFoundError(f"Memory file not found: {self.memory_key}")
 
+    def _prepare_memory_for_save(self) -> dict:
+        """
+        Prepare memory for S3 save with deep copy to prevent race conditions.
+
+        Returns:
+            Deep copy of memory safe for serialization
+        """
+        import copy
+
+        # Update timestamp
+        self._memory['last_updated'] = datetime.now(timezone.utc).isoformat()
+
+        # Deep copy to prevent concurrent modifications during serialization
+        memory_to_save = copy.deepcopy(self._memory)
+
+        # Convert defaultdict to regular dict for JSON serialization
+        if isinstance(memory_to_save['indexes'].get('by_url'), defaultdict):
+            memory_to_save['indexes']['by_url'] = dict(memory_to_save['indexes']['by_url'])
+
+        return memory_to_save
+
+    def _backup_sync(self):
+        """
+        Synchronous backup to S3 (for use in sync contexts).
+        """
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                memory_to_save = self._prepare_memory_for_save()
+
+                # Save to S3 (synchronous)
+                self.s3_manager.s3_client.put_object(
+                    Bucket=self.s3_manager.bucket_name,
+                    Key=self.memory_key,
+                    Body=json.dumps(memory_to_save),  # No indent - 30-40% smaller, faster
+                    ContentType='application/json'
+                )
+
+                logger.debug(f"[MEMORY] Backed up to S3 sync (attempt {attempt + 1})")
+                return
+
+            except Exception as e:
+                if attempt == self.MAX_RETRIES - 1:
+                    logger.error(f"[MEMORY] Failed to backup after {self.MAX_RETRIES} attempts: {e}")
+                    raise
+
+                # Exponential backoff
+                wait_time = self.RETRY_BASE_DELAY ** attempt
+                logger.warning(f"[MEMORY] Backup failed (attempt {attempt + 1}), retrying in {wait_time}s: {e}")
+                time.sleep(wait_time)
+
     async def backup(self):
         """
         Save current memory state to S3 with optimistic concurrency.
@@ -208,22 +258,14 @@ class SearchMemory:
         """
         for attempt in range(self.MAX_RETRIES):
             try:
-                # Update timestamp
-                self._memory['last_updated'] = datetime.now(timezone.utc).isoformat()
+                memory_to_save = self._prepare_memory_for_save()
 
-                # Prepare for JSON serialization (convert defaultdict to dict)
-                memory_to_save = self._memory.copy()
-                memory_to_save['indexes'] = {
-                    'by_time': self._memory['indexes']['by_time'],
-                    'by_url': dict(self._memory['indexes']['by_url'])
-                }
-
-                # Save to S3
+                # Save to S3 (async)
                 await asyncio.to_thread(
                     self.s3_manager.s3_client.put_object,
                     Bucket=self.s3_manager.bucket_name,
                     Key=self.memory_key,
-                    Body=json.dumps(memory_to_save, indent=2),
+                    Body=json.dumps(memory_to_save),  # No indent - 30-40% smaller, faster
                     ContentType='application/json'
                 )
 

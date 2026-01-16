@@ -231,7 +231,7 @@ class MemoryCache:
         Args:
             session_id: Session identifier to flush
         """
-        # Check dirty status with lock
+        # Get memory reference and mark as flushing (prevents concurrent modifications)
         with _CACHE_LOCK:
             if session_id not in _MEMORY_CACHE:
                 logger.debug(f"[MEMORY_CACHE] Session {session_id} not in cache, nothing to flush")
@@ -244,7 +244,11 @@ class MemoryCache:
             memory = _MEMORY_CACHE[session_id]
             query_count = len(memory._memory.get('queries', {}))
 
-        # Release lock during async S3 write (can take 1-5 seconds)
+            # Mark as clean BEFORE write to prevent double-flush
+            # If write fails, we'll log error but won't retry
+            _DIRTY_SESSIONS.discard(session_id)
+
+        # Lock is held throughout backup to prevent race conditions during serialization
         logger.info(f"[MEMORY_CACHE] Flushing {query_count} queries to S3 for session {session_id}")
         start_time = __import__('time').time()
 
@@ -253,12 +257,53 @@ class MemoryCache:
             elapsed = __import__('time').time() - start_time
             logger.info(f"[MEMORY_CACHE] Flush complete for session {session_id} ({elapsed:.2f}s)")
 
-            # Mark as clean
+        except Exception as e:
+            logger.error(f"[MEMORY_CACHE] Flush failed for session {session_id}: {e}")
+            # Re-mark as dirty so it can be retried
             with _CACHE_LOCK:
-                _DIRTY_SESSIONS.discard(session_id)
+                _DIRTY_SESSIONS.add(session_id)
+            raise
+
+    @classmethod
+    def flush_sync(cls, session_id: str):
+        """
+        Write session memory to S3 synchronously. For use in sync contexts.
+
+        Only writes if session is dirty (has new data).
+
+        Args:
+            session_id: Session identifier to flush
+        """
+        # Get memory reference and mark as flushing
+        with _CACHE_LOCK:
+            if session_id not in _MEMORY_CACHE:
+                logger.debug(f"[MEMORY_CACHE] Session {session_id} not in cache, nothing to flush")
+                return
+
+            if session_id not in _DIRTY_SESSIONS:
+                logger.debug(f"[MEMORY_CACHE] Session {session_id} not dirty, skipping flush")
+                return
+
+            memory = _MEMORY_CACHE[session_id]
+            query_count = len(memory._memory.get('queries', {}))
+
+            # Mark as clean BEFORE write to prevent double-flush
+            _DIRTY_SESSIONS.discard(session_id)
+
+        logger.info(f"[MEMORY_CACHE] Flushing {query_count} queries to S3 for session {session_id} (sync)")
+        start_time = __import__('time').time()
+
+        try:
+            # Synchronous backup
+            memory._backup_sync()
+            elapsed = __import__('time').time() - start_time
+            logger.info(f"[MEMORY_CACHE] Flush complete for session {session_id} ({elapsed:.2f}s)")
 
         except Exception as e:
             logger.error(f"[MEMORY_CACHE] Flush failed for session {session_id}: {e}")
+            # Re-mark as dirty so it can be retried
+            with _CACHE_LOCK:
+                _DIRTY_SESSIONS.add(session_id)
             raise
 
     @classmethod

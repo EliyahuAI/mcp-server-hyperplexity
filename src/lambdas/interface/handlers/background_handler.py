@@ -1568,6 +1568,16 @@ def handle_main_processing(event, context):
                 logger.warning(f"[PREVIEW_HISTORY] Failed to extract validation history: {e}")
                 validation_history = {}
 
+            # CRITICAL: Flush memory to S3 before invoking validation lambda
+            # Validation lambda runs in separate process and needs persisted memory
+            if session_id:
+                try:
+                    from the_clone.search_memory_cache import MemoryCache
+                    MemoryCache.flush_sync(session_id)
+                    logger.info(f"[MEMORY_CACHE] Flushed memory for session {session_id} before validation")
+                except Exception as e:
+                    logger.warning(f"[MEMORY_CACHE] Failed to flush memory before validation: {e}")
+
             try:
                 validation_results = invoke_validator_lambda(
                     actual_excel_s3_key, actual_config_s3_key, max_rows, batch_size, S3_UNIFIED_BUCKET, VALIDATOR_LAMBDA_NAME,
@@ -3710,6 +3720,16 @@ def handle_main_processing(event, context):
 
                     logger.debug(f"[SYNC_VALIDATION] Using invoke_validator_lambda for session {session_id}")
                     logger.debug(f"[SYNC_VALIDATION] Rows: {len(sync_payload.get('validation_data', {}).get('rows', []))}")
+
+                    # CRITICAL: Flush memory to S3 before invoking validation lambda
+                    # Validation lambda runs in separate process and needs persisted memory
+                    if session_id:
+                        try:
+                            from the_clone.search_memory_cache import MemoryCache
+                            MemoryCache.flush_sync(session_id)
+                            logger.info(f"[MEMORY_CACHE] Flushed memory for session {session_id} before validation")
+                        except Exception as e:
+                            logger.warning(f"[MEMORY_CACHE] Failed to flush memory before validation: {e}")
 
                     # Use the same invoke_validator_lambda function that preview uses (has retry protection)
                     invoke_result = invoke_validator_lambda(

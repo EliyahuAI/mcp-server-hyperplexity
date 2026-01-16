@@ -830,17 +830,29 @@ def _process_preview_sync(storage_manager, email_address, session_id, excel_s3_k
     from ..core.validator_invoker import invoke_validator_lambda
     from ..reporting.markdown_report import create_markdown_table_from_results
     
-    
+
     try:
+        # CRITICAL: Flush memory to S3 before invoking validation lambda
+        # Validation lambda runs in separate process and needs persisted memory
+        if session_id:
+            try:
+                from the_clone.search_memory_cache import MemoryCache
+                MemoryCache.flush_sync(session_id)
+                logger.info(f"[MEMORY_CACHE] Flushed memory for session {session_id} before preview validation")
+            except Exception as e:
+                logger.warning(f"[MEMORY_CACHE] Failed to flush memory before validation: {e}")
+
         start_time = time.time()
         validation_results = invoke_validator_lambda(
-            excel_s3_key, config_s3_key, 
-            max_rows=preview_max_rows, 
+            excel_s3_key, config_s3_key,
+            max_rows=preview_max_rows,
             batch_size=preview_max_rows,
             S3_CACHE_BUCKET=storage_manager.bucket_name,
-            VALIDATOR_LAMBDA_NAME=os.environ.get('VALIDATOR_LAMBDA_NAME'), 
-            preview_first_row=True, 
-            preview_max_rows=preview_max_rows
+            VALIDATOR_LAMBDA_NAME=os.environ.get('VALIDATOR_LAMBDA_NAME'),
+            preview_first_row=True,
+            preview_max_rows=preview_max_rows,
+            session_id=session_id,
+            email=email_address
         )
         processing_time = time.time() - start_time
         
@@ -949,23 +961,35 @@ def _process_preview_sync(storage_manager, email_address, session_id, excel_s3_k
         logger.error(f"Preview processing error: {str(e)}")
         return create_response(500, {'error': f'Preview processing failed: {str(e)}'})
 
-def _process_validation_sync(storage_manager, email_address, session_id, excel_s3_key, 
+def _process_validation_sync(storage_manager, email_address, session_id, excel_s3_key,
                            config_s3_key, max_rows, batch_size):
     """Process full validation synchronously and store results in unified storage"""
     from ..utils.helpers import create_response
     from ..core.validator_invoker import invoke_validator_lambda
     # ZIP report functionality disabled to avoid import errors
     # from ..reporting.zip_report import create_zip_report
-    
+
     try:
+        # CRITICAL: Flush memory to S3 before invoking validation lambda
+        # Validation lambda runs in separate process and needs persisted memory
+        if session_id:
+            try:
+                from the_clone.search_memory_cache import MemoryCache
+                MemoryCache.flush_sync(session_id)
+                logger.info(f"[MEMORY_CACHE] Flushed memory for session {session_id} before full validation")
+            except Exception as e:
+                logger.warning(f"[MEMORY_CACHE] Failed to flush memory before validation: {e}")
+
         start_time = time.time()
         validation_results = invoke_validator_lambda(
-            excel_s3_key, config_s3_key, 
-            max_rows=max_rows, 
+            excel_s3_key, config_s3_key,
+            max_rows=max_rows,
             batch_size=batch_size,
             S3_CACHE_BUCKET=storage_manager.bucket_name,
-            VALIDATOR_LAMBDA_NAME=os.environ.get('VALIDATOR_LAMBDA_NAME'), 
-            preview_first_row=False
+            VALIDATOR_LAMBDA_NAME=os.environ.get('VALIDATOR_LAMBDA_NAME'),
+            preview_first_row=False,
+            session_id=session_id,
+            email=email_address
         )
         processing_time = time.time() - start_time
         
