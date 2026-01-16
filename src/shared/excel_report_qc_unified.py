@@ -1034,11 +1034,15 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                         cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
                                         cite_url = citation.get('url', '')
                                         cite_snippet = citation.get('cited_text', '')
-                                        # Format: [{#}] {Title}: "{quote}" (URL)
+                                        cite_p = citation.get('p', '')  # Reliability score
+                                        # Format: [{#}] {Title}: "{quote}" ({url}, Conf={p})
                                         if cite_snippet:
                                             cite_text += f": \"{cite_snippet}\""
                                         if cite_url:
-                                            cite_text += f" ({cite_url})"
+                                            if cite_p:
+                                                cite_text += f" ({cite_url}, Conf={cite_p})"
+                                            else:
+                                                cite_text += f" ({cite_url})"
                                         citation_texts.append(cite_text)
 
                                 # Add QC sources as [QC1], [QC2], etc. (if any)
@@ -1055,10 +1059,14 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                                     cite_text = f"[QC{i}] {qc_source.get('title', 'QC Source')}"
                                                     cite_url = qc_source.get('url', '')
                                                     cite_snippet = qc_source.get('cited_text', '')
+                                                    cite_p = qc_source.get('p', '')
                                                     if cite_snippet:
                                                         cite_text += f": \"{cite_snippet}\""
                                                     if cite_url:
-                                                        cite_text += f" ({cite_url})"
+                                                        if cite_p:
+                                                            cite_text += f" ({cite_url}, Conf={cite_p})"
+                                                        else:
+                                                            cite_text += f" ({cite_url})"
                                                 else:
                                                     cite_text = f"[QC{i}] {str(qc_source)}"
                                                 citation_texts.append(cite_text)
@@ -1286,11 +1294,15 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                         cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
                                         cite_url = citation.get('url', '')
                                         cite_snippet = citation.get('cited_text', '')
-                                        # Format: [{#}] {Title}: "{quote}" (URL)
+                                        cite_p = citation.get('p', '')  # Reliability score
+                                        # Format: [{#}] {Title}: "{quote}" ({url}, Conf={p})
                                         if cite_snippet:
                                             cite_text += f": \"{cite_snippet}\""
                                         if cite_url:
-                                            cite_text += f" ({cite_url})"
+                                            if cite_p:
+                                                cite_text += f" ({cite_url}, Conf={cite_p})"
+                                            else:
+                                                cite_text += f" ({cite_url})"
                                         citation_texts.append(cite_text)
 
                                 # Add QC sources as [QC1], [QC2], etc. (if any)
@@ -1307,10 +1319,14 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                                     cite_text = f"[QC{i}] {qc_source.get('title', 'QC Source')}"
                                                     cite_url = qc_source.get('url', '')
                                                     cite_snippet = qc_source.get('cited_text', '')
+                                                    cite_p = qc_source.get('p', '')
                                                     if cite_snippet:
                                                         cite_text += f": \"{cite_snippet}\""
                                                     if cite_url:
-                                                        cite_text += f" ({cite_url})"
+                                                        if cite_p:
+                                                            cite_text += f" ({cite_url}, Conf={cite_p})"
+                                                        else:
+                                                            cite_text += f" ({cite_url})"
                                                 else:
                                                     cite_text = f"[QC{i}] {str(qc_source)}"
                                                 citation_texts.append(cite_text)

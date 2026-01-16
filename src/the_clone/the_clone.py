@@ -522,6 +522,7 @@ class TheClone2Refined:
 
         # Step 1.5: Memory Recall
         memory_sources = []
+        memory_snippets = []  # NEW: Snippets extracted from memory (before search decision)
         recall_result = None
         memory = None  # Initialize memory variable
         search_decision = {'action': 'full_search', 'search_terms': search_terms, 'reasoning': 'Memory not enabled'}
@@ -633,17 +634,101 @@ class TheClone2Refined:
                     breadth=breadth,
                     depth=depth,
                     url_sources=url_matched_sources,  # Pass URL sources for Gemini consideration
-                    search_terms=search_terms  # Pass for per-term confidence assessment
+                    search_terms=search_terms,  # Pass for per-term confidence assessment
+                    skip_verification=True  # NEW: Extract first, then verify based on snippets
                 )
 
                 memory_sources = recall_result['memories']
-                confidence = recall_result['confidence']
                 recall_meta = recall_result['recall_metadata']
 
                 logger.debug(
                     f"[CLONE] Memory recall: {len(memory_sources)} sources "
                     f"(url_sources={recall_meta.get('url_sources_count', 0)}), "
-                    f"confidence={confidence:.2f}, cost=${recall_meta['recall_cost']:.4f}"
+                    f"verification_skipped=True, cost=${recall_meta['recall_cost']:.4f}"
+                )
+
+                # NEW: Extract from memory sources BEFORE assessing confidence
+                memory_snippets = []
+                if memory_sources:
+                    logger.debug(f"[CLONE] Extracting from {len(memory_sources)} memory sources...")
+                    extract_start = time.time()
+
+                    # Prepare memory sources for extraction (add metadata extraction expects)
+                    for rank_idx, source in enumerate(memory_sources):
+                        source['_search_term'] = source.get('_original_query', 'Memory')
+                        source['_search_index'] = 1
+                        source['_search_ref'] = 1
+                        source['_rank_position'] = rank_idx
+
+                    # Extract using batch extraction
+                    batch_result = await self.snippet_extractor.extract_from_sources_batch(
+                        sources=memory_sources,
+                        query=prompt,
+                        snippet_id_prefix="SM",  # SM = Snippet from Memory
+                        all_search_terms=search_terms,
+                        model=models['extraction'],
+                        soft_schema=False,
+                        min_quality_threshold=strategy['min_p_threshold'],
+                        extraction_mode=strategy['extraction_mode'],
+                        max_snippets_per_source=strategy['max_snippets_per_source'],
+                        clone_logger=clone_logger,
+                        provider=provider,
+                        start_source_index=1,
+                        accept_all_quality_levels=strategy.get('accept_all_quality_levels', False)
+                    )
+
+                    # Collect snippets
+                    for source_result in batch_result:
+                        snippets = source_result.get('snippets', [])
+                        memory_snippets.extend(snippets)
+
+                    # Track cost
+                    extract_cost = 0.0
+                    if batch_result and len(batch_result) > 0:
+                        model_response = batch_result[0].get('model_response', {})
+                        extract_cost, extract_provider = self._extract_cost_and_provider(model_response, clone_logger, stats)
+                        costs['extraction'] = costs.get('extraction', 0.0) + extract_cost
+                        costs_by_provider[extract_provider] = costs_by_provider.get(extract_provider, 0.0) + extract_cost
+
+                    extract_time = time.time() - extract_start
+                    logger.debug(
+                        f"[CLONE] Memory extraction: {len(memory_snippets)} snippets "
+                        f"from {len(memory_sources)} sources ({extract_time:.2f}s, ${extract_cost:.4f})"
+                    )
+
+                # NEW: Assess confidence based on ACTUAL extracted snippets
+                from the_clone.snippet_confidence import assess_snippet_confidence
+
+                confidence_assessment = await assess_snippet_confidence(
+                    snippets=memory_snippets,
+                    search_terms=search_terms,
+                    breadth=breadth,
+                    depth=depth,
+                    ai_client=self.ai_client
+                )
+
+                confidence = confidence_assessment['overall_confidence']
+                confidence_vector = confidence_assessment['confidence_vector']
+                snippet_counts = confidence_assessment['snippet_counts']
+                recommended_searches = confidence_assessment['recommended_searches']
+
+                logger.debug(
+                    f"[CLONE] Snippet-based confidence: {confidence:.2f} "
+                    f"(counts={snippet_counts}, vector={confidence_vector})"
+                )
+
+                # Update recall_result with snippet-based confidence
+                recall_result['confidence'] = confidence
+                recall_result['confidence_vector'] = confidence_vector
+                recall_result['recommended_searches'] = recommended_searches
+                recall_result['search_term_confidence'] = {
+                    term: confidence_vector[i] if i < len(confidence_vector) else 0.0
+                    for i, term in enumerate(search_terms)
+                }
+
+                logger.debug(
+                    f"[CLONE] Updated confidence after extraction: {confidence:.2f}, "
+                    f"recommended_searches={recommended_searches}"
                 )
 
                 # Log recall details

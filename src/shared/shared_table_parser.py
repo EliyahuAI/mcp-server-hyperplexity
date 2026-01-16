@@ -2264,10 +2264,14 @@ class S3TableParser:
     def _extract_url_from_citation(self, citation_text: str) -> str:
         """
         Extract URL from citation text.
-        URLs are typically at the END of the citation in parentheses: (https://...)
+        URLs are typically at the END of the citation in parentheses.
+
+        Supported formats:
+        - (https://...) - URL only
+        - (https://..., Conf=0.85) - URL with confidence score
 
         Args:
-            citation_text: Full citation text like "[1] Title (0.85): \"quote\" (https://...)"
+            citation_text: Full citation text like "[1] Title: \"quote\" (https://..., Conf=0.85)"
 
         Returns:
             The URL or empty string if not found
@@ -2277,18 +2281,30 @@ class S3TableParser:
         if not citation_text:
             return ""
 
-        # Find the last URL-like pattern in parentheses
-        # Pattern: (https://...) or (http://...) at the end
+        # Pattern 1: URL with confidence score at the end: (https://..., Conf=X.XX)
+        # The URL ends at the comma before "Conf="
+        url_with_conf_pattern = r'\((https?://[^,\)]+),\s*Conf=[^\)]+\)\s*$'
+        match = re.search(url_with_conf_pattern, citation_text)
+        if match:
+            return match.group(1).strip()
+
+        # Pattern 2: URL only at the end: (https://...)
         url_pattern = r'\((https?://[^\)]+)\)\s*$'
         match = re.search(url_pattern, citation_text)
         if match:
             return match.group(1)
 
+        # Fallback: Find any URL with confidence in the citation
+        url_with_conf_fallback = r'\((https?://[^,\)]+),\s*Conf=[^\)]+\)'
+        matches = re.findall(url_with_conf_fallback, citation_text)
+        if matches:
+            return matches[-1].strip()
+
         # Fallback: Find any URL in the citation
-        url_pattern_fallback = r'\((https?://[^\)]+)\)'
+        url_pattern_fallback = r'\((https?://[^\),]+)'
         matches = re.findall(url_pattern_fallback, citation_text)
         if matches:
-            return matches[-1]  # Return the last one (most likely the actual URL)
+            return matches[-1].strip()  # Return the last one (most likely the actual URL)
 
         return ""
 

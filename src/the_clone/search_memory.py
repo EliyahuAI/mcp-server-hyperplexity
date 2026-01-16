@@ -690,12 +690,13 @@ class SearchMemory:
         breadth: str = "narrow",
         depth: str = "shallow",
         url_sources: Optional[List[Dict[str, Any]]] = None,
-        search_terms: Optional[List[str]] = None
+        search_terms: Optional[List[str]] = None,
+        skip_verification: bool = False
     ) -> Dict[str, Any]:
         """
         Recall relevant memories with per-search-term confidence assessment.
 
-        Flow:
+        Flow (skip_verification=False, default):
         1. Keyword pre-filter: Filter stored queries by required/positive/negative keywords
            - Required keywords use | for OR variants, AND between groups
            - Example: ["Apple|AAPL", "stock|shares"] = (Apple OR AAPL) AND (stock OR shares)
@@ -705,6 +706,12 @@ class SearchMemory:
         3. Snippet verification (if any high conf): Full snippet review
            - Returns refined search terms for low-confidence domains
         4. URL sources: Always included at top of results regardless of selection
+
+        Flow (skip_verification=True, for extract-then-verify):
+        1. Keyword pre-filter
+        2. Gemini selection (titles/previews only)
+        3. Return sources WITHOUT confidence assessment
+        4. Caller extracts snippets then assesses confidence based on actual quotes
 
         Args:
             query: Current user query
@@ -791,43 +798,56 @@ class SearchMemory:
             for i, term in enumerate(search_terms_list):
                 search_term_confidence[term] = confidence_vector[i] if i < len(confidence_vector) else 0.0
 
-            # Check if ALL confidences are low -> skip verification, go straight to search
-            all_low = all(c < confidence_threshold for c in confidence_vector) if confidence_vector else True
-            any_high = any(c >= confidence_threshold for c in confidence_vector) if confidence_vector else False
-
-            if all_low:
-                # ALL terms have low confidence -> skip verification, search all terms
-                # URL sources will still be included in final results regardless
-                logger.debug(f"[MEMORY] All {num_terms} terms have low confidence, skipping verification")
+            # Skip verification if requested (for extract-then-verify pattern)
+            if skip_verification:
+                logger.debug(f"[MEMORY] Skipping verification (extract-then-verify pattern)")
                 llm_cost = selection_cost
-                recommended_searches = search_terms_list[:]  # Search all terms
+                # Don't set confidence - caller will assess after extraction
+                confidence_vector = None
+                recommended_searches = None  # Caller will determine after extraction
+                verification_run = False
             else:
-                # ANY term has high confidence -> run verification for refined terms
-                verification_run = True
-                logger.debug(f"[MEMORY] Running verification (any_high={any_high}, search_terms={num_terms})...")
-                verified_sources, verification_cost, recommended_searches, verified_confidence_vector = await self._verify_with_full_snippets(
-                    query=query,
-                    selected_sources=selected_sources,
-                    breadth=breadth,
-                    depth=depth,
-                    url_sources=url_sources,
-                    search_terms=search_terms_list
-                )
+                # Check if ALL confidences are low -> skip verification, go straight to search
+                all_low = all(c < confidence_threshold for c in confidence_vector) if confidence_vector else True
+                any_high = any(c >= confidence_threshold for c in confidence_vector) if confidence_vector else False
 
-                # Update with verified results
-                selected_sources = verified_sources
-                llm_cost = selection_cost + verification_cost
+                if all_low:
+                    # ALL terms have low confidence -> skip verification, search all terms
+                    # URL sources will still be included in final results regardless
+                    logger.debug(f"[MEMORY] All {num_terms} terms have low confidence, skipping verification")
+                    llm_cost = selection_cost
+                    recommended_searches = search_terms_list[:]  # Search all terms
+                else:
+                    # ANY term has high confidence -> run verification for refined terms
+                    verification_run = True
+                    logger.debug(f"[MEMORY] Running verification (any_high={any_high}, search_terms={num_terms})...")
+                    verified_sources, verification_cost, recommended_searches, verified_confidence_vector = await self._verify_with_full_snippets(
+                        query=query,
+                        selected_sources=selected_sources,
+                        breadth=breadth,
+                        depth=depth,
+                        url_sources=url_sources,
+                        search_terms=search_terms_list
+                    )
 
-                # Update per-term confidence with verified values
-                if verified_confidence_vector:
-                    confidence_vector = verified_confidence_vector
-                    for i, term in enumerate(search_terms_list):
-                        search_term_confidence[term] = confidence_vector[i] if i < len(confidence_vector) else 0.0
+                    # Update with verified results
+                    selected_sources = verified_sources
+                    llm_cost = selection_cost + verification_cost
 
-                logger.debug(f"[MEMORY] Verification complete: conf_vector={confidence_vector}, recommended_searches={recommended_searches} (cost: ${verification_cost:.4f})")
+                    # Update per-term confidence with verified values
+                    if verified_confidence_vector:
+                        confidence_vector = verified_confidence_vector
+                        for i, term in enumerate(search_terms_list):
+                            search_term_confidence[term] = confidence_vector[i] if i < len(confidence_vector) else 0.0
 
-        # Calculate overall confidence from vector
-        confidence = sum(confidence_vector) / len(confidence_vector) if confidence_vector else 0.0
+                    logger.debug(f"[MEMORY] Verification complete: conf_vector={confidence_vector}, recommended_searches={recommended_searches} (cost: ${verification_cost:.4f})")
+
+        # Calculate overall confidence from vector (None if verification skipped)
+        if confidence_vector is not None:
+            confidence = sum(confidence_vector) / len(confidence_vector) if confidence_vector else 0.0
+        else:
+            confidence = None  # No confidence assessment yet (extract-then-verify pattern)
+            confidence_vector = []  # Empty vector
 
         # Post-selection filter: Validate individual sources match required keywords
         # This catches sources that slipped through query-level filter (e.g., Amazon source in MSFT query)
@@ -849,11 +869,15 @@ class SearchMemory:
 
         recall_time = (time.time() - start_time) * 1000
 
+        # Handle recommended_searches when verification skipped
+        if recommended_searches is None:
+            recommended_searches = []  # Caller will determine after extraction
+
         return {
             'memories': memory_results,
-            'confidence': confidence,
-            'confidence_vector': confidence_vector,
-            'should_search': len(recommended_searches) > 0,
+            'confidence': confidence,  # None if verification skipped
+            'confidence_vector': confidence_vector,  # [] if verification skipped
+            'should_search': len(recommended_searches) > 0 if recommended_searches else None,
             'recommended_searches': recommended_searches,
             'search_term_confidence': search_term_confidence,
             'recall_metadata': {
@@ -863,7 +887,8 @@ class SearchMemory:
                 'url_sources_count': len(url_sources),
                 'recall_cost': llm_cost,
                 'recall_time_ms': recall_time,
-                'verification_run': verification_run
+                'verification_run': verification_run,
+                'verification_skipped': skip_verification
             }
         }
 
