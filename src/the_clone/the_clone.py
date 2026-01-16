@@ -965,6 +965,7 @@ class TheClone2Refined:
 
         # Step 4: Iterative Extraction
         all_snippets = []
+        sources_examined = []  # Track sources for synthesis (in case of 0 snippets)
         sources_pulled = 0
         first_extraction_prompt_logged = False
         iteration = 0
@@ -999,6 +1000,9 @@ class TheClone2Refined:
                 for search_idx in sorted(sources_by_search.keys()):
                     search_sources = sources_by_search[search_idx]
                     snippet_id_prefix = f"S{search_idx}"
+
+                    # Track sources examined
+                    sources_examined.extend(search_sources)
 
                     logger.debug(f"[CLONE] FINDALL Search {search_idx}: Queueing {len(search_sources)} sources for batch extraction")
 
@@ -1084,6 +1088,9 @@ class TheClone2Refined:
                         break
 
                     logger.debug(f"[CLONE] Pulling sources {sources_pulled}-{batch_end-1} ({len(sources_this_batch)} sources)")
+
+                    # Track sources examined (for synthesis visibility when 0 snippets)
+                    sources_examined.extend(sources_this_batch)
 
                     # For code extraction, decide between batch (shallow) or parallel individual (deep)
                     use_batch_single_call = strategy.get('batch_extraction', False) and use_code_extraction
@@ -1262,7 +1269,8 @@ class TheClone2Refined:
             debug_dir=debug_dir,
             soft_schema=False,
             clone_logger=clone_logger,
-            initial_decision=decision  # Pass initial decision to detect source mismatches
+            initial_decision=decision,  # Pass initial decision to detect source mismatches
+            sources_examined=sources_examined  # Pass sources for visibility when 0 snippets
         )
 
         synth_cost, synth_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}), clone_logger, stats)

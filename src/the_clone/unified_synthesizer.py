@@ -52,7 +52,8 @@ class UnifiedSynthesizer:
         soft_schema: bool = False,
         clone_logger: Any = None,
         note_to_self: str = None,
-        initial_decision: str = None
+        initial_decision: str = None,
+        sources_examined: List[Dict] = None
     ) -> Dict[str, Any]:
         """
         Unified evaluation + synthesis call.
@@ -89,7 +90,8 @@ class UnifiedSynthesizer:
             is_last_iteration=is_last_iteration,
             search_terms=search_terms,
             note_to_self=note_to_self,
-            initial_decision=initial_decision
+            initial_decision=initial_decision,
+            sources_examined=sources_examined or []
         )
 
         if clone_logger:
@@ -227,7 +229,8 @@ class UnifiedSynthesizer:
         is_last_iteration: bool,
         search_terms: List[str] = None,
         note_to_self: str = None,
-        initial_decision: str = None
+        initial_decision: str = None,
+        sources_examined: List[Dict] = None
     ) -> str:
         """Build unified prompt."""
         from datetime import datetime
@@ -241,18 +244,41 @@ class UnifiedSynthesizer:
         # Check for source mismatch: initial decision expected sources but we have none
         source_mismatch_warning = ""
         if initial_decision == "need_search" and len(snippets) == 0:
-            source_mismatch_warning = """
-**⚠️ WARNING: NO SOURCES AVAILABLE**
+            # Format sources that were examined but produced no snippets
+            examined_list = ""
+            if sources_examined and len(sources_examined) > 0:
+                examined_list = "\n**Sources Examined (but no relevant snippets extracted):**\n\n"
+                for i, src in enumerate(sources_examined[:10], 1):  # Show max 10
+                    title = src.get('title', 'No title')[:80]
+                    url = src.get('url', 'No URL')
+                    from_memory = " [FROM MEMORY]" if src.get('_from_memory') else ""
+                    original_query = src.get('_original_query', src.get('_search_term', ''))
+                    examined_list += f"{i}. {title}{from_memory}\n"
+                    examined_list += f"   URL: {url}\n"
+                    if original_query:
+                        examined_list += f"   Found via: \"{original_query}\"\n"
+                    examined_list += "\n"
+                if len(sources_examined) > 10:
+                    examined_list += f"   ... and {len(sources_examined) - 10} more sources\n"
+
+            source_mismatch_warning = f"""
+**⚠️ WARNING: NO SNIPPETS EXTRACTED**
 
 The initial decision determined that web search was needed to answer this query.
-However, NO search snippets were extracted (either memory sources were irrelevant,
-or extraction found no relevant facts).
+However, extraction found NO relevant facts in the sources provided.
+
+{examined_list}
+**Extraction returned 0 snippets** - the sources above were examined but contained no
+specific facts relevant to the query (they may be topically related but lack the
+specific entities, dates, or details needed).
 
 **You have two options:**
-1. **Grade yourself "B"** and provide `suggested_search_terms` to trigger a second iteration
-2. **Answer from context** if the query provides sufficient information (but note this in your assessment)
+1. **Grade yourself "B"** and provide `suggested_search_terms` to trigger a fresh search
+   - Recommend more specific search terms that target the exact entities/facts needed
+2. **Answer from context** if the query provides sufficient information in the prompt itself
 
-If you choose option 2, be transparent in your `note_to_self` that you answered without sources.
+If you choose option 2, be transparent in your `note_to_self` that you answered without
+source citations (used prompt context only).
 
 """
 
