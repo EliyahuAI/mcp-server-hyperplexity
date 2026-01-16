@@ -520,6 +520,11 @@ class GeminiProvider:
             }
         }
 
+        # Explicitly disable thinking for Gemini 2.5 models to prevent thinking tokens
+        # from counting against maxOutputTokens (thinkingBudget: 0 = disabled)
+        if '2.5' in model or '2-5' in model:
+            request_body["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
+
         # Track schema conversions for later restoration
         conversion_map = None
 
