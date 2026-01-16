@@ -5,14 +5,54 @@ uses only the format field, and supports model configuration with per-field over
 
 import logging
 import json
+import re
 import unicodedata
 from dataclasses import dataclass
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional, Set
 from datetime import datetime, timedelta
 import yaml
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_referenced_citations(text: str) -> Set[int]:
+    """Extract citation numbers referenced in text (e.g., [1], [2], [3]).
+
+    Args:
+        text: Text that may contain citation references like [1], [2]
+
+    Returns:
+        Set of citation numbers found (e.g., {1, 2, 3})
+    """
+    if not text:
+        return set()
+    # Match [n] where n is a number (not [QC1] style)
+    matches = re.findall(r'\[(\d+)\]', text)
+    return {int(m) for m in matches}
+
+
+def _filter_sources_by_references(sources_full: List[str], referenced_nums: Set[int]) -> List[str]:
+    """Filter sources to only include those referenced by number.
+
+    Args:
+        sources_full: List of full citation strings like "[1] Title: quote (url)"
+        referenced_nums: Set of citation numbers to include (e.g., {1, 2})
+
+    Returns:
+        Filtered list of sources that match the referenced numbers
+    """
+    if not sources_full or not referenced_nums:
+        return []
+
+    filtered = []
+    for source in sources_full:
+        # Extract the citation number from the source (e.g., "[1] ..." -> 1)
+        match = re.match(r'^\[(\d+)\]', source.strip())
+        if match and int(match.group(1)) in referenced_nums:
+            filtered.append(source)
+
+    return filtered
 
 @dataclass
 class ValidationTarget:
@@ -466,6 +506,12 @@ class SimplifiedSchemaValidator:
             if validation_history and target.column in validation_history:
                 field_history = validation_history[target.column]
 
+                # Extract citation numbers referenced in current cell value and explanation
+                current_value = str(row.get(target.column, ''))
+                validator_explanation = field_history.get('validator_explanation', '')
+                referenced_nums = _extract_referenced_citations(current_value)
+                referenced_nums.update(_extract_referenced_citations(validator_explanation))
+
                 # Previous value from Original Values sheet (historical baseline)
                 if field_history.get('original_value'):
                     field_parts.append(f"\n**Previous Value** (from Original Values sheet): {field_history['original_value']}")
@@ -477,11 +523,15 @@ class SimplifiedSchemaValidator:
                     if field_history.get('original_key_citation'):
                         field_parts.append(f"  Key Citation: {field_history['original_key_citation']}")
 
-                    # Use original_sources_full (numbered citations) if available, else fall back to URLs
-                    if field_history.get('original_sources_full'):
-                        field_parts.append(f"  Previous Validation Sources:")
-                        for source in field_history['original_sources_full']:
-                            field_parts.append(f"    {source}")
+                    # Use original_sources_full (numbered citations) if available, filtered to only referenced ones
+                    if field_history.get('original_sources_full') and referenced_nums:
+                        filtered_sources = _filter_sources_by_references(
+                            field_history['original_sources_full'], referenced_nums
+                        )
+                        if filtered_sources:
+                            field_parts.append(f"  Previous Validation Sources:")
+                            for source in filtered_sources:
+                                field_parts.append(f"    {source}")
                     elif field_history.get('original_sources'):
                         sources_str = ', '.join(field_history['original_sources'])
                         field_parts.append(f"  Sources: {sources_str}")
@@ -498,11 +548,15 @@ class SimplifiedSchemaValidator:
                     if field_history.get('original_key_citation'):
                         field_parts.append(f"  Key Citation: {field_history['original_key_citation']}")
 
-                    # Use original_sources_full (numbered citations) if available, else fall back to URLs
-                    if field_history.get('original_sources_full'):
-                        field_parts.append(f"  Previous Validation Sources:")
-                        for source in field_history['original_sources_full']:
-                            field_parts.append(f"    {source}")
+                    # Use original_sources_full (numbered citations) if available, filtered to only referenced ones
+                    if field_history.get('original_sources_full') and referenced_nums:
+                        filtered_sources = _filter_sources_by_references(
+                            field_history['original_sources_full'], referenced_nums
+                        )
+                        if filtered_sources:
+                            field_parts.append(f"  Previous Validation Sources:")
+                            for source in filtered_sources:
+                                field_parts.append(f"    {source}")
                     elif field_history.get('original_sources'):
                         sources_str = ', '.join(field_history['original_sources'])
                         field_parts.append(f"  Sources: {sources_str}")
