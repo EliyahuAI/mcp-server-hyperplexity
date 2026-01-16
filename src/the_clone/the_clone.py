@@ -352,7 +352,9 @@ class TheClone2Refined:
                 search_terms=[prompt],  # Use query as search term
                 debug_dir=debug_dir,
                 soft_schema=False,
-                clone_logger=clone_logger
+                clone_logger=clone_logger,
+                initial_decision=decision,  # Pass initial decision
+                sources_examined=[]  # No sources examined for answer_directly
             )
 
             synth_cost, synth_provider = self._extract_cost_and_provider(
@@ -1502,7 +1504,9 @@ class TheClone2Refined:
                 debug_dir=debug_dir,
                 soft_schema=target_soft_schema,
                 clone_logger=clone_logger,
-                note_to_self=note_to_self
+                note_to_self=note_to_self,
+                initial_decision=decision,  # Pass initial decision
+                sources_examined=sources_examined  # Pass examined sources
             )
 
             tier4_cost, tier4_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}), clone_logger, stats)
