@@ -14793,6 +14793,54 @@ function handleReferenceCheckComplete(data, cardId) {
         // INITIALIZATION
         // ============================================
 
+        // ============================================
+        // TAB ISOLATION & NAVIGATION TRACKING
+        // ============================================
+
+        // Generate or retrieve unique tab ID for state isolation
+        // Each tab gets its own state storage key
+        function getOrCreateTabId() {
+            let tabId = sessionStorage.getItem('hyperplexity_tab_id');
+            if (!tabId) {
+                // Generate unique ID for this tab
+                tabId = 'tab_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                sessionStorage.setItem('hyperplexity_tab_id', tabId);
+            }
+            return tabId;
+        }
+
+        // Get the state storage key for this tab
+        function getStateKey() {
+            return 'hyperplexity_app_state_' + getOrCreateTabId();
+        }
+
+        // Navigation intent tracking - distinguishes reload from back/forward
+        // On reload: beforeunload fires, then load happens within ~100ms
+        // On back/forward: beforeunload fires, user navigates away, comes back later (>500ms)
+        // On fresh load: no navigation timestamp exists
+        function isPageReload() {
+            const navTimestamp = sessionStorage.getItem('hyperplexity_nav_timestamp');
+            if (!navTimestamp) {
+                // Fresh load - no prior navigation
+                return false;
+            }
+
+            const timeSinceNav = Date.now() - parseInt(navTimestamp, 10);
+            // If less than 500ms since beforeunload, this is a reload
+            // Back/forward navigation takes longer (user was on another page)
+            const isReload = timeSinceNav < 500;
+
+            // Clear the timestamp after checking
+            sessionStorage.removeItem('hyperplexity_nav_timestamp');
+
+            return isReload;
+        }
+
+        // Set navigation timestamp on beforeunload
+        window.addEventListener('beforeunload', () => {
+            sessionStorage.setItem('hyperplexity_nav_timestamp', Date.now().toString());
+        }, { capture: true }); // capture: true ensures this runs before other handlers
+
         document.addEventListener('DOMContentLoaded', function() {
 // Check for testing overrides before anything else
 checkForTestingOverrides();
@@ -15227,7 +15275,7 @@ try {
     });
     state.globalFormData = globalFormData;
 
-    sessionStorage.setItem('hyperplexity_app_state', JSON.stringify(state));
+    sessionStorage.setItem(getStateKey(), JSON.stringify(state));
 } catch (error) {
     console.warn('[WARN] Could not save application state:', error);
 }
@@ -15235,7 +15283,8 @@ try {
 
         function restoreApplicationState() {
 try {
-    const savedState = sessionStorage.getItem('hyperplexity_app_state');
+    const stateKey = getStateKey();
+    const savedState = sessionStorage.getItem(stateKey);
     if (!savedState) return false;
 
     const state = JSON.parse(savedState);
@@ -15243,7 +15292,7 @@ try {
     // Check if state is recent (within 1 hour)
     const oneHour = 60 * 60 * 1000;
     if (Date.now() - state.timestamp > oneHour) {
-        sessionStorage.removeItem('hyperplexity_app_state');
+        sessionStorage.removeItem(stateKey);
         return false;
     }
 
@@ -15378,7 +15427,7 @@ try {
     return true;
 } catch (error) {
     console.warn('[WARN] Could not restore application state:', error);
-    sessionStorage.removeItem('hyperplexity_app_state');
+    sessionStorage.removeItem(getStateKey());
     return false;
 }
         }
@@ -15404,7 +15453,7 @@ stateChangeTimeout = setTimeout(saveApplicationState, 1000);
         // Update reset button appearance based on state
         function updateResetButtonAppearance() {
 const resetButton = document.querySelector('.reset-button');
-const hasState = sessionStorage.getItem('hyperplexity_app_state') !== null;
+const hasState = sessionStorage.getItem(getStateKey()) !== null;
 const cardCount = document.querySelectorAll('[id^="card-"]').length;
 
 if (resetButton) {
@@ -15434,8 +15483,10 @@ if (event.persisted) {
 
 
         // Try to restore state when DOM is loaded - BEFORE other initialization
+        // Only restores on back/forward navigation, NOT on page reload
         function attemptStateRestore() {
-const hasState = sessionStorage.getItem('hyperplexity_app_state');
+const stateKey = getStateKey();
+const hasState = sessionStorage.getItem(stateKey);
 if (hasState) {
     try {
         const state = JSON.parse(hasState);
@@ -15444,7 +15495,7 @@ if (hasState) {
 
         // Check if state is recent (within 1 hour)
         if (Date.now() - state.timestamp > oneHour) {
-            sessionStorage.removeItem('hyperplexity_app_state');
+            sessionStorage.removeItem(stateKey);
             return false;
         }
 
@@ -15453,28 +15504,31 @@ if (hasState) {
         const savedPageType = state.pageType || 'default';
         if (currentPageType !== savedPageType) {
             console.log(`[STATE] Page type changed from ${savedPageType} to ${currentPageType}, clearing saved state`);
-            sessionStorage.removeItem('hyperplexity_app_state');
+            sessionStorage.removeItem(stateKey);
             return false;
         }
 
         if (cardCount >= 2) {
-            // Check if this was a page refresh (performance navigation timing)
-            if (performance && performance.getEntriesByType) {
-                const navEntries = performance.getEntriesByType('navigation');
-                if (navEntries.length > 0 && navEntries[0].type === 'reload') {
-                    return false;
-                }
+            // CRITICAL: Only restore on back/forward navigation, NOT on reload
+            // isPageReload() uses timing to distinguish:
+            // - Reload: beforeunload → load happens within ~100ms
+            // - Back/forward: user navigates away, comes back later (>500ms)
+            if (isPageReload()) {
+                console.log('[STATE] Page reload detected, clearing saved state to start fresh');
+                sessionStorage.removeItem(stateKey);
+                return false;
             }
 
             // Auto-restore for navigation back/forward
+            console.log('[STATE] Back/forward navigation detected, restoring state');
             return restoreApplicationState();
         } else {
-            sessionStorage.removeItem('hyperplexity_app_state');
+            sessionStorage.removeItem(stateKey);
             return false;
         }
     } catch (error) {
         console.warn('[AUTO] Invalid saved state, clearing:', error);
-        sessionStorage.removeItem('hyperplexity_app_state');
+        sessionStorage.removeItem(stateKey);
         return false;
     }
 }
@@ -15961,8 +16015,8 @@ try {
     // Disable leave warning since user is intentionally resetting
     window.leaveWarningEnabled = false;
 
-    // Clear saved state multiple times to ensure it's gone
-    sessionStorage.removeItem('hyperplexity_app_state');
+    // Clear saved state for this tab (sessionStorage.clear() handles it, but be explicit)
+    sessionStorage.removeItem(getStateKey());
     sessionStorage.clear(); // Clear all session storage just to be sure
 
     // Force reload with cache bypass
@@ -16007,21 +16061,29 @@ if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'R') {
 
         // Console helper function
         window.clearState = function() {
-sessionStorage.removeItem('hyperplexity_app_state');
+sessionStorage.removeItem(getStateKey());
+console.log('[STATE] Cleared state for tab:', getOrCreateTabId());
         };
 
         // Debug function to inspect saved state
         window.inspectState = function() {
-const saved = sessionStorage.getItem('hyperplexity_app_state');
+const tabId = getOrCreateTabId();
+const stateKey = getStateKey();
+console.log('[STATE] Tab ID:', tabId);
+console.log('[STATE] State key:', stateKey);
+const saved = sessionStorage.getItem(stateKey);
 if (saved) {
     const state = JSON.parse(saved);
+    console.log('[STATE] Saved state:', state);
     if (state.cards) {
         state.cards.forEach((card, i) => {
             const cleanTitle = (card.title || '').replace(/<[^>]*>/g, '').trim();
             const cleanContent = (card.content || '').replace(/<[^>]*>/g, '').trim();
+            console.log(`[STATE] Card ${i}: ${cleanTitle} (${cleanContent.length} chars)`);
         });
     }
 } else {
+    console.log('[STATE] No saved state found');
 }
         };
 
@@ -16101,8 +16163,9 @@ if (!document.hidden) {
             return;
         }
 
-        // Check if we have saved state
-        const savedState = sessionStorage.getItem('hyperplexity_app_state');
+        // Check if we have saved state for this tab
+        const stateKey = getStateKey();
+        const savedState = sessionStorage.getItem(stateKey);
         if (savedState) {
             try {
                 const state = JSON.parse(savedState);
@@ -16114,7 +16177,7 @@ if (!document.hidden) {
                         restoreApplicationState();
                     }
                 } else if (Date.now() - state.timestamp > oneHour) {
-                    sessionStorage.removeItem('hyperplexity_app_state');
+                    sessionStorage.removeItem(stateKey);
                 }
             } catch (error) {
                 console.warn('[NAV] Error checking saved state:', error);
