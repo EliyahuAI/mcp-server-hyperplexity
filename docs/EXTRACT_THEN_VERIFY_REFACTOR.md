@@ -1,12 +1,14 @@
 # Extract-Then-Verify Refactor Plan
 
+**Status:** COMPLETED
+
 **Goal:** Eliminate double-reading of memory sources by extracting quotes BEFORE assessing confidence.
 
-**Current Problem:** Memory verification reads 2000 chars, then extraction reads the SAME content again.
+**Solution:** Simple - triage already has `existing_snippets` parameter. Pass `memory_snippets` to it.
 
 ---
 
-## Architecture Change
+## Architecture
 
 ### Before (Verify-Then-Extract)
 ```
@@ -17,119 +19,82 @@ Memory Recall:
   ↓
 Search Decision: Skip (confidence=0.90)
   ↓
-Triage: Skip (memory-only)
+Triage: Memory + search sources mixed together
   ↓
-Extraction: Read 2000 chars AGAIN → $0.0011, 0 snippets!
+Extraction: Read memory sources AGAIN → $0.0011, 0 snippets!
   ↓
 Synthesis: "I have 0 snippets but conf was 0.90..."
 ```
 
-**Total Gemini calls on memory: 3** (selection + verification + extraction)
-**Problem:** False positives (high confidence, 0 snippets)
+**Problem:** False positives (high confidence, 0 snippets) + double extraction
 
-### After (Extract-Then-Verify)
+### After (Extract-Then-Verify) ✅
 ```
 Memory Recall:
   1. Keyword filter (free)
   2. Gemini selection (titles) → $0.0002
   ↓
 Extract from Memory:
-  3. Read sources, extract quotes → $0.0011, 0 snippets!
+  3. Extract quotes → memory_snippets
   ↓
 Snippet-Based Confidence:
-  4. Heuristic: 0 snippets → conf=0.0 (fast)
-  OR
-  4. Gemini (borderline): Assess actual quotes → $0.0002
+  4. Heuristic based on actual snippets → confidence
   ↓
-Search Decision: Search (confidence=0.0)
+Search Decision: Based on snippet confidence
   ↓
-Search Execution → 10 results
+Search Execution (if needed)
   ↓
-Triage (search results only, memory already done)
+Triage SEARCH ONLY:
+  - existing_snippets=memory_snippets (knows what we have)
+  - Deprioritizes redundant search results
   ↓
-Extract from Search Sources → snippets
+Extract from Search Sources
   ↓
-Merge: memory_snippets + search_snippets
-  ↓
-Synthesis: Has actual snippets
-```
-
-**Total Gemini calls on memory: 2-3** (selection + extraction + optional assessment)
-**Benefit:** Impossible to have false positives (0 snippets = 0 confidence)
-
----
-
-## Implementation Plan
-
-### Phase 1: Add skip_verification to memory.recall()
-- [x] Add parameter `skip_verification: bool = False`
-- [x] When True: Skip verification step, return confidence=None
-- [x] Update return dict to handle None confidence
-
-### Phase 2: Create snippet_confidence.py
-- [x] Heuristic assessment (count + p-scores)
-- [x] Optional Gemini refinement (borderline cases)
-- [x] Returns confidence_vector per search term
-
-### Phase 3: Refactor the_clone.py memory recall section
-```python
-# Call recall without verification
-recall_result = await memory.recall(..., skip_verification=True)
-memory_sources = recall_result['memories']  # No confidence yet
-
-# Extract from memory sources (if any)
-memory_snippets = []
-if memory_sources:
-    # Mark sources as memory-origin
-    for src in memory_sources:
-        src['_from_memory'] = True
-        src['_already_extracted'] = True  # Flag to skip in main loop
-
-    # Extract
-    memory_snippets = await extract_from_sources(memory_sources, prefix="SM")
-
-    # Assess confidence based on ACTUAL snippets
-    confidence_result = await assess_snippet_confidence(
-        snippets=memory_snippets,
-        search_terms=search_terms,
-        breadth=breadth,
-        depth=depth
-    )
-
-    confidence = confidence_result['overall_confidence']
-    recommended_searches = confidence_result['recommended_searches']
-```
-
-### Phase 4: Update search decision logic
-- Use snippet-based confidence instead of preview-based
-- Terms with <0.85 confidence go to search
-
-### Phase 5: Update triage
-- Skip sources with `_already_extracted=True`
-- Or triage search sources only, memory already ranked
-
-### Phase 6: Update extraction loop
-- Skip sources with `_already_extracted=True`
-- Or separate memory/search extraction entirely
-
-### Phase 7: Merge snippets
-```python
 all_snippets = memory_snippets + search_snippets
-# Dedupe by URL at snippet level (not source level)
+  ↓
+Synthesis
 ```
 
-### Phase 8: Update synthesis
-- Pass merged snippets
-- Update source mismatch warning to account for memory snippets
+**Benefit:** No double extraction, accurate confidence, simple triage integration
 
 ---
 
-## Risk Mitigation
+## Implementation Summary
 
-1. **Add feature flag:** `use_extract_then_verify=True` (default off initially)
-2. **Preserve old code path:** Keep verify-then-extract working
-3. **Extensive logging:** Log every step of new flow
-4. **Backwards compatibility:** Ensure old tests still pass
+### Key Changes (all in the_clone.py)
+
+1. **Memory extraction before confidence** (lines 652-697)
+   ```python
+   # Extract from memory sources first
+   memory_snippets = await extract_from_sources_batch(memory_sources, prefix="SM")
+   ```
+
+2. **Snippet-based confidence** (lines 699-732)
+   ```python
+   confidence = await assess_snippet_confidence(memory_snippets, search_terms, ...)
+   ```
+
+3. **URL deduplication** (lines 952-963)
+   ```python
+   # Remove search results that memory already covers
+   memory_urls = {s.get('_source_url') for s in memory_snippets}
+   result['results'] = [r for r in results if r.get('url') not in memory_urls]
+   ```
+
+4. **Pass memory to triage** (line 986)
+   ```python
+   existing_snippets=memory_snippets  # Triage sees what memory covers
+   ```
+
+5. **Start with memory snippets** (line 1039)
+   ```python
+   all_snippets = list(memory_snippets)  # Search snippets added by extraction loop
+   ```
+
+### Files Modified
+- `the_clone.py` - Main flow refactor
+- `snippet_confidence.py` - Confidence assessment utility (already existed)
+- `search_memory.py` - Added `skip_verification` parameter (already existed)
 
 ---
 
@@ -137,30 +102,6 @@ all_snippets = memory_snippets + search_snippets
 
 - [ ] Memory with relevant sources → snippets extracted → high confidence → skip search
 - [ ] Memory with irrelevant sources → 0 snippets → low confidence → trigger search
-- [ ] Memory + search → snippets merged correctly
+- [ ] Memory + search → snippets merged correctly (no duplicates)
 - [ ] No memory → regular flow works
 - [ ] Memory-only path → no double extraction
-
----
-
-## Files to Modify
-
-1. `search_memory.py` - Add skip_verification parameter ✓
-2. `snippet_confidence.py` - Confidence assessment utility ✓
-3. `the_clone.py` - Main refactor (extract memory early, assess, merge)
-4. `unified_synthesizer.py` - Handle memory snippets in source mismatch warning
-
----
-
-## Rollback Plan
-
-If issues arise:
-```python
-# In the_clone.py
-USE_EXTRACT_THEN_VERIFY = False  # Set to False to revert
-
-if USE_EXTRACT_THEN_VERIFY:
-    # New flow
-else:
-    # Old flow (current code)
-```

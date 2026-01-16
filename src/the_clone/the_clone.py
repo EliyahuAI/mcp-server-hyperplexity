@@ -647,11 +647,20 @@ class TheClone2Refined:
                     f"verification_skipped=True, cost=${recall_meta['recall_cost']:.4f}"
                 )
 
-                # NEW: Extract from memory sources BEFORE assessing confidence
+                # Extract from memory sources BEFORE assessing confidence
                 memory_snippets = []
+                memory_extract_cost = 0.0  # Track extraction cost separately
+                memory_extract_provider = None
                 if memory_sources:
                     logger.debug(f"[CLONE] Extracting from {len(memory_sources)} memory sources...")
                     extract_start = time.time()
+
+                    if clone_logger:
+                        clone_logger.log_section("Memory Extraction Starting", {
+                            "Sources to Extract": len(memory_sources),
+                            "Extraction Model": models['extraction'],
+                            "Snippet ID Prefix": "SM (Snippet from Memory)"
+                        }, level=4, collapse=True)
 
                     # Prepare memory sources for extraction (add metadata extraction expects)
                     for rank_idx, source in enumerate(memory_sources):
@@ -683,20 +692,41 @@ class TheClone2Refined:
                         memory_snippets.extend(snippets)
 
                     # Track cost
-                    extract_cost = 0.0
                     if batch_result and len(batch_result) > 0:
                         model_response = batch_result[0].get('model_response', {})
-                        extract_cost, extract_provider = self._extract_cost_and_provider(model_response, clone_logger, stats)
-                        costs['extraction'] = costs.get('extraction', 0.0) + extract_cost
-                        costs_by_provider[extract_provider] = costs_by_provider.get(extract_provider, 0.0) + extract_cost
+                        memory_extract_cost, memory_extract_provider = self._extract_cost_and_provider(model_response, clone_logger, stats)
+                        costs['extraction'] = costs.get('extraction', 0.0) + memory_extract_cost
+                        costs_by_provider[memory_extract_provider] = costs_by_provider.get(memory_extract_provider, 0.0) + memory_extract_cost
+                        calls_by_provider[memory_extract_provider] = calls_by_provider.get(memory_extract_provider, 0) + 1
 
                     extract_time = time.time() - extract_start
                     logger.debug(
                         f"[CLONE] Memory extraction: {len(memory_snippets)} snippets "
-                        f"from {len(memory_sources)} sources ({extract_time:.2f}s, ${extract_cost:.4f})"
+                        f"from {len(memory_sources)} sources ({extract_time:.2f}s, ${memory_extract_cost:.4f})"
                     )
 
-                # NEW: Assess confidence based on ACTUAL extracted snippets
+                    # Log memory extraction results
+                    if clone_logger:
+                        # Summarize extracted snippets
+                        snippet_summary = []
+                        for i, snippet in enumerate(memory_snippets[:10]):  # First 10
+                            p_score = snippet.get('p', 0)
+                            text_preview = snippet.get('text', '')[:100]
+                            snippet_summary.append(f"[{snippet.get('id', i)}] p={p_score:.2f}: {text_preview}...")
+
+                        clone_logger.log_section("Memory Extraction Results", {
+                            "Sources Processed": len(memory_sources),
+                            "Snippets Extracted": len(memory_snippets),
+                            "Extraction Time": f"{extract_time:.2f}s",
+                            "Extraction Cost": f"${memory_extract_cost:.4f}",
+                            "Provider": memory_extract_provider or "N/A",
+                            "Avg Quality": f"{sum(s.get('p', 0) for s in memory_snippets) / len(memory_snippets):.2f}" if memory_snippets else "N/A",
+                            "High Quality (p>=0.85)": sum(1 for s in memory_snippets if s.get('p', 0) >= 0.85),
+                            "Snippet Preview": snippet_summary if snippet_summary else "No snippets extracted"
+                        }, level=4, collapse=False)
+
+                # Assess confidence based on ACTUAL extracted snippets
+                # (runs even if memory_sources was empty - will return 0 confidence)
                 from the_clone.snippet_confidence import assess_snippet_confidence
 
                 confidence_assessment = await assess_snippet_confidence(
@@ -716,6 +746,26 @@ class TheClone2Refined:
                     f"[CLONE] Snippet-based confidence: {confidence:.2f} "
                     f"(counts={snippet_counts}, vector={confidence_vector})"
                 )
+
+                # Log snippet-based confidence assessment
+                if clone_logger:
+                    conf_info = {
+                        "Overall Confidence": f"{confidence:.2f}",
+                        "Assessment Method": "Snippet-based (extract-then-verify)",
+                        "Snippets Assessed": len(memory_snippets),
+                    }
+                    # Per-term breakdown
+                    for i, term in enumerate(search_terms):
+                        term_conf = confidence_vector[i] if i < len(confidence_vector) else 0.0
+                        term_count = snippet_counts[i] if i < len(snippet_counts) else 0
+                        conf_info[f"Term {i+1}: \"{term[:40]}\""] = f"conf={term_conf:.2f}, snippets={term_count}"
+
+                    if recommended_searches:
+                        conf_info["Recommended Searches"] = recommended_searches
+                    else:
+                        conf_info["Recommended Searches"] = "None (all terms covered)"
+
+                    clone_logger.log_section("Snippet-Based Confidence", conf_info, level=4, collapse=False)
 
                 # Update recall_result with snippet-based confidence
                 recall_result['confidence'] = confidence
@@ -838,10 +888,17 @@ class TheClone2Refined:
 
                 step_time_phase = time.time() - step_start_phase
                 if clone_logger:
+                    # Calculate total memory cost (recall + extraction)
+                    total_memory_cost = recall_cost + memory_extract_cost
+                    # Build provider string (recall is always gemini, extraction may differ)
+                    if memory_extract_provider and memory_extract_provider != 'gemini':
+                        provider_str = f"gemini+{memory_extract_provider}"
+                    else:
+                        provider_str = "gemini"
                     clone_logger.record_step_metric(
-                        "Memory Recall", "gemini", "gemini-2.0-flash",
-                        recall_cost, step_time_phase,
-                        f"{len(memory_sources)} sources, confidence={confidence:.2f}"
+                        "Memory Recall", provider_str, "gemini-2.0-flash",
+                        total_memory_cost, step_time_phase,
+                        f"{len(memory_sources)} sources, {len(memory_snippets)} snippets, confidence={confidence:.2f}"
                     )
                     clone_logger.end_step("Memory Recall")
 
@@ -941,50 +998,36 @@ class TheClone2Refined:
             logger.debug(f"\n[CLONE] Step 2: Skipping search (using memory only)")
             search_results = []
 
-        # Step 2.5: Deduplicate memory vs search
+        # Step 2.5: Deduplicate memory snippets vs search results (by URL)
         original_memory_count = len(memory_sources)
         original_search_count = len(search_terms) if search_terms else 0
 
-        if memory_sources:
-            # Flatten search results for deduplication
-            all_search_sources = []
+        if memory_snippets and search_results:
+            # Get URLs already covered by memory snippets
+            memory_urls = {s.get('_source_url') for s in memory_snippets if s.get('_source_url')}
+
+            # Remove duplicate URLs from search results (memory already has them)
+            total_deduped = 0
             for result in search_results:
                 if not isinstance(result, Exception):
-                    all_search_sources.extend(result.get('results', []))
+                    original_len = len(result.get('results', []))
+                    result['results'] = [r for r in result.get('results', []) if r.get('url') not in memory_urls]
+                    total_deduped += original_len - len(result.get('results', []))
 
-            # Deduplicate
-            memory_sources, all_search_sources = self._deduplicate_memory_and_search(
-                memory_sources, all_search_sources
-            )
+            if total_deduped > 0:
+                logger.debug(f"[CLONE] Deduped {total_deduped} search results (URLs already in memory snippets)")
 
-            # Rebuild search_results structure (wrap memory as virtual search 0)
-            if memory_sources:
-                # Use "Memory" label for triage - original query names can be misleading when
-                # memory sources are from different topics (e.g., showing "Amazon news" for MSFT query)
-                memory_search_result = {'results': memory_sources, '_is_memory': True}
-                search_results = [memory_search_result] + search_results
-                search_terms = ["Memory"] + list(search_terms)
-                logger.debug(f"[CLONE] Combined: {len(memory_sources)} memory sources + {len(all_search_sources)} search sources")
-
-        # Step 3: Triage (rank ALL sources) - SKIP if using memory-only (already ranked by verification)
-        memory_only = (search_decision.get('action') == 'skip' and original_search_count == 0)
+        # Step 3: Triage SEARCH RESULTS ONLY (memory already extracted)
+        # Pass memory_snippets as existing_snippets so triage knows what we have
+        memory_only = (search_decision.get('action') == 'skip' and len(search_results) == 0)
 
         if memory_only:
-            logger.debug(f"\n[CLONE] Step 3: Skipping triage (memory sources already ranked by verification)")
-            # Memory sources are already ranked by verification
-            # Add metadata fields that extraction layer expects
+            logger.debug(f"\n[CLONE] Step 3: Skipping triage (no search results, using memory snippets only)")
+            # Memory snippets already extracted - nothing more to triage/extract
             ranked_sources = []
-            for rank_position, source in enumerate(memory_sources):
-                source_copy = source.copy()
-                # Use original query from memory instead of generic "[Memory]" label
-                source_copy['_search_term'] = source.get('_original_query', 'Memory')
-                source_copy['_search_index'] = 1
-                source_copy['_search_ref'] = 1
-                source_copy['_rank_position'] = rank_position
-                ranked_sources.append(source_copy)
 
             if clone_logger:
-                clone_logger.log_section("Triage Skipped", f"Using {len(ranked_sources)} memory sources pre-ranked by verification (no triage needed)", level=3, collapse=False)
+                clone_logger.log_section("Triage Skipped", f"No search results to triage - using {len(memory_snippets)} memory snippets", level=3, collapse=False)
         else:
             logger.debug(f"\n[CLONE] Step 3: Ranking sources...")
             step_start_phase = time.time()
@@ -995,7 +1038,7 @@ class TheClone2Refined:
                 search_results=search_results,
                 search_terms=search_terms,
                 query=prompt,
-                existing_snippets=[],
+                existing_snippets=memory_snippets,  # Triage sees what memory already covers
                 positive_keywords=positive_keywords,
                 negative_keywords=negative_keywords,
                 model=models['triage'],
@@ -1043,7 +1086,7 @@ class TheClone2Refined:
             if clone_logger:
                 clone_logger.log_section("Empty Snippet Filter", f"Removed {original_count - len(ranked_sources)} sources with empty snippets (cannot extract from empty content)", level=3)
 
-        logger.debug(f"[CLONE] Ranked {len(ranked_sources)} relevant sources")
+        logger.debug(f"[CLONE] Ranked {len(ranked_sources)} search sources to extract")
 
         if len(ranked_sources) == 0:
             logger.debug("[CLONE] No relevant sources found from triage - proceeding to synthesis for self-correction")
@@ -1051,17 +1094,27 @@ class TheClone2Refined:
                 clone_logger.log_section("Triage Result", "No relevant sources passed triage - synthesis will attempt answer from model knowledge and may suggest new search terms", level=3)
 
         # Step 4: Iterative Extraction
-        all_snippets = []
+        # Start with memory snippets (already extracted in memory phase)
+        all_snippets = list(memory_snippets)  # Copy to avoid mutation issues
+        if memory_snippets:
+            logger.debug(f"[CLONE] Starting extraction with {len(memory_snippets)} memory snippets")
+            if clone_logger:
+                clone_logger.log_section("Memory Snippets Merged", f"Starting with {len(memory_snippets)} snippets from memory extraction", level=3)
         sources_examined = []  # Track sources for synthesis (in case of 0 snippets)
         sources_pulled = 0
         first_extraction_prompt_logged = False
         iteration = 0
 
-        # Skip extraction if no sources (will proceed to synthesis for self-correction)
+        # Skip extraction if no search sources (memory snippets already extracted)
         if len(ranked_sources) == 0:
-            logger.debug(f"\n[CLONE] Step 4: Skipping extraction (no sources) - will proceed to synthesis")
-            if clone_logger:
-                clone_logger.log_section("Extraction Skipped", "No sources to extract from - synthesis will use model knowledge", level=3)
+            if memory_snippets:
+                logger.debug(f"\n[CLONE] Step 4: Skipping search extraction (using {len(memory_snippets)} memory snippets)")
+                if clone_logger:
+                    clone_logger.log_section("Search Extraction Skipped", f"No search sources to extract - proceeding with {len(memory_snippets)} memory snippets", level=3)
+            else:
+                logger.debug(f"\n[CLONE] Step 4: Skipping extraction (no sources) - will proceed to synthesis")
+                if clone_logger:
+                    clone_logger.log_section("Extraction Skipped", "No sources to extract from - synthesis will use model knowledge", level=3)
         else:
             logger.debug(f"\n[CLONE] Step 4: Iterative extraction (max {global_limits['max_iterations']} iterations)...")
             step_start_phase = time.time()
@@ -1801,68 +1854,6 @@ class TheClone2Refined:
                 'search_terms': search_terms,
                 'reasoning': f"Low overall confidence ({overall_confidence:.2f})"
             }
-
-    def _deduplicate_memory_and_search(
-        self,
-        memory_sources: List[Dict],
-        search_sources: List[Dict]
-    ) -> tuple[List[Dict], List[Dict]]:
-        """
-        Deduplicate memory vs search results.
-
-        Rules:
-        - Prefer search if same URL (fresher query context)
-        - Keep both if different source dates (content may have changed)
-
-        Args:
-            memory_sources: Sources from memory recall
-            search_sources: Sources from new searches
-
-        Returns:
-            (deduplicated_memory, deduplicated_search)
-        """
-        memory_by_url = {m['url']: m for m in memory_sources}
-        search_by_url = {s['url']: s for s in search_sources}
-
-        # Find overlapping URLs
-        overlap_urls = set(memory_by_url.keys()) & set(search_by_url.keys())
-
-        deduplicated_memory = []
-        deduplicated_search = []
-
-        # Handle overlaps
-        for url in overlap_urls:
-            mem = memory_by_url[url]
-            search = search_by_url[url]
-
-            # Compare source dates
-            mem_date = mem.get('date')
-            search_date = search.get('date')
-
-            if mem_date and search_date and mem_date != search_date:
-                # Different dates - keep both (content may have changed)
-                deduplicated_memory.append(mem)
-                deduplicated_search.append(search)
-            else:
-                # Same URL, same/no date → prefer search (fresher context)
-                deduplicated_search.append(search)
-                logger.debug(f"[DEDUP] Removed memory duplicate (preferring search): {url}")
-
-        # Add non-overlapping sources
-        for url, mem in memory_by_url.items():
-            if url not in overlap_urls:
-                deduplicated_memory.append(mem)
-
-        for url, search in search_by_url.items():
-            if url not in overlap_urls:
-                deduplicated_search.append(search)
-
-        logger.debug(
-            f"[DEDUP] Memory: {len(memory_sources)} → {len(deduplicated_memory)}, "
-            f"Search: {len(search_sources)} → {len(deduplicated_search)}"
-        )
-
-        return deduplicated_memory, deduplicated_search
 
     def _build_ranked_source_pool(
         self,
