@@ -477,7 +477,12 @@ class SimplifiedSchemaValidator:
                     if field_history.get('original_key_citation'):
                         field_parts.append(f"  Key Citation: {field_history['original_key_citation']}")
 
-                    if field_history.get('original_sources'):
+                    # Use original_sources_full (numbered citations) if available, else fall back to URLs
+                    if field_history.get('original_sources_full'):
+                        field_parts.append(f"  Previous Validation Sources:")
+                        for source in field_history['original_sources_full']:
+                            field_parts.append(f"    {source}")
+                    elif field_history.get('original_sources'):
                         sources_str = ', '.join(field_history['original_sources'])
                         field_parts.append(f"  Sources: {sources_str}")
 
@@ -493,7 +498,12 @@ class SimplifiedSchemaValidator:
                     if field_history.get('original_key_citation'):
                         field_parts.append(f"  Key Citation: {field_history['original_key_citation']}")
 
-                    if field_history.get('original_sources'):
+                    # Use original_sources_full (numbered citations) if available, else fall back to URLs
+                    if field_history.get('original_sources_full'):
+                        field_parts.append(f"  Previous Validation Sources:")
+                        for source in field_history['original_sources_full']:
+                            field_parts.append(f"    {source}")
+                    elif field_history.get('original_sources'):
                         sources_str = ', '.join(field_history['original_sources'])
                         field_parts.append(f"  Sources: {sources_str}")
 
