@@ -2,12 +2,13 @@
 
 ## Table of Contents
 1. [Architecture Overview](#architecture-overview)
-2. [Infrastructure Components](#infrastructure-components)
-3. [Setup Guide](#setup-guide)
-4. [Workflow Overview](#workflow-overview)
-5. [Table Maker System](#table-maker-system)
-6. [Testing Guide](#testing-guide)
-7. [Troubleshooting](#troubleshooting)
+2. [Frontend Architecture](#frontend-architecture)
+3. [Infrastructure Components](#infrastructure-components)
+4. [Setup Guide](#setup-guide)
+5. [Workflow Overview](#workflow-overview)
+6. [Table Maker System](#table-maker-system)
+7. [Testing Guide](#testing-guide)
+8. [Troubleshooting](#troubleshooting)
 
 ## Architecture Overview
 
@@ -33,6 +34,85 @@ A WebSocket connection is established for real-time progress updates during long
 - **Conversational AI**: Users can interact with the system in natural language to create and modify complex validation rules.
 - **DynamoDB Tracking**: Comprehensive session tracking, user stats, and validation metrics.
 - **WebSocket Integration**: Provides real-time feedback to the user during asynchronous operations.
+
+## Frontend Architecture
+
+The frontend is a single-page application built with vanilla JavaScript, organized into modular source files that are assembled at build time.
+
+### Directory Structure
+
+```
+frontend/
+├── src/
+│   ├── template.html      # HTML template with {{CSS}} and {{JS}} placeholders
+│   ├── styles/            # CSS modules (sorted by numeric prefix)
+│   │   ├── 01-variables.css
+│   │   ├── 02-base.css
+│   │   ├── 03-layout.css
+│   │   └── ...
+│   └── js/                # JavaScript modules (sorted by numeric prefix)
+│       ├── 00-config.js       # Global state and configuration
+│       ├── 01-utils.js        # Utility functions
+│       ├── 02-storage.js      # Local storage management
+│       ├── 03-websocket.js    # WebSocket connection and message routing
+│       ├── 04-cards.js        # Card UI components
+│       ├── 05-chat.js         # Chat interface
+│       ├── 06-upload.js       # File upload handling
+│       ├── 07-email-validation.js
+│       ├── 08-config-generation.js
+│       ├── 09-table-maker.js
+│       ├── 10-upload-interview.js
+│       ├── 11-preview.js      # Preview validation flow
+│       ├── 12-validation.js   # Full validation flow
+│       ├── 13-results.js
+│       ├── 14-account.js
+│       ├── 15-reference-check.js
+│       └── 99-init.js         # Initialization and event binding
+├── build.py               # Build script
+└── Hyperplexity_FullScript_Temp-dev.html  # Built output
+```
+
+### Build Process
+
+The frontend uses a simple build script that concatenates modular source files into a single HTML file for deployment.
+
+```bash
+# Build the frontend (from project root)
+python3 frontend/build.py
+
+# Watch mode - auto-rebuild on changes
+python3 frontend/build.py --watch
+```
+
+The build script:
+1. Loads `src/template.html`
+2. Concatenates all CSS files from `src/styles/` (sorted alphabetically by filename)
+3. Concatenates all JS files from `src/js/` (sorted alphabetically by filename)
+4. Wraps JS in an IIFE for encapsulation
+5. Replaces `{{CSS}}` and `{{JS}}` placeholders in the template
+6. Outputs to `Hyperplexity_FullScript_Temp-dev.html`
+
+### Key Modules
+
+| Module | Purpose |
+|--------|---------|
+| `00-config.js` | Global state object, API endpoints, environment config |
+| `03-websocket.js` | WebSocket connection management, message routing, fallback polling |
+| `04-cards.js` | Card creation, thinking indicators, progress animations |
+| `11-preview.js` | Preview validation flow, processing card creation |
+| `12-validation.js` | Full validation handling, completion UI |
+
+### WebSocket & Fallback System
+
+The frontend maintains a WebSocket connection for real-time progress updates. A fallback polling system activates when the WebSocket is silent:
+
+- **Silence Threshold**: API polling only occurs if no WebSocket content messages received for 30+ seconds
+- **Pong Exclusion**: Ping/pong heartbeats don't count as content messages
+- **Completion Deduplication**: Central `tryHandleCompletion()` ensures exactly-once completion handling
+
+### Deployment
+
+The built HTML file (`Hyperplexity_FullScript_Temp-dev.html`) is deployed to Squarespace by copying its contents into a code block.
 
 ## Infrastructure Components
 

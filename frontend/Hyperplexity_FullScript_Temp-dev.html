@@ -4024,6 +4024,10 @@ let registrationCounter = 0;
 // Fallback polling state - stored globally so we can manage it
 let activeFallbackPolling = null; // { sessionId, intervalId, startTime }
 
+// Global timestamp for last WebSocket message - used to determine if fallback polling should kick in
+// This is updated whenever ANY WebSocket message is received, regardless of session
+let lastGlobalWebSocketMessageTime = null;
+
 // Track if we've already completed to prevent duplicate handling
 let validationCompletionHandled = false;
 let completionHandledBy = null; // Track which source handled completion (for debugging)
@@ -4255,14 +4259,20 @@ function connectToSession(sessionId, reconnectAttempt = 0) {
 
     ws.onmessage = (event) => {
         // Track last message time for health checks
-        ws._lastMessageTime = Date.now();
+        const now = Date.now();
+        ws._lastMessageTime = now;
 
         try {
-            // Check if this is a pong response
+            // Check if this is a pong response - DON'T update global timestamp for pongs
+            // We only want content messages to indicate the WebSocket is delivering data
             if (event.data === 'pong' || event.data === 'Pong' || event.data === '"pong"') {
                 ws._pongsReceived++;
                 return; // Don't route pong messages
             }
+
+            // Only update global timestamp for actual content messages
+            // This ensures fallback polling kicks in if WebSocket isn't delivering content
+            lastGlobalWebSocketMessageTime = now;
 
             const data = JSON.parse(event.data);
 
@@ -4371,14 +4381,15 @@ function setupWebSocketFallback(sessionId, options = {}) {
     const {
         pollInterval = 10000,  // Check every 10 seconds (reduced frequency to be lighter)
         maxDuration = 20 * 60 * 1000,  // 20 minutes max (covers most validations)
-        isPreview = false
+        isPreview = false,
+        silenceThreshold = 30000  // Only poll if no WebSocket message for 30 seconds
     } = options;
 
-    console.log(`[FALLBACK] Starting polling for session ${sessionId} (preview: ${isPreview}, duration: ${maxDuration / 60000}min)`);
+    console.log(`[FALLBACK] Starting polling for session ${sessionId} (preview: ${isPreview}, duration: ${maxDuration / 60000}min, silence threshold: ${silenceThreshold / 1000}s)`);
 
     const startTime = Date.now();
 
-    // Poll for completion if WebSocket messages aren't coming through
+    // Poll for completion ONLY if WebSocket messages aren't coming through
     const fallbackInterval = setInterval(async () => {
         // Check if validation has already been handled
         if (validationCompletionHandled && !isPreview) {
@@ -4403,6 +4414,21 @@ function setupWebSocketFallback(sessionId, options = {}) {
             console.log('[FALLBACK] Max polling duration reached, stopping');
             stopFallbackPolling();
             return;
+        }
+
+        // CRITICAL: Only poll if we haven't received a WebSocket message recently
+        // This prevents the API poll from interfering with healthy WebSocket connections
+        // Uses global timestamp to handle session ID mismatches between WS and polling
+        if (lastGlobalWebSocketMessageTime) {
+            const timeSinceLastMessage = Date.now() - lastGlobalWebSocketMessageTime;
+            if (timeSinceLastMessage < silenceThreshold) {
+                // WebSocket is healthy and sending messages, skip this poll cycle
+                console.log(`[FALLBACK] WebSocket active (${Math.round(timeSinceLastMessage / 1000)}s ago), skipping poll`);
+                return;
+            }
+            console.log(`[FALLBACK] WebSocket silent for ${Math.round(timeSinceLastMessage / 1000)}s, polling API`);
+        } else {
+            console.log('[FALLBACK] No WebSocket messages received yet, polling API');
         }
 
         // Use the centralized status check function with source tracking
@@ -4749,7 +4775,16 @@ function routeMessage(data, sessionId) {
     }
 
     if (latestHandler && latestCardId) {
-        latestHandler.handler(data, latestCardId);
+        try {
+            latestHandler.handler(data, latestCardId);
+        } catch (error) {
+            console.error(`[ROUTE] Error in card handler for ${latestCardId}:`, error);
+            console.error('[ROUTE] Message that caused error:', data);
+            // If this was a completion message and the handler failed, log for debugging
+            if (data.status === 'COMPLETED') {
+                console.error('[ROUTE] CRITICAL: COMPLETED handler threw an exception - UI may not update!');
+            }
+        }
     } else {
         console.warn('No handler found for WebSocket message:', data);
     }
