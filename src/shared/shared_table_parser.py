@@ -2010,9 +2010,13 @@ class S3TableParser:
                             'original_value': str(cell_value).strip(),  # Updated Values sheet cell = INPUT
                             'original_confidence': parsed_comment.get('original_confidence', ''),
                             'original_key_citation': parsed_comment.get('key_citation', ''),
-                            'original_sources': parsed_comment.get('sources', []),  # URLs for backward compatibility
-                            'original_sources_full': parsed_comment.get('sources_full', []),  # Full citation text
-                            'original_timestamp': timestamps.get('original_timestamp', '')
+                            'original_sources': parsed_comment.get('sources', []),  # Validation URLs for backward compatibility
+                            'original_sources_full': parsed_comment.get('sources_full', []),  # Validation full citation text
+                            'qc_sources': parsed_comment.get('qc_sources', []),  # QC source URLs
+                            'qc_sources_full': parsed_comment.get('qc_sources_full', []),  # QC full citation text
+                            'original_timestamp': timestamps.get('original_timestamp', ''),
+                            'validator_explanation': parsed_comment.get('validator_explanation', ''),
+                            'qc_reasoning': parsed_comment.get('qc_reasoning', '')
                         }
 
                         validation_history[row_key][column_name] = field_history
@@ -2057,7 +2061,9 @@ class S3TableParser:
                 'original_value': str,  # Current cell value
                 'original_key_citation': str,
                 'original_sources': list[str],
-                'original_sources_full': list[str]
+                'original_sources_full': list[str],
+                'validator_explanation': str,
+                'qc_reasoning': str
             }
 
         Note on timestamps:
@@ -2093,8 +2099,12 @@ class S3TableParser:
             'original_value': str(cell_value).strip(),  # Updated Values sheet cell = INPUT
             'original_confidence': parsed_comment.get('original_confidence', ''),
             'original_key_citation': parsed_comment.get('key_citation', ''),
-            'original_sources': parsed_comment.get('sources', []),  # URLs for backward compatibility
-            'original_sources_full': parsed_comment.get('sources_full', [])  # Full citation text
+            'original_sources': parsed_comment.get('sources', []),  # Validation URLs for backward compatibility
+            'original_sources_full': parsed_comment.get('sources_full', []),  # Validation full citation text
+            'qc_sources': parsed_comment.get('qc_sources', []),  # QC source URLs
+            'qc_sources_full': parsed_comment.get('qc_sources_full', []),  # QC full citation text
+            'validator_explanation': parsed_comment.get('validator_explanation', ''),
+            'qc_reasoning': parsed_comment.get('qc_reasoning', '')
         }
 
         return field_history
@@ -2103,23 +2113,36 @@ class S3TableParser:
         """
         Parse structured validation comment from Updated Values sheet.
 
-        Example input:
-            Original Value: ABC Corp (MEDIUM Confidence)
+        Example input (new format with QC):
+            Original Value: No new safety signals observed... (HIGH Confidence)
 
-            Key Citation: Company website (https://...)
+            Validator Explanation: Roche press release explicitly states... [1]; PharmacyTimes confirms... [2]
+
+            Key Citation: [V1] Roche's phase III evERA data showed... (0.85): "Basel..." (https://...)
 
             Sources:
-            [1] Title (URL): "snippet"
-            [2] Title (URL): "snippet"
+            [1] Roche's phase III evERA data...: "Basel..." (https://...)
+            [2] Giredestrant Plus Everolimus...: "Among patients..." (https://...)
+            [QC1] QC Source (https://qc-source.com)
 
         Returns:
             {
-                'original_value': 'ABC Corp',
-                'original_confidence': 'MEDIUM',
-                'key_citation': 'Company website (https://...)',
-                'sources': ['https://...', 'https://...']
+                'original_value': 'No new safety signals observed...',
+                'original_confidence': 'HIGH',
+                'validator_explanation': 'Roche press release explicitly states... [1]; ...',
+                'key_citation': '[1] Roche's phase III evERA data showed... (0.85): "Basel..." (https://...)',
+                'sources': ['https://...', 'https://...'],  # Validation citation URLs
+                'sources_full': ['[1] Roche's phase III...: "Basel..." (https://...)', ...],  # Full validation citations
+                'qc_sources': ['https://qc-source.com'],  # QC citation URLs
+                'qc_sources_full': ['[QC1] QC Source (https://qc-source.com)']  # Full QC citations
             }
+
+        Note on citation numbering:
+            - [Vn] in Key Citation = references [n] in Sources (validation citations)
+            - [QCn] = QC's own web search citations (separate from validation citations)
+            - key_citation is normalized to use [n] format (stripping V prefix)
         """
+        import re
         result = {}
 
         if not comment_text:
@@ -2145,35 +2168,129 @@ class S3TableParser:
                 else:
                     result['original_value'] = content
 
-            # Parse Key Citation
+            # Parse Validator Explanation (new field)
+            elif line.startswith('Validator Explanation:'):
+                result['validator_explanation'] = line.replace('Validator Explanation:', '').strip()
+
+            # Parse QC Reasoning (if present)
+            elif line.startswith('QC Reasoning:'):
+                result['qc_reasoning'] = line.replace('QC Reasoning:', '').strip()
+
+            # Parse Key Citation - normalize [Vn] to [n]
             elif line.startswith('Key Citation:'):
-                result['key_citation'] = line.replace('Key Citation:', '').strip()
+                key_citation = line.replace('Key Citation:', '').strip()
+                # Normalize [Vn] references to [n] - validation citations use [V*] prefix
+                # but map to Sources which uses [1], [2], etc.
+                key_citation = re.sub(r'\[V(\d+)\]', r'[\1]', key_citation)
+                result['key_citation'] = key_citation
 
             # Parse Sources section
             elif line.startswith('Sources:'):
-                sources = []
-                sources_full = []  # Keep full citation text
+                sources = []  # Validation sources (URLs)
+                sources_full = []  # Validation sources (full citation text)
+                qc_sources = []  # QC sources (URLs)
+                qc_sources_full = []  # QC sources (full citation text)
                 i += 1
+                current_source = ""
+                current_is_qc = False
+
+                def save_current_source():
+                    """Helper to save the current accumulated source."""
+                    nonlocal current_source, current_is_qc
+                    if current_source:
+                        url = self._extract_url_from_citation(current_source)
+                        if current_is_qc:
+                            qc_sources_full.append(current_source)
+                            if url:
+                                qc_sources.append(url)
+                        else:
+                            sources_full.append(current_source)
+                            if url:
+                                sources.append(url)
+                        current_source = ""
+                        current_is_qc = False
+
                 while i < len(lines):
                     source_line = lines[i].strip()
+
+                    # Empty line ends the Sources section (but check if next line starts a new section)
                     if not source_line:
-                        break
-                    # Keep the full source line for complete citation
-                    sources_full.append(source_line)
-                    # Also extract just the URL for backward compatibility
-                    if '(' in source_line and ')' in source_line:
-                        url_start = source_line.find('(')
-                        url_end = source_line.find(')', url_start)
-                        url = source_line[url_start+1:url_end]
-                        sources.append(url)
+                        save_current_source()
+                        # Check if we've hit another section header
+                        if i + 1 < len(lines):
+                            next_line = lines[i + 1].strip()
+                            if any(next_line.startswith(prefix) for prefix in
+                                   ['Original Value:', 'Validator Explanation:', 'QC Reasoning:', 'Key Citation:']):
+                                break
+                        i += 1
+                        continue
+
+                    # Check if this line starts a new citation [n] or [QCn]
+                    qc_match = re.match(r'^\[QC(\d+)\]', source_line)
+                    regular_match = re.match(r'^\[(\d+)\]', source_line)
+
+                    if qc_match:
+                        # QC citation [QCn]
+                        save_current_source()
+                        current_source = source_line
+                        current_is_qc = True
+                    elif regular_match:
+                        # Regular validation citation [n]
+                        save_current_source()
+                        current_source = source_line
+                        current_is_qc = False
+                    elif current_source:
+                        # Continuation of previous source (multi-line citation)
+                        current_source += " " + source_line
+                    else:
+                        # Orphan line - might be continuation of last citation
+                        current_source = source_line
+
                     i += 1
+
+                # Don't forget the last source
+                save_current_source()
+
                 result['sources'] = sources
-                result['sources_full'] = sources_full  # Full citation text
+                result['sources_full'] = sources_full
+                result['qc_sources'] = qc_sources
+                result['qc_sources_full'] = qc_sources_full
                 continue
 
             i += 1
 
         return result
+
+    def _extract_url_from_citation(self, citation_text: str) -> str:
+        """
+        Extract URL from citation text.
+        URLs are typically at the END of the citation in parentheses: (https://...)
+
+        Args:
+            citation_text: Full citation text like "[1] Title (0.85): \"quote\" (https://...)"
+
+        Returns:
+            The URL or empty string if not found
+        """
+        import re
+
+        if not citation_text:
+            return ""
+
+        # Find the last URL-like pattern in parentheses
+        # Pattern: (https://...) or (http://...) at the end
+        url_pattern = r'\((https?://[^\)]+)\)\s*$'
+        match = re.search(url_pattern, citation_text)
+        if match:
+            return match.group(1)
+
+        # Fallback: Find any URL in the citation
+        url_pattern_fallback = r'\((https?://[^\)]+)\)'
+        matches = re.findall(url_pattern_fallback, citation_text)
+        if matches:
+            return matches[-1]  # Return the last one (most likely the actual URL)
+
+        return ""
 
     def _load_validation_timestamps(self, bucket: str, key: str) -> Dict:
         """

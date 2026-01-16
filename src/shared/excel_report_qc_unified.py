@@ -177,6 +177,39 @@ def should_update_value(original_confidence, validation_confidence):
     # Only update if validation confidence is higher than or equal to original
     return validation_level >= original_level
 
+
+def normalize_citation_references(text: str) -> str:
+    """
+    Normalize citation references in key_citation text.
+
+    Order of operations:
+    1. First, transform bare [n] (QC's own citations) → [QCn]
+    2. Then, transform [Vn] (validation citations) → [n]
+
+    This ensures:
+    - Validation citations [Vn] map to [n] in the Sources section
+    - QC's own citations [n] become [QCn] and map to [QCn] entries in Sources
+
+    Args:
+        text: Key citation text that may contain [Vn], [QCn], or bare [n] references
+
+    Returns:
+        Normalized text with proper citation references
+    """
+    import re
+    if not text:
+        return text
+
+    # Step 1: Transform bare [n] to [QCn] (but not [Vn] or already [QCn])
+    # This regex matches [1], [2], [10], etc. but NOT [V1], [QC1], [KNOWLEDGE], etc.
+    # Use negative lookbehind to avoid matching [Vn] or [QCn]
+    text = re.sub(r'(?<![VQ])\[(\d+)\]', r'[QC\1]', text)
+
+    # Step 2: Transform [Vn] to [n] (validation citations)
+    text = re.sub(r'\[V(\d+)\]', r'[\1]', text)
+
+    return text
+
 def calculate_confidence_distribution(validation_results, qc_results, excluded_fields=None):
     """
     Calculate percentage distribution of confidence levels.
@@ -985,14 +1018,18 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                             key_citation += f" ({cite_url})"
 
                                 if key_citation:
+                                    # Normalize citation references: [n] → [QCn], then [Vn] → [n]
+                                    clean_citation = normalize_citation_references(key_citation)
                                     # Ensure key citation doesn't have problematic newlines
-                                    clean_citation = key_citation.replace('\n', ' ').replace('\r', ' ')
+                                    clean_citation = clean_citation.replace('\n', ' ').replace('\r', ' ')
                                     comment_parts.append(f'Key Citation: {clean_citation}')
 
-                                # Add Sources section
+                                # Add Sources section (validation citations as [n], QC sources as [QCn])
                                 citations = field_data.get('citations', [])
+                                citation_texts = []
+
+                                # Add validation citations as [1], [2], etc.
                                 if citations:
-                                    citation_texts = []
                                     for i, citation in enumerate(citations, 1):
                                         cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
                                         cite_url = citation.get('url', '')
@@ -1004,13 +1041,35 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                             cite_text += f" ({cite_url})"
                                         citation_texts.append(cite_text)
 
-                                    if citation_texts:
-                                        comment_parts.append(f"Sources:\n" + "\n".join(citation_texts))
+                                # Add QC sources as [QC1], [QC2], etc. (if any)
+                                if row_qc_data and col_name in row_qc_data:
+                                    field_qc_data = row_qc_data[col_name]
+                                    if isinstance(field_qc_data, dict):
+                                        qc_sources = field_qc_data.get('qc_sources', [])
+                                        if qc_sources:
+                                            for i, qc_source in enumerate(qc_sources, 1):
+                                                # QC sources may be just URLs or full citation objects
+                                                if isinstance(qc_source, str):
+                                                    cite_text = f"[QC{i}] QC Source ({qc_source})"
+                                                elif isinstance(qc_source, dict):
+                                                    cite_text = f"[QC{i}] {qc_source.get('title', 'QC Source')}"
+                                                    cite_url = qc_source.get('url', '')
+                                                    cite_snippet = qc_source.get('cited_text', '')
+                                                    if cite_snippet:
+                                                        cite_text += f": \"{cite_snippet}\""
+                                                    if cite_url:
+                                                        cite_text += f" ({cite_url})"
+                                                else:
+                                                    cite_text = f"[QC{i}] {str(qc_source)}"
+                                                citation_texts.append(cite_text)
+
+                                if citation_texts:
+                                    comment_parts.append(f"Sources:\n" + "\n".join(citation_texts))
 
                                 # Create comment only if we have meaningful content
                                 if comment_parts:
                                     comment_text = '\n\n'.join(comment_parts)
-                        
+
                         # Add comment if needed
                         if comment_text:
                             try:
@@ -1211,14 +1270,18 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                             key_citation += f" ({cite_url})"
 
                                 if key_citation:
+                                    # Normalize citation references: [n] → [QCn], then [Vn] → [n]
+                                    clean_citation = normalize_citation_references(key_citation)
                                     # Ensure key citation doesn't have problematic newlines
-                                    clean_citation = key_citation.replace('\n', ' ').replace('\r', ' ')
+                                    clean_citation = clean_citation.replace('\n', ' ').replace('\r', ' ')
                                     comment_parts.append(f'Key Citation: {clean_citation}')
 
-                                # Add Sources section
+                                # Add Sources section (validation citations as [n], QC sources as [QCn])
                                 citations = field_data.get('citations', [])
+                                citation_texts = []
+
+                                # Add validation citations as [1], [2], etc.
                                 if citations:
-                                    citation_texts = []
                                     for i, citation in enumerate(citations, 1):
                                         cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
                                         cite_url = citation.get('url', '')
@@ -1230,8 +1293,30 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                             cite_text += f" ({cite_url})"
                                         citation_texts.append(cite_text)
 
-                                    if citation_texts:
-                                        comment_parts.append(f"Sources:\n" + "\n".join(citation_texts))
+                                # Add QC sources as [QC1], [QC2], etc. (if any)
+                                if row_qc_data and col_name in row_qc_data:
+                                    field_qc_data = row_qc_data[col_name]
+                                    if isinstance(field_qc_data, dict):
+                                        qc_sources = field_qc_data.get('qc_sources', [])
+                                        if qc_sources:
+                                            for i, qc_source in enumerate(qc_sources, 1):
+                                                # QC sources may be just URLs or full citation objects
+                                                if isinstance(qc_source, str):
+                                                    cite_text = f"[QC{i}] QC Source ({qc_source})"
+                                                elif isinstance(qc_source, dict):
+                                                    cite_text = f"[QC{i}] {qc_source.get('title', 'QC Source')}"
+                                                    cite_url = qc_source.get('url', '')
+                                                    cite_snippet = qc_source.get('cited_text', '')
+                                                    if cite_snippet:
+                                                        cite_text += f": \"{cite_snippet}\""
+                                                    if cite_url:
+                                                        cite_text += f" ({cite_url})"
+                                                else:
+                                                    cite_text = f"[QC{i}] {str(qc_source)}"
+                                                citation_texts.append(cite_text)
+
+                                if citation_texts:
+                                    comment_parts.append(f"Sources:\n" + "\n".join(citation_texts))
 
                                 # Create comment only if we have meaningful content
                                 if comment_parts:
