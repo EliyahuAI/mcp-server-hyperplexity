@@ -80,6 +80,10 @@ except ImportError:
 class S3TableParser:
     """Unified S3 table-to-JSON parser used by both interface and validation code"""
 
+    # Cache schema version - increment this when the cache structure changes
+    # to invalidate old caches with incompatible data formats
+    CACHE_SCHEMA_VERSION = 2  # v2: Fixed history mapping (original_value = previous value, not current)
+
     def __init__(self, enable_cleaning_log: bool = True, output_dir: str = None):
         self.s3_client = boto3.client('s3')
         self.logger = logging.getLogger(__name__)
@@ -415,6 +419,15 @@ class S3TableParser:
                 self.logger.warning(f"[CACHE_SKIP] Cache missing required structure (metadata/data)")
                 return None
 
+            # Validate cache schema version - reject outdated caches
+            cached_version = cached_data.get('metadata', {}).get('cache_schema_version', 1)
+            if cached_version < self.CACHE_SCHEMA_VERSION:
+                self.logger.info(
+                    f"[CACHE_SKIP] Cache schema version {cached_version} < {self.CACHE_SCHEMA_VERSION}. "
+                    f"Re-parsing with updated schema."
+                )
+                return None
+
             # Validate that id_fields match what was used to generate the cache
             cached_id_fields = cached_data.get('metadata', {}).get('id_fields')
 
@@ -475,10 +488,11 @@ class S3TableParser:
             extract_history: Whether history extraction was performed
         """
         try:
-            # Add id_fields and extract_history to metadata for validation on cache load
+            # Add metadata for validation on cache load
             if 'metadata' not in parsed_data:
                 parsed_data['metadata'] = {}
             parsed_data['metadata']['id_fields'] = id_fields
+            parsed_data['metadata']['cache_schema_version'] = self.CACHE_SCHEMA_VERSION
             # Check if any row has _history to determine if history was actually extracted
             has_history = any('_history' in row for row in parsed_data.get('data', [])[:10])
             parsed_data['metadata']['has_history'] = has_history
@@ -2019,13 +2033,13 @@ class S3TableParser:
                             parsed_comment = self._parse_validation_comment(comment_text)
 
                         # Build field history
-                        # IMPORTANT: Updated Values sheet cell = Original/Current (INPUT)
-                        #            Updated Values sheet comment "Original Value:" = Prior (from Original Values sheet)
+                        # NOTE: The prompt generator expects 'original_value' to be the PREVIOUS value
+                        #       (the historical baseline from the comment's "Original Value:" field)
                         field_history = {
                             'prior_value': parsed_comment.get('original_value', ''),  # From comment's "Original Value:" field
                             'prior_confidence': parsed_comment.get('original_confidence', ''),
                             'prior_timestamp': timestamps.get('prior_timestamp', ''),
-                            'original_value': str(cell_value).strip(),  # Updated Values sheet cell = INPUT
+                            'original_value': parsed_comment.get('original_value', ''),  # Same as prior_value - the PREVIOUS value
                             'original_confidence': parsed_comment.get('original_confidence', ''),
                             'original_key_citation': parsed_comment.get('key_citation', ''),
                             'original_sources': parsed_comment.get('sources', []),  # Validation URLs for backward compatibility
@@ -2109,12 +2123,13 @@ class S3TableParser:
             return None
 
         # Build field history
-        # IMPORTANT: Updated Values sheet cell = Original/Current (INPUT)
-        #            Updated Values sheet comment "Original Value:" = Prior (from Original Values sheet)
+        # NOTE: The prompt generator expects 'original_value' to be the PREVIOUS value
+        #       (the historical baseline from the comment's "Original Value:" field)
+        #       NOT the current cell value being validated.
         field_history = {
             'prior_value': parsed_comment.get('original_value', ''),  # From comment's "Original Value:" field
             'prior_confidence': parsed_comment.get('original_confidence', ''),
-            'original_value': str(cell_value).strip(),  # Updated Values sheet cell = INPUT
+            'original_value': parsed_comment.get('original_value', ''),  # Same as prior_value - the PREVIOUS value
             'original_confidence': parsed_comment.get('original_confidence', ''),
             'original_key_citation': parsed_comment.get('key_citation', ''),
             'original_sources': parsed_comment.get('sources', []),  # Validation URLs for backward compatibility
