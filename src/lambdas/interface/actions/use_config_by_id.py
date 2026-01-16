@@ -90,6 +90,22 @@ def copy_agent_memory(
         query_count = len(memory_data.get('queries', {}))
         logger.info(f"Copied agent_memory.json to {target_session} ({query_count} queries, caution note added)")
 
+        # CRITICAL: Load copied memory into RAM cache immediately
+        # This ensures parallel agents can access the copied memory without S3 reads
+        try:
+            from the_clone.search_memory_cache import MemoryCache
+            memory = MemoryCache.load_from_copy(
+                target_session_id=target_session,
+                source_session_id=source_session,
+                email=target_email,
+                s3_manager=storage_manager,
+                ai_client=None  # Will be set when clone uses it
+            )
+            logger.info(f"[MEMORY_CACHE] Loaded copied memory into RAM cache for {target_session}")
+        except Exception as e:
+            # Non-critical: Memory will still work, just slower (will load on-demand)
+            logger.warning(f"[MEMORY_CACHE] Failed to pre-load copied memory into cache: {e}")
+
         return {
             'success': True,
             'queries_copied': query_count,
