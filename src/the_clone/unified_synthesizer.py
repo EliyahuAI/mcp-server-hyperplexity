@@ -603,7 +603,8 @@ Query: {query}
                 id_part = parts[1].strip()
 
                 # Extract snippet ID from second part
-                sid_match = re.search(r'S\d+(?:\.\d+)*-p\d+\.\d+', id_part)
+                # Pattern matches both search (S1.x.x.x) and memory (SM.x.x.x) snippet IDs
+                sid_match = re.search(r'S(?:M|\d+)(?:\.\d+)*-p\d+\.\d+', id_part)
                 if sid_match:
                     extracted_sid = sid_match.group(0)
 
@@ -634,7 +635,8 @@ Query: {query}
             # Strategy 2: Starts with S and has -p - try as snippet ID (or if Strategy 1 extracted an ID but didn't match)
             if not matched and (extracted_sid or (item.startswith('S') and '-p' in item)):
                 sid = extracted_sid if extracted_sid else item
-                sid_match = re.search(r'S\d+(?:\.\d+)*-p\d+\.\d+', sid)
+                # Pattern matches both search (S1.x.x.x) and memory (SM.x.x.x) snippet IDs
+                sid_match = re.search(r'S(?:M|\d+)(?:\.\d+)*-p\d+\.\d+', sid)
                 if sid_match:
                     sid = sid_match.group(0)
                     # Try exact match first
