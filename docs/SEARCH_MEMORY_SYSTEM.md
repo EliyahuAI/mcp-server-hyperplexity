@@ -113,7 +113,7 @@ In addition to search results, the memory can store **full URL content** directl
 
 ## Recall Algorithm
 
-The recall process uses a **3-stage hybrid approach** to find relevant memories:
+The recall process uses a **2-stage approach** with optional verification:
 
 ### Stage 1: Keyword Pre-Filter (Free, <50ms)
 
@@ -125,36 +125,130 @@ The recall process uses a **3-stage hybrid approach** to find relevant memories:
 ### Stage 2: Gemini Source Selection (~$0.0002)
 
 - Gemini selects most relevant sources from filtered queries
-- Provides initial confidence assessment
-- Returns selected sources with initial confidence
+- Returns selected sources (confidence determined later by extraction)
 - **Model: gemini-2.0-flash**
 
-### Stage 3: Verification with Full Snippets (~$0.0003)
+### Stage 3: Verification (SKIPPED in Extract-Then-Verify mode)
 
-**Triggered when:** Initial confidence ≥ 0.75
+**Note:** The clone now uses `skip_verification=True` by default. Confidence is determined by actual extracted snippets, not preview-based verification. See "Extract-Then-Verify Architecture" below.
 
-**Process:**
-1. Provides full snippet text to Gemini (up to 2000 chars per source)
-2. Includes context: breadth (narrow/broad) and depth (shallow/deep)
-3. Provides today's date for recency assessment
+**Total Recall Cost:** ~$0.0002 (selection only, verification skipped)
 
-**Gemini Returns:**
-- **Confidence**: Probability (0.0-1.0) that sources can provide complete, accurate answer
-- **Ranked source indices**: Which sources to use, in priority order (skips irrelevant ones)
-- **Recommended searches**: 1-3 specific search terms to fill identified gaps
+---
 
-**Example Output:**
-```json
-{
-  "confidence": 0.85,
-  "can_answer": true,
-  "ranked_source_indices": [2, 0, 4],
-  "recommended_searches": [],
-  "reasoning": "Sources cover syntax and typing well, comprehensive for shallow/broad answer"
-}
+## Extract-Then-Verify Architecture
+
+**The Problem:** Preview-based verification could return high confidence (0.90) but extraction would find 0 snippets (false positive).
+
+**The Solution:** Extract from memory sources FIRST, then assess confidence based on actual extracted quotes.
+
+### Flow
+
+```
+Memory Recall (skip_verification=True)
+    ↓
+memory_sources = selected sources (no confidence yet)
+    ↓
+Extract from memory sources → memory_snippets (with p-scores)
+    ↓
+assess_snippet_confidence(memory_snippets, search_terms)
+    ↓
+confidence = based on actual snippet count & quality
+    ↓
+Search Decision (using real confidence)
+    ↓
+Search (if low confidence)
+    ↓
+Dedupe search results by URL (remove URLs in memory_snippets)
+    ↓
+Triage search results (existing_snippets=memory_snippets)
+    ↓
+Extract from search sources
+    ↓
+all_snippets = memory_snippets + search_snippets
+    ↓
+Synthesis
 ```
 
-**Total Recall Cost:** ~$0.0005 (all 3 stages)
+### Confidence Assessment (snippet_confidence.py)
+
+Heuristic based on actual extracted snippets:
+
+| Snippets | Avg p-score | Confidence |
+|----------|-------------|------------|
+| 0        | N/A         | 0.0        |
+| 1-2      | < 0.7       | 0.3-0.5    |
+| 3+       | ≥ 0.85      | 0.85+      |
+
+**Per-term confidence:** Each search term gets its own confidence based on snippets that match that term.
+
+### Benefits
+
+1. **No false positives** - 0 snippets = 0 confidence (impossible to claim high confidence with no data)
+2. **Accurate cost** - Extraction cost tracked separately from recall
+3. **Simple triage** - Pass `existing_snippets=memory_snippets` so triage knows what we have
+
+## URLs in Query Input
+
+The system automatically detects and handles URLs mentioned in the user's query.
+
+### URL Extraction from Prompt
+
+```python
+from the_clone.search_memory import extract_urls_from_text
+
+# Automatically extracts URLs from query
+query_urls = extract_urls_from_text(prompt)
+# ["https://census.gov/data/tables/...", "https://bls.gov/..."]
+```
+
+### How URLs in Query Are Processed
+
+```
+User Query: "What is Wyoming's population? See https://census.gov/data/..."
+    ↓
+extract_urls_from_text(prompt) → ["https://census.gov/..."]
+    ↓
+recall_by_urls(urls, required_keywords=["Wyoming"])
+    ↓
+├─> URL found in memory + passes keywords → url_sources
+├─> URL found but fails keywords → needs_fetch (Jina fetches live)
+└─> URL not in memory → not_found (Jina fetches live)
+    ↓
+url_sources passed to memory.recall() as priority sources
+    ↓
+Gemini selection sees URL sources at TOP (query_index=-1)
+    ↓
+URL sources ALWAYS included in final memory_sources
+```
+
+### Priority Handling
+
+URLs mentioned in the query receive special treatment:
+
+1. **Lookup in memory first** - Avoids redundant fetches
+2. **Keyword validation** - Ensures stored content has required entities
+3. **Jina fallback** - Fetches fresh if memory doesn't have valid content
+4. **Always included** - URL sources bypass ranking (user explicitly mentioned them)
+
+### Skip-to-Synthesis Mode
+
+When certain conditions are met, the clone can skip directly to synthesis using URL content:
+
+```python
+# In the_clone.py, skip-to-synthesis checks:
+if (initial_decision['action'] == 'answer_directly'
+    and query_urls
+    and memory):
+    # Look up URLs in memory
+    url_lookup_result = memory.recall_by_urls(
+        urls=query_urls,
+        required_keywords=skip_required_keywords
+    )
+    # If URLs found with valid content → skip search entirely
+```
+
+---
 
 ## URL-Based Recall (with Keyword Validation)
 
@@ -240,37 +334,48 @@ Based on Gemini's confidence assessment:
 
 ## Integration into the_clone.py
 
-### Modified Pipeline
+### Modified Pipeline (Extract-Then-Verify)
 
 ```
 Step 1: Initial Decision
   ↓ (generates: search_terms, keywords, breadth, depth)
 
-Step 1.5: Memory Recall [NEW]
+Step 1.5: Memory Recall + Extraction [EXTRACT-THEN-VERIFY]
   ├─> Stage 1: Keyword filter
-  ├─> Stage 2: Gemini selection
-  └─> Stage 3: Verification (if confidence ≥ 0.75)
-      - Provides full snippets
-      - Considers breadth/depth
-      - Returns: confidence, ranked sources, recommended searches
+  ├─> Stage 2: Gemini selection (skip_verification=True)
+  ├─> Extract from memory_sources → memory_snippets
+  └─> assess_snippet_confidence(memory_snippets) → confidence
   ↓
 
 Step 2: Search [MODIFIED]
   ├─> If confidence ≥ 0.85: SKIP
-  ├─> If 0.6-0.85: Use recommended searches
+  ├─> If 0.6-0.85: Supplement (low-confidence terms only)
   └─> If < 0.6: Full search
   ↓
 
-Step 2.5: Deduplication [NEW]
-  ↓ (Remove duplicate URLs between memory and search)
+Step 2.5: URL Deduplication [SIMPLIFIED]
+  ↓ (Remove search results whose URLs are already in memory_snippets)
 
-Step 3: Triage [OPTIMIZED]
-  ├─> If memory-only: SKIP (already ranked by verification)
-  └─> Else: Triage memory + search sources
+Step 3: Triage [SIMPLIFIED]
+  ├─> If memory-only: SKIP (memory_snippets already extracted)
+  └─> Else: Triage search results with existing_snippets=memory_snippets
   ↓
 
-Step 4-5: Extraction & Synthesis [UNCHANGED]
+Step 4: Extraction [MEMORY-AWARE]
+  ├─> all_snippets starts with memory_snippets
+  └─> Extract from search sources only (memory already done)
+  ↓
+
+Step 5: Synthesis
+  └─> Uses all_snippets (memory + search combined)
 ```
+
+### Key Changes from Previous Architecture
+
+1. **Memory extraction happens BEFORE confidence assessment** - No more false positives
+2. **Triage receives `existing_snippets=memory_snippets`** - Knows what we already have
+3. **Memory sources NOT added to search_results** - Clean separation
+4. **Deduplication by URL against memory_snippets** - Simple and effective
 
 ## Usage
 
@@ -523,11 +628,20 @@ await memory.store_url_content(
   - Lower max_tokens → Skipped (preserve richer data)
   - Higher max_tokens → Updated (upgrade to richer data)
 
-### 2. Memory vs Search Deduplication (Recall)
-- **Rule**: Dedupe by URL before triage
-- **Behavior**:
-  - Same URL, different dates → Keep both (content may have changed)
-  - Same URL, same/no date → Prefer search (fresher query context)
+### 2. Memory vs Search Deduplication (Extract-Then-Verify)
+- **Rule**: Remove search results whose URLs are already in `memory_snippets`
+- **When**: After search execution, before triage
+- **Logic**:
+  ```python
+  memory_urls = {s.get('_source_url') for s in memory_snippets}
+  result['results'] = [r for r in results if r.get('url') not in memory_urls]
+  ```
+- **Note**: Same URL with different search term could yield different Perplexity snippets. Current implementation prefers memory (already extracted). Future enhancement could compare snippet content.
+
+### 3. Triage Awareness
+- **Rule**: Triage receives `existing_snippets=memory_snippets`
+- **Benefit**: Triage can deprioritize search results that cover same ground as memory
+- **Logic**: Built into triage prompt - "these snippets already exist, rank new sources by unique value"
 
 ## Performance Characteristics
 
@@ -589,14 +703,28 @@ When `debug_dir` is specified, memory operations are fully logged in `FULL_LOG.m
 #### Recall Results
 - Queries After Keyword Filter: 8
 - Sources Selected: 5
-- Confidence: 0.85
-- Recall Cost: $0.0005
-- Verification: Ran with full snippets (2-stage recall)
-- Recommended Searches: []
+- Recall Cost: $0.0002
+
+#### Memory Extraction Results
+- Sources Processed: 5
+- Snippets Extracted: 8
+- Extraction Time: 1.2s
+- Extraction Cost: $0.0008
+- Provider: gemini
+- Avg Quality: 0.82
+- High Quality (p>=0.85): 5
+
+#### Snippet-Based Confidence
+- Overall Confidence: 0.85
+- Assessment Method: Snippet-based (extract-then-verify)
+- Snippets Assessed: 8
+- Term 1: "Python 3.12 features": conf=0.90, snippets=5
+- Term 2: "type hints": conf=0.80, snippets=3
+- Recommended Searches: None (all terms covered)
 
 #### Search Decision
 - Action: SKIP
-- Reasoning: High confidence (0.85) - Gemini assessed sources as complete
+- Reasoning: High confidence (0.85) - Snippet-based assessment
 </details>
 ```
 
@@ -645,16 +773,19 @@ The memory copy is recorded in `session_info.json`:
 - **RAM-based cache for parallel agents** (`MemoryCache` - zero latency, no S3 conflicts)
 - **Automatic backup check** (loads from S3 if not in cache)
 - **Single S3 write per batch** (no per-search writes)
-- 3-stage hybrid recall (keyword + 2x Gemini)
-- Context-aware verification (breadth/depth)
+- **Extract-then-verify architecture** (no false positives)
+- **Snippet-based confidence** (assessed from actual extracted quotes)
+- 2-stage recall (keyword + Gemini selection, verification skipped)
 - Intelligent source selection (skip irrelevant sources)
-- Targeted supplemental searches (Gemini recommends gaps)
+- Targeted supplemental searches (low-confidence terms only)
 - Triage skipping for memory-only queries
+- **Triage awareness** (`existing_snippets=memory_snippets`)
 - Full debug logging and cost tracking
-- Deduplication (same query + memory vs search)
+- Deduplication (URL-based against memory_snippets)
 - Proper nouns in keywords
 - Sparse negative keywords (only when needed)
 - **Direct URL content storage** (`store_url_content()`)
+- **URL extraction from prompt** (`extract_urls_from_text()`)
 - **URL-based recall with keyword validation** (`recall_by_urls(required_keywords)`)
 - **Multiple snippets per URL** (search results + table extractions)
 - **Table Maker integration** (auto-stores extracted tables)
@@ -672,21 +803,23 @@ The memory copy is recorded in `session_info.json`:
 ## Files
 
 ### New Files
-- `src/the_clone/search_memory.py` - Core memory class
-- `src/the_clone/search_memory_cache.py` - **RAM-based cache for parallel agents** (NEW)
+- `src/the_clone/search_memory.py` - Core memory class + `extract_urls_from_text()`
+- `src/the_clone/search_memory_cache.py` - **RAM-based cache for parallel agents**
+- `src/the_clone/snippet_confidence.py` - **Snippet-based confidence assessment** (extract-then-verify)
 - `src/the_clone/prompts/memory_recall.md` - Source selection prompt template
 - `src/the_clone/tests/test_memory.py` - Unit tests
 - `src/the_clone/test_memory_integration.py` - Integration test
 - `docs/SEARCH_MEMORY_SYSTEM.md` - This documentation
-- `docs/MEMORY_CACHE_INTEGRATION.md` - **RAM cache integration guide** (NEW)
+- `docs/MEMORY_CACHE_INTEGRATION.md` - RAM cache integration guide
+- `docs/EXTRACT_THEN_VERIFY_REFACTOR.md` - Extract-then-verify architecture notes
 
 ### Modified Files
-- `src/the_clone/search_memory.py` - Added `_load_from_s3_sync()`, `_store_search_no_backup()`, `_store_url_content_no_backup()` for cache support
-- `src/the_clone/the_clone.py` - Full integration (Step 1.5, search decision, triage skip, URL keyword validation) - **TODO: Migrate to MemoryCache**
+- `src/the_clone/search_memory.py` - Added `skip_verification` parameter, URL extraction
+- `src/the_clone/the_clone.py` - Extract-then-verify flow, triage with `existing_snippets`, URL deduplication
 - `src/the_clone/prompts/initial_decision.md` - Proper nouns, sparse negative keywords
 - `src/the_clone/initial_decision_schemas.py` - Negative keywords optional
-- `src/lambdas/interface/actions/table_maker/execution.py` - Stores extracted tables to agent_memory - **TODO: Migrate to MemoryCache**
-- `src/lambdas/interface/actions/copy_config.py` - Copies agent_memory.json when copying config - **TODO: Add MemoryCache.load_from_copy()**
+- `src/lambdas/interface/actions/table_maker/execution.py` - Stores extracted tables to agent_memory
+- `src/lambdas/interface/actions/copy_config.py` - Copies agent_memory.json when copying config
 
 ## Future Enhancements
 
