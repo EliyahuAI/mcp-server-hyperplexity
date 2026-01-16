@@ -51,7 +51,8 @@ class UnifiedSynthesizer:
         debug_dir: str = None,
         soft_schema: bool = False,
         clone_logger: Any = None,
-        note_to_self: str = None
+        note_to_self: str = None,
+        initial_decision: str = None
     ) -> Dict[str, Any]:
         """
         Unified evaluation + synthesis call.
@@ -87,7 +88,8 @@ class UnifiedSynthesizer:
             context=context,
             is_last_iteration=is_last_iteration,
             search_terms=search_terms,
-            note_to_self=note_to_self
+            note_to_self=note_to_self,
+            initial_decision=initial_decision
         )
 
         if clone_logger:
@@ -224,7 +226,8 @@ class UnifiedSynthesizer:
         context: str,
         is_last_iteration: bool,
         search_terms: List[str] = None,
-        note_to_self: str = None
+        note_to_self: str = None,
+        initial_decision: str = None
     ) -> str:
         """Build unified prompt."""
         from datetime import datetime
@@ -234,6 +237,24 @@ class UnifiedSynthesizer:
 
         # Format snippets grouped by search term
         formatted_snippets = self._format_snippets_by_search_term(snippets, search_terms)
+
+        # Check for source mismatch: initial decision expected sources but we have none
+        source_mismatch_warning = ""
+        if initial_decision == "need_search" and len(snippets) == 0:
+            source_mismatch_warning = """
+**⚠️ WARNING: NO SOURCES AVAILABLE**
+
+The initial decision determined that web search was needed to answer this query.
+However, NO search snippets were extracted (either memory sources were irrelevant,
+or extraction found no relevant facts).
+
+**You have two options:**
+1. **Grade yourself "B"** and provide `suggested_search_terms` to trigger a second iteration
+2. **Answer from context** if the query provides sufficient information (but note this in your assessment)
+
+If you choose option 2, be transparent in your `note_to_self` that you answered without sources.
+
+"""
 
         if is_last_iteration:
             # Synthesis mode
@@ -270,7 +291,7 @@ Query: {query}
 ## Quotes Organized by Search Term
 
 {formatted_snippets}
-
+{source_mismatch_warning}
 ## Synthesis Instructions
 
 {guidance}
@@ -382,7 +403,7 @@ Query: {query}
 ## Quotes Organized by Search Term
 
 {formatted_snippets}
-
+{source_mismatch_warning}
 ## Synthesis Instructions
 
 {guidance}

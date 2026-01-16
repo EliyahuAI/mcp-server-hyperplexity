@@ -1261,7 +1261,8 @@ class TheClone2Refined:
             search_terms=search_terms,
             debug_dir=debug_dir,
             soft_schema=False,
-            clone_logger=clone_logger
+            clone_logger=clone_logger,
+            initial_decision=decision  # Pass initial decision to detect source mismatches
         )
 
         synth_cost, synth_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}), clone_logger, stats)
