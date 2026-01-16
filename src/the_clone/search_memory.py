@@ -155,7 +155,7 @@ class SearchMemory:
         }
 
     async def _load_from_s3(self):
-        """Load memory from S3."""
+        """Load memory from S3 (async)."""
         try:
             response = await asyncio.to_thread(
                 self.s3_manager.s3_client.get_object,
@@ -167,6 +167,31 @@ class SearchMemory:
             self._memory = json.loads(memory_json)
 
             # Convert by_url dict back from JSON (was converted to list for serialization)
+            if isinstance(self._memory['indexes'].get('by_url'), dict):
+                self._memory['indexes']['by_url'] = defaultdict(
+                    list,
+                    self._memory['indexes']['by_url']
+                )
+
+        except self.s3_manager.s3_client.exceptions.NoSuchKey:
+            raise FileNotFoundError(f"Memory file not found: {self.memory_key}")
+
+    def _load_from_s3_sync(self):
+        """
+        Load memory from S3 (synchronous - for use within locks).
+
+        Used by MemoryCache to load memory while holding a lock.
+        """
+        try:
+            response = self.s3_manager.s3_client.get_object(
+                Bucket=self.s3_manager.bucket_name,
+                Key=self.memory_key
+            )
+
+            memory_json = response['Body'].read().decode('utf-8')
+            self._memory = json.loads(memory_json)
+
+            # Convert by_url dict back from JSON
             if isinstance(self._memory['indexes'].get('by_url'), dict):
                 self._memory['indexes']['by_url'] = defaultdict(
                     list,
@@ -216,6 +241,180 @@ class SearchMemory:
                 await asyncio.sleep(wait_time)
 
     # === STORAGE ===
+
+    def _store_search_no_backup(
+        self,
+        search_term: str,
+        results: Dict[str, Any],
+        parameters: Dict[str, Any],
+        strategy: str = "unknown"
+    ) -> str:
+        """
+        Store search results in memory WITHOUT backup to S3.
+
+        Used by MemoryCache for batch operations.
+        Identical to store_search() but skips the backup() call.
+
+        Returns:
+            query_id: Unique identifier for stored query
+        """
+        # Ensure memory is loaded
+        if self._memory is None:
+            self._initialize_empty_memory()
+
+        # Generate query ID
+        query_id = self._generate_query_id(search_term)
+
+        # Check if this exact query+search_term already exists
+        existing_query = self._memory['queries'].get(query_id)
+
+        if existing_query:
+            # Same query exists - check max_tokens
+            existing_max_tokens = existing_query['parameters'].get('max_tokens_per_page', 0)
+            new_max_tokens = parameters.get('max_tokens_per_page', 0)
+
+            if new_max_tokens <= existing_max_tokens:
+                # Don't overwrite richer data with poorer data
+                logger.debug(
+                    f"[MEMORY] Skipping storage - existing result has higher max_tokens "
+                    f"({existing_max_tokens} vs {new_max_tokens})"
+                )
+                return query_id
+            else:
+                logger.debug(
+                    f"[MEMORY] Updating with richer data "
+                    f"(max_tokens: {existing_max_tokens} → {new_max_tokens})"
+                )
+
+        # Store query data
+        query_data = {
+            "query_text": search_term,
+            "search_term": search_term,
+            "query_time": datetime.now(timezone.utc).isoformat(),
+            "parameters": parameters,
+            "results": results.get('results', []),
+            "metadata": {
+                "cost": 0.005,  # Perplexity Search API flat rate
+                "num_results": len(results.get('results', [])),
+                "strategy": strategy
+            }
+        }
+
+        # Add to queries
+        self._memory['queries'][query_id] = query_data
+
+        # Update time index (add to front if new, move to front if updating)
+        if query_id in self._memory['indexes']['by_time']:
+            self._memory['indexes']['by_time'].remove(query_id)
+        self._memory['indexes']['by_time'].insert(0, query_id)
+
+        # Update URL index (for deduplication tracking)
+        for result in results.get('results', []):
+            url = result.get('url')
+            if url and query_id not in self._memory['indexes']['by_url'][url]:
+                self._memory['indexes']['by_url'][url].append(query_id)
+
+        logger.debug(
+            f"[MEMORY] Stored query '{search_term}' with {len(results.get('results', []))} results (no backup)"
+        )
+
+        return query_id
+
+    def _store_url_content_no_backup(
+        self,
+        url: str,
+        content: str,
+        title: str = None,
+        source_type: str = "table_extraction",
+        metadata: Dict[str, Any] = None
+    ) -> str:
+        """
+        Store URL content in memory WITHOUT backup to S3.
+
+        Used by MemoryCache for batch operations.
+        Identical to store_url_content() but skips the backup() call.
+
+        Returns:
+            query_id: Unique identifier for stored content
+        """
+        # Ensure memory is loaded
+        if self._memory is None:
+            self._initialize_empty_memory()
+
+        # Generate query ID based on URL (not search term)
+        query_id = self._generate_url_content_id(url, source_type)
+
+        # Check if we already have content for this URL
+        existing_query = self._memory['queries'].get(query_id)
+
+        if existing_query:
+            # Compare content length - keep richer data
+            existing_content_len = len(existing_query.get('results', [{}])[0].get('snippet', ''))
+            new_content_len = len(content)
+
+            if new_content_len <= existing_content_len:
+                logger.debug(
+                    f"[MEMORY] Skipping URL content storage - existing content is richer "
+                    f"({existing_content_len} vs {new_content_len} chars)"
+                )
+                return query_id
+            else:
+                logger.debug(
+                    f"[MEMORY] Updating URL content with richer data "
+                    f"({existing_content_len} -> {new_content_len} chars)"
+                )
+
+        # Build result in search API format
+        result_entry = {
+            "url": url,
+            "title": title or f"Extracted content from {url}",
+            "snippet": content,
+            "date": datetime.now(timezone.utc).isoformat(),
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "_source_type": source_type,
+            "_is_full_content": True,  # Flag that this is complete content, not truncated
+        }
+
+        # Add any additional metadata
+        if metadata:
+            result_entry["_extraction_metadata"] = metadata
+
+        # Store as query data (compatible with existing recall system)
+        query_data = {
+            "query_text": f"[URL_CONTENT] {url}",
+            "search_term": f"[URL_CONTENT] {url}",
+            "query_time": datetime.now(timezone.utc).isoformat(),
+            "parameters": {
+                "source_type": source_type,
+                "content_length": len(content),
+                "is_url_content": True
+            },
+            "results": [result_entry],
+            "metadata": {
+                "cost": 0.0,  # No API cost for stored content
+                "num_results": 1,
+                "strategy": source_type,
+                "is_url_content": True
+            }
+        }
+
+        # Add to queries
+        self._memory['queries'][query_id] = query_data
+
+        # Update time index
+        if query_id in self._memory['indexes']['by_time']:
+            self._memory['indexes']['by_time'].remove(query_id)
+        self._memory['indexes']['by_time'].insert(0, query_id)
+
+        # Update URL index - this is critical for recall_by_urls
+        if query_id not in self._memory['indexes']['by_url'][url]:
+            self._memory['indexes']['by_url'][url].append(query_id)
+
+        logger.debug(
+            f"[MEMORY] Stored URL content: {url} ({len(content)} chars, type={source_type}, no backup)"
+        )
+
+        return query_id
 
     async def store_search(
         self,

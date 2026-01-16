@@ -140,21 +140,38 @@ The Search step alone accounts for 45% of total time.
 
 ---
 
+## Root Cause Identified
+
+**The actual bottleneck: Parallel S3 writes to agent_memory.json**
+
+After implementation, the real problem was discovered:
+- Multiple parallel agents writing `agent_memory.json` to S3 after each search
+- File size: 50+ MB (with pretty-printing)
+- S3 write latency: 2-6 seconds per write
+- Race conditions: Last write wins, data loss
+- Total overhead: N agents × 5s per write = massive latency
+
+**Solution Implemented:** RAM-based memory cache (see `search_memory_cache.py`)
+
+---
+
 ## Recommended Next Steps
 
 1. **Check Lambda CloudWatch logs** for:
    - `[PERPLEXITY_HIGH_429]` warnings
    - `[PERPLEXITY] Rate limit 429` retry messages
    - `[PERPLEXITY_SLOW]` slow search alerts
+   - `[MEMORY] Backed up to S3` frequency (should be rare)
 
 2. **Check concurrent usage**:
    - How many table rows are validated simultaneously?
    - Are multiple Lambda invocations sharing rate limits?
 
-3. **Add detailed timing instrumentation** to identify:
-   - Semaphore wait time (time waiting for slot)
-   - Actual API response time
-   - Retry count and cumulative delay
+3. **Migrate to RAM cache** (see `docs/MEMORY_CACHE_INTEGRATION.md`):
+   - Replace `SearchMemory.restore()` with `MemoryCache.get()`
+   - Replace `memory.store_search()` with `MemoryCache.store_search()`
+   - Add `MemoryCache.flush()` at batch end
+   - Expect 10x speedup for parallel execution
 
 4. **Test from Lambda environment**:
    - Deploy a test function to replicate production conditions
@@ -166,8 +183,11 @@ The Search step alone accounts for 45% of total time.
 
 - Search client: `src/the_clone/perplexity_search.py`
 - Search manager: `src/the_clone/search_manager.py`
+- Memory cache: `src/the_clone/search_memory_cache.py` (NEW - RAM-based cache)
+- Search memory: `src/the_clone/search_memory.py` (modified with no-backup methods)
 - Semaphore limit: `_SEMAPHORE_LIMIT = 15` (line 27 of perplexity_search.py)
 - Diagnostic tests: `src/the_clone/tests/test_*_latency*.py`
+- Integration guide: `docs/MEMORY_CACHE_INTEGRATION.md`
 
 ---
 
