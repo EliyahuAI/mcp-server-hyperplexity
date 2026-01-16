@@ -141,7 +141,7 @@ def _process_files(excel_file, config_file, email_address, params, context):
     try:
         logger.info(f"Using shared_table_parser to get accurate row count from s3://{S3_CACHE_BUCKET}/{excel_s3_key}")
         table_parser = S3TableParser()
-        parsed_data = table_parser.parse_s3_table(S3_CACHE_BUCKET, excel_s3_key)
+        parsed_data = table_parser.parse_s3_table(S3_CACHE_BUCKET, excel_s3_key, extract_history=True)
         total_rows = parsed_data['total_rows']
         logger.info(f"Accurate row count from shared_table_parser: {total_rows}")
     except Exception as e:

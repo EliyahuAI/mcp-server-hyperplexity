@@ -430,7 +430,8 @@ async def handle_generate_config_unified(event_data, websocket_callback=None, ta
                         full_table_data = s3_table_parser.parse_s3_table(
                             storage_manager.bucket_name,
                             excel_s3_key,
-                            extract_formulas=True
+                            extract_formulas=True,
+                            extract_history=True
                         )
 
                         if full_table_data.get('formulas'):

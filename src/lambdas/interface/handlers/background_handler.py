@@ -4456,6 +4456,7 @@ def handle_main_processing(event, context):
                             storage_manager.bucket_name,
                             actual_excel_s3_key,
                             extract_formulas=True,
+                            extract_history=True,
                             id_fields=id_fields if id_fields else None
                         )
                         logger.debug(f"[TABLE_PARSE] Parsed table data with {len(id_fields)} ID fields, generated row keys for {len(table_data.get('data', []))} rows")

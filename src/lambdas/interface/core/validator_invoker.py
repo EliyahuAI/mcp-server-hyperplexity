@@ -321,7 +321,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
         # Parse table with ID fields to get rows with correct row keys
         logger.info(f"Using shared_table_parser with id_fields to parse table")
         table_parser = S3TableParser()
-        parsed_data = table_parser.parse_s3_table(S3_CACHE_BUCKET, excel_s3_key, id_fields=id_fields)
+        parsed_data = table_parser.parse_s3_table(S3_CACHE_BUCKET, excel_s3_key, id_fields=id_fields, extract_history=True)
         accurate_total_rows = parsed_data['total_rows']
         logger.info(f"Accurate row count from shared_table_parser: {accurate_total_rows}")
 

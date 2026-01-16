@@ -223,7 +223,7 @@ class S3TableParser:
             # CRITICAL: Check for cached parsed JSON first to ensure row key consistency
             # This prevents regenerating row keys with different id_fields
             parsed_cache_key = self._get_parsed_cache_key(key)
-            cached_result = self._try_load_parsed_cache(bucket, parsed_cache_key, id_fields)
+            cached_result = self._try_load_parsed_cache(bucket, parsed_cache_key, id_fields, extract_history)
             if cached_result:
                 self.logger.info(f"[SUCCESS] Using cached parsed table from {parsed_cache_key}")
                 return cached_result
@@ -321,7 +321,7 @@ class S3TableParser:
 
             # Save parsed JSON to cache for future use
             # This ensures row keys are never regenerated with different id_fields
-            self._save_parsed_cache(bucket, parsed_cache_key, result, id_fields)
+            self._save_parsed_cache(bucket, parsed_cache_key, result, id_fields, extract_history)
 
             return result
 
@@ -358,7 +358,7 @@ class S3TableParser:
 
         return cache_key
 
-    def _try_load_parsed_cache(self, bucket: str, cache_key: str, id_fields: Optional[List[str]]) -> Optional[Dict]:
+    def _try_load_parsed_cache(self, bucket: str, cache_key: str, id_fields: Optional[List[str]], extract_history: bool = False) -> Optional[Dict]:
         """
         Attempt to load cached parsed JSON from S3.
 
@@ -366,6 +366,7 @@ class S3TableParser:
             bucket: S3 bucket name
             cache_key: Cache key (with _parsed.json suffix)
             id_fields: ID fields that should match the cache
+            extract_history: Whether history extraction was requested
 
         Returns:
             Cached parsed data if valid, None otherwise
@@ -432,9 +433,22 @@ class S3TableParser:
                     self.logger.warning(f"[CACHE_SKIP] Cache missing _row_key despite having id_fields")
                     return None
 
+            # Validate that extract_history matches - if history is requested but cache doesn't have it, skip
+            if extract_history:
+                cached_has_history = cached_data.get('metadata', {}).get('has_history', False)
+                if not cached_has_history:
+                    # Check if any row actually has _history (for backward compatibility)
+                    has_history_data = any('_history' in row for row in cached_data.get('data', [])[:5])
+                    if not has_history_data:
+                        self.logger.info(
+                            f"[CACHE_SKIP] History extraction requested but cache has no history data. "
+                            f"Re-parsing to extract history."
+                        )
+                        return None
+
             self.logger.info(
                 f"[CACHE_HIT] Loaded cached parsed table with {len(cached_data.get('data', []))} rows "
-                f"and id_fields={id_fields}"
+                f"and id_fields={id_fields}, has_history={extract_history}"
             )
             return cached_data
 
@@ -449,7 +463,7 @@ class S3TableParser:
             self.logger.warning(f"[CACHE_ERROR] Failed to load/validate cache: {str(e)}")
             return None
 
-    def _save_parsed_cache(self, bucket: str, cache_key: str, parsed_data: Dict, id_fields: Optional[List[str]]) -> None:
+    def _save_parsed_cache(self, bucket: str, cache_key: str, parsed_data: Dict, id_fields: Optional[List[str]], extract_history: bool = False) -> None:
         """
         Save parsed JSON to S3 cache for future use.
 
@@ -458,12 +472,16 @@ class S3TableParser:
             cache_key: Cache key (with _parsed.json suffix)
             parsed_data: Parsed table data to cache
             id_fields: ID fields used for row key generation
+            extract_history: Whether history extraction was performed
         """
         try:
-            # Add id_fields to metadata for validation on cache load
+            # Add id_fields and extract_history to metadata for validation on cache load
             if 'metadata' not in parsed_data:
                 parsed_data['metadata'] = {}
             parsed_data['metadata']['id_fields'] = id_fields
+            # Check if any row has _history to determine if history was actually extracted
+            has_history = any('_history' in row for row in parsed_data.get('data', [])[:10])
+            parsed_data['metadata']['has_history'] = has_history
 
             # Serialize to JSON
             cache_content = json.dumps(parsed_data, indent=2, ensure_ascii=False)
@@ -478,7 +496,7 @@ class S3TableParser:
 
             self.logger.info(
                 f"[CACHE_SAVE] Saved parsed table cache to s3://{bucket}/{cache_key} "
-                f"with {len(parsed_data.get('data', []))} rows and id_fields={id_fields}"
+                f"with {len(parsed_data.get('data', []))} rows, id_fields={id_fields}, has_history={has_history}"
             )
 
         except Exception as e:
@@ -1109,7 +1127,7 @@ class S3TableParser:
     def get_table_sample(self, bucket: str, key: str, max_rows: int = 10) -> Dict[str, Any]:
         """Get a sample of the table data without loading the entire file"""
         try:
-            full_data = self.parse_s3_table(bucket, key)
+            full_data = self.parse_s3_table(bucket, key, extract_history=True)
             
             # Return sample
             sample_data = full_data['data'][:max_rows]
@@ -1135,7 +1153,7 @@ class S3TableParser:
 
             if should_extract_formulas:
                 # Use full parse with formula extraction for Excel files
-                full_data = self.parse_s3_table(bucket, key, extract_formulas=True)
+                full_data = self.parse_s3_table(bucket, key, extract_formulas=True, extract_history=True)
                 sample = {
                     'filename': full_data['filename'],
                     'total_rows': full_data['total_rows'],
@@ -1894,7 +1912,7 @@ class S3TableParser:
             if not parsed_data:
                 self.logger.info(f"No parsed_data provided, parsing file with id_fields={id_fields}")
                 # Parse with id_fields to ensure consistent row key generation
-                parsed_data = self.parse_s3_table(bucket, key, sheet_name="Updated Values", id_fields=id_fields)
+                parsed_data = self.parse_s3_table(bucket, key, sheet_name="Updated Values", id_fields=id_fields, extract_history=True)
 
             # Extract row keys from parsed data
             parsed_rows = parsed_data.get('data', [])
