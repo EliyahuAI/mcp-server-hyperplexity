@@ -1,7 +1,9 @@
 
 import json
 import logging
+import asyncio
 import aiohttp
+import os
 from datetime import datetime
 from typing import Dict, Any, Optional
 from google.auth.transport.requests import Request
@@ -12,7 +14,49 @@ from ..config import get_model_timeout, get_timeout_tier
 
 logger = logging.getLogger(__name__)
 
+# Per-model semaphores (each Gemini model variant has its own rate limit quota)
+_gemini_semaphores: Dict[str, asyncio.Semaphore] = {}
+_gemini_default_max_concurrent: int = 5  # Default max concurrent calls per model
+
+# Rationale for default of 5 per model:
+# - Vertex AI Gemini standard tier: ~60 RPM per model (1 req/sec sustained)
+# - Each model variant (2.0-flash, 2.5-flash-lite, 2.5-flash) has separate quota
+# - With batch extraction enabled, typical usage is 1-2 calls per iteration
+# - Findall mode runs up to 5 parallel batch calls (one per search term)
+# - Setting to 5 allows findall to run without queuing while preventing bursts
+# - Can be configured per-model via env vars: GEMINI_MAX_CONCURRENT_2_0_FLASH=10
+
+
+def get_gemini_semaphore(model: str) -> asyncio.Semaphore:
+    """
+    Get or create a semaphore for a specific Gemini model.
+
+    Each model has its own semaphore because Vertex AI rate limits are per-model.
+    This allows us to maximize throughput when using multiple model variants.
+    """
+    global _gemini_semaphores, _gemini_default_max_concurrent
+
+    # Normalize model name for env var lookup (e.g., "gemini-2.0-flash" -> "2_0_FLASH")
+    model_suffix = model.replace('gemini-', '').replace('.', '_').replace('-', '_').upper()
+    env_var = f'GEMINI_MAX_CONCURRENT_{model_suffix}'
+
+    if model not in _gemini_semaphores:
+        # Check for model-specific env var, fall back to default
+        max_concurrent = int(os.environ.get(env_var,
+                            os.environ.get('GEMINI_MAX_CONCURRENT', _gemini_default_max_concurrent)))
+        _gemini_semaphores[model] = asyncio.Semaphore(max_concurrent)
+        logger.info(f"[GEMINI_RATE_LIMIT] Initialized semaphore for {model} with max_concurrent={max_concurrent}")
+
+    return _gemini_semaphores[model]
+
+
 class GeminiProvider:
+    # Rate limit retry configuration
+    # Only retry twice before letting ai_client try backup models in the chain
+    RATE_LIMIT_MAX_RETRIES = 2
+    RATE_LIMIT_BASE_DELAY = 1.0  # seconds
+    RATE_LIMIT_MAX_DELAY = 8.0  # seconds (reduced since we retry less)
+
     def __init__(self, project_id: str, location: str, cache_handler, usage_handler, ai_client=None):
         self.project_id = project_id
         self.location = location or 'us-central1'  # Default to us-central1 for Gemini
@@ -22,8 +66,6 @@ class GeminiProvider:
 
     async def _get_access_token(self) -> str:
         """Get OAuth2 access token for Vertex AI using service account credentials."""
-        import os
-
         # Get credentials file path from environment
         creds_file = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
         if not creds_file:
@@ -512,6 +554,9 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
         timeout_seconds = get_model_timeout(model, timeout_override)
         logger.debug(f"[GEMINI] Using timeout {get_timeout_tier(model)} for {model}{' (override)' if timeout_override else ''}")
 
+        # Get per-model semaphore for concurrency control
+        semaphore = get_gemini_semaphore(model)
+
         try:
             access_token = await self._get_access_token()
             url = f"https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{model}:generateContent"
@@ -520,17 +565,36 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
                 'Content-Type': 'application/json'
             }
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=request_body, timeout=aiohttp.ClientTimeout(total=timeout_seconds)) as response:
-                    processing_time = (datetime.now() - start_time).total_seconds()
-                    response_text = await response.text()
+            # Retry loop with exponential backoff for rate limits
+            last_error = None
+            for attempt in range(self.RATE_LIMIT_MAX_RETRIES + 1):
+                async with semaphore:  # Limit concurrent Gemini calls
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(url, headers=headers, json=request_body, timeout=aiohttp.ClientTimeout(total=timeout_seconds)) as response:
+                            processing_time = (datetime.now() - start_time).total_seconds()
+                            response_text = await response.text()
 
-                    if response.status == 200:
-                        response_json = json.loads(response_text)
-                    else:
-                        error = Exception(f"Gemini API status {response.status}: {response_text}")
-                        await self.cache_handler.save_debug_data('gemini', model, debug_request, response_text, error=error, context=f"status_{response.status}", cache_key=cache_key)
-                        raise error
+                            if response.status == 200:
+                                response_json = json.loads(response_text)
+                                break  # Success - exit retry loop
+                            elif response.status == 429 or 'RESOURCE_EXHAUSTED' in response_text or 'quota' in response_text.lower():
+                                # Rate limited - apply exponential backoff
+                                delay = min(self.RATE_LIMIT_BASE_DELAY * (2 ** attempt), self.RATE_LIMIT_MAX_DELAY)
+                                logger.warning(f"[GEMINI_RATE_LIMIT] 429 on attempt {attempt + 1}/{self.RATE_LIMIT_MAX_RETRIES + 1}, backing off {delay:.1f}s")
+                                last_error = Exception(f"Gemini API rate limited (429): {response_text[:200]}")
+
+                                if attempt < self.RATE_LIMIT_MAX_RETRIES:
+                                    await asyncio.sleep(delay)
+                                    continue  # Retry
+                                else:
+                                    # Max retries exhausted - raise to trigger backup model
+                                    await self.cache_handler.save_debug_data('gemini', model, debug_request, response_text, error=last_error, context="rate_limit_exhausted", cache_key=cache_key)
+                                    raise last_error
+                            else:
+                                # Other error - don't retry
+                                error = Exception(f"Gemini API status {response.status}: {response_text}")
+                                await self.cache_handler.save_debug_data('gemini', model, debug_request, response_text, error=error, context=f"status_{response.status}", cache_key=cache_key)
+                                raise error
 
             # Normalize response
             unified_response = await self._normalize_gemini_response(response_json, soft_schema, schema, model)

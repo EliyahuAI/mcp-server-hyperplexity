@@ -24,7 +24,7 @@
       "min_p_threshold": 0.50,
       "stop_condition": null,
       "max_tokens_per_page": 2048,
-      "batch_extraction": false
+      "batch_extraction": true
     },
     "survey": {
       "description": "Broad breadth + Shallow depth: List/enumerate many aspects",
@@ -48,7 +48,7 @@
       "min_p_threshold": 0.50,
       "stop_condition": null,
       "max_tokens_per_page": 2048,
-      "batch_extraction": false
+      "batch_extraction": true
     },
     "findall_breadth": {
       "description": "Maximum breadth: Up to 5 searches × 20 results, batch extraction",
@@ -92,7 +92,7 @@
   "providers": {
     "deepseek": {
       "description": "Default provider using Gemini 2.0 Flash for extraction, DeepSeek for synthesis",
-      "default_extraction_model": "gemini-2.0-flash",
+      "default_extraction_model": "gemini-2.5-flash-lite",
       "tiers": {
         "tier1": {
           "synthesis": "deepseek-v3.2",
@@ -118,7 +118,7 @@
     },
     "claude": {
       "description": "Gemini extraction + Claude synthesis for speed and reliability",
-      "default_extraction_model": "gemini-2.0-flash",
+      "default_extraction_model": "gemini-2.5-flash-lite",
       "tiers": {
         "tier1": {
           "synthesis": "claude-haiku-4-5",
@@ -144,7 +144,7 @@
     },
     "baseten": {
       "description": "Gemini extraction + Baseten DeepSeek synthesis for speed",
-      "default_extraction_model": "gemini-2.0-flash",
+      "default_extraction_model": "gemini-2.5-flash-lite",
       "tiers": {
         "tier1": {
           "synthesis": "deepseek-v3.2-baseten",
