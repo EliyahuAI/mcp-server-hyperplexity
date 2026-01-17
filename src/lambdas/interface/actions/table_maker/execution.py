@@ -140,14 +140,14 @@ from .config_bridge import build_table_analysis_from_conversation
 from ..generate_config_unified import handle_generate_config_unified
 from .table_maker_lib.config_generator import ConfigGenerator
 
-# Import SearchMemory for storing extracted tables to agent_memory
+# Import MemoryCache for storing extracted tables to agent_memory (RAM-based, flushed at batch end)
 try:
-    from the_clone.search_memory import SearchMemory
+    from the_clone.search_memory_cache import MemoryCache
     SEARCH_MEMORY_AVAILABLE = True
 except ImportError:
     SEARCH_MEMORY_AVAILABLE = False
     logger = logging.getLogger()
-    logger.warning("[EXECUTION] SearchMemory not available - extracted tables won't be stored to agent_memory")
+    logger.warning("[EXECUTION] MemoryCache not available - extracted tables won't be stored to agent_memory")
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -1078,9 +1078,12 @@ async def execute_full_table_generation(
 
                         # CRITICAL: Store extracted tables to agent_memory for validation
                         # This makes the full table content available when validation looks up source URLs
+                        # Uses MemoryCache for RAM-based storage (flushed to S3 at batch end)
                         if SEARCH_MEMORY_AVAILABLE and extracted_tables:
                             try:
-                                memory = SearchMemory(ai_client=ai_client)
+                                # First ensure memory is loaded into cache (loads from S3 if not cached)
+                                MemoryCache.get(session_id, email, storage_manager, ai_client)
+
                                 tables_stored = 0
 
                                 for table_data in extracted_tables:
@@ -1089,8 +1092,9 @@ async def execute_full_table_generation(
                                     table_name = table_data.get('table_name', 'Extracted Table')
 
                                     if source_url and markdown_table:
-                                        # Store the markdown table content with metadata
-                                        await memory.store_url_content(
+                                        # Store the markdown table content with metadata (RAM only, no S3 write)
+                                        MemoryCache.store_url_content(
+                                            session_id=session_id,
                                             url=source_url,
                                             content=markdown_table,
                                             title=table_name,
@@ -1108,7 +1112,8 @@ async def execute_full_table_generation(
                                         # Also store for each source_url in source_urls (multi-source extractions)
                                         for alt_url in table_data.get('source_urls', []):
                                             if alt_url and alt_url != source_url:
-                                                await memory.store_url_content(
+                                                MemoryCache.store_url_content(
+                                                    session_id=session_id,
                                                     url=alt_url,
                                                     content=markdown_table,
                                                     title=f"{table_name} (via {alt_url})",
@@ -1122,7 +1127,7 @@ async def execute_full_table_generation(
 
                                 logger.info(
                                     f"[STEP 0b] Stored {tables_stored} extracted tables to agent_memory "
-                                    f"(for validation URL lookup)"
+                                    f"(RAM cache, will flush at batch end)"
                                 )
                             except Exception as mem_error:
                                 logger.warning(
@@ -2536,9 +2541,27 @@ async def execute_full_table_generation(
         result['success'] = True
         logger.info(f"[EXECUTION] Pipeline complete: {len(approved_rows)} rows")
 
+        # Flush memory cache to S3 at batch end (single write for all stored tables)
+        if SEARCH_MEMORY_AVAILABLE:
+            try:
+                if MemoryCache.is_dirty(session_id):
+                    await MemoryCache.flush(session_id)
+                    logger.info("[EXECUTION] Memory cache flushed to S3")
+            except Exception as mem_error:
+                logger.warning(f"[EXECUTION] Failed to flush memory cache (non-fatal): {mem_error}")
+
         return result
 
     except Exception as e:
         result['error'] = f"Execution pipeline error: {str(e)}"
         logger.error(f"[EXECUTION] {result['error']}", exc_info=True)
+
+        # Try to flush memory even on error
+        if SEARCH_MEMORY_AVAILABLE:
+            try:
+                if MemoryCache.is_dirty(session_id):
+                    await MemoryCache.flush(session_id)
+            except:
+                pass  # Silently ignore flush errors on exception path
+
         return result

@@ -262,9 +262,12 @@ class TheClone2Refined:
             # Get required_keywords for URL validation (from initial decision)
             skip_required_keywords = initial_result.get('required_keywords', [])
 
-            if query_urls and use_memory:
+            if query_urls and use_memory and session_id and email and s3_manager:
                 logger.debug(f"[CLONE] Skip-to-synthesis: Found {len(query_urls)} URLs in query")
-                memory = SearchMemory(ai_client=self.ai_client)
+
+                # Use MemoryCache for shared memory access (loads from S3 if not cached)
+                from the_clone.search_memory_cache import MemoryCache
+                memory = MemoryCache.get(session_id, email, s3_manager, self.ai_client)
 
                 # Look up URLs in memory with keyword validation
                 url_lookup_result = memory.recall_by_urls(
@@ -537,13 +540,9 @@ class TheClone2Refined:
                 clone_logger.start_step("Memory Recall")
 
             try:
-                # Restore/initialize memory
-                memory = await SearchMemory.restore(
-                    session_id=session_id,
-                    email=email,
-                    s3_manager=s3_manager,
-                    ai_client=self.ai_client
-                )
+                # Use MemoryCache for shared memory access (single S3 load, shared across agents)
+                from the_clone.search_memory_cache import MemoryCache
+                memory = MemoryCache.get(session_id, email, s3_manager, self.ai_client)
 
                 # Log memory statistics
                 mem_stats = memory.get_stats()
@@ -986,18 +985,20 @@ class TheClone2Refined:
                 clone_logger.record_step_metric("Search", "perplexity", "Search API", search_cost, step_time_phase, f"{len(search_terms)} queries, {total_results} results")
                 clone_logger.end_step("Search Execution")
 
-            # Store search results in memory
+            # Store search results in memory (RAM only, flushed at batch end)
             if use_memory and session_id and email and s3_manager:
                 try:
+                    from the_clone.search_memory_cache import MemoryCache
                     for term, result in zip(search_terms, search_results):
                         if not isinstance(result, Exception):
-                            await memory.store_search(
+                            MemoryCache.store_search(
+                                session_id=session_id,
                                 search_term=term,
                                 results=result,
                                 parameters=search_settings,
                                 strategy=strategy['name']
                             )
-                    logger.debug(f"[MEMORY] Stored {len(search_terms)} searches")
+                    logger.debug(f"[MEMORY] Stored {len(search_terms)} searches (RAM cache)")
                 except Exception as e:
                     logger.warning(f"[MEMORY] Failed to store searches: {e}")
         else:
