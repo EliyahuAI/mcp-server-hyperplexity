@@ -133,7 +133,33 @@ class SearchMemory:
 
         try:
             await instance._load_from_s3()
-            logger.debug(f"[MEMORY] Restored {len(instance._memory['queries'])} queries from S3")
+
+            # Enhanced logging: show query count, URL count, and recent timestamps
+            queries = instance._memory.get('queries', {})
+            by_url = instance._memory.get('indexes', {}).get('by_url', {})
+            query_count = len(queries)
+            url_count = len(by_url)
+
+            # Get the 5 most recent query timestamps
+            recent_times = []
+            for qid, qdata in queries.items():
+                query_time = qdata.get('query_time')
+                if query_time:
+                    recent_times.append((query_time, qdata.get('search_term', 'unknown')[:50]))
+            recent_times.sort(reverse=True)
+            recent_times = recent_times[:5]
+
+            logger.info(f"[MEMORY] Restored from S3: {query_count} queries, {url_count} unique URLs indexed")
+            if recent_times:
+                logger.info(f"[MEMORY] Most recent queries:")
+                for qt, term in recent_times:
+                    logger.info(f"[MEMORY]   - {qt}: '{term}'")
+
+            # Log sample of URLs in index (first 5)
+            if by_url:
+                sample_urls = list(by_url.keys())[:5]
+                logger.info(f"[MEMORY] Sample URLs in index: {sample_urls}")
+
         except Exception as e:
             logger.debug(f"[MEMORY] No existing memory found, initializing empty: {e}")
             instance._initialize_empty_memory()
@@ -1946,7 +1972,13 @@ Return JSON:
                         "_from_url_lookup": True,
                         "_fetch_method": "jina_reader",
                         "_memory_relevance": 10.0,  # High relevance - user explicitly mentioned
-                        "_content_length": len(markdown)
+                        "_content_length": len(markdown),
+
+                        # Fields for consistency with memory sources (used by debug logging)
+                        "_original_query": "[Live Fetch]",
+                        "_query_date": datetime.now(timezone.utc).isoformat(),
+                        "_memory_age_days": 0,
+                        "_freshness_indicator": "live"
                     }
 
                     fetched_sources.append(source)

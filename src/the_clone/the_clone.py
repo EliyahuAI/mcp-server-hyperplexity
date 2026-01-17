@@ -865,12 +865,18 @@ class TheClone2Refined:
                     sources_preview = []
                     for i, src in enumerate(memory_sources[:5], 1):  # Show first 5
                         snippet_preview = src.get('snippet', '')[:80] if src.get('snippet') else '[EMPTY]'
+                        title = src.get('title', 'Unknown')[:60]
+                        url = src.get('url', 'Unknown')
+                        original_query = src.get('_original_query', '[Live Fetch]')
+                        age_days = src.get('_memory_age_days', 0)
+                        freshness = src.get('_freshness_indicator', 'live')
+                        relevance = src.get('_memory_relevance', 0.0)
                         sources_preview.append(
-                            f"{i}. **{src['title'][:60]}...**\n"
-                            f"   - URL: {src['url']}\n"
-                            f"   - Original Query: \"{src['_original_query']}\"\n"
-                            f"   - Age: {src['_memory_age_days']} days ({src['_freshness_indicator']})\n"
-                            f"   - Relevance: {src['_memory_relevance']:.1f}\n"
+                            f"{i}. **{title}...**\n"
+                            f"   - URL: {url}\n"
+                            f"   - Original Query: \"{original_query}\"\n"
+                            f"   - Age: {age_days} days ({freshness})\n"
+                            f"   - Relevance: {relevance:.1f}\n"
                             f"   - Snippet: {snippet_preview}"
                         )
                     if len(memory_sources) > 5:
