@@ -346,6 +346,9 @@ class UploadInterviewHandler:
             for i, row in enumerate(sample_rows[:3], 1):
                 parts.append(f"\nRow {i}:")
                 for col, value in row.items():
+                    # Skip internal metadata fields (e.g., _row_key, _history)
+                    if col.startswith('_'):
+                        continue
                     # Truncate long values
                     value_str = str(value)[:100]
                     if len(str(value)) > 100:

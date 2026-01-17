@@ -205,7 +205,8 @@ class RowExpander:
                 errors.append(f"Row {idx + 1} is not a dictionary")
                 continue
 
-            row_columns = set(row.keys())
+            # Exclude internal metadata fields (e.g., _row_key, _history)
+            row_columns = set(k for k in row.keys() if not k.startswith('_'))
 
             # Check for missing columns
             missing = expected_columns - row_columns
