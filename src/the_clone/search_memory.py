@@ -2178,10 +2178,14 @@ Return JSON:
         """
         Find citations where required keywords match citation-specific content.
 
-        Match criteria: All required keywords appear somewhere in:
+        Match criteria: All required keyword GROUPS appear somewhere in:
         - citation quote (the actual extracted text)
         - citation context (verbal handle)
         - hit_keywords (keywords captured at extraction time)
+
+        Supports | pattern for OR variants:
+        - "MSFT|Microsoft" matches if either "MSFT" OR "Microsoft" is found
+        - All keyword groups must match (AND between groups, OR within groups)
 
         NOTE: We do NOT include source-level search_term in matching because
         it's shared across all citations for a URL and would cause false matches.
@@ -2190,7 +2194,7 @@ Return JSON:
         Args:
             citations: List of stored citations
             query_data: Stored query data (unused for matching, kept for API compat)
-            required_keywords: Current query's required/mandatory keywords
+            required_keywords: Current query's required/mandatory keyword groups
         """
         if not required_keywords:
             # Return all citations if no keywords specified
@@ -2206,8 +2210,16 @@ Return JSON:
                 " ".join(citation.get("hit_keywords", []))
             ]).lower()
 
-            # All required keywords must appear somewhere in searchable text
-            if all(kw.lower() in searchable for kw in required_keywords):
+            # All required keyword groups must match (AND between groups)
+            all_groups_match = True
+            for keyword_group in required_keywords:
+                # Split by | for OR variants within group
+                variants = [v.strip().lower() for v in keyword_group.split('|')]
+                if not any(variant in searchable for variant in variants):
+                    all_groups_match = False
+                    break
+
+            if all_groups_match:
                 matching.append(citation)
 
         return matching
@@ -2301,21 +2313,31 @@ Return JSON:
         Stores ALL keywords that are found (required + positive + any others).
         This provides rich metadata for recall matching and debugging.
 
+        Supports | pattern for OR variants:
+        - "MSFT|Microsoft" matches if either "MSFT" OR "Microsoft" is found
+        - The full keyword group (e.g., "MSFT|Microsoft") is stored as the hit
+
         Args:
             citation: The extracted citation with quote and context
             all_keywords: All keywords to check (required + positive combined)
 
         Returns:
-            List of keywords that were found in the citation
+            List of keyword groups that were found in the citation
         """
         citation_text = f"{citation.get('quote', '')} {citation.get('context', '')}".lower()
 
         hit = []
         for kw in all_keywords:
-            # Check keyword and common variants
-            variants = SearchMemory._get_keyword_variants(kw)
-            if any(v.lower() in citation_text for v in variants):
-                hit.append(kw)
+            # Split by | for OR variants within keyword group
+            variants = [v.strip().lower() for v in kw.split('|')]
+            # Also add any additional variants (like state abbreviations)
+            all_variants = []
+            for v in variants:
+                all_variants.append(v)
+                all_variants.extend([x.lower() for x in SearchMemory._get_keyword_variants(v) if x.lower() != v])
+
+            if any(variant in citation_text for variant in all_variants):
+                hit.append(kw)  # Store the full keyword group
 
         return hit
 
