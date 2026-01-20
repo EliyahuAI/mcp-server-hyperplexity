@@ -634,20 +634,32 @@ class SnippetExtractorStreamlined:
                 if not isinstance(quotes, list):
                     continue
 
+                # Pre-process quotes to extract source_id and code for neighbor lookup
+                parsed_quotes = []
                 for quote_array in quotes:
                     if not isinstance(quote_array, list) or len(quote_array) < 2:
                         continue
-
                     detail_limitation = quote_array[0]
                     code = quote_array[1]
-
-                    # Extract source_id from code prefix (§S1:1.2 -> S1)
                     source_id = None
                     code_without_prefix = code
                     if ':' in code:
                         prefix_part, code_part = code.split(':', 1)
                         source_id = prefix_part.lstrip('§`')
                         code_without_prefix = '§' + code_part.lstrip('§')
+                    parsed_quotes.append({
+                        'detail_limitation': detail_limitation,
+                        'code': code,
+                        'source_id': source_id,
+                        'code_without_prefix': code_without_prefix
+                    })
+
+                # Process each quote with neighbor context
+                for idx, pq in enumerate(parsed_quotes):
+                    detail_limitation = pq['detail_limitation']
+                    code = pq['code']
+                    source_id = pq['source_id']
+                    code_without_prefix = pq['code_without_prefix']
 
                     if not source_id:
                         logger.warning(f"[BATCH EXTRACTOR] Code '{code}' missing source prefix, skipping")
@@ -701,7 +713,21 @@ class SnippetExtractorStreamlined:
                     # Resolve code to text
                     quote_text = resolver.resolve(code_without_prefix)
                     if not quote_text:
-                        logger.warning(f"[BATCH EXTRACTOR] Code not found: '{code_without_prefix}' doesn't exist in {source_id}, skipping")
+                        # Find neighboring quotes from same source for context
+                        prev_code = next_code = None
+                        for i in range(idx - 1, -1, -1):
+                            if parsed_quotes[i]['source_id'] == source_id:
+                                prev_code = parsed_quotes[i]['code_without_prefix']
+                                break
+                        for i in range(idx + 1, len(parsed_quotes)):
+                            if parsed_quotes[i]['source_id'] == source_id:
+                                next_code = parsed_quotes[i]['code_without_prefix']
+                                break
+
+                        bounds_info = ""
+                        if prev_code or next_code:
+                            bounds_info = f" (neighbors: {prev_code or '?'} < ? < {next_code or '?'})"
+                        logger.warning(f"[BATCH EXTRACTOR] Code not found: '{code_without_prefix}' doesn't exist in {source_id}{bounds_info}, skipping")
                         continue
 
                     # Filter by dynamic effective threshold

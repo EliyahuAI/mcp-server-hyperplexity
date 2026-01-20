@@ -161,5 +161,6 @@ Max 25 chars. Must be unique within source (append _2, _3 if needed).
 - Each quote: `[detail_limitation, code]` ← **HANDLE FIRST, then code**
 - Source is identified by code prefix (§S1:1.1 → S1)
 - **Max {max_snippets} per source per search term**
+- **ORDERING: List quotes sequentially by source (all S1, then all S2, then S3...), and within each source by code order (1.1, 1.2, 2.1...)**
 
 Return empty `{{}}` if nothing clear.
