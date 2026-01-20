@@ -5972,6 +5972,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
         }
     finally:
+        # Flush memory cache to S3 at end of validation batch
+        # This persists any searches done during validation for future use
+        try:
+            from the_clone.search_memory_cache import MemoryCache
+            if session_id and MemoryCache.is_cached(session_id) and MemoryCache.is_dirty(session_id):
+                MemoryCache.flush_sync(session_id)
+                logger.info(f"[MEMORY_CACHE] Flushed memory for session {session_id} at end of validation")
+        except Exception as mem_error:
+            logger.warning(f"[MEMORY_CACHE] Failed to flush memory at end of validation: {mem_error}")
+
         if progress_thread:
             if progress_queue:
                 progress_queue.put(None)
