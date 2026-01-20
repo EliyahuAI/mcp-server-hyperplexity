@@ -680,10 +680,11 @@ class TheClone2Refined:
                                     # We have pre-extracted citations - convert to snippet format
                                     recalled_citations = citation_result.get('citations', [])
                                     for i, citation in enumerate(recalled_citations):
+                                        p_score = citation.get('p_score', 0.8)
                                         snippet = {
-                                            'id': f'SC.{citation_recall_count + 1}.{i + 1}',  # SC = Snippet from Citation
+                                            'id': f'SC.{citation_recall_count + 1}.{i + 1}-p{p_score:.2f}',  # SC = Snippet from Citation
                                             'text': citation.get('quote', ''),
-                                            'p': citation.get('p_score', 0.8),
+                                            'p': p_score,
                                             'c': 'H/S',  # High reliability, stored citation
                                             'verbal_handle': citation.get('context', source.get('title', '')),
                                             'validation_reason': f"Recalled from citation store (keywords: {citation.get('hit_keywords', [])})",
