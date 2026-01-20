@@ -662,6 +662,9 @@ class TheClone2Refined:
                     sources_needing_extraction = []
                     from the_clone.search_memory_cache import MemoryCache
 
+                    # Track citation recall results for debug logging
+                    citation_recall_details = []
+
                     for source in memory_sources:
                         source_url = source.get('url')
                         if source_url:
@@ -675,7 +678,8 @@ class TheClone2Refined:
 
                                 if citation_result.get('found') and not citation_result.get('needs_extraction'):
                                     # We have pre-extracted citations - convert to snippet format
-                                    for i, citation in enumerate(citation_result.get('citations', [])):
+                                    recalled_citations = citation_result.get('citations', [])
+                                    for i, citation in enumerate(recalled_citations):
                                         snippet = {
                                             'id': f'SC.{citation_recall_count + 1}.{i + 1}',  # SC = Snippet from Citation
                                             'text': citation.get('quote', ''),
@@ -692,25 +696,71 @@ class TheClone2Refined:
                                         }
                                         memory_snippets.append(snippet)
                                     citation_recall_count += 1
-                                    logger.debug(f"[CLONE] Citation recall HIT: {len(citation_result.get('citations', []))} citations for {source_url[:50]}...")
-                                else:
-                                    # No matching citations - need extraction
+                                    logger.debug(f"[CLONE] Citation recall HIT: {len(recalled_citations)} citations for {source_url[:50]}...")
+
+                                    # Record for debug log
+                                    citation_recall_details.append({
+                                        "status": "USED",
+                                        "url": source_url[:80],
+                                        "title": source.get('title', 'Unknown')[:50],
+                                        "citations_returned": len(recalled_citations),
+                                        "hit_keywords": [c.get('hit_keywords', []) for c in recalled_citations[:3]],  # First 3
+                                        "quotes_preview": [c.get('quote', '')[:60] + '...' for c in recalled_citations[:2]]
+                                    })
+                                elif citation_result.get('found'):
+                                    # Source exists but no matching citations - need extraction
                                     sources_needing_extraction.append(source)
+
+                                    # Record for debug log - citations exist but didn't match
+                                    available_sources = citation_result.get('sources', [])
+                                    citation_recall_details.append({
+                                        "status": "MISS_NO_MATCH",
+                                        "url": source_url[:80],
+                                        "title": source.get('title', 'Unknown')[:50],
+                                        "reason": "Source has citations but none match required keywords",
+                                        "required_keywords": required_keywords,
+                                        "available_sources": len(available_sources)
+                                    })
+                                else:
+                                    # No source found at all
+                                    sources_needing_extraction.append(source)
+                                    citation_recall_details.append({
+                                        "status": "MISS_NO_SOURCE",
+                                        "url": source_url[:80],
+                                        "title": source.get('title', 'Unknown')[:50],
+                                        "reason": "No citations stored for this URL"
+                                    })
                             except Exception as e:
                                 # Citation recall failed - fall back to extraction
                                 logger.warning(f"[CLONE] Citation recall failed for {source_url[:50]}: {e}")
                                 sources_needing_extraction.append(source)
+                                citation_recall_details.append({
+                                    "status": "ERROR",
+                                    "url": source_url[:80],
+                                    "error": str(e)[:100]
+                                })
                         else:
                             sources_needing_extraction.append(source)
 
+                    # Log citation recall details to debug file
+                    if clone_logger and citation_recall_details:
+                        used_count = sum(1 for d in citation_recall_details if d['status'] == 'USED')
+                        miss_no_match = sum(1 for d in citation_recall_details if d['status'] == 'MISS_NO_MATCH')
+                        miss_no_source = sum(1 for d in citation_recall_details if d['status'] == 'MISS_NO_SOURCE')
+
+                        clone_logger.log_section("Citation-Aware Memory Recall", {
+                            "Summary": {
+                                "Total Sources Checked": len(memory_sources),
+                                "Citations USED (skipped extraction)": used_count,
+                                "MISS - No Matching Citations": miss_no_match,
+                                "MISS - No Source Stored": miss_no_source,
+                                "Required Keywords": required_keywords
+                            },
+                            "Per-Source Details": citation_recall_details
+                        }, level=4, collapse=False)
+
                     if citation_recall_count > 0:
                         logger.debug(f"[CLONE] Citation recall: {citation_recall_count} sources used cached citations, {len(sources_needing_extraction)} need extraction")
-                        if clone_logger:
-                            clone_logger.log_section("Citation-Aware Recall", {
-                                "Sources with Cached Citations": citation_recall_count,
-                                "Snippets from Cache": len(memory_snippets),
-                                "Sources Needing Extraction": len(sources_needing_extraction)
-                            }, level=4, collapse=False)
 
                     # Extract from remaining sources that don't have cached citations
                     if sources_needing_extraction:
