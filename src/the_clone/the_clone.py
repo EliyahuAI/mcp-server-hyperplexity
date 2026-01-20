@@ -692,7 +692,8 @@ class TheClone2Refined:
                                             '_source_url': source_url,
                                             '_source_date': source.get('date', ''),
                                             '_search_term': source.get('_original_query', ''),
-                                            '_from_citation_recall': True
+                                            '_from_citation_recall': True,
+                                            '_from_memory': True  # Track as memory source for logging
                                         }
                                         memory_snippets.append(snippet)
                                     citation_recall_count += 1
@@ -795,9 +796,11 @@ class TheClone2Refined:
                             accept_all_quality_levels=strategy.get('accept_all_quality_levels', False)
                         )
 
-                        # Collect extracted snippets
+                        # Collect extracted snippets and mark as from memory
                         for source_result in batch_result:
                             snippets = source_result.get('snippets', [])
+                            for snippet in snippets:
+                                snippet['_from_memory'] = True  # Track as memory source
                             memory_snippets.extend(snippets)
 
                         # Track cost
@@ -1892,10 +1895,11 @@ class TheClone2Refined:
         # Log citation URLs for memory debugging (MEMORY_URL_STORAGE_ISSUE)
         if final_citations:
             citation_urls = [c.get('url', 'no-url') for c in final_citations]
-            from_memory = [c.get('url', 'no-url') for c in final_citations if c.get('_from_memory')]
-            from_search = [c.get('url', 'no-url') for c in final_citations if not c.get('_from_memory') and not c.get('_from_live_fetch')]
+            # Check both _from_memory and _from_citation_recall (cached citations)
+            from_memory = [c.get('url', 'no-url') for c in final_citations if c.get('_from_memory') or c.get('_from_citation_recall')]
+            from_search = [c.get('url', 'no-url') for c in final_citations if not c.get('_from_memory') and not c.get('_from_citation_recall') and not c.get('_from_live_fetch')]
             from_jina = [c.get('url', 'no-url') for c in final_citations if c.get('_from_live_fetch')]
-            logger.info(f"[CLONE_MEMORY_DEBUG] Citations: {len(final_citations)} total, {len(from_memory)} from memory, {len(from_search)} from search, {len(from_jina)} from Jina")
+            logger.info(f"[CLONE_MEMORY_DEBUG] Citations: {len(final_citations)} total, {len(from_memory)} from memory/cache, {len(from_search)} from search, {len(from_jina)} from Jina")
             if from_jina:
                 logger.info(f"[CLONE_MEMORY_DEBUG] Jina-fetched URLs: {from_jina[:5]}{'...' if len(from_jina) > 5 else ''}")
 
@@ -2111,4 +2115,4 @@ class TheClone2Refined:
                     logger.warning(f"[CLONE] Failed to store citations for {url[:50]}: {e}")
 
         if stored_count > 0:
-            logger.debug(f"[CLONE] Stored {stored_count} citations from {len(snippets_by_url)} sources (type: {source_type})")
+            logger.info(f"[CLONE_MEMORY_DEBUG] Stored {stored_count} citations from {len(snippets_by_url)} sources to sources dict (type: {source_type})")

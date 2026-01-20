@@ -288,11 +288,13 @@ class MemoryCache:
 
             memory = _MEMORY_CACHE[session_id]
             query_count = len(memory._memory.get('queries', {}))
+            sources_count = len(memory._memory.get('sources', {}))
+            total_citations = sum(len(s.get('citations', [])) for s in memory._memory.get('sources', {}).values())
 
             # Mark as clean BEFORE write to prevent double-flush
             _DIRTY_SESSIONS.discard(session_id)
 
-        logger.info(f"[MEMORY_CACHE] Flushing {query_count} queries to S3 for session {session_id} (sync)")
+        logger.info(f"[MEMORY_CACHE] Flushing {query_count} queries, {sources_count} sources ({total_citations} citations) to S3 for session {session_id} (sync)")
         start_time = __import__('time').time()
 
         try:
@@ -474,7 +476,7 @@ class MemoryCache:
             )
             _DIRTY_SESSIONS.add(session_id)
 
-            logger.debug(
+            logger.info(
                 f"[MEMORY_CACHE] Stored {len(citations)} citations for "
                 f"'{url[:50]}...' (RAM only, no S3)"
             )

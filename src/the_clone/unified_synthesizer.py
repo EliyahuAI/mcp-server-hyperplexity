@@ -794,6 +794,12 @@ Query: {query}
             # Combine all snippets into single cited_text
             cited_text = ''.join(snippet_parts) if snippet_parts else ''
 
+            # Check if ANY snippet from this URL is from memory/cache/live-fetch
+            # (in case of mixed sources for same URL)
+            any_from_memory = any(s.get('_from_memory') for s in url_snippets)
+            any_from_citation_recall = any(s.get('_from_citation_recall') for s in url_snippets)
+            any_from_live_fetch = any(s.get('_from_live_fetch') for s in url_snippets)
+
             # Sonar-compatible format with additional Clone-specific fields
             citations.append({
                 'url': source_url,
@@ -805,7 +811,11 @@ Query: {query}
                 'reliability': first_snippet.get('_source_reliability', 'MEDIUM'),
                 'snippets': [cited_text],  # Single combined text
                 'p': first_snippet.get('p', 0.50),  # Source-level probability
-                'c': first_snippet.get('c', 'M/O')  # Source-level classification
+                'c': first_snippet.get('c', 'M/O'),  # Source-level classification
+                # Preserve memory/cache tracking flags for analytics (any snippet match)
+                '_from_memory': any_from_memory,
+                '_from_citation_recall': any_from_citation_recall,
+                '_from_live_fetch': any_from_live_fetch
             })
 
         # Map snippet IDs to citation indices

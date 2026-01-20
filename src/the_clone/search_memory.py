@@ -1442,11 +1442,27 @@ Consider data freshness - old memories about dynamic topics should lower confide
                 date = source.get('date', 'No date')
                 snippet_preview = source.get('snippet', '')[:150]
                 original_query = source.get('_original_query', 'Unknown')
-                url_lines.append(f"  [{src_idx}] {title}")
+
+                # Check for cached citations - show actual content
+                cached_citations = self.get_cached_citations_for_url(url) if url else []
+                if cached_citations:
+                    cache_indicator = f" [CACHED: {len(cached_citations)}+ citations]"
+                else:
+                    cache_indicator = ""
+
+                url_lines.append(f"  [{src_idx}] {title}{cache_indicator}")
                 url_lines.append(f"      URL: {url}")
                 url_lines.append(f"      Date: {date}")
                 url_lines.append(f"      Originally found via: \"{original_query}\"")
                 url_lines.append(f"      Preview: {snippet_preview}...")
+                if cached_citations:
+                    url_lines.append(f"      CACHED CITATIONS (ready to use):")
+                    for ci, cit in enumerate(cached_citations):
+                        quote = cit.get('quote', '')[:120]
+                        keywords = cit.get('hit_keywords', [])[:5]
+                        url_lines.append(f"        - \"{quote}...\"")
+                        if keywords:
+                            url_lines.append(f"          Keywords: {', '.join(keywords)}")
                 url_lines.append("")
             url_section = chr(10).join(url_lines) + chr(10)
 
@@ -1466,8 +1482,24 @@ Consider data freshness - old memories about dynamic topics should lower confide
                 title = source.get('title', 'No title')[:60]
                 date = source.get('date', 'No date')
                 snippet_preview = source.get('snippet', '')[:100]
-                formatted_queries.append(f"    [{src_idx}] {title} ({date})")
-                formatted_queries.append(f"        Preview: {snippet_preview}...")
+                url = source.get('url', '')
+
+                # Check for cached citations - show actual content
+                cached_citations = self.get_cached_citations_for_url(url) if url else []
+                if cached_citations:
+                    cache_indicator = f" [CACHED: {len(cached_citations)}+ citations]"
+                    formatted_queries.append(f"    [{src_idx}] {title} ({date}){cache_indicator}")
+                    formatted_queries.append(f"        Preview: {snippet_preview}...")
+                    formatted_queries.append(f"        CACHED CITATIONS (ready to use):")
+                    for ci, cit in enumerate(cached_citations):
+                        quote = cit.get('quote', '')[:120]
+                        keywords = cit.get('hit_keywords', [])[:5]
+                        formatted_queries.append(f"          - \"{quote}...\"")
+                        if keywords:
+                            formatted_queries.append(f"            Keywords: {', '.join(keywords)}")
+                else:
+                    formatted_queries.append(f"    [{src_idx}] {title} ({date})")
+                    formatted_queries.append(f"        Preview: {snippet_preview}...")
 
             formatted_queries.append("")
 
@@ -1500,6 +1532,7 @@ Consider data freshness - old memories about dynamic topics should lower confide
 - **Accuracy**: Are the sources from reliable, authoritative sources?
 - **Recency** (when applicable): For time-sensitive queries (e.g., "latest", "new", "current", specific years), prioritize recent sources
 - **Diversity**: Avoid redundant sources covering the same information
+- **CACHED sources** (marked with [CACHED: N citations]): PREFER these when equally relevant - they have pre-extracted citations ready for immediate use, saving processing time
 
 **Per-Term Confidence Guidelines:**
 Ask yourself: "Could I write a complete answer to '[search term]' using ONLY these sources?"
@@ -2057,6 +2090,70 @@ Return JSON:
         url_hash = hashlib.md5(url.lower().strip().encode()).hexdigest()[:12]
         return f"source_{url_hash}"
 
+    def get_citation_count_for_url(self, url: str) -> int:
+        """
+        Get count of cached citations for a URL.
+
+        Used to boost source selection in Gemini prompt - sources with
+        pre-extracted citations can skip extraction entirely.
+
+        Args:
+            url: Source URL to look up
+
+        Returns:
+            Number of cached citations (0 if none)
+        """
+        self._ensure_sources_store()
+        source_id = self._generate_source_id(url)
+        sources_store = self._memory.get('sources', {})
+
+        if source_id in sources_store:
+            return len(sources_store[source_id].get('citations', []))
+
+        # Try alternate lookup by URL match
+        for source in sources_store.values():
+            if source.get('url', '').rstrip('/') == url.rstrip('/'):
+                return len(source.get('citations', []))
+
+        return 0
+
+    def get_cached_citations_for_url(self, url: str, max_citations: int = 3) -> List[Dict[str, Any]]:
+        """
+        Get cached citation details for a URL.
+
+        Returns actual citation quotes to help Gemini selection.
+        Sources with cached citations can skip extraction entirely.
+
+        Args:
+            url: Source URL to look up
+            max_citations: Maximum citations to return (default 3 for prompt brevity)
+
+        Returns:
+            List of citation dicts with 'quote' and 'hit_keywords'
+        """
+        self._ensure_sources_store()
+        source_id = self._generate_source_id(url)
+        sources_store = self._memory.get('sources', {})
+
+        citations = []
+        if source_id in sources_store:
+            citations = sources_store[source_id].get('citations', [])
+        else:
+            # Try alternate lookup by URL match
+            for source in sources_store.values():
+                if source.get('url', '').rstrip('/') == url.rstrip('/'):
+                    citations = source.get('citations', [])
+                    break
+
+        # Return truncated list with essential fields
+        result = []
+        for c in citations[:max_citations]:
+            result.append({
+                'quote': c.get('quote', '')[:150],  # Truncate for prompt
+                'hit_keywords': c.get('hit_keywords', [])
+            })
+        return result
+
     def recall_citations(
         self,
         url: str = None,
@@ -2156,6 +2253,7 @@ Return JSON:
         Filter sources by keyword match.
 
         Supports | pattern for OR variants within keyword groups.
+        Uses word-level matching for multi-word variants.
 
         Args:
             required_keywords: Keywords that must appear somewhere in source
@@ -2169,9 +2267,15 @@ Return JSON:
 
         matching = []
         for source in self._memory.get('sources', {}).values():
-            # Build searchable text
+            # Use accumulated search_terms if available
+            search_terms = source.get("search_terms", [])
+            if not search_terms:
+                single_term = source.get("search_term", "")
+                search_terms = [single_term] if single_term else []
+
+            # Build searchable text from source metadata
             searchable = " ".join([
-                source.get("search_term", ""),
+                " ".join(search_terms),  # All search terms from different queries
                 source.get("title", ""),
                 source.get("content", "")[:5000]  # Limit content for performance
             ]).lower()
@@ -2181,7 +2285,24 @@ Return JSON:
             for keyword_group in required_keywords:
                 # Split by | for OR variants within group
                 variants = [v.strip().lower() for v in keyword_group.split('|')]
-                if not any(variant in searchable for variant in variants):
+
+                # Check if ANY variant matches (OR logic within group)
+                variant_matched = False
+                for variant in variants:
+                    # For multi-word variants, check if ALL words appear (word-level matching)
+                    words = variant.split()
+                    if len(words) > 1:
+                        # Multi-word: all words must appear somewhere
+                        if all(word in searchable for word in words):
+                            variant_matched = True
+                            break
+                    else:
+                        # Single word: substring match
+                        if variant in searchable:
+                            variant_matched = True
+                            break
+
+                if not variant_matched:
                     all_groups_match = False
                     break
 
@@ -2210,6 +2331,9 @@ Return JSON:
         - "MSFT|Microsoft" matches if either "MSFT" OR "Microsoft" is found
         - All keyword groups must match (AND between groups, OR within groups)
 
+        WORD-LEVEL MATCHING: For multi-word variants like "Bella Poarch", matches
+        if all words appear anywhere in the text (not requiring exact phrase).
+
         Args:
             citations: List of stored citations from a single source
             query_data: Stored query data (unused for matching, kept for API compat)
@@ -2228,6 +2352,23 @@ Return JSON:
         # Build AGGREGATE searchable text from ALL citations in this source
         # This allows keyword coverage across multiple citations
         aggregate_parts = []
+
+        # Include source-level metadata for matching
+        # query_data is the source dict containing search_term(s) and title
+        # Use accumulated search_terms if available (each query's term helps matching)
+        search_terms = query_data.get("search_terms", [])
+        if not search_terms:
+            single_term = query_data.get("search_term", "")
+            if single_term:
+                search_terms = [single_term]
+        # Add each search_term separately (they each get a chance to match)
+        aggregate_parts.extend(search_terms)
+
+        # Include title - often contains entity names (e.g., "Bella Poarch - Official Music Video")
+        title = query_data.get("title", "")
+        if title:
+            aggregate_parts.append(title)
+
         for citation in citations:
             aggregate_parts.append(citation.get("quote", ""))
             aggregate_parts.append(citation.get("context", ""))
@@ -2240,7 +2381,25 @@ Return JSON:
         for keyword_group in required_keywords:
             # Split by | for OR variants within group
             variants = [v.strip().lower() for v in keyword_group.split('|')]
-            if not any(variant in aggregate_searchable for variant in variants):
+
+            # Check if ANY variant matches (OR logic within group)
+            variant_matched = False
+            for variant in variants:
+                # For multi-word variants, check if ALL words appear (not requiring exact phrase)
+                # This handles cases like "Bella Poarch" matching when "bella" and "poarch" are separate
+                words = variant.split()
+                if len(words) > 1:
+                    # Multi-word: all words must appear somewhere
+                    if all(word in aggregate_searchable for word in words):
+                        variant_matched = True
+                        break
+                else:
+                    # Single word: substring match
+                    if variant in aggregate_searchable:
+                        variant_matched = True
+                        break
+
+            if not variant_matched:
                 all_groups_match = False
                 break
 
@@ -2278,14 +2437,23 @@ Return JSON:
         sources_store = self._memory['sources']
 
         if source_id in sources_store:
-            # Existing source - append new citations
+            # Existing source - append new citations and search_term
             existing = sources_store[source_id]
             existing["citations"].extend(citations)
             # Dedupe by quote text
             existing["citations"] = self._dedupe_citations(existing["citations"])
+
+            # Accumulate search_terms - each query's term should help with matching
+            existing_terms = existing.get("search_terms", [])
+            if not existing_terms and existing.get("search_term"):
+                existing_terms = [existing["search_term"]]
+            if search_term and search_term not in existing_terms:
+                existing_terms.append(search_term)
+            existing["search_terms"] = existing_terms
+
             logger.debug(
                 f"[MEMORY] Appended {len(citations)} citations to existing source "
-                f"{url[:50]}... (total: {len(existing['citations'])})"
+                f"{url[:50]}... (total: {len(existing['citations'])}, search_terms: {len(existing_terms)})"
             )
         else:
             # New source
@@ -2294,6 +2462,7 @@ Return JSON:
                 "title": title,
                 "content": content,
                 "search_term": search_term,
+                "search_terms": [search_term] if search_term else [],
                 "source_type": source_type,
                 "citations": citations,
                 "created_at": datetime.now(timezone.utc).isoformat()
