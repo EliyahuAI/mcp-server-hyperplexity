@@ -2,10 +2,16 @@
 
 Extract quotable snippets with codes for synthesis. **Synthesis will NOT see original sources** - only these snippets.
 
-**Today:** {current_date} | **Mode:** {extraction_mode_guidance} | **Max:** {max_snippets}/source
+**Today:** {current_date} | **Mode:** {extraction_mode_guidance} | **Max:** {max_snippets}/source/search
 
 **Search terms:**
 {all_search_terms_formatted}
+
+**RULES:**
+- **Merge contiguous:** Adjacent sentences = ONE snippet (use ranges), even if addressing different aspects
+- **No duplication:** Once a passage is extracted, trust it's available to synthesis - do NOT extract again for other terms
+
+{mode_rules}
 
 ---
 
@@ -82,9 +88,9 @@ Judge extracts all atomic claims from source and tests each. Pass = precisely ac
 - Clarification: `` §S1:1.1 [of Gemini] ``
 
 **Consecutive Lines (CRITICAL):**
-- **Consecutive lines within same heading section = ONE snippet**
-- Use ranges to group: `` §S1:2.1-2.4 `` for lines that flow together under one heading
-- Don't split related content that belongs together conceptually
+- **Contiguous sentences = ONE snippet** - even if they address different search terms or aspects
+- Use ranges: `` §S1:2.1-2.4 `` - NEVER create separate snippets for adjacent lines
+- Assign combined snippet to the MOST relevant search term
 
 **Tables (CRITICAL):**
 - ONE snippet per table: `` §S1:5.0-5.7 `` (header row 0 + data rows 1-7)
@@ -161,5 +167,6 @@ Max 25 chars. Must be unique within source (append _2, _3 if needed).
 - **p**: Source-level probability (p05, p15, p30, p50, p65, p85, p95)
 - **quotes_by_search**: Organized by search term number
   - Each quote: `[detail_limitation, code]` ← **HANDLE FIRST, then code**
+  - **Max {max_snippets} per search term** - once text is extracted, don't repeat it for other terms
 
 Return empty `{{}}` if nothing clear.

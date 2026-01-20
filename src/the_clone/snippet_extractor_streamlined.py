@@ -796,17 +796,23 @@ class SnippetExtractorStreamlined:
         # Format labeled sources
         formatted_sources = self._format_labeled_sources_for_batch(labeled_sources)
 
-        # Mode guidance
+        # Mode guidance and rules
         mode_guidance = {
-            "simple_facts": "Extract ONLY concrete atomic facts (numbers, dates, entities). Prefer brevity.",
+            "simple_facts": "Extract ONLY concrete atomic facts (numbers, dates, entities). Be MINIMAL with just enough context to verify.",
             "nuanced": "Extract facts with context, explanations, and methodology when relevant."
         }.get(extraction_mode, "Extract essential quotes.")
+
+        mode_rules = {
+            "simple_facts": f"**SHALLOW MODE LIMITS:**\n- **{max_snippets} snippets MAX per source per search term**\n- **Brevity:** Just enough context to verify - prefer minimal over comprehensive",
+            "nuanced": f"**DEEP MODE:** Extract up to {max_snippets} snippets per source per search term. Include context, methodology, and supporting details."
+        }.get(extraction_mode, "")
 
         prompt = template.format(
             current_date=current_date,
             all_search_terms_formatted=formatted_terms,
             formatted_sources=formatted_sources,
             extraction_mode_guidance=mode_guidance,
+            mode_rules=mode_rules,
             max_snippets=max_snippets
         )
 
@@ -993,7 +999,7 @@ class SnippetExtractorStreamlined:
 
         # Mode guidance
         mode_guidance = {
-            "simple_facts": "Extract ONLY concrete atomic facts (numbers, dates, entities). Prefer brevity.",
+            "simple_facts": "Extract ONLY concrete atomic facts (numbers, dates, entities). Be MINIMAL with just enough context to verify.",
             "nuanced": "Extract facts with context, explanations, and methodology when relevant."
         }.get(extraction_mode, "Extract essential quotes.")
 
