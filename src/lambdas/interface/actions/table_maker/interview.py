@@ -105,8 +105,10 @@ class TableInterviewHandler:
         try:
             logger.info(f"[INTERVIEW] Starting interview with message: '{user_message[:100]}...'")
 
-            # Build prompt with user message
-            prompt = self.interview_prompt.replace('{{USER_MESSAGE}}', user_message)
+            # Build prompt with user message and current date
+            today_date = datetime.utcnow().strftime('%B %d, %Y')
+            prompt = self.interview_prompt.replace('{{TODAY_DATE}}', today_date)
+            prompt = prompt.replace('{{USER_MESSAGE}}', user_message)
 
             # Add user message to history
             self.messages.append({
@@ -238,8 +240,10 @@ class TableInterviewHandler:
                 for msg in self.messages
             ])
 
-            # Build prompt with full context
-            prompt = self.interview_prompt.replace(
+            # Build prompt with full context and current date
+            today_date = datetime.utcnow().strftime('%B %d, %Y')
+            prompt = self.interview_prompt.replace('{{TODAY_DATE}}', today_date)
+            prompt = prompt.replace(
                 '{{USER_MESSAGE}}',
                 f"Previous conversation:\n{conversation_text}\n\nUser's latest message:\n{user_message}"
             )

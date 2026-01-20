@@ -32,6 +32,10 @@ except ImportError:
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# Hardcoded confirmation message - used when user confirms the validation plan
+# This avoids duplicate/triplicate messages from AI-generated responses
+CONFIRMATION_MESSAGE = "On it! Formalizing the table structure and developing a validation approach. I will then validate the first 3 rows (3-4 minutes) - hang tight."
+
 
 async def handle_upload_interview_start(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
@@ -234,19 +238,11 @@ async def handle_upload_interview_continue(event: Dict[str, Any], context: Any) 
 
         if is_confirmation and conversation_state.get('mode') == 2 and conversation_state.get('confirmation_response'):
             # Use pre-generated confirmation response (skip redundant AI call)
-            logger.info("[UPLOAD_INTERVIEW] Using pre-generated confirmation response")
+            # Frontend already showed the confirmation message, so we skip WebSocket update
+            # and go directly to config generation
+            logger.info("[UPLOAD_INTERVIEW] Using pre-generated confirmation - skipping to config generation")
 
             confirmation_response = conversation_state['confirmation_response']
-
-            result = {
-                'success': True,
-                'mode': 3,
-                'trigger_config_generation': True,
-                'ai_message': confirmation_response['ai_message'],
-                'config_instructions': confirmation_response['config_instructions'],
-                'inferred_context': conversation_state.get('interview_context', {}),
-                'confirmation_response': None
-            }
 
             # Update conversation state messages
             interview_handler = UploadInterviewHandler(PROMPTS_DIR, SCHEMAS_DIR)
@@ -260,12 +256,43 @@ async def handle_upload_interview_continue(event: Dict[str, Any], context: Any) 
                 'timestamp': datetime.utcnow().isoformat() + 'Z'
             })
 
-            # Add assistant confirmation
+            # Add assistant confirmation (use hardcoded message, not AI-generated)
             interview_handler.messages.append({
                 'role': 'assistant',
-                'content': result,
+                'content': {'mode': 3, 'ai_message': CONFIRMATION_MESSAGE},
                 'timestamp': datetime.utcnow().isoformat() + 'Z'
             })
+
+            # Save updated conversation state
+            conversation_state.update({
+                'updated_at': datetime.utcnow().isoformat() + 'Z',
+                'status': 'approved',
+                'turn_count': len(interview_handler.messages),
+                'messages': interview_handler.messages,
+                'mode': 3,
+                'trigger_config_generation': True
+            })
+            _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
+
+            # Directly trigger config generation (skip sending redundant WebSocket update
+            # since frontend already displayed the confirmation message)
+            await _trigger_config_generation(
+                storage_manager=storage_manager,
+                session_id=session_id,
+                email=email,
+                conversation_id=conversation_id,
+                config_instructions=confirmation_response['config_instructions'],
+                inferred_context=conversation_state.get('interview_context', {}),
+                conversation_messages=interview_handler.messages
+            )
+
+            return create_response(200, {
+                'success': True,
+                'conversation_id': conversation_id,
+                'mode': 3,
+                'used_stored_confirmation': True
+            })
+
         else:
             # Initialize interview handler and restore state
             interview_handler = UploadInterviewHandler(PROMPTS_DIR, SCHEMAS_DIR)
@@ -310,18 +337,23 @@ async def handle_upload_interview_continue(event: Dict[str, Any], context: Any) 
 
         # Send response via WebSocket
         if websocket_client:
+            # For mode 3 (confirmation), use hardcoded message to avoid duplicates
+            ai_message_to_send = CONFIRMATION_MESSAGE if result['mode'] == 3 else result['ai_message']
+
             websocket_message = {
                 'type': 'upload_interview_update',
                 'conversation_id': conversation_id,
                 'mode': result['mode'],
-                'ai_message': result['ai_message'],
+                'ai_message': ai_message_to_send,
                 'inferred_context': result.get('inferred_context', {}),
                 'trigger_config_generation': result['trigger_config_generation']
             }
 
-            # Include confirmation_response for mode 2
+            # Include confirmation_response for mode 2 (use hardcoded message)
             if result['mode'] == 2 and result.get('confirmation_response'):
-                websocket_message['confirmation_response'] = result['confirmation_response']
+                confirmation_with_hardcoded = result['confirmation_response'].copy()
+                confirmation_with_hardcoded['ai_message'] = CONFIRMATION_MESSAGE
+                websocket_message['confirmation_response'] = confirmation_with_hardcoded
 
             websocket_client.send_to_session(session_id, websocket_message)
             logger.info(f"[UPLOAD_INTERVIEW] Sent WebSocket update for mode {result['mode']}")

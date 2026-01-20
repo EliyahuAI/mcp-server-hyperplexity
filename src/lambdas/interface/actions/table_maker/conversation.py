@@ -1316,23 +1316,14 @@ async def handle_table_conversation_continue(request_data, context):
         confirmation_response = conversation_state.get('confirmation_response')
 
         if is_simple_confirmation and confirmation_response:
-            logger.info(f"[TABLE_MAKER] Using pre-generated confirmation response (skipping AI call)")
-
-            # Use the pre-generated response
-            result['success'] = True
-            result['mode'] = 3  # Execution mode
-            result['trigger_execution'] = True
-            result['show_structure'] = False
-            result['ai_message'] = confirmation_response.get('ai_message', 'Starting table generation...')
-            result['context_web_research'] = confirmation_response.get('context_web_research', [])
-            result['processing_steps'] = confirmation_response.get('processing_steps', [])
-            result['table_name'] = confirmation_response.get('table_name', conversation_state.get('table_name', ''))
-            result['turn_count'] = conversation_state['turn_count'] + 1
+            # Use pre-generated confirmation response (skip AI call AND redundant WebSocket update)
+            # Frontend already displayed the confirmation message, so we go directly to execution
+            logger.info(f"[TABLE_MAKER] Using pre-generated confirmation - skipping to execution")
 
             # Update conversation state
             conversation_state['last_updated'] = datetime.utcnow().isoformat() + 'Z'
             conversation_state['status'] = 'execution_ready'
-            conversation_state['turn_count'] = result['turn_count']
+            conversation_state['turn_count'] = conversation_state['turn_count'] + 1
             conversation_state['trigger_execution'] = True
             # Clear the confirmation_response since we've used it
             conversation_state.pop('confirmation_response', None)
@@ -1351,37 +1342,17 @@ async def handle_table_conversation_continue(request_data, context):
             else:
                 logger.info(f"[TABLE_MAKER] Saved conversation state to {save_result['s3_key']}")
 
-            # Send WebSocket update
-            if websocket_client and session_id:
-                try:
-                    websocket_client.send_to_session(session_id, {
-                        'type': 'table_conversation_update',
-                        'conversation_id': conversation_id,
-                        'progress': 100,
-                        'status': 'Confirmation received - starting execution',
-                        'mode': result['mode'],
-                        'trigger_execution': result['trigger_execution'],
-                        'show_structure': result['show_structure'],
-                        'ai_message': result['ai_message'],
-                        'context_web_research': result['context_web_research'],
-                        'processing_steps': result['processing_steps'],
-                        'table_name': result['table_name'],
-                        'turn_count': result['turn_count']
-                    })
-                except Exception as e:
-                    logger.warning(f"[TABLE_MAKER] Failed to send WebSocket update: {e}")
-
-            # Start execution pipeline
+            # Skip WebSocket update - frontend already showed confirmation message
+            # Go directly to execution
             logger.info(f"[TABLE_MAKER] Quick confirmation - starting execution immediately")
-            await asyncio.sleep(0.5)  # Brief delay for UI to update
 
             # Trigger execution (same logic as normal flow)
             execution_event = {
                 'session_id': session_id,
                 'email': email,
                 'conversation_id': conversation_id,
-                'table_name': result['table_name'],
-                'context_web_research': result['context_web_research']
+                'table_name': confirmation_response.get('table_name', conversation_state.get('table_name', '')),
+                'context_web_research': confirmation_response.get('context_web_research', [])
             }
 
             try:
@@ -1394,7 +1365,12 @@ async def handle_table_conversation_continue(request_data, context):
             except Exception as e:
                 logger.error(f"[TABLE_MAKER] Error queuing execution: {e}")
 
-            return create_response(200, result)
+            return create_response(200, {
+                'success': True,
+                'conversation_id': conversation_id,
+                'mode': 3,
+                'used_stored_confirmation': True
+            })
 
         # Check if we're in recovery mode (zero rows found, awaiting user guidance)
         conversation_status = conversation_state.get('status', 'in_progress')

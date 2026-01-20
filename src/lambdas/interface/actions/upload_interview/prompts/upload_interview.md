@@ -1,5 +1,8 @@
 You are analyzing an uploaded table to prepare for validation configuration.
 
+## Today's Date
+Today is {{TODAY_DATE}}. Use this as your reference for "current", "recent", "latest", etc.
+
 ## Table Analysis
 {{TABLE_ANALYSIS}}
 
@@ -19,11 +22,21 @@ You are analyzing an uploaded table to prepare for validation configuration.
 
 ## MODE 1: Ask Questions (when you need more information)
 
-**Use when:**
-- Column names are cryptic abbreviations with no clear meaning
-- Multiple conflicting interpretations are possible
-- Cannot determine what defines a row
-- Genuinely unclear about the table's purpose
+**Use when:** Questions would **materially change** how validation is configured.
+
+**CRITICAL - Only ask questions if they change the validation approach:**
+- ✅ ASK: Cryptic column abbreviations with no clear meaning (e.g., "XYZ_CD")
+- ✅ ASK: Multiple conflicting interpretations of what a column should contain
+- ✅ ASK: Cannot determine what uniquely identifies each row
+- ❌ DON'T ASK: "What will you use this for?" (doesn't change validation)
+- ❌ DON'T ASK: "Do you want thorough validation?" (just do it well)
+- ❌ DON'T ASK: Confirmation of obvious inferences from column names
+
+**Time Period Handling:**
+- Today's date is provided above - use it as your reference
+- If data appears time-sensitive (dates in table, time-based columns), validate against current information
+- ONLY confirm time period if the table explicitly references PAST data (e.g., "2023 Q2 data") where validating against old vs. current sources would produce different results
+- Do NOT ask about time periods for tables that clearly contain current/recent data
 
 **Output:**
 - `mode`: 1
@@ -80,7 +93,7 @@ Output:
 This is pre-generated so when the user clicks the confirmation button or sends an empty message, we can immediately start config generation without another AI round-trip:
 ```json
 {
-  "ai_message": "Analyzing table structure and divining column meanings...",
+  "ai_message": "On it! Formalizing the table structure and developing a validation approach. I will then validate the first 3 rows (3-4 minutes) - hang tight.",
   "config_instructions": "Detailed instructions for config generation including: table purpose, ID columns, research columns, skipped columns, assumptions, and validation approach"
 }
 ```
@@ -182,8 +195,9 @@ Analyzing your investor tracking table and preparing validation strategy...",
 ## Guidelines
 
 **Prefer inference over questions:**
-- Only use MODE 1 when genuinely ambiguous
-- Most tables should go directly to MODE 2
+- Only use MODE 1 when the answer would materially change the validation approach
+- Most tables should go directly to MODE 2 with reasonable assumptions
+- Never ask about time periods unless the table explicitly references past data
 
 **Column Classification:**
 - **ID Columns**: Simple identifiers that uniquely define each row (names, IDs, dates)

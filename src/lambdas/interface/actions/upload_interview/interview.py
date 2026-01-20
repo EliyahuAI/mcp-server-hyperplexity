@@ -145,8 +145,10 @@ class UploadInterviewHandler:
             # Build conversation history string
             conversation_history = self._format_conversation_history()
 
-            # Build prompt with variables
-            prompt = self.interview_prompt.replace('{{TABLE_ANALYSIS}}', table_analysis_str)
+            # Build prompt with variables and current date
+            today_date = datetime.utcnow().strftime('%B %d, %Y')
+            prompt = self.interview_prompt.replace('{{TODAY_DATE}}', today_date)
+            prompt = prompt.replace('{{TABLE_ANALYSIS}}', table_analysis_str)
             prompt = prompt.replace('{{CONVERSATION_HISTORY}}', conversation_history)
             prompt = prompt.replace('{{USER_MESSAGE}}', user_message if user_message else "(No message - this is the initial analysis)")
 

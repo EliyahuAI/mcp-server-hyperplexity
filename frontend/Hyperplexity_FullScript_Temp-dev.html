@@ -11843,19 +11843,23 @@ if (data.mode === 1) {
                 const confirmation = window[`${cardId}_confirmation`];
 
                 if (isSimpleConfirmation && confirmation) {
-                    // Use pre-generated confirmation - skip a round trip
+                    // Use pre-generated confirmation - skip showing duplicate messages
                     markButtonSelected(button, 'Generating...');
 
                     // Show user confirmation
                     const displayMessage = userMessage || '✓ Confirmed';
                     await addChatMessage(cardId, 'user', displayMessage);
 
-                    // Show AI confirmation message
-                    await addChatMessage(cardId, 'ai', confirmation.ai_message);
+                    // Show hardcoded AI confirmation message (consistent with backend)
+                    const confirmationMessage = "On it! Formalizing the table structure and developing a validation approach. I will then validate the first 3 rows (3-4 minutes) - hang tight.";
+                    await addChatMessage(cardId, 'ai', confirmationMessage);
 
                     // Hide input and show thinking
                     if (inputContainer) inputContainer.style.display = 'none';
                     showThinkingInCard(cardId, 'Starting configuration generation...');
+
+                    // Mark that we already showed confirmation (prevents duplicate from WebSocket)
+                    window[`${cardId}_confirmation_shown`] = true;
 
                     // Clear confirmation (used once)
                     window[`${cardId}_confirmation`] = null;
@@ -11876,7 +11880,14 @@ if (data.mode === 1) {
 } else if (data.mode === 3) {
     // Mode 3: Config generation starting
     if (inputContainer) inputContainer.style.display = 'none';
-    await addChatMessage(cardId, 'ai', data.ai_message);
+
+    // Only show message if we didn't already show it from stored confirmation
+    if (!window[`${cardId}_confirmation_shown`]) {
+        await addChatMessage(cardId, 'ai', data.ai_message);
+    }
+    // Clear the flag
+    window[`${cardId}_confirmation_shown`] = false;
+
     showThinkingInCard(cardId, 'Generating configuration...');
 }
         }
