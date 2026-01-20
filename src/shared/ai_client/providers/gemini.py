@@ -5,7 +5,8 @@ import asyncio
 import aiohttp
 import os
 from datetime import datetime
-from typing import Dict, Any, Optional
+from threading import Lock
+from typing import Dict, Any, Optional, Tuple
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 
@@ -14,8 +15,12 @@ from ..config import get_model_timeout, get_timeout_tier
 
 logger = logging.getLogger(__name__)
 
-# Per-model semaphores (each Gemini model variant has its own rate limit quota)
-_gemini_semaphores: Dict[str, asyncio.Semaphore] = {}
+# Per-model, per-loop semaphores (each Gemini model variant has its own rate limit quota)
+# IMPORTANT: asyncio.Semaphore is bound to the event loop when first used.
+# In Lambda, asyncio.new_event_loop() creates a new loop each invocation,
+# so we must create the semaphore lazily for the current loop.
+_gemini_semaphore_lock = Lock()
+_gemini_semaphores: Dict[Tuple[int, str], asyncio.Semaphore] = {}  # (loop_id, model) -> Semaphore
 _gemini_default_max_concurrent: int = 5  # Default max concurrent calls per model
 
 # Rationale for default of 5 per model:
@@ -29,25 +34,44 @@ _gemini_default_max_concurrent: int = 5  # Default max concurrent calls per mode
 
 def get_gemini_semaphore(model: str) -> asyncio.Semaphore:
     """
-    Get or create a semaphore for a specific Gemini model.
+    Get or create a semaphore for a specific Gemini model and current event loop.
 
     Each model has its own semaphore because Vertex AI rate limits are per-model.
+    Semaphores are also keyed by event loop to handle Lambda's new loop per invocation.
     This allows us to maximize throughput when using multiple model variants.
     """
     global _gemini_semaphores, _gemini_default_max_concurrent
+
+    # Get current event loop ID
+    # This is always called from async context (make_single_call), so loop should exist
+    loop = asyncio.get_running_loop()
+    loop_id = id(loop)
 
     # Normalize model name for env var lookup (e.g., "gemini-2.0-flash" -> "2_0_FLASH")
     model_suffix = model.replace('gemini-', '').replace('.', '_').replace('-', '_').upper()
     env_var = f'GEMINI_MAX_CONCURRENT_{model_suffix}'
 
-    if model not in _gemini_semaphores:
-        # Check for model-specific env var, fall back to default
-        max_concurrent = int(os.environ.get(env_var,
-                            os.environ.get('GEMINI_MAX_CONCURRENT', _gemini_default_max_concurrent)))
-        _gemini_semaphores[model] = asyncio.Semaphore(max_concurrent)
-        logger.info(f"[GEMINI_RATE_LIMIT] Initialized semaphore for {model} with max_concurrent={max_concurrent}")
+    key = (loop_id, model)
 
-    return _gemini_semaphores[model]
+    with _gemini_semaphore_lock:
+        if key not in _gemini_semaphores:
+            # Check for model-specific env var, fall back to default
+            max_concurrent = int(os.environ.get(env_var,
+                                os.environ.get('GEMINI_MAX_CONCURRENT', _gemini_default_max_concurrent)))
+            logger.debug(f"[GEMINI_SEMAPHORE] Creating new semaphore for loop {loop_id}, model {model}")
+            _gemini_semaphores[key] = asyncio.Semaphore(max_concurrent)
+            logger.info(f"[GEMINI_RATE_LIMIT] Initialized semaphore for {model} with max_concurrent={max_concurrent}")
+
+            # Clean up old loop semaphores (keep only last 2 loops to prevent memory leak)
+            loop_ids = set(k[0] for k in _gemini_semaphores.keys())
+            if len(loop_ids) > 2:
+                oldest_loop = min(loop_ids)
+                keys_to_remove = [k for k in _gemini_semaphores.keys() if k[0] == oldest_loop]
+                for old_key in keys_to_remove:
+                    del _gemini_semaphores[old_key]
+                logger.debug(f"[GEMINI_SEMAPHORE] Cleaned up {len(keys_to_remove)} semaphores from old loop {oldest_loop}")
+
+        return _gemini_semaphores[key]
 
 
 class GeminiProvider:
