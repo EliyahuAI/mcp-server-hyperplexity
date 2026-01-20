@@ -2293,17 +2293,17 @@ Return JSON:
     @staticmethod
     def compute_hit_keywords(
         citation: Dict[str, Any],
-        required_keywords: List[str]
+        all_keywords: List[str]
     ) -> List[str]:
         """
-        Determine which REQUIRED keywords actually appear in this citation.
+        Determine which keywords actually appear in this citation.
 
-        Only stores required/mandatory keywords that are actually found.
-        This is what we match against during recall.
+        Stores ALL keywords that are found (required + positive + any others).
+        This provides rich metadata for recall matching and debugging.
 
         Args:
             citation: The extracted citation with quote and context
-            required_keywords: Only the mandatory keywords from the query
+            all_keywords: All keywords to check (required + positive combined)
 
         Returns:
             List of keywords that were found in the citation
@@ -2311,7 +2311,7 @@ Return JSON:
         citation_text = f"{citation.get('quote', '')} {citation.get('context', '')}".lower()
 
         hit = []
-        for kw in required_keywords:
+        for kw in all_keywords:
             # Check keyword and common variants
             variants = SearchMemory._get_keyword_variants(kw)
             if any(v.lower() in citation_text for v in variants):

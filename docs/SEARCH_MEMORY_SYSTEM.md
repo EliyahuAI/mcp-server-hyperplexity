@@ -997,9 +997,9 @@ The memory system includes **citation-aware storage and recall** that avoids red
 
 ### How It Works
 
-**After Extraction**: When snippets are extracted from sources, they are stored as citations with `hit_keywords` (the required keywords that were found in the citation).
+**After Extraction**: When snippets are extracted from sources, they are stored as citations with `hit_keywords` (ALL keywords - required + positive - that were found in the citation).
 
-**During Recall**: Before extracting from a source, the system checks if there are already stored citations that match the current query's required keywords. If found, the cached citations are returned directly without re-extraction.
+**During Recall**: Before extracting from a source, the system checks if there are already stored citations where the REQUIRED keywords match. If found, the cached citations are returned directly without re-extraction. The `hit_keywords` field provides rich metadata for debugging and future matching.
 
 ### Citation Storage Structure
 

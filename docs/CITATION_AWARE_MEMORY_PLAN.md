@@ -19,9 +19,9 @@ Store citations alongside memory so we can return pre-extracted citations instea
 No special handling for different source types. All sources accumulate citations over time.
 
 **Important distinctions:**
-- **Only required/mandatory keywords** are used for matching and stored as hit_keywords
-- **Matching searches across**: stored query/search_term + citation quote + citation context + hit_keywords
-- **hit_keywords**: Only the required keywords that were actually found in the citation
+- **hit_keywords**: Stores ALL keywords that were found (required + positive) - provides rich metadata
+- **Recall matching**: Only REQUIRED keywords must match for citation to be returned
+- **Matching searches across**: citation quote + citation context + hit_keywords (NOT source-level search_term)
 
 ---
 
@@ -297,21 +297,21 @@ def dedupe_citations(citations: list) -> list:
 ### Computing Hit Keywords
 
 ```python
-def compute_hit_keywords(citation: dict, required_keywords: list) -> list:
+def compute_hit_keywords(citation: dict, all_keywords: list) -> list:
     """
-    Determine which REQUIRED keywords actually appear in this citation.
+    Determine which keywords actually appear in this citation.
 
-    Only stores required/mandatory keywords that are actually found.
-    This is what we match against during recall.
+    Stores ALL keywords that are found (required + positive combined).
+    This provides rich metadata for recall matching and debugging.
 
     Args:
         citation: The extracted citation with quote and context
-        required_keywords: Only the mandatory keywords from the query
+        all_keywords: All keywords to check (required + positive combined)
     """
     citation_text = f"{citation.get('quote', '')} {citation.get('context', '')}".lower()
 
     hit = []
-    for kw in required_keywords:
+    for kw in all_keywords:
         # Check keyword and common variants
         variants = get_keyword_variants(kw)  # e.g., "Wyoming" -> ["wyoming", "wy"]
         if any(v.lower() in citation_text for v in variants):
@@ -330,19 +330,20 @@ def compute_hit_keywords(citation: dict, required_keywords: list) -> list:
 # In the_clone.py after extraction completes
 
 for source in extracted_sources:
-    # Compute hit_keywords for each citation using REQUIRED keywords only
+    # Compute hit_keywords for each citation using ALL keywords (required + positive)
     citations_with_hits = []
+    all_keywords = required_keywords + positive_keywords
     for citation in source["citations"]:
-        citation["hit_keywords"] = compute_hit_keywords(citation, required_keywords)
+        citation["hit_keywords"] = compute_hit_keywords(citation, all_keywords)
         citations_with_hits.append(citation)
 
-    # Store with search_term for recall matching
+    # Store citations (search_term stored at source level)
     MemoryCache.store_citations(
         session_id=session_id,
         url=source["url"],
         content=source["content"],
         title=source["title"],
-        search_term=search_term,  # Stored for recall matching
+        search_term=search_term,
         citations=citations_with_hits,
         source_type=source.get("source_type", "search")
     )

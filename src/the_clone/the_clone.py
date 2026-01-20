@@ -791,7 +791,7 @@ class TheClone2Refined:
                         self._store_snippets_as_citations(
                             snippets=newly_extracted,
                             session_id=session_id,
-                            required_keywords=required_keywords,
+                            all_keywords=required_keywords + positive_keywords,
                             source_type="memory_extraction"
                         )
 
@@ -1439,7 +1439,7 @@ class TheClone2Refined:
                         self._store_snippets_as_citations(
                             snippets=new_snippets,
                             session_id=session_id,
-                            required_keywords=required_keywords,
+                            all_keywords=required_keywords + positive_keywords,
                             source_type="search_extraction"
                         )
 
@@ -1985,7 +1985,7 @@ class TheClone2Refined:
         self,
         snippets: List[Dict[str, Any]],
         session_id: str,
-        required_keywords: List[str],
+        all_keywords: List[str],
         source_type: str = "search"
     ):
         """
@@ -1998,7 +1998,7 @@ class TheClone2Refined:
         Args:
             snippets: List of extracted snippets with _source_url, text, p, etc.
             session_id: Session identifier for MemoryCache
-            required_keywords: Keywords to compute hit_keywords for recall matching
+            all_keywords: All keywords to check for hits (required + positive combined)
             source_type: Origin type (memory_extraction, search_extraction, etc.)
         """
         from the_clone.search_memory_cache import MemoryCache
@@ -2025,13 +2025,14 @@ class TheClone2Refined:
             citations = []
             for snippet in source_data['snippets']:
                 # Convert snippet to citation format
+                # Store ALL keywords that hit (required + positive) for rich metadata
                 citation = {
                     'quote': snippet.get('text', ''),
                     'p_score': snippet.get('p', 0.5),
                     'context': snippet.get('verbal_handle', ''),
                     'hit_keywords': SearchMemory.compute_hit_keywords(
                         {'quote': snippet.get('text', ''), 'context': snippet.get('verbal_handle', '')},
-                        required_keywords
+                        all_keywords
                     ),
                     'extracted_at': datetime.now().isoformat(),
                     'snippet_id': snippet.get('id', ''),
