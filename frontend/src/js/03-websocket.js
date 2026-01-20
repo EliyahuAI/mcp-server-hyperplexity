@@ -726,18 +726,23 @@ function routeMessage(data, sessionId) {
         globalState.isProcessingConfig = false;
     }
 
-    // Handle completion messages - use central tryHandleCompletion for atomic deduplication
+    // Handle completion messages - track but ALWAYS dispatch to card handler
+    // UI updates are idempotent, so duplicates just refresh the same content
     if (data.status === 'COMPLETED') {
         // Determine the source: WebSocket (no _completionSource) or API poll (has _completionSource)
         const source = data._completionSource || 'websocket';
 
-        // Try to handle completion - returns false if already handled
-        if (!tryHandleCompletion(source)) {
-            // Already handled by another path, skip to prevent duplicate UI updates
-            return;
+        // Track completion for logging, but DON'T block handler dispatch
+        // The card handler is idempotent - safe to call multiple times
+        const isFirstCompletion = tryHandleCompletion(source);
+
+        if (!isFirstCompletion) {
+            // Log duplicate but STILL dispatch to handler (fixes UI hang bug)
+            // The handler will just refresh the same completion UI
+            console.log(`[ROUTE] Duplicate COMPLETED from '${source}' - dispatching anyway to ensure UI updates`);
         }
 
-        // We're the first to handle completion - clear async timeouts
+        // Clear async timeouts (safe to call multiple times)
         if (window.asyncTimeouts && window.asyncTimeouts.has(sessionId)) {
             const timeoutInfo = window.asyncTimeouts.get(sessionId);
             if (timeoutInfo && timeoutInfo.inactivityTimer) {
@@ -746,8 +751,8 @@ function routeMessage(data, sessionId) {
             window.asyncTimeouts.delete(sessionId);
         }
 
-        // Continue to dispatch to card handler below
-        console.log(`[ROUTE] Dispatching COMPLETED to card handler (source: ${source})`);
+        // Always dispatch to card handler - UI updates are idempotent
+        console.log(`[ROUTE] Dispatching COMPLETED to card handler (source: ${source}, first: ${isFirstCompletion})`);
     }
 
     // Route ALL messages to the last registered card

@@ -75,6 +75,8 @@ function handleProcessingWebSocketMessage(data, cardId) {
         // Progress routed to card level;
 
     } else if (data.status === 'COMPLETED') {
+        console.log(`[VALIDATION] COMPLETED handler called for cardId: ${cardId}`);
+
         // Stop fallback polling since we received completion via WebSocket
         if (typeof stopFallbackPolling === 'function') {
             stopFallbackPolling();
@@ -96,10 +98,12 @@ function handleProcessingWebSocketMessage(data, cardId) {
         globalState.workflowPhase = 'completed';
         // Reset guard flag - processing complete
         globalState.processingInProgress = false;
-        
+
         // First update to 100% if we have a progress bar
         const indicator = document.getElementById(`${cardId}-thinking`);
         const hasProgress = indicator && indicator.classList.contains('with-progress');
+
+        console.log(`[VALIDATION] cardId: ${cardId}, indicator exists: ${!!indicator}, hasProgress: ${hasProgress}`);
 
         if (hasProgress) {
             updateThinkingProgress(cardId, 100, 'Validation complete!');
@@ -119,8 +123,36 @@ function handleProcessingWebSocketMessage(data, cardId) {
         const showResultsDelay = hasProgress ? 2400 : 0;
 
         setTimeout(() => {
-            const messagesContainer = document.getElementById(`${cardId}-messages`);
-            if (messagesContainer) {
+            let messagesContainer = document.getElementById(`${cardId}-messages`);
+            let actualCardId = cardId;
+
+            // FALLBACK: If the expected container doesn't exist, find the most recent processing card
+            if (!messagesContainer) {
+                console.warn(`[VALIDATION] Messages container not found for cardId: ${cardId}, searching for fallback...`);
+
+                // Find any card with a messages container (most recent card)
+                const allCards = document.querySelectorAll('[id^="card-"]');
+                for (let i = allCards.length - 1; i >= 0; i--) {
+                    const card = allCards[i];
+                    const container = card.querySelector('[id$="-messages"]');
+                    if (container) {
+                        messagesContainer = container;
+                        actualCardId = card.id;
+                        console.log(`[VALIDATION] Using fallback container from card: ${actualCardId}`);
+                        break;
+                    }
+                }
+            }
+
+            if (!messagesContainer) {
+                console.error('[VALIDATION] CRITICAL: No messages container found anywhere! Creating completion card instead.');
+                // Last resort: create a new completion card
+                createCompletionCard(data);
+                return;
+            }
+
+            console.log(`[VALIDATION] Showing completion UI in container: ${messagesContainer.id}`);
+
             // Show full results interface immediately, but with disabled download button
             const balanceText = globalState.accountBalance !== undefined ? 
                 `• Remaining balance: $${globalState.accountBalance.toFixed(2)}` : 
@@ -140,7 +172,7 @@ function handleProcessingWebSocketMessage(data, cardId) {
             const newValidationColor = 'primary';
 
             const revertButtonHtml = showRevertButton ?
-                `<button class="std-button ${revertColor}" id="${cardId}-revert-btn" style="flex: 1;">
+                `<button class="std-button ${revertColor}" id="${actualCardId}-revert-btn" style="flex: 1;">
                         <span class="button-text">↩️ Revert to Previous</span>
                     </button>` : '';
 
@@ -151,7 +183,7 @@ function handleProcessingWebSocketMessage(data, cardId) {
                 </div>` : '';
 
             const refineButtonHtml = !globalState.isReferenceCheck ?
-                `<button class="std-button ${refineColor}" id="${cardId}-refine-btn" style="flex: 1;">
+                `<button class="std-button ${refineColor}" id="${actualCardId}-refine-btn" style="flex: 1;">
                     <span class="button-text">🔧 Refine Configuration</span>
                 </button>` : '';
 
@@ -169,13 +201,13 @@ function handleProcessingWebSocketMessage(data, cardId) {
                             • Enable editing to see key citations and sources in cell comments when hovering.
                         </div>
                         ${refineMessageHtml}
-                        <div id="${cardId}-balance-info">
+                        <div id="${actualCardId}-balance-info">
                             ${balanceText}
                         </div>
                     </div>
                 </div>
                 <div style="display: flex; gap: 10px; margin-top: 1rem;">
-                    <button class="std-button ${downloadColor}" id="${cardId}-download-btn" style="flex: 1;" disabled>
+                    <button class="std-button ${downloadColor}" id="${actualCardId}-download-btn" style="flex: 1;" disabled>
                         <span class="button-text">📥 Preparing Download...</span>
                     </button>
                     ${refineButtonHtml}
@@ -187,13 +219,13 @@ function handleProcessingWebSocketMessage(data, cardId) {
                     </button>
                 </div>
             `;
-            
+
             // Add event listeners for the buttons after DOM update
             setTimeout(() => {
-                const downloadBtn = document.getElementById(`${cardId}-download-btn`);
-                const refineBtn = document.getElementById(`${cardId}-refine-btn`);
-                const revertBtn = document.getElementById(`${cardId}-revert-btn`);
-                const balanceInfo = document.getElementById(`${cardId}-balance-info`);
+                const downloadBtn = document.getElementById(`${actualCardId}-download-btn`);
+                const refineBtn = document.getElementById(`${actualCardId}-refine-btn`);
+                const revertBtn = document.getElementById(`${actualCardId}-revert-btn`);
+                const balanceInfo = document.getElementById(`${actualCardId}-balance-info`);
 
                 if (refineBtn) {
                     refineBtn.addEventListener('click', debounceConfigAction('refine-config-2', async () => {
@@ -246,7 +278,6 @@ function handleProcessingWebSocketMessage(data, cardId) {
                     }, 3000); // 3 second delay for download to be ready
                 }
             }, 0);
-            }
         }, showResultsDelay);
 
     } else if (data.status === 'FAILED' || data.status === 'ERROR') {
