@@ -700,14 +700,22 @@ class SnippetExtractorStreamlined:
 
                         # Strip source prefix from code before resolving (e.g., §S1:1.1 -> §1.1)
                         code_without_prefix = code
+                        code_source_prefix = None
                         if ':' in code:
-                            # Extract the part after the colon
-                            code_without_prefix = '§' + code.split(':', 1)[1].lstrip('§')
+                            # Extract source prefix and code parts
+                            prefix_part, code_part = code.split(':', 1)
+                            # Extract source ID from prefix (e.g., "§S4" -> "S4")
+                            code_source_prefix = prefix_part.lstrip('§`')
+                            code_without_prefix = '§' + code_part.lstrip('§')
 
                         # Resolve code to text
                         quote_text = resolver.resolve(code_without_prefix)
                         if not quote_text:
-                            logger.warning(f"[BATCH EXTRACTOR] Failed to resolve code '{code}' (stripped: '{code_without_prefix}') from {source_id}, skipping")
+                            # Provide clearer error message based on failure type
+                            if code_source_prefix and code_source_prefix != source_id:
+                                logger.warning(f"[BATCH EXTRACTOR] Wrong source prefix: '{code}' has {code_source_prefix} but was returned for {source_id}, skipping")
+                            else:
+                                logger.warning(f"[BATCH EXTRACTOR] Code not found: '{code_without_prefix}' doesn't exist in {source_id}, skipping")
                             continue
 
                         # Filter by dynamic effective threshold
