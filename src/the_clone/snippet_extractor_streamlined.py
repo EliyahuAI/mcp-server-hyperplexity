@@ -818,6 +818,53 @@ class SnippetExtractorStreamlined:
 
         return prompt
 
+    def _get_valid_code_ranges(self, structure: Dict, source_id: str) -> str:
+        """
+        Extract valid code ranges from text structure to help model avoid hallucinating codes.
+
+        Args:
+            structure: Text structure dict from TextLabeler
+            source_id: Source identifier (e.g., "S1")
+
+        Returns:
+            String describing valid code ranges for this source
+        """
+        sections = structure.get('sections', [])
+        if not sections:
+            return "No valid codes"
+
+        ranges = []
+        for section in sections:
+            section_id = section.get('id', '')
+            if not section_id.startswith('H'):
+                continue
+            section_num = section_id[1:]  # "H1" -> "1"
+
+            sentences = section.get('sentences', {})
+            if not sentences:
+                continue
+
+            # Get all sentence numbers in this section
+            sent_nums = []
+            for sent_id in sentences.keys():
+                # sent_id like "H1.0", "H1.1", "H1.2"
+                parts = sent_id.split('.')
+                if len(parts) >= 2:
+                    try:
+                        sent_nums.append(int(parts[1]))
+                    except ValueError:
+                        continue
+
+            if sent_nums:
+                min_sent = min(sent_nums)
+                max_sent = max(sent_nums)
+                if min_sent == max_sent:
+                    ranges.append(f"§{source_id}:{section_num}.{min_sent}")
+                else:
+                    ranges.append(f"§{source_id}:{section_num}.{min_sent} to §{source_id}:{section_num}.{max_sent}")
+
+        return ", ".join(ranges) if ranges else "No valid codes"
+
     def _format_labeled_sources_for_batch(self, labeled_sources: List[Dict]) -> str:
         """Format multiple labeled sources for batch prompt."""
         if not labeled_sources:
@@ -839,6 +886,10 @@ class SnippetExtractorStreamlined:
 
             # Labeled text (use display version with source prefixes)
             formatted.append(src['labeled_text_display'])
+
+            # Add valid code ranges at end of each source
+            valid_ranges = self._get_valid_code_ranges(src['structure'], source_id)
+            formatted.append(f"\n**Valid codes for {source_id}:** {valid_ranges}")
             formatted.append("\n")
 
         return '\n'.join(formatted)

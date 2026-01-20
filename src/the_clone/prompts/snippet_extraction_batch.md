@@ -96,7 +96,16 @@ Judge extracts all atomic claims from source and tests each. Pass = precisely ac
 - ONE snippet per table: `` §S1:5.0-5.7 `` (header row 0 + data rows 1-7)
 - NEVER separate rows
 
-**CRITICAL:** Only use codes that exist in sources.
+**CRITICAL - Code Accuracy Rules:**
+- **ONLY use codes that appear in the labeled source text** - copy them EXACTLY
+- Each source shows "Valid codes for SX:" at the bottom - codes MUST fall within those ranges
+- **WRONG formats (NEVER output these):**
+  - `` §S2:47.84 `` ← Decimal sentence numbers don't exist
+  - `` §S2:189 `` ← Single integers without section.sentence format
+  - `` §S7:1.1 `` when extracting from S2 ← Wrong source prefix
+  - `` §S1:1.15-1.18 `` ← Range beyond actual sentence count
+- **If you can't find the exact code in the source, OMIT the quote entirely**
+- When in doubt, look at the "Valid codes" line for each source
 
 ---
 
