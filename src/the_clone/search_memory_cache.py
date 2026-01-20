@@ -396,3 +396,109 @@ class MemoryCache:
         """Get list of all dirty session IDs (for debugging)."""
         with _CACHE_LOCK:
             return list(_DIRTY_SESSIONS)
+
+    # === CITATION-AWARE MEMORY METHODS ===
+
+    @classmethod
+    def recall_citations(
+        cls,
+        session_id: str,
+        url: str = None,
+        required_keywords: list = None
+    ) -> Dict[str, Any]:
+        """
+        Recall pre-extracted citations from memory.
+
+        Args:
+            session_id: Session identifier
+            url: Optional URL to look up directly
+            required_keywords: Mandatory keywords that must match
+
+        Returns:
+            Dict with found, needs_extraction, citations/sources
+
+        Raises:
+            ValueError: If session not in cache (must call get() first)
+        """
+        with _CACHE_LOCK:
+            if session_id not in _MEMORY_CACHE:
+                raise ValueError(
+                    f"Session {session_id} not in cache. Call MemoryCache.get() first."
+                )
+
+            memory = _MEMORY_CACHE[session_id]
+            return memory.recall_citations(url=url, required_keywords=required_keywords)
+
+    @classmethod
+    def store_citations(
+        cls,
+        session_id: str,
+        url: str,
+        content: str,
+        title: str,
+        search_term: str,
+        citations: list,
+        source_type: str = "search"
+    ):
+        """
+        Store citations in RAM cache. NO S3 WRITE.
+
+        Citations accumulate - new extractions add to existing.
+
+        Args:
+            session_id: Session identifier
+            url: Source URL
+            content: Full source content
+            title: Source title
+            search_term: Original query for recall matching
+            citations: List of citations with hit_keywords computed
+            source_type: Origin type (search, url_fetch, table_extraction)
+
+        Raises:
+            ValueError: If session not in cache (must call get() first)
+        """
+        with _CACHE_LOCK:
+            if session_id not in _MEMORY_CACHE:
+                raise ValueError(
+                    f"Session {session_id} not in cache. Call MemoryCache.get() first."
+                )
+
+            memory = _MEMORY_CACHE[session_id]
+            memory._store_citations_no_backup(
+                url=url,
+                content=content,
+                title=title,
+                search_term=search_term,
+                citations=citations,
+                source_type=source_type
+            )
+            _DIRTY_SESSIONS.add(session_id)
+
+            logger.debug(
+                f"[MEMORY_CACHE] Stored {len(citations)} citations for "
+                f"'{url[:50]}...' (RAM only, no S3)"
+            )
+
+    @classmethod
+    def get_citation_stats(cls, session_id: str) -> Dict[str, Any]:
+        """
+        Get citation statistics for a session.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            Dict with citation stats or empty dict if not cached
+        """
+        with _CACHE_LOCK:
+            if session_id not in _MEMORY_CACHE:
+                return {
+                    "cached": False,
+                    "total_sources": 0,
+                    "total_citations": 0
+                }
+
+            memory = _MEMORY_CACHE[session_id]
+            stats = memory.get_citation_stats()
+            stats["cached"] = True
+            return stats

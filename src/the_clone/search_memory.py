@@ -2021,11 +2021,356 @@ Return JSON:
             for q in self._memory['queries'].values()
         )
 
+        # Count citations in the new citation-aware system
+        sources_store = self._memory.get('sources', {})
+        total_citations = sum(
+            len(s.get('citations', []))
+            for s in sources_store.values()
+        )
+
         return {
             'session_id': self.session_id,
             'total_queries': len(self._memory['queries']),
             'total_sources': total_sources,
             'unique_urls': len(self._memory['indexes']['by_url']),
+            'total_citations': total_citations,
+            'sources_with_citations': len(sources_store),
             'created_at': self._memory.get('created_at'),
             'last_updated': self._memory.get('last_updated')
+        }
+
+    # === CITATION-AWARE MEMORY SYSTEM ===
+    #
+    # Store citations alongside memory so we can return pre-extracted citations
+    # instead of re-extracting. Avoids redundant extraction work while
+    # maintaining the ability to extract fresh when needed.
+
+    def _ensure_sources_store(self):
+        """Ensure the sources store exists in memory structure."""
+        if self._memory is None:
+            self._initialize_empty_memory()
+        if 'sources' not in self._memory:
+            self._memory['sources'] = {}
+
+    def _generate_source_id(self, url: str) -> str:
+        """Generate stable source ID from URL."""
+        url_hash = hashlib.md5(url.lower().strip().encode()).hexdigest()[:12]
+        return f"source_{url_hash}"
+
+    def recall_citations(
+        self,
+        url: str = None,
+        required_keywords: List[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Unified citation recall - check for pre-extracted citations.
+
+        Match required keywords against: stored query/search_term + citation quote +
+        citation context + hit_keywords.
+
+        Args:
+            url: Optional URL to look up directly
+            required_keywords: Mandatory keywords that must match
+
+        Returns:
+            - needs_extraction: False + citations (if required keywords match)
+            - needs_extraction: True + source (if no match but have source)
+            - found: False (if nothing relevant)
+        """
+        self._ensure_sources_store()
+        sources_store = self._memory.get('sources', {})
+        required_keywords = required_keywords or []
+
+        # Find candidate sources
+        candidates = []
+        if url:
+            # URL-based: look up specific source
+            source_id = self._generate_source_id(url)
+            if source_id in sources_store:
+                candidates = [sources_store[source_id]]
+            else:
+                # Try alternate ID formats (legacy)
+                for sid, source in sources_store.items():
+                    if source.get('url', '').rstrip('/') == url.rstrip('/'):
+                        candidates = [source]
+                        break
+        else:
+            # Keyword-based: find sources with content matching keywords
+            candidates = self._keyword_filter_sources(required_keywords)
+
+        if not candidates:
+            return {"found": False}
+
+        # Check each candidate for citation match against required keywords
+        for source in candidates:
+            matching_citations = self._find_matching_citations(
+                citations=source.get("citations", []),
+                query_data=source,  # Contains search_term
+                required_keywords=required_keywords
+            )
+
+            if matching_citations:
+                logger.debug(
+                    f"[MEMORY] Citation recall HIT: {len(matching_citations)} citations match "
+                    f"keywords {required_keywords} for {source.get('url', 'unknown')[:50]}"
+                )
+                return {
+                    "found": True,
+                    "needs_extraction": False,
+                    "citations": matching_citations,
+                    "source_url": source.get("url"),
+                    "source_title": source.get("title")
+                }
+
+        # Have source(s) but no matching citations - need extraction
+        logger.debug(
+            f"[MEMORY] Citation recall MISS: sources found but no citations match "
+            f"keywords {required_keywords}, need extraction"
+        )
+        return {
+            "found": True,
+            "needs_extraction": True,
+            "sources": [
+                {
+                    "url": s.get("url"),
+                    "title": s.get("title"),
+                    "content": s.get("content")
+                }
+                for s in candidates
+            ]
+        }
+
+    def _keyword_filter_sources(self, required_keywords: List[str]) -> List[Dict[str, Any]]:
+        """
+        Filter sources by keyword match.
+
+        Args:
+            required_keywords: Keywords that must appear somewhere in source
+
+        Returns:
+            List of matching source dicts
+        """
+        if not required_keywords:
+            # Return all sources if no keywords specified
+            return list(self._memory.get('sources', {}).values())
+
+        matching = []
+        for source in self._memory.get('sources', {}).values():
+            # Build searchable text
+            searchable = " ".join([
+                source.get("search_term", ""),
+                source.get("title", ""),
+                source.get("content", "")[:5000]  # Limit content for performance
+            ]).lower()
+
+            # All required keywords must match
+            if all(kw.lower() in searchable for kw in required_keywords):
+                matching.append(source)
+
+        return matching
+
+    def _find_matching_citations(
+        self,
+        citations: List[Dict[str, Any]],
+        query_data: Dict[str, Any],
+        required_keywords: List[str]
+    ) -> List[Dict[str, Any]]:
+        """
+        Find citations where required keywords match citation-specific content.
+
+        Match criteria: All required keywords appear somewhere in:
+        - citation quote (the actual extracted text)
+        - citation context (verbal handle)
+        - hit_keywords (keywords captured at extraction time)
+
+        NOTE: We do NOT include source-level search_term in matching because
+        it's shared across all citations for a URL and would cause false matches.
+        The hit_keywords field captures query-specific keywords at extraction time.
+
+        Args:
+            citations: List of stored citations
+            query_data: Stored query data (unused for matching, kept for API compat)
+            required_keywords: Current query's required/mandatory keywords
+        """
+        if not required_keywords:
+            # Return all citations if no keywords specified
+            return citations
+
+        matching = []
+        for citation in citations:
+            # Build searchable text from citation-specific fields only
+            # Don't include source-level search_term as it's shared across citations
+            searchable = " ".join([
+                citation.get("quote", ""),
+                citation.get("context", ""),
+                " ".join(citation.get("hit_keywords", []))
+            ]).lower()
+
+            # All required keywords must appear somewhere in searchable text
+            if all(kw.lower() in searchable for kw in required_keywords):
+                matching.append(citation)
+
+        return matching
+
+    def store_citations(
+        self,
+        url: str,
+        content: str,
+        title: str,
+        search_term: str,
+        citations: List[Dict[str, Any]],
+        source_type: str = "search"
+    ):
+        """
+        Store or update source with new citations.
+
+        Citations accumulate - new extractions add to existing.
+        search_term is stored for recall matching.
+
+        Args:
+            url: Source URL
+            content: Full source content (for fallback extraction)
+            title: Source title
+            search_term: Original query/search term for recall matching
+            citations: List of citations with hit_keywords already computed
+            source_type: Origin type (search, url_fetch, table_extraction)
+        """
+        self._ensure_sources_store()
+        source_id = self._generate_source_id(url)
+        sources_store = self._memory['sources']
+
+        if source_id in sources_store:
+            # Existing source - append new citations
+            existing = sources_store[source_id]
+            existing["citations"].extend(citations)
+            # Dedupe by quote text
+            existing["citations"] = self._dedupe_citations(existing["citations"])
+            logger.debug(
+                f"[MEMORY] Appended {len(citations)} citations to existing source "
+                f"{url[:50]}... (total: {len(existing['citations'])})"
+            )
+        else:
+            # New source
+            sources_store[source_id] = {
+                "url": url,
+                "title": title,
+                "content": content,
+                "search_term": search_term,
+                "source_type": source_type,
+                "citations": citations,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            logger.debug(
+                f"[MEMORY] Stored new source with {len(citations)} citations: {url[:50]}..."
+            )
+
+    def _store_citations_no_backup(
+        self,
+        url: str,
+        content: str,
+        title: str,
+        search_term: str,
+        citations: List[Dict[str, Any]],
+        source_type: str = "search"
+    ):
+        """
+        Store citations WITHOUT S3 backup. Used by MemoryCache for batch operations.
+        """
+        self.store_citations(url, content, title, search_term, citations, source_type)
+        # Note: store_citations doesn't do backup, this method exists for API consistency
+
+    def _dedupe_citations(self, citations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove duplicate citations by quote text."""
+        seen = set()
+        unique = []
+        for c in citations:
+            quote_hash = hash(c.get("quote", "").strip().lower())
+            if quote_hash not in seen:
+                seen.add(quote_hash)
+                unique.append(c)
+        return unique
+
+    @staticmethod
+    def compute_hit_keywords(
+        citation: Dict[str, Any],
+        required_keywords: List[str]
+    ) -> List[str]:
+        """
+        Determine which REQUIRED keywords actually appear in this citation.
+
+        Only stores required/mandatory keywords that are actually found.
+        This is what we match against during recall.
+
+        Args:
+            citation: The extracted citation with quote and context
+            required_keywords: Only the mandatory keywords from the query
+
+        Returns:
+            List of keywords that were found in the citation
+        """
+        citation_text = f"{citation.get('quote', '')} {citation.get('context', '')}".lower()
+
+        hit = []
+        for kw in required_keywords:
+            # Check keyword and common variants
+            variants = SearchMemory._get_keyword_variants(kw)
+            if any(v.lower() in citation_text for v in variants):
+                hit.append(kw)
+
+        return hit
+
+    @staticmethod
+    def _get_keyword_variants(keyword: str) -> List[str]:
+        """
+        Get keyword variants for matching.
+
+        For now, just returns the keyword itself. Can be extended
+        to include abbreviations, stock tickers, etc.
+
+        Args:
+            keyword: The keyword to get variants for
+
+        Returns:
+            List of variant strings to match
+        """
+        # Base variant is the keyword itself
+        variants = [keyword]
+
+        # Common state abbreviations
+        state_abbrevs = {
+            "wyoming": ["wy"],
+            "montana": ["mt"],
+            "california": ["ca"],
+            "new york": ["ny"],
+            "texas": ["tx"],
+            # Add more as needed
+        }
+        kw_lower = keyword.lower()
+        if kw_lower in state_abbrevs:
+            variants.extend(state_abbrevs[kw_lower])
+
+        return variants
+
+    def get_citation_stats(self) -> Dict[str, Any]:
+        """Get statistics about stored citations."""
+        sources_store = self._memory.get('sources', {}) if self._memory else {}
+
+        total_citations = 0
+        sources_with_citations = 0
+        citations_by_type = {}
+
+        for source in sources_store.values():
+            citations = source.get('citations', [])
+            if citations:
+                sources_with_citations += 1
+                total_citations += len(citations)
+
+                source_type = source.get('source_type', 'unknown')
+                citations_by_type[source_type] = citations_by_type.get(source_type, 0) + len(citations)
+
+        return {
+            'total_sources': len(sources_store),
+            'sources_with_citations': sources_with_citations,
+            'total_citations': total_citations,
+            'citations_by_type': citations_by_type
         }

@@ -647,61 +647,117 @@ class TheClone2Refined:
                 )
 
                 # Extract from memory sources BEFORE assessing confidence
+                # But first, check if we have pre-extracted citations (citation-aware memory)
                 memory_snippets = []
                 memory_extract_cost = 0.0  # Track extraction cost separately
                 memory_extract_provider = None
+                citation_recall_count = 0  # Track how many sources used citation recall
+
                 if memory_sources:
-                    logger.debug(f"[CLONE] Extracting from {len(memory_sources)} memory sources...")
+                    logger.debug(f"[CLONE] Processing {len(memory_sources)} memory sources...")
                     extract_start = time.time()
 
-                    if clone_logger:
-                        clone_logger.log_section("Memory Extraction Starting", {
-                            "Sources to Extract": len(memory_sources),
-                            "Extraction Model": models['extraction'],
-                            "Snippet ID Prefix": "SM (Snippet from Memory)"
-                        }, level=4, collapse=True)
+                    # Citation-aware recall: Check for pre-extracted citations
+                    # This avoids redundant extraction when we already have good citations
+                    sources_needing_extraction = []
+                    from the_clone.search_memory_cache import MemoryCache
 
-                    # Prepare memory sources for extraction (add metadata extraction expects)
-                    for rank_idx, source in enumerate(memory_sources):
-                        source['_search_term'] = source.get('_original_query', 'Memory')
-                        source['_search_index'] = 1
-                        source['_search_ref'] = 1
-                        source['_rank_position'] = rank_idx
+                    for source in memory_sources:
+                        source_url = source.get('url')
+                        if source_url:
+                            # Check if we have matching citations for this source
+                            citation_result = MemoryCache.recall_citations(
+                                session_id=session_id,
+                                url=source_url,
+                                required_keywords=required_keywords
+                            )
 
-                    # Extract using batch extraction
-                    batch_result = await self.snippet_extractor.extract_from_sources_batch(
-                        sources=memory_sources,
-                        query=prompt,
-                        snippet_id_prefix="SM",  # SM = Snippet from Memory
-                        all_search_terms=search_terms,
-                        model=models['extraction'],
-                        soft_schema=False,
-                        min_quality_threshold=strategy['min_p_threshold'],
-                        extraction_mode=strategy['extraction_mode'],
-                        max_snippets_per_source=strategy['max_snippets_per_source'],
-                        clone_logger=clone_logger,
-                        provider=provider,
-                        start_source_index=1,
-                        accept_all_quality_levels=strategy.get('accept_all_quality_levels', False)
-                    )
+                            if citation_result.get('found') and not citation_result.get('needs_extraction'):
+                                # We have pre-extracted citations - convert to snippet format
+                                for i, citation in enumerate(citation_result.get('citations', [])):
+                                    snippet = {
+                                        'id': f'SC.{citation_recall_count + 1}.{i + 1}',  # SC = Snippet from Citation
+                                        'text': citation.get('quote', ''),
+                                        'p': citation.get('p_score', 0.8),
+                                        'c': 'H/S',  # High reliability, stored citation
+                                        'verbal_handle': citation.get('context', source.get('title', '')),
+                                        'validation_reason': f"Recalled from citation store (keywords: {citation.get('hit_keywords', [])})",
+                                        'search_ref': 1,
+                                        '_source_title': source.get('title', ''),
+                                        '_source_url': source_url,
+                                        '_source_date': source.get('date', ''),
+                                        '_search_term': source.get('_original_query', ''),
+                                        '_from_citation_recall': True
+                                    }
+                                    memory_snippets.append(snippet)
+                                citation_recall_count += 1
+                                logger.debug(f"[CLONE] Citation recall HIT: {len(citation_result.get('citations', []))} citations for {source_url[:50]}...")
+                            else:
+                                # No matching citations - need extraction
+                                sources_needing_extraction.append(source)
+                        else:
+                            sources_needing_extraction.append(source)
 
-                    # Collect snippets
-                    for source_result in batch_result:
-                        snippets = source_result.get('snippets', [])
-                        memory_snippets.extend(snippets)
+                    if citation_recall_count > 0:
+                        logger.debug(f"[CLONE] Citation recall: {citation_recall_count} sources used cached citations, {len(sources_needing_extraction)} need extraction")
+                        if clone_logger:
+                            clone_logger.log_section("Citation-Aware Recall", {
+                                "Sources with Cached Citations": citation_recall_count,
+                                "Snippets from Cache": len(memory_snippets),
+                                "Sources Needing Extraction": len(sources_needing_extraction)
+                            }, level=4, collapse=False)
 
-                    # Track cost
-                    if batch_result and len(batch_result) > 0:
-                        model_response = batch_result[0].get('model_response', {})
-                        memory_extract_cost, memory_extract_provider = self._extract_cost_and_provider(model_response, clone_logger, stats)
-                        costs['extraction'] = costs.get('extraction', 0.0) + memory_extract_cost
-                        costs_by_provider[memory_extract_provider] = costs_by_provider.get(memory_extract_provider, 0.0) + memory_extract_cost
-                        calls_by_provider[memory_extract_provider] = calls_by_provider.get(memory_extract_provider, 0) + 1
+                    # Extract from remaining sources that don't have cached citations
+                    if sources_needing_extraction:
+                        if clone_logger:
+                            clone_logger.log_section("Memory Extraction Starting", {
+                                "Sources to Extract": len(sources_needing_extraction),
+                                "Extraction Model": models['extraction'],
+                                "Snippet ID Prefix": "SM (Snippet from Memory)"
+                            }, level=4, collapse=True)
+
+                        # Prepare memory sources for extraction (add metadata extraction expects)
+                        for rank_idx, source in enumerate(sources_needing_extraction):
+                            source['_search_term'] = source.get('_original_query', 'Memory')
+                            source['_search_index'] = 1
+                            source['_search_ref'] = 1
+                            source['_rank_position'] = rank_idx
+
+                        # Extract using batch extraction
+                        batch_result = await self.snippet_extractor.extract_from_sources_batch(
+                            sources=sources_needing_extraction,
+                            query=prompt,
+                            snippet_id_prefix="SM",  # SM = Snippet from Memory
+                            all_search_terms=search_terms,
+                            model=models['extraction'],
+                            soft_schema=False,
+                            min_quality_threshold=strategy['min_p_threshold'],
+                            extraction_mode=strategy['extraction_mode'],
+                            max_snippets_per_source=strategy['max_snippets_per_source'],
+                            clone_logger=clone_logger,
+                            provider=provider,
+                            start_source_index=1,
+                            accept_all_quality_levels=strategy.get('accept_all_quality_levels', False)
+                        )
+
+                        # Collect extracted snippets
+                        for source_result in batch_result:
+                            snippets = source_result.get('snippets', [])
+                            memory_snippets.extend(snippets)
+
+                        # Track cost
+                        if batch_result and len(batch_result) > 0:
+                            model_response = batch_result[0].get('model_response', {})
+                            memory_extract_cost, memory_extract_provider = self._extract_cost_and_provider(model_response, clone_logger, stats)
+                            costs['extraction'] = costs.get('extraction', 0.0) + memory_extract_cost
+                            costs_by_provider[memory_extract_provider] = costs_by_provider.get(memory_extract_provider, 0.0) + memory_extract_cost
+                            calls_by_provider[memory_extract_provider] = calls_by_provider.get(memory_extract_provider, 0) + 1
 
                     extract_time = time.time() - extract_start
                     logger.debug(
-                        f"[CLONE] Memory extraction: {len(memory_snippets)} snippets "
-                        f"from {len(memory_sources)} sources ({extract_time:.2f}s, ${memory_extract_cost:.4f})"
+                        f"[CLONE] Memory processing: {len(memory_snippets)} snippets "
+                        f"({citation_recall_count} from cache, {len(sources_needing_extraction)} extracted) "
+                        f"({extract_time:.2f}s, ${memory_extract_cost:.4f})"
                     )
 
                     # Log memory extraction results
@@ -711,18 +767,33 @@ class TheClone2Refined:
                         for i, snippet in enumerate(memory_snippets[:10]):  # First 10
                             p_score = snippet.get('p', 0)
                             text_preview = snippet.get('text', '')[:100]
-                            snippet_summary.append(f"[{snippet.get('id', i)}] p={p_score:.2f}: {text_preview}...")
+                            source_type = "CACHE" if snippet.get('_from_citation_recall') else "EXTRACT"
+                            snippet_summary.append(f"[{snippet.get('id', i)}] ({source_type}) p={p_score:.2f}: {text_preview}...")
 
-                        clone_logger.log_section("Memory Extraction Results", {
-                            "Sources Processed": len(memory_sources),
-                            "Snippets Extracted": len(memory_snippets),
-                            "Extraction Time": f"{extract_time:.2f}s",
+                        clone_logger.log_section("Memory Processing Results", {
+                            "Total Sources": len(memory_sources),
+                            "Sources with Cached Citations": citation_recall_count,
+                            "Sources Extracted": len(sources_needing_extraction),
+                            "Total Snippets": len(memory_snippets),
+                            "From Citation Cache": sum(1 for s in memory_snippets if s.get('_from_citation_recall')),
+                            "From Extraction": sum(1 for s in memory_snippets if not s.get('_from_citation_recall')),
+                            "Processing Time": f"{extract_time:.2f}s",
                             "Extraction Cost": f"${memory_extract_cost:.4f}",
-                            "Provider": memory_extract_provider or "N/A",
+                            "Provider": memory_extract_provider or "N/A (used cache)",
                             "Avg Quality": f"{sum(s.get('p', 0) for s in memory_snippets) / len(memory_snippets):.2f}" if memory_snippets else "N/A",
                             "High Quality (p>=0.85)": sum(1 for s in memory_snippets if s.get('p', 0) >= 0.85),
-                            "Snippet Preview": snippet_summary if snippet_summary else "No snippets extracted"
+                            "Snippet Preview": snippet_summary if snippet_summary else "No snippets"
                         }, level=4, collapse=False)
+
+                    # Store newly extracted snippets as citations for future recall
+                    newly_extracted = [s for s in memory_snippets if not s.get('_from_citation_recall')]
+                    if newly_extracted and session_id:
+                        self._store_snippets_as_citations(
+                            snippets=newly_extracted,
+                            session_id=session_id,
+                            required_keywords=required_keywords,
+                            source_type="memory_extraction"
+                        )
 
                 # Assess confidence based on ACTUAL extracted snippets
                 # (runs even if memory_sources was empty - will return 0 confidence)
@@ -1363,6 +1434,15 @@ class TheClone2Refined:
                         high_p = sum(1 for s in all_snippets if s.get('p', 0) >= 0.85)
                         logger.debug(f"[CLONE] Quality: avg_p={avg_p:.2f}, high_quality={high_p}/{len(all_snippets)}")
 
+                    # Store extracted snippets as citations for future recall
+                    if new_snippets and use_memory and session_id:
+                        self._store_snippets_as_citations(
+                            snippets=new_snippets,
+                            session_id=session_id,
+                            required_keywords=required_keywords,
+                            source_type="search_extraction"
+                        )
+
                     # Check stop condition
                     if should_stop_iteration(all_snippets, strategy):
                         logger.debug(f"[CLONE] Stop condition met ({strategy.get('stop_condition')})")
@@ -1900,3 +1980,79 @@ class TheClone2Refined:
                     pool.append(source)
 
         return pool
+
+    def _store_snippets_as_citations(
+        self,
+        snippets: List[Dict[str, Any]],
+        session_id: str,
+        required_keywords: List[str],
+        source_type: str = "search"
+    ):
+        """
+        Store extracted snippets as citations for future recall.
+
+        This enables citation-aware memory: on future queries with matching
+        required keywords, we can return pre-extracted citations instead of
+        re-extracting from raw source content.
+
+        Args:
+            snippets: List of extracted snippets with _source_url, text, p, etc.
+            session_id: Session identifier for MemoryCache
+            required_keywords: Keywords to compute hit_keywords for recall matching
+            source_type: Origin type (memory_extraction, search_extraction, etc.)
+        """
+        from the_clone.search_memory_cache import MemoryCache
+        from the_clone.search_memory import SearchMemory
+
+        # Group snippets by source URL
+        snippets_by_url = {}
+        for snippet in snippets:
+            url = snippet.get('_source_url')
+            if not url:
+                continue
+            if url not in snippets_by_url:
+                snippets_by_url[url] = {
+                    'snippets': [],
+                    'title': snippet.get('_source_title', 'Unknown'),
+                    'search_term': snippet.get('_search_term', ''),
+                    'content': ''  # We don't store full content here (it's in existing memory)
+                }
+            snippets_by_url[url]['snippets'].append(snippet)
+
+        # Store citations for each source
+        stored_count = 0
+        for url, source_data in snippets_by_url.items():
+            citations = []
+            for snippet in source_data['snippets']:
+                # Convert snippet to citation format
+                citation = {
+                    'quote': snippet.get('text', ''),
+                    'p_score': snippet.get('p', 0.5),
+                    'context': snippet.get('verbal_handle', ''),
+                    'hit_keywords': SearchMemory.compute_hit_keywords(
+                        {'quote': snippet.get('text', ''), 'context': snippet.get('verbal_handle', '')},
+                        required_keywords
+                    ),
+                    'extracted_at': datetime.now().isoformat(),
+                    'snippet_id': snippet.get('id', ''),
+                    'validation_reason': snippet.get('validation_reason', '')
+                }
+                citations.append(citation)
+
+            if citations:
+                try:
+                    MemoryCache.store_citations(
+                        session_id=session_id,
+                        url=url,
+                        content='',  # Content already in existing memory
+                        title=source_data['title'],
+                        search_term=source_data['search_term'],
+                        citations=citations,
+                        source_type=source_type
+                    )
+                    stored_count += len(citations)
+                except Exception as e:
+                    logger.warning(f"[CLONE] Failed to store citations for {url[:50]}: {e}")
+
+        if stored_count > 0:
+            logger.debug(f"[CLONE] Stored {stored_count} citations from {len(snippets_by_url)} sources (type: {source_type})")

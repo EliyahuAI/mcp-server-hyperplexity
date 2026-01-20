@@ -990,3 +990,123 @@ The memory system is working correctly when:
 [CLONE_MEMORY_DEBUG] Citations: 5 total, 2 from memory, 2 from search, 1 from Jina
 [CLONE_MEMORY_DEBUG] Jina-fetched URLs: ['https://example.com/...']
 ```
+
+## Citation-Aware Memory System
+
+The memory system includes **citation-aware storage and recall** that avoids redundant extraction by returning pre-extracted citations when they match the required keywords.
+
+### How It Works
+
+**After Extraction**: When snippets are extracted from sources, they are stored as citations with `hit_keywords` (the required keywords that were found in the citation).
+
+**During Recall**: Before extracting from a source, the system checks if there are already stored citations that match the current query's required keywords. If found, the cached citations are returned directly without re-extraction.
+
+### Citation Storage Structure
+
+```json
+{
+  "sources": {
+    "source_abc123": {
+      "url": "https://census.gov/population-by-state",
+      "title": "US Population by State",
+      "content": "Full table...",
+      "source_type": "search",
+      "search_term": "US state population 2020",
+      "citations": [
+        {
+          "quote": "Wyoming: 576,851",
+          "p_score": 0.92,
+          "context": "Census 2020 table",
+          "hit_keywords": ["Wyoming", "population", "2020"],
+          "extracted_at": "2026-01-20T10:30:00Z"
+        },
+        {
+          "quote": "Montana: 1,084,225",
+          "p_score": 0.89,
+          "context": "Census 2020 table",
+          "hit_keywords": ["Montana", "population", "2020"],
+          "extracted_at": "2026-01-20T11:00:00Z"
+        }
+      ]
+    }
+  }
+}
+```
+
+### Citation-Aware Recall Flow
+
+```python
+# Check for cached citations before extraction
+result = MemoryCache.recall_citations(
+    session_id=session_id,
+    url=source_url,
+    required_keywords=['Wyoming', 'population']
+)
+
+if result['found'] and not result['needs_extraction']:
+    # Use cached citations directly (no extraction needed)
+    for citation in result['citations']:
+        snippet = convert_citation_to_snippet(citation)
+        memory_snippets.append(snippet)
+else:
+    # Need extraction - run extraction then store
+    snippets = await extractor.extract(source)
+    MemoryCache.store_citations(
+        session_id=session_id,
+        url=source_url,
+        citations=snippets_to_citations(snippets, required_keywords)
+    )
+```
+
+### Citation Accumulation
+
+Citations accumulate over time for the same source. Different validation runs with different entities add new citations:
+
+1. **First validation** (Wyoming population): Extracts and stores citation with `hit_keywords: ["Wyoming", "population"]`
+2. **Second validation** (Montana population): Same source, extracts and stores citation with `hit_keywords: ["Montana", "population"]`
+3. **Third validation** (Wyoming population again): **Recalls cached citation** - no extraction needed
+
+### MemoryCache Citation Methods
+
+```python
+# Store citations after extraction
+MemoryCache.store_citations(
+    session_id=session_id,
+    url="https://census.gov/pop",
+    content="Full table content...",
+    title="Census Data",
+    search_term="state population 2020",
+    citations=[{
+        'quote': 'Wyoming: 576,851',
+        'p_score': 0.92,
+        'context': 'Census table',
+        'hit_keywords': ['Wyoming', 'population'],
+        'extracted_at': '2026-01-20T10:30:00Z'
+    }],
+    source_type="search"
+)
+
+# Recall cached citations
+result = MemoryCache.recall_citations(
+    session_id=session_id,
+    url="https://census.gov/pop",
+    required_keywords=['Wyoming', 'population']
+)
+
+# Get citation statistics
+stats = MemoryCache.get_citation_stats(session_id)
+print(f"Total citations: {stats['total_citations']}")
+```
+
+### Debug Logging
+
+```
+[CLONE] Citation recall HIT: 3 citations match keywords ['Wyoming', 'population']
+[CLONE] Citation recall MISS: sources found but no citations match keywords ['California']
+[CLONE] Memory processing: 5 snippets (2 from cache, 3 extracted) (1.2s, $0.0012)
+[CLONE] Stored 4 citations from 2 sources (type: search_extraction)
+```
+
+### Related Documentation
+
+- `docs/CITATION_AWARE_MEMORY_PLAN.md` - Implementation plan and design details

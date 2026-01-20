@@ -1,5 +1,13 @@
 # Citation-Aware Memory System - Implementation Plan
 
+> **STATUS: IMPLEMENTED** (2026-01-20)
+>
+> This plan has been fully implemented. See:
+> - `src/the_clone/search_memory.py` - Core citation storage and recall methods
+> - `src/the_clone/search_memory_cache.py` - MemoryCache wrapper methods
+> - `src/the_clone/the_clone.py` - Integration in extraction flow
+> - `src/the_clone/tests/test_citation_aware_memory.py` - Unit tests
+
 ## Overview
 
 Store citations alongside memory so we can return pre-extracted citations instead of re-extracting. This avoids redundant extraction work while maintaining the ability to extract fresh when needed.
@@ -379,10 +387,13 @@ if not query_urls:
 | Nothing found | Jina fetch (URL) or search (keywords) |
 
 **Matching logic**: All required keywords must appear somewhere in the combined text of:
-- Stored `search_term`
 - Citation `quote`
 - Citation `context`
 - Citation `hit_keywords`
+
+> **Implementation Note**: The source-level `search_term` is NOT used for matching
+> because it's shared across all citations for a URL and would cause false matches
+> when the same source has citations for different entities (e.g., Wyoming vs Montana).
 
 ---
 
