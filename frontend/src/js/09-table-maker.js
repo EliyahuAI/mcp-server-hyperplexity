@@ -712,6 +712,12 @@ const card = createCard({
             width: 'full',
             callback: async (e) => {
                 const button = e.target.closest('button');
+                // Validate input before marking button (so button stays enabled on error)
+                const input = document.getElementById(`${cardId}-input`);
+                if (!input || !input.value.trim()) {
+                    showMessage(`${cardId}-messages`, 'Please describe what table you want to create', 'error');
+                    return;
+                }
                 markButtonSelected(button, 'Thinking...');
                 await startTableConversationFromCard(cardId);
             }
