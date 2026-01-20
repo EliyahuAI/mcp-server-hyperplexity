@@ -156,8 +156,9 @@ class ModelConfigTable:
             )
             
             configs = response.get('Items', [])
-            # Sort by priority (lower number = higher priority)
-            configs.sort(key=lambda c: c.get('priority', 999))
+            # Sort by priority (lower number = higher priority), then by pattern length (longer = more specific)
+            # This ensures more specific patterns like "gemini-2.5-flash-lite*" match before broader "gemini-2.5-flash*"
+            configs.sort(key=lambda c: (c.get('priority', 999), -len(c.get('model_pattern', ''))))
             
             # Find first matching pattern
             for config in configs:
