@@ -793,6 +793,7 @@ The memory copy is recorded in `session_info.json`:
 - **Memory copying on config match** (copies agent_memory.json with caution note)
 - **Recency priority scoring** (fresher memories get priority in recall)
 - **Relative time display** (verification shows "2 days ago" not timestamps)
+- **Jina-fetched URL storage** (live-fetched URLs stored to memory for future recall)
 
 ### 📊 Performance Metrics
 - Recall time: ~500-750ms
@@ -836,6 +837,16 @@ The memory copy is recorded in `session_info.json`:
 - Verification runs on snippet previews (2000 chars), not full content
 - Self-assessment "B" triggers improvement searches (bypasses memory savings)
 
+### Known Issue: URL Memory Storage Gap
+
+**Issue documented in:** `docs/MEMORY_URL_STORAGE_ISSUE.md`
+
+**Summary:** URLs cited in validation output may not appear in `agent_memory.json`, causing subsequent runs to re-fetch via Jina.
+
+**Fix applied:** Jina-fetched URLs are now stored to memory in `fetch_url_content()` (lines 1987-2002 in `search_memory.py`).
+
+**Open question:** Why would Jina be called in the first validation run at all? This remains unexplained. See the issue doc for details.
+
 ## Troubleshooting
 
 ### Memory Not Working
@@ -871,6 +882,17 @@ The memory copy is recorded in `session_info.json`:
 - Memory saved initial search, but improvement searches still executed
 
 **This is normal** - memory provides starting point, clone augments if needed
+
+### URLs Not Being Recalled
+
+**Symptom:** URL Memory Lookup shows URLs as "Not in Memory" even though they were used in a previous validation.
+
+**Debug steps:**
+1. Check `[CLONE_MEMORY_DEBUG]` logs for how many URLs were stored
+2. Check `[MEMORY_CACHE]` flush logs for query/URL counts
+3. Compare citation URLs with URLs in search results
+
+**See:** `docs/MEMORY_URL_STORAGE_ISSUE.md` for detailed analysis of this issue.
 
 ## Example: Lambda Integration
 
@@ -959,4 +981,12 @@ The memory system is working correctly when:
 [MEMORY] Verification: confidence=0.72, recommended_searches=2
 [CLONE] Search decision: supplement - Using Gemini's recommended searches
 [SEARCH] Executing 2 searches: ['Python 3.12 performance', 'PEP 709 benchmarks']
+```
+
+**Memory Debug Logging (for MEMORY_URL_STORAGE_ISSUE):**
+```
+[CLONE_MEMORY_DEBUG] Stored 3 searches with 15 URLs to memory (RAM cache)
+[MEMORY_CACHE] Flushing 72 queries, 156 unique URLs to S3 for session session_123
+[CLONE_MEMORY_DEBUG] Citations: 5 total, 2 from memory, 2 from search, 1 from Jina
+[CLONE_MEMORY_DEBUG] Jina-fetched URLs: ['https://example.com/...']
 ```

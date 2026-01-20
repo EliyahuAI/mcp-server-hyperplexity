@@ -14950,6 +14950,9 @@ setTimeout(() => {
     setTimeout(() => {
         window.scrollTo = originalScrollTo;
         Element.prototype.scrollIntoView = originalScrollIntoView;
+        // Clear the initial restore decision flag to allow future back/forward restoration
+        // This ensures the flag doesn't stay set forever if visibilitychange never fires
+        window.initialRestoreDecisionMade = false;
     }, 500);
 }, 100);
 
@@ -15538,7 +15541,23 @@ if (event.persisted) {
         // Try to restore state when DOM is loaded - BEFORE other initialization
         // Only restores on back/forward navigation, NOT on page reload
         function attemptStateRestore() {
+// Mark that initial restore decision is being made
+// This prevents visibilitychange from attempting duplicate restoration
+window.initialRestoreDecisionMade = true;
+
 const stateKey = getStateKey();
+
+// CRITICAL: Check if user was warned and chose to leave/reload
+// If so, they want a fresh start - don't restore state regardless of timing
+const userWasWarned = sessionStorage.getItem('hyperplexity_user_warned');
+sessionStorage.removeItem('hyperplexity_user_warned'); // Clear flag after checking
+if (userWasWarned) {
+    console.log('[STATE] User was warned and chose to leave, clearing state for fresh start');
+    sessionStorage.removeItem(stateKey);
+    sessionStorage.removeItem('hyperplexity_nav_timestamp');
+    return false;
+}
+
 const hasState = sessionStorage.getItem(stateKey);
 if (hasState) {
     try {
@@ -16175,6 +16194,10 @@ setTimeout(() => {
         window.addEventListener('beforeunload', (e) => {
 // Don't warn if user explicitly clicked "New Validation" or is downloading
 if (hasValuableData() && !isDownloading && !window.isResetting) {
+    // Mark that user was warned - if they proceed, we'll clear state on reload
+    // This ensures consistent behavior: warning shown = state cleared on reload
+    sessionStorage.setItem('hyperplexity_user_warned', 'true');
+
     // Save state for navigation (not refresh)
     if (typeof saveApplicationState === 'function') {
         saveApplicationState();
@@ -16196,6 +16219,9 @@ if (window.isResetting) {
 }
         });
 
+        // Track if initial restoration decision has been made (to avoid duplicate restoration attempts)
+        window.initialRestoreDecisionMade = false;
+
         // Handle page visibility changes (back/forward navigation)
         document.addEventListener('visibilitychange', () => {
 if (!document.hidden) {
@@ -16212,7 +16238,13 @@ if (!document.hidden) {
 
     // Small delay to ensure state is ready
     setTimeout(() => {
-        if (hasValuableData()) {
+        // Don't attempt restoration if:
+        // - Initial restore decision was already made (page just loaded)
+        // - Already have valuable data displayed
+        // - User is in the middle of resetting
+        if (window.initialRestoreDecisionMade || hasValuableData() || window.isResetting) {
+            // Clear the flag after first visibility change to allow future back/forward restoration
+            window.initialRestoreDecisionMade = false;
             return;
         }
 

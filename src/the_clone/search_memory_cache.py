@@ -243,13 +243,15 @@ class MemoryCache:
 
             memory = _MEMORY_CACHE[session_id]
             query_count = len(memory._memory.get('queries', {}))
+            url_count = len(memory._memory.get('indexes', {}).get('by_url', {}))
 
             # Mark as clean BEFORE write to prevent double-flush
             # If write fails, we'll log error but won't retry
             _DIRTY_SESSIONS.discard(session_id)
 
         # Lock is held throughout backup to prevent race conditions during serialization
-        logger.info(f"[MEMORY_CACHE] Flushing {query_count} queries to S3 for session {session_id}")
+        # Log for MEMORY_URL_STORAGE_ISSUE debugging
+        logger.info(f"[MEMORY_CACHE] Flushing {query_count} queries, {url_count} unique URLs to S3 for session {session_id}")
         start_time = __import__('time').time()
 
         try:

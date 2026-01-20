@@ -989,6 +989,8 @@ class TheClone2Refined:
             if use_memory and session_id and email and s3_manager:
                 try:
                     from the_clone.search_memory_cache import MemoryCache
+                    stored_count = 0
+                    total_urls_indexed = 0
                     for term, result in zip(search_terms, search_results):
                         if not isinstance(result, Exception):
                             MemoryCache.store_search(
@@ -998,7 +1000,10 @@ class TheClone2Refined:
                                 parameters=search_settings,
                                 strategy=strategy['name']
                             )
-                    logger.debug(f"[MEMORY] Stored {len(search_terms)} searches (RAM cache)")
+                            stored_count += 1
+                            total_urls_indexed += len(result.get('results', []))
+                    # Log for MEMORY_URL_STORAGE_ISSUE debugging
+                    logger.info(f"[CLONE_MEMORY_DEBUG] Stored {stored_count} searches with {total_urls_indexed} URLs to memory (RAM cache)")
                 except Exception as e:
                     logger.warning(f"[MEMORY] Failed to store searches: {e}")
         else:
@@ -1748,6 +1753,16 @@ class TheClone2Refined:
 
         if clone_logger:
             clone_logger.finalize(metadata, final_answer_data, final_citations)
+
+        # Log citation URLs for memory debugging (MEMORY_URL_STORAGE_ISSUE)
+        if final_citations:
+            citation_urls = [c.get('url', 'no-url') for c in final_citations]
+            from_memory = [c.get('url', 'no-url') for c in final_citations if c.get('_from_memory')]
+            from_search = [c.get('url', 'no-url') for c in final_citations if not c.get('_from_memory') and not c.get('_from_live_fetch')]
+            from_jina = [c.get('url', 'no-url') for c in final_citations if c.get('_from_live_fetch')]
+            logger.info(f"[CLONE_MEMORY_DEBUG] Citations: {len(final_citations)} total, {len(from_memory)} from memory, {len(from_search)} from search, {len(from_jina)} from Jina")
+            if from_jina:
+                logger.info(f"[CLONE_MEMORY_DEBUG] Jina-fetched URLs: {from_jina[:5]}{'...' if len(from_jina) > 5 else ''}")
 
         return {
             "answer": final_answer_data,

@@ -1983,6 +1983,23 @@ Return JSON:
 
                     fetched_sources.append(source)
                     logger.debug(f"[MEMORY] Fetched URL: {url} ({len(markdown)} chars, title: {title[:50]})")
+
+                    # Store fetched content to memory for future recall
+                    try:
+                        await self.store_url_content(
+                            url=url,
+                            content=snippet,
+                            title=title,
+                            source_type="jina_live_fetch",
+                            metadata={
+                                "content_length": len(markdown),
+                                "fetch_method": "jina_reader",
+                                "truncated": len(markdown) > 8000
+                            }
+                        )
+                        logger.debug(f"[MEMORY] Stored live-fetched URL to memory: {url}")
+                    except Exception as store_err:
+                        logger.warning(f"[MEMORY] Failed to store live-fetched URL (non-fatal): {store_err}")
                 else:
                     logger.warning(f"[MEMORY] Failed to fetch URL: {url} - {jina_result.get('error', 'Unknown error')}")
 
