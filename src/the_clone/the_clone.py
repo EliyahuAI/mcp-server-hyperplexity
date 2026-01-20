@@ -665,35 +665,40 @@ class TheClone2Refined:
                     for source in memory_sources:
                         source_url = source.get('url')
                         if source_url:
-                            # Check if we have matching citations for this source
-                            citation_result = MemoryCache.recall_citations(
-                                session_id=session_id,
-                                url=source_url,
-                                required_keywords=required_keywords
-                            )
+                            try:
+                                # Check if we have matching citations for this source
+                                citation_result = MemoryCache.recall_citations(
+                                    session_id=session_id,
+                                    url=source_url,
+                                    required_keywords=required_keywords
+                                )
 
-                            if citation_result.get('found') and not citation_result.get('needs_extraction'):
-                                # We have pre-extracted citations - convert to snippet format
-                                for i, citation in enumerate(citation_result.get('citations', [])):
-                                    snippet = {
-                                        'id': f'SC.{citation_recall_count + 1}.{i + 1}',  # SC = Snippet from Citation
-                                        'text': citation.get('quote', ''),
-                                        'p': citation.get('p_score', 0.8),
-                                        'c': 'H/S',  # High reliability, stored citation
-                                        'verbal_handle': citation.get('context', source.get('title', '')),
-                                        'validation_reason': f"Recalled from citation store (keywords: {citation.get('hit_keywords', [])})",
-                                        'search_ref': 1,
-                                        '_source_title': source.get('title', ''),
-                                        '_source_url': source_url,
-                                        '_source_date': source.get('date', ''),
-                                        '_search_term': source.get('_original_query', ''),
-                                        '_from_citation_recall': True
-                                    }
-                                    memory_snippets.append(snippet)
-                                citation_recall_count += 1
-                                logger.debug(f"[CLONE] Citation recall HIT: {len(citation_result.get('citations', []))} citations for {source_url[:50]}...")
-                            else:
-                                # No matching citations - need extraction
+                                if citation_result.get('found') and not citation_result.get('needs_extraction'):
+                                    # We have pre-extracted citations - convert to snippet format
+                                    for i, citation in enumerate(citation_result.get('citations', [])):
+                                        snippet = {
+                                            'id': f'SC.{citation_recall_count + 1}.{i + 1}',  # SC = Snippet from Citation
+                                            'text': citation.get('quote', ''),
+                                            'p': citation.get('p_score', 0.8),
+                                            'c': 'H/S',  # High reliability, stored citation
+                                            'verbal_handle': citation.get('context', source.get('title', '')),
+                                            'validation_reason': f"Recalled from citation store (keywords: {citation.get('hit_keywords', [])})",
+                                            'search_ref': 1,
+                                            '_source_title': source.get('title', ''),
+                                            '_source_url': source_url,
+                                            '_source_date': source.get('date', ''),
+                                            '_search_term': source.get('_original_query', ''),
+                                            '_from_citation_recall': True
+                                        }
+                                        memory_snippets.append(snippet)
+                                    citation_recall_count += 1
+                                    logger.debug(f"[CLONE] Citation recall HIT: {len(citation_result.get('citations', []))} citations for {source_url[:50]}...")
+                                else:
+                                    # No matching citations - need extraction
+                                    sources_needing_extraction.append(source)
+                            except Exception as e:
+                                # Citation recall failed - fall back to extraction
+                                logger.warning(f"[CLONE] Citation recall failed for {source_url[:50]}: {e}")
                                 sources_needing_extraction.append(source)
                         else:
                             sources_needing_extraction.append(source)

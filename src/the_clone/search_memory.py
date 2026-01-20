@@ -2101,7 +2101,11 @@ Return JSON:
         if not candidates:
             return {"found": False}
 
-        # Check each candidate for citation match against required keywords
+        # Check ALL candidates and aggregate matching citations
+        all_matching_citations = []
+        sources_with_matches = []
+        sources_without_matches = []
+
         for source in candidates:
             matching_citations = self._find_matching_citations(
                 citations=source.get("citations", []),
@@ -2110,17 +2114,24 @@ Return JSON:
             )
 
             if matching_citations:
-                logger.debug(
-                    f"[MEMORY] Citation recall HIT: {len(matching_citations)} citations match "
-                    f"keywords {required_keywords} for {source.get('url', 'unknown')[:50]}"
-                )
-                return {
-                    "found": True,
-                    "needs_extraction": False,
-                    "citations": matching_citations,
-                    "source_url": source.get("url"),
-                    "source_title": source.get("title")
-                }
+                all_matching_citations.extend(matching_citations)
+                sources_with_matches.append(source)
+            else:
+                sources_without_matches.append(source)
+
+        if all_matching_citations:
+            logger.debug(
+                f"[MEMORY] Citation recall HIT: {len(all_matching_citations)} citations match "
+                f"keywords {required_keywords} from {len(sources_with_matches)} sources"
+            )
+            return {
+                "found": True,
+                "needs_extraction": False,
+                "citations": all_matching_citations,
+                "source_url": sources_with_matches[0].get("url") if len(sources_with_matches) == 1 else None,
+                "source_title": sources_with_matches[0].get("title") if len(sources_with_matches) == 1 else None,
+                "sources_matched": len(sources_with_matches)
+            }
 
         # Have source(s) but no matching citations - need extraction
         logger.debug(
@@ -2144,6 +2155,8 @@ Return JSON:
         """
         Filter sources by keyword match.
 
+        Supports | pattern for OR variants within keyword groups.
+
         Args:
             required_keywords: Keywords that must appear somewhere in source
 
@@ -2163,8 +2176,16 @@ Return JSON:
                 source.get("content", "")[:5000]  # Limit content for performance
             ]).lower()
 
-            # All required keywords must match
-            if all(kw.lower() in searchable for kw in required_keywords):
+            # All required keyword groups must match (AND between groups, OR within)
+            all_groups_match = True
+            for keyword_group in required_keywords:
+                # Split by | for OR variants within group
+                variants = [v.strip().lower() for v in keyword_group.split('|')]
+                if not any(variant in searchable for variant in variants):
+                    all_groups_match = False
+                    break
+
+            if all_groups_match:
                 matching.append(source)
 
         return matching
