@@ -2197,53 +2197,58 @@ Return JSON:
         required_keywords: List[str]
     ) -> List[Dict[str, Any]]:
         """
-        Find citations where required keywords match citation-specific content.
+        Check if a source's citations COLLECTIVELY match required keywords.
 
-        Match criteria: All required keyword GROUPS appear somewhere in:
-        - citation quote (the actual extracted text)
-        - citation context (verbal handle)
-        - hit_keywords (keywords captured at extraction time)
+        AGGREGATE MATCHING: Keywords are matched against ALL citations combined.
+        If citation 1 has "Wyoming" and citation 2 has "population", searching
+        for ["Wyoming", "population"] matches because together they cover all keywords.
+
+        If the aggregate matches, ALL citations from the source are returned
+        (each with their individual quote/text and context/verbal_handle).
 
         Supports | pattern for OR variants:
         - "MSFT|Microsoft" matches if either "MSFT" OR "Microsoft" is found
         - All keyword groups must match (AND between groups, OR within groups)
 
-        NOTE: We do NOT include source-level search_term in matching because
-        it's shared across all citations for a URL and would cause false matches.
-        The hit_keywords field captures query-specific keywords at extraction time.
-
         Args:
-            citations: List of stored citations
+            citations: List of stored citations from a single source
             query_data: Stored query data (unused for matching, kept for API compat)
             required_keywords: Current query's required/mandatory keyword groups
+
+        Returns:
+            All citations if aggregate matches, empty list otherwise
         """
         if not required_keywords:
             # Return all citations if no keywords specified
             return citations
 
-        matching = []
+        if not citations:
+            return []
+
+        # Build AGGREGATE searchable text from ALL citations in this source
+        # This allows keyword coverage across multiple citations
+        aggregate_parts = []
         for citation in citations:
-            # Build searchable text from citation-specific fields only
-            # Don't include source-level search_term as it's shared across citations
-            searchable = " ".join([
-                citation.get("quote", ""),
-                citation.get("context", ""),
-                " ".join(citation.get("hit_keywords", []))
-            ]).lower()
+            aggregate_parts.append(citation.get("quote", ""))
+            aggregate_parts.append(citation.get("context", ""))
+            aggregate_parts.extend(citation.get("hit_keywords", []))
 
-            # All required keyword groups must match (AND between groups)
-            all_groups_match = True
-            for keyword_group in required_keywords:
-                # Split by | for OR variants within group
-                variants = [v.strip().lower() for v in keyword_group.split('|')]
-                if not any(variant in searchable for variant in variants):
-                    all_groups_match = False
-                    break
+        aggregate_searchable = " ".join(aggregate_parts).lower()
 
-            if all_groups_match:
-                matching.append(citation)
+        # Check if all required keyword groups are covered by the aggregate
+        all_groups_match = True
+        for keyword_group in required_keywords:
+            # Split by | for OR variants within group
+            variants = [v.strip().lower() for v in keyword_group.split('|')]
+            if not any(variant in aggregate_searchable for variant in variants):
+                all_groups_match = False
+                break
 
-        return matching
+        # If aggregate matches, return ALL citations from this source
+        if all_groups_match:
+            return citations
+        else:
+            return []
 
     def store_citations(
         self,
