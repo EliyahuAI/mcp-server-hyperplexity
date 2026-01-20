@@ -134,48 +134,32 @@ Max 25 chars. Must be unique within source (append _2, _3 if needed).
 
 ```json
 {{
-  "quotes_by_source": {{
-    "S1": {{
-      "source_handle": "freddie",
-      "c": "H/P",
-      "p": "p95",
-      "quotes_by_search": {{
-        "1": [
-          ["mortgage-rate_dec-2025", "§S1:1.1"],
-          ["refinance-rate_30yr-fixed", "§S1:2.1"]
-        ],
-        "2": []
-      }}
-    }},
-    "S2": {{
-      "source_handle": "nih",
-      "c": "H/D/A",
-      "p": "p85",
-      "quotes_by_search": {{
-        "1": [
-          ["weight-loss_if-vs-cer", "[§S2:1.0] §S2:1.5"],
-          ["insulin-sensitivity_tre-protocol", "§S2:2.1-2.3"]
-        ]
-      }}
-    }},
-    "S3": {{
-      "source_handle": "techblog",
-      "c": "M/O",
-      "p": "p65",
-      "quotes_by_search": {{
-        "1": [["ai-trends_2025", "§S3:1.1"]]
-      }}
-    }}
+  "source_metadata": {{
+    "S1": {{"handle": "freddie", "c": "H/P", "p": "p95"}},
+    "S2": {{"handle": "nih", "c": "H/D/A", "p": "p85"}},
+    "S3": {{"handle": "techblog", "c": "M/O", "p": "p65"}}
+  }},
+  "quotes_by_search": {{
+    "1": [
+      ["mortgage-rate_dec-2025", "§S1:1.1"],
+      ["refinance-rate_30yr-fixed", "§S1:2.1"],
+      ["weight-loss_if-vs-cer", "[§S2:1.0] §S2:1.5"],
+      ["insulin-sensitivity_tre-protocol", "§S2:2.1-2.3"],
+      ["ai-trends_2025", "§S3:1.1"]
+    ],
+    "2": []
   }}
 }}
 ```
 
-**For each source:**
-- **source_handle**: 1-word identifier
-- **c**: Authority + all applicable quality codes (H/P, M/A/O, L/U/S, etc.)
-- **p**: Source-level probability (p05, p15, p30, p50, p65, p85, p95)
-- **quotes_by_search**: Organized by search term number
-  - Each quote: `[detail_limitation, code]` ← **HANDLE FIRST, then code**
-  - **Max {max_snippets} per search term** - once text is extracted, don't repeat it for other terms
+**source_metadata** - One entry per source:
+- **handle**: 1-word identifier (nih, webmd, freddie)
+- **c**: Authority + quality codes (H/P, M/A/O, L/U/S)
+- **p**: Probability (p05, p15, p30, p50, p65, p85, p95)
+
+**quotes_by_search** - Organized by search term number:
+- Each quote: `[detail_limitation, code]` ← **HANDLE FIRST, then code**
+- Source is identified by code prefix (§S1:1.1 → S1)
+- **Max {max_snippets} per source per search term**
 
 Return empty `{{}}` if nothing clear.

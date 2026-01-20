@@ -35,17 +35,66 @@ def convert_p_string_to_number(p_value):
     return 0.50
 
 
-def get_snippet_extraction_batch_code_schema_v2() -> dict:
+def get_snippet_extraction_batch_code_schema_v3() -> dict:
     """
-    Schema for batch extraction with source-level assessment.
+    Schema for batch extraction with flattened structure (v3).
 
     Structure:
-    - Each source has: source_handle, c (classification), p (probability)
-    - Each snippet has: [code, detail_limitation]
-    - Full handle assembled later: {source_handle}_{detail}_{limitation}
+    - source_metadata: Per-source assessment (handle, c, p)
+    - quotes_by_search: Flat list of quotes per search term
+    - Source is derived from code prefix (§S1:1.2 -> S1)
 
     Returns:
-        JSON schema for batch code-based extraction with source-level assessment
+        JSON schema for batch code-based extraction
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "source_metadata": {
+                "type": "object",
+                "description": "Source-level assessment keyed by source ID (S1, S2, S3)",
+                "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                        "handle": {
+                            "type": "string",
+                            "description": "1-word source identifier (nih, webmd, pubmed, etc.)"
+                        },
+                        "c": {
+                            "type": "string",
+                            "description": "Classification: Authority + quality codes (H/P, M/A/O, L/U/S)"
+                        },
+                        "p": {
+                            "type": "string",
+                            "description": "Probability score: p05, p15, p30, p50, p65, p85, p95",
+                            "enum": ["p05", "p15", "p30", "p50", "p65", "p85", "p95"]
+                        }
+                    },
+                    "required": ["handle", "c", "p"]
+                }
+            },
+            "quotes_by_search": {
+                "type": "object",
+                "description": "Quotes organized by search term number (1, 2, 3)",
+                "additionalProperties": {
+                    "type": "array",
+                    "description": "Array of [detail_limitation, code] pairs",
+                    "items": {
+                        "type": "array",
+                        "description": "[detail_limitation, code] - source derived from code prefix",
+                        "items": {"type": "string"}
+                    }
+                }
+            }
+        },
+        "required": ["source_metadata", "quotes_by_search"]
+    }
+
+
+def get_snippet_extraction_batch_code_schema_v2() -> dict:
+    """
+    DEPRECATED: Old nested schema. Use v3 instead.
+    Kept for backward compatibility.
     """
     return {
         "type": "object",
@@ -171,8 +220,8 @@ def get_snippet_extraction_schema() -> dict:
 
 # Backward compatibility - keep old schema function names
 def get_snippet_extraction_batch_code_schema() -> dict:
-    """Legacy schema - redirects to v2."""
-    return get_snippet_extraction_batch_code_schema_v2()
+    """Current schema - uses v3 flattened structure."""
+    return get_snippet_extraction_batch_code_schema_v3()
 
 
 def get_snippet_extraction_code_schema() -> dict:

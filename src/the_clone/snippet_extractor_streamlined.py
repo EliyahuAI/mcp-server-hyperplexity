@@ -592,15 +592,18 @@ class SnippetExtractorStreamlined:
             if clone_logger:
                 clone_logger.log_section(f"Batch Extraction Result ({len(sources)} sources)", data, level=4, collapse=True)
 
-            quotes_by_source = data.get('quotes_by_source', {})
+            # New v3 schema: source_metadata + quotes_by_search (flat)
+            source_metadata = data.get('source_metadata', {})
+            quotes_by_search = data.get('quotes_by_search', {})
+
+            # Build lookup map from source_id to labeled_src
+            source_lookup = {src['source_id']: src for src in labeled_sources}
 
             # 1. Calculate dynamic threshold based on available quality (Top 2 Levels)
             all_p_scores = set()
-            for src_id, src_data in quotes_by_source.items():
-                if src_data.get('quotes_by_search'):
-                    # Convert p from string format (p05, p15, etc.) to number (0.05, 0.15, etc.)
-                    p_value = convert_p_string_to_number(src_data.get('p', 0.50))
-                    all_p_scores.add(p_value)
+            for src_id, meta in source_metadata.items():
+                p_value = convert_p_string_to_number(meta.get('p', 0.50))
+                all_p_scores.add(p_value)
 
             sorted_p = sorted(list(all_p_scores), reverse=True)
 
@@ -620,54 +623,59 @@ class SnippetExtractorStreamlined:
 
                 logger.debug(f"[BATCH EXTRACTOR] Dynamic threshold: p >= {effective_threshold} (Available levels: {sorted_p}, Strategy min: {min_quality_threshold})")
 
-            # Process each source's quotes
-            results = []
-            for labeled_src in labeled_sources:
-                source_id = labeled_src['source_id']
-                source_num = labeled_src['source_num']
-                resolver = labeled_src['resolver']
+            # Process quotes - organized by source for results
+            snippets_by_source = {src['source_id']: [] for src in labeled_sources}
+            snippet_counters = {src['source_id']: 0 for src in labeled_sources}
+            dropped_by_source = {src['source_id']: 0 for src in labeled_sources}
 
-                # Get source data (new format with source-level assessment)
-                source_data = quotes_by_source.get(source_id, {})
+            for search_num_str, quotes in quotes_by_search.items():
+                search_num = int(search_num_str)
 
-                # Extract source-level metadata
-                source_handle = source_data.get('source_handle', f'source{source_num}')
-                source_c = source_data.get('c', 'M/O')  # Classification (e.g., H/P, M/A/O)
-                # Convert p from string format (p05, p15, etc.) to number (0.05, 0.15, etc.)
-                source_p = convert_p_string_to_number(source_data.get('p', 0.50))
-                source_quotes_by_search = source_data.get('quotes_by_search', {})
+                if not isinstance(quotes, list):
+                    continue
 
-                snippets = []
-                snippet_counter = 0
-                dropped_count = 0
-                
-                # Check if this source is considered "lower quality" relative to original strict requirements
-                is_lower_quality = source_p < min_quality_threshold
+                for quote_array in quotes:
+                    if not isinstance(quote_array, list) or len(quote_array) < 2:
+                        continue
 
-                # Process quotes organized by search term
-                for search_num_str, quotes in source_quotes_by_search.items():
-                    search_num = int(search_num_str)
+                    detail_limitation = quote_array[0]
+                    code = quote_array[1]
 
-                    # Check for pass-all flag (NEW FORMAT: [detail_limitation, code])
-                    has_pass_all = False
-                    if isinstance(quotes, list):
-                        for q in quotes:
-                            if isinstance(q, list) and len(q) >= 2:
-                                code = q[1]  # Code is now position [1], handle is [0]
-                                if code == f'§{source_id}:*' or code == '§*':
-                                    has_pass_all = True
-                                    logger.debug(f"[BATCH EXTRACTOR] Found pass-all code for {source_id}, using entire source")
-                                    break
+                    # Extract source_id from code prefix (§S1:1.2 -> S1)
+                    source_id = None
+                    code_without_prefix = code
+                    if ':' in code:
+                        prefix_part, code_part = code.split(':', 1)
+                        source_id = prefix_part.lstrip('§`')
+                        code_without_prefix = '§' + code_part.lstrip('§')
 
-                    # If pass-all, create single snippet with entire source
-                    if has_pass_all:
-                        # Only check effective threshold for pass-all
+                    if not source_id:
+                        logger.warning(f"[BATCH EXTRACTOR] Code '{code}' missing source prefix, skipping")
+                        continue
+
+                    # Look up source
+                    labeled_src = source_lookup.get(source_id)
+                    if not labeled_src:
+                        logger.warning(f"[BATCH EXTRACTOR] Unknown source '{source_id}' in code '{code}', skipping")
+                        continue
+
+                    resolver = labeled_src['resolver']
+                    source_num = labeled_src['source_num']
+
+                    # Get source metadata
+                    meta = source_metadata.get(source_id, {})
+                    source_handle = meta.get('handle', f'source{source_num}')
+                    source_c = meta.get('c', 'M/O')
+                    source_p = convert_p_string_to_number(meta.get('p', 0.50))
+                    is_lower_quality = source_p < min_quality_threshold
+
+                    # Check for pass-all code
+                    if code_without_prefix in ('§*', '`*', '*'):
                         if source_p < effective_threshold:
-                            dropped_count += 1
+                            dropped_by_source[source_id] += 1
                             continue
 
-                        snippet_id = f"{snippet_id_prefix}.{labeled_src['search_ref']}.{source_num}.{snippet_counter}-p{source_p:.2f}"
-                        # Full verbal handle = source_handle + detail_limitation
+                        snippet_id = f"{snippet_id_prefix}.{labeled_src['search_ref']}.{source_num}.{snippet_counters[source_id]}-p{source_p:.2f}"
                         verbal_handle = f"{source_handle}_entire-source_pass-all"
 
                         snippet = {
@@ -686,73 +694,60 @@ class SnippetExtractorStreamlined:
                             "_source_handle": source_handle,
                             "_is_lower_quality": is_lower_quality
                         }
-                        snippets.append(snippet)
-                        snippet_counter += 1
+                        snippets_by_source[source_id].append(snippet)
+                        snippet_counters[source_id] += 1
                         continue
 
-                    # Process individual quotes (NEW FORMAT: [detail_limitation, code])
-                    for quote_array in quotes:
-                        if not isinstance(quote_array, list) or len(quote_array) < 2:
-                            continue
+                    # Resolve code to text
+                    quote_text = resolver.resolve(code_without_prefix)
+                    if not quote_text:
+                        logger.warning(f"[BATCH EXTRACTOR] Code not found: '{code_without_prefix}' doesn't exist in {source_id}, skipping")
+                        continue
 
-                        detail_limitation = quote_array[0]  # Handle components (detail_limitation)
-                        code = quote_array[1]  # Location code
+                    # Filter by dynamic effective threshold
+                    if source_p < effective_threshold:
+                        dropped_by_source[source_id] += 1
+                        continue
 
-                        # Strip source prefix from code before resolving (e.g., §S1:1.1 -> §1.1)
-                        code_without_prefix = code
-                        code_source_prefix = None
-                        if ':' in code:
-                            # Extract source prefix and code parts
-                            prefix_part, code_part = code.split(':', 1)
-                            # Extract source ID from prefix (e.g., "§S4" -> "S4")
-                            code_source_prefix = prefix_part.lstrip('§`')
-                            code_without_prefix = '§' + code_part.lstrip('§')
+                    # Create snippet
+                    snippet_id = f"{snippet_id_prefix}.{labeled_src['search_ref']}.{source_num}.{snippet_counters[source_id]}-p{source_p:.2f}"
+                    verbal_handle = f"{source_handle}_{detail_limitation}"
 
-                        # Resolve code to text
-                        quote_text = resolver.resolve(code_without_prefix)
-                        if not quote_text:
-                            # Provide clearer error message based on failure type
-                            if code_source_prefix and code_source_prefix != source_id:
-                                logger.warning(f"[BATCH EXTRACTOR] Wrong source prefix: '{code}' has {code_source_prefix} but was returned for {source_id}, skipping")
-                            else:
-                                logger.warning(f"[BATCH EXTRACTOR] Code not found: '{code_without_prefix}' doesn't exist in {source_id}, skipping")
-                            continue
+                    snippet = {
+                        "id": snippet_id,
+                        "verbal_handle": verbal_handle,
+                        "text": quote_text,
+                        "p": source_p,
+                        "c": source_c,
+                        "search_ref": search_num,
+                        "_source_title": labeled_src['title'],
+                        "_source_url": labeled_src['url'],
+                        "_source_date": labeled_src['date'],
+                        "_source_reliability": labeled_src['reliability'],
+                        "_search_term": labeled_src['search_term'],
+                        "_source_handle": source_handle,
+                        "_detail_limitation": detail_limitation,
+                        "_code": code,
+                        "_is_lower_quality": is_lower_quality
+                    }
+                    snippets_by_source[source_id].append(snippet)
+                    snippet_counters[source_id] += 1
 
-                        # Filter by dynamic effective threshold
-                        if source_p < effective_threshold:
-                            dropped_count += 1
-                            continue
+            # Build results list (one per source)
+            results = []
+            for labeled_src in labeled_sources:
+                source_id = labeled_src['source_id']
+                source_num = labeled_src['source_num']
+                snippets = snippets_by_source[source_id]
+                dropped_count = dropped_by_source[source_id]
 
-                        # Create snippet with source-level p in ID
-                        snippet_id = f"{snippet_id_prefix}.{labeled_src['search_ref']}.{source_num}.{snippet_counter}-p{source_p:.2f}"
+                meta = source_metadata.get(source_id, {})
+                source_handle = meta.get('handle', f'source{source_num}')
+                source_p = convert_p_string_to_number(meta.get('p', 0.50))
+                source_c = meta.get('c', 'M/O')
 
-                        # Assemble full verbal handle: source_handle + detail_limitation
-                        verbal_handle = f"{source_handle}_{detail_limitation}"
-
-                        snippet = {
-                            "id": snippet_id,
-                            "verbal_handle": verbal_handle,
-                            "text": quote_text,
-                            "p": source_p,
-                            "c": source_c,
-                            "search_ref": search_num,
-                            "_source_title": labeled_src['title'],
-                            "_source_url": labeled_src['url'],
-                            "_source_date": labeled_src['date'],
-                            "_source_reliability": labeled_src['reliability'],
-                            "_search_term": labeled_src['search_term'],
-                            "_source_handle": source_handle,
-                            "_detail_limitation": detail_limitation,
-                            "_code": code,
-                            "_is_lower_quality": is_lower_quality
-                        }
-                        snippets.append(snippet)
-                        snippet_counter += 1
-
-                # All snippets from this source have same source-level p (already set above)
                 logger.debug(f"[BATCH EXTRACTOR] {source_id} ({source_handle}): {len(snippets)} quotes extracted (dropped {dropped_count} low quality), p={source_p}, c={source_c}")
 
-                # Add result for this source
                 results.append({
                     "snippets": snippets,
                     "source_info": {
@@ -760,7 +755,7 @@ class SnippetExtractorStreamlined:
                         "url": labeled_src['url'],
                         "reliability": labeled_src['reliability']
                     },
-                    "model_response": response  # Share same response for all sources
+                    "model_response": response
                 })
 
             return results
