@@ -90,6 +90,18 @@ Note: The system will later determine which columns serve as identifiers vs rese
 - `context_web_research`: [specific items] or []
 - `processing_steps`: [3-10 specific phrases with context]
 - `table_name`: "Title Case Name"
+- `confirmation_response`: Pre-generated response for when user confirms (see below)
+
+**confirmation_response Structure:**
+This is pre-generated so when the user clicks confirm or sends a blank message, we can immediately start execution without another AI round-trip:
+```json
+{
+  "ai_message": "Building out rows and columns for {table_name}. I will validate the first 3 rows (3-4 minutes) - hang tight.",
+  "context_web_research": [same as above],
+  "processing_steps": [same as above],
+  "table_name": "Same as above"
+}
+```
 
 **Example 1:**
 ```
@@ -113,7 +125,13 @@ Ready to generate this table?",
   "show_structure": true,
   "context_web_research": ["Eliyahu.AI background and services"],
   "processing_steps": ["Researching Eliyahu.AI Context", "Finding GenAI Job Postings", "Analyzing Hiring Companies", "Drafting Outreach Emails"],
-  "table_name": "GenAI Hiring Companies for Outreach"
+  "table_name": "GenAI Hiring Companies for Outreach",
+  "confirmation_response": {
+    "ai_message": "Building out rows and columns for GenAI Hiring Companies for Outreach. I will validate the first 3 rows (3-4 minutes) - hang tight.",
+    "context_web_research": ["Eliyahu.AI background and services"],
+    "processing_steps": ["Researching Eliyahu.AI Context", "Finding GenAI Job Postings", "Analyzing Hiring Companies", "Drafting Outreach Emails"],
+    "table_name": "GenAI Hiring Companies for Outreach"
+  }
 }
 ```
 
