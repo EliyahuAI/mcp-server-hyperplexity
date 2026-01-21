@@ -521,8 +521,11 @@ class SnippetExtractorStreamlined:
         logger.debug(f"[BATCH EXTRACTOR] Processing {len(sources)} sources in single call (starting index {start_source_index})")
 
         # Label all sources with source-prefixed codes
+        # Always use S1-Sn within batch for schema compatibility (v4 schema has explicit S1-S10 keys)
+        # The start_source_index is only used for snippet IDs (global uniqueness), not source labeling
         labeled_sources = []
-        for i, source in enumerate(sources, start=start_source_index):
+        for batch_idx, source in enumerate(sources):
+            global_idx = start_source_index + batch_idx  # For snippet IDs
             source_text = source.get('snippet', '')
             source_url = source.get('url', 'Unknown URL')
             source_title = source.get('title', 'Unknown')
@@ -535,14 +538,15 @@ class SnippetExtractorStreamlined:
             labeled_text, text_structure = self.text_labeler.label_text(source_text)
 
             # Add source prefix to all codes for display (e.g., §1.1 -> §S1:1.1)
-            source_id = f"S{i}"
+            # Always use S1, S2, S3... within batch (not global index) for schema compatibility
+            source_id = f"S{batch_idx + 1}"
             labeled_text_with_prefix = re.sub(r'§(\d+\.\d+)', f'§{source_id}:\\1', labeled_text)
 
             # Create resolver with ORIGINAL labeled_text (without source prefix)
             # Model will return codes WITH prefix (S1:1.1), we'll strip before resolving
             labeled_sources.append({
                 'source_id': source_id,
-                'source_num': i,
+                'source_num': global_idx,  # Use global index for snippet IDs
                 'url': source_url,
                 'title': source_title,
                 'date': source_date,
