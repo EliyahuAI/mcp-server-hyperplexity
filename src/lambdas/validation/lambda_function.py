@@ -1290,7 +1290,7 @@ def resolve_search_group_model(targets: List[Any], validator) -> Tuple[str, List
                         logger.debug(f"Using search group {group_id} defined model: {group_def['model']}")
                         return group_def['model'], warnings
                     else:
-                        logger.warning(f"Search group {group_id} found but no model defined")
+                        logger.debug(f"Search group {group_id} found but no model defined, will resolve from targets")
         else:
             logger.info(f"Validator has no search_groups or empty search_groups")
     
@@ -1417,7 +1417,7 @@ def resolve_search_group_context_size(targets: List[Any], validator) -> str:
                         logger.debug(f"Using search group {group_id} defined context: {group_def['search_context']}")
                         return group_def['search_context']
                     else:
-                        logger.warning(f"Search group {group_id} found but no search_context defined")
+                        logger.debug(f"Search group {group_id} found but no search_context defined, will resolve from targets")
         else:
             logger.debug(f"Validator has no search_groups or empty search_groups")
     
