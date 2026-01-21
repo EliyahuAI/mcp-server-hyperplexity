@@ -352,6 +352,9 @@ class SnippetExtractorStreamlined:
                         "_primary_search": primary_search_index,
                         "_is_off_topic": search_num != primary_search_index
                     }
+                    # Add _code if using code extraction (for sorting in synthesis)
+                    if use_code_extraction and 'code' in locals():
+                        snippet["_code"] = code
                     snippets.append(snippet)
                     total_quotes += 1
 
