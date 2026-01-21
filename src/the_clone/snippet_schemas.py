@@ -35,9 +35,84 @@ def convert_p_string_to_number(p_value):
     return 0.50
 
 
+def _get_source_metadata_schema() -> dict:
+    """Schema for a single source's metadata."""
+    return {
+        "type": "object",
+        "properties": {
+            "handle": {
+                "type": "string",
+                "description": "1-word source identifier (nih, webmd, pubmed, etc.)"
+            },
+            "c": {
+                "type": "string",
+                "description": "Classification: Authority + quality codes (H/P, M/A/O, L/U/S)"
+            },
+            "p": {
+                "type": "string",
+                "description": "Probability score: p05, p15, p30, p50, p65, p85, p95",
+                "enum": ["p05", "p15", "p30", "p50", "p65", "p85", "p95"]
+            }
+        },
+        "required": ["handle", "c", "p"]
+    }
+
+
+def _get_quotes_array_schema() -> dict:
+    """Schema for an array of quote pairs."""
+    return {
+        "type": "array",
+        "description": "Array of [detail_limitation, code] pairs",
+        "items": {
+            "type": "array",
+            "description": "[detail_limitation, code] - source derived from code prefix",
+            "items": {"type": "string"}
+        }
+    }
+
+
+def get_snippet_extraction_batch_code_schema_v4() -> dict:
+    """
+    Schema for batch extraction with explicit keys (v4) - AI Studio compatible.
+
+    Structure:
+    - source_metadata: Per-source assessment with explicit S1-S10 keys
+    - quotes_by_search: Quotes per search term with explicit 1-10 keys
+    - Source is derived from code prefix (§S1:1.2 -> S1)
+
+    Uses explicit keys instead of additionalProperties for AI Studio compatibility.
+
+    Returns:
+        JSON schema for batch code-based extraction
+    """
+    # Build source_metadata with explicit S1-S10 keys
+    source_props = {f"S{i}": _get_source_metadata_schema() for i in range(1, 11)}
+
+    # Build quotes_by_search with explicit 1-10 keys
+    search_props = {str(i): _get_quotes_array_schema() for i in range(1, 11)}
+
+    return {
+        "type": "object",
+        "properties": {
+            "source_metadata": {
+                "type": "object",
+                "description": "Source-level assessment keyed by source ID (S1, S2, ... S10)",
+                "properties": source_props
+            },
+            "quotes_by_search": {
+                "type": "object",
+                "description": "Quotes organized by search term number (1, 2, ... 10)",
+                "properties": search_props
+            }
+        },
+        "required": ["source_metadata", "quotes_by_search"]
+    }
+
+
 def get_snippet_extraction_batch_code_schema_v3() -> dict:
     """
     Schema for batch extraction with flattened structure (v3).
+    DEPRECATED: Use v4 for AI Studio compatibility.
 
     Structure:
     - source_metadata: Per-source assessment (handle, c, p)
@@ -220,8 +295,8 @@ def get_snippet_extraction_schema() -> dict:
 
 # Backward compatibility - keep old schema function names
 def get_snippet_extraction_batch_code_schema() -> dict:
-    """Current schema - uses v3 flattened structure."""
-    return get_snippet_extraction_batch_code_schema_v3()
+    """Current schema - uses v4 with explicit keys for AI Studio compatibility."""
+    return get_snippet_extraction_batch_code_schema_v4()
 
 
 def get_snippet_extraction_code_schema() -> dict:
