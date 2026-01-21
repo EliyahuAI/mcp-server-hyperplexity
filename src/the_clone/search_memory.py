@@ -1959,6 +1959,86 @@ Return JSON:
 
         return True  # All groups matched
 
+    def _is_url_fetch_failed(self, url: str) -> Optional[str]:
+        """
+        Check if a URL has previously failed to fetch via Jina.
+
+        Args:
+            url: URL to check
+
+        Returns:
+            Error message if URL has failed before, None otherwise
+        """
+        if self._memory is None:
+            return None
+
+        query_id = self._generate_url_content_id(url, "jina_fetch_failed")
+        existing = self._memory['queries'].get(query_id)
+
+        if existing:
+            # Get the stored error message
+            results = existing.get('results', [{}])
+            if results:
+                error = results[0].get('_error_message', 'Previously failed')
+                return error
+        return None
+
+    async def _store_failed_url(self, url: str, error_message: str) -> None:
+        """
+        Store a failed URL fetch in memory to prevent retrying.
+
+        Args:
+            url: URL that failed to fetch
+            error_message: Error message from the failure
+        """
+        if self._memory is None:
+            self._initialize_empty_memory()
+
+        query_id = self._generate_url_content_id(url, "jina_fetch_failed")
+
+        # Build result entry marking this as a failed fetch
+        result_entry = {
+            "url": url,
+            "title": f"[FETCH FAILED] {url}",
+            "snippet": "",
+            "date": datetime.now(timezone.utc).isoformat(),
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "_source_type": "jina_fetch_failed",
+            "_is_full_content": False,
+            "_error_message": error_message,
+            "_fetch_failed": True
+        }
+
+        # Store as query data
+        query_data = {
+            "query_text": f"[FETCH_FAILED] {url}",
+            "search_term": f"[FETCH_FAILED] {url}",
+            "query_time": datetime.now(timezone.utc).isoformat(),
+            "parameters": {
+                "source_type": "jina_fetch_failed",
+                "error_message": error_message,
+                "is_failed_fetch": True
+            },
+            "results": [result_entry],
+            "metadata": {
+                "cost": 0.0,
+                "num_results": 0,
+                "strategy": "jina_fetch_failed"
+            }
+        }
+
+        self._memory['queries'][query_id] = query_data
+
+        # Update URL index
+        if query_id not in self._memory['indexes']['by_url'][url]:
+            self._memory['indexes']['by_url'][url].append(query_id)
+
+        # Update time index
+        if query_id not in self._memory['indexes']['by_time']:
+            self._memory['indexes']['by_time'].append(query_id)
+
+        logger.debug(f"[MEMORY] Stored failed URL to prevent retry: {url} - {error_message}")
+
     async def fetch_url_content(self, urls: List[str]) -> List[Dict[str, Any]]:
         """
         Fetch content from URLs not in memory using Jina AI Reader.
@@ -1982,6 +2062,12 @@ Return JSON:
 
         for url in urls:
             try:
+                # Check if this URL has already failed
+                previous_error = self._is_url_fetch_failed(url)
+                if previous_error:
+                    logger.debug(f"[MEMORY] Skipping previously failed URL: {url} - {previous_error}")
+                    continue
+
                 logger.debug(f"[MEMORY] Fetching URL content via Jina: {url}")
                 jina_result = await html_parser.fetch_via_jina(url)
 
@@ -2034,10 +2120,24 @@ Return JSON:
                     except Exception as store_err:
                         logger.warning(f"[MEMORY] Failed to store live-fetched URL (non-fatal): {store_err}")
                 else:
-                    logger.warning(f"[MEMORY] Failed to fetch URL: {url} - {jina_result.get('error', 'Unknown error')}")
+                    error_msg = jina_result.get('error', 'Unknown error')
+                    logger.warning(f"[MEMORY] Failed to fetch URL: {url} - {error_msg}")
+
+                    # Store failed URL to memory to prevent retrying
+                    try:
+                        await self._store_failed_url(url, error_msg)
+                    except Exception as store_err:
+                        logger.warning(f"[MEMORY] Failed to store failed URL (non-fatal): {store_err}")
 
             except Exception as e:
-                logger.error(f"[MEMORY] Error fetching URL {url}: {str(e)}")
+                error_msg = str(e)
+                logger.error(f"[MEMORY] Error fetching URL {url}: {error_msg}")
+
+                # Store failed URL to memory to prevent retrying
+                try:
+                    await self._store_failed_url(url, error_msg)
+                except Exception as store_err:
+                    logger.warning(f"[MEMORY] Failed to store failed URL (non-fatal): {store_err}")
 
         logger.debug(f"[MEMORY] Live URL fetch: {len(urls)} URLs -> {len(fetched_sources)} fetched")
         return fetched_sources

@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 
 # Jina AI Reader endpoint for clean content extraction
 JINA_READER_BASE = "https://r.jina.ai/"
+JINA_TIMEOUT = 5  # Jina-specific timeout in seconds
+
+# Image extensions to skip for Jina fetches
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico', '.tiff', '.tif'}
 
 
 class HTMLTableParser:
@@ -389,6 +393,14 @@ class HTMLTableParser:
             'error': None
         }
 
+        # Skip image URLs - Jina can't extract useful content from images
+        parsed = urlparse(url)
+        path_lower = parsed.path.lower()
+        if any(path_lower.endswith(ext) for ext in IMAGE_EXTENSIONS):
+            result['error'] = f"Skipping image URL: {url}"
+            logger.info(f"  [SKIP] Not fetching image URL via Jina: {url}")
+            return result
+
         try:
             jina_url = f"{JINA_READER_BASE}{url}"
             logger.info(f"Fetching via Jina AI Reader: {url}")
@@ -399,7 +411,7 @@ class HTMLTableParser:
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(jina_url, headers=headers, timeout=self.timeout) as response:
+                async with session.get(jina_url, headers=headers, timeout=JINA_TIMEOUT) as response:
                     if response.status == 200:
                         content = await response.text()
 
@@ -419,8 +431,8 @@ class HTMLTableParser:
                         logger.warning(f"  [FAILED] Jina HTTP {response.status}")
 
         except asyncio.TimeoutError:
-            result['error'] = f"Jina timeout after {self.timeout}s"
-            logger.error(f"  [TIMEOUT] Jina request timed out")
+            result['error'] = f"Jina timeout after {JINA_TIMEOUT}s"
+            logger.error(f"  [TIMEOUT] Jina request timed out after {JINA_TIMEOUT}s")
         except Exception as e:
             result['error'] = str(e)
             logger.error(f"  [ERROR] Jina fetch failed: {str(e)}")
