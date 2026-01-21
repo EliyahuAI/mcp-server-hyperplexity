@@ -419,6 +419,17 @@ class GeminiProvider:
                 logger.debug(f"[GEMINI_SCHEMA] Removing 'items': False at {path} (tuple validation not supported)")
                 del node['items']
 
+            # Fix 4: Handle objects with empty/missing properties
+            # AI Studio requires non-empty properties for OBJECT type
+            if node.get('type') == 'object':
+                if 'properties' not in node or not node['properties']:
+                    # Convert to generic object that accepts any string keys
+                    # Since we can't use additionalProperties, remove the type constraint
+                    logger.debug(f"[GEMINI_SCHEMA] Removing type constraint for object with no properties at {path}")
+                    del node['type']
+                    conversion_map['empty_object_fixes'] = conversion_map.get('empty_object_fixes', [])
+                    conversion_map['empty_object_fixes'].append(path)
+
             # Recursively process nested structures
             if 'properties' in node:
                 for prop_name, prop_schema in node['properties'].items():
@@ -463,7 +474,7 @@ class GeminiProvider:
         converted = process_schema_node(schema)
 
         # Log conversions if any were made
-        if conversion_map['null_conversions'] or conversion_map['type_array_fixes'] or conversion_map.get('prefixItems_conversions') or conversion_map['stripped_fields'] or conversion_map.get('integer_enum_conversions'):
+        if conversion_map['null_conversions'] or conversion_map['type_array_fixes'] or conversion_map.get('prefixItems_conversions') or conversion_map['stripped_fields'] or conversion_map.get('integer_enum_conversions') or conversion_map.get('empty_object_fixes'):
             logger.info(f"[GEMINI_SCHEMA] Applied compatibility fixes:")
             if conversion_map['stripped_fields']:
                 logger.info(f"  - Stripped {len(conversion_map['stripped_fields'])} unsupported field(s): {conversion_map['stripped_fields'][:5]}")
@@ -477,6 +488,8 @@ class GeminiProvider:
                 logger.info(f"  - Converted integer enums to strings in {len(conversion_map['integer_enum_conversions'])} field(s): {conversion_map['integer_enum_conversions']}")
             if conversion_map.get('prefixItems_conversions'):
                 logger.info(f"  - Converted prefixItems to items in {len(conversion_map['prefixItems_conversions'])} field(s): {conversion_map['prefixItems_conversions']}")
+            if conversion_map.get('empty_object_fixes'):
+                logger.info(f"  - Removed type constraint from {len(conversion_map['empty_object_fixes'])} empty object(s): {conversion_map['empty_object_fixes']}")
 
         return converted, conversion_map
 
