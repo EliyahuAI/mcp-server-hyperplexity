@@ -82,7 +82,7 @@ class S3TableParser:
 
     # Cache schema version - increment this when the cache structure changes
     # to invalidate old caches with incompatible data formats
-    CACHE_SCHEMA_VERSION = 2  # v2: Fixed history mapping (original_value = previous value, not current)
+    CACHE_SCHEMA_VERSION = 3  # v3: Exclude _history from row key hash (fixes history lookup mismatch)
 
     def __init__(self, enable_cleaning_log: bool = True, output_dir: str = None):
         self.s3_client = boto3.client('s3')

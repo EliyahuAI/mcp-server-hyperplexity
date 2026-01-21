@@ -37,10 +37,11 @@ def generate_row_key(row: Dict[str, Any], primary_keys: List[str] = None) -> str
         sorted_items = sorted(row.items())
 
         # Build key data from all fields
+        # Exclude all internal fields (starting with '_') like _row_key, _history
         key_data = {
             "mode": "full_row",
             "fields": {k: (str(v).strip() if v is not None and str(v).strip() else "EMPTY")
-                      for k, v in sorted_items if k != '_row_key'}  # Exclude _row_key itself
+                      for k, v in sorted_items if not k.startswith('_')}
         }
 
         # Convert to JSON string with sorted keys for consistency

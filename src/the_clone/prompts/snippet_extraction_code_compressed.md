@@ -135,6 +135,11 @@ Format: `[code, p_score, reason_abbrev, verbal_handle]`
 
 **Verbal Handle Requirements:**
 
+**⚠️ CRITICAL: EVERY CITATION MUST HAVE A UNIQUE TEXT HANDLE ⚠️**
+- Handles are the PRIMARY way synthesis identifies and cites snippets
+- **Duplicate handles = synthesis cannot distinguish citations = BROKEN OUTPUT**
+- Track handles as you go - if a handle already exists, MUST append _2, _3, _4, etc.
+
 **Format:** `source_detail_limits`
 - Sections separated by underscore `_`
 - Within sections use hyphens `-`
@@ -144,14 +149,16 @@ Format: `[code, p_score, reason_abbrev, verbal_handle]`
 - **detail** (1-2 words, hyphenated): Specific reason WHY this snippet chosen (weight-loss, insulin-sensitivity, mortgage-rate, metabolic-switch, etc.)
 - **limits** (1-2 words, hyphenated): Qualifications/scope (dec-2025, fasting-only, 8wk-study, post-2020, adf-protocol, etc.)
 
-**Examples:**
+**Examples (note uniqueness):**
 - `freddie_mortgage-rate_dec-2025` - Freddie Mac rate, Dec 2025 specific
 - `pubmed_weight-loss_if-vs-cer` - PubMed weight loss, IF vs CER comparison
+- `pubmed_weight-loss_if-vs-cer_2` - **Second snippet** on same topic (MUST append _2)
 - `nih_insulin-sensitivity_tre-protocol` - NIH insulin sensitivity, TRE protocol
+- `nih_insulin-sensitivity_tre-protocol_2` - **Second snippet** (MUST append _2)
 - `harvard_metabolic-switch_12hr-fast` - Harvard metabolic switch, 12-hour fasting
 
-**CRITICAL:**
-- **MUST be unique** - if duplicate, append _2, _3
+**UNIQUENESS IS MANDATORY:**
+- **MUST be unique across ALL snippets** - if duplicate, append _2, _3, _4...
 - All three parts required
 - Max 30 chars total
 

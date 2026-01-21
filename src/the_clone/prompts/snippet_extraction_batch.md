@@ -113,6 +113,11 @@ Judge extracts all atomic claims from source and tests each. Pass = precisely ac
 
 For each snippet, provide: `detail_limitation` (NO source prefix here)
 
+**CRITICAL: EVERY CITATION MUST HAVE A UNIQUE TEXT HANDLE**
+- Handles are the PRIMARY identifier for citations in synthesis
+- If two snippets have the same handle, synthesis cannot distinguish them
+- **ALWAYS ensure uniqueness** - append _2, _3, _4, etc. if a handle already exists
+
 **Format:** `detail_limitation`
 - **detail** (1-2 words hyphenated): mortgage-rate, weight-loss, efficiency-table
 - **limitation** (1-2 words hyphenated): dec-2025, solar-2024, us-only, post-2020
@@ -121,12 +126,15 @@ For each snippet, provide: `detail_limitation` (NO source prefix here)
 - `mortgage-rate_dec-2025`
 - `weight-loss_if-protocol`
 - `efficiency-table_solar-2024`
+- `weight-loss_if-protocol_2` ← **Second snippet on same topic**
+- `weight-loss_if-protocol_3` ← **Third snippet on same topic**
 
-Max 25 chars. Must be unique within source (append _2, _3 if needed).
+Max 25 chars. **MUST be unique across ALL sources in this batch** (append _2, _3 if needed).
 
 **Full handle assembled later:** `{{source_handle}}_{{detail}}_{{limitation}}`
 - freddie_mortgage-rate_dec-2025
 - nih_weight-loss_if-protocol
+- nih_weight-loss_if-protocol_2
 
 ---
 

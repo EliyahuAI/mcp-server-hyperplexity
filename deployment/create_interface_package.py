@@ -168,7 +168,7 @@ def install_dependencies(mode='unified'):
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
-            # Install dependencies for Lambda Linux environment (Python 3.9 on manylinux2014_x86_64)
+            # Install dependencies for Lambda Linux environment (Python 3.11 on manylinux2014_x86_64)
             # When using platform constraints, pip requires BOTH --only-binary=:all: AND --no-binary=:none:
             # This ensures all packages get correct Linux manylinux wheels for the Lambda runtime
             subprocess.check_call([
@@ -177,7 +177,7 @@ def install_dependencies(mode='unified'):
                 "-t", str(PACKAGE_DIR),
                 "--platform", "manylinux2014_x86_64",
                 "--implementation", "cp",
-                "--python-version", "3.9",
+                "--python-version", "3.11",
                 "--only-binary", ":all:",
                 "--no-binary", ":none:",
                 "--upgrade",
