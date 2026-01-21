@@ -567,8 +567,15 @@ class MergedSynthesizer:
 
         answer_str = re.sub(citation_pattern, replace_citation, answer_str)
 
-        # Remove duplicate consecutive citations
-        answer_str = re.sub(r'\[(\d+)\](?:\[\1\])+', r'[\1]', answer_str)
+        # Sort and deduplicate consecutive citation groups (e.g., [3][1][2] -> [1][2][3])
+        def sort_and_dedupe_citations(match):
+            group = match.group(0)
+            numbers = re.findall(r'\[(\d+)\]', group)
+            unique_sorted = sorted(set(int(n) for n in numbers))
+            return ''.join(f'[{n}]' for n in unique_sorted)
+
+        # Match groups of consecutive citations with optional whitespace between them
+        answer_str = re.sub(r'\[\d+\](?:\s*\[\d+\])+', sort_and_dedupe_citations, answer_str)
 
         answer_final = json.loads(answer_str)
 
