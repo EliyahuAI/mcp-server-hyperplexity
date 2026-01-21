@@ -21,14 +21,12 @@ logger = logging.getLogger(__name__)
 # so we must create the semaphore lazily for the current loop.
 _gemini_semaphore_lock = Lock()
 _gemini_semaphores: Dict[Tuple[int, str], asyncio.Semaphore] = {}  # (loop_id, model) -> Semaphore
-_gemini_default_max_concurrent: int = 5  # Default max concurrent calls per model
+_gemini_default_max_concurrent: int = 100  # Default max concurrent calls per model
 
-# Rationale for default of 5 per model:
-# - Vertex AI Gemini standard tier: ~60 RPM per model (1 req/sec sustained)
-# - Each model variant (2.0-flash, 2.5-flash-lite, 2.5-flash) has separate quota
-# - With batch extraction enabled, typical usage is 1-2 calls per iteration
-# - Findall mode runs up to 5 parallel batch calls (one per search term)
-# - Setting to 5 allows findall to run without queuing while preventing bursts
+# Rationale for default of 100 per model:
+# - Google AI Studio has much higher rate limits (~1000+ RPM) than Vertex AI (~10 RPM)
+# - With AI Studio enabled, we can safely run 100 concurrent requests
+# - If using Vertex AI fallback, rate limit retries will handle 429s
 # - Can be configured per-model via env vars: GEMINI_MAX_CONCURRENT_2_0_FLASH=10
 
 
@@ -81,12 +79,24 @@ class GeminiProvider:
     RATE_LIMIT_BASE_DELAY = 1.0  # seconds
     RATE_LIMIT_MAX_DELAY = 8.0  # seconds (reduced since we retry less)
 
-    def __init__(self, project_id: str, location: str, cache_handler, usage_handler, ai_client=None):
+    # Google AI Studio endpoint (much higher rate limits than Vertex AI)
+    AI_STUDIO_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
+
+    def __init__(self, project_id: str, location: str, cache_handler, usage_handler, ai_client=None, ai_studio_api_key: str = None):
         self.project_id = project_id
         self.location = location or 'us-central1'  # Default to us-central1 for Gemini
         self.cache_handler = cache_handler
         self.usage_handler = usage_handler
         self.ai_client = ai_client
+        self.ai_studio_api_key = ai_studio_api_key
+
+        # Determine which endpoint to use
+        # Prefer AI Studio if API key is available (much higher rate limits: 1000+ RPM vs ~10 RPM)
+        self.use_ai_studio = bool(ai_studio_api_key)
+        if self.use_ai_studio:
+            logger.info(f"[GEMINI] Using Google AI Studio endpoint (higher rate limits)")
+        else:
+            logger.info(f"[GEMINI] Using Vertex AI endpoint (project={project_id}, location={location})")
 
     async def _get_access_token(self) -> str:
         """Get OAuth2 access token for Vertex AI using service account credentials."""
@@ -587,12 +597,22 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
         semaphore = get_gemini_semaphore(model)
 
         try:
-            access_token = await self._get_access_token()
-            url = f"https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{model}:generateContent"
-            headers = {
-                'Authorization': f'Bearer {access_token}',
-                'Content-Type': 'application/json'
-            }
+            # Build URL and headers based on endpoint choice
+            if self.use_ai_studio:
+                # Google AI Studio: API key auth, global endpoint, higher rate limits
+                url = f"{self.AI_STUDIO_BASE_URL}/models/{model}:generateContent?key={self.ai_studio_api_key}"
+                headers = {
+                    'Content-Type': 'application/json'
+                }
+                logger.debug(f"[GEMINI] Using AI Studio endpoint for {model}")
+            else:
+                # Vertex AI: OAuth2 auth, regional endpoint
+                access_token = await self._get_access_token()
+                url = f"https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{model}:generateContent"
+                headers = {
+                    'Authorization': f'Bearer {access_token}',
+                    'Content-Type': 'application/json'
+                }
 
             # Retry loop with exponential backoff for rate limits
             last_error = None

@@ -209,6 +209,43 @@ def get_perplexity_api_key() -> str:
         logger.error(f"Failed to retrieve Perplexity API key: {str(e)}")
         raise
 
+def get_google_ai_studio_api_key() -> Optional[str]:
+    """Get Google AI Studio API key from environment or SSM."""
+    api_key = os.environ.get('GOOGLE_AI_STUDIO_API_KEY')
+    if api_key:
+        logger.debug("Using Google AI Studio API key from environment variable")
+        return api_key
+
+    # Try AWS Systems Manager Parameter Store
+    try:
+        ssm_client = boto3.client('ssm')
+        param_names = [
+            '/perplexity-validator/Google_AI_studio_API_key',
+            '/perplexity-validator/google-ai-studio-api-key',
+            'Google_AI_Studio_API_Key'
+        ]
+
+        for param_name in param_names:
+            try:
+                logger.debug(f"Attempting to retrieve Google AI Studio API key from SSM parameter: {param_name}")
+                response = ssm_client.get_parameter(
+                    Name=param_name,
+                    WithDecryption=True
+                )
+                logger.debug(f"Successfully retrieved Google AI Studio API key from {param_name}")
+                return response['Parameter']['Value']
+            except Exception as e:
+                logger.warning(f"Failed to get Google AI Studio API key from SSM parameter '{param_name}': {str(e)}")
+                continue
+
+        # If we get here, all parameter names failed
+        logger.warning("Could not retrieve Google AI Studio API key from any SSM parameter")
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to retrieve Google AI Studio API key: {str(e)}")
+        return None
+
+
 def get_vertex_credentials_from_ssm() -> Optional[str]:
     """Get Google Cloud service account JSON from SSM Parameter Store."""
     # Try AWS Systems Manager Parameter Store

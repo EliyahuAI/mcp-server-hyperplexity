@@ -10,6 +10,7 @@ from .config import (
     get_anthropic_api_key,
     get_perplexity_api_key,
     get_baseten_api_key,
+    get_google_ai_studio_api_key,
     setup_vertex_credentials
 )
 from .utils import (
@@ -97,9 +98,14 @@ class AIAPIClient:
         self.vertex = VertexProvider(project_id, self.cache_handler, self.usage_handler, ai_client=self)
         self.vertex_project = project_id # exposed for compatibility
 
-        # Initialize Gemini provider (same project as Vertex, but us-central1 for better Gemini availability)
+        # Initialize Gemini provider
+        # Prefer Google AI Studio (much higher rate limits: 1000+ RPM vs ~10 RPM on Vertex AI)
         gemini_location = os.environ.get('GEMINI_LOCATION', 'us-central1')
-        self.gemini = GeminiProvider(project_id, gemini_location, self.cache_handler, self.usage_handler, ai_client=self)
+        ai_studio_api_key = get_google_ai_studio_api_key()
+        self.gemini = GeminiProvider(
+            project_id, gemini_location, self.cache_handler, self.usage_handler,
+            ai_client=self, ai_studio_api_key=ai_studio_api_key
+        )
 
         # Initialize Baseten provider (pass self for Haiku repair capability)
         try:
