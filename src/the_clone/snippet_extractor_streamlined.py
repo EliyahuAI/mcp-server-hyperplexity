@@ -243,7 +243,8 @@ class SnippetExtractorStreamlined:
                         "_source_reliability": source_reliability,
                         "_search_term": source_search_term,
                         "_primary_search": primary_search_index,
-                        "_is_off_topic": search_num != primary_search_index
+                        "_is_off_topic": search_num != primary_search_index,
+                        "_code": "§*"
                     }
                     snippets.append(snippet)
                     total_quotes += 1
@@ -433,7 +434,8 @@ class SnippetExtractorStreamlined:
                             "_search_term": source_search_term,
                             "_primary_search": primary_search_index,
                             "_is_off_topic": False,
-                            "_optimized_from_coverage": coverage
+                            "_optimized_from_coverage": coverage,
+                            "_code": "§*"
                         }]
 
             # Debug logging for code extraction
@@ -711,6 +713,7 @@ class SnippetExtractorStreamlined:
                             "_source_reliability": labeled_src['reliability'],
                             "_search_term": labeled_src['search_term'],
                             "_source_handle": source_handle,
+                            "_code": code,
                             "_is_lower_quality": is_lower_quality
                         }
                         snippets_by_source[source_id].append(snippet)

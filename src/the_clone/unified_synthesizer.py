@@ -756,10 +756,10 @@ Query: {query}
 
             sorted_snippets = sorted(url_snippets, key=extract_sort_key)
 
-            # Debug: Log if _code is missing
+            # Debug: Log if _code is missing (fallback to snippet ID order works fine)
             missing_code = sum(1 for s in url_snippets if not s.get('_code'))
             if missing_code > 0:
-                logger.warning(f"[CITATIONS] {missing_code}/{len(url_snippets)} snippets missing _code field, using snippet ID order")
+                logger.debug(f"[CITATIONS] {missing_code}/{len(url_snippets)} snippets missing _code field, using snippet ID order")
 
             # Get metadata from first snippet
             first_snippet = sorted_snippets[0]
