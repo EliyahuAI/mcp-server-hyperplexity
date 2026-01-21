@@ -357,11 +357,13 @@ class GeminiProvider:
 
             # Fix 0: Strip unsupported JSON Schema meta fields, validation constraints, and conditionals
             # Gemini's protobuf-based schema only supports basic structure, not validation keywords
+            # Note: Google AI Studio is stricter than Vertex AI - additionalProperties not supported
             unsupported_fields = [
                 '$schema', '$id', '$ref', 'if', 'then', 'else', 'not', 'allOf', 'oneOf',
                 'uniqueItems', 'minItems', 'maxItems', 'minLength', 'maxLength',
                 'pattern', 'format', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum',
-                'const', 'dependencies', 'patternProperties', 'minProperties', 'maxProperties'
+                'const', 'dependencies', 'patternProperties', 'minProperties', 'maxProperties',
+                'additionalProperties'  # Not supported by Google AI Studio
             ]
             for field in unsupported_fields:
                 if field in node:
