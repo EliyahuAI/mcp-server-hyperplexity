@@ -778,11 +778,13 @@ class SearchMemory:
         negative_keywords = keywords.get('negative', []) if keywords else []
 
         # Stage 1: Keyword pre-filter on queries
+        # Use search_terms for similarity matching (more focused than original query)
         filtered_queries = self._filter_queries_by_keywords(
             query=query,
             required_keywords=required_keywords,
             positive_keywords=positive_keywords,
-            negative_keywords=negative_keywords
+            negative_keywords=negative_keywords,
+            search_terms=search_terms
         )
 
         # Log URL sources if present
@@ -924,7 +926,8 @@ class SearchMemory:
         required_keywords: List[str],
         positive_keywords: List[str],
         negative_keywords: List[str],
-        top_k: int = 30
+        top_k: int = 30,
+        search_terms: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """
         Filter queries by keyword match and query similarity.
@@ -933,11 +936,17 @@ class SearchMemory:
         Required keywords: Source must contain AT LEAST ONE (case-insensitive substring).
         This is "ANY" logic because keywords are entity variants (e.g., "Apple", "AAPL").
 
+        Args:
+            query: Original user query (used as fallback if search_terms not provided)
+            search_terms: List of search terms to use for similarity matching (preferred)
+
         Returns:
             List of {query_id, query_data, relevance_score}
         """
         scored_queries = []
-        query_tokens = set(query.lower().split())
+        # Use search_terms for token matching if provided, otherwise fall back to query
+        match_text = " ".join(search_terms) if search_terms else query
+        query_tokens = set(match_text.lower().split())
 
         for query_id, query_data in self._memory['queries'].items():
             # Build searchable text from query AND all snippets
@@ -1263,10 +1272,13 @@ class SearchMemory:
 {chr(10).join(numbered_terms)}
 """
 
+        # Use search terms as the query display (more focused than original prompt)
+        query_display = " | ".join(search_terms_list) if search_terms_list else query
+
         prompt = f"""# Memory Verification
 
 **Date:** {today}
-**Query:** {query}
+**Query:** {query_display}
 **Requirements:** {breadth}/{depth}
 {search_terms_section}
 
@@ -1512,11 +1524,14 @@ Consider data freshness - old memories about dynamic topics should lower confide
 - These are high-priority as the user explicitly mentioned them
 """
 
+        # Use search terms as the "current query" for Gemini (more focused than original prompt)
+        current_query_display = " | ".join(search_terms) if search_terms else query
+
         return f"""# Memory Recall Task
 
 **Today's Date:** {today}
 
-**Current Query:** {query}
+**Current Query:** {current_query_display}
 
 {search_terms_section}{url_section}**Past Queries ({len(filtered_queries)} candidates):**
 
