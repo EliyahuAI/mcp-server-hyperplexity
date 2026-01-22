@@ -56,7 +56,7 @@ class ClaimExtractor:
         """Get default JSON schema for claim extraction."""
         return {
             "type": "object",
-            "required": ["is_suitable", "table_name", "total_claims", "claims_with_references", "claims_without_references", "claims"],
+            "required": ["is_suitable", "table_name", "claims", "total_claims", "claims_with_references", "claims_without_references"],
             "properties": {
                 "is_suitable": {
                     "type": "boolean",
@@ -83,18 +83,6 @@ class ClaimExtractor:
                 "suggestion": {
                     "type": "string",
                     "description": "What kind of text would work better (if unsuitable)"
-                },
-                "total_claims": {
-                    "type": "integer",
-                    "description": "Total number of claims extracted"
-                },
-                "claims_with_references": {
-                    "type": "integer",
-                    "description": "Number of claims with citations"
-                },
-                "claims_without_references": {
-                    "type": "integer",
-                    "description": "Number of claims without citations"
                 },
                 "claims": {
                     "type": "array",
@@ -167,6 +155,18 @@ class ClaimExtractor:
                             }
                         }
                     }
+                },
+                "total_claims": {
+                    "type": "integer",
+                    "description": "Total number of claims extracted"
+                },
+                "claims_with_references": {
+                    "type": "integer",
+                    "description": "Number of claims with citations"
+                },
+                "claims_without_references": {
+                    "type": "integer",
+                    "description": "Number of claims without citations"
                 }
             }
         }

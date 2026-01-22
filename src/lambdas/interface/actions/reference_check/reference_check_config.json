@@ -6,14 +6,14 @@
     },
     "chunking": {
         "enabled": true,
-        "threshold_tokens": 40000,
-        "chunk_target_tokens": 30000,
-        "chunk_max_tokens": 35000,
+        "threshold_tokens": 25000,
+        "chunk_target_tokens": 20000,
+        "chunk_max_tokens": 25000,
         "max_chunks": 4,
         "max_boundary_distance": 2000
     },
     "reference_extraction": {
-        "model": "gemini-2-5-flash",
+        "model": "gemini-2.5-flash",
         "max_tokens": 64000,
         "temperature": 0.2,
         "timeout_seconds": 120,

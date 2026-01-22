@@ -351,9 +351,6 @@ Provide a concise, descriptive name for this reference check table based on the 
   "table_name": "Tylenol Autism Claims",
   "source_type_guess": "Perplexity",
   "source_confidence": 0.9,
-  "total_claims": 3,
-  "claims_with_references": 2,
-  "claims_without_references": 1,
   "claims": [
     {
       "claim_id": "claim_001",
@@ -402,11 +399,16 @@ Provide a concise, descriptive name for this reference check table based on the 
         "section_name": "Experimental Results"
       }
     }
-  ]
+  ],
+  "total_claims": 3,
+  "claims_with_references": 2,
+  "claims_without_references": 1
 }
 ```
 
 **Important notes**:
+- **Claims come first**: Extract ALL claims in the `claims` array BEFORE computing counts
+- **Counts come after**: Compute `total_claims`, `claims_with_references`, and `claims_without_references` AFTER extraction
 - **Extract in document order**: Return claims as they appear in the text (no sorting)
 - **claim_order tracks position**: Assign sequential numbers (1, 2, 3...) based on document appearance
 - **Criticality scale**: 5=Critical (thesis depends on it), 1=Minimal (background context)
