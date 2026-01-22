@@ -21,11 +21,13 @@ logger = logging.getLogger(__name__)
 # so we must create the semaphore lazily for the current loop.
 _gemini_semaphore_lock = Lock()
 _gemini_semaphores: Dict[Tuple[int, str], asyncio.Semaphore] = {}  # (loop_id, model) -> Semaphore
-_gemini_default_max_concurrent: int = 100  # Default max concurrent calls per model
+_gemini_default_max_concurrent: int = 50  # Default max concurrent calls per model
 
-# Rationale for default of 100 per model:
-# - Google AI Studio has much higher rate limits (~1000+ RPM) than Vertex AI (~10 RPM)
-# - With AI Studio enabled, we can safely run 100 concurrent requests
+# Rationale for default of 50 per model:
+# - Google AI Studio has higher RPM limits (~2000 RPM for Tier 1) than Vertex AI (~10 RPM)
+# - Setting to 50 balances throughput with burst rate limits
+# - Prevents hitting QPS/concurrent request limits while maximizing throughput
+# - With 50 concurrent @ 5s avg latency = ~600 RPM theoretical max (well under 2K limit)
 # - If using Vertex AI fallback, rate limit retries will handle 429s
 # - Can be configured per-model via env vars: GEMINI_MAX_CONCURRENT_2_0_FLASH=10
 

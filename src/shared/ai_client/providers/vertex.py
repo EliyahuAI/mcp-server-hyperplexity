@@ -3,13 +3,71 @@ import json
 import logging
 import asyncio
 import aiohttp
+import os
 from datetime import datetime
-from typing import Dict, Any
+from threading import Lock
+from typing import Dict, Any, Tuple
 
 from ..utils import normalize_vertex_model, extract_json_from_text, validate_and_normalize_soft_schema, repair_json_with_haiku
 from ..config import get_model_timeout, get_timeout_tier
 
 logger = logging.getLogger(__name__)
+
+# Per-model, per-loop semaphores (each DeepSeek model variant has its own rate limit quota)
+# IMPORTANT: asyncio.Semaphore is bound to the event loop when first used.
+# In Lambda, asyncio.new_event_loop() creates a new loop each invocation,
+# so we must create the semaphore lazily for the current loop.
+_vertex_semaphore_lock = Lock()
+_vertex_semaphores: Dict[Tuple[int, str], asyncio.Semaphore] = {}  # (loop_id, model) -> Semaphore
+_vertex_default_max_concurrent: int = 25  # Default max concurrent calls per model
+
+# Rationale for default of 25 per model:
+# - Vertex AI DeepSeek models need conservative concurrency limits
+# - Setting to 25 prevents burst traffic from overwhelming Vertex endpoints
+# - With 25 concurrent @ ~5-8s avg latency = ~180-300 RPM theoretical max
+# - Can be configured per-model via env vars: VERTEX_MAX_CONCURRENT_DEEPSEEK_V3_2=30
+
+
+def get_vertex_semaphore(model: str) -> asyncio.Semaphore:
+    """
+    Get or create a semaphore for a specific Vertex model and current event loop.
+
+    Each model has its own semaphore because Vertex AI rate limits are per-model.
+    Semaphores are also keyed by event loop to handle Lambda's new loop per invocation.
+    This allows us to maximize throughput when using multiple model variants.
+    """
+    global _vertex_semaphores, _vertex_default_max_concurrent
+
+    # Get current event loop ID
+    # This is always called from async context (make_single_call), so loop should exist
+    loop = asyncio.get_running_loop()
+    loop_id = id(loop)
+
+    # Normalize model name for env var lookup (e.g., "deepseek-v3.2" -> "DEEPSEEK_V3_2")
+    model_suffix = model.replace('-', '_').replace('.', '_').upper()
+    env_var = f'VERTEX_MAX_CONCURRENT_{model_suffix}'
+
+    key = (loop_id, model)
+
+    with _vertex_semaphore_lock:
+        if key not in _vertex_semaphores:
+            # Check for model-specific env var, fall back to default
+            max_concurrent = int(os.environ.get(env_var,
+                                os.environ.get('VERTEX_MAX_CONCURRENT', _vertex_default_max_concurrent)))
+            logger.debug(f"[VERTEX_SEMAPHORE] Creating new semaphore for loop {loop_id}, model {model}")
+            _vertex_semaphores[key] = asyncio.Semaphore(max_concurrent)
+            logger.info(f"[VERTEX_RATE_LIMIT] Initialized semaphore for {model} with max_concurrent={max_concurrent}")
+
+            # Clean up old loop semaphores (keep only last 2 loops to prevent memory leak)
+            loop_ids = set(k[0] for k in _vertex_semaphores.keys())
+            if len(loop_ids) > 2:
+                oldest_loop = min(loop_ids)
+                keys_to_remove = [k for k in _vertex_semaphores.keys() if k[0] == oldest_loop]
+                for old_key in keys_to_remove:
+                    del _vertex_semaphores[old_key]
+                logger.debug(f"[VERTEX_SEMAPHORE] Cleaned up {len(keys_to_remove)} semaphores from old loop {oldest_loop}")
+
+        return _vertex_semaphores[key]
 
 class VertexProvider:
     def __init__(self, project_id: str, cache_handler, usage_handler, ai_client=None):
@@ -238,32 +296,36 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
             timeout_seconds = get_model_timeout(model, timeout_override)
             logger.debug(f"[VERTEX] Using timeout {get_timeout_tier(model)} for {model}{' (override)' if timeout_override else ''}")
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=timeout_seconds)) as response:
-                    processing_time = (datetime.now() - start_time).total_seconds()
-                    response_text = await response.text()
-                    
-                    if response.status == 200:
-                        response_json = json.loads(response_text)
-                        
-                        # Convert OpenAI format to Gemini/Vertex format for internal consistency if needed, 
-                        # OR just use the OpenAI format structure. 
-                        # The extract_vertex_token_usage handles both.
-                        # I'll construct a dict that matches what _normalize_vertex_response expects
-                        # The response_json here IS OpenAI format (choices/message/content)
-                        # So let's pass it as is to normalization if it supports it.
-                        # _normalize_vertex_response checks for 'content' list (DeepSeek) or 'candidates'.
-                        # OpenAI format has 'choices'. I should adapt it.
-                        
-                        response_dict = {
-                            'content': [{'type': 'text', 'text': response_json['choices'][0]['message']['content']}],
-                            'usage': response_json.get('usage', {}),
-                            'stop_reason': response_json['choices'][0].get('finish_reason', 'stop')
-                        }
-                    else:
-                        error = Exception(f"Vertex API status {response.status}: {response_text}")
-                        await self.cache_handler.save_debug_data('vertex', model, debug_request, response_text, error=error, context=f"status_{response.status}", cache_key=cache_key)
-                        raise error
+            # Get per-model semaphore for concurrency control
+            semaphore = get_vertex_semaphore(model)
+
+            async with semaphore:  # Limit concurrent Vertex calls
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=timeout_seconds)) as response:
+                        processing_time = (datetime.now() - start_time).total_seconds()
+                        response_text = await response.text()
+
+                        if response.status == 200:
+                            response_json = json.loads(response_text)
+
+                            # Convert OpenAI format to Gemini/Vertex format for internal consistency if needed,
+                            # OR just use the OpenAI format structure.
+                            # The extract_vertex_token_usage handles both.
+                            # I'll construct a dict that matches what _normalize_vertex_response expects
+                            # The response_json here IS OpenAI format (choices/message/content)
+                            # So let's pass it as is to normalization if it supports it.
+                            # _normalize_vertex_response checks for 'content' list (DeepSeek) or 'candidates'.
+                            # OpenAI format has 'choices'. I should adapt it.
+
+                            response_dict = {
+                                'content': [{'type': 'text', 'text': response_json['choices'][0]['message']['content']}],
+                                'usage': response_json.get('usage', {}),
+                                'stop_reason': response_json['choices'][0].get('finish_reason', 'stop')
+                            }
+                        else:
+                            error = Exception(f"Vertex API status {response.status}: {response_text}")
+                            await self.cache_handler.save_debug_data('vertex', model, debug_request, response_text, error=error, context=f"status_{response.status}", cache_key=cache_key)
+                            raise error
 
             unified_response = await self._normalize_vertex_response(response_dict, soft_schema, schema, model)
             
