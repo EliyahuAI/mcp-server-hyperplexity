@@ -10163,6 +10163,20 @@ function handleTableExecutionUnrecoverable(message) {
     }
     if (!tableMakerCardId) return;
 
+    // Guard: If rows have already been discovered, this message is likely stale/invalid
+    // This can happen when navigating away and back, receiving out-of-order WebSocket messages
+    const hasDiscoveredRows = document.querySelector('.discovered-rows-box');
+    if (hasDiscoveredRows) {
+        console.log('[UNRECOVERABLE] Ignoring - rows already discovered, message likely stale');
+        return;
+    }
+
+    // Guard: If config has been generated successfully, don't treat as unrecoverable
+    if (globalState.currentConfig || globalState.configStored) {
+        console.log('[UNRECOVERABLE] Ignoring - config already generated');
+        return;
+    }
+
     console.log('[UNRECOVERABLE] Request is impossible');
     completeThinkingInCard(tableMakerCardId, 'Unable to discover rows');
 
@@ -10214,6 +10228,29 @@ function createRestructureDetails(message) {
 }
 
 function showGetStartedCard() {
+    // Guard: Check if there's already a Get Started card visible
+    const existingGetStartedCard = document.querySelector('.card-title');
+    const hasGetStartedCard = existingGetStartedCard &&
+        Array.from(document.querySelectorAll('.card-title')).some(
+            title => title.textContent.trim() === 'Get Started'
+        );
+
+    if (hasGetStartedCard) {
+        console.log('[GET_STARTED] Skipping - Get Started card already exists');
+        return;
+    }
+
+    // Guard: Check if there's an active table making workflow with progress
+    // Don't show Get Started if user has rows discovered or config generated
+    const activeProgressContent = document.querySelector('[id$="-progress-content"]');
+    const hasDiscoveredRows = document.querySelector('.discovered-rows-box');
+    const hasConfigGenerated = globalState.currentConfig || globalState.configStored;
+
+    if (activeProgressContent && (hasDiscoveredRows || hasConfigGenerated)) {
+        console.log('[GET_STARTED] Skipping - active workflow with progress exists');
+        return;
+    }
+
     console.log('[GET_STARTED] Showing new "Get Started" card (same as after email validation)');
     // Reuse the same Get Started card shown after email validation
     createUploadOrDemoCard();
@@ -14868,25 +14905,80 @@ function handleReferenceCheckComplete(data, cardId) {
         }
 
         // Navigation intent tracking - distinguishes reload from back/forward
-        // On reload: beforeunload fires, then load happens within ~100ms
-        // On back/forward: beforeunload fires, user navigates away, comes back later (>500ms)
-        // On fresh load: no navigation timestamp exists
+        // Uses Performance API for reliable detection, with timing fallback
+
+        // Global flag set early to track if this is a reload
+        // This is checked synchronously before any async operations
+        let _isPageReloadResult = null;
+
         function isPageReload() {
+            // Return cached result if already computed
+            if (_isPageReloadResult !== null) {
+                return _isPageReloadResult;
+            }
+
+            // Method 1: Use Performance Navigation API (most reliable)
+            // PerformanceNavigationTiming.type: 'reload', 'navigate', 'back_forward', 'prerender'
+            try {
+                const navEntries = performance.getEntriesByType('navigation');
+                if (navEntries && navEntries.length > 0) {
+                    const navType = navEntries[0].type;
+                    if (navType === 'reload') {
+                        console.log('[NAV] Reload detected via Performance API');
+                        _isPageReloadResult = true;
+                        return true;
+                    }
+                    if (navType === 'back_forward') {
+                        console.log('[NAV] Back/forward detected via Performance API');
+                        _isPageReloadResult = false;
+                        return false;
+                    }
+                    // 'navigate' or 'prerender' = fresh load
+                    if (navType === 'navigate' || navType === 'prerender') {
+                        console.log('[NAV] Fresh navigation detected via Performance API');
+                        _isPageReloadResult = false;
+                        return false;
+                    }
+                }
+            } catch (e) {
+                console.warn('[NAV] Performance API not available, using fallback');
+            }
+
+            // Method 2: Fallback to timing-based detection
             const navTimestamp = sessionStorage.getItem('hyperplexity_nav_timestamp');
             if (!navTimestamp) {
                 // Fresh load - no prior navigation
+                _isPageReloadResult = false;
                 return false;
             }
 
             const timeSinceNav = Date.now() - parseInt(navTimestamp, 10);
-            // If less than 500ms since beforeunload, this is a reload
-            // Back/forward navigation takes longer (user was on another page)
-            const isReload = timeSinceNav < 500;
+            // If less than 1000ms since beforeunload, this is likely a reload
+            // Increased threshold for more reliable detection on slower systems
+            const isReload = timeSinceNav < 1000;
+
+            console.log(`[NAV] Timing-based detection: ${timeSinceNav}ms since beforeunload, isReload=${isReload}`);
 
             // Clear the timestamp after checking
             sessionStorage.removeItem('hyperplexity_nav_timestamp');
 
+            _isPageReloadResult = isReload;
             return isReload;
+        }
+
+        // Check reload status immediately at script load time
+        // This ensures we know the navigation type before any handlers run
+        const IS_PAGE_RELOAD = isPageReload();
+
+        // If this is a reload, clear state immediately (before DOMContentLoaded)
+        if (IS_PAGE_RELOAD) {
+            console.log('[NAV] Reload detected at script load - clearing saved state');
+            const tabId = sessionStorage.getItem('hyperplexity_tab_id');
+            if (tabId) {
+                sessionStorage.removeItem('hyperplexity_app_state_' + tabId);
+            }
+            sessionStorage.removeItem('hyperplexity_nav_timestamp');
+            sessionStorage.removeItem('hyperplexity_user_warned');
         }
 
         // Set navigation timestamp on beforeunload
@@ -14897,6 +14989,20 @@ function handleReferenceCheckComplete(data, cardId) {
         document.addEventListener('DOMContentLoaded', function() {
 // Check for testing overrides before anything else
 checkForTestingOverrides();
+
+// CRITICAL: If this is a page reload, clear the DOM and state immediately
+// This ensures a clean slate before any other initialization
+if (IS_PAGE_RELOAD) {
+    console.log('[DOM] Reload detected - clearing card container for fresh start');
+    const cardContainer = document.getElementById('cardContainer');
+    if (cardContainer) {
+        cardContainer.innerHTML = '';
+    }
+    // Also reset any global window flags that might have persisted
+    window.isRestoringState = false;
+    window.isResetting = false;
+    window.leaveWarningEnabled = false;
+}
 
 // MOBILE VERSION: Skip mobile detection to allow mobile usage
 // if (isMobileDevice()) {
@@ -15529,7 +15635,14 @@ if (resetButton) {
         // Handle page show event (when returning from back/forward navigation)
         window.addEventListener('pageshow', function(event) {
 if (event.persisted) {
-    // Page was restored from browser cache
+    // Page was restored from browser cache (bfcache)
+    // Don't restore if this was a reload - the page might have been in bfcache
+    // but user explicitly requested a refresh
+    if (IS_PAGE_RELOAD) {
+        console.log('[PAGESHOW] Ignoring persisted pageshow - this is a reload');
+        return;
+    }
+    console.log('[PAGESHOW] Restoring from bfcache');
     restoreApplicationState();
 }
         });
@@ -15582,11 +15695,9 @@ if (hasState) {
 
         if (cardCount >= 2) {
             // CRITICAL: Only restore on back/forward navigation, NOT on reload
-            // isPageReload() uses timing to distinguish:
-            // - Reload: beforeunload → load happens within ~100ms
-            // - Back/forward: user navigates away, comes back later (>500ms)
-            if (isPageReload()) {
-                console.log('[STATE] Page reload detected, clearing saved state to start fresh');
+            // IS_PAGE_RELOAD is computed once at script load using Performance API
+            if (IS_PAGE_RELOAD) {
+                console.log('[STATE] Page reload detected (via IS_PAGE_RELOAD), clearing saved state to start fresh');
                 sessionStorage.removeItem(stateKey);
                 return false;
             }
@@ -16239,12 +16350,16 @@ if (!document.hidden) {
     // Small delay to ensure state is ready
     setTimeout(() => {
         // Don't attempt restoration if:
+        // - This is a page reload (user explicitly refreshed)
         // - Initial restore decision was already made (page just loaded)
         // - Already have valuable data displayed
         // - User is in the middle of resetting
-        if (window.initialRestoreDecisionMade || hasValuableData() || window.isResetting) {
+        if (IS_PAGE_RELOAD || window.initialRestoreDecisionMade || hasValuableData() || window.isResetting) {
             // Clear the flag after first visibility change to allow future back/forward restoration
             window.initialRestoreDecisionMade = false;
+            if (IS_PAGE_RELOAD) {
+                console.log('[VISIBILITY] Skipping state restoration - this is a reload');
+            }
             return;
         }
 
@@ -16258,6 +16373,7 @@ if (!document.hidden) {
 
                 if (Date.now() - state.timestamp <= oneHour && state.cards && state.cards.length > 1) {
                     // Auto-restore without modal
+                    console.log('[VISIBILITY] Restoring state for back/forward navigation');
                     if (typeof restoreApplicationState === 'function') {
                         restoreApplicationState();
                     }

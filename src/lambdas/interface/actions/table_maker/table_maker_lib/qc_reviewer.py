@@ -197,16 +197,24 @@ class QCReviewer:
             # Extract structured response
             raw_response = api_response.get('response', {})
 
+            # Log the raw response structure for debugging
+            logger.info(f"[QC_RESPONSE] Raw response keys: {list(raw_response.keys())}")
+
             # Parse the structured content
             if 'choices' in raw_response and len(raw_response['choices']) > 0:
                 content = raw_response['choices'][0]['message']['content']
                 ai_response = json.loads(content) if isinstance(content, str) else content
+                logger.info(f"[QC_RESPONSE] Parsed from choices format, action={ai_response.get('action', 'N/A')}")
             elif 'action' in raw_response:
                 # New simplified format - convert to old format for backward compatibility
+                action = raw_response.get('action', 'unknown')
+                rows_count = len(raw_response.get('rows', []))
+                logger.info(f"[QC_RESPONSE] Simplified format: action={action}, rows={rows_count}")
                 ai_response = self._convert_simplified_response(raw_response, discovered_rows)
             elif 'reviewed_rows' in raw_response and 'qc_summary' in raw_response:
                 # Old format - already structured
                 ai_response = raw_response
+                logger.info(f"[QC_RESPONSE] Old format: reviewed_rows={len(raw_response.get('reviewed_rows', []))}")
             else:
                 logger.error(f"Unexpected response structure: {json.dumps(raw_response, indent=2)[:500]}")
                 raise Exception("Failed to extract structured QC review response")
@@ -403,10 +411,18 @@ class QCReviewer:
             if filtered_by_limit > 0:
                 logger.info(f"Filtered {filtered_by_limit} rows due to max_rows limit ({max_rows})")
 
-            # Check for insufficient rows scenario (discovered < min_row_count)
-            insufficient_rows = len(discovered_rows) < min_row_count
+            # Check for insufficient rows scenario
+            # IMPORTANT: Consider BOTH prepopulated rows AND discovered rows (after QC approval)
+            # Prepopulated rows (from column_definition) are pre-approved
+            total_rows = pre_row_count + len(final_approved)
+            insufficient_rows = total_rows < min_row_count
             insufficient_rows_statement = ai_response.get('insufficient_rows_statement', '')
             insufficient_rows_recommendations = ai_response.get('insufficient_rows_recommendations', [])
+
+            logger.info(
+                f"[INSUFFICIENT_CHECK] Prepopulated: {pre_row_count}, QC approved: {len(final_approved)}, "
+                f"Total: {total_rows}, Min required: {min_row_count}, Insufficient: {insufficient_rows}"
+            )
 
             # Update qc_summary with new fields
             qc_summary['minimum_guarantee_applied'] = minimum_guarantee_applied
@@ -430,14 +446,16 @@ class QCReviewer:
             result['rejected_rows'] = final_rejected
             result['qc_summary'] = qc_summary
             result['reviewed_rows'] = reviewed_rows
+            result['prepopulated_row_count'] = pre_row_count  # For execution to know total
 
             # Add insufficient rows details if applicable
             if insufficient_rows:
                 result['insufficient_rows_statement'] = insufficient_rows_statement
                 result['insufficient_rows_recommendations'] = insufficient_rows_recommendations
                 logger.warning(
-                    f"[INSUFFICIENT_ROWS] Only {len(discovered_rows)} rows discovered (< {min_row_count}). "
-                    f"Statement: {insufficient_rows_statement[:100]}..."
+                    f"[INSUFFICIENT_ROWS] Only {total_rows} total rows ({pre_row_count} prepopulated + "
+                    f"{len(final_approved)} QC approved) < {min_row_count} required. "
+                    f"Statement: {insufficient_rows_statement[:100] if insufficient_rows_statement else 'N/A'}..."
                 )
 
             # Add retrigger_discovery if present in AI response
@@ -446,6 +464,14 @@ class QCReviewer:
                 result['retrigger_discovery'] = retrigger_discovery
                 logger.info(
                     f"[RETRIGGER_REQUESTED] QC requested retrigger: {retrigger_discovery.get('reason', 'No reason provided')}"
+                )
+
+            # Add recovery_decision if present in AI response (for restructure/give_up decisions)
+            recovery_decision = ai_response.get('recovery_decision', {})
+            if recovery_decision:
+                result['recovery_decision'] = recovery_decision
+                logger.info(
+                    f"[RECOVERY_DECISION] QC provided recovery decision: {recovery_decision.get('decision', 'unknown')}"
                 )
 
             # Capture enhanced_data for cost tracking

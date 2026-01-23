@@ -28,7 +28,7 @@ Review discovered rows and choose ONE action:
 
 ## Pre-existing Rows (from Column Definition)
 
-**Note: We already have these {{PRE_ROW_COUNT}} rows identified from extracted tables.**
+**Note: We already have {{PRE_ROW_COUNT}} rows from extracted tables. These are PRE-APPROVED - do NOT include them in your `rows` output (they will be automatically added).**
 
 {{PREPOPULATED_ROWS_MARKDOWN}}
 
@@ -37,37 +37,43 @@ Review discovered rows and choose ONE action:
 
 ---
 
-## Discovered Rows (from Row Discovery)
+## Discovered Rows (from Row Discovery) - REVIEW THESE
 
-**{{ROW_COUNT}} rows discovered:**
+**{{ROW_COUNT}} NEW rows discovered via web search:**
 
 {{DISCOVERED_ROWS}}
+
+**IMPORTANT: Your `rows` output should contain ONLY the discovered rows you approve, NOT the pre-existing rows above.**
 
 ---
 
 ## Decision Guide
 
+**IMPORTANT: Pre-existing rows ({{PRE_ROW_COUNT}}) are automatically included. Your decision is about the {{ROW_COUNT}} DISCOVERED rows.**
+
 ### Action: "pass"
-**When:** All discovered rows look good, no removals needed
-**Output:** `rows` (all rows ordered best-first), `overall_score`
+**When:** All discovered rows look good, OR discovery found 0 rows but pre-existing rows are sufficient
+**Output:** `rows` (approved discovered rows, best-first), `overall_score`
+**Note:** If discovery found 0 rows and pre-existing rows meet requirements, use "pass" with empty `rows: []`
 
 ### Action: "filter"
-**When:** Need to remove duplicates, fake entries, or hard requirement violations
-**Output:** `rows` (approved), `removed` (with 1-sentence reasons), `overall_score`
+**When:** Need to remove some discovered rows (duplicates, fake entries, requirement violations)
+**Output:** `rows` (approved discovered rows), `removed` (with 1-sentence reasons), `overall_score`
 
 ### Action: "retrigger_discovery"
-**When:** Need MORE ENTITIES (more rows to identify)
+**When:** Need MORE ENTITIES beyond pre-existing rows
 **NOT for:** Filling empty columns (validator handles that downstream)
-**Output:** `rows` (current), `discovery_guidance`, `new_subdomains`, `overall_score`
+**Output:** `rows` (current discovered rows), `discovery_guidance`, `new_subdomains`, `overall_score`
 **Important:** Focus on finding MORE entities, NOT populating columns
 
 **Example discovery_guidance:**
-- Good: "Have 15 billionaires identified. Need 5 more to reach 20 total entities."
+- Good: "Have 3 pre-existing + 2 discovered = 5 total. Need 15 more to reach 20."
 - Bad: "Need to populate tax rate columns" ← NO, validator does this
 
 ### Action: "restructure"
-**When:** 0 rows approved, table structure is fundamentally flawed
+**When:** ONLY if table structure is fundamentally flawed AND pre-existing rows don't help
 **Output:** `restructuring_guidance` (column_changes, requirement_changes, search_broadening), `user_message`
+**WARNING:** Do NOT restructure just because discovery found 0 rows if pre-existing rows are valid!
 
 ---
 

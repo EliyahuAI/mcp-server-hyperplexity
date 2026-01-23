@@ -1542,18 +1542,24 @@ async def execute_full_table_generation(
                     logger.error(f"[EXECUTION] {result['error']}")
                     return result
 
-                final_rows = discovery_result.get('final_rows', [])
+                # Get rows from discovery (BEFORE merging with initial_rows)
+                # This is what QC should review as "discovered" rows
+                discovery_only_rows = discovery_result.get('final_rows', [])
                 stream_results = discovery_result.get('stream_results', [])
 
-                # Merge initial_rows from column definition with discovered rows
+                logger.info(f"[DISCOVERY] Row discovery found {len(discovery_only_rows)} new rows")
+
+                # Merge initial_rows from column definition with discovered rows for final output
                 if initial_rows:
-                    logger.info(f"[MERGE] Merging {len(initial_rows)} initial rows with {len(final_rows)} discovered rows")
+                    logger.info(f"[MERGE] Merging {len(initial_rows)} initial rows with {len(discovery_only_rows)} discovered rows")
                     final_rows = _merge_rows_with_preference(
                         initial_rows=initial_rows,
-                        discovered_rows=final_rows,
+                        discovered_rows=discovery_only_rows,
                         id_column_names=[col['name'] for col in columns if col.get('importance') == 'ID']
                     )
-                    logger.info(f"[MERGE] After merge: {len(final_rows)} total rows for QC review")
+                    logger.info(f"[MERGE] After merge: {len(final_rows)} total rows")
+                else:
+                    final_rows = discovery_only_rows
 
                 # Track each subdomain's API calls
                 for stream_result in stream_results:
@@ -1708,9 +1714,11 @@ async def execute_full_table_generation(
                     min_row_count = qc_config.get('min_row_count', 4)
                     min_row_count_for_frontend = qc_config.get('min_row_count_for_frontend', 4)
 
-                    # Call QC reviewer (same as local test)
+                    # Call QC reviewer
+                    # IMPORTANT: Pass discovery_only_rows (not merged final_rows) to avoid
+                    # duplicating prepopulated rows which are already shown in PREPOPULATED_ROWS_MARKDOWN
                     qc_result = await qc_reviewer.review_rows(
-                        discovered_rows=final_rows,
+                        discovered_rows=discovery_only_rows,  # Only rows from discovery, not prepopulated
                         columns=columns,
                         user_context=conversation_state.get('user_request', ''),
                         table_name=table_name,
@@ -1733,7 +1741,23 @@ async def execute_full_table_generation(
                         approved_rows = final_rows
                         break
                     else:
-                        approved_rows = qc_result.get('approved_rows', final_rows)
+                        # QC approved rows are from discovery only
+                        # Combine prepopulated rows (initial_rows) with QC-approved discovered rows
+                        qc_approved_discovered = qc_result.get('approved_rows', [])
+
+                        if initial_rows:
+                            # Merge: prepopulated rows + QC-approved discovered rows
+                            approved_rows = _merge_rows_with_preference(
+                                initial_rows=initial_rows,
+                                discovered_rows=qc_approved_discovered,
+                                id_column_names=[col['name'] for col in columns if col.get('importance') == 'ID']
+                            )
+                            logger.info(
+                                f"[QC_MERGE] Combined {len(initial_rows)} prepopulated + "
+                                f"{len(qc_approved_discovered)} QC-approved = {len(approved_rows)} total rows"
+                            )
+                        else:
+                            approved_rows = qc_approved_discovered
 
                         # Track API call
                         _add_api_call_to_runs(
@@ -1769,7 +1793,8 @@ async def execute_full_table_generation(
                         result['insufficient_rows_statement'] = qc_result.get('insufficient_rows_statement', '')
                         result['insufficient_rows_recommendations'] = qc_result.get('insufficient_rows_recommendations', [])
 
-                        # If we have 0 approved rows, check QC's autonomous recovery decision
+                        # If we have 0 total rows (including prepopulated), check QC's autonomous recovery decision
+                        # Note: approved_rows now includes prepopulated rows merged with QC-approved discovery rows
                         if len(approved_rows) == 0:
                             logger.warning(
                                 f"[ZERO_ROWS] No approved rows after {retry_count} retrigger(s). "
@@ -2060,6 +2085,27 @@ async def execute_full_table_generation(
                                     existing_ids.add(id_key)
 
                         logger.info(f"[RETRIGGER] Merged {merged_count} new unique rows with {len(approved_rows)} approved rows, total now: {len(final_rows)}")
+
+                        # Update discovery_only_rows for second QC
+                        # For retrigger, QC2 should re-evaluate ALL non-prepopulated rows:
+                        # - Previously approved rows from QC1 (excluding prepopulated)
+                        # - New rows from retrigger discovery
+                        # The prepopulated rows are already in column_result and shown separately
+                        if initial_rows:
+                            # Filter out prepopulated rows from final_rows for QC2
+                            initial_ids = set()
+                            for row in initial_rows:
+                                id_values = row.get('id_values', {})
+                                if id_values:
+                                    initial_ids.add(tuple(sorted(id_values.items())))
+
+                            discovery_only_rows = [
+                                row for row in final_rows
+                                if tuple(sorted(row.get('id_values', {}).items())) not in initial_ids
+                            ]
+                            logger.info(f"[RETRIGGER] Second QC will review {len(discovery_only_rows)} rows (excluding {len(initial_rows)} prepopulated)")
+                        else:
+                            discovery_only_rows = final_rows
 
                         # Update original_discovered_count to include retrigger rows
                         # This ensures the frontend sees the total cumulative count, not a shrinking number

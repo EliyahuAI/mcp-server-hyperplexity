@@ -295,6 +295,20 @@ function handleTableExecutionUnrecoverable(message) {
     }
     if (!tableMakerCardId) return;
 
+    // Guard: If rows have already been discovered, this message is likely stale/invalid
+    // This can happen when navigating away and back, receiving out-of-order WebSocket messages
+    const hasDiscoveredRows = document.querySelector('.discovered-rows-box');
+    if (hasDiscoveredRows) {
+        console.log('[UNRECOVERABLE] Ignoring - rows already discovered, message likely stale');
+        return;
+    }
+
+    // Guard: If config has been generated successfully, don't treat as unrecoverable
+    if (globalState.currentConfig || globalState.configStored) {
+        console.log('[UNRECOVERABLE] Ignoring - config already generated');
+        return;
+    }
+
     console.log('[UNRECOVERABLE] Request is impossible');
     completeThinkingInCard(tableMakerCardId, 'Unable to discover rows');
 
@@ -346,6 +360,29 @@ function createRestructureDetails(message) {
 }
 
 function showGetStartedCard() {
+    // Guard: Check if there's already a Get Started card visible
+    const existingGetStartedCard = document.querySelector('.card-title');
+    const hasGetStartedCard = existingGetStartedCard &&
+        Array.from(document.querySelectorAll('.card-title')).some(
+            title => title.textContent.trim() === 'Get Started'
+        );
+
+    if (hasGetStartedCard) {
+        console.log('[GET_STARTED] Skipping - Get Started card already exists');
+        return;
+    }
+
+    // Guard: Check if there's an active table making workflow with progress
+    // Don't show Get Started if user has rows discovered or config generated
+    const activeProgressContent = document.querySelector('[id$="-progress-content"]');
+    const hasDiscoveredRows = document.querySelector('.discovered-rows-box');
+    const hasConfigGenerated = globalState.currentConfig || globalState.configStored;
+
+    if (activeProgressContent && (hasDiscoveredRows || hasConfigGenerated)) {
+        console.log('[GET_STARTED] Skipping - active workflow with progress exists');
+        return;
+    }
+
     console.log('[GET_STARTED] Showing new "Get Started" card (same as after email validation)');
     // Reuse the same Get Started card shown after email validation
     createUploadOrDemoCard();

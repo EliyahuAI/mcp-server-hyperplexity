@@ -115,6 +115,14 @@ class RowDiscoveryStream:
                 f"(target: {target_rows} rows, {len(escalation_strategy)} round(s) max)"
             )
 
+            # Log escalation strategy details for debugging
+            for idx, strat in enumerate(escalation_strategy, 1):
+                logger.info(
+                    f"  Strategy {idx}: model={strat.get('model')}, "
+                    f"min_pct={strat.get('min_candidates_percentage')}, "
+                    f"context={strat.get('search_context_size', 'high')}"
+                )
+
             all_rounds = []
             accumulated_candidates = []
             all_search_improvements = []
@@ -128,6 +136,11 @@ class RowDiscoveryStream:
                 max_web_searches = strategy.get('max_web_searches', 3)  # For Claude models
                 min_percentage = strategy.get('min_candidates_percentage')
                 findall = strategy.get('findall', False)  # For the-clone models
+
+                logger.info(
+                    f"[ESCALATION] {subdomain_name} entering round {round_idx}/{len(escalation_strategy)}: "
+                    f"model={model}, min_pct={min_percentage}, accumulated={len(accumulated_candidates)}"
+                )
 
                 # === GLOBAL COUNTER CHECK (BEFORE executing this level) ===
                 if global_counter:
@@ -154,6 +167,11 @@ class RowDiscoveryStream:
                             f"({threshold_pct}% of {global_target}). Skipping {rounds_skipped} round(s)"
                         )
                         break
+                    else:
+                        logger.info(
+                            f"[GLOBAL CHECK] {subdomain_name} Round {round_idx}: "
+                            f"Global {current_global} < threshold {stop_at_count}, continuing"
+                        )
 
                 # Log round info with appropriate details
                 if 'claude' in model.lower():
@@ -257,6 +275,18 @@ class RowDiscoveryStream:
                             f"({min_percentage}% of {target_rows}). Skipping {rounds_skipped} round(s)"
                         )
                         break
+                    else:
+                        # Log that we're continuing (not stopping)
+                        logger.info(
+                            f"[LOCAL CHECK] {subdomain_name} Round {round_idx}: "
+                            f"{total_so_far} < {threshold} threshold, continuing to next round"
+                        )
+
+            # Log why we exited the loop
+            logger.info(
+                f"[ESCALATION COMPLETE] {subdomain_name}: Exited after {len(all_rounds)} round(s), "
+                f"{len(accumulated_candidates)} total candidates"
+            )
 
             # Prepare result
             processing_time = time.time() - start_time
