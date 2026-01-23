@@ -3720,4 +3720,219 @@ def get_connections_for_session(session_id: str) -> List[str]:
         return [item['connectionId'] for item in items]
     except ClientError as e:
         logger.error(f"Error querying for connections by session {session_id}: {e}")
-        return [] 
+        return []
+
+
+# --- WebSocket Message Log for Replay ---
+
+MESSAGE_LOG_TABLE_NAME = "perplexity-validator-message-log"
+
+def create_message_log_table():
+    """
+    Create perplexity-validator-message-log table for websocket message replay.
+    TTL: 3 days (messages auto-deleted after 3 days)
+
+    Schema:
+    - Partition Key: session_card_id (composite: session_id#card_id)
+    - Sort Key: message_seq (sequence number for ordering)
+    - GSI: GSI_SessionIndex on session_id for querying all messages for a session
+    """
+    try:
+        dynamodb.create_table(
+            TableName=MESSAGE_LOG_TABLE_NAME,
+            KeySchema=[
+                {'AttributeName': 'session_card_id', 'KeyType': 'HASH'},  # PK
+                {'AttributeName': 'message_seq', 'KeyType': 'RANGE'}      # SK
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'session_card_id', 'AttributeType': 'S'},
+                {'AttributeName': 'message_seq', 'AttributeType': 'N'},
+                {'AttributeName': 'session_id', 'AttributeType': 'S'}
+            ],
+            GlobalSecondaryIndexes=[
+                {
+                    'IndexName': 'GSI_SessionIndex',
+                    'KeySchema': [
+                        {'AttributeName': 'session_id', 'KeyType': 'HASH'},
+                        {'AttributeName': 'message_seq', 'KeyType': 'RANGE'}
+                    ],
+                    'Projection': {'ProjectionType': 'ALL'}
+                }
+            ],
+            BillingMode='PAY_PER_REQUEST'  # On-demand pricing
+        )
+
+        waiter = boto3.client('dynamodb').get_waiter('table_exists')
+        waiter.wait(TableName=MESSAGE_LOG_TABLE_NAME)
+        logger.info(f"Table {MESSAGE_LOG_TABLE_NAME} created successfully with GSI.")
+
+        # Enable TTL after table creation (3 days)
+        try:
+            dynamodb_client.update_time_to_live(
+                TableName=MESSAGE_LOG_TABLE_NAME,
+                TimeToLiveSpecification={'AttributeName': 'ttl', 'Enabled': True}
+            )
+            logger.info(f"TTL enabled for {MESSAGE_LOG_TABLE_NAME} (3 days)")
+        except Exception as ttl_error:
+            logger.warning(f"Failed to enable TTL for {MESSAGE_LOG_TABLE_NAME}: {ttl_error}")
+
+        return True
+
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceInUseException':
+            logger.info(f"Table {MESSAGE_LOG_TABLE_NAME} already exists.")
+            return True
+        else:
+            logger.error(f"Failed to create message log table: {e}")
+            return False
+
+
+def persist_message_to_log(session_id: str, card_id: str, seq: int, message: dict) -> bool:
+    """
+    Persist a websocket message to the message log table for replay.
+
+    Args:
+        session_id: Session identifier
+        card_id: Card identifier (e.g., 'card-4' for preview)
+        seq: Sequence number for ordering
+        message: Full message payload
+
+    Returns:
+        bool: True if persisted successfully
+    """
+    try:
+        table = dynamodb.Table(MESSAGE_LOG_TABLE_NAME)
+        session_card_id = f"{session_id}#{card_id}"
+        ttl = int(time.time()) + (3 * 24 * 60 * 60)  # 3 days from now
+
+        # Convert any floats to Decimal for DynamoDB
+        message_data = convert_floats_to_decimal(message)
+
+        table.put_item(
+            Item={
+                'session_card_id': session_card_id,
+                'message_seq': seq,
+                'session_id': session_id,
+                'card_id': card_id,
+                'message_type': message.get('type', 'unknown'),
+                'message_data': message_data,
+                'timestamp': int(time.time() * 1000),
+                'ttl': ttl
+            }
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Failed to persist message {seq} for {card_id}: {e}")
+        return False
+
+
+def get_messages_for_card(session_id: str, card_id: str, since_seq: int = 0, limit: int = 100) -> dict:
+    """
+    Retrieve messages for a specific card since a given sequence number.
+
+    Args:
+        session_id: Session identifier
+        card_id: Card identifier
+        since_seq: Return messages with seq > since_seq
+        limit: Maximum number of messages to return
+
+    Returns:
+        dict with 'messages', 'last_seq', and 'has_more'
+    """
+    try:
+        table = dynamodb.Table(MESSAGE_LOG_TABLE_NAME)
+        session_card_id = f"{session_id}#{card_id}"
+
+        response = table.query(
+            KeyConditionExpression=boto3.dynamodb.conditions.Key('session_card_id').eq(session_card_id) &
+                                   boto3.dynamodb.conditions.Key('message_seq').gt(since_seq),
+            Limit=limit + 1,  # Fetch one extra to check if there are more
+            ScanIndexForward=True  # Ascending order by seq
+        )
+
+        items = response.get('Items', [])
+        has_more = len(items) > limit
+        messages = items[:limit]
+
+        # Convert Decimals back to regular Python types
+        def convert_decimals(obj):
+            if isinstance(obj, dict):
+                return {k: convert_decimals(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_decimals(i) for i in obj]
+            elif isinstance(obj, Decimal):
+                return float(obj) if obj % 1 else int(obj)
+            return obj
+
+        messages = [convert_decimals(m) for m in messages]
+        last_seq = messages[-1]['message_seq'] if messages else since_seq
+
+        return {
+            'messages': messages,
+            'last_seq': last_seq,
+            'has_more': has_more
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting messages for card {card_id}: {e}")
+        return {
+            'messages': [],
+            'last_seq': since_seq,
+            'has_more': False
+        }
+
+
+def get_messages_since(session_id: str, since_seq: int = 0, limit: int = 100) -> dict:
+    """
+    Retrieve all messages for a session since a given sequence number.
+    Uses the GSI to query across all cards.
+
+    Args:
+        session_id: Session identifier
+        since_seq: Return messages with seq > since_seq
+        limit: Maximum number of messages to return
+
+    Returns:
+        dict with 'messages', 'last_seq', and 'has_more'
+    """
+    try:
+        table = dynamodb.Table(MESSAGE_LOG_TABLE_NAME)
+
+        response = table.query(
+            IndexName='GSI_SessionIndex',
+            KeyConditionExpression=boto3.dynamodb.conditions.Key('session_id').eq(session_id) &
+                                   boto3.dynamodb.conditions.Key('message_seq').gt(since_seq),
+            Limit=limit + 1,
+            ScanIndexForward=True
+        )
+
+        items = response.get('Items', [])
+        has_more = len(items) > limit
+        messages = items[:limit]
+
+        # Convert Decimals
+        def convert_decimals(obj):
+            if isinstance(obj, dict):
+                return {k: convert_decimals(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_decimals(i) for i in obj]
+            elif isinstance(obj, Decimal):
+                return float(obj) if obj % 1 else int(obj)
+            return obj
+
+        messages = [convert_decimals(m) for m in messages]
+        last_seq = messages[-1]['message_seq'] if messages else since_seq
+
+        return {
+            'messages': messages,
+            'last_seq': last_seq,
+            'has_more': has_more
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting messages for session {session_id}: {e}")
+        return {
+            'messages': [],
+            'last_seq': since_seq,
+            'has_more': False
+        } 

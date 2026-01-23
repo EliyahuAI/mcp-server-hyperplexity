@@ -5,6 +5,7 @@ import boto3
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -12,10 +13,13 @@ logger = logging.getLogger(__name__)
 
 class WebSocketClient:
     """Client for sending WebSocket messages to connected clients"""
-    
+
     def __init__(self):
         self.websocket_url = os.environ.get('WEBSOCKET_API_URL', '')
         logger.info(f"[WEBSOCKET_CLIENT] Initializing WebSocketClient with URL: {self.websocket_url}")
+
+        # Sequence counters per session for message ordering
+        self._sequence_counters = {}
 
         # Extract API Gateway info from WebSocket URL
         if self.websocket_url.startswith('wss://'):
@@ -41,13 +45,38 @@ class WebSocketClient:
             logger.error(f"[WEBSOCKET_CLIENT] Invalid WebSocket URL: {self.websocket_url}")
             self.client = None
     
-    def send_to_session(self, session_id: str, message: Dict[str, Any]) -> bool:
+    def _get_next_sequence(self, session_id: str) -> int:
+        """Get next sequence number for session (in-memory counter)"""
+        if session_id not in self._sequence_counters:
+            self._sequence_counters[session_id] = 0
+
+        self._sequence_counters[session_id] += 1
+        return self._sequence_counters[session_id]
+
+    def _persist_message(self, session_id: str, card_id: str, seq: int, message: dict) -> bool:
         """
-        Send a message to all connections subscribed to a session
+        Persist message to DynamoDB message log (fire-and-forget, don't block WebSocket send).
+        """
+        try:
+            from dynamodb_schemas import persist_message_to_log
+            return persist_message_to_log(session_id, card_id, seq, message)
+        except ImportError as e:
+            logger.warning(f"[WEBSOCKET_CLIENT] Could not import persist_message_to_log: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"[WEBSOCKET_CLIENT] Failed to persist message {seq} for {card_id}: {e}")
+            # Don't raise - message already sent via WebSocket
+            return False
+
+    def send_to_session(self, session_id: str, message: Dict[str, Any], card_id: str = None) -> bool:
+        """
+        Send a message to all connections subscribed to a session.
+        Optionally persists message to DynamoDB for replay if card_id is provided.
 
         Args:
             session_id: The session ID to send the message to
             message: The message data to send
+            card_id: Optional card identifier for message persistence and replay
 
         Returns:
             bool: True if message was sent successfully
@@ -57,7 +86,22 @@ class WebSocketClient:
             return False
 
         try:
-            logger.info(f"[WEBSOCKET_CLIENT] Attempting to send message to session {session_id}, type={message.get('type')}")
+            # Get next sequence number for this session
+            seq = self._get_next_sequence(session_id)
+
+            # Add metadata to message
+            message_with_meta = {
+                **message,
+                '_seq': seq,
+                '_card_id': card_id,
+                '_timestamp': int(time.time() * 1000)
+            }
+
+            logger.info(f"[WEBSOCKET_CLIENT] Attempting to send message to session {session_id}, type={message.get('type')}, seq={seq}, card_id={card_id}")
+
+            # Persist to message log if card_id provided (async, non-blocking)
+            if card_id:
+                self._persist_message(session_id, card_id, seq, message_with_meta)
 
             # Get connections for this session
             connections = self._get_connections_for_session(session_id)
@@ -69,10 +113,10 @@ class WebSocketClient:
 
             logger.info(f"[WEBSOCKET_CLIENT] Found {len(connections)} connection(s) for session {session_id}")
 
-            # Send message to all connections
+            # Send message with metadata to all connections
             success_count = 0
             for connection_id in connections:
-                if self._send_to_connection(connection_id, message):
+                if self._send_to_connection(connection_id, message_with_meta):
                     success_count += 1
 
             logger.info(f"[WEBSOCKET_CLIENT] Sent WebSocket message to {success_count}/{len(connections)} connections for session {session_id}")

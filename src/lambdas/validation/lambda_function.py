@@ -2238,10 +2238,15 @@ async def call_anthropic_api_text(session: aiohttp.ClientSession, prompt: str,
             error_text = await response.text()
             raise Exception(f"Anthropic API error: {response.status} - {error_text}")
 
-def progress_sender(progress_queue, session_id):
+def progress_sender(progress_queue, session_id, card_id: str = None):
     """
     Worker thread function to send progress updates from a queue.
     This version sends updates as they come, relying on a check to prevent sending stale (out-of-order) counts.
+
+    Args:
+        progress_queue: Queue of progress updates
+        session_id: Session identifier
+        card_id: Card identifier for message persistence ('preview' or 'validation')
     """
     last_sent_count = -1
     while True:
@@ -2261,7 +2266,7 @@ def progress_sender(progress_queue, session_id):
                     last_sent_count = count
 
                 logger.debug(f"[PROGRESS_SENDER] Sending progress: count={count}, last_sent={last_sent_count}, confidence_score={confidence_score}")
-                send_websocket_progress(session_id, message, progress_percent, confidence_score)
+                send_websocket_progress(session_id, message, progress_percent, confidence_score, card_id=card_id)
             else:
                 logger.debug(f"[PROGRESS_SENDER] Skipping stale progress: count={count}, last_sent={last_sent_count}")
 
@@ -2270,8 +2275,16 @@ def progress_sender(progress_queue, session_id):
             logger.error(f"[PROGRESS_SENDER] Error in progress sender thread: {e}")
 
 
-def send_websocket_progress(session_id: str, message: str, progress: int = None, confidence_score: int = None):
-    """Send progress update via WebSocket with optional confidence score (0-100)"""
+def send_websocket_progress(session_id: str, message: str, progress: int = None, confidence_score: int = None, card_id: str = None):
+    """Send progress update via WebSocket with optional confidence score (0-100)
+
+    Args:
+        session_id: Session identifier
+        message: Progress message
+        progress: Progress percentage (0-100)
+        confidence_score: Confidence score (0-100)
+        card_id: Card identifier for message persistence (e.g., 'preview', 'validation')
+    """
     logger.debug(f"send_websocket_progress called: websocket_client={websocket_client is not None}, session_id={session_id}, message={message}, progress={progress}, confidence_score={confidence_score}")
 
     if websocket_client and session_id:
@@ -2289,9 +2302,9 @@ def send_websocket_progress(session_id: str, message: str, progress: int = None,
                 logger.debug(f"[WEBSOCKET_CONFIDENCE] Sending confidence_score={confidence_score} with message='{message}'")
 
             logger.debug(f"Sending data: {update_data}")
-            result = websocket_client.send_to_session(session_id, update_data)
+            result = websocket_client.send_to_session(session_id, update_data, card_id=card_id)
             logger.debug(f"Send result: {result}")
-            logger.debug(f"Sent WebSocket progress: {message} to session {session_id} confidence={confidence_score}")
+            logger.debug(f"Sent WebSocket progress: {message} to session {session_id} confidence={confidence_score} card_id={card_id}")
         except Exception as e:
             logger.debug(f"Failed to send WebSocket progress: {e}")
             logger.debug(f"Full traceback: {traceback.format_exc()}")
@@ -2975,12 +2988,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Extract session_id for progress updates
         session_id = event.get('session_id')
 
+        # Determine card_id for message persistence (preview vs full validation)
+        is_preview_mode = event.get('is_preview', False)
+        progress_card_id = 'preview' if is_preview_mode else 'validation'
+
         # Create a queue and a worker thread for progress updates
         progress_queue = queue.Queue()
         progress_thread = None
         if session_id and websocket_client:
-            logger.debug(f"Session ID for progress updates: {session_id}")
-            progress_thread = threading.Thread(target=progress_sender, args=(progress_queue, session_id))
+            logger.debug(f"Session ID for progress updates: {session_id}, card_id: {progress_card_id}")
+            progress_thread = threading.Thread(target=progress_sender, args=(progress_queue, session_id, progress_card_id))
             progress_thread.start()
             progress_queue.put((0, "Starting validation process...", 5, None))
 

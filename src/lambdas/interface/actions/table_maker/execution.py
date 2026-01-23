@@ -196,7 +196,9 @@ def send_execution_progress(
                 f"{len(kwargs['discovered_rows'])} rows, total_discovered: {kwargs.get('total_discovered', 'N/A')}"
             )
 
-        websocket_client.send_to_session(session_id, message)
+        # Use table-maker-{conversation_id} as card_id for message persistence
+        card_id = f"table-maker-{conversation_id}" if conversation_id else "table-maker"
+        websocket_client.send_to_session(session_id, message, card_id=card_id)
         logger.info(
             f"[EXECUTION] Progress {progress_percent}% (Step {current_step}/{total_steps}): {status}"
         )
@@ -240,7 +242,9 @@ def send_warning(
         if conversation_id:
             warning_message['conversation_id'] = conversation_id
 
-        websocket_client.send_to_session(session_id, warning_message)
+        # Use table-maker-{conversation_id} as card_id for message persistence
+        card_id = f"table-maker-{conversation_id}" if conversation_id else "table-maker"
+        websocket_client.send_to_session(session_id, warning_message, card_id=card_id)
         logger.info(f"[WARNING] Sent {warning_type} warning to frontend: {title}")
     except Exception as e:
         logger.warning(f"[WARNING] Failed to send warning: {e}")

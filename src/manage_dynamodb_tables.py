@@ -1759,6 +1759,9 @@ Model Configuration Management Commands:
     python manage_dynamodb_tables.py test-model-config <model_name>     # Test model pattern matching
     python manage_dynamodb_tables.py create-model-config-table          # Create model config table
 
+WebSocket Message Persistence Commands:
+    python manage_dynamodb_tables.py create-message-log-table           # Create message log table for WS replay
+
 Examples:
     python manage_dynamodb_tables.py validation eliyahu@eliyahu.ai
     python manage_dynamodb_tables.py delete-validation eliyahu@eliyahu.ai
@@ -1986,10 +1989,34 @@ Examples:
     
     elif command == "create-model-config-table":
         create_model_config_table_command()
-    
+
+    elif command == "create-message-log-table":
+        create_message_log_table_command()
+
     else:
         print(f"Unknown command: {command}")
         print("Use 'python manage_dynamodb_tables.py' for help.")
+
+def create_message_log_table_command():
+    """Create the WebSocket message log table for replay functionality."""
+    try:
+        from shared.dynamodb_schemas import create_message_log_table, MESSAGE_LOG_TABLE_NAME
+        print(f"\n=== Creating Message Log Table: {MESSAGE_LOG_TABLE_NAME} ===")
+        result = create_message_log_table()
+        if result:
+            print(f"[SUCCESS] Message log table created/exists: {MESSAGE_LOG_TABLE_NAME}")
+            print("Table schema:")
+            print("  - PK: session_card_id (session_id#card_id)")
+            print("  - SK: message_seq (sequence number)")
+            print("  - GSI: GSI_SessionIndex on session_id")
+            print("  - TTL: 3 days")
+        else:
+            print(f"[ERROR] Failed to create message log table")
+    except ImportError as e:
+        print(f"[ERROR] Could not import message log functions: {e}")
+    except Exception as e:
+        print(f"[ERROR] Failed to create message log table: {e}")
+
 
 def get_batch_audit_history(model_name, limit=50):
     """Get batch size change history for a specific model."""

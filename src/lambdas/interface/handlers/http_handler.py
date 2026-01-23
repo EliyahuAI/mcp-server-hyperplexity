@@ -205,6 +205,9 @@ def handle(event, context):
             elif action in ['startUploadInterview', 'continueUploadInterview']:
                 route_upload_interview_action = lazy_import('interface_lambda.actions.upload_interview', 'route_upload_interview_action')
                 return route_upload_interview_action(action, request_data, context)
+            elif action in ['getMessagesForCard', 'getMessagesSince']:
+                message_replay = lazy_import('interface_lambda.actions', 'message_replay')
+                return message_replay.handle(request_data, context)
             else:
                 logger.warning(f"Unknown action in JSON body: {action}")
                 return create_response(400, {'error': f'Unknown or unsupported action: {action}'})

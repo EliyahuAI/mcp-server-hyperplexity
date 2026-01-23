@@ -183,6 +183,10 @@ function handlePreviewWebSocketMessage(data, cardId) {
                 const inactivityTimer = setTimeout(() => {
                     const timeoutInfo = window.asyncTimeouts.get(sessionId);
                     if (timeoutInfo && timeoutInfo.activeProcessing) {
+                        // Save restorable state before showing warning
+                        if (typeof saveRestorableState === 'function') {
+                            saveRestorableState(cardId, 'preview');
+                        }
                         if (typeof showValidatorDeathWarning === 'function') {
                             showValidatorDeathWarning(cardId, sessionId);
                         }

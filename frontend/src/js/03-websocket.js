@@ -273,6 +273,18 @@ function connectToSession(sessionId, reconnectAttempt = 0) {
 
             // Validate data is not null/undefined before routing
             if (data && typeof data === 'object') {
+                // Process through message queue for deduplication and ordering
+                if (typeof processIncomingMessage === 'function') {
+                    const { shouldProcess, isOutOfOrder } = processIncomingMessage(data);
+                    if (!shouldProcess) {
+                        // Message is duplicate or queued for later processing
+                        if (!isOutOfOrder) {
+                            console.log('[WEBSOCKET] Skipping duplicate message:', data.type);
+                        }
+                        return;
+                    }
+                }
+
                 routeMessage(data, sessionId);
             }
         } catch (error) {

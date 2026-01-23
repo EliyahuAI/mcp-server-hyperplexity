@@ -157,13 +157,71 @@ const originalScrollIntoView = Element.prototype.scrollIntoView;
 window.scrollTo = () => {};
 Element.prototype.scrollIntoView = () => {};
 
-// Check for saved state first
+// Check for saved state first (back/forward navigation)
 const hasHandledState = attemptStateRestore();
+
+// Check for warning-triggered restorable state (after validator stall)
+// Note: This uses sessionStorage directly since getRestorableState is defined later
+let warningBasedRestoreTriggered = false;
+try {
+    const savedRestoreState = sessionStorage.getItem('hyperplexity_restorable_state');
+    if (savedRestoreState) {
+        const restoreState = JSON.parse(savedRestoreState);
+        const age = Date.now() - (restoreState.timestamp || 0);
+        const maxAge = 30 * 60 * 1000; // 30 minutes
+
+        if (restoreState.warningTriggered && age <= maxAge) {
+            console.log('[INIT] Found warning-triggered state, will attempt restore');
+            warningBasedRestoreTriggered = true;
+
+            // Clear the state immediately to prevent re-triggering
+            sessionStorage.removeItem('hyperplexity_restorable_state');
+
+            // Restore global state
+            globalState.sessionId = restoreState.sessionId;
+            globalState.email = restoreState.email;
+            globalState.workflowPhase = restoreState.workflowPhase;
+
+            // Restore message queue sequences
+            if (restoreState.lastSeqs && typeof messageQueueState !== 'undefined') {
+                messageQueueState.lastReceivedSeq = restoreState.lastSeqs;
+            }
+
+            // Connect to WebSocket (function available from 03-websocket.js)
+            if (typeof connectToSession === 'function' && restoreState.sessionId) {
+                connectToSession(restoreState.sessionId);
+            }
+
+            // Fetch missed messages asynchronously
+            if (typeof getAllMessagesSince === 'function' && restoreState.sessionId) {
+                const seqValues = Object.values(restoreState.lastSeqs || {});
+                const minSeq = seqValues.length > 0 ? Math.min(...seqValues) : 0;
+
+                getAllMessagesSince(restoreState.sessionId, minSeq).then(result => {
+                    console.log(`[INIT] Fetched ${result.messages.length} missed messages for restore`);
+                    for (const msg of result.messages) {
+                        const msgData = msg.message_data || msg;
+                        if (typeof dispatchReplayedMessage === 'function') {
+                            dispatchReplayedMessage(msgData);
+                        }
+                    }
+                }).catch(e => {
+                    console.error('[INIT] Error fetching missed messages:', e);
+                });
+            }
+        } else if (age > maxAge) {
+            console.log('[INIT] Warning-triggered state too old, discarding');
+            sessionStorage.removeItem('hyperplexity_restorable_state');
+        }
+    }
+} catch (e) {
+    console.error('[INIT] Error checking warning-triggered state:', e);
+}
 
 // Defer card creation to allow user to read content above first
 setTimeout(() => {
     // Only create initial card if we're not restoring from saved state and haven't shown modal
-    if (!window.isRestoringState && !hasHandledState) {
+    if (!window.isRestoringState && !hasHandledState && !warningBasedRestoreTriggered) {
         const pageType = detectPageType();
 
         if (pageType === 'reference-check') {
@@ -1522,8 +1580,154 @@ if (!document.hidden) {
         // Note: State restoration is now handled in the main DOMContentLoaded event
         // to avoid conflicts with card initialization
 
+        // ============================================
+        // STATE RECOVERY FUNCTIONS
+        // Saves state when validation stalls (warning shown)
+        // Allows replay of missed messages after page refresh
+        // ============================================
+
+        /**
+         * Save restorable state for recovery after page refresh.
+         * Called when validator appears stalled or on deliberate state save.
+         */
+        function saveRestorableState(cardId, phase) {
+            try {
+                const sessionId = globalState.sessionId;
+                if (!sessionId) {
+                    console.log('[RESTORE] No session ID, skipping state save');
+                    return;
+                }
+
+                // Get last received sequences from message queue
+                const lastSeqs = (typeof messageQueueState !== 'undefined')
+                    ? messageQueueState.lastReceivedSeq
+                    : {};
+
+                const restorableState = {
+                    sessionId: sessionId,
+                    cardId: cardId,
+                    phase: phase || globalState.workflowPhase,
+                    workflowPhase: globalState.workflowPhase,
+                    email: globalState.email,
+                    lastSeqs: lastSeqs,
+                    timestamp: Date.now(),
+                    warningTriggered: true
+                };
+
+                sessionStorage.setItem('hyperplexity_restorable_state', JSON.stringify(restorableState));
+                console.log('[RESTORE] Saved restorable state:', restorableState);
+
+                // Also save message queue state if available
+                if (typeof saveMessageQueueState === 'function') {
+                    saveMessageQueueState();
+                }
+            } catch (e) {
+                console.error('[RESTORE] Error saving restorable state:', e);
+            }
+        }
+
+        /**
+         * Check if we have restorable state from a previous warning.
+         * Returns the state if valid and recent (< 30 minutes).
+         */
+        function getRestorableState() {
+            try {
+                const saved = sessionStorage.getItem('hyperplexity_restorable_state');
+                if (!saved) return null;
+
+                const state = JSON.parse(saved);
+                const age = Date.now() - (state.timestamp || 0);
+                const maxAge = 30 * 60 * 1000; // 30 minutes
+
+                if (age > maxAge) {
+                    console.log('[RESTORE] State too old, discarding');
+                    sessionStorage.removeItem('hyperplexity_restorable_state');
+                    return null;
+                }
+
+                return state;
+            } catch (e) {
+                console.error('[RESTORE] Error reading restorable state:', e);
+                return null;
+            }
+        }
+
+        /**
+         * Attempt to restore state after page reload following a validation warning.
+         * This handles the specific case where the validator appeared stalled.
+         * Returns true if restoration was initiated.
+         */
+        async function attemptWarningBasedRestore() {
+            const state = getRestorableState();
+            if (!state || !state.warningTriggered) {
+                return false;
+            }
+
+            console.log('[RESTORE] Found warning-triggered restorable state, attempting restore:', state);
+
+            // Clear the saved state so we don't restore again
+            sessionStorage.removeItem('hyperplexity_restorable_state');
+
+            // Restore global state
+            globalState.sessionId = state.sessionId;
+            globalState.email = state.email;
+            globalState.workflowPhase = state.workflowPhase;
+
+            // Restore message queue last sequences
+            if (state.lastSeqs && typeof messageQueueState !== 'undefined') {
+                messageQueueState.lastReceivedSeq = state.lastSeqs;
+            }
+
+            // Connect to WebSocket and fetch missed messages
+            try {
+                if (typeof connectToSession === 'function') {
+                    connectToSession(state.sessionId);
+                }
+
+                // Fetch missed messages since last known sequence
+                const seqValues = Object.values(state.lastSeqs || {});
+                const minSeq = seqValues.length > 0 ? Math.min(...seqValues) : 0;
+
+                if (typeof getAllMessagesSince === 'function') {
+                    const result = await getAllMessagesSince(state.sessionId, minSeq);
+                    console.log(`[RESTORE] Fetched ${result.messages.length} missed messages`);
+
+                    // Process each message through the replay dispatcher
+                    for (const msg of result.messages) {
+                        const msgData = msg.message_data || msg;
+                        if (typeof dispatchReplayedMessage === 'function') {
+                            dispatchReplayedMessage(msgData);
+                        }
+                    }
+                }
+
+                // Show recovery message in main container
+                const mainMessages = document.getElementById('main-messages');
+                if (mainMessages) {
+                    showMessage('main-messages', `
+                        <strong>Session Restored</strong><br>
+                        Reconnected to your validation session. Processing resumed.
+                    `, 'success', true, 'restore-success');
+                }
+
+                return true;
+            } catch (e) {
+                console.error('[RESTORE] Error during warning-based state restore:', e);
+                return false;
+            }
+        }
+
+        // Export restore functions globally
+        window.saveRestorableState = saveRestorableState;
+        window.getRestorableState = getRestorableState;
+        window.attemptWarningBasedRestore = attemptWarningBasedRestore;
+
         // Validator timeout warning functions
         function showValidatorDeathWarning(cardId, sessionId) {
+
+// Save state for potential recovery after refresh
+const phase = globalState.currentValidationState || globalState.workflowPhase;
+saveRestorableState(cardId, phase);
 
 // Update progress text to show warning (less dramatic, recoverable)
 const progressText = document.querySelector(`#${cardId} .progress-text`);
