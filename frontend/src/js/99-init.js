@@ -171,7 +171,6 @@ try {
         const maxAge = 30 * 60 * 1000; // 30 minutes
 
         if (restoreState.warningTriggered && age <= maxAge) {
-            console.log('[INIT] Found warning-triggered state, will attempt restore');
             warningBasedRestoreTriggered = true;
 
             // Clear the state immediately to prevent re-triggering
@@ -198,7 +197,6 @@ try {
                 const minSeq = seqValues.length > 0 ? Math.min(...seqValues) : 0;
 
                 getAllMessagesSince(restoreState.sessionId, minSeq).then(result => {
-                    console.log(`[INIT] Fetched ${result.messages.length} missed messages for restore`);
                     for (const msg of result.messages) {
                         const msgData = msg.message_data || msg;
                         if (typeof dispatchReplayedMessage === 'function') {
@@ -210,7 +208,6 @@ try {
                 });
             }
         } else if (age > maxAge) {
-            console.log('[INIT] Warning-triggered state too old, discarding');
             sessionStorage.removeItem('hyperplexity_restorable_state');
         }
     }
@@ -297,8 +294,10 @@ window.testProgressError = (cardId = 'card-1') => {
 
         });
 
-        // Cleanup on page unload
-        window.addEventListener('beforeunload', () => {
+        // Cleanup on page unload - use 'unload' event instead of 'beforeunload'
+        // This is critical: beforeunload fires BEFORE user decides to stay/leave
+        // If we close WebSockets in beforeunload and user cancels, we lose the connection
+        window.addEventListener('unload', () => {
 // Close all session WebSocket connections
 sessionWebSockets.forEach((ws, sessionId) => {
     ws._intentionallyClosed = true;
@@ -310,6 +309,35 @@ cardDummyProgress.clear();
 cardCurrentProgress.clear();
 registrationCounter = 0;
         });
+
+        // Recovery mechanism: If beforeunload fires but user cancels, WebSockets may
+        // have been affected. Add a check after beforeunload dialog closes.
+        let beforeunloadTriggered = false;
+        window.addEventListener('beforeunload', () => {
+            beforeunloadTriggered = true;
+            // Set a flag that we'll check shortly to see if user cancelled
+            sessionStorage.setItem('hyperplexity_beforeunload_check', Date.now().toString());
+        }, { capture: true });
+
+        // Check if beforeunload was triggered but we're still here (user cancelled)
+        // This runs periodically to catch the case where user cancelled the navigation
+        setInterval(() => {
+            const checkTime = sessionStorage.getItem('hyperplexity_beforeunload_check');
+            if (checkTime) {
+                const elapsed = Date.now() - parseInt(checkTime, 10);
+                // If more than 500ms passed and we're still here, user cancelled
+                if (elapsed > 500) {
+                    sessionStorage.removeItem('hyperplexity_beforeunload_check');
+                    // Clear the user_warned flag since they chose to stay
+                    sessionStorage.removeItem('hyperplexity_user_warned');
+
+                    // Reconnect WebSockets if they were closed
+                    if (globalState.sessionId && !sessionWebSockets.has(globalState.sessionId)) {
+                        connectToSession(globalState.sessionId, 0);
+                    }
+                }
+            }
+        }, 1000);
 
         // Function to download preview results
         async function downloadPreviewResults(previewData) {
@@ -1594,7 +1622,6 @@ if (!document.hidden) {
             try {
                 const sessionId = globalState.sessionId;
                 if (!sessionId) {
-                    console.log('[RESTORE] No session ID, skipping state save');
                     return;
                 }
 
@@ -1615,7 +1642,6 @@ if (!document.hidden) {
                 };
 
                 sessionStorage.setItem('hyperplexity_restorable_state', JSON.stringify(restorableState));
-                console.log('[RESTORE] Saved restorable state:', restorableState);
 
                 // Also save message queue state if available
                 if (typeof saveMessageQueueState === 'function') {
@@ -1640,7 +1666,6 @@ if (!document.hidden) {
                 const maxAge = 30 * 60 * 1000; // 30 minutes
 
                 if (age > maxAge) {
-                    console.log('[RESTORE] State too old, discarding');
                     sessionStorage.removeItem('hyperplexity_restorable_state');
                     return null;
                 }
@@ -1662,8 +1687,6 @@ if (!document.hidden) {
             if (!state || !state.warningTriggered) {
                 return false;
             }
-
-            console.log('[RESTORE] Found warning-triggered restorable state, attempting restore:', state);
 
             // Clear the saved state so we don't restore again
             sessionStorage.removeItem('hyperplexity_restorable_state');
@@ -1690,7 +1713,6 @@ if (!document.hidden) {
 
                 if (typeof getAllMessagesSince === 'function') {
                     const result = await getAllMessagesSince(state.sessionId, minSeq);
-                    console.log(`[RESTORE] Fetched ${result.messages.length} missed messages`);
 
                     // Process each message through the replay dispatcher
                     for (const msg of result.messages) {

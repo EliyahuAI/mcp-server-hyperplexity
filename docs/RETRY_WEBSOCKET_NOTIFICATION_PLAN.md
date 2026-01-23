@@ -1,5 +1,9 @@
 # Retry WebSocket Notification Plan
 
+## Related Documentation
+
+- **WebSocket Message Persistence**: See `docs/SESSION_PERSISTENCE_SYSTEM.md` for the implemented message persistence and replay system that ensures WebSocket messages are never lost.
+
 ## Problem
 
 All retry logic in `src/shared/ai_api_client.py` is internal and invisible to callers. When retries happen (especially long ones like max_tokens retry), the frontend shows timeout errors because it doesn't know a retry is in progress.
@@ -86,3 +90,57 @@ Medium - Not critical but improves UX significantly for long-running config gene
 - `src/shared/ai_api_client.py` - Add callback parameter and invocations
 - `src/lambdas/interface/actions/config_generation/__init__.py` - Implement callback with WebSocket updates
 - `src/lambdas/interface/handlers/background_handler.py` - May also benefit from retry visibility
+
+## Relationship to WebSocket Message Persistence
+
+The **WebSocket Message Persistence System** (implemented January 2025) complements this retry notification plan:
+
+### How They Work Together
+
+| System | Purpose | Status |
+|--------|---------|--------|
+| **Retry Notifications** (this plan) | Inform user when AI retries are happening | Planned |
+| **Message Persistence** | Ensure no WebSocket messages are lost | **Implemented** |
+
+### Key Insight
+
+Even with retry notifications, messages can still be lost due to:
+- Network disconnections
+- Browser tab going to sleep
+- User refreshing the page
+
+The Message Persistence System ensures that even if retry notifications are missed, they can be recovered:
+
+```
+1. AI retry happens → retry notification sent via WebSocket
+2. WebSocket message logged to DynamoDB with sequence number
+3. If message is missed (network issue, refresh, etc.)
+4. Frontend detects gap in sequence numbers
+5. Frontend fetches missed messages from API
+6. Retry notification is replayed to user
+```
+
+### Implementation Note
+
+When implementing retry notifications, ensure they:
+1. Include `card_id` parameter so they're logged to DynamoDB
+2. Use appropriate message types that the frontend can handle on replay
+
+```python
+# Example: Retry notification with persistence
+await websocket_client.send_to_session(
+    session_id=session_id,
+    message={
+        'type': 'retry_notification',
+        'retry_type': 'max_tokens_retry',
+        'message': 'Response too large, retrying with more capacity...'
+    },
+    card_id='config-generation'  # Enables message persistence
+)
+```
+
+### See Also
+
+- `docs/SESSION_PERSISTENCE_SYSTEM.md` - Full documentation of the message persistence system
+- `src/shared/websocket_client.py` - WebSocket client with message logging
+- `frontend/src/js/03b-message-queue.js` - Frontend message queue with gap detection

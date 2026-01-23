@@ -46,7 +46,6 @@ function processIncomingMessage(data) {
 
     // Check for duplicate
     if (messageQueueState.seenSeqs[cardId].has(seq)) {
-        console.log(`[MESSAGE_QUEUE] Duplicate message seq=${seq} for card=${cardId}, skipping`);
         return { shouldProcess: false, isOutOfOrder: false };
     }
 
@@ -58,7 +57,6 @@ function processIncomingMessage(data) {
     // Check for gap (missed messages)
     if (seq > expectedSeq) {
         const gap = seq - expectedSeq;
-        console.log(`[MESSAGE_QUEUE] Gap detected for card=${cardId}: expected seq=${expectedSeq}, got seq=${seq}, gap=${gap}`);
 
         // Only fetch if gap is reasonable
         if (gap <= messageQueueState.maxGapBeforeFetch) {
@@ -75,7 +73,6 @@ function processIncomingMessage(data) {
         }
 
         // Gap too large - just reset and process this message
-        console.log(`[MESSAGE_QUEUE] Gap too large (${gap}), resetting sequence tracking`);
         messageQueueState.lastReceivedSeq[cardId] = seq;
         return { shouldProcess: true, isOutOfOrder: false };
     }
@@ -90,17 +87,14 @@ function processIncomingMessage(data) {
  */
 async function fetchMissedMessages(cardId, sinceSeq, toSeq) {
     if (messageQueueState.isFetching) {
-        console.log('[MESSAGE_QUEUE] Already fetching, skipping duplicate request');
         return;
     }
 
     if (!globalState.sessionId) {
-        console.log('[MESSAGE_QUEUE] No session ID, cannot fetch missed messages');
         return;
     }
 
     messageQueueState.isFetching = true;
-    console.log(`[MESSAGE_QUEUE] Fetching missed messages for card=${cardId} since seq=${sinceSeq}`);
 
     try {
         const response = await fetch(`${API_BASE}/validate`, {
@@ -118,7 +112,6 @@ async function fetchMissedMessages(cardId, sinceSeq, toSeq) {
         const data = await response.json();
 
         if (data.success && data.messages && data.messages.length > 0) {
-            console.log(`[MESSAGE_QUEUE] Received ${data.messages.length} missed messages`);
 
             // Process each missed message
             for (const msg of data.messages) {
@@ -185,7 +178,6 @@ function processPendingMessages(cardId) {
  * This re-routes messages that were fetched from the replay API.
  */
 function dispatchReplayedMessage(data) {
-    console.log('[MESSAGE_QUEUE] Dispatching replayed message:', data.type);
 
     // Dispatch based on message type
     const messageType = data.type || data.message_type;
@@ -261,7 +253,6 @@ function resetMessageQueue(cardId = null) {
         messageQueueState.seenSeqs = {};
         messageQueueState.pendingMessages = {};
     }
-    console.log(`[MESSAGE_QUEUE] Reset queue state for ${cardId || 'all cards'}`);
 }
 
 /**
@@ -290,7 +281,6 @@ function restoreMessageQueueState() {
             // Only restore if less than 5 minutes old
             if (state.timestamp && (Date.now() - state.timestamp) < 5 * 60 * 1000) {
                 messageQueueState.lastReceivedSeq = state.lastReceivedSeq || {};
-                console.log('[MESSAGE_QUEUE] Restored state:', messageQueueState.lastReceivedSeq);
                 return true;
             }
         }

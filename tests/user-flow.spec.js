@@ -1,14 +1,14 @@
 // @ts-check
 import { test, expect } from '@playwright/test';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, resolve } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Path to the built frontend HTML file
-const frontendPath = resolve(__dirname, '../frontend/Hyperplexity_frontend.html');
-const frontendUrl = `file://${frontendPath}`;
+const frontendPath = resolve(__dirname, '../frontend/Hyperplexity_FullScript_Temp-dev.html');
+const frontendUrl = pathToFileURL(frontendPath).href;
 
 test.describe('User Flow: Email to Demo Selection', () => {
 

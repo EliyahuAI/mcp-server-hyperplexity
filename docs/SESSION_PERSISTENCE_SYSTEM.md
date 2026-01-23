@@ -137,6 +137,285 @@ The Hyperplexity Table Validator implements a comprehensive session persistence 
 - **Prominent When Needed**: Pulses when state exists
 - **Multiple Methods**: Visual, keyboard, console commands
 
+## WebSocket Message Persistence System (Implemented January 2025)
+
+The application now includes a **server-side WebSocket message persistence system** that complements the client-side UI state persistence. This system ensures that WebSocket messages (progress updates, completion notifications) are never lost, even if the browser disconnects or the user refreshes during validation.
+
+### Two Complementary Systems
+
+| System | Storage | Purpose | Triggered By |
+|--------|---------|---------|--------------|
+| **UI State Persistence** | sessionStorage (client) | Restore cards, forms, scroll position | beforeunload, input changes |
+| **WebSocket Message Persistence** | DynamoDB (server) | Replay missed WebSocket messages | Validator stall warning, page refresh |
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         BACKEND                                      │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐  │
+│  │ Validation      │───▶│ WebSocket       │───▶│ DynamoDB        │  │
+│  │ Lambda          │    │ Client          │    │ Message Log     │  │
+│  │                 │    │ (sends + logs)  │    │ (3-day TTL)     │  │
+│  └─────────────────┘    └────────┬────────┘    └────────┬────────┘  │
+│                                  │                       │           │
+│                                  │              ┌────────▼────────┐  │
+│                                  │              │ Message Replay  │  │
+│                                  │              │ API             │  │
+│                                  │              └────────┬────────┘  │
+└──────────────────────────────────┼───────────────────────┼───────────┘
+                                   │ WebSocket             │ HTTP
+                                   ▼                       ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                         FRONTEND                                     │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐  │
+│  │ Message Queue   │◀───│ WebSocket       │    │ Restorable      │  │
+│  │ (dedup, order)  │    │ Handler         │    │ State           │  │
+│  │                 │    │                 │    │ (sessionStorage)│  │
+│  └────────┬────────┘    └─────────────────┘    └────────┬────────┘  │
+│           │                                              │           │
+│           ▼                                              ▼           │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                     Gap Detection & Recovery                     ││
+│  │  - Detects missing sequence numbers                              ││
+│  │  - Fetches missed messages from API                              ││
+│  │  - Replays messages through normal handlers                      ││
+│  └─────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Backend Components
+
+#### 1. DynamoDB Message Log Table
+
+**Table**: `hyperplexity-message-log`
+
+```python
+# Schema (src/shared/dynamodb_schemas.py)
+{
+    'session_id': str,      # Partition key
+    'seq_card': str,        # Sort key: "{sequence}#{card_id}"
+    'card_id': str,         # Card identifier (e.g., 'preview', 'validation')
+    'sequence': int,        # Monotonically increasing per session
+    'message_data': dict,   # Full WebSocket message payload
+    'timestamp': int,       # Unix timestamp (ms)
+    'ttl': int              # Auto-delete after 3 days
+}
+```
+
+#### 2. WebSocket Client Enhancement
+
+**File**: `src/shared/websocket_client.py`
+
+```python
+def send_to_session(self, session_id: str, message: Dict, card_id: str = None):
+    # Get next sequence number for this session
+    seq = self._get_next_sequence(session_id)
+
+    # Add metadata to message
+    message_with_meta = {
+        **message,
+        '_seq': seq,
+        '_card_id': card_id,
+        '_timestamp': int(time.time() * 1000)
+    }
+
+    # Persist to DynamoDB (if card_id provided)
+    if card_id:
+        self._persist_message(session_id, card_id, seq, message_with_meta)
+
+    # Send via WebSocket
+    self._send_websocket(session_id, message_with_meta)
+```
+
+#### 3. Message Replay API
+
+**File**: `src/lambdas/interface/actions/message_replay.py`
+
+| Action | Parameters | Returns |
+|--------|------------|---------|
+| `getMessagesForCard` | `session_id`, `card_id` | All messages for a card |
+| `getMessagesSince` | `session_id`, `since_seq` | Messages after sequence number |
+
+### Frontend Components
+
+#### 1. Message Queue Module
+
+**File**: `frontend/src/js/03b-message-queue.js`
+
+```javascript
+// Global state for message tracking
+window.messageQueueState = {
+    lastReceivedSeq: {},      // card_id -> last sequence number
+    seenSeqs: {},             // card_id -> Set of seen sequences
+    pendingMessages: {},      // card_id -> messages awaiting ordering
+    isFetching: {}            // card_id -> boolean (prevent duplicate fetches)
+};
+
+// Process incoming WebSocket message
+function processIncomingMessage(data) {
+    const seq = parseInt(data._seq, 10);
+    const cardId = data._card_id;
+
+    // Legacy message (no sequence) - always process
+    if (seq === undefined || isNaN(seq) || !cardId) {
+        return { shouldProcess: true, isOutOfOrder: false };
+    }
+
+    // Deduplication - skip if already seen
+    if (seenSeqs[cardId]?.has(seq)) {
+        return { shouldProcess: false, isOutOfOrder: false };
+    }
+
+    // Gap detection
+    const lastSeq = lastReceivedSeq[cardId] || 0;
+    const expectedSeq = lastSeq + 1;
+
+    if (seq > expectedSeq) {
+        const gap = seq - expectedSeq;
+        console.log(`[MESSAGE_QUEUE] Gap detected: expected ${expectedSeq}, got ${seq}`);
+
+        if (gap > 5) {
+            // Large gap - reset tracking to avoid getting stuck
+            lastReceivedSeq[cardId] = seq;
+        } else {
+            // Small gap - fetch missed messages
+            fetchMissedMessages(cardId, lastSeq);
+        }
+    }
+
+    // Track and process
+    seenSeqs[cardId].add(seq);
+    lastReceivedSeq[cardId] = Math.max(lastReceivedSeq[cardId] || 0, seq);
+
+    return { shouldProcess: true, isOutOfOrder: seq !== expectedSeq };
+}
+```
+
+#### 2. Warning-Based State Recovery
+
+**File**: `frontend/src/js/99-init.js`
+
+When the validator appears stalled (no updates for 3 minutes), the system saves restorable state:
+
+```javascript
+// Triggered when validator stall warning is shown
+function saveRestorableState(cardId, phase) {
+    const restorableState = {
+        sessionId: globalState.sessionId,
+        cardId: cardId,
+        phase: phase,
+        workflowPhase: globalState.workflowPhase,
+        email: globalState.email,
+        lastSeqs: messageQueueState.lastReceivedSeq,  // Last received sequences
+        timestamp: Date.now(),
+        warningTriggered: true
+    };
+
+    sessionStorage.setItem('hyperplexity_restorable_state', JSON.stringify(restorableState));
+}
+```
+
+On page load, if restorable state exists:
+
+```javascript
+// In DOMContentLoaded handler
+const savedRestoreState = sessionStorage.getItem('hyperplexity_restorable_state');
+if (savedRestoreState) {
+    const restoreState = JSON.parse(savedRestoreState);
+
+    if (restoreState.warningTriggered && age <= 30 * 60 * 1000) {
+        // Restore global state
+        globalState.sessionId = restoreState.sessionId;
+        globalState.email = restoreState.email;
+
+        // Reconnect WebSocket
+        connectToSession(restoreState.sessionId);
+
+        // Fetch and replay missed messages
+        const minSeq = Math.min(...Object.values(restoreState.lastSeqs));
+        const result = await getAllMessagesSince(restoreState.sessionId, minSeq);
+
+        for (const msg of result.messages) {
+            dispatchReplayedMessage(msg.message_data);
+        }
+    }
+}
+```
+
+### Message Flow During Validation
+
+```
+1. User starts validation
+   └─▶ Backend sends: { type: "progress", progress: 10, _seq: 1, _card_id: "validation" }
+       └─▶ Logged to DynamoDB
+       └─▶ Sent via WebSocket
+       └─▶ Frontend processes, tracks seq=1
+
+2. Network hiccup - messages 15-17 lost
+   └─▶ Frontend receives seq=18
+   └─▶ Gap detected (expected 15, got 18)
+   └─▶ Fetch messages since seq=14
+   └─▶ Replay messages 15, 16, 17
+   └─▶ Continue with seq=18
+
+3. User refreshes during validation stall
+   └─▶ saveRestorableState() saved lastSeqs
+   └─▶ Page reloads
+   └─▶ Detects warningTriggered state
+   └─▶ Reconnects WebSocket
+   └─▶ Fetches all messages since lastSeqs
+   └─▶ Replays to rebuild UI state
+```
+
+### Key Differences from UI State Persistence
+
+| Aspect | UI State Persistence | WebSocket Message Persistence |
+|--------|---------------------|------------------------------|
+| **Storage** | Client (sessionStorage) | Server (DynamoDB) |
+| **Data** | UI cards, forms, scroll | WebSocket messages |
+| **TTL** | 1 hour | 3 days |
+| **Trigger** | Always (beforeunload) | Only during active validation |
+| **Recovery** | Back/forward navigation | Validator stall + refresh |
+| **Complexity** | High (button recreation) | Low (replay existing messages) |
+
+### When Each System Is Used
+
+1. **Normal back/forward navigation**: UI State Persistence restores cards
+2. **Refresh during validation**: WebSocket Message Persistence fetches missed messages
+3. **Validator stall + refresh**: Both systems work together:
+   - UI State Persistence may restore card structure
+   - WebSocket Message Persistence fetches/replays progress updates
+
+### Related Files
+
+| File | Purpose |
+|------|---------|
+| `src/shared/dynamodb_schemas.py` | DynamoDB table schema and persistence functions |
+| `src/shared/websocket_client.py` | Sequence numbering and message logging |
+| `src/lambdas/interface/actions/message_replay.py` | API for fetching missed messages |
+| `frontend/src/js/03b-message-queue.js` | Client-side deduplication and gap detection |
+| `frontend/src/js/99-init.js` | `saveRestorableState()`, `getRestorableState()` |
+| `tests/message-persistence.spec.js` | Playwright tests for the system |
+
+### Console Logging
+
+```javascript
+// Gap detection
+[MESSAGE_QUEUE] Gap detected for card=validation: expected seq=100, got seq=102, gap=2
+[MESSAGE_QUEUE] Fetching missed messages for card=validation since seq=99
+
+// Large gap handling
+[MESSAGE_QUEUE] Gap too large (8), resetting sequence tracking
+
+// Deduplication
+[MESSAGE_QUEUE] Already fetching, skipping duplicate request
+
+// State recovery
+[INIT] Found warning-triggered state, will attempt restore
+[INIT] Fetched 15 missed messages for restore
+```
+
 ## Future Enhancements
 
 ### Database-Based Persistence
