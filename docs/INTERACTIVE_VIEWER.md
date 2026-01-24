@@ -1,17 +1,41 @@
 # Interactive Results Viewer
 
-The Interactive Results Viewer provides a standalone way to view validation results with an interactive table interface. Users can access results via URL, explore data with hover tooltips and click-through modals, and download results in Excel or JSON format.
+The Interactive Results Viewer provides an interactive table interface for viewing validation results. Users can explore data with hover tooltips and click-through modals, and download results in Excel or JSON format.
 
 ## Overview
 
-The viewer can be used in two ways:
+The viewer is integrated in three ways:
 
-1. **Standalone Mode** - Access via URL with session parameters
-2. **Embedded Card** - Called programmatically within the app after validation completes
+1. **Preview Card** - Shows interactive table with first 3 rows after preview completes
+2. **Full Validation Card** - Shows interactive table with ALL rows after full validation completes
+3. **Standalone Mode** - Access via URL with session parameters
 
-## URL Parameters
+## Integrated Viewer (Preview & Full Validation)
 
-### Standalone Viewer URL
+After preview or full validation completes, the interactive table is displayed directly in the results card.
+
+### Preview Card Features
+- Interactive table showing **first 3 rows** (preview data)
+- Download buttons: **Download Excel**, **Download JSON (for AI)**, **Refine Configuration**
+- Revert button (if applicable) on separate row
+
+### Full Validation Card Features
+- Interactive table showing **ALL rows** (complete validation data)
+- Download buttons: **Download Excel**, **Download JSON (for AI)**, **Refine Configuration**
+- Revert + New Validation buttons on separate row
+
+### Button Layout
+```
+┌─────────────────────────────────────────────────────────┐
+│ [Download Excel] [Download JSON (for AI)] [Refine]      │
+├─────────────────────────────────────────────────────────┤
+│ [Revert to Previous] [New Validation]                   │  (Full validation only)
+└─────────────────────────────────────────────────────────┘
+```
+
+## Standalone Viewer Mode
+
+### URL Parameters
 
 ```
 https://eliyahu.ai/hyperplexity?mode=viewer&session=SESSION_ID&version=VERSION
@@ -66,15 +90,27 @@ Two download options are available:
 | Button | Format | Description |
 |--------|--------|-------------|
 | Download Excel | `.xlsx` | Full enhanced Excel with formatting, comments, and metadata |
-| Download JSON | `.json` | Raw table_metadata for programmatic use or archival |
+| Download JSON (for AI) | `.json` | Raw table_metadata for programmatic use or AI analysis |
+
+Both downloads use client-side blob creation (no page navigation).
 
 ## Architecture
 
 ### Frontend Components
 
-#### `18-viewer-mode.js`
+#### `12-validation.js` - Full Validation Integration
 
-Main viewer module with these functions:
+| Function | Description |
+|----------|-------------|
+| `fetchAndRenderValidationTable(cardId, sessionId)` | Fetches full validation data and renders interactive table |
+
+Called after full validation completes. Requests data with `is_preview: false` to get all rows.
+
+#### `13-results.js` - Preview Integration
+
+Shows interactive table using `InteractiveTable.render()` with preview data (3 rows) delivered via WebSocket.
+
+#### `18-viewer-mode.js` - Standalone Viewer
 
 | Function | Description |
 |----------|-------------|
@@ -83,7 +119,7 @@ Main viewer module with these functions:
 | `createResultsViewerCard(options)` | Creates viewer card (can be called from anywhere) |
 | `displayResultsInCard(cardId, data)` | Renders table and download buttons |
 | `showFullValidationResults(data)` | Convenience function for post-validation display |
-| `downloadJsonMetadata(metadata, button)` | Client-side JSON download fallback |
+| `downloadJsonMetadata(metadata, button)` | Client-side JSON download (blob, no navigation) |
 
 #### Card Options
 
@@ -110,9 +146,17 @@ createResultsViewerCard({
     "action": "getViewerData",
     "email": "user@example.com",
     "session_id": "session_20240124_abc123",
-    "version": 1
+    "version": 1,
+    "is_preview": false
 }
 ```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `email` | Yes | User's email address |
+| `session_id` | Yes | Session ID to load results for |
+| `version` | No | Config version number (defaults to latest) |
+| `is_preview` | No | `false` = full data only, `true` = preview only, omit = auto-detect (prefers full) |
 
 **Response:**
 ```json
@@ -127,10 +171,15 @@ createResultsViewerCard({
     "table_name": "Validation Results (2024-01-24)",
     "session_id": "session_20240124_abc123",
     "version": 1,
+    "is_full_validation": true,
     "enhanced_download_url": "https://s3.../presigned-excel-url",
     "json_download_url": "https://s3.../presigned-json-url"
 }
 ```
+
+| Response Field | Description |
+|----------------|-------------|
+| `is_full_validation` | `true` if full validation data returned, `false` if preview data |
 
 **Error Response:**
 ```json
@@ -146,10 +195,27 @@ Location: `src/lambdas/interface/actions/viewer_data.py`
 
 Key functions:
 - `handle(request_data, context)` - Main handler
-- `_find_latest_version(storage_manager, session_path)` - Find most recent config version
+- `_find_latest_version(storage_manager, session_path)` - Find most recent config version (handles both `_results` and `_results-dev` folders)
+- `_find_results_folder(bucket, standard_prefix, dev_prefix)` - Find results folder with `-dev` fallback
 - `_load_json_from_s3(bucket, key)` - Load and parse JSON from S3
 - `_find_excel_file(bucket, prefix)` - Locate enhanced Excel in results folder
 - `_generate_presigned_url(bucket, key, filename)` - Create download URL
+
+#### Data Loading Priority
+
+The backend loads metadata with this priority:
+
+1. **If `is_preview=false`**: Only try `table_metadata.json` (full validation)
+2. **If `is_preview=true`**: Only try `preview_table_metadata.json` (preview)
+3. **If `is_preview` omitted (auto-detect)**:
+   - Try `table_metadata.json` first (full validation, all rows)
+   - Fall back to `preview_table_metadata.json` (preview, 3 rows)
+
+#### Folder Fallback
+
+If the standard results folder doesn't exist, the backend falls back to the `-dev` folder:
+- `v{N}_results/` (primary)
+- `v{N}_results-dev/` (fallback)
 
 ### S3 Storage Structure
 
@@ -162,10 +228,16 @@ hyperplexity-storage[-dev]/
         └── {email_prefix}/
             └── {session_id}/
                 └── v{version}_results/
-                    ├── preview_table_metadata.json
+                    ├── table_metadata.json          # Full validation (all rows)
+                    ├── preview_table_metadata.json  # Preview (3 rows)
                     ├── {filename}_enhanced.xlsx
                     └── ...
 ```
+
+| File | Created By | Rows |
+|------|------------|------|
+| `table_metadata.json` | Full validation completion | All rows |
+| `preview_table_metadata.json` | Preview completion | First 3 rows |
 
 ## Table Metadata Schema
 
@@ -286,6 +358,12 @@ This loads directly from a local file without API calls (useful for UI developme
 2. **Wrong bucket**: Check `S3_UNIFIED_BUCKET` environment variable matches where data is stored
 3. **Session doesn't exist**: Verify session ID is correct
 4. **No results yet**: Validation may not have completed
+5. **Full validation not run**: If requesting full data (`is_preview: false`), ensure full validation completed (not just preview)
+
+### "No results folder found for this session"
+
+1. Check both `v{N}_results/` and `v{N}_results-dev/` folders exist
+2. Verify the version number is correct
 
 ### "Missing Parameters"
 
@@ -299,16 +377,19 @@ Ensure URL includes either `session` or `path` parameter:
 
 1. Check browser console for errors
 2. Verify presigned URLs are being generated (check API response)
-3. For JSON, client-side fallback should work even without API URL
+3. For JSON, client-side blob download should work even without API URL
 
 ## Related Files
 
 | File | Purpose |
 |------|---------|
-| `frontend/src/js/18-viewer-mode.js` | Viewer mode frontend logic |
+| `frontend/src/js/12-validation.js` | Full validation card with interactive table |
+| `frontend/src/js/13-results.js` | Preview card with interactive table |
+| `frontend/src/js/18-viewer-mode.js` | Standalone viewer mode logic |
 | `frontend/src/js/16-interactive-table.js` | Table rendering component |
 | `frontend/src/js/00-config.js` | Mode detection (`detectPageType`, `getViewerParams`) |
 | `frontend/src/js/99-init.js` | Initialization routing |
 | `frontend/viewer-test.html` | Local development test page |
 | `src/lambdas/interface/actions/viewer_data.py` | Backend API handler |
+| `src/lambdas/interface/handlers/background_handler.py` | Generates table_metadata.json on validation completion |
 | `src/lambdas/interface/handlers/http_handler.py` | API routing |
