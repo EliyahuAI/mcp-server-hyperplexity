@@ -834,12 +834,33 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
             
             # SHEET 1: Updated Values
             updated_sheet = workbook.add_worksheet('Updated Values')
-            
+
+            # Build column info map from config for header comments
+            column_info_map = {}
+            for target in config_data.get('validation_targets', []):
+                col_name = target.get('column') or target.get('column_name', '')
+                if col_name:
+                    column_info_map[col_name] = {
+                        'description': target.get('description', ''),
+                        'notes': target.get('notes', '')
+                    }
+
             # Headers for updated values sheet (no additional columns)
             updated_headers = headers
             for col_idx, col_name in enumerate(updated_headers):
                 updated_sheet.write(0, col_idx, col_name, header_format)
                 updated_sheet.set_column(col_idx, col_idx, 20)
+
+                # Add comment with column description and notes if available
+                col_info = column_info_map.get(col_name, {})
+                comment_parts = []
+                if col_info.get('description'):
+                    comment_parts.append(f"Description: {col_info['description']}")
+                if col_info.get('notes'):
+                    comment_parts.append(f"Notes: {col_info['notes']}")
+                if comment_parts:
+                    updated_sheet.write_comment(0, col_idx, '\n\n'.join(comment_parts),
+                                               {'width': 300, 'height': 100})
             
             # Write all rows to updated sheet (not just rows with changes)
             updated_row_idx = 1
@@ -1101,11 +1122,22 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
 
             # SHEET 2: Original Values
             original_sheet = workbook.add_worksheet('Original Values')
-            
-            # Write headers
+
+            # Write headers with comments
             for col_idx, col_name in enumerate(headers):
                 original_sheet.write(0, col_idx, col_name, header_format)
                 original_sheet.set_column(col_idx, col_idx, 20)
+
+                # Add comment with column description and notes if available
+                col_info = column_info_map.get(col_name, {})
+                comment_parts = []
+                if col_info.get('description'):
+                    comment_parts.append(f"Description: {col_info['description']}")
+                if col_info.get('notes'):
+                    comment_parts.append(f"Notes: {col_info['notes']}")
+                if comment_parts:
+                    original_sheet.write_comment(0, col_idx, '\n\n'.join(comment_parts),
+                                                {'width': 300, 'height': 100})
             
             # Write original data with confidence-based coloring and comments
             logger.debug(f"[ORIG_SHEET_DEBUG] Starting Original Values sheet write. Total rows: {len(rows_data)}")
@@ -2035,7 +2067,7 @@ def generate_table_preview_metadata(
     Returns:
         Dict with structure:
         {
-            "columns": [{"name": str, "importance": str, "description": str}],
+            "columns": [{"name": str, "importance": str, "description": str, "notes": str}],
             "rows": [{
                 "row_key": str,
                 "cells": {
@@ -2054,11 +2086,12 @@ def generate_table_preview_metadata(
                     }
                 }
             }],
-            "is_transposed": True
+            "is_transposed": True,
+            "general_notes": str  # Configuration-level notes
         }
     """
     if not validation_results or not config_data:
-        return {"columns": [], "rows": [], "is_transposed": True}
+        return {"columns": [], "rows": [], "is_transposed": True, "general_notes": ""}
 
     # Extract column metadata from config_data['validation_targets']
     columns = []
@@ -2069,7 +2102,8 @@ def generate_table_preview_metadata(
             col_info = {
                 'name': col_name,
                 'importance': target.get('importance', 'MEDIUM'),
-                'description': target.get('description', '')
+                'description': target.get('description', ''),
+                'notes': target.get('notes', '')
             }
             columns.append(col_info)
             column_config_map[col_name] = col_info
@@ -2135,7 +2169,8 @@ def generate_table_preview_metadata(
     return {
         'columns': columns,
         'rows': rows,
-        'is_transposed': True
+        'is_transposed': True,
+        'general_notes': config_data.get('general_notes', '')
     }
 
 

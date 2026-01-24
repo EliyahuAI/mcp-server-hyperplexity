@@ -872,7 +872,7 @@
                     const headerHtml = `
                         <div class="message message-info">
                             <span class="message-icon">ℹ️</span>
-                            <span>This preview shows the first 3 rows of Updated values (transposed). A richer preview can be downloaded at the button below.</span>
+                            <span>This preview shows the first 3 rows of Updated values (transposed). An Excel version can be downloaded at the button below.</span>
                         </div>
                     `;
                     
@@ -908,7 +908,7 @@
                 const actionsHtml = `
                     <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
                         <button type="button" class="std-button ${downloadColor}" data-action="download-preview">
-                            📥 Download Rich Preview
+                            📥 Download Excel Preview
                         </button>
                         ${refineButtonHtml}
                         ${revertButtonHtml}

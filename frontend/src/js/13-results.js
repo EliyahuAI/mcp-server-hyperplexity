@@ -40,7 +40,7 @@ function showPreviewResults(cardId, previewData) {
         const headerHtml = `
             <div class="message message-info">
                 <span class="message-icon">ℹ️</span>
-                <span>This preview shows the first 3 rows of Updated values (transposed). A richer preview can be downloaded at the button below.</span>
+                <span>This preview shows the first 3 rows of Updated values (transposed). An Excel version can be downloaded at the button below.</span>
             </div>
         `;
 
@@ -83,7 +83,7 @@ function showPreviewResults(cardId, previewData) {
     const actionsHtml = `
         <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
             <button type="button" class="std-button ${downloadColor}" data-action="download-preview">
-                📥 Download Rich Preview
+                📥 Download Excel Preview
             </button>
             ${refineButtonHtml}
             ${revertButtonHtml}
@@ -302,10 +302,26 @@ function renderInteractiveTable(tableMetadata) {
         return null;
     }
 
-    const { columns, rows } = tableMetadata;
+    const { columns, rows, general_notes } = tableMetadata;
+
+    let html = '';
+
+    // General notes info box (collapsible if long)
+    if (general_notes && general_notes.trim()) {
+        const isLong = general_notes.length > 200;
+        const uniqueId = 'general-notes-' + Date.now();
+        html += `<div class="general-notes-box${isLong ? ' collapsible collapsed' : ''}" ${isLong ? `onclick="toggleGeneralNotes('${uniqueId}')"` : ''} id="${uniqueId}">
+            <div class="general-notes-header">
+                <span class="general-notes-icon">📋</span>
+                <span class="general-notes-title">Configuration Notes</span>
+                ${isLong ? '<span class="general-notes-toggle">▼</span>' : ''}
+            </div>
+            <div class="general-notes-content">${escapeHtmlForTable(general_notes)}</div>
+        </div>`;
+    }
 
     // Color legend/key
-    let html = `<div class="table-legend">
+    html += `<div class="table-legend">
         <span class="legend-title">Confidence:</span>
         <span class="legend-item"><span class="legend-color confidence-high"></span> High</span>
         <span class="legend-item"><span class="legend-color confidence-medium"></span> Medium</span>
@@ -331,8 +347,19 @@ function renderInteractiveTable(tableMetadata) {
         // Bug fix #2: Both ID and IGNORED columns should show as ID style
         const importance = col.importance ? col.importance.toUpperCase() : '';
         const isIdColumn = importance === 'ID' || importance === 'IGNORED';
+
+        // Build column header tooltip from description and notes
+        const colTooltip = buildColumnTooltip(col.description, col.notes);
+        const hasTooltip = colTooltip && colTooltip.length > 0;
+
         html += '<tr>';
-        html += `<td class="sticky-column ${isIdColumn ? 'id-column' : ''}" data-col-index="0">`;
+        html += `<td class="sticky-column ${isIdColumn ? 'id-column' : ''}${hasTooltip ? ' has-column-info' : ''}" data-col-index="0"`;
+        if (hasTooltip) {
+            html += ` data-tooltip-html="${colTooltip.replace(/"/g, '&quot;')}"`;
+            html += ` onmouseenter="showCustomTooltip(event, this)"`;
+            html += ` onmouseleave="hideCustomTooltip()"`;
+        }
+        html += '>';
         html += `<strong>${escapeHtmlForTable(col.name)}</strong>`;
         html += '</td>';
 
@@ -420,6 +447,32 @@ function buildTooltipContent(comment, fullValue, displayValue) {
     }
     return parts.join('<br>');
 }
+
+function buildColumnTooltip(description, notes) {
+    let parts = [];
+
+    if (description && description.trim()) {
+        parts.push(`<b>Description:</b> ${escapeHtmlForTable(description)}`);
+    }
+
+    if (notes && notes.trim()) {
+        parts.push(`<b>Notes:</b> ${escapeHtmlForTable(notes)}`);
+    }
+
+    return parts.join('<br>');
+}
+
+// Toggle general notes box expansion
+window.toggleGeneralNotes = function(id) {
+    const box = document.getElementById(id);
+    if (box) {
+        box.classList.toggle('collapsed');
+        const toggle = box.querySelector('.general-notes-toggle');
+        if (toggle) {
+            toggle.textContent = box.classList.contains('collapsed') ? '▼' : '▲';
+        }
+    }
+};
 
 // Expose to global scope for onclick handlers
 window.showCellDetailModal = function(cellElement) {
@@ -688,12 +741,16 @@ window.showCustomTooltip = function(event, cell) {
     currentHoverCell = cell;
     const coords = { x: event.clientX, y: event.clientY };
 
-    // Immediately show cell saturation and column highlights
-    cell.classList.add('cell-hover-active');
+    // Immediately show cell saturation and column highlights (skip for sticky column headers)
     const colIndex = cell.dataset.colIndex;
-    if (colIndex) {
-        const cells = document.querySelectorAll(`.interactive-table [data-col-index="${colIndex}"]`);
-        cells.forEach(c => c.classList.add('column-highlight'));
+    const isColumnHeader = colIndex === '0' || cell.classList.contains('sticky-column');
+
+    if (!isColumnHeader) {
+        cell.classList.add('cell-hover-active');
+        if (colIndex) {
+            const cells = document.querySelectorAll(`.interactive-table [data-col-index="${colIndex}"]`);
+            cells.forEach(c => c.classList.add('column-highlight'));
+        }
     }
 
     if (!html) return;

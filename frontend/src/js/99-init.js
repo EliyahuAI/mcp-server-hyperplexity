@@ -988,7 +988,7 @@ try {
         } else if (buttonText.includes('Process Table') || buttonText.includes('Start Processing') || buttonClass.includes('process-button') || button.id.includes('process')) {
             button.onclick = () => startFullProcessing(cardId);
 
-        } else if (dataAction === 'download-preview' || buttonText.includes('Download Rich Preview')) {
+        } else if (dataAction === 'download-preview' || buttonText.includes('Download Excel Preview')) {
             button.onclick = async () => {
                 try {
                     markDownloadStart();
