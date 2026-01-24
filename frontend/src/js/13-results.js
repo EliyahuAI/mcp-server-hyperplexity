@@ -343,6 +343,13 @@ function renderInteractiveTable(tableMetadata) {
             const fullValue = cellData.full_value || displayValue;
             const comment = cellData.comment || {};
 
+            // Add column name and row ID info to cell data for modal display
+            // Get ID values from cells marked as ID columns
+            const idColumns = columns.filter(c => c.importance && c.importance.toUpperCase() === 'ID');
+            const rowIdValues = idColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
+            cellData._columnName = col.name;
+            cellData._rowId = rowIdValues || `Row ${colIdx + 1}`;
+
             // Build tooltip content
             const tooltipContent = buildTooltipContent(comment, fullValue, displayValue);
 
@@ -392,11 +399,6 @@ function buildTooltipContent(comment, fullValue, displayValue) {
     if (fullValue && fullValue.length > displayValue.length) {
         const truncated = fullValue.substring(0, 200) + (fullValue.length > 200 ? '...' : '');
         parts.push(`<b>Full:</b> ${escapeHtmlForTable(truncated)}`);
-    }
-
-    if (comment.original_value !== undefined && comment.original_value !== '') {
-        const conf = comment.original_confidence ? ` (${comment.original_confidence})` : '';
-        parts.push(`<b>Original:</b> ${escapeHtmlForTable(comment.original_value)}${conf}`);
     }
 
     if (comment.validator_explanation) {
@@ -472,21 +474,27 @@ window.showCellDetailModal = function(cellElement) {
                       normalizeValue(originalValue) !== normalizeValue(currentValue);
     console.log('[MODAL] isUpdated:', isUpdated);
 
+    const columnName = cellData._columnName || 'Unknown';
+    const rowId = cellData._rowId || 'Unknown';
+
     let modalContent = `
         <div class="cell-detail-modal">
             <div class="cell-detail-header">
-                <h3>📋 Cell Details</h3>
+                <div class="cell-detail-title">
+                    <h3>${escapeHtmlForTable(columnName)}</h3>
+                    <span class="cell-detail-row-id">${escapeHtmlForTable(rowId)}</span>
+                </div>
                 <button class="modal-close" onclick="closeCellDetailModal()">&times;</button>
             </div>
 
             <div class="detail-section">
-                <label>${isUpdated ? 'Updated Value' : 'Value'} ${currentConfidence ? `<span class="confidence-badge ${getConfidenceClass(currentConfidence)}">${formatConfidence(currentConfidence)}</span>` : ''}</label>
+                <label>${isUpdated ? 'Updated Value' : 'Value'} ${currentConfidence ? `<span class="confidence-text ${getConfidenceClass(currentConfidence)}">${formatConfidence(currentConfidence)}</span>` : ''}</label>
                 <p class="detail-value">${formatValue(currentValue)}</p>
             </div>
 
             ${isUpdated ? `
             <div class="detail-section">
-                <label>Original Value ${originalConfidence ? `<span class="confidence-badge ${getConfidenceClass(originalConfidence)}">${formatConfidence(originalConfidence)}</span>` : ''}</label>
+                <label>Original Value ${originalConfidence ? `<span class="confidence-text ${getConfidenceClass(originalConfidence)}">${formatConfidence(originalConfidence)}</span>` : ''}</label>
                 <p class="detail-value">${formatValue(originalValue)}</p>
             </div>
             ` : ''}

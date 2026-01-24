@@ -40,17 +40,36 @@
 }
 
 .card-icon {
-    width: 40px;
-    height: 40px;
-    background-color: var(--primary-color);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.16);
+    background: linear-gradient(180deg, rgba(40, 255, 58, 0.22), rgba(40, 255, 58, 0.06));
+    display: grid;
+    place-items: center;
     margin-right: 1rem;
-    color: white;
-    font-weight: bold;
-    font-size: var(--font-size-base);
+    margin-top: -7px;
+    flex-shrink: 0;
+    transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.card:hover .card-icon {
+    border-color: rgba(40, 255, 58, 0.55);
+    transform: rotate(-1deg) scale(1.03);
+}
+
+.card-icon svg {
+    width: 22px;
+    height: 22px;
+    stroke: rgba(0, 0, 0, 0.85);
+    stroke-width: 2;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.card-icon-inner {
+    display: contents;
 }
 
 .card-title {
@@ -298,10 +317,16 @@
     }
 
     .card-icon {
-        width: 30px;
-        height: 30px;
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
         margin-right: 0;
         flex-shrink: 0;
+    }
+
+    .card-icon svg {
+        width: 18px;
+        height: 18px;
     }
 
     /* Typography adjustments */
