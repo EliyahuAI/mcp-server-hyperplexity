@@ -1094,7 +1094,15 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
                     </ul>
                 </div>
             </div>
-            
+
+            <div style="text-align: center; margin: 25px 0;">
+                <a href="https://eliyahu.ai/viewer?session={session_id}"
+                   style="display: inline-block; background: #4CAF50; color: white; text-decoration: none; padding: 15px 30px; border-radius: 8px; font-size: 18px; font-weight: bold; border: none;">
+                    📊 View Interactive Results
+                </a>
+                <p style="margin-top: 10px; color: #666; font-size: 14px;">Explore your data with hover tooltips, click-through details, and download options</p>
+            </div>
+
             <div class="attachments">
                 <h3>📎 Attached Files</h3>
                 {"<div style='background: #FFF3CD; border: 2px solid #FFB800; padding: 15px; margin: 15px 0; border-radius: 8px;'><b>⚠️ Important Notice:</b> The enhanced Excel file could not be generated due to a processing error. We have included your original file and you have not been charged for this validation. Please contact support for assistance.</div>" if not enhanced_excel_valid else ""}

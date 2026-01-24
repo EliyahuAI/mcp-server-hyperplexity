@@ -61,16 +61,30 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         # Initialize storage manager
         storage_manager = UnifiedS3Manager()
 
+        # Determine which bucket to use - try primary, fallback to -dev
+        primary_bucket = storage_manager.bucket_name
+        dev_bucket = f"{primary_bucket}-dev" if not primary_bucket.endswith('-dev') else primary_bucket
+
         # Get session path
         session_path = storage_manager.get_session_path(email, session_id)
         logger.info(f"[VIEWER_DATA] Session path: {session_path}")
 
-        # Determine version to use
+        # Determine version to use - try primary bucket first, then dev bucket
+        config_version = None
+        active_bucket = primary_bucket
+
         if version:
             config_version = int(version)
         else:
-            # Find latest version by listing result folders
-            config_version = _find_latest_version(storage_manager, session_path)
+            # Find latest version by listing result folders - try primary bucket first
+            config_version = _find_latest_version_in_bucket(primary_bucket, session_path)
+            if not config_version:
+                # Try dev bucket as fallback
+                config_version = _find_latest_version_in_bucket(dev_bucket, session_path)
+                if config_version:
+                    active_bucket = dev_bucket
+                    logger.info(f"[VIEWER_DATA] Found results in dev bucket: {dev_bucket}")
+
             if not config_version:
                 return create_response(404, {
                     'success': False,
@@ -83,8 +97,15 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         results_prefix = f"{session_path}v{config_version}_results/"
         results_prefix_dev = f"{session_path}v{config_version}_results-dev/"
 
-        # Check which results folder exists
-        actual_results_prefix = _find_results_folder(storage_manager.bucket_name, results_prefix, results_prefix_dev)
+        # Check which results folder exists in the active bucket
+        actual_results_prefix = _find_results_folder(active_bucket, results_prefix, results_prefix_dev)
+
+        # If not found in active bucket, try the other bucket
+        if not actual_results_prefix and active_bucket == primary_bucket:
+            actual_results_prefix = _find_results_folder(dev_bucket, results_prefix, results_prefix_dev)
+            if actual_results_prefix:
+                active_bucket = dev_bucket
+                logger.info(f"[VIEWER_DATA] Found results folder in dev bucket: {dev_bucket}")
         if not actual_results_prefix:
             return create_response(404, {
                 'success': False,
@@ -103,7 +124,7 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         if is_preview is not True:  # is_preview is False or None (auto)
             # Try full validation metadata first (table_metadata.json)
             full_metadata_key = f"{actual_results_prefix}table_metadata.json"
-            table_metadata = _load_json_from_s3(storage_manager.bucket_name, full_metadata_key)
+            table_metadata = _load_json_from_s3(active_bucket, full_metadata_key)
             if table_metadata:
                 metadata_key = full_metadata_key
                 is_full_validation = True
@@ -112,7 +133,7 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         if not table_metadata and is_preview is not False:
             # Try preview metadata (preview_table_metadata.json)
             preview_metadata_key = f"{actual_results_prefix}preview_table_metadata.json"
-            table_metadata = _load_json_from_s3(storage_manager.bucket_name, preview_metadata_key)
+            table_metadata = _load_json_from_s3(active_bucket, preview_metadata_key)
             if table_metadata:
                 metadata_key = preview_metadata_key
                 logger.info(f"[VIEWER_DATA] Loaded preview metadata from {preview_metadata_key}")
@@ -124,19 +145,19 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
             })
 
         # Find Excel file and generate download URL
-        excel_key, excel_filename = _find_excel_file(storage_manager.bucket_name, actual_results_prefix)
+        excel_key, excel_filename = _find_excel_file(active_bucket, actual_results_prefix)
 
         enhanced_download_url = None
         if excel_key:
             enhanced_download_url = _generate_presigned_url(
-                storage_manager.bucket_name,
+                active_bucket,
                 excel_key,
                 excel_filename or 'results.xlsx'
             )
 
         # Generate JSON download URL
         json_download_url = _generate_presigned_url(
-            storage_manager.bucket_name,
+            active_bucket,
             metadata_key,
             f"table_metadata_v{config_version}.json"
         )
@@ -166,14 +187,14 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         })
 
 
-def _find_latest_version(storage_manager: UnifiedS3Manager, session_path: str) -> Optional[int]:
-    """Find the latest config version by listing result folders.
+def _find_latest_version_in_bucket(bucket: str, session_path: str) -> Optional[int]:
+    """Find the latest config version by listing result folders in a specific bucket.
 
     Handles both standard (_results) and dev (_results-dev) folders.
     """
     try:
         response = s3_client.list_objects_v2(
-            Bucket=storage_manager.bucket_name,
+            Bucket=bucket,
             Prefix=session_path,
             Delimiter='/'
         )
