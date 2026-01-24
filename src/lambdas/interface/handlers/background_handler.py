@@ -2498,11 +2498,10 @@ def handle_main_processing(event, context):
                 preview_payload["enhanced_download_url"] = enhanced_download_url
                 logger.debug(f"[DEBUG] Added enhanced_download_url to preview_payload: {enhanced_download_url}")
 
-                # Add table_metadata to preview_payload for WebSocket delivery
-                if table_metadata:
-                    preview_payload["table_metadata"] = table_metadata
-                    logger.info(f"[TABLE_METADATA] Added to preview_payload for WebSocket delivery")
-                
+                # NOTE: table_metadata is saved to S3 as preview_table_metadata.json
+                # Frontend fetches it via getViewerData API (same pattern as full validation)
+                # This avoids WebSocket 413 errors for large payloads
+
                 # Get account balance and multiplier for preview tracking
                 try:
                     import sys
@@ -2780,7 +2779,7 @@ def handle_main_processing(event, context):
 
                 frontend_payload = {
                     "markdown_table": preview_payload.get("markdown_table", ""),
-                    "table_metadata": table_metadata,  # Interactive table preview data
+                    # table_metadata removed - frontend fetches via getViewerData API
                     "enhanced_download_url": preview_payload.get("enhanced_download_url"),
                     "total_rows": preview_payload.get("total_rows", 0),
                     "cost_estimates": cost_estimates_dict,
@@ -2890,21 +2889,37 @@ def handle_main_processing(event, context):
                         logger.info(f"API Gateway management client initialized: {client is not None}")
                         
                         if client:
+                            # Use minimal frontend_payload instead of full preview_payload to avoid 413 errors
+                            # AWS WebSocket limit is 128 KB
+                            WEBSOCKET_MAX_SIZE = 120000  # 120 KB - leave buffer for encoding overhead
+
                             websocket_payload = {
                                 'status': 'COMPLETED',
                                 'percent_complete': 100,
                                 'verbose_status': 'Preview complete. Results available.',
-                                'preview_data': preview_payload
+                                'preview_data': frontend_payload
                             }
-                            
+
+                            # Check payload size and trim markdown_table if necessary (safeguard)
+                            # Note: table_metadata is no longer sent via WebSocket - fetched via API instead
+                            payload_json = json.dumps(websocket_payload)
+                            if len(payload_json) > WEBSOCKET_MAX_SIZE:
+                                logger.warning(f"[WEBSOCKET] Payload too large ({len(payload_json)} bytes), trimming markdown_table")
+                                # Remove markdown_table - it's only for legacy display, interactive table is fetched via API
+                                trimmed_payload = {k: v for k, v in frontend_payload.items()
+                                                  if k != 'markdown_table'}
+                                trimmed_payload['payload_trimmed'] = True  # Signal frontend that markdown was trimmed
+                                websocket_payload['preview_data'] = trimmed_payload
+                                logger.info(f"[WEBSOCKET] Trimmed payload size: {len(json.dumps(websocket_payload))} bytes")
+
                             # DEBUG: Log the cost estimates being sent to frontend
-                            cost_estimates = preview_payload.get('cost_estimates', {})
+                            cost_estimates = frontend_payload.get('cost_estimates', {})
                             logger.debug(f"[COST_DEBUG] WebSocket payload cost_estimates: {cost_estimates}")
                             logger.debug(f"[COST_DEBUG] quoted_validation_cost: {cost_estimates.get('quoted_validation_cost')}")
 
                             # Log call counts being sent to frontend (CALL COUNTS DEBUGGING)
                             total_provider_calls_ws = cost_estimates.get('total_provider_calls', 0)
-                            validation_metrics_ws = preview_payload.get('validation_metrics', {})
+                            validation_metrics_ws = frontend_payload.get('validation_metrics', {})
                             search_groups_count_ws = validation_metrics_ws.get('search_groups_count', 0)
                             claude_search_groups_count_ws = validation_metrics_ws.get('claude_search_groups_count', 0)
                             calculated_perplexity_groups = search_groups_count_ws - claude_search_groups_count_ws
@@ -2914,7 +2929,7 @@ def handle_main_processing(event, context):
                             logger.debug(f"[WEBSOCKET_SENDING]   search_groups_count (total): {search_groups_count_ws}")
                             logger.debug(f"[WEBSOCKET_SENDING]   claude_search_groups_count: {claude_search_groups_count_ws}")
                             logger.debug(f"[WEBSOCKET_SENDING]   frontend will calculate perplexity_groups: {calculated_perplexity_groups}")
-                            logger.debug(f"[WEBSOCKET_SENDING]   payload contains preview_data with {len(preview_payload)} top-level fields")
+                            logger.debug(f"[WEBSOCKET_SENDING]   payload contains preview_data with {len(frontend_payload)} top-level fields")
 
                             logger.info(f"Sending WebSocket payload to connection {connection_id}: {len(json.dumps(websocket_payload))} bytes")
                             

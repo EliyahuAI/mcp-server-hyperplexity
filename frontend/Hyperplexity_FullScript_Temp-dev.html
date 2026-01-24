@@ -14280,59 +14280,53 @@ function showPreviewResults(cardId, previewData) {
             </div>
         `;
 
-        // Use interactive table if metadata available, otherwise fallback to markdown
-        console.log('[TABLE_PREVIEW] table_metadata:', previewData.table_metadata ? 'present' : 'missing', previewData.table_metadata);
-        if (previewData.table_metadata && typeof InteractiveTable !== 'undefined') {
-            const interactiveTableHtml = InteractiveTable.render(previewData.table_metadata, {
-                showGeneralNotes: true,
-                showLegend: true
-            });
-            previewContent.innerHTML = headerHtml + interactiveTableHtml;
-            InteractiveTable.init();
-        } else {
-            previewContent.innerHTML = headerHtml + renderMarkdown(previewData.markdown_table);
-        }
+        // Check if revert button should be shown (only if this session has 2+ versions)
+        const sessionVersionCount = previewData.session_version_count || 0;
+        const showRevertButton = sessionVersionCount >= 2;
+
+        const revertButtonHtml = showRevertButton ?
+            `<button type="button" class="std-button quaternary" data-action="revert-config">
+                    ↩️ Revert to Previous
+                </button>` : '';
+
+        // Fixed colors for preview card buttons
+        const downloadColor = 'tertiary';  // orange
+        const refineColor = 'secondary';   // purple
+
+        // Hide refine button for reference check (static config cannot be refined)
+        const refineButtonHtml = !globalState.isReferenceCheck ?
+            `<button type="button" class="std-button ${refineColor}" data-action="refine-config">
+                🔧 Refine Configuration
+            </button>` : '';
+
+        const actionsHtml = `
+            <div style="display: flex; gap: 10px; margin-bottom: 10px; justify-content: center; flex-wrap: wrap;">
+                <button type="button" class="std-button ${downloadColor}" data-action="download-preview">
+                    📥 Download Excel
+                </button>
+                <button type="button" class="std-button quaternary" data-action="download-json">
+                    📋 Download JSON (for AI)
+                </button>
+                ${refineButtonHtml}
+            </div>
+            ${revertButtonHtml ? `<div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">${revertButtonHtml}</div>` : ''}
+        `;
+
+        // Build complete HTML upfront to avoid innerHTML += race condition with async fetch
+        const tableContainerId = `${cardId}-table-container`;
+        previewContent.innerHTML = headerHtml + `
+            <div id="${tableContainerId}">
+                <p style="color: #999; font-style: italic; text-align: center; padding: 1rem;">Loading interactive table...</p>
+            </div>
+        ` + actionsHtml;
 
         // Store the download URL for the button
         previewContent.dataset.fullPreviewUrl = fullPreviewUrl;
+
+        // Fetch table metadata via API (async, non-blocking)
+        // This avoids WebSocket payload size limits (same pattern as full validation)
+        fetchAndRenderPreviewTable(tableContainerId, globalState.sessionId, previewData.markdown_table);
     }
-
-    // Add buttons above estimates
-    // Check if revert button should be shown (only if this session has 2+ versions)
-    // Use session_version_count if available (accurate), otherwise fall back to config_version
-    const sessionVersionCount = previewData.session_version_count || 0;
-    const currentVersion = previewData.config_version || globalState.currentConfig?.config_version || 1;
-    const showRevertButton = sessionVersionCount >= 2;
-
-    const revertButtonHtml = showRevertButton ?
-        `<button type="button" class="std-button quaternary" data-action="revert-config">
-                ↩️ Revert to Previous
-            </button>` : '';
-
-    // Fixed colors for preview card buttons
-    // Download = orange, Refine = purple, Revert = cyan (when shown), Process = green
-    const downloadColor = 'tertiary';  // orange
-    const refineColor = 'secondary';   // purple
-
-    // Hide refine button for reference check (static config cannot be refined)
-    const refineButtonHtml = !globalState.isReferenceCheck ?
-        `<button type="button" class="std-button ${refineColor}" data-action="refine-config">
-            🔧 Refine Configuration
-        </button>` : '';
-
-    const actionsHtml = `
-        <div style="display: flex; gap: 10px; margin-bottom: 10px; justify-content: center; flex-wrap: wrap;">
-            <button type="button" class="std-button ${downloadColor}" data-action="download-preview">
-                📥 Download Excel
-            </button>
-            <button type="button" class="std-button quaternary" data-action="download-json">
-                📋 Download JSON (for AI)
-            </button>
-            ${refineButtonHtml}
-        </div>
-        ${revertButtonHtml ? `<div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">${revertButtonHtml}</div>` : ''}
-    `;
-    previewContent.innerHTML += actionsHtml;
 
     // Calculate cost values ONCE before display and button logic to ensure consistency
     const estimatedCost = previewData.cost_estimates ? (previewData.cost_estimates.quoted_validation_cost || previewData.cost_estimates.quoted_full_cost) : 0;
@@ -14440,10 +14434,11 @@ function showPreviewResults(cardId, previewData) {
 
         if (jsonBtn) {
             jsonBtn.addEventListener('click', () => {
-                if (previewData.table_metadata) {
-                    downloadJsonMetadata(previewData.table_metadata, jsonBtn);
+                // Use fetched metadata from API (stored in globalState)
+                if (globalState.previewTableMetadata) {
+                    downloadJsonMetadata(globalState.previewTableMetadata, jsonBtn);
                 } else {
-                    showMessage(`${cardId}-messages`, 'JSON metadata not available for this preview.', 'error');
+                    showMessage(`${cardId}-messages`, 'JSON metadata still loading. Please wait a moment and try again.', 'info');
                 }
             });
         }
@@ -14539,6 +14534,61 @@ function showPreviewResults(cardId, previewData) {
     // Show instruction message for Add Credits button
     if (!sufficientBalance) {
         showMessage(`${cardId}-messages`, `💳 Click button to add credits. After purchase, return to this tab for auto-processing.`, 'info', false, 'add-credits-instruction');
+    }
+}
+
+/* ========================================
+ * Preview Table Fetching
+ * Fetches table metadata via API (same pattern as full validation)
+ * This avoids WebSocket payload size limits
+ * ======================================== */
+
+async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdown) {
+    const container = document.getElementById(containerId);
+    if (!container) {
+        console.warn('[PREVIEW] Table container not found:', containerId);
+        return;
+    }
+
+    try {
+        console.log('[PREVIEW] Fetching table metadata via API for session:', sessionId);
+        const response = await fetch(`${API_BASE}/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'getViewerData',
+                email: globalState.email,
+                session_id: sessionId,
+                is_preview: true  // Request preview data (3 rows)
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.table_metadata) {
+            // Store for JSON download
+            globalState.previewTableMetadata = data.table_metadata;
+
+            // Render interactive table
+            if (typeof InteractiveTable !== 'undefined') {
+                container.innerHTML = InteractiveTable.render(data.table_metadata, {
+                    showGeneralNotes: true,
+                    showLegend: true
+                });
+                InteractiveTable.init();
+                console.log('[PREVIEW] Interactive table rendered successfully');
+            } else {
+                console.warn('[PREVIEW] InteractiveTable not available, using markdown fallback');
+                container.innerHTML = renderMarkdown(fallbackMarkdown || '');
+            }
+        } else {
+            console.warn('[PREVIEW] API returned no table_metadata, using markdown fallback:', data.error || 'unknown');
+            container.innerHTML = renderMarkdown(fallbackMarkdown || '');
+        }
+    } catch (error) {
+        console.error('[PREVIEW] Failed to fetch table metadata:', error);
+        // Fallback to markdown
+        container.innerHTML = renderMarkdown(fallbackMarkdown || '');
     }
 }
 
