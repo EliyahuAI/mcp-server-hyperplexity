@@ -4849,6 +4849,28 @@ def handle_main_processing(event, context):
                                     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                                 )
                                 logger.info(f"Created enhanced Excel download link for full results: {enhanced_download_url}")
+
+                                # Generate and save full table metadata (all rows) for interactive viewer
+                                try:
+                                    from excel_report_qc_unified import generate_table_preview_metadata
+                                    full_table_metadata = generate_table_preview_metadata(
+                                        validation_results=real_results,
+                                        config_data=config_data,
+                                        preview_row_count=None  # None = include ALL rows
+                                    )
+                                    if full_table_metadata:
+                                        session_path = storage_manager.get_session_path(email, clean_session_id)
+                                        full_metadata_key = f"{session_path}v{config_version}_results/table_metadata.json"
+                                        full_metadata_json = json.dumps(full_table_metadata, indent=2)
+                                        s3_client.put_object(
+                                            Bucket=storage_manager.bucket_name,
+                                            Key=full_metadata_key,
+                                            Body=full_metadata_json.encode('utf-8'),
+                                            ContentType='application/json'
+                                        )
+                                        logger.info(f"[FULL_VALIDATION] Saved full table_metadata.json with {len(full_table_metadata.get('rows', []))} rows to {full_metadata_key}")
+                                except Exception as meta_error:
+                                    logger.error(f"[FULL_VALIDATION] Failed to save full table_metadata.json: {meta_error}")
                             else:
                                 logger.error(f"Failed to store enhanced Excel in results folder for full validation: {enhanced_result.get('error')}")
                                 

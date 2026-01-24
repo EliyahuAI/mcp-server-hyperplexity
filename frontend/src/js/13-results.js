@@ -85,13 +85,16 @@ function showPreviewResults(cardId, previewData) {
         </button>` : '';
 
     const actionsHtml = `
-        <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
+        <div style="display: flex; gap: 10px; margin-bottom: 10px; justify-content: center; flex-wrap: wrap;">
             <button type="button" class="std-button ${downloadColor}" data-action="download-preview">
-                📥 Download Excel Preview
+                📥 Download Excel
+            </button>
+            <button type="button" class="std-button quaternary" data-action="download-json">
+                📋 Download JSON (for AI)
             </button>
             ${refineButtonHtml}
-            ${revertButtonHtml}
         </div>
+        ${revertButtonHtml ? `<div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">${revertButtonHtml}</div>` : ''}
     `;
     previewContent.innerHTML += actionsHtml;
 
@@ -188,6 +191,7 @@ function showPreviewResults(cardId, previewData) {
     // Add event listeners for the buttons above estimates
     setTimeout(() => {
         const downloadBtn = card.querySelector('[data-action="download-preview"]');
+        const jsonBtn = card.querySelector('[data-action="download-json"]');
         const refineBtn = card.querySelector('[data-action="refine-config"]');
         const revertBtn = card.querySelector('[data-action="revert-config"]');
 
@@ -195,6 +199,16 @@ function showPreviewResults(cardId, previewData) {
             downloadBtn.addEventListener('click', async () => {
                 markDownloadStart();
                 await downloadPreviewResults(previewData);
+            });
+        }
+
+        if (jsonBtn) {
+            jsonBtn.addEventListener('click', () => {
+                if (previewData.table_metadata) {
+                    downloadJsonMetadata(previewData.table_metadata, jsonBtn);
+                } else {
+                    showMessage(`${cardId}-messages`, 'JSON metadata not available for this preview.', 'error');
+                }
             });
         }
 

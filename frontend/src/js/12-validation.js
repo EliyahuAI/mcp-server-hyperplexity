@@ -206,13 +206,21 @@ function handleProcessingWebSocketMessage(data, cardId) {
                         </div>
                     </div>
                 </div>
-                <div style="display: flex; gap: 10px; margin-top: 1rem;">
-                    <button class="std-button ${downloadColor}" id="${actualCardId}-download-btn" style="flex: 1;" disabled>
+                <div id="${actualCardId}-table-info" class="message message-info" style="display: flex; margin-top: 1rem;">
+                    <span class="message-icon">ℹ️</span>
+                    <span>Review your validation results below. Click cells for details.</span>
+                </div>
+                <div id="${actualCardId}-table-container" style="margin: 1rem 0;"></div>
+                <div style="display: flex; gap: 10px; margin-top: 1rem; flex-wrap: wrap;">
+                    <button class="std-button ${downloadColor}" id="${actualCardId}-download-btn" style="flex: 1; min-width: 150px;" disabled>
                         <span class="button-text">📥 Preparing Download...</span>
+                    </button>
+                    <button class="std-button quaternary" id="${actualCardId}-json-btn" style="flex: 1; min-width: 150px;">
+                        <span class="button-text">📋 Download JSON (for AI)</span>
                     </button>
                     ${refineButtonHtml}
                 </div>
-                <div style="display: flex; gap: 10px; margin-top: 0.5rem;">
+                <div style="display: flex; gap: 10px; margin-top: 0.5rem; flex-wrap: wrap;">
                     ${revertButtonHtml}
                     <button class="std-button ${newValidationColor}" onclick="window.resetPage()" style="flex: 1;">
                         <span class="button-text">🔄 New Validation</span>
@@ -223,9 +231,13 @@ function handleProcessingWebSocketMessage(data, cardId) {
             // Add event listeners for the buttons after DOM update
             setTimeout(() => {
                 const downloadBtn = document.getElementById(`${actualCardId}-download-btn`);
+                const jsonBtn = document.getElementById(`${actualCardId}-json-btn`);
                 const refineBtn = document.getElementById(`${actualCardId}-refine-btn`);
                 const revertBtn = document.getElementById(`${actualCardId}-revert-btn`);
                 const balanceInfo = document.getElementById(`${actualCardId}-balance-info`);
+
+                // Fetch and render interactive table
+                fetchAndRenderValidationTable(actualCardId, globalState.sessionId);
 
                 if (refineBtn) {
                     refineBtn.addEventListener('click', debounceConfigAction('refine-config-2', async () => {
@@ -250,6 +262,24 @@ function handleProcessingWebSocketMessage(data, cardId) {
                             revertBtn.disabled = false;
                         }
                     }));
+                }
+
+                // JSON download button handler
+                if (jsonBtn) {
+                    jsonBtn.addEventListener('click', () => {
+                        // Prefer blob download (no page navigation) over URL download
+                        if (globalState.validationTableMetadata) {
+                            downloadJsonMetadata(globalState.validationTableMetadata, jsonBtn);
+                        } else {
+                            // Fallback: show message if no data available yet
+                            const tableContainer = document.getElementById(`${actualCardId}-table-container`);
+                            if (tableContainer && tableContainer.innerHTML.includes('Loading')) {
+                                alert('Please wait for the table to load before downloading JSON.');
+                            } else {
+                                alert('JSON metadata not available. Please download the Excel file instead.');
+                            }
+                        }
+                    });
                 }
 
                 // Handle download preparation
@@ -479,4 +509,66 @@ async function continueProcessing(cardId, maxRows) {
 
     // Create new processing card
     createProcessingCard();
+}
+
+/**
+ * Fetch and render the interactive table for full validation results
+ * @param {string} cardId - Card ID containing the table container
+ * @param {string} sessionId - Session ID to fetch data for
+ */
+async function fetchAndRenderValidationTable(cardId, sessionId) {
+    const container = document.getElementById(`${cardId}-table-container`);
+    const infoEl = document.getElementById(`${cardId}-table-info`);
+
+    if (!container) {
+        console.warn('[VALIDATION] Table container not found:', `${cardId}-table-container`);
+        return;
+    }
+
+    // Show loading state
+    container.innerHTML = '<p style="color: #999; font-style: italic; text-align: center; padding: 1rem;">Loading interactive table...</p>';
+
+    try {
+        const response = await fetch(`${API_BASE}/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'getViewerData',
+                email: globalState.email,
+                session_id: sessionId,
+                is_preview: false  // Request full validation data, not preview
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.table_metadata) {
+            // Store for JSON download
+            globalState.validationTableMetadata = data.table_metadata;
+            globalState.validationJsonUrl = data.json_download_url;
+
+            // Render table with all rows
+            const tableHtml = InteractiveTable.render(data.table_metadata, {
+                showGeneralNotes: true,
+                showLegend: true
+            });
+            container.innerHTML = tableHtml;
+            InteractiveTable.init();
+
+            console.log('[VALIDATION] Interactive table rendered successfully');
+        } else {
+            // No table metadata available
+            console.warn('[VALIDATION] No table metadata in response:', data);
+            container.innerHTML = '<p style="color: #999; font-style: italic; text-align: center; padding: 1rem;">Table preview unavailable. Download Excel for full results.</p>';
+            if (infoEl) {
+                infoEl.style.display = 'none';
+            }
+        }
+    } catch (error) {
+        console.error('[VALIDATION] Failed to load table:', error);
+        container.innerHTML = '<p style="color: #999; font-style: italic; text-align: center; padding: 1rem;">Table preview unavailable. Download Excel for full results.</p>';
+        if (infoEl) {
+            infoEl.style.display = 'none';
+        }
+    }
 }
