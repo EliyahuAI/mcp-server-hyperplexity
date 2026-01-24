@@ -4037,6 +4037,12 @@ def handle_main_processing(event, context):
                                     qc_original_confidence = field_qc_data.get('qc_original_confidence')
                                     real_results[row_key][field_name]['original_confidence'] = qc_original_confidence
                                     logger.debug(f"[QC_MERGE_FULL] {field_name}: Using QC original confidence: {qc_original_confidence}")
+
+                                # Merge original_value from QC data for interactive table preview
+                                if 'original_value' in field_qc_data:
+                                    original_value = field_qc_data.get('original_value')
+                                    real_results[row_key][field_name]['original_value'] = original_value
+                                    logger.debug(f"[QC_MERGE_FULL] {field_name}: Using QC original value: {original_value}")
             # Extract enhanced metrics from validation response
             enhanced_metrics = metadata.get('enhanced_metrics', {})
             # validation_metrics is nested inside enhanced_metrics

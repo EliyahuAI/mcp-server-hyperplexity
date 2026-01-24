@@ -4736,6 +4736,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                     # ENFORCE: Blank original values must have null confidence (don't rely on AI)
                     original_value = row.get(target.column, '')
+                    # Store original spreadsheet value for preview comparison
+                    row_results[target.column]['original_value'] = str(original_value) if original_value is not None else ''
                     if original_value is None or str(original_value).strip() == '':
                         # Original was blank - enforce null confidence regardless of what AI said
                         row_results[target.column]['original_confidence'] = None

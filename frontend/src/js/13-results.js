@@ -333,7 +333,7 @@ function renderInteractiveTable(tableMetadata) {
         const isIdColumn = importance === 'ID' || importance === 'IGNORED';
         html += '<tr>';
         html += `<td class="sticky-column ${isIdColumn ? 'id-column' : ''}" data-col-index="0">`;
-        html += `${isIdColumn ? '🔵 ' : ''}<strong>${escapeHtmlForTable(col.name)}</strong>`;
+        html += `<strong>${escapeHtmlForTable(col.name)}</strong>`;
         html += '</td>';
 
         rows.forEach((row, colIdx) => {
@@ -410,7 +410,7 @@ function buildTooltipContent(comment, fullValue, displayValue) {
         const citation = comment.key_citation.length > 100
             ? comment.key_citation.substring(0, 100) + '...'
             : comment.key_citation;
-        parts.push(`<b>Key:</b> ${escapeHtmlForTable(citation)}`);
+        parts.push(`<b>Key Citation:</b> ${escapeHtmlForTable(citation)}`);
     }
 
     if (parts.length > 0) {
@@ -444,6 +444,34 @@ window.showCellDetailModal = function(cellElement) {
         return '';
     };
 
+    // Format confidence text (e.g., "HIGH" -> "HIGH CONFIDENCE")
+    const formatConfidence = (conf) => {
+        if (!conf) return '';
+        if (conf === 'ID') return 'ID';
+        return conf + ' CONFIDENCE';
+    };
+
+    // Format value with newlines preserved
+    const formatValue = (val) => {
+        if (!val) return '-';
+        return escapeHtmlForTable(val).replace(/\n/g, '<br>');
+    };
+
+    // Determine if value was updated
+    const currentValue = cellData.full_value || cellData.display_value || '-';
+    const originalValue = comment.original_value;
+    const originalConfidence = comment.original_confidence ? comment.original_confidence.toUpperCase() : '';
+
+    // Debug logging
+    console.log('[MODAL] currentValue:', JSON.stringify(currentValue));
+    console.log('[MODAL] originalValue:', JSON.stringify(originalValue));
+
+    // Check if updated - compare normalized values
+    const normalizeValue = (v) => v === undefined || v === null ? '' : String(v).replace(/\s+/g, ' ').trim();
+    const isUpdated = originalValue !== undefined && originalValue !== '' &&
+                      normalizeValue(originalValue) !== normalizeValue(currentValue);
+    console.log('[MODAL] isUpdated:', isUpdated);
+
     let modalContent = `
         <div class="cell-detail-modal">
             <div class="cell-detail-header">
@@ -451,28 +479,21 @@ window.showCellDetailModal = function(cellElement) {
                 <button class="modal-close" onclick="closeCellDetailModal()">&times;</button>
             </div>
 
-            ${currentConfidence ? `
-            <div class="detail-section confidence-section">
-                <label>Confidence</label>
-                <span class="confidence-badge ${getConfidenceClass(currentConfidence)}">${currentConfidence}</span>
-            </div>
-            ` : ''}
-
             <div class="detail-section">
-                <label>Current Value</label>
-                <p class="detail-value">${escapeHtmlForTable(cellData.full_value || cellData.display_value || '-')}</p>
+                <label>${isUpdated ? 'Updated Value' : 'Value'} ${currentConfidence ? `<span class="confidence-badge ${getConfidenceClass(currentConfidence)}">${formatConfidence(currentConfidence)}</span>` : ''}</label>
+                <p class="detail-value">${formatValue(currentValue)}</p>
             </div>
 
-            ${comment.original_value !== undefined && comment.original_value !== '' ? `
+            ${isUpdated ? `
             <div class="detail-section">
-                <label>Original Value</label>
-                <p class="detail-value">${escapeHtmlForTable(comment.original_value)}</p>
+                <label>Original Value ${originalConfidence ? `<span class="confidence-badge ${getConfidenceClass(originalConfidence)}">${formatConfidence(originalConfidence)}</span>` : ''}</label>
+                <p class="detail-value">${formatValue(originalValue)}</p>
             </div>
             ` : ''}
 
             ${comment.validator_explanation ? `
             <div class="detail-section">
-                <label>🔍 Validator Explanation</label>
+                <label>🔍 Explanation</label>
                 <p class="detail-value">${escapeHtmlForTable(comment.validator_explanation)}</p>
             </div>
             ` : ''}
@@ -539,65 +560,100 @@ function escapeHtmlForTable(text) {
 /* Custom Tooltip System */
 let tooltipElement = null;
 let tooltipTimeout = null;
+let hoverDelayTimeout = null;
+let currentHoverCell = null;
 
 window.showCustomTooltip = function(event, cell) {
     const html = cell.dataset.tooltipHtml;
+
+    // Track current cell and store event coords
+    currentHoverCell = cell;
+    const coords = { x: event.clientX, y: event.clientY };
+
+    // Immediately show cell saturation and column highlights
+    cell.classList.add('cell-hover-active');
+    const colIndex = cell.dataset.colIndex;
+    if (colIndex) {
+        const cells = document.querySelectorAll(`.interactive-table [data-col-index="${colIndex}"]`);
+        cells.forEach(c => c.classList.add('column-highlight'));
+    }
+
     if (!html) return;
 
-    // Clear any pending hide
+    // Clear any pending timeouts
     if (tooltipTimeout) {
         clearTimeout(tooltipTimeout);
         tooltipTimeout = null;
     }
-
-    // Create tooltip if doesn't exist
-    if (!tooltipElement) {
-        tooltipElement = document.createElement('div');
-        tooltipElement.className = 'custom-tooltip';
-        document.body.appendChild(tooltipElement);
+    if (hoverDelayTimeout) {
+        clearTimeout(hoverDelayTimeout);
+        hoverDelayTimeout = null;
     }
 
-    // Set content as HTML
-    tooltipElement.innerHTML = html;
-    tooltipElement.style.display = 'block';
+    // Delay showing tooltip by 1 second
+    hoverDelayTimeout = setTimeout(() => {
+        if (currentHoverCell !== cell) return; // Mouse moved away
 
-    // Position near cursor
-    const padding = 12;
-    let x = event.clientX + padding;
-    let y = event.clientY + padding;
+        // Create tooltip if doesn't exist
+        if (!tooltipElement) {
+            tooltipElement = document.createElement('div');
+            tooltipElement.className = 'custom-tooltip';
+            document.body.appendChild(tooltipElement);
+        }
 
-    // Measure tooltip
-    const rect = tooltipElement.getBoundingClientRect();
+        // Set content as HTML
+        tooltipElement.innerHTML = html;
+        tooltipElement.style.display = 'block';
 
-    // Keep on screen
-    if (x + rect.width > window.innerWidth - padding) {
-        x = event.clientX - rect.width - padding;
-    }
-    if (y + rect.height > window.innerHeight - padding) {
-        y = event.clientY - rect.height - padding;
-    }
+        // Position near cursor
+        const padding = 12;
+        let x = coords.x + padding;
+        let y = coords.y + padding;
 
-    tooltipElement.style.left = x + 'px';
-    tooltipElement.style.top = y + 'px';
+        // Measure tooltip
+        const rect = tooltipElement.getBoundingClientRect();
+
+        // Keep on screen
+        if (x + rect.width > window.innerWidth - padding) {
+            x = coords.x - rect.width - padding;
+        }
+        if (y + rect.height > window.innerHeight - padding) {
+            y = coords.y - rect.height - padding;
+        }
+
+        tooltipElement.style.left = x + 'px';
+        tooltipElement.style.top = y + 'px';
+    }, 1000);
 };
 
 window.hideCustomTooltip = function() {
-    tooltipTimeout = setTimeout(() => {
-        if (tooltipElement) {
-            tooltipElement.style.display = 'none';
-        }
-    }, 100);
+    // Clear hover delay
+    if (hoverDelayTimeout) {
+        clearTimeout(hoverDelayTimeout);
+        hoverDelayTimeout = null;
+    }
+
+    // Remove cell hover class
+    if (currentHoverCell) {
+        currentHoverCell.classList.remove('cell-hover-active');
+    }
+    currentHoverCell = null;
+
+    // Clear column highlights
+    const highlighted = document.querySelectorAll('.interactive-table .column-highlight');
+    highlighted.forEach(cell => cell.classList.remove('column-highlight'));
+
+    // Hide tooltip immediately
+    if (tooltipElement) {
+        tooltipElement.style.display = 'none';
+    }
 };
 
-// Column highlighting for crosshair effect
+// Column highlighting (triggered immediately in showCustomTooltip)
 window.highlightColumn = function(colIndex) {
-    // Find all cells in this column and add highlight class
-    const cells = document.querySelectorAll(`.interactive-table [data-col-index="${colIndex}"]`);
-    cells.forEach(cell => cell.classList.add('column-highlight'));
+    // Kept for compatibility but handled in showCustomTooltip
 };
 
 window.clearColumnHighlight = function() {
-    // Remove highlight from all cells
-    const highlighted = document.querySelectorAll('.interactive-table .column-highlight');
-    highlighted.forEach(cell => cell.classList.remove('column-highlight'));
+    // Kept for compatibility but handled in hideCustomTooltip
 };

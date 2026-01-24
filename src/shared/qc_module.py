@@ -1275,6 +1275,10 @@ class QCModule:
                 'all_sources': aggregated_citations.get(column, [])
             }
 
+            # Store original spreadsheet value for preview comparison (always, not just when QC applied)
+            if original_row_data and column in original_row_data:
+                merged_result['original_value'] = str(original_row_data[column]) if original_row_data[column] is not None else ''
+
             if qc_applied:
                 # QC made changes - extract QC-specific fields only
                 # Since QC is now comprehensive, we always have QC values

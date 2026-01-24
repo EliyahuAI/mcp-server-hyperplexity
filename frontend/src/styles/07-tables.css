@@ -98,7 +98,7 @@
 }
 
 .legend-color.confidence-medium {
-    background-color: #ff9800;
+    background-color: #ffeb3b;
 }
 
 .legend-color.confidence-low {
@@ -200,30 +200,30 @@
     background-color: #e3f2fd;
 }
 
-/* Row and column crosshair highlighting */
+/* Row highlighting - gentle darkening */
 .interactive-table tbody tr:hover > td {
-    background-color: rgba(0, 0, 0, 0.04);
+    filter: brightness(0.95);
 }
 
-.interactive-table tbody tr:hover > td.confidence-high {
-    background-color: #c8e6c9;
+.interactive-table tbody tr:hover > td.sticky-column {
+    filter: none;
+    background-color: #f3e5f5;
 }
 
-.interactive-table tbody tr:hover > td.confidence-medium {
-    background-color: #ffecb3;
+/* Column header highlight (purple to distinguish from blue ID columns) */
+.interactive-table th.column-highlight {
+    background-color: #f3e5f5;
 }
 
-.interactive-table tbody tr:hover > td.confidence-low {
-    background-color: #ffcdd2;
-}
-
-.interactive-table tbody tr:hover > td.confidence-id {
+/* ID cells in hovered column get more saturated blue */
+.interactive-table td.confidence-id.column-highlight {
     background-color: #bbdefb;
 }
 
-/* Column highlight via JavaScript - gentle darkening like row hover */
-.interactive-table .column-highlight {
-    filter: brightness(0.96);
+/* Actively hovered cell gets increased saturation (override row hover) */
+.interactive-table tbody tr:hover > td.cell-hover-active,
+.interactive-table td.cell-hover-active {
+    filter: saturate(1.8) brightness(0.92) !important;
 }
 
 /* Cell hover and interaction */
