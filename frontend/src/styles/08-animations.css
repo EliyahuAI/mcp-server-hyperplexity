@@ -92,8 +92,8 @@
     }
 
     .status-badge.success {
-        background-color: #e8f5e9;
-        color: #2e7d32;
+        background-color: rgba(40, 255, 58, 0.1);
+        color: #0a6b18;
     }
 
     .status-badge.pending {
@@ -102,8 +102,8 @@
     }
 
     .status-badge.completed {
-        background-color: #e8f5e9;
-        color: #2e7d32;
+        background-color: rgba(40, 255, 58, 0.1);
+        color: #0a6b18;
     }
 
     /* Card buttons container */
@@ -614,7 +614,7 @@
 
     .drop-zone.drag-over {
         border-color: var(--primary-color);
-        background-color: #e8f5e9;
+        background-color: rgba(40, 255, 58, 0.1);
         transform: scale(1.02);
     }
 

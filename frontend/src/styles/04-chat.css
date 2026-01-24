@@ -390,7 +390,7 @@
 .cost-estimate {
     margin-top: 1rem;
     padding: 1rem;
-    background-color: #e8f5e9;
+    background-color: rgba(40, 255, 58, 0.1);
     border-radius: var(--border-radius);
     display: flex;
     flex-direction: column;
@@ -399,7 +399,7 @@
 
 .cost-estimate-header {
     font-weight: 600;
-    color: #2e7d32;
+    color: #0a6b18;
     text-align: center;
     font-size: var(--font-size-base);
 }
@@ -424,7 +424,7 @@
 
 .cost-value {
     font-weight: 600;
-    color: #2e7d32;
+    color: #0a6b18;
 }
 
 /* Message Component */
@@ -443,9 +443,9 @@
 }
 
 .message-success {
-    background-color: #e8f5e9;
-    color: #2e7d32;
-    border: 1px solid #c8e6c9;
+    background-color: rgba(40, 255, 58, 0.1);
+    color: #0a6b18;
+    border: 1px solid rgba(40, 255, 58, 0.35);
 }
 
 .message-error {

@@ -148,7 +148,7 @@
     }
 
     .table-maker-message.user .table-maker-message-content {
-        background-color: #e8f5e9;
+        background-color: rgba(40, 255, 58, 0.1);
         color: var(--text-color);
     }
 
@@ -163,16 +163,16 @@
     }
 
     .table-maker-preview-header {
-        background-color: #e8f5e9;
+        background-color: rgba(40, 255, 58, 0.1);
         padding: 1rem;
         border-radius: var(--border-radius) var(--border-radius) 0 0;
-        border: 1px solid #c8e6c9;
+        border: 1px solid rgba(40, 255, 58, 0.35);
     }
 
     .table-maker-preview-title {
         font-size: var(--font-size-base);
         font-weight: 600;
-        color: #2e7d32;
+        color: #0a6b18;
         margin: 0 0 0.5rem 0;
     }
 
@@ -183,7 +183,7 @@
     }
 
     .table-maker-preview-table {
-        border: 1px solid #c8e6c9;
+        border: 1px solid rgba(40, 255, 58, 0.35);
         border-top: none;
         border-radius: 0 0 var(--border-radius) var(--border-radius);
         overflow: hidden;

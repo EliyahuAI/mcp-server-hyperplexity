@@ -86,7 +86,7 @@
 
     .drop-zone.drag-over {
         border-color: var(--primary-color);
-        background-color: #e8f5e9;
+        background-color: rgba(40, 255, 58, 0.1);
         transform: scale(1.02);
     }
 

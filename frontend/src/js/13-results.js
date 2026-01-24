@@ -423,6 +423,15 @@ function buildTooltipContent(comment, fullValue, displayValue) {
 
 // Expose to global scope for onclick handlers
 window.showCellDetailModal = function(cellElement) {
+    // Track current cell for navigation
+    currentModalCell = cellElement;
+
+    // Determine navigation state
+    const cells = getAllInteractiveCells();
+    const currentIndex = cells.indexOf(cellElement);
+    const hasPrev = currentIndex > 0;
+    const hasNext = currentIndex < cells.length - 1;
+
     // Bug fix #4 continued: Decode HTML entities before parsing JSON
     let cellDataStr = cellElement.dataset.cellData || '{}';
     cellDataStr = cellDataStr
@@ -480,11 +489,21 @@ window.showCellDetailModal = function(cellElement) {
     let modalContent = `
         <div class="cell-detail-modal">
             <div class="cell-detail-header">
+                <div class="cell-detail-nav">
+                    <button class="modal-nav-btn" onclick="navigateToPrevCell()" ${!hasPrev ? 'disabled' : ''} title="Previous cell (←)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                    </button>
+                </div>
                 <div class="cell-detail-title">
                     <h3>${escapeHtmlForTable(columnName)}</h3>
                     <span class="cell-detail-row-id">${escapeHtmlForTable(rowId)}</span>
                 </div>
-                <button class="modal-close" onclick="closeCellDetailModal()">&times;</button>
+                <div class="cell-detail-actions">
+                    <button class="modal-nav-btn" onclick="navigateToNextCell()" ${!hasNext ? 'disabled' : ''} title="Next cell (→)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                    </button>
+                    <button class="modal-close" onclick="closeCellDetailModal()">&times;</button>
+                </div>
             </div>
 
             <div class="detail-section">
@@ -544,19 +563,94 @@ window.showCellDetailModal = function(cellElement) {
     overlay.innerHTML = modalContent;
     document.body.appendChild(overlay);
 
-    // Add escape key handler
-    document.addEventListener('keydown', handleModalEscape);
+    // Add keyboard handler for escape and arrow navigation
+    document.addEventListener('keydown', handleModalKeydown);
 }
 
 window.closeCellDetailModal = function() {
     const overlay = document.querySelector('.cell-detail-overlay');
     if (overlay) overlay.remove();
-    document.removeEventListener('keydown', handleModalEscape);
+    currentModalCell = null;
+    document.removeEventListener('keydown', handleModalKeydown);
 }
 
-function handleModalEscape(e) {
-    if (e.key === 'Escape') closeCellDetailModal();
+function handleModalKeydown(e) {
+    if (e.key === 'Escape') {
+        closeCellDetailModal();
+    } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        navigateModalCell(-1, 'horizontal');
+    } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        navigateModalCell(1, 'horizontal');
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        navigateModalCell(-1, 'vertical');
+    } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        navigateModalCell(1, 'vertical');
+    } else if (e.key === ' ') {
+        // Space scrolls the modal down
+        e.preventDefault();
+        const modal = document.querySelector('.cell-detail-modal');
+        if (modal) {
+            modal.scrollBy({ top: 150, behavior: 'smooth' });
+        }
+    }
 }
+
+// Get all interactive cells in reading order
+function getAllInteractiveCells() {
+    return Array.from(document.querySelectorAll('.interactive-table .table-cell'));
+}
+
+// Navigate to prev/next cell in modal
+// direction: -1 (prev) or 1 (next)
+// mode: 'horizontal' (left/right in reading order) or 'vertical' (up/down same column)
+function navigateModalCell(direction, mode = 'horizontal') {
+    if (!currentModalCell) return;
+
+    const cells = getAllInteractiveCells();
+    const currentIndex = cells.indexOf(currentModalCell);
+    if (currentIndex === -1) return;
+
+    let targetCell = null;
+
+    if (mode === 'horizontal') {
+        // Left/Right: move in reading order
+        const newIndex = currentIndex + direction;
+        if (newIndex >= 0 && newIndex < cells.length) {
+            targetCell = cells[newIndex];
+        }
+    } else if (mode === 'vertical') {
+        // Up/Down: move to same column in prev/next row
+        const currentRow = currentModalCell.closest('tr');
+        const currentColIndex = currentModalCell.dataset.colIndex;
+
+        // Find the target row
+        const allRows = Array.from(document.querySelectorAll('.interactive-table tbody tr'));
+        const currentRowIndex = allRows.indexOf(currentRow);
+        const targetRowIndex = currentRowIndex + direction;
+
+        if (targetRowIndex >= 0 && targetRowIndex < allRows.length) {
+            // Find the cell with the same column index in the target row
+            targetCell = allRows[targetRowIndex].querySelector(`.table-cell[data-col-index="${currentColIndex}"]`);
+        }
+    }
+
+    if (targetCell) {
+        closeCellDetailModal();
+        showCellDetailModal(targetCell);
+    }
+}
+
+window.navigateToPrevCell = function() {
+    navigateModalCell(-1);
+};
+
+window.navigateToNextCell = function() {
+    navigateModalCell(1);
+};
 
 function escapeHtmlForTable(text) {
     if (text === null || text === undefined) return '';
@@ -571,7 +665,23 @@ let tooltipTimeout = null;
 let hoverDelayTimeout = null;
 let currentHoverCell = null;
 
+/* Modal Navigation State */
+let currentModalCell = null;
+
+/* Touch Device Detection */
+let isTouchDevice = false;
+
+// Detect touch device on first touch
+document.addEventListener('touchstart', function onFirstTouch() {
+    isTouchDevice = true;
+    document.body.classList.add('touch-device');
+    document.removeEventListener('touchstart', onFirstTouch);
+}, { passive: true });
+
 window.showCustomTooltip = function(event, cell) {
+    // Skip tooltip system entirely on touch devices - tap goes straight to modal
+    if (isTouchDevice) return;
+
     const html = cell.dataset.tooltipHtml;
 
     // Track current cell and store event coords
@@ -598,7 +708,7 @@ window.showCustomTooltip = function(event, cell) {
         hoverDelayTimeout = null;
     }
 
-    // Delay showing tooltip by 1 second
+    // Delay showing tooltip by 300ms (fast enough to feel responsive, slow enough to avoid spam)
     hoverDelayTimeout = setTimeout(() => {
         if (currentHoverCell !== cell) return; // Mouse moved away
 
@@ -631,7 +741,7 @@ window.showCustomTooltip = function(event, cell) {
 
         tooltipElement.style.left = x + 'px';
         tooltipElement.style.top = y + 'px';
-    }, 1000);
+    }, 300);
 };
 
 window.hideCustomTooltip = function() {
