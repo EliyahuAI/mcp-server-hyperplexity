@@ -150,7 +150,34 @@
     font-style: italic;
 }
 
-/* Native title tooltips are used - no custom CSS needed */
+/* Custom Tooltip */
+.custom-tooltip {
+    position: fixed;
+    display: none;
+    background: var(--card-background);
+    color: var(--text-color);
+    border: 1px solid #e0e0e0;
+    border-radius: var(--border-radius);
+    padding: 10px 14px;
+    font-family: var(--font-family);
+    font-size: var(--font-size-small);
+    line-height: var(--line-height);
+    max-width: 360px;
+    box-shadow: var(--box-shadow);
+    z-index: 10001;
+    pointer-events: none;
+    word-wrap: break-word;
+}
+
+.custom-tooltip .tooltip-hint {
+    display: block;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #eee;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-style: italic;
+}
 
 /* Cell Detail Modal */
 .cell-detail-overlay {

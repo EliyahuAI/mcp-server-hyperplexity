@@ -354,9 +354,11 @@ function renderInteractiveTable(tableMetadata) {
 
             html += `<td
                 class="table-cell ${confidenceClass}"
-                title="${tooltipContent ? escapeHtmlForTable(tooltipContent) : ''}"
+                data-tooltip-html="${tooltipContent ? tooltipContent.replace(/"/g, '&quot;') : ''}"
                 data-cell-data="${cellDataJson}"
                 onclick="showCellDetailModal(this)"
+                onmouseenter="showCustomTooltip(event, this)"
+                onmouseleave="hideCustomTooltip()"
             >`;
             html += `<span class="cell-value">${escapeHtmlForTable(displayValue)}</span>`;
             if (fullValue.length > displayValue.length) {
@@ -378,30 +380,33 @@ function buildTooltipContent(comment, fullValue, displayValue) {
 
     // Show full value if truncated
     if (fullValue && fullValue.length > displayValue.length) {
-        parts.push(`Full: ${fullValue.substring(0, 200)}${fullValue.length > 200 ? '...' : ''}`);
+        const truncated = fullValue.substring(0, 200) + (fullValue.length > 200 ? '...' : '');
+        parts.push(`<b>Full:</b> ${escapeHtmlForTable(truncated)}`);
     }
 
     if (comment.original_value !== undefined && comment.original_value !== '') {
         const conf = comment.original_confidence ? ` (${comment.original_confidence})` : '';
-        parts.push(`Original: ${comment.original_value}${conf}`);
+        parts.push(`<b>Original:</b> ${escapeHtmlForTable(comment.original_value)}${conf}`);
     }
 
     if (comment.validator_explanation) {
-        const explanation = comment.validator_explanation.length > 100
-            ? comment.validator_explanation.substring(0, 100) + '...'
+        const explanation = comment.validator_explanation.length > 150
+            ? comment.validator_explanation.substring(0, 150) + '...'
             : comment.validator_explanation;
-        parts.push(`Reason: ${explanation}`);
+        parts.push(`<b>Reason:</b> ${escapeHtmlForTable(explanation)}`);
     }
 
     if (comment.key_citation) {
-        const citation = comment.key_citation.length > 80
-            ? comment.key_citation.substring(0, 80) + '...'
+        const citation = comment.key_citation.length > 100
+            ? comment.key_citation.substring(0, 100) + '...'
             : comment.key_citation;
-        parts.push(`Source: ${citation}`);
+        parts.push(`<b>Source:</b> ${escapeHtmlForTable(citation)}`);
     }
 
-    // Bug fix #3: Replace newlines with spaces to prevent CSS content breakage
-    return parts.join(' | ').replace(/[\n\r]+/g, ' ');
+    if (parts.length > 0) {
+        parts.push('<span class="tooltip-hint">Click for more</span>');
+    }
+    return parts.join('<br>');
 }
 
 // Expose to global scope for onclick handlers
@@ -514,3 +519,56 @@ function escapeHtmlForTable(text) {
     div.textContent = String(text);
     return div.innerHTML;
 }
+
+/* Custom Tooltip System */
+let tooltipElement = null;
+let tooltipTimeout = null;
+
+window.showCustomTooltip = function(event, cell) {
+    const html = cell.dataset.tooltipHtml;
+    if (!html) return;
+
+    // Clear any pending hide
+    if (tooltipTimeout) {
+        clearTimeout(tooltipTimeout);
+        tooltipTimeout = null;
+    }
+
+    // Create tooltip if doesn't exist
+    if (!tooltipElement) {
+        tooltipElement = document.createElement('div');
+        tooltipElement.className = 'custom-tooltip';
+        document.body.appendChild(tooltipElement);
+    }
+
+    // Set content as HTML
+    tooltipElement.innerHTML = html;
+    tooltipElement.style.display = 'block';
+
+    // Position near cursor
+    const padding = 12;
+    let x = event.clientX + padding;
+    let y = event.clientY + padding;
+
+    // Measure tooltip
+    const rect = tooltipElement.getBoundingClientRect();
+
+    // Keep on screen
+    if (x + rect.width > window.innerWidth - padding) {
+        x = event.clientX - rect.width - padding;
+    }
+    if (y + rect.height > window.innerHeight - padding) {
+        y = event.clientY - rect.height - padding;
+    }
+
+    tooltipElement.style.left = x + 'px';
+    tooltipElement.style.top = y + 'px';
+};
+
+window.hideCustomTooltip = function() {
+    tooltipTimeout = setTimeout(() => {
+        if (tooltipElement) {
+            tooltipElement.style.display = 'none';
+        }
+    }, 100);
+};
