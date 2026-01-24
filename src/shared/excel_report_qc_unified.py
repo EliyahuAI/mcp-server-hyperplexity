@@ -2015,3 +2015,241 @@ def preserve_citations_through_qc(validation_results, qc_results):
 
     logger.info("[CITATIONS] Citations preserved through QC")
     return validation_results
+
+
+def generate_table_preview_metadata(
+    validation_results: dict,
+    config_data: dict,
+    preview_row_count: int = 3
+) -> dict:
+    """
+    Generate JSON metadata for interactive table preview.
+    Returns cell data/comments that would go into Excel comments.
+
+    Args:
+        validation_results: Dict of {row_key: {field_name: {value, confidence_level, citations, ...}}}
+                           QC data is embedded in validation_results[row_key]['_qc']
+        config_data: Config dict with validation_targets
+        preview_row_count: Number of rows to include in preview (default 3)
+
+    Returns:
+        Dict with structure:
+        {
+            "columns": [{"name": str, "importance": str, "description": str}],
+            "rows": [{
+                "row_key": str,
+                "cells": {
+                    "ColumnName": {
+                        "display_value": str,    # Truncated for table display (50 chars)
+                        "full_value": str,       # Complete value
+                        "confidence": str,       # HIGH/MEDIUM/LOW/ID
+                        "comment": {
+                            "original_value": str,
+                            "original_confidence": str,
+                            "validator_explanation": str,
+                            "qc_reasoning": str,
+                            "key_citation": str,
+                            "sources": [{"id": int/str, "title": str, "url": str, "snippet": str}]
+                        }
+                    }
+                }
+            }],
+            "is_transposed": True
+        }
+    """
+    if not validation_results or not config_data:
+        return {"columns": [], "rows": [], "is_transposed": True}
+
+    # Extract column metadata from config_data['validation_targets']
+    columns = []
+    column_config_map = {}
+    for target in config_data.get('validation_targets', []):
+        col_name = target.get('column') or target.get('column_name', '')
+        if col_name:
+            col_info = {
+                'name': col_name,
+                'importance': target.get('importance', 'MEDIUM'),
+                'description': target.get('description', '')
+            }
+            columns.append(col_info)
+            column_config_map[col_name] = col_info
+
+    # Build rows with cell metadata (only first N rows)
+    rows = []
+    sorted_row_keys = list(validation_results.keys())[:preview_row_count]
+
+    for row_key in sorted_row_keys:
+        row_validation_data = validation_results.get(row_key, {})
+        if not isinstance(row_validation_data, dict):
+            continue
+
+        # Bug fix #5: Extract embedded QC data with null safety
+        row_qc_data = row_validation_data.get('_qc', {})
+        if not isinstance(row_qc_data, dict):
+            row_qc_data = {}
+
+        cells = {}
+        for col in columns:
+            col_name = col['name']
+            field_data = row_validation_data.get(col_name, {})
+
+            if not isinstance(field_data, dict):
+                cells[col_name] = {
+                    'display_value': str(field_data) if field_data else '',
+                    'full_value': str(field_data) if field_data else '',
+                    'confidence': 'UNKNOWN',
+                    'comment': {}
+                }
+                continue
+
+            # Get the value (QC-merged value if available)
+            full_value = str(field_data.get('value', ''))
+            display_value = full_value[:50] + '...' if len(full_value) > 50 else full_value
+
+            # Get confidence (may have been overridden by QC)
+            confidence = field_data.get('confidence_level', 'UNKNOWN')
+
+            # Bug fix #2: Override confidence for both ID and IGNORED fields
+            col_config = column_config_map.get(col_name, {})
+            importance = col_config.get('importance', '').upper()
+            if importance in ('ID', 'IGNORED'):
+                confidence = 'ID'
+
+            # Build comment
+            comment = _build_preview_cell_comment(
+                col_name, field_data, row_qc_data.get(col_name, {})
+            )
+
+            cells[col_name] = {
+                'display_value': display_value,
+                'full_value': full_value,
+                'confidence': confidence,
+                'comment': comment
+            }
+
+        rows.append({
+            'row_key': row_key,
+            'cells': cells
+        })
+
+    return {
+        'columns': columns,
+        'rows': rows,
+        'is_transposed': True
+    }
+
+
+def _build_preview_cell_comment(col_name: str, field_data: dict, field_qc_data: dict) -> dict:
+    """
+    Build cell comment dict for interactive preview.
+    Mirrors the Excel comment building logic (lines 946-1079).
+
+    Args:
+        col_name: Column name
+        field_data: Validation field data {value, confidence_level, original_value, explanation, citations, ...}
+        field_qc_data: QC field data {qc_entry, qc_confidence, qc_reasoning, qc_sources, key_citation, ...}
+
+    Returns:
+        Comment dict with original_value, validator_explanation, qc_reasoning, key_citation, sources
+    """
+    comment = {}
+
+    if not isinstance(field_data, dict):
+        return comment
+
+    # Original value and confidence
+    original_value = field_data.get('original_value', '')
+    if original_value:
+        comment['original_value'] = str(original_value)
+
+    # Get original confidence (use QC-adjusted if available)
+    original_confidence = field_data.get('original_confidence', '')
+    if isinstance(field_qc_data, dict):
+        qc_original_confidence = field_qc_data.get('qc_original_confidence')
+        if qc_original_confidence and str(qc_original_confidence).strip():
+            original_confidence = qc_original_confidence
+    if original_confidence:
+        comment['original_confidence'] = str(original_confidence)
+
+    # Validator explanation
+    explanation = field_data.get('explanation', '')
+    if explanation and str(explanation).strip():
+        comment['validator_explanation'] = str(explanation)
+
+    # QC reasoning
+    if isinstance(field_qc_data, dict):
+        qc_entry = field_qc_data.get('qc_entry', '')
+        qc_reasoning = field_qc_data.get('qc_reasoning', '')
+        validated_value = field_data.get('value', '')
+        qc_overrode = str(qc_entry).strip() != str(validated_value).strip() if qc_entry else False
+
+        if qc_reasoning and str(qc_reasoning).strip():
+            if qc_overrode:
+                comment['qc_reasoning'] = f'(Validation Override) {qc_reasoning}'
+            else:
+                comment['qc_reasoning'] = str(qc_reasoning)
+
+    # Key citation - from QC's key_citation field first
+    key_citation = None
+    if isinstance(field_qc_data, dict):
+        qc_key_citation = field_qc_data.get('key_citation', '')
+        if qc_key_citation and str(qc_key_citation).strip():
+            key_citation = qc_key_citation
+
+    # If no QC key_citation, use first validation citation
+    if not key_citation:
+        citations = field_data.get('citations', [])
+        if citations and len(citations) > 0:
+            first_citation = citations[0]
+            cite_text = first_citation.get('title', 'Source')
+            cite_url = first_citation.get('url', '')
+            cite_snippet = first_citation.get('cited_text', '')
+            if cite_snippet and len(cite_snippet) > 150:
+                cite_snippet = cite_snippet[:150] + "..."
+            key_citation = cite_text
+            if cite_snippet:
+                key_citation += f" - {cite_snippet}"
+            if cite_url:
+                key_citation += f" ({cite_url})"
+
+    if key_citation:
+        comment['key_citation'] = str(key_citation)
+
+    # Sources list
+    sources = []
+
+    # Add validation citations
+    citations = field_data.get('citations', [])
+    for i, citation in enumerate(citations, 1):
+        sources.append({
+            'id': i,
+            'title': citation.get('title', 'Untitled'),
+            'url': citation.get('url', ''),
+            'snippet': citation.get('cited_text', ''),
+            'confidence': citation.get('p', '')
+        })
+
+    # Add QC sources
+    if isinstance(field_qc_data, dict):
+        qc_sources = field_qc_data.get('qc_sources', [])
+        for i, qc_source in enumerate(qc_sources, 1):
+            if isinstance(qc_source, str):
+                sources.append({
+                    'id': f'QC{i}',
+                    'title': 'QC Source',
+                    'url': qc_source,
+                    'snippet': ''
+                })
+            elif isinstance(qc_source, dict):
+                sources.append({
+                    'id': f'QC{i}',
+                    'title': qc_source.get('title', 'QC Source'),
+                    'url': qc_source.get('url', ''),
+                    'snippet': qc_source.get('cited_text', ''),
+                    'confidence': qc_source.get('p', '')
+                })
+
+    if sources:
+        comment['sources'] = sources
+
+    return comment

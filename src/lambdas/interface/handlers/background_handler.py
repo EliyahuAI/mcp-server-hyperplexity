@@ -2163,6 +2163,20 @@ def handle_main_processing(event, context):
                 # Note: QC data already merged into real_results, no separate qc_results needed
                 markdown_table = create_markdown_table_from_results(real_results, 3, actual_config_s3_key, S3_UNIFIED_BUCKET)
 
+                # Generate interactive table metadata for frontend
+                table_metadata = None
+                try:
+                    from shared.excel_report_qc_unified import generate_table_preview_metadata
+                    table_metadata = generate_table_preview_metadata(
+                        validation_results=real_results,
+                        config_data=config_data,
+                        preview_row_count=3
+                    )
+                    logger.debug(f"[TABLE_METADATA] Generated metadata for {len(table_metadata.get('rows', []))} rows, {len(table_metadata.get('columns', []))} columns")
+                except Exception as e:
+                    logger.warning(f"[TABLE_METADATA] Failed to generate table metadata: {e}")
+                    table_metadata = None
+
                 preview_payload = {
                     "status": "COMPLETED", "session_id": session_id,
                     "markdown_table": markdown_table, "total_rows": total_rows,
@@ -2743,6 +2757,7 @@ def handle_main_processing(event, context):
 
                 frontend_payload = {
                     "markdown_table": preview_payload.get("markdown_table", ""),
+                    "table_metadata": table_metadata,  # Interactive table preview data
                     "enhanced_download_url": preview_payload.get("enhanced_download_url"),
                     "total_rows": preview_payload.get("total_rows", 0),
                     "cost_estimates": cost_estimates_dict,

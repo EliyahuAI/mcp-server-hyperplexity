@@ -44,7 +44,13 @@ function showPreviewResults(cardId, previewData) {
             </div>
         `;
 
-        previewContent.innerHTML = headerHtml + renderMarkdown(previewData.markdown_table);
+        // Use interactive table if metadata available, otherwise fallback to markdown
+        if (previewData.table_metadata) {
+            const interactiveTable = renderInteractiveTable(previewData.table_metadata);
+            previewContent.innerHTML = headerHtml + (interactiveTable || renderMarkdown(previewData.markdown_table));
+        } else {
+            previewContent.innerHTML = headerHtml + renderMarkdown(previewData.markdown_table);
+        }
 
         // Store the download URL for the button
         previewContent.dataset.fullPreviewUrl = fullPreviewUrl;
@@ -279,4 +285,218 @@ function showPreviewResults(cardId, previewData) {
     if (!sufficientBalance) {
         showMessage(`${cardId}-messages`, `💳 Click button to add credits. After purchase, return to this tab for auto-processing.`, 'info', false, 'add-credits-instruction');
     }
+}
+
+/* ========================================
+ * Interactive Table Preview Functions
+ * ======================================== */
+
+/**
+ * Render an interactive table with frozen first column and tooltips
+ */
+function renderInteractiveTable(tableMetadata) {
+    // Bug fix #1: Check both rows AND columns exist and are non-empty
+    if (!tableMetadata || !tableMetadata.rows || tableMetadata.rows.length === 0 ||
+        !tableMetadata.columns || tableMetadata.columns.length === 0) {
+        return null;
+    }
+
+    const { columns, rows } = tableMetadata;
+
+    let html = '<div class="interactive-table-container">';
+    html += '<table class="interactive-table">';
+
+    // Transposed format: columns as rows, data rows as columns
+    // Header row: Column | Row 1 | Row 2 | Row 3
+    html += '<thead><tr>';
+    html += '<th class="sticky-column">Column</th>';
+    rows.forEach((_, i) => {
+        html += `<th>Row ${i + 1}</th>`;
+    });
+    html += '</tr></thead>';
+
+    // Data rows: one row per column
+    html += '<tbody>';
+    columns.forEach(col => {
+        // Bug fix #2: Both ID and IGNORED columns should show as ID style
+        const importance = col.importance ? col.importance.toUpperCase() : '';
+        const isIdColumn = importance === 'ID' || importance === 'IGNORED';
+        html += '<tr>';
+        html += `<td class="sticky-column ${isIdColumn ? 'id-column' : ''}">`;
+        html += `${isIdColumn ? '🔵 ' : ''}<strong>${escapeHtmlForTable(col.name)}</strong>`;
+        html += '</td>';
+
+        rows.forEach(row => {
+            const cellData = row.cells[col.name] || {};
+            const confidence = (cellData.confidence || '').toUpperCase();
+            const displayValue = cellData.display_value || '';
+            const fullValue = cellData.full_value || displayValue;
+            const comment = cellData.comment || {};
+
+            // Build tooltip content
+            const tooltipContent = buildTooltipContent(comment, fullValue, displayValue);
+
+            // Determine confidence class
+            let confidenceClass = '';
+            if (confidence === 'HIGH') confidenceClass = 'confidence-high';
+            else if (confidence === 'MEDIUM') confidenceClass = 'confidence-medium';
+            else if (confidence === 'LOW') confidenceClass = 'confidence-low';
+            else if (confidence === 'ID') confidenceClass = 'confidence-id';
+
+            // Bug fix #4: Properly escape JSON for HTML attribute (handle quotes, newlines, special chars)
+            const cellDataJson = JSON.stringify(cellData)
+                .replace(/&/g, '&amp;')
+                .replace(/'/g, '&#39;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+
+            html += `<td
+                class="table-cell ${confidenceClass}"
+                ${tooltipContent ? `data-tooltip="${escapeHtmlForTable(tooltipContent)}"` : ''}
+                data-cell-data="${cellDataJson}"
+                onclick="showCellDetailModal(this)"
+            >`;
+            html += `<span class="cell-value">${escapeHtmlForTable(displayValue)}</span>`;
+            if (fullValue.length > displayValue.length) {
+                html += '<span class="truncated-indicator">...</span>';
+            }
+            html += '</td>';
+        });
+
+        html += '</tr>';
+    });
+    html += '</tbody>';
+
+    html += '</table></div>';
+    return html;
+}
+
+function buildTooltipContent(comment, fullValue, displayValue) {
+    let parts = [];
+
+    // Show full value if truncated
+    if (fullValue && fullValue.length > displayValue.length) {
+        parts.push(`Full: ${fullValue.substring(0, 200)}${fullValue.length > 200 ? '...' : ''}`);
+    }
+
+    if (comment.original_value !== undefined && comment.original_value !== '') {
+        const conf = comment.original_confidence ? ` (${comment.original_confidence})` : '';
+        parts.push(`Original: ${comment.original_value}${conf}`);
+    }
+
+    if (comment.validator_explanation) {
+        const explanation = comment.validator_explanation.length > 100
+            ? comment.validator_explanation.substring(0, 100) + '...'
+            : comment.validator_explanation;
+        parts.push(`Reason: ${explanation}`);
+    }
+
+    if (comment.key_citation) {
+        const citation = comment.key_citation.length > 80
+            ? comment.key_citation.substring(0, 80) + '...'
+            : comment.key_citation;
+        parts.push(`Source: ${citation}`);
+    }
+
+    // Bug fix #3: Replace newlines with spaces to prevent CSS content breakage
+    return parts.join(' | ').replace(/[\n\r]+/g, ' ');
+}
+
+function showCellDetailModal(cellElement) {
+    // Bug fix #4 continued: Decode HTML entities before parsing JSON
+    let cellDataStr = cellElement.dataset.cellData || '{}';
+    cellDataStr = cellDataStr
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
+    const cellData = JSON.parse(cellDataStr);
+    const comment = cellData.comment || {};
+
+    let modalContent = `
+        <div class="cell-detail-modal">
+            <div class="cell-detail-header">
+                <h3>📋 Cell Details</h3>
+                <button class="modal-close" onclick="closeCellDetailModal()">&times;</button>
+            </div>
+
+            <div class="detail-section">
+                <label>Current Value</label>
+                <p class="detail-value">${escapeHtmlForTable(cellData.full_value || cellData.display_value || '-')}</p>
+            </div>
+
+            ${comment.original_value !== undefined ? `
+            <div class="detail-section">
+                <label>Original Value</label>
+                <p class="detail-value">${escapeHtmlForTable(comment.original_value)}
+                    ${comment.original_confidence ? `<span class="confidence-badge">${comment.original_confidence}</span>` : ''}</p>
+            </div>
+            ` : ''}
+
+            ${comment.validator_explanation ? `
+            <div class="detail-section">
+                <label>🔍 Validator Explanation</label>
+                <p class="detail-value">${escapeHtmlForTable(comment.validator_explanation)}</p>
+            </div>
+            ` : ''}
+
+            ${comment.qc_reasoning ? `
+            <div class="detail-section">
+                <label>✅ QC Reasoning</label>
+                <p class="detail-value">${escapeHtmlForTable(comment.qc_reasoning)}</p>
+            </div>
+            ` : ''}
+
+            ${comment.key_citation ? `
+            <div class="detail-section">
+                <label>🔗 Key Citation</label>
+                <p class="detail-value">${escapeHtmlForTable(comment.key_citation)}</p>
+            </div>
+            ` : ''}
+
+            ${comment.sources && comment.sources.length > 0 ? `
+            <div class="detail-section">
+                <label>📚 Sources</label>
+                <ul class="sources-list">
+                    ${comment.sources.map(s => `
+                        <li>
+                            <span class="source-id">[${s.id}]</span>
+                            ${s.url ? `<a href="${escapeHtmlForTable(s.url)}" target="_blank">${escapeHtmlForTable(s.title)}</a>` : escapeHtmlForTable(s.title)}
+                            ${s.snippet ? `<br><small class="source-snippet">"${escapeHtmlForTable(s.snippet.substring(0, 150))}${s.snippet.length > 150 ? '...' : ''}"</small>` : ''}
+                        </li>
+                    `).join('')}
+                </ul>
+            </div>
+            ` : ''}
+        </div>
+    `;
+
+    // Create modal overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'cell-detail-overlay';
+    overlay.onclick = (e) => { if (e.target === overlay) closeCellDetailModal(); };
+    overlay.innerHTML = modalContent;
+    document.body.appendChild(overlay);
+
+    // Add escape key handler
+    document.addEventListener('keydown', handleModalEscape);
+}
+
+function closeCellDetailModal() {
+    const overlay = document.querySelector('.cell-detail-overlay');
+    if (overlay) overlay.remove();
+    document.removeEventListener('keydown', handleModalEscape);
+}
+
+function handleModalEscape(e) {
+    if (e.key === 'Escape') closeCellDetailModal();
+}
+
+function escapeHtmlForTable(text) {
+    if (text === null || text === undefined) return '';
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
 }
