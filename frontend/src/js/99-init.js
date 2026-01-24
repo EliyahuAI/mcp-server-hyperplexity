@@ -221,7 +221,11 @@ setTimeout(() => {
     if (!window.isRestoringState && !hasHandledState && !warningBasedRestoreTriggered) {
         const pageType = detectPageType();
 
-        if (pageType === 'reference-check') {
+        if (pageType === 'viewer') {
+            // Viewer mode - show results viewer
+            // Email validation handled within initViewerMode
+            initViewerMode();
+        } else if (pageType === 'reference-check') {
             // Reference check mode - go directly to reference check card
             // Email will be validated when user tries to submit
             createReferenceCheckCard();

@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Viewer Mode Test</title>
+
+    <!--
+        Load frontend modules.
+        For local testing, run: python3 -m http.server 8000 from the frontend directory
+        Then open: http://localhost:8000/viewer-test.html
+    -->
+    <link rel="stylesheet" href="src/styles/01-base.css">
+    <link rel="stylesheet" href="src/styles/02-cards.css">
+    <link rel="stylesheet" href="src/styles/07-tables.css">
+
+    <style>
+        /* CSS Variables needed for table/tooltip styles */
+        :root {
+            --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --border-radius: 8px;
+            --font-size-small: 13px;
+            --line-height: 1.5;
+            --text-color: #333;
+            --text-secondary: #666;
+            --card-background: #fff;
+            --box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            --button-primary-bg: #28FF3A;
+            --button-primary-hover: #20dd32;
+            --button-secondary-bg: #9c27b0;
+            --button-secondary-hover: #7b1fa2;
+        }
+
+        body {
+            font-family: var(--font-family);
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-controls {
+            max-width: 800px;
+            margin: 0 auto 20px;
+            padding: 20px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .test-controls h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        .test-controls p {
+            color: #666;
+            margin: 10px 0;
+        }
+        .test-controls code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .test-controls button {
+            background: #28FF3A;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-top: 10px;
+        }
+        .test-controls button:hover {
+            background: #20dd32;
+        }
+        .test-controls button.secondary {
+            background: #9c27b0;
+            color: white;
+        }
+        .test-controls button.secondary:hover {
+            background: #7b1fa2;
+        }
+        #cardContainer {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-controls">
+        <h2>Viewer Mode Test</h2>
+        <p>This page tests the viewer mode functionality with mock data.</p>
+        <p>In production, use URL: <code>?mode=viewer&session=session_xxx</code></p>
+        <p id="status" style="font-weight: 600;">Loading...</p>
+
+        <button onclick="testViewerCard()">Test Viewer Card (Real Data)</button>
+        <button onclick="testFullResults()" class="secondary">Test Full Results</button>
+        <button onclick="testWithMockData()">Test with Mock Data</button>
+        <button onclick="clearCards()">Clear</button>
+    </div>
+
+    <div id="cardContainer"></div>
+
+    <!-- Load frontend JS modules -->
+    <script src="src/js/00-config.js"></script>
+    <script src="src/js/04-cards.js"></script>
+    <script src="src/js/16-interactive-table.js"></script>
+    <script src="src/js/17-table-view-card.js"></script>
+    <script src="src/js/18-viewer-mode.js"></script>
+
+    <!-- Stub for missing email validation functions (for testing without full app) -->
+    <script>
+        // Stub requireEmailThen if not loaded (just execute immediately for testing)
+        if (typeof requireEmailThen !== 'function') {
+            window.requireEmailThen = function(action, description) {
+                console.log('[STUB] requireEmailThen bypassed for testing:', description);
+                action();
+            };
+        }
+        // Stub createEmailCard if not loaded
+        if (typeof createEmailCard !== 'function') {
+            window.createEmailCard = function() {
+                console.log('[STUB] createEmailCard called');
+            };
+        }
+    </script>
+
+    <!-- Test functions -->
+    <script>
+        // Mock validated email to skip validation flow (only for this page session)
+        // Store original value to restore later
+        const originalEmail = localStorage.getItem('validatedEmail');
+        const TEST_EMAIL = 'test@example.com';
+        localStorage.setItem('validatedEmail', TEST_EMAIL);
+
+        // Restore original email when leaving page
+        window.addEventListener('beforeunload', () => {
+            if (originalEmail) {
+                localStorage.setItem('validatedEmail', originalEmail);
+            } else {
+                localStorage.removeItem('validatedEmail');
+            }
+        });
+
+        // Store loaded metadata
+        let LOADED_TABLE_METADATA = null;
+        let MOCK_TABLE_METADATA = null;
+
+        // Load real metadata from JSON file
+        async function loadRealMetadata() {
+            // Check if running from file:// protocol (fetch won't work)
+            if (window.location.protocol === 'file:') {
+                console.warn('[TEST] Running from file:// - fetch disabled. Use a local server.');
+                document.getElementById('status').innerHTML =
+                    '⚠ Open via server: <code>python3 -m http.server 8000</code> then visit <a href="http://localhost:8000/viewer-test.html">localhost:8000</a>';
+                document.getElementById('status').style.color = '#ff9800';
+                initMockData();
+                return;
+            }
+
+            try {
+                const response = await fetch('preview_table_metadata.json');
+                if (!response.ok) throw new Error('Failed to load metadata');
+                LOADED_TABLE_METADATA = await response.json();
+                console.log('[TEST] Loaded real metadata:', LOADED_TABLE_METADATA.rows?.length, 'rows');
+                document.getElementById('status').textContent =
+                    `✓ Loaded real data: ${LOADED_TABLE_METADATA.rows?.length || 0} rows, ${LOADED_TABLE_METADATA.columns?.length || 0} columns`;
+                document.getElementById('status').style.color = '#28FF3A';
+            } catch (error) {
+                console.warn('[TEST] Could not load real metadata, using mock:', error);
+                document.getElementById('status').textContent = '⚠ Using mock data (real file not found)';
+                document.getElementById('status').style.color = '#ff9800';
+                initMockData();
+            }
+        }
+
+        // Initialize mock data as fallback
+        function initMockData() {
+            MOCK_TABLE_METADATA = {
+                columns: [
+                    { name: "Company", importance: "ID", description: "The company name identifier" },
+                    { name: "Revenue (2023)", importance: "HIGH", description: "Annual revenue in USD", notes: "Sourced from annual reports" },
+                    { name: "Employees", importance: "MEDIUM", description: "Total employee count" },
+                    { name: "Founded", importance: "LOW", description: "Year the company was founded" }
+                ],
+                rows: [
+                    {
+                        row_key: "row_1",
+                        cells: {
+                            "Company": { display_value: "Apple Inc.", full_value: "Apple Inc.", confidence: "ID", comment: {} },
+                            "Revenue (2023)": {
+                                display_value: "$383.3B",
+                                full_value: "$383.3 Billion USD",
+                                confidence: "HIGH",
+                                comment: {
+                                    validator_explanation: "Verified from Apple's Q4 2023 earnings report and 10-K filing.",
+                                    key_citation: "Apple Inc. Form 10-K, FY2023",
+                                    original_value: "$380B",
+                                    original_confidence: "MEDIUM"
+                                }
+                            },
+                            "Employees": { display_value: "161,000", full_value: "161,000 full-time employees", confidence: "HIGH", comment: { validator_explanation: "From official company data" } },
+                            "Founded": { display_value: "1976", full_value: "April 1, 1976", confidence: "HIGH", comment: {} }
+                        }
+                    },
+                    {
+                        row_key: "row_2",
+                        cells: {
+                            "Company": { display_value: "Microsoft", full_value: "Microsoft Corporation", confidence: "ID", comment: {} },
+                            "Revenue (2023)": {
+                                display_value: "$211.9B",
+                                full_value: "$211.9 Billion USD",
+                                confidence: "HIGH",
+                                comment: {
+                                    validator_explanation: "From Microsoft FY2023 annual report.",
+                                    key_citation: "Microsoft Annual Report 2023"
+                                }
+                            },
+                            "Employees": { display_value: "221,000", full_value: "221,000 employees worldwide", confidence: "MEDIUM", comment: { validator_explanation: "Approximate count from company filings" } },
+                            "Founded": { display_value: "1975", full_value: "April 4, 1975", confidence: "HIGH", comment: {} }
+                        }
+                    },
+                    {
+                        row_key: "row_3",
+                        cells: {
+                            "Company": { display_value: "Alphabet", full_value: "Alphabet Inc. (Google)", confidence: "ID", comment: {} },
+                            "Revenue (2023)": {
+                                display_value: "$307.4B",
+                                full_value: "$307.4 Billion USD",
+                                confidence: "MEDIUM",
+                                comment: {
+                                    validator_explanation: "From Alphabet Q4 2023 earnings. Some segments estimated.",
+                                    key_citation: "Alphabet Q4 2023 Earnings Release"
+                                }
+                            },
+                            "Employees": { display_value: "182,000", full_value: "182,000 employees", confidence: "LOW", comment: { validator_explanation: "Recent layoffs may affect accuracy" } },
+                            "Founded": { display_value: "1998", full_value: "September 4, 1998", confidence: "HIGH", comment: {} }
+                        }
+                    }
+                ],
+                general_notes: "This table contains financial data for major tech companies. Revenue figures are from fiscal year 2023 annual reports. Employee counts are approximate and may have changed due to recent workforce adjustments. All monetary values are in USD. Data validated against official company filings, SEC documents, and reputable financial news sources.",
+                is_transposed: true
+            };
+        }
+
+        // Get the current metadata (prefer real, fallback to mock)
+        function getMetadata() {
+            return LOADED_TABLE_METADATA || MOCK_TABLE_METADATA;
+        }
+
+        // Test creating a viewer card with real data
+        function testViewerCard() {
+            clearCards();
+            const metadata = getMetadata();
+            if (!metadata) {
+                alert('No metadata loaded yet');
+                return;
+            }
+
+            const { cardId } = createResultsViewerCard({
+                title: 'Stock Analysis Results',
+                subtitle: `${metadata.rows?.length || 0} companies validated`,
+                infoHeaderText: 'Interactive validation results. Click any cell for details, hover for quick preview.',
+                tableMetadata: metadata,
+                downloadUrl: '#mock-download'
+            });
+
+            console.log('[TEST] Created viewer card:', cardId);
+        }
+
+        // Test the full validation results function
+        function testFullResults() {
+            clearCards();
+            const metadata = getMetadata();
+            if (!metadata) {
+                alert('No metadata loaded yet');
+                return;
+            }
+
+            const cardId = showFullValidationResults({
+                table_name: 'Stock Analysis',
+                row_count: metadata.rows?.length || 0,
+                table_metadata: metadata,
+                enhanced_download_url: '#mock-download-full'
+            });
+
+            console.log('[TEST] Created full results card:', cardId);
+        }
+
+        // Test with mock data explicitly
+        function testWithMockData() {
+            initMockData();
+            LOADED_TABLE_METADATA = null;  // Force mock
+            document.getElementById('status').textContent = 'Using mock data (3 rows)';
+            document.getElementById('status').style.color = '#2196f3';
+            testViewerCard();
+        }
+
+        // Clear all cards
+        function clearCards() {
+            const container = document.getElementById('cardContainer');
+            container.innerHTML = '';
+        }
+
+        // Override fetch for mock API responses
+        const originalFetch = window.fetch;
+        window.fetch = function(url, options) {
+            // Don't intercept local JSON file loads
+            if (typeof url === 'string' && url.endsWith('.json')) {
+                return originalFetch.apply(this, arguments);
+            }
+
+            // Check if this is a viewer API call
+            if (options && options.body) {
+                try {
+                    const body = JSON.parse(options.body);
+                    if (body.action === 'getViewerData') {
+                        console.log('[MOCK API] Returning viewer data');
+                        const metadata = getMetadata();
+                        return Promise.resolve({
+                            ok: true,
+                            json: () => Promise.resolve({
+                                success: true,
+                                table_metadata: metadata,
+                                table_name: 'Mock Session Results',
+                                download_url: '#mock-download',
+                                enhanced_download_url: '#mock-enhanced-download'
+                            })
+                        });
+                    }
+                } catch (e) {}
+            }
+            return originalFetch.apply(this, arguments);
+        };
+
+        // Initialize on load
+        loadRealMetadata();
+        console.log('[TEST] Viewer test page loaded. Click buttons to test.');
+    </script>
+</body>
+</html>

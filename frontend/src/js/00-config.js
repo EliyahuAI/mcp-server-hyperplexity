@@ -291,8 +291,17 @@ function checkForTestingOverrides() {
 // PAGE TYPE DETECTION
 // ============================================
 function detectPageType() {
-    // Check URL for chex or reference-check parameter
     const urlParams = new URLSearchParams(window.location.search);
+
+    // Check for viewer mode (results viewer)
+    if (urlParams.get('mode') === 'viewer' || urlParams.get('page') === 'viewer') {
+        return 'viewer';
+    }
+    if (window.location.pathname.includes('/viewer')) {
+        return 'viewer';
+    }
+
+    // Check URL for chex or reference-check parameter
     if (urlParams.get('mode') === 'chex' || urlParams.get('page') === 'chex' ||
         urlParams.get('mode') === 'reference-check' || urlParams.get('page') === 'reference-check') {
         return 'reference-check';
@@ -311,6 +320,19 @@ function detectPageType() {
 
     // Default mode
     return 'default';
+}
+
+/**
+ * Get viewer parameters from URL
+ * @returns {Object} { session, version, path } - viewer parameters
+ */
+function getViewerParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return {
+        session: urlParams.get('session') || urlParams.get('id'),
+        version: urlParams.get('version') || urlParams.get('v'),
+        path: urlParams.get('path')
+    };
 }
 
 // Make testing functions available globally for console use
