@@ -55,6 +55,60 @@
  * Interactive Table Styles
  * ======================================== */
 
+/* Color Legend */
+.table-legend {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 0.75rem;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-bottom: none;
+    border-radius: var(--border-radius) var(--border-radius) 0 0;
+    font-size: var(--font-size-small);
+}
+
+.table-legend + .interactive-table-container {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+}
+
+.legend-title {
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-color);
+}
+
+.legend-color {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid rgba(0,0,0,0.1);
+}
+
+.legend-color.confidence-high {
+    background-color: #4caf50;
+}
+
+.legend-color.confidence-medium {
+    background-color: #ff9800;
+}
+
+.legend-color.confidence-low {
+    background-color: #f44336;
+}
+
+.legend-color.confidence-id {
+    background-color: #2196f3;
+}
+
 /* Container with horizontal scroll */
 .interactive-table-container {
     overflow-x: auto;
@@ -77,13 +131,25 @@
 .interactive-table th,
 .interactive-table td {
     padding: 0.6rem 0.8rem;
-    border-bottom: 1px solid #eee;
-    border-right: 1px solid #eee;
+    border-bottom: 1px solid #c0c0c0;
+    border-right: 1px solid #c0c0c0;
     text-align: left;
     vertical-align: top;
     max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* Add top border to first row */
+.interactive-table tr:first-child th,
+.interactive-table tr:first-child td {
+    border-top: 1px solid #c0c0c0;
+}
+
+/* Add left border to first column cells */
+.interactive-table th:first-child,
+.interactive-table td:first-child {
+    border-left: 1px solid #c0c0c0;
 }
 
 .interactive-table th {
@@ -132,6 +198,32 @@
 
 .interactive-table .confidence-id {
     background-color: #e3f2fd;
+}
+
+/* Row and column crosshair highlighting */
+.interactive-table tbody tr:hover > td {
+    background-color: rgba(0, 0, 0, 0.04);
+}
+
+.interactive-table tbody tr:hover > td.confidence-high {
+    background-color: #c8e6c9;
+}
+
+.interactive-table tbody tr:hover > td.confidence-medium {
+    background-color: #ffecb3;
+}
+
+.interactive-table tbody tr:hover > td.confidence-low {
+    background-color: #ffcdd2;
+}
+
+.interactive-table tbody tr:hover > td.confidence-id {
+    background-color: #bbdefb;
+}
+
+/* Column highlight via JavaScript - gentle darkening like row hover */
+.interactive-table .column-highlight {
+    filter: brightness(0.96);
 }
 
 /* Cell hover and interaction */

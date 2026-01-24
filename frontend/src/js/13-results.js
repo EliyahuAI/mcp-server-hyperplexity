@@ -304,15 +304,24 @@ function renderInteractiveTable(tableMetadata) {
 
     const { columns, rows } = tableMetadata;
 
-    let html = '<div class="interactive-table-container">';
+    // Color legend/key
+    let html = `<div class="table-legend">
+        <span class="legend-title">Confidence:</span>
+        <span class="legend-item"><span class="legend-color confidence-high"></span> High</span>
+        <span class="legend-item"><span class="legend-color confidence-medium"></span> Medium</span>
+        <span class="legend-item"><span class="legend-color confidence-low"></span> Low</span>
+        <span class="legend-item"><span class="legend-color confidence-id"></span> ID</span>
+    </div>`;
+
+    html += '<div class="interactive-table-container">';
     html += '<table class="interactive-table">';
 
     // Transposed format: columns as rows, data rows as columns
     // Header row: Column | Row 1 | Row 2 | Row 3
     html += '<thead><tr>';
-    html += '<th class="sticky-column">Column</th>';
+    html += '<th class="sticky-column" data-col-index="0">Column</th>';
     rows.forEach((_, i) => {
-        html += `<th>Row ${i + 1}</th>`;
+        html += `<th data-col-index="${i + 1}">Row ${i + 1}</th>`;
     });
     html += '</tr></thead>';
 
@@ -323,11 +332,11 @@ function renderInteractiveTable(tableMetadata) {
         const importance = col.importance ? col.importance.toUpperCase() : '';
         const isIdColumn = importance === 'ID' || importance === 'IGNORED';
         html += '<tr>';
-        html += `<td class="sticky-column ${isIdColumn ? 'id-column' : ''}">`;
+        html += `<td class="sticky-column ${isIdColumn ? 'id-column' : ''}" data-col-index="0">`;
         html += `${isIdColumn ? '🔵 ' : ''}<strong>${escapeHtmlForTable(col.name)}</strong>`;
         html += '</td>';
 
-        rows.forEach(row => {
+        rows.forEach((row, colIdx) => {
             const cellData = row.cells[col.name] || {};
             const confidence = (cellData.confidence || '').toUpperCase();
             const displayValue = cellData.display_value || '';
@@ -354,11 +363,12 @@ function renderInteractiveTable(tableMetadata) {
 
             html += `<td
                 class="table-cell ${confidenceClass}"
+                data-col-index="${colIdx + 1}"
                 data-tooltip-html="${tooltipContent ? tooltipContent.replace(/"/g, '&quot;') : ''}"
                 data-cell-data="${cellDataJson}"
                 onclick="showCellDetailModal(this)"
-                onmouseenter="showCustomTooltip(event, this)"
-                onmouseleave="hideCustomTooltip()"
+                onmouseenter="showCustomTooltip(event, this); highlightColumn(${colIdx + 1})"
+                onmouseleave="hideCustomTooltip(); clearColumnHighlight()"
             >`;
             html += `<span class="cell-value">${escapeHtmlForTable(displayValue)}</span>`;
             if (fullValue.length > displayValue.length) {
@@ -400,7 +410,7 @@ function buildTooltipContent(comment, fullValue, displayValue) {
         const citation = comment.key_citation.length > 100
             ? comment.key_citation.substring(0, 100) + '...'
             : comment.key_citation;
-        parts.push(`<b>Source:</b> ${escapeHtmlForTable(citation)}`);
+        parts.push(`<b>Key:</b> ${escapeHtmlForTable(citation)}`);
     }
 
     if (parts.length > 0) {
@@ -438,9 +448,15 @@ window.showCellDetailModal = function(cellElement) {
         <div class="cell-detail-modal">
             <div class="cell-detail-header">
                 <h3>📋 Cell Details</h3>
-                ${currentConfidence ? `<span class="confidence-badge ${getConfidenceClass(currentConfidence)}">${currentConfidence}</span>` : ''}
                 <button class="modal-close" onclick="closeCellDetailModal()">&times;</button>
             </div>
+
+            ${currentConfidence ? `
+            <div class="detail-section confidence-section">
+                <label>Confidence</label>
+                <span class="confidence-badge ${getConfidenceClass(currentConfidence)}">${currentConfidence}</span>
+            </div>
+            ` : ''}
 
             <div class="detail-section">
                 <label>Current Value</label>
@@ -571,4 +587,17 @@ window.hideCustomTooltip = function() {
             tooltipElement.style.display = 'none';
         }
     }, 100);
+};
+
+// Column highlighting for crosshair effect
+window.highlightColumn = function(colIndex) {
+    // Find all cells in this column and add highlight class
+    const cells = document.querySelectorAll(`.interactive-table [data-col-index="${colIndex}"]`);
+    cells.forEach(cell => cell.classList.add('column-highlight'));
+};
+
+window.clearColumnHighlight = function() {
+    // Remove highlight from all cells
+    const highlighted = document.querySelectorAll('.interactive-table .column-highlight');
+    highlighted.forEach(cell => cell.classList.remove('column-highlight'));
 };
