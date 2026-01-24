@@ -247,6 +247,15 @@
     transition: transform 0.2s ease;
 }
 
+.general-notes-expand-hint {
+    font-size: 0.75em;
+    color: #9c27b0;
+    font-style: italic;
+    margin-left: auto;
+    margin-right: 8px;
+    opacity: 0.8;
+}
+
 .general-notes-content {
     margin-top: 8px;
     color: #4a148c;

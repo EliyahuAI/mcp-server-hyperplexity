@@ -1129,27 +1129,38 @@ const futureIds = previewData.future_ids || previewData.rows?.additional_rows ||
 const idColumns = columns.filter(c => c.importance && c.importance.toUpperCase() === 'ID');
 const researchColumns = columns.filter(c => !c.importance || c.importance.toUpperCase() !== 'ID');
 
-// Build TRANSPOSED markdown table with blue dots BEFORE column names
-let markdownTable = '';
+// Build interactive table using the InteractiveTable module (if available)
+let tableHtml = '';
+const hasInteractiveTable = typeof InteractiveTable !== 'undefined';
+
 if (sampleRows.length > 0 && columns.length > 0) {
-    const rowsToShow = sampleRows.slice(0, 3);
-
-    // Transposed: each column becomes a row, blue dot before ID columns
-    const transposedRows = columns.map(col => {
-        const colName = col.name || col;
-        const isId = col.importance && col.importance.toUpperCase() === 'ID';
-        const idMarker = isId ? '🔵 ' : '';
-        const values = rowsToShow.map(row => {
-            const value = row[colName] || '';
-            return String(value).substring(0, 50);
+    if (hasInteractiveTable) {
+        // Use InteractiveTable module for interactive rendering
+        const tableMetadata = InteractiveTable.fromSampleRows(columns, sampleRows, 3);
+        tableHtml = InteractiveTable.render(tableMetadata, {
+            showGeneralNotes: false,  // No notes for AI preview
+            showLegend: false,        // Simpler view
+            maxRows: 3
         });
-        return `| ${idMarker}**${colName}** | ${values.join(' | ')} |`;
-    }).join('\n');
+    } else {
+        // Fallback to markdown table if InteractiveTable not available
+        const rowsToShow = sampleRows.slice(0, 3);
+        const transposedRows = columns.map(col => {
+            const colName = col.name || col;
+            const isId = col.importance && col.importance.toUpperCase() === 'ID';
+            const idMarker = isId ? '🔵 ' : '';
+            const values = rowsToShow.map(row => {
+                const value = row[colName] || '';
+                return String(value).substring(0, 50);
+            });
+            return `| ${idMarker}**${colName}** | ${values.join(' | ')} |`;
+        }).join('\n');
 
-    const header = `| Column | ${rowsToShow.map((_, i) => `Row ${i + 1}`).join(' | ')} |`;
-    const separator = `| --- | ${rowsToShow.map(() => '---').join(' | ')} |`;
-
-    markdownTable = `${header}\n${separator}\n${transposedRows}`;
+        const header = `| Column | ${rowsToShow.map((_, i) => `Row ${i + 1}`).join(' | ')} |`;
+        const separator = `| --- | ${rowsToShow.map(() => '---').join(' | ')} |`;
+        const markdownTable = `${header}\n${separator}\n${transposedRows}`;
+        tableHtml = renderMarkdown(markdownTable);
+    }
 }
 
 // Step 1: After 800ms pause, show column definitions, intro message, and table
@@ -1205,14 +1216,19 @@ setTimeout(() => {
     }
 
     // Step 1b: Display blue info box, then table, then info boxes below
-    if (markdownTable) {
+    if (tableHtml) {
         const blueInfoBox = `
             <div class="message message-info" style="margin-bottom: 1rem;">
                 <span class="message-icon">ℹ️</span>
                 <div>First 3 rows (transposed) of state of the art AI table generation, prior to Hyperplexity validation.</div>
             </div>
         `;
-        previewContainer.innerHTML = `${blueInfoBox}<div style="margin: 16px 0;">${renderMarkdown(markdownTable)}</div>${infoBoxesHtml}`;
+        previewContainer.innerHTML = `${blueInfoBox}<div style="margin: 16px 0;">${tableHtml}</div>${infoBoxesHtml}`;
+
+        // Initialize interactive table event handlers if using InteractiveTable
+        if (hasInteractiveTable) {
+            InteractiveTable.init();
+        }
     }
 
     // Step 1c: Add next steps explanation in chat
