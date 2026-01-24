@@ -2166,15 +2166,17 @@ def handle_main_processing(event, context):
                 # Generate interactive table metadata for frontend
                 table_metadata = None
                 try:
-                    from shared.excel_report_qc_unified import generate_table_preview_metadata
+                    from excel_report_qc_unified import generate_table_preview_metadata
                     table_metadata = generate_table_preview_metadata(
                         validation_results=real_results,
                         config_data=config_data,
                         preview_row_count=3
                     )
-                    logger.debug(f"[TABLE_METADATA] Generated metadata for {len(table_metadata.get('rows', []))} rows, {len(table_metadata.get('columns', []))} columns")
+                    logger.info(f"[TABLE_METADATA] Generated metadata for {len(table_metadata.get('rows', []))} rows, {len(table_metadata.get('columns', []))} columns")
                 except Exception as e:
-                    logger.warning(f"[TABLE_METADATA] Failed to generate table metadata: {e}")
+                    logger.error(f"[TABLE_METADATA] Failed to generate table metadata: {e}")
+                    import traceback
+                    logger.error(f"[TABLE_METADATA] Traceback: {traceback.format_exc()}")
                     table_metadata = None
 
                 preview_payload = {
@@ -2446,6 +2448,22 @@ def handle_main_processing(event, context):
                                 if enhanced_result['success']:
                                     logger.debug(f"[DEBUG] Enhanced Excel stored in results folder: {enhanced_result['stored_files']}")
 
+                                    # Save table_metadata JSON alongside the Excel
+                                    if table_metadata:
+                                        try:
+                                            session_path = storage_manager.get_session_path(email, clean_session_id)
+                                            metadata_key = f"{session_path}v{config_version}_results/preview_table_metadata.json"
+                                            metadata_json = json.dumps(table_metadata, indent=2)
+                                            s3_client.put_object(
+                                                Bucket=storage_manager.bucket_name,
+                                                Key=metadata_key,
+                                                Body=metadata_json.encode('utf-8'),
+                                                ContentType='application/json'
+                                            )
+                                            logger.info(f"[TABLE_METADATA] Saved metadata JSON to: {metadata_key}")
+                                        except Exception as meta_e:
+                                            logger.warning(f"[TABLE_METADATA] Error saving metadata JSON: {meta_e}")
+
                                     # Use CUSTOMER version (without Details) for download link
                                     if enhanced_excel_buffer and hasattr(enhanced_excel_buffer, 'customer_version'):
                                         download_excel_content = enhanced_excel_buffer.customer_version
@@ -2479,6 +2497,11 @@ def handle_main_processing(event, context):
                 # Add enhanced Excel download URL to preview payload
                 preview_payload["enhanced_download_url"] = enhanced_download_url
                 logger.debug(f"[DEBUG] Added enhanced_download_url to preview_payload: {enhanced_download_url}")
+
+                # Add table_metadata to preview_payload for WebSocket delivery
+                if table_metadata:
+                    preview_payload["table_metadata"] = table_metadata
+                    logger.info(f"[TABLE_METADATA] Added to preview_payload for WebSocket delivery")
                 
                 # Get account balance and multiplier for preview tracking
                 try:

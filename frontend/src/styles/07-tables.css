@@ -150,41 +150,7 @@
     font-style: italic;
 }
 
-/* CSS Tooltips */
-.interactive-table .table-cell[data-tooltip] {
-    cursor: help;
-}
-
-.interactive-table .table-cell[data-tooltip]:hover::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%);
-    background: #333;
-    color: #fff;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    line-height: 1.4;
-    white-space: pre-wrap;
-    max-width: 350px;
-    min-width: 200px;
-    z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    pointer-events: none;
-}
-
-.interactive-table .table-cell[data-tooltip]:hover::before {
-    content: '';
-    position: absolute;
-    bottom: calc(100% + 2px);
-    left: 50%;
-    transform: translateX(-50%);
-    border: 6px solid transparent;
-    border-top-color: #333;
-    z-index: 1000;
-}
+/* Native title tooltips are used - no custom CSS needed */
 
 /* Cell Detail Modal */
 .cell-detail-overlay {
@@ -268,12 +234,56 @@
 
 .confidence-badge {
     display: inline-block;
-    padding: 2px 8px;
+    padding: 4px 12px;
     border-radius: 4px;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
-    margin-left: 8px;
     background: #e0e0e0;
+    color: #333;
+}
+
+.confidence-badge.confidence-high {
+    background: #4caf50;
+    color: white;
+}
+
+.confidence-badge.confidence-medium {
+    background: #ff9800;
+    color: white;
+}
+
+.confidence-badge.confidence-low {
+    background: #f44336;
+    color: white;
+}
+
+.confidence-badge.confidence-id {
+    background: #2196f3;
+    color: white;
+}
+
+.confidence-section {
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.confidence-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.confidence-arrow {
+    font-size: 18px;
+    color: #666;
+    font-weight: bold;
+}
+
+.confidence-changed-label {
+    font-size: 11px;
+    color: #4caf50;
+    font-style: italic;
 }
 
 .sources-list {

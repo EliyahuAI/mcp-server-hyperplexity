@@ -45,6 +45,7 @@ function showPreviewResults(cardId, previewData) {
         `;
 
         // Use interactive table if metadata available, otherwise fallback to markdown
+        console.log('[TABLE_PREVIEW] table_metadata:', previewData.table_metadata ? 'present' : 'missing', previewData.table_metadata);
         if (previewData.table_metadata) {
             const interactiveTable = renderInteractiveTable(previewData.table_metadata);
             previewContent.innerHTML = headerHtml + (interactiveTable || renderMarkdown(previewData.markdown_table));
@@ -353,7 +354,7 @@ function renderInteractiveTable(tableMetadata) {
 
             html += `<td
                 class="table-cell ${confidenceClass}"
-                ${tooltipContent ? `data-tooltip="${escapeHtmlForTable(tooltipContent)}"` : ''}
+                title="${tooltipContent ? escapeHtmlForTable(tooltipContent) : ''}"
                 data-cell-data="${cellDataJson}"
                 onclick="showCellDetailModal(this)"
             >`;
@@ -403,7 +404,8 @@ function buildTooltipContent(comment, fullValue, displayValue) {
     return parts.join(' | ').replace(/[\n\r]+/g, ' ');
 }
 
-function showCellDetailModal(cellElement) {
+// Expose to global scope for onclick handlers
+window.showCellDetailModal = function(cellElement) {
     // Bug fix #4 continued: Decode HTML entities before parsing JSON
     let cellDataStr = cellElement.dataset.cellData || '{}';
     cellDataStr = cellDataStr
@@ -415,10 +417,23 @@ function showCellDetailModal(cellElement) {
     const cellData = JSON.parse(cellDataStr);
     const comment = cellData.comment || {};
 
+    // Determine confidence info
+    const currentConfidence = (cellData.confidence || '').toUpperCase();
+
+    // Get confidence class for styling
+    const getConfidenceClass = (conf) => {
+        if (conf === 'HIGH') return 'confidence-high';
+        if (conf === 'MEDIUM') return 'confidence-medium';
+        if (conf === 'LOW') return 'confidence-low';
+        if (conf === 'ID') return 'confidence-id';
+        return '';
+    };
+
     let modalContent = `
         <div class="cell-detail-modal">
             <div class="cell-detail-header">
                 <h3>📋 Cell Details</h3>
+                ${currentConfidence ? `<span class="confidence-badge ${getConfidenceClass(currentConfidence)}">${currentConfidence}</span>` : ''}
                 <button class="modal-close" onclick="closeCellDetailModal()">&times;</button>
             </div>
 
@@ -427,11 +442,10 @@ function showCellDetailModal(cellElement) {
                 <p class="detail-value">${escapeHtmlForTable(cellData.full_value || cellData.display_value || '-')}</p>
             </div>
 
-            ${comment.original_value !== undefined ? `
+            ${comment.original_value !== undefined && comment.original_value !== '' ? `
             <div class="detail-section">
                 <label>Original Value</label>
-                <p class="detail-value">${escapeHtmlForTable(comment.original_value)}
-                    ${comment.original_confidence ? `<span class="confidence-badge">${comment.original_confidence}</span>` : ''}</p>
+                <p class="detail-value">${escapeHtmlForTable(comment.original_value)}</p>
             </div>
             ` : ''}
 
@@ -484,7 +498,7 @@ function showCellDetailModal(cellElement) {
     document.addEventListener('keydown', handleModalEscape);
 }
 
-function closeCellDetailModal() {
+window.closeCellDetailModal = function() {
     const overlay = document.querySelector('.cell-detail-overlay');
     if (overlay) overlay.remove();
     document.removeEventListener('keydown', handleModalEscape);
