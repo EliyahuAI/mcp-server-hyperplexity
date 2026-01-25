@@ -375,10 +375,16 @@ if (isPartial) {
     ];
 } else {
     // Show full content immediately with disabled download button
-    const balanceText = globalState.accountBalance !== undefined ? 
-        `• Remaining balance: $${globalState.accountBalance.toFixed(2)}` : 
+    const balanceText = globalState.accountBalance !== undefined ?
+        `• Remaining balance: $${globalState.accountBalance.toFixed(2)}` :
         `• Balance updating...`;
-    
+
+    // Hide refine message for reference check (static config cannot be refined)
+    const refineMessageHtml = !globalState.isReferenceCheck ?
+        `<div style="margin-bottom: 8px;">
+            • If you want to change anything, refine the configuration and check out the preview
+        </div>` : '';
+
     content = `
         <div class="message message-success" style="margin-bottom: 1rem;">
             <span class="message-icon">🎉</span>
@@ -389,9 +395,7 @@ if (isPartial) {
                 <div style="margin-bottom: 8px;">
                     • Notice the Updated and Original sheets, color coded by confidence: Green (High), Yellow (Medium), Red (Low), No Color (Null/Blank)
                 </div>
-                <div style="margin-bottom: 8px;">
-                    • If you want to change anything, refine the configuration and check out the preview
-                </div>
+                ${refineMessageHtml}
                 <div id="${cardId}-balance-info">
                     ${balanceText}
                 </div>
@@ -412,8 +416,12 @@ if (isPartial) {
             width: 'half',
             disabled: true,
             callback: async function() {} // Will be replaced when enabled
-        },
-        {
+        }
+    ];
+
+    // Only add refine button if NOT reference check (static config cannot be refined)
+    if (!globalState.isReferenceCheck) {
+        buttons.push({
             text: 'Refine Configuration',
             icon: '🔧',
             variant: 'secondary',
@@ -426,8 +434,8 @@ if (isPartial) {
                     alert('Refine failed: ' + error.message);
                 }
             }
-        }
-    ];
+        });
+    }
 
     // Only add revert button if version > 1
     if (showRevertButton) {

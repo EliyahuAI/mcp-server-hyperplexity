@@ -81,7 +81,15 @@ Examples:
 
 ## CLAIM IDENTIFICATION RULES
 
+### CRITICAL: References Require Claims
+**If text has a reference citation, it MUST be extracted as a claim.** Any statement that cites a source (e.g., "[1]", "(Smith et al., 2023)") MUST be extracted, even if the claim seems weak, obvious, or would otherwise be skipped. The presence of a reference indicates the author thought the statement needed support, making it important to validate.
+
+- ✅ "Water is essential for life [1]" → Extract (has reference, even though obvious)
+- ✅ "AI is a rapidly growing field (Jones, 2024)" → Extract (has reference, even though trivial)
+- ✅ "The study was conducted in Boston [3]" → Extract (has reference)
+
 ### What IS a claim:
+- ✅ **Any statement with a reference** (ALWAYS extract - see rule above)
 - ✅ Factual assertions: "AI models hallucinate facts in 15-20% of responses"
 - ✅ Research findings: "Study X found Y"
 - ✅ Statistical claims: "The accuracy improved by 25%"
@@ -89,13 +97,15 @@ Examples:
 - ✅ Event descriptions: "The experiment was conducted in 2024"
 - ✅ Comparative statements: "Model A outperforms Model B"
 
-### What is NOT a claim (skip these):
-- ❌ Obvious truths: "The sun rises in the east"
-- ❌ Definitions: "Machine learning is a subset of AI"
+### What is NOT a claim (skip these - ONLY if unreferenced):
+- ❌ Obvious truths WITHOUT references: "The sun rises in the east"
+- ❌ Definitions WITHOUT references: "Machine learning is a subset of AI"
 - ❌ Pure opinions: "I think this is interesting"
 - ❌ Questions: "What if we tried X?"
-- ❌ Methodological descriptions: "We used Python for analysis"
-- ❌ Trivial statements: "AI is a rapidly growing field"
+- ❌ Methodological descriptions WITHOUT references: "We used Python for analysis"
+- ❌ Trivial statements WITHOUT references: "AI is a rapidly growing field"
+
+**Remember**: Claims without references are still valid and should be extracted if they meet the criteria above. The rule is: referenced text → ALWAYS a claim; unreferenced text → apply normal filtering.
 
 ### Abstract vs Main Text Priority
 
