@@ -82,11 +82,16 @@ def build():
     # Write output file
     OUTPUT_FILE.write_text(output, encoding='utf-8')
 
+    # Also write a copy without -dev suffix for production use
+    PROD_OUTPUT_FILE = FRONTEND_DIR / 'Hyperplexity_FullScript_Temp.html'
+    PROD_OUTPUT_FILE.write_text(output, encoding='utf-8')
+
     elapsed = time.time() - start_time
     line_count = output.count('\n')
     byte_size = len(output.encode('utf-8'))
 
     print(f'[SUCCESS] Built {OUTPUT_FILE.name}')
+    print(f'[SUCCESS] Also copied to {PROD_OUTPUT_FILE.name}')
     print(f'[SUCCESS] {line_count:,} lines, {byte_size:,} bytes in {elapsed:.2f}s')
 
 def watch():

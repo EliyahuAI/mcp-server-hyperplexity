@@ -314,6 +314,26 @@ def confirm_upload_complete(request_data: Dict[str, Any], context: Any) -> Dict[
                 email_prefix = email.split('@')[0] if '@' in email else email
                 storage_path = f"{domain}/{email_prefix}/{session_id}"
 
+                # Extract and store clean table name in session_info
+                from interface_lambda.utils.helpers import clean_table_name
+                display_name = clean_table_name(filename, for_display=True)
+                filename_base = clean_table_name(filename, for_display=False)
+
+                try:
+                    session_info = storage_manager.load_session_info(email, session_id)
+                    session_info['original_filename'] = filename
+                    session_info['clean_table_name'] = display_name
+                    session_info['table_name_base'] = filename_base  # For use in output filenames
+                    session_info['input_file'] = {
+                        's3_key': s3_key,
+                        'upload_id': upload_id,
+                        'uploaded_at': datetime.now(timezone.utc).isoformat()
+                    }
+                    storage_manager.save_session_info(email, session_id, session_info)
+                    logger.info(f"[UPLOAD_CONFIRM] Saved clean_table_name='{display_name}' to session_info")
+                except Exception as e:
+                    logger.warning(f"[UPLOAD_CONFIRM] Failed to save session_info: {e}")
+
                 logger.info(f"[UPLOAD_CONFIRM] Excel analysis complete: {upload_id}")
 
                 return create_response(200, {

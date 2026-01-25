@@ -165,10 +165,82 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         # Extract table name from metadata or session
         table_name = table_metadata.get('table_name') or _extract_table_name(session_id)
 
+        # Load session_info to get clean_table_name and analysis date
+        clean_table_name = None
+        original_filename = None
+        analysis_date = None
+
+        try:
+            session_info = storage_manager.load_session_info(email, session_id)
+            clean_table_name = session_info.get('clean_table_name')
+            original_filename = session_info.get('original_filename')
+
+            # Try to get analysis date from session_info versions
+            versions_info = session_info.get('versions', {})
+            version_key = f"v{config_version}"
+            if version_key in versions_info:
+                version_info = versions_info[version_key]
+                # Look for validation completion time
+                analysis_date = version_info.get('validation_completed_at') or version_info.get('created_at')
+
+            # Fallback: use table_metadata timestamp if available
+            if not analysis_date and table_metadata:
+                analysis_date = table_metadata.get('generated_at') or table_metadata.get('created_at')
+
+            logger.info(f"[VIEWER_DATA] Loaded session_info: clean_table_name='{clean_table_name}', analysis_date='{analysis_date}'")
+        except Exception as e:
+            logger.warning(f"[VIEWER_DATA] Could not load session_info: {e}")
+
+        # If no original_filename, try to find it from S3 (input xlsx files in session folder)
+        if not original_filename:
+            try:
+                response = s3_client.list_objects_v2(
+                    Bucket=active_bucket,
+                    Prefix=session_path,
+                    MaxKeys=50
+                )
+                for obj in response.get('Contents', []):
+                    key = obj['Key']
+                    filename = key.split('/')[-1]
+                    # Look for input xlsx files (not in results folders)
+                    if filename.endswith('.xlsx') and '_results' not in key and 'v1_' not in key and 'v2_' not in key:
+                        original_filename = filename
+                        logger.info(f"[VIEWER_DATA] Found input file in S3: {original_filename}")
+                        break
+            except Exception as e:
+                logger.debug(f"[VIEWER_DATA] Could not find input file in S3: {e}")
+
+        # If still no analysis_date, try to get from results folder metadata file timestamp
+        if not analysis_date:
+            try:
+                response = s3_client.head_object(
+                    Bucket=active_bucket,
+                    Key=metadata_key
+                )
+                if 'LastModified' in response:
+                    analysis_date = response['LastModified'].isoformat()
+                    logger.info(f"[VIEWER_DATA] Got analysis_date from S3 metadata: {analysis_date}")
+            except Exception as e:
+                logger.debug(f"[VIEWER_DATA] Could not get metadata timestamp: {e}")
+
+        # If no clean_table_name from session_info, derive from original filename
+        if not clean_table_name or clean_table_name == "Validation Results":
+            from interface_lambda.utils.helpers import clean_table_name as derive_clean_name
+            # Prefer original_filename, then try session_id for a meaningful name
+            if original_filename:
+                clean_table_name = derive_clean_name(original_filename, for_display=True)
+            else:
+                # Last resort: use session_id but make it readable
+                clean_table_name = f"Table {session_id.split('_')[-1][:8]}"
+            logger.info(f"[VIEWER_DATA] Derived clean_table_name: '{clean_table_name}'")
+
         return create_response(200, {
             'success': True,
             'table_metadata': table_metadata,
             'table_name': table_name,
+            'clean_table_name': clean_table_name,
+            'original_filename': original_filename,
+            'analysis_date': analysis_date,
             'session_id': session_id,
             'version': config_version,
             'is_full_validation': is_full_validation,

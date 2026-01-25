@@ -100,12 +100,60 @@ async function loadAndDisplayResults(params) {
         // Hide loading indicator
         completeThinkingInCard(cardId, 'Results loaded');
 
-        // Update card subtitle with actual info
+        // Debug: log the data received from API
+        console.log('[VIEWER] Data received:', {
+            clean_table_name: data.clean_table_name,
+            table_name: data.table_name,
+            analysis_date: data.analysis_date,
+            is_full_validation: data.is_full_validation,
+            version: data.version
+        });
+
+        // Update card title and subtitle with clean table name and date
         const card = document.getElementById(cardId);
-        if (card && data.table_name) {
+        console.log('[VIEWER] Card element:', card, 'cardId:', cardId);
+
+        if (card) {
+            // Use clean_table_name for the title if available
+            const displayName = data.clean_table_name || data.table_name || 'Validation Results';
+            const titleEl = card.querySelector('.card-title');
+            console.log('[VIEWER] Title element:', titleEl, 'displayName:', displayName);
+            if (titleEl) {
+                titleEl.textContent = displayName;
+            }
+
+            // Build subtitle with analysis date and validation type
+            let subtitleParts = [];
+            if (data.analysis_date) {
+                const dateObj = new Date(data.analysis_date);
+                const formattedDate = dateObj.toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'short', day: 'numeric'
+                });
+                subtitleParts.push(`Analyzed: ${formattedDate}`);
+            }
+            if (data.is_full_validation !== undefined) {
+                subtitleParts.push(data.is_full_validation ? 'Full Validation' : 'Preview');
+            }
+            if (data.version) {
+                subtitleParts.push(`v${data.version}`);
+            }
+            console.log('[VIEWER] Subtitle parts:', subtitleParts);
+
             const subtitle = card.querySelector('.card-subtitle');
-            if (subtitle) {
-                subtitle.textContent = data.table_name;
+            console.log('[VIEWER] Subtitle element:', subtitle);
+            if (subtitle && subtitleParts.length > 0) {
+                subtitle.textContent = subtitleParts.join(' • ');
+                console.log('[VIEWER] Updated subtitle to:', subtitleParts.join(' • '));
+            } else if (!subtitle) {
+                console.warn('[VIEWER] No subtitle element found, creating one');
+                // Create subtitle if it doesn't exist
+                const headerDiv = card.querySelector('.card-header > div:nth-child(2)');
+                if (headerDiv) {
+                    const newSubtitle = document.createElement('p');
+                    newSubtitle.className = 'card-subtitle';
+                    newSubtitle.textContent = subtitleParts.join(' • ');
+                    headerDiv.appendChild(newSubtitle);
+                }
             }
         }
 
@@ -140,8 +188,8 @@ function createResultsViewerCard(options = {}) {
             <span id="${cardId}-info-text">${options.infoHeaderText || 'View your validation results below.'}</span>
         </div>
         <div id="${cardId}-table-container"></div>
-        <div id="${cardId}-messages"></div>
         <div id="${cardId}-buttons" class="card-buttons"></div>
+        <div id="${cardId}-messages"></div>
     `;
 
     const card = createCard({
@@ -181,6 +229,17 @@ function displayResultsInCard(cardId, data) {
         return;
     }
 
+    // Update the info header with analysis date if available
+    const infoText = document.getElementById(`${cardId}-info-text`);
+    if (infoText && data.analysis_date) {
+        const dateObj = new Date(data.analysis_date);
+        const formattedDate = dateObj.toLocaleDateString('en-US', {
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+        });
+        const validationType = data.is_full_validation ? 'Full validation' : 'Preview';
+        infoText.innerHTML = `<strong>${validationType} completed ${formattedDate}</strong>. Click cells for details, or download the results.`;
+    }
+
     // Render table if metadata available
     if (data.table_metadata && typeof InteractiveTable !== 'undefined') {
         const tableHtml = InteractiveTable.render(data.table_metadata, {
@@ -203,7 +262,7 @@ function displayResultsInCard(cardId, data) {
     // Build download buttons
     const buttons = [
         {
-            text: '📥 Download Excel',
+            text: 'Download Excel',
             icon: '📥',
             variant: 'primary',
             callback: async (e) => {
@@ -219,7 +278,7 @@ function displayResultsInCard(cardId, data) {
             }
         },
         {
-            text: '📋 Download JSON',
+            text: 'Download JSON',
             icon: '📋',
             variant: 'secondary',
             callback: async (e) => {
@@ -234,6 +293,15 @@ function displayResultsInCard(cardId, data) {
                 } else {
                     await downloadResultsViaApi(cardId, button, 'json');
                 }
+            }
+        },
+        {
+            text: 'Update Table',
+            icon: '🔄',
+            variant: 'tertiary',
+            callback: async (e) => {
+                const button = e.target.closest('button');
+                await handleUpdateTable(cardId, button, data);
             }
         }
     ];
@@ -355,4 +423,77 @@ function showFullValidationResults(validationData) {
     showMessage(`${cardId}-messages`, 'Validation completed successfully!', 'success');
 
     return cardId;
+}
+
+/**
+ * Handle the Update Table button click.
+ * Creates a new validation session from the current enhanced results.
+ *
+ * @param {string} cardId - Card ID for showing messages
+ * @param {HTMLElement} button - Button element for state updates
+ * @param {Object} data - Results data containing session info
+ */
+async function handleUpdateTable(cardId, button, data) {
+    const params = getViewerParams();
+
+    try {
+        markButtonSelected(button, '🔄 Creating session...');
+
+        // Call backend to create update session
+        const response = await fetch(`${API_BASE}/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'createUpdateSession',
+                email: globalState.email,
+                source_session_id: params.session || data.session_id,
+                source_version: params.version || data.version
+            })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || 'Failed to create update session');
+        }
+
+        console.log('[VIEWER] Update session created:', result.new_session_id);
+
+        // Warn if only preview data was available
+        if (result.used_preview_data) {
+            console.warn('[VIEWER] Using preview data - full validation not found');
+            showMessage(`${cardId}-messages`,
+                'Warning: Using preview data. Run a full validation first for complete results.', 'warning');
+        }
+
+        // Update global state for new session
+        globalState.sessionId = result.new_session_id;
+        globalState.excelFileUploaded = true;
+        globalState.configStored = result.config_copied;
+        globalState.activePreviewCard = null;
+
+        markButtonSelected(button, '🔄 Starting preview...');
+        showMessage(`${cardId}-messages`,
+            'New session created. Starting preview...', 'success');
+
+        // Clear viewer URL params and trigger preview after a short delay
+        setTimeout(() => {
+            // Remove viewer mode params from URL
+            window.history.replaceState({}, '', window.location.pathname);
+
+            // Create and start the preview card
+            if (typeof createPreviewCard === 'function') {
+                createPreviewCard();
+            } else {
+                console.error('[VIEWER] createPreviewCard function not available');
+                showMessage(`${cardId}-messages`,
+                    'Session created but preview could not start automatically. Please refresh the page.', 'warning');
+            }
+        }, 1000);
+
+    } catch (error) {
+        console.error('[VIEWER] Update table error:', error);
+        showMessage(`${cardId}-messages`, `Update failed: ${error.message}`, 'error');
+        markButtonUnselected(button);
+    }
 }

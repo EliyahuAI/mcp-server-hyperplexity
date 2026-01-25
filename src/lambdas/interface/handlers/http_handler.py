@@ -211,6 +211,9 @@ def handle(event, context):
             elif action == 'getViewerData':
                 viewer_data = lazy_import('interface_lambda.actions', 'viewer_data')
                 return viewer_data.handle(request_data, context)
+            elif action == 'createUpdateSession':
+                create_update_session = lazy_import('interface_lambda.actions', 'create_update_session')
+                return create_update_session.handle_create_update_session(request_data, context)
             else:
                 logger.warning(f"Unknown action in JSON body: {action}")
                 return create_response(400, {'error': f'Unknown or unsupported action: {action}'})
