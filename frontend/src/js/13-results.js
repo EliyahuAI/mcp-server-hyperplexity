@@ -40,7 +40,7 @@ function showPreviewResults(cardId, previewData) {
         const headerHtml = `
             <div class="message message-info">
                 <span class="message-icon">ℹ️</span>
-                <span>This preview shows the first 3 rows of Updated values (transposed). An Excel version can be downloaded at the button below.</span>
+                <span>Preview of first 3 rows (displayed as columns). Hover cells for quick info, click for full details. Use the buttons below to download, refine, or process the full table.</span>
             </div>
         `;
 

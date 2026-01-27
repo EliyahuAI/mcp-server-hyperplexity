@@ -1066,7 +1066,7 @@ try {
             button.disabled = false;
             const buttonTextElement = button.querySelector('.button-text');
             if (buttonTextElement) {
-                buttonTextElement.textContent = '📥 Download Results';
+                buttonTextElement.textContent = '📥 Download Excel (for Humans)';
             }
             button.onclick = async () => {
                 try {
@@ -1078,7 +1078,7 @@ try {
                 }
             };
 
-        } else if (buttonText.includes('Download Results') || buttonClass.includes('download-button')) {
+        } else if (buttonText.includes('Download Excel') || buttonClass.includes('download-button')) {
             button.onclick = async () => {
                 try {
                     markDownloadStart();
@@ -1128,7 +1128,7 @@ try {
     // SIMPLE APPROACH: If the card already has working buttons, don't touch them
     const existingButtons = cardElement.querySelectorAll('button');
     const hasWorkingDownload = Array.from(existingButtons).some(btn =>
-        btn.textContent.includes('Download Results') && !btn.disabled && btn.onclick
+        btn.textContent.includes('Download Excel') && !btn.disabled && btn.onclick
     );
 
     if (hasWorkingDownload) {

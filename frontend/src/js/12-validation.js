@@ -192,13 +192,10 @@ function handleProcessingWebSocketMessage(data, cardId) {
                     <span class="message-icon">🎉</span>
                     <div style="line-height: 1.6;">
                         <div style="margin-bottom: 8px;">
-                            • Your validation has been completed successfully and emailed to you
+                            • The interactive table below is the best way to review your results. Note: rows are displayed as columns for easier reading.
                         </div>
                         <div style="margin-bottom: 8px;">
-                            • Notice the Updated and Original sheets, color coded by confidence: Green (High), Yellow (Medium), Red (Low), No Color (Null/Blank)
-                        </div>
-                        <div style="margin-bottom: 8px;">
-                            • Enable editing to see key citations and sources in cell comments when hovering.
+                            • Your Excel results have been emailed - check the Updated and Original sheets for color-coded confidence (Green=High, Yellow=Medium, Red=Low), and hover cells to see citations in the comments.
                         </div>
                         ${refineMessageHtml}
                         <div id="${actualCardId}-balance-info">
@@ -208,7 +205,7 @@ function handleProcessingWebSocketMessage(data, cardId) {
                 </div>
                 <div id="${actualCardId}-table-info" class="message message-info" style="display: flex; margin-top: 1rem;">
                     <span class="message-icon">ℹ️</span>
-                    <span>Review your validation results below. Click cells for details.</span>
+                    <span>Rows are displayed as columns below. Hover cells for quick info, click for full details. Use the buttons to download, refine, or start fresh.</span>
                 </div>
                 <div id="${actualCardId}-table-container" style="margin: 1rem 0;"></div>
                 <div style="display: flex; gap: 10px; margin-top: 1rem; flex-wrap: wrap;">
@@ -288,7 +285,7 @@ function handleProcessingWebSocketMessage(data, cardId) {
                     setTimeout(() => {
                         if (downloadBtn) {
                             downloadBtn.disabled = false;
-                            downloadBtn.querySelector('.button-text').textContent = '📥 Download Results';
+                            downloadBtn.querySelector('.button-text').textContent = '📥 Download Excel (for Humans)';
 
                             downloadBtn.addEventListener('click', async function() {
                                 try {
@@ -390,10 +387,10 @@ if (isPartial) {
             <span class="message-icon">🎉</span>
             <div style="line-height: 1.6;">
                 <div style="margin-bottom: 8px;">
-                    • Your validation has been completed successfully and emailed to you
+                    • The interactive table below is the best way to review your results. Note: rows are displayed as columns for easier reading.
                 </div>
                 <div style="margin-bottom: 8px;">
-                    • Notice the Updated and Original sheets, color coded by confidence: Green (High), Yellow (Medium), Red (Low), No Color (Null/Blank)
+                    • Your Excel results have been emailed - check the Updated and Original sheets for color-coded confidence (Green=High, Yellow=Medium, Red=Low), and hover cells to see citations in the comments.
                 </div>
                 ${refineMessageHtml}
                 <div id="${cardId}-balance-info">
@@ -481,7 +478,7 @@ if (!isPartial) {
         
         if (downloadButton) {
             downloadButton.disabled = false;
-            downloadButton.querySelector('.button-text').textContent = '📥 Download Results';
+            downloadButton.querySelector('.button-text').textContent = '📥 Download Excel (for Humans)';
             
             // Add the click handler
             downloadButton.addEventListener('click', async function() {
