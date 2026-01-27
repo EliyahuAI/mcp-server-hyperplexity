@@ -35,7 +35,11 @@ PROJECT_DIR = SCRIPT_DIR.parent
 SRC_DIR = PROJECT_DIR / "src"
 LAMBDA_SRC_DIR = SRC_DIR / "lambdas" / "validation"
 SHARED_SRC_DIR = SRC_DIR / "shared"
-PACKAGE_DIR = SCRIPT_DIR / "package"
+
+# Package directory uses temp folder outside OneDrive to avoid file lock issues
+# Output ZIP stays in deployment folder for easy access
+TEMP_BUILD_DIR = Path("C:/temp/perplexity_deployment") if os.name == 'nt' else Path("/tmp/perplexity_deployment")
+PACKAGE_DIR = TEMP_BUILD_DIR / "package"
 OUTPUT_ZIP = SCRIPT_DIR / "lambda_package.zip"
 
 # Lambda configuration
@@ -110,6 +114,8 @@ def install_dependencies():
                 "-t", str(PACKAGE_DIR),
                 "--no-cache-dir",
                 "--platform", "manylinux2014_x86_64",
+                "--implementation", "cp",
+                "--python-version", "3.11",
                 "--only-binary=:all:"
             ])
             logger.info("Dependencies installed successfully.")
@@ -174,6 +180,8 @@ def verify_dependencies():
                     "-t", str(PACKAGE_DIR),
                     "--no-cache-dir",
                     "--platform", "manylinux2014_x86_64",
+                    "--implementation", "cp",
+                    "--python-version", "3.11",
                     "--only-binary=:all:"
                 ])
     except Exception as e:
@@ -188,6 +196,8 @@ def verify_dependencies():
                 "-t", str(PACKAGE_DIR),
                 "--no-cache-dir",
                 "--platform", "manylinux2014_x86_64",
+                "--implementation", "cp",
+                "--python-version", "3.11",
                 "--only-binary=:all:"
             ])
     
@@ -1046,6 +1056,8 @@ def main():
             "-t", str(PACKAGE_DIR),
             "--no-cache-dir",
             "--platform", "manylinux2014_x86_64",
+            "--implementation", "cp",
+            "--python-version", "3.11",
             "--only-binary=:all:"
         ])
         

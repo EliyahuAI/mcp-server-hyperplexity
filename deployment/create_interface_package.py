@@ -47,8 +47,10 @@ SRC_DIR = PROJECT_DIR / "src"
 LAMBDA_SRC_DIR = SRC_DIR / "lambdas" / "interface"
 SHARED_SRC_DIR = SRC_DIR / "shared"
 
-# Package directory and output ZIP will be set based on mode
-PACKAGE_DIR = SCRIPT_DIR / "interface_package"
+# Package directory uses temp folder outside OneDrive to avoid file lock issues
+# Output ZIP stays in deployment folder for easy access
+TEMP_BUILD_DIR = Path("C:/temp/perplexity_deployment") if os.name == 'nt' else Path("/tmp/perplexity_deployment")
+PACKAGE_DIR = TEMP_BUILD_DIR / "interface_package"
 OUTPUT_ZIP = SCRIPT_DIR / "interface_lambda_package.zip"
 
 # Lambda configuration for interface function
@@ -110,18 +112,21 @@ def set_package_paths_for_mode(mode):
     """Set package directory and ZIP output path based on deployment mode."""
     global PACKAGE_DIR, OUTPUT_ZIP
 
+    # Ensure temp build directory exists
+    TEMP_BUILD_DIR.mkdir(parents=True, exist_ok=True)
+
     if mode == 'lightweight':
-        PACKAGE_DIR = SCRIPT_DIR / "interface_package_lightweight"
+        PACKAGE_DIR = TEMP_BUILD_DIR / "interface_package_lightweight"
         OUTPUT_ZIP = SCRIPT_DIR / "interface_lambda_package_lightweight.zip"
     elif mode == 'background':
-        PACKAGE_DIR = SCRIPT_DIR / "interface_package_background"
+        PACKAGE_DIR = TEMP_BUILD_DIR / "interface_package_background"
         OUTPUT_ZIP = SCRIPT_DIR / "interface_lambda_package_background.zip"
     else:  # unified
-        PACKAGE_DIR = SCRIPT_DIR / "interface_package"
+        PACKAGE_DIR = TEMP_BUILD_DIR / "interface_package"
         OUTPUT_ZIP = SCRIPT_DIR / "interface_lambda_package.zip"
 
     logger.info(f"[PACKAGE PATHS] Mode: {mode}")
-    logger.info(f"[PACKAGE PATHS] Package dir: {PACKAGE_DIR}")
+    logger.info(f"[PACKAGE PATHS] Package dir: {PACKAGE_DIR} (outside OneDrive)")
     logger.info(f"[PACKAGE PATHS] Output ZIP: {OUTPUT_ZIP}")
 
 def clean_directory(dir_path):
