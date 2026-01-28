@@ -53,7 +53,8 @@ class UnifiedSynthesizer:
         clone_logger: Any = None,
         note_to_self: str = None,
         initial_decision: str = None,
-        sources_examined: List[Dict] = None
+        sources_examined: List[Dict] = None,
+        previous_iteration_data: Dict = None
     ) -> Dict[str, Any]:
         """
         Unified evaluation + synthesis call.
@@ -70,6 +71,7 @@ class UnifiedSynthesizer:
             schema: Optional custom schema
             model: Model to use (default: Sonnet 4.5)
             note_to_self: Optional note from previous iteration
+            previous_iteration_data: Optional dict with previous iteration's response, grade, etc.
 
         Returns:
             Dict with:
@@ -91,7 +93,8 @@ class UnifiedSynthesizer:
             search_terms=search_terms,
             note_to_self=note_to_self,
             initial_decision=initial_decision,
-            sources_examined=sources_examined or []
+            sources_examined=sources_examined or [],
+            previous_iteration_data=previous_iteration_data
         )
 
         if clone_logger:
@@ -230,7 +233,8 @@ class UnifiedSynthesizer:
         search_terms: List[str] = None,
         note_to_self: str = None,
         initial_decision: str = None,
-        sources_examined: List[Dict] = None
+        sources_examined: List[Dict] = None,
+        previous_iteration_data: Dict = None
     ) -> str:
         """Build unified prompt."""
         from datetime import datetime
@@ -284,9 +288,51 @@ source citations (used prompt context only).
 
         if is_last_iteration:
             # Synthesis mode
-            note_section = ""
-            if note_to_self:
-                note_section = f"""
+            previous_iteration_section = ""
+            if previous_iteration_data:
+                prev_iteration = previous_iteration_data.get('iteration', 1)
+                prev_grade = previous_iteration_data.get('grade', 'Unknown')
+                prev_response = previous_iteration_data.get('response') or {}
+                prev_note = previous_iteration_data.get('note_to_self') or ''
+                prev_search_terms = previous_iteration_data.get('search_terms') or []
+
+                # Format search terms used in previous iteration
+                search_terms_str = ""
+                if prev_search_terms:
+                    search_terms_str = "\n**Search Terms Used:** " + ", ".join(f'"{t}"' for t in prev_search_terms)
+
+                # Format the previous response as JSON
+                try:
+                    prev_response_str = json.dumps(prev_response, indent=2) if prev_response else "(No response generated)"
+                    # Escape any triple backticks in the JSON to prevent markdown breakage
+                    prev_response_str = prev_response_str.replace('```', '` ` `')
+                except:
+                    prev_response_str = str(prev_response).replace('```', '` ` `')
+
+                previous_iteration_section = f"""
+## Your Previous Response (Iteration {prev_iteration}), Grade: {prev_grade}
+{search_terms_str}
+
+```json
+{prev_response_str}
+```
+
+**Grade: {prev_grade}**"""
+
+                if prev_note:
+                    previous_iteration_section += f"""
+**Your Comment to Self:** "{prev_note}"
+"""
+
+                previous_iteration_section += """
+
+---
+**IMPORTANT:** You are now receiving additional search results based on your self-correction request.
+Use your previous response as a foundation and improve upon it with the new information.
+"""
+            elif note_to_self:
+                # Fallback to old behavior if only note_to_self is provided
+                previous_iteration_section = f"""
 ## Note from Previous Attempt
 The previous synthesis attempt was self-assessed as insufficient. Here is your note to yourself for this attempt:
 "{note_to_self}"
@@ -297,7 +343,7 @@ The previous synthesis attempt was self-assessed as insufficient. Here is your n
 Query: {query}
 
 **Today's Date:** {current_date}
-{note_section}
+{previous_iteration_section}
 ## Structure Legend
 
 - **Q1.{'{n}'}:** Query number in iteration 1 (search term used)

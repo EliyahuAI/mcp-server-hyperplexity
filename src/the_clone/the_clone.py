@@ -1583,6 +1583,8 @@ class TheClone2Refined:
         suggested_search_terms = synthesis_result.get('suggested_search_terms', [])
         request_upgrade = synthesis_result.get('request_capability_upgrade', False)
         note_to_self = synthesis_result.get('note_to_self')
+        original_note_to_self = note_to_self  # Preserve original before prefix is added
+        previous_answer = synthesis_result.get('answer', {})  # Capture for passing to next iteration
         upgraded = False
 
         # Only trigger if low grade AND (we have search terms OR explicit upgrade request)
@@ -1781,11 +1783,21 @@ class TheClone2Refined:
 
             logger.debug(f"[CLONE] Retrying synthesis with {target_model}")
 
+            # Build previous iteration data to pass to synthesis
+            # Note: First synthesis is always iteration 1, so previous is always 1
+            previous_iteration_data = {
+                'iteration': 1,  # First synthesis is always iteration 1
+                'grade': self_assessment,
+                'response': previous_answer,
+                'note_to_self': original_note_to_self or '',  # Original note before prefix was added
+                'search_terms': search_terms or []  # Search terms used in previous iteration (ensure list)
+            }
+
             synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
                 query=prompt,
                 snippets=all_snippets,
                 context=synthesis_context,
-                iteration=1,
+                iteration=iteration,
                 is_last_iteration=True,
                 schema=schema,
                 model=target_model,
@@ -1795,7 +1807,8 @@ class TheClone2Refined:
                 clone_logger=clone_logger,
                 note_to_self=note_to_self,
                 initial_decision=decision,  # Pass initial decision
-                sources_examined=sources_examined  # Pass examined sources
+                sources_examined=sources_examined,  # Pass examined sources
+                previous_iteration_data=previous_iteration_data  # Pass previous iteration data
             )
 
             tier4_cost, tier4_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}), clone_logger, stats)
