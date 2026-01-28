@@ -1377,6 +1377,11 @@ if (isSimpleConfirmation && tableMakerState.confirmationResponse) {
 }
 
 // Otherwise, send to backend for AI processing (user wants changes)
+// Log error if blank confirmation is going to backend (stored response should have been used)
+if (isSimpleConfirmation) {
+    console.error('[TABLE_MAKER] BUG: Blank/simple confirmation going to backend - confirmationResponse was null/missing. This should have been handled locally.');
+}
+
 const messageToSend = userMessage || 'Yes, looks good. Please generate this table.';
 
 // Add user message to chat (show actual message or affirmative)

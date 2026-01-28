@@ -487,6 +487,10 @@ if (data.mode === 1) {
                     // Send empty message to trigger config generation
                     await sendInterviewMessage(conversationId, '');
                 } else {
+                    // Log error if blank confirmation is going to backend (stored response should have been used)
+                    if (isSimpleConfirmation) {
+                        console.error('[UPLOAD_INTERVIEW] BUG: Blank/simple confirmation going to backend - confirmation was null/missing. This should have been handled locally.');
+                    }
                     // User wants changes - send their message
                     markButtonSelected(button, 'Thinking...');
                     await addChatMessage(cardId, 'user', userMessage);
