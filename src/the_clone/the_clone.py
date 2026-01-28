@@ -489,6 +489,11 @@ class TheClone2Refined:
             global_limits['max_sources_total'] = max_per_search * len(search_terms)
             logger.debug(f"[CLONE] FINDALL mode: Overriding max_sources_total to {global_limits['max_sources_total']}")
 
+            # FINDALL mode: Use Gemini 2.5 Flash for synthesis (faster for entity enumeration)
+            if not model_override:
+                models['synthesis'] = 'gemini-2.5-flash'
+                logger.debug(f"[CLONE] FINDALL mode: Using Gemini 2.5 Flash for synthesis")
+
         logger.debug(f"[CLONE] Strategy: {strategy['name']} (breadth={breadth}, depth={depth})")
         logger.debug(f"[CLONE] Synthesis tier: {synthesis_tier} (model: {models['synthesis']})")
         logger.debug(f"[CLONE] Params: batch={strategy['sources_per_batch']}, mode={strategy['extraction_mode']}, max_snippets={strategy['max_snippets_per_source']}, min_p={strategy['min_p_threshold']}")
@@ -1263,7 +1268,7 @@ class TheClone2Refined:
             if clone_logger:
                 clone_logger.start_step("Extraction")
 
-            # FINDALL MODE: Process sources grouped by search in PARALLEL
+            # FINDALL MODE: Process sources grouped by search in PARALLEL (one batch per search)
             if strategy.get('bypass_global_source_limit') and strategy.get('batch_extraction'):
                 logger.debug(f"[CLONE] FINDALL mode: Processing sources grouped by search in PARALLEL")
 
@@ -1277,19 +1282,19 @@ class TheClone2Refined:
 
                 logger.debug(f"[CLONE] FINDALL: Found {len(sources_by_search)} searches with sources")
 
+                # Track sources examined
+                sources_examined.extend(ranked_sources)
+
                 # Create extraction tasks for each search (run in PARALLEL)
                 extraction_tasks = []
                 for search_idx in sorted(sources_by_search.keys()):
                     search_sources = sources_by_search[search_idx]
                     snippet_id_prefix = f"S{search_idx}"
 
-                    # Track sources examined
-                    sources_examined.extend(search_sources)
-
                     logger.debug(f"[CLONE] FINDALL Search {search_idx}: Queueing {len(search_sources)} sources for batch extraction")
 
                     task = self.snippet_extractor.extract_from_sources_batch(
-                        sources=search_sources,  # All 20 sources for this search
+                        sources=search_sources,  # All sources for this search in one batch
                         query=prompt,
                         snippet_id_prefix=snippet_id_prefix,
                         all_search_terms=search_terms,
@@ -1325,7 +1330,7 @@ class TheClone2Refined:
                         all_snippets.extend(snippets)
                         logger.debug(f"[CLONE] FINDALL Search {search_idx}: Extracted {len(snippets)} snippets")
 
-                    # Extract cost
+                    # Extract cost ONCE per batch (not per source - model_response is shared)
                     if result and len(result) > 0:
                         model_response = result[0].get('model_response', {})
                         extract_cost, extract_provider = self._extract_cost_and_provider(model_response, clone_logger, stats)
@@ -1725,23 +1730,23 @@ class TheClone2Refined:
                         if isinstance(batch_result, Exception):
                             logger.error(f"[CLONE] Extraction batch {i} failed: {batch_result}")
                             continue
-                            
-                        # Flatten list of lists? No, batch_result is a LIST of source results
+
+                        # Collect snippets from all sources in this batch
                         new_snippets = []
-                        # Each batch_result is a list of dicts (one per source in that batch)
                         for source_result in batch_result:
                             new_snippets.extend(source_result.get('snippets', []))
-                            model_response = source_result.get('model_response', {})
-                            # Note: Cost attribution might double-count if model_response is shared?
-                            # extract_from_sources_batch returns unique model_response per batch call
+
+                        all_snippets.extend(new_snippets)
+                        total_new_snippets += len(new_snippets)
+
+                        # Extract cost ONCE per batch (model_response is shared across sources in batch)
+                        if batch_result and len(batch_result) > 0:
+                            model_response = batch_result[0].get('model_response', {})
                             extract_cost, extract_provider = self._extract_cost_and_provider(model_response, clone_logger, stats)
                             correction_extraction_cost += extract_cost
                             costs['extraction'] += extract_cost
                             costs_by_provider[extract_provider] = costs_by_provider.get(extract_provider, 0.0) + extract_cost
                             calls_by_provider[extract_provider] = calls_by_provider.get(extract_provider, 0) + 1
-                        
-                        all_snippets.extend(new_snippets)
-                        total_new_snippets += len(new_snippets)
 
                     # Update global source counter
                     sources_pulled += len(new_ranked_sources)
