@@ -435,16 +435,22 @@ Imagine a client paid an expert researcher for this answer. Would they be satisf
 **Grade your synthesis (A+ to C-):**
 - **A+/A**: Expert-quality - client would be satisfied, nothing important missing
 - **B**: Acceptable but incomplete - missing information that's likely findable online
-  - **Required:** Provide `suggested_search_terms` for the missing information.
+  - **Optional:** Provide `suggested_search_terms` ONLY if you have specific, concrete gaps that targeted searches would fill.
   - **Optional:** `request_capability_upgrade=true` if reasoning is too complex.
   - **Optional:** `note_to_self` for next attempt.
 - **C**: Insufficient - cannot meaningfully answer, or information not available
-  - **Optional:** Provide `suggested_search_terms` if more search would help.
+  - **Optional:** Provide `suggested_search_terms` ONLY if specific searches would likely help.
+
+**CRITICAL for suggested_search_terms:**
+- ONLY suggest search terms when you have HIGH CONFIDENCE they will find new, useful information
+- Do NOT suggest speculative or exploratory searches ("maybe there's more about X")
+- Each term should target a SPECIFIC gap you identified (e.g., "Company Y Phase 3 trial results 2024")
+- If you're unsure whether more searches would help, do NOT suggest any - just give your best answer
+- Empty `suggested_search_terms` is preferable to low-confidence guesses
 
 **CRITICAL:**
 - You MUST always provide an answer that satisfies the schema structure, even if incomplete.
-- If you grade B or C, we will only re-run if you provide `suggested_search_terms` OR set `request_capability_upgrade=true`.
-- Be specific with search terms if you need more info.
+- We will only re-run searches if you provide `suggested_search_terms` OR set `request_capability_upgrade=true`.
 
 Return JSON with 'comparison', 'self_assessment', and optional 'suggested_search_terms', 'request_capability_upgrade', and 'note_to_self' fields."""
 

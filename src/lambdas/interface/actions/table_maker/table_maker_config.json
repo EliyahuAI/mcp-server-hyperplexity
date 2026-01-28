@@ -78,30 +78,35 @@
         "model": "the-clone",
         "search_context_size": "high",
         "findall": true,
-        "description": "Primary: the_clone with findall mode for comprehensive entity identification",
-        "min_candidates_percentage": 75,
-        "_note": "Stop early if we get 75% of target_row_count (15/20 rows)"
+        "findall_iterations": 2,
+        "description": "Round 1: the_clone findall with up to 2 self-correction iterations",
+        "min_candidates_percentage": 50,
+        "_note": "First discovery round. Low threshold (50%) to continue to round 2 for more entities."
       },
       {
-        "model": "sonar-pro",
+        "model": "the-clone",
         "search_context_size": "high",
-        "description": "Primary: Premium search with sonar-pro for high quality results",
+        "findall": true,
+        "findall_iterations": 2,
+        "description": "Round 2: the_clone findall - find MORE entities not in previous round",
         "min_candidates_percentage": 75,
-        "_note": "Stop early if we get 75% of target_row_count (15/20 rows)"
+        "_note": "Second discovery round with accumulated context from round 1."
+      },
+      {
+        "model": "the-clone",
+        "search_context_size": "high",
+        "findall": true,
+        "findall_iterations": 2,
+        "description": "Round 3: the_clone findall - find remaining entities",
+        "min_candidates_percentage": 90,
+        "_note": "Third discovery round. Higher threshold (90%) before escalating to other models."
       },
       {
         "model": "claude-haiku-4-5",
         "max_web_searches": 10,
         "description": "Fallback: Claude haiku with web search for comprehensive coverage",
-        "min_candidates_percentage": 75,
-        "_note": "Moving to claude haiku for comprehensive coverage"
-      },
-      {
-        "model": "claude-sonnet-4-5",
-        "max_web_searches": 10,
-        "description": "Fallback: Claude Sonnet with web search for comprehensive coverage",
         "min_candidates_percentage": null,
-        "_note": "No early stop - this is the final level, always runs if previous insufficient"
+        "_note": "Final fallback - no early stop, always runs if previous insufficient"
       }
     ],
 

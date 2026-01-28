@@ -136,6 +136,7 @@ class RowDiscoveryStream:
                 max_web_searches = strategy.get('max_web_searches', 3)  # For Claude models
                 min_percentage = strategy.get('min_candidates_percentage')
                 findall = strategy.get('findall', False)  # For the-clone models
+                findall_iterations = strategy.get('findall_iterations', 1)  # Max self-correction iterations
 
                 logger.info(
                     f"[ESCALATION] {subdomain_name} entering round {round_idx}/{len(escalation_strategy)}: "
@@ -194,7 +195,8 @@ class RowDiscoveryStream:
                     combined_improvements,  # Pass improvements from other subdomains AND previous rounds
                     max_web_searches,
                     findall,        # Pass findall flag for the-clone (position 9)
-                    soft_schema     # Pass soft_schema flag (position 10)
+                    soft_schema,    # Pass soft_schema flag (position 10)
+                    findall_iterations  # Pass findall_iterations for the-clone (position 11)
                 )
 
                 # Tag each candidate with model/context info
@@ -550,7 +552,8 @@ class RowDiscoveryStream:
         previous_search_improvements: Optional[List[str]] = None,
         max_web_searches: int = 3,
         findall: bool = False,
-        soft_schema: bool = True
+        soft_schema: bool = True,
+        findall_iterations: int = 1
     ) -> Dict[str, Any]:
         """
         Execute web search with integrated scoring in ONE call.
@@ -634,7 +637,8 @@ class RowDiscoveryStream:
                 soft_schema=soft_schema,  # Use config setting for schema strictness
                 include_domains=include_domains,  # Domain filtering
                 exclude_domains=exclude_domains,   # Domain filtering
-                findall=findall  # For the-clone models
+                findall=findall,  # For the-clone models
+                findall_iterations=findall_iterations  # Max self-correction iterations for the-clone
             )
 
             # call_structured_api returns dict with 'response', 'token_usage', etc.

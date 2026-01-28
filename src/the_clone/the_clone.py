@@ -78,6 +78,7 @@ class TheClone2Refined:
         use_code_extraction: bool = True,
         disable_keyword_scoring: bool = False,
         findall: bool = False,
+        findall_iterations: int = 1,
         extraction: bool = False,
         session_id: Optional[str] = None,
         email: Optional[str] = None,
@@ -1592,176 +1593,189 @@ class TheClone2Refined:
         previous_answer = synthesis_result.get('answer', {})  # Capture for passing to next iteration
         upgraded = False
 
-        # Only trigger if low grade AND (we have search terms OR explicit upgrade request)
-        if self_assessment not in ['A+', 'A'] and (suggested_search_terms or (request_upgrade and synthesis_tier != 'tier4')):
-            logger.info(f"\n[CLONE] Self-assessment: {self_assessment}. Checking for improvements...")
-            
-            # 1. Execute suggested searches if any
-            if suggested_search_terms:
-                # Limit to max 2 additional searches
-                suggested_search_terms = suggested_search_terms[:2]
-                
-                iteration += 1 # Count self-correction as an additional iteration
-                logger.debug(f"[CLONE] Model suggested search terms: {suggested_search_terms}")
-                if clone_logger:
-                    clone_logger.log_section("Self-Correction Search", f"Grade {self_assessment}. Executing suggested searches: {suggested_search_terms}", level=2)
+        # Track all search terms used across iterations (for deduplication)
+        all_search_terms_used = set(search_terms or [])
 
-                # Prepend system message to note_to_self
-                prefix = "Providing additional search results that you requested"
-                if note_to_self:
-                    note_to_self = f"{prefix}: {note_to_self}"
-                else:
-                    note_to_self = f"{prefix}."
+        # Determine max self-correction iterations (findall mode can do more)
+        max_self_corrections = findall_iterations if findall else 1
+        self_correction_count = 0
 
-                # Search
-                new_search_results = await self.search_manager.execute_searches(
-                    search_terms=suggested_search_terms,
-                    search_settings=search_settings,
-                    include_domains=search_include_domains,
-                    exclude_domains=search_exclude_domains,
-                    clone_logger=clone_logger
+        # Self-correction loop: runs up to max_self_corrections times while we have search terms
+        while (self_assessment not in ['A+', 'A']
+               and suggested_search_terms
+               and self_correction_count < max_self_corrections):
+
+            self_correction_count += 1
+            logger.info(f"\n[CLONE] Self-correction {self_correction_count}/{max_self_corrections}: Grade {self_assessment}")
+
+            # Filter out already-used search terms and limit to 2
+            suggested_search_terms = [t for t in suggested_search_terms if t not in all_search_terms_used][:2]
+            if not suggested_search_terms:
+                logger.debug(f"[CLONE] No new search terms to try, stopping self-correction")
+                break
+
+            all_search_terms_used.update(suggested_search_terms)
+            iteration += 1
+            logger.debug(f"[CLONE] Suggested search terms: {suggested_search_terms}")
+            if clone_logger:
+                clone_logger.log_section("Self-Correction Search", f"Iteration {self_correction_count}: Grade {self_assessment}. Executing: {suggested_search_terms}", level=2)
+
+            # Prepend system message to note_to_self
+            prefix = "Providing additional search results that you requested"
+            if note_to_self:
+                note_to_self = f"{prefix}: {note_to_self}"
+            else:
+                note_to_self = f"{prefix}."
+
+            # Search
+            new_search_results = await self.search_manager.execute_searches(
+                search_terms=suggested_search_terms,
+                search_settings=search_settings,
+                include_domains=search_include_domains,
+                exclude_domains=search_exclude_domains,
+                clone_logger=clone_logger
+            )
+            search_cost = len(suggested_search_terms) * 0.005
+            costs['search'] += search_cost
+            costs_by_provider['perplexity'] += search_cost
+            calls_by_provider['perplexity'] += len(suggested_search_terms)
+            search_results.extend(new_search_results)
+
+            if clone_logger:
+                clone_logger.record_step_metric(
+                    "Self-Correction Search",
+                    "perplexity",
+                    "Search API",
+                    search_cost,
+                    0.0,
+                    f"{len(suggested_search_terms)} queries"
                 )
-                search_cost = len(suggested_search_terms) * 0.005
-                costs['search'] += search_cost
-                costs_by_provider['perplexity'] += search_cost
-                calls_by_provider['perplexity'] += len(suggested_search_terms)
-                search_results.extend(new_search_results)
-                
-                if clone_logger:
-                    clone_logger.record_step_metric(
-                        "Self-Correction Search", 
-                        "perplexity", 
-                        "Search API", 
-                        search_cost, 
-                        0.0, 
-                        f"{len(suggested_search_terms)} queries"
-                    )
 
-                # Triage
+            # Triage
+            start_time_corr = time.time()
+            correction_triage_cost = 0.0
+            new_ranked_lists, new_triage_results = await self.source_triage.triage_all_searches(
+                search_results=new_search_results,
+                search_terms=suggested_search_terms,
+                query=prompt,
+                existing_snippets=all_snippets,
+                positive_keywords=positive_keywords,
+                negative_keywords=negative_keywords,
+                model=models['triage'],
+                soft_schema=False,
+                clone_logger=clone_logger,
+                provider=provider
+            )
+            for result in new_triage_results:
+                if not isinstance(result, Exception):
+                    triage_cost, triage_provider = self._extract_cost_and_provider(result.get('model_response', {}), clone_logger, stats)
+                    correction_triage_cost += triage_cost
+                    costs['triage'] += triage_cost
+                    costs_by_provider[triage_provider] = costs_by_provider.get(triage_provider, 0.0) + triage_cost
+                    calls_by_provider[triage_provider] = calls_by_provider.get(triage_provider, 0) + 1
+
+            if clone_logger:
+                clone_logger.record_step_metric(
+                    "Self-Correction Triage",
+                    provider,
+                    models['triage'],
+                    correction_triage_cost,
+                    time.time() - start_time_corr,
+                    f"Ranked {len(new_ranked_lists)} groups"
+                )
+
+            # Build pool
+            new_ranked_sources = self._build_ranked_source_pool(new_search_results, new_ranked_lists, suggested_search_terms)
+            ranked_sources.extend(new_ranked_sources)
+
+            # Extraction
+            if new_ranked_sources:
+                logger.debug(f"[CLONE] Extracting from {len(new_ranked_sources)} new sources (Parallel)...")
+
+                new_sources_pulled = 0
+                total_new_snippets = 0
+                extraction_tasks = []
+
+                # Prepare tasks
+                current_global_index = sources_pulled + 1  # Start index for continuous numbering
+
+                while new_sources_pulled < len(new_ranked_sources):
+                    # Determine batch (restrict to same search term)
+                    batch_size = strategy['sources_per_batch']
+                    current_search_index = new_ranked_sources[new_sources_pulled].get('_search_index')
+
+                    batch_end = new_sources_pulled
+                    for i in range(new_sources_pulled, min(new_sources_pulled + batch_size, len(new_ranked_sources))):
+                        if new_ranked_sources[i].get('_search_index') != current_search_index:
+                            break
+                        batch_end = i + 1
+
+                    sources_this_batch = new_ranked_sources[new_sources_pulled:batch_end]
+
+                    # Add task
+                    task = self.snippet_extractor.extract_from_sources_batch(
+                        sources=sources_this_batch,
+                        query=prompt,
+                        snippet_id_prefix=f"S{iteration}",  # Use iteration-specific prefix to avoid ID collisions
+                        all_search_terms=list(all_search_terms_used),
+                        model=models['extraction'],
+                        soft_schema=False,
+                        min_quality_threshold=strategy['min_p_threshold'],
+                        extraction_mode=strategy['extraction_mode'],
+                        max_snippets_per_source=strategy['max_snippets_per_source'],
+                        clone_logger=clone_logger,
+                        provider=provider,
+                        start_source_index=current_global_index,
+                        accept_all_quality_levels=strategy.get('accept_all_quality_levels', False)
+                    )
+                    extraction_tasks.append(task)
+
+                    # Update counters for next batch
+                    new_sources_pulled += len(sources_this_batch)
+                    current_global_index += len(sources_this_batch)
+
+                # Execute all extraction tasks in parallel
                 start_time_corr = time.time()
-                correction_triage_cost = 0.0
-                new_ranked_lists, new_triage_results = await self.source_triage.triage_all_searches(
-                    search_results=new_search_results,
-                    search_terms=suggested_search_terms,
-                    query=prompt,
-                    existing_snippets=all_snippets,
-                    positive_keywords=positive_keywords,
-                    negative_keywords=negative_keywords,
-                    model=models['triage'],
-                    soft_schema=False,
-                    clone_logger=clone_logger,
-                    provider=provider
-                )
-                for result in new_triage_results:
-                    if not isinstance(result, Exception):
-                        triage_cost, triage_provider = self._extract_cost_and_provider(result.get('model_response', {}), clone_logger, stats)
-                        correction_triage_cost += triage_cost
-                        costs['triage'] += triage_cost
-                        costs_by_provider[triage_provider] = costs_by_provider.get(triage_provider, 0.0) + triage_cost
-                        calls_by_provider[triage_provider] = calls_by_provider.get(triage_provider, 0) + 1
-                
+                correction_extraction_cost = 0.0
+                batch_results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
+
+                # Process results
+                for i, batch_result in enumerate(batch_results):
+                    if isinstance(batch_result, Exception):
+                        logger.error(f"[CLONE] Extraction batch {i} failed: {batch_result}")
+                        continue
+
+                    # Collect snippets from all sources in this batch
+                    new_snippets = []
+                    for source_result in batch_result:
+                        new_snippets.extend(source_result.get('snippets', []))
+
+                    all_snippets.extend(new_snippets)
+                    total_new_snippets += len(new_snippets)
+
+                    # Extract cost ONCE per batch (model_response is shared across sources in batch)
+                    if batch_result and len(batch_result) > 0:
+                        model_response = batch_result[0].get('model_response', {})
+                        extract_cost, extract_provider = self._extract_cost_and_provider(model_response, clone_logger, stats)
+                        correction_extraction_cost += extract_cost
+                        costs['extraction'] += extract_cost
+                        costs_by_provider[extract_provider] = costs_by_provider.get(extract_provider, 0.0) + extract_cost
+                        calls_by_provider[extract_provider] = calls_by_provider.get(extract_provider, 0) + 1
+
+                # Update global source counter
+                sources_pulled += len(new_ranked_sources)
+
                 if clone_logger:
                     clone_logger.record_step_metric(
-                        "Self-Correction Triage", 
-                        provider, 
-                        models['triage'], 
-                        correction_triage_cost, 
-                        time.time() - start_time_corr, 
-                        f"Ranked {len(new_ranked_lists)} groups"
+                        "Self-Correction Extraction",
+                        provider,
+                        models['extraction'],
+                        correction_extraction_cost,
+                        time.time() - start_time_corr,
+                        f"Extracted {total_new_snippets} new snippets (Parallel)"
                     )
 
-                # Build pool
-                new_ranked_sources = self._build_ranked_source_pool(new_search_results, new_ranked_lists, suggested_search_terms)
-                ranked_sources.extend(new_ranked_sources)
-
-                # Extraction
-                if new_ranked_sources:
-                    logger.debug(f"[CLONE] Extracting from {len(new_ranked_sources)} new sources (Parallel)...")
-                    
-                    new_sources_pulled = 0
-                    total_new_snippets = 0
-                    extraction_tasks = []
-                    
-                    # Prepare tasks
-                    current_global_index = sources_pulled + 1 # Start index for continuous numbering
-
-                    while new_sources_pulled < len(new_ranked_sources):
-                        # Determine batch (restrict to same search term)
-                        batch_size = strategy['sources_per_batch']
-                        current_search_index = new_ranked_sources[new_sources_pulled].get('_search_index')
-                        
-                        batch_end = new_sources_pulled
-                        for i in range(new_sources_pulled, min(new_sources_pulled + batch_size, len(new_ranked_sources))):
-                            if new_ranked_sources[i].get('_search_index') != current_search_index:
-                                break
-                            batch_end = i + 1
-                        
-                        sources_this_batch = new_ranked_sources[new_sources_pulled:batch_end]
-                        
-                        # Add task
-                        task = self.snippet_extractor.extract_from_sources_batch(
-                            sources=sources_this_batch,
-                            query=prompt,
-                            snippet_id_prefix=f"S{iteration}",  # Use iteration-specific prefix to avoid ID collisions
-                            all_search_terms=search_terms + suggested_search_terms,
-                            model=models['extraction'],
-                            soft_schema=False,
-                            min_quality_threshold=strategy['min_p_threshold'],
-                            extraction_mode=strategy['extraction_mode'],
-                            max_snippets_per_source=strategy['max_snippets_per_source'],
-                            clone_logger=clone_logger,
-                            provider=provider,
-                            start_source_index=current_global_index,
-                            accept_all_quality_levels=strategy.get('accept_all_quality_levels', False)
-                        )
-                        extraction_tasks.append(task)
-                        
-                        # Update counters for next batch
-                        new_sources_pulled += len(sources_this_batch)
-                        current_global_index += len(sources_this_batch)
-                    
-                    # Execute all extraction tasks in parallel
-                    start_time_corr = time.time()
-                    correction_extraction_cost = 0.0
-                    batch_results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
-                    
-                    # Process results
-                    for i, batch_result in enumerate(batch_results):
-                        if isinstance(batch_result, Exception):
-                            logger.error(f"[CLONE] Extraction batch {i} failed: {batch_result}")
-                            continue
-
-                        # Collect snippets from all sources in this batch
-                        new_snippets = []
-                        for source_result in batch_result:
-                            new_snippets.extend(source_result.get('snippets', []))
-
-                        all_snippets.extend(new_snippets)
-                        total_new_snippets += len(new_snippets)
-
-                        # Extract cost ONCE per batch (model_response is shared across sources in batch)
-                        if batch_result and len(batch_result) > 0:
-                            model_response = batch_result[0].get('model_response', {})
-                            extract_cost, extract_provider = self._extract_cost_and_provider(model_response, clone_logger, stats)
-                            correction_extraction_cost += extract_cost
-                            costs['extraction'] += extract_cost
-                            costs_by_provider[extract_provider] = costs_by_provider.get(extract_provider, 0.0) + extract_cost
-                            calls_by_provider[extract_provider] = calls_by_provider.get(extract_provider, 0) + 1
-
-                    # Update global source counter
-                    sources_pulled += len(new_ranked_sources)
-                    
-                    if clone_logger:
-                        clone_logger.record_step_metric(
-                            "Self-Correction Extraction", 
-                            provider, 
-                            models['extraction'], 
-                            correction_extraction_cost, 
-                            time.time() - start_time_corr, 
-                            f"Extracted {total_new_snippets} new snippets (Parallel)"
-                        )
-                            
-                    logger.debug(f"[CLONE] Added {total_new_snippets} new snippets")
+                logger.debug(f"[CLONE] Added {total_new_snippets} new snippets")
 
             # 2. Determine model for re-synthesis
             target_model = models['synthesis']
@@ -1806,7 +1820,7 @@ class TheClone2Refined:
                 is_last_iteration=True,
                 schema=schema,
                 model=target_model,
-                search_terms=search_terms + suggested_search_terms,
+                search_terms=list(all_search_terms_used),
                 debug_dir=debug_dir,
                 soft_schema=target_soft_schema,
                 clone_logger=clone_logger,
@@ -1820,7 +1834,7 @@ class TheClone2Refined:
             costs['synthesis'] += tier4_cost
             costs_by_provider[tier4_provider] = costs_by_provider.get(tier4_provider, 0.0) + tier4_cost
             calls_by_provider[tier4_provider] = calls_by_provider.get(tier4_provider, 0) + 1
-            
+
             step_time_phase = time.time() - step_start_phase
             if clone_logger:
                 model_resp = synthesis_result.get('model_response', {})
@@ -1829,13 +1843,16 @@ class TheClone2Refined:
                 clone_logger.record_step_metric(action_name, tier4_provider, used_model, tier4_cost, step_time_phase, "Re-synthesized")
                 clone_logger.end_step(action_name)
 
-            # Get new self-assessment
+            # Extract values for next iteration (if loop continues)
             answer_data = synthesis_result.get('answer', {})
             self_assessment = answer_data.get('self_assessment', 'A') if isinstance(answer_data, dict) else 'A'
-            logger.debug(f"[CLONE] Final self-assessment: {self_assessment}")
-            
-        elif self_assessment not in ['A+', 'A']:
-            logger.warning(f"[CLONE] Low self-assessment ({self_assessment}) but no search/upgrade improvements requested. Returning best effort.")
+            suggested_search_terms = synthesis_result.get('suggested_search_terms', [])
+            previous_answer = synthesis_result.get('answer', {})
+            logger.debug(f"[CLONE] Self-correction {self_correction_count} complete: grade={self_assessment}, new_terms={len(suggested_search_terms)}")
+
+        # Warn if low grade but no self-correction was possible
+        if self_correction_count == 0 and self_assessment not in ['A+', 'A']:
+            logger.warning(f"[CLONE] Low self-assessment ({self_assessment}) but no search terms suggested. Returning best effort.")
 
         # Build response
         total_time = time.time() - call_start_time # Use overall start time
