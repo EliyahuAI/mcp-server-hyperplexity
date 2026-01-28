@@ -1803,13 +1803,12 @@ class TheClone2Refined:
             logger.debug(f"[CLONE] Retrying synthesis with {target_model}")
 
             # Build previous iteration data to pass to synthesis
-            # Note: First synthesis is always iteration 1, so previous is always 1
             previous_iteration_data = {
-                'iteration': 1,  # First synthesis is always iteration 1
+                'iteration': self_correction_count,  # Track actual iteration number
                 'grade': self_assessment,
                 'response': previous_answer,
                 'note_to_self': original_note_to_self or '',  # Original note before prefix was added
-                'search_terms': search_terms or []  # Search terms used in previous iteration (ensure list)
+                'search_terms': list(all_search_terms_used)  # All search terms used across iterations
             }
 
             synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
@@ -1850,8 +1849,66 @@ class TheClone2Refined:
             previous_answer = synthesis_result.get('answer', {})
             logger.debug(f"[CLONE] Self-correction {self_correction_count} complete: grade={self_assessment}, new_terms={len(suggested_search_terms)}")
 
+        # Handle tier4 upgrade request if loop didn't run (no search terms but upgrade requested)
+        if (self_correction_count == 0
+            and self_assessment not in ['A+', 'A']
+            and request_upgrade
+            and synthesis_tier != 'tier4'):
+
+            logger.info(f"[CLONE] Grade {self_assessment} with upgrade request (no search terms). Upgrading to tier4.")
+            tier4_models = get_models_for_tier(provider, 'tier4', strategy=strategy)
+            target_model = tier4_models['synthesis']
+            synthesis_tier = 'tier4'
+            models['synthesis'] = target_model
+            upgraded = True
+
+            step_start_phase = time.time()
+            if clone_logger:
+                clone_logger.start_step("Tier 4 Upgrade (No Search)")
+                clone_logger.log_section("Tier 4 Upgrade", f"Grade {self_assessment}. Upgrading model without new searches.", level=2)
+
+            synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
+                query=prompt,
+                snippets=all_snippets,
+                context=synthesis_context,
+                iteration=iteration,
+                is_last_iteration=True,
+                schema=schema,
+                model=target_model,
+                search_terms=list(all_search_terms_used),
+                debug_dir=debug_dir,
+                soft_schema=False,
+                clone_logger=clone_logger,
+                note_to_self=note_to_self,
+                initial_decision=decision,
+                sources_examined=sources_examined,
+                previous_iteration_data={
+                    'iteration': 1,
+                    'grade': self_assessment,
+                    'response': previous_answer,
+                    'note_to_self': original_note_to_self or '',
+                    'search_terms': list(all_search_terms_used)
+                }
+            )
+
+            upgrade_cost, upgrade_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}), clone_logger, stats)
+            costs['synthesis'] += upgrade_cost
+            costs_by_provider[upgrade_provider] = costs_by_provider.get(upgrade_provider, 0.0) + upgrade_cost
+            calls_by_provider[upgrade_provider] = calls_by_provider.get(upgrade_provider, 0) + 1
+
+            step_time_phase = time.time() - step_start_phase
+            if clone_logger:
+                model_resp = synthesis_result.get('model_response', {})
+                used_model = model_resp.get('model_used', target_model)
+                if model_resp.get('used_backup_model'): used_model += " (Backup)"
+                clone_logger.record_step_metric("Tier 4 Upgrade (No Search)", upgrade_provider, used_model, upgrade_cost, step_time_phase, "Upgraded")
+                clone_logger.end_step("Tier 4 Upgrade (No Search)")
+
+            answer_data = synthesis_result.get('answer', {})
+            self_assessment = answer_data.get('self_assessment', 'A') if isinstance(answer_data, dict) else 'A'
+
         # Warn if low grade but no self-correction was possible
-        if self_correction_count == 0 and self_assessment not in ['A+', 'A']:
+        elif self_correction_count == 0 and self_assessment not in ['A+', 'A']:
             logger.warning(f"[CLONE] Low self-assessment ({self_assessment}) but no search terms suggested. Returning best effort.")
 
         # Build response
