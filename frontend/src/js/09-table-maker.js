@@ -15,6 +15,20 @@ const tableMakerState = {
     confirmationResponse: null
 };
 
+// Reset table maker state - call when starting a new conversation
+function resetTableMakerState() {
+    console.log('[TABLE_MAKER] Resetting state for new conversation');
+    tableMakerState.cardId = null;
+    tableMakerState.conversationId = null;
+    tableMakerState.messages = [];
+    tableMakerState.confirmationResponse = null;
+    tableMakerState.previewData = null;
+    tableMakerState.previewCardId = null;
+    tableMakerState.table_name = null;
+    tableMakerState.reasoning = null;
+    tableMakerState.clarifying_questions = null;
+}
+
 function handleTableExecutionUpdate(message) {
     const conversationId = message.conversation_id;
     const phase = message.phase;
@@ -717,6 +731,9 @@ function collapseConversation(conversationId) {
 }
 
 function createTableMakerCard() {
+// Reset state from any previous conversation to prevent stale data issues
+resetTableMakerState();
+
 const cardId = generateCardId();
 tableMakerState.cardId = cardId;
 
@@ -794,9 +811,29 @@ if (inputContainer) inputContainer.style.display = 'none';
 // Keep buttons visible to show "Thinking..." state
 showThinkingInCard(cardId, 'Starting conversation with AI...', true);
 
+// Clear any old table maker state to prevent stale data
+// This ensures fresh conversation even if old state lingered
+if (tableMakerState.conversationId && tableMakerState.cardId !== cardId) {
+    console.log('[TABLE_MAKER] Clearing stale conversation state from previous card');
+    resetTableMakerState();
+    tableMakerState.cardId = cardId;
+}
+
 // Add user message to chat
 addChatMessage(cardId, 'user', userMessage);
 tableMakerState.messages.push({ role: 'user', content: userMessage });
+
+// Unregister any old table maker handlers before registering new one
+// This prevents duplicate message handling from old cards
+if (typeof unregisterCardHandler === 'function') {
+    // Unregister handlers from cards that no longer exist in DOM
+    cardHandlers.forEach((_, existingCardId) => {
+        if (existingCardId !== cardId && !document.getElementById(existingCardId)) {
+            console.log(`[TABLE_MAKER] Cleaning up orphaned handler for ${existingCardId}`);
+            unregisterCardHandler(existingCardId);
+        }
+    });
+}
 
 // Register WebSocket handler
 registerTableMakerWebSocketHandler(cardId);
@@ -810,6 +847,22 @@ if (subtitle) {
 
 // Send to backend - this will queue the work and return immediately
 try {
+    // IMPORTANT: If sessionId looks stale (from restored state), let backend generate fresh one
+    // This prevents CORS errors from using expired sessions
+    let sessionIdToUse = globalState.sessionId;
+
+    // Check if we should clear potentially stale sessionId
+    // If there's no active WebSocket for this session, it might be stale
+    if (sessionIdToUse && typeof sessionWebSockets !== 'undefined') {
+        const existingWs = sessionWebSockets.get(sessionIdToUse);
+        if (!existingWs || existingWs.readyState !== WebSocket.OPEN) {
+            // WebSocket not connected - session might be stale
+            // Let backend generate new session to be safe
+            console.log('[TABLE_MAKER] No active WebSocket for session, letting backend generate new one');
+            sessionIdToUse = null;
+        }
+    }
+
     // Backend will generate session ID in session_YYYYMMDD_HHMMSS_hex format
     const response = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
@@ -817,7 +870,7 @@ try {
         body: JSON.stringify({
             action: 'startTableConversation',
             email: globalState.email,
-            session_id: globalState.sessionId || null,  // Let backend generate if not set
+            session_id: sessionIdToUse,  // Let backend generate if null/stale
             user_message: userMessage
         })
     });

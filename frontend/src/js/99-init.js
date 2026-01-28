@@ -107,6 +107,10 @@
             }
             sessionStorage.removeItem('hyperplexity_nav_timestamp');
             sessionStorage.removeItem('hyperplexity_user_warned');
+            // Also clear stale sessionId from localStorage to prevent CORS errors
+            // from using expired sessions on reload
+            localStorage.removeItem('sessionId');
+            console.log('[NAV] Cleared sessionId from localStorage on reload');
         }
 
         // Set navigation timestamp on beforeunload
@@ -771,6 +775,21 @@ try {
 
     // Restore global state with proper initialization
     if (state.globalState) {
+        // IMPORTANT: Don't restore sessionId from saved state if it might be stale
+        // This prevents CORS errors from using expired session IDs
+        // Sessions should be created fresh for new interactions
+        const savedSessionId = state.globalState.sessionId;
+        const sessionAge = Date.now() - state.timestamp;
+        const maxSessionAge = 30 * 60 * 1000; // 30 minutes - sessions can expire
+
+        // Clear sessionId if state is old to prevent stale session CORS errors
+        if (savedSessionId && sessionAge > maxSessionAge) {
+            console.log(`[STATE] Clearing stale sessionId (age: ${Math.round(sessionAge / 60000)} min)`);
+            state.globalState.sessionId = null;
+            // Also clear from localStorage
+            localStorage.removeItem('sessionId');
+        }
+
         Object.assign(globalState, state.globalState);
 
         // Ensure debounceTimers is properly initialized as a Map

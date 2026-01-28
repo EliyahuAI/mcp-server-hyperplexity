@@ -113,6 +113,20 @@ The Hyperplexity Table Validator implements a comprehensive session persistence 
 - **Local Access**: Anyone with device access can view saved data
 - **Browser Vulnerabilities**: Subject to browser security issues
 
+### Stale Session ID Handling (Updated January 2025)
+
+A critical issue arises when `sessionId` is persisted across browser sessions but expires on the backend. This can cause CORS-like errors when the backend rejects requests for invalid sessions without proper CORS headers.
+
+**Prevention Mechanisms:**
+1. **Hard Refresh Cleanup**: On page reload (`IS_PAGE_RELOAD`), both sessionStorage state AND localStorage `sessionId` are cleared
+2. **Age-Based Clearing**: During state restoration, sessionIds older than 30 minutes are cleared to prevent stale session errors
+3. **Table Maker State Reset**: `tableMakerState` is reset when creating new cards to prevent stale `conversationId` from persisting
+4. **WebSocket Validation**: Before using a restored sessionId for Table Maker, the system checks if there's an active WebSocket connection; if not, a fresh session is requested
+
+**Files Modified:**
+- `99-init.js`: Added localStorage sessionId cleanup on reload and age-based sessionId validation during restore
+- `09-table-maker.js`: Added `resetTableMakerState()` function and cleanup of orphaned handlers
+
 #### Sensitive Data Handling
 - **Excluded**: File contents, passwords, sensitive API keys
 - **Included**: Form inputs, session IDs, non-sensitive configuration
