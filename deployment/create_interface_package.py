@@ -1094,7 +1094,14 @@ def setup_dynamodb_tables(region="us-east-1"):
             logger.info("✅ User tracking table created/verified")
         except Exception as e:
             logger.error(f"Failed to create user tracking table: {e}")
-        
+
+        # Create WebSocket message log table for message persistence/replay
+        try:
+            dynamodb_schemas.create_message_log_table()
+            logger.info("✅ WebSocket message log table created/verified (3-day TTL)")
+        except Exception as e:
+            logger.error(f"Failed to create message log table: {e}")
+
         logger.info("✅ All DynamoDB tables are ready!")
         return True
         
