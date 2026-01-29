@@ -1,25 +1,69 @@
 {
   "type": "object",
-  "required": ["subdomain", "candidates"],
+  "required": ["subdomain", "candidates_markdown", "citations"],
   "properties": {
     "subdomain": {
       "type": "string",
       "description": "The subdomain focus area being searched"
     },
+    "candidates_markdown": {
+      "type": "string",
+      "description": "Markdown table with ALL columns (ID + RESEARCH columns from column_definition). Use inline citations [n] after values. Empty string if no matches found."
+    },
+    "citations": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Map of citation numbers to URLs, e.g., {\"1\": \"https://example.com\", \"2\": \"https://other.com\"}"
+    },
+    "scoring": {
+      "type": "array",
+      "description": "Scoring breakdown per row (separate from main table)",
+      "items": {
+        "type": "object",
+        "properties": {
+          "row_id": {
+            "type": "string",
+            "description": "Row identifier matching first ID column value"
+          },
+          "relevancy": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "How well entity matches requirements (0-1)"
+          },
+          "reliability": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Source reliability score (0-1)"
+          },
+          "recency": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Information recency score (0-1)"
+          },
+          "rationale": {
+            "type": "string",
+            "description": "Brief explanation of scoring"
+          }
+        }
+      }
+    },
     "no_matches_reason": {
       "type": "string",
-      "description": "If candidates is empty, explain why no matches were found (search issues, no results, unclear queries, etc.)"
+      "description": "If candidates_markdown is empty, explain why no matches were found"
     },
     "search_improvements": {
       "type": "array",
-      "description": "Suggestions for improving search results in future subdomains (e.g., better query terms, different approaches, missing context). Only include if searches yielded poor results or required multiple attempts.",
+      "description": "Suggestions for improving search results in future subdomains",
       "items": {
         "type": "string"
       }
     },
     "domain_filtering_recommendations": {
       "type": "object",
-      "description": "Recommendations for domain filtering based on search results. Only exclusions can be recommended - included domains are set by the user.",
+      "description": "Recommendations for domain filtering based on search results",
       "properties": {
         "add_to_excluded": {
           "type": "array",
@@ -33,10 +77,6 @@
           "description": "Why these domain exclusions would help"
         }
       }
-    },
-    "candidates": {
-      "type": "string",
-      "description": "Markdown table of candidate rows. Columns: ID columns, then Relevancy, Reliability, Recency scores, Rationale, Sources. Empty string if no matches."
     }
   }
 }

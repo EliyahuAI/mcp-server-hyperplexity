@@ -28,7 +28,7 @@ Review discovered rows and choose ONE action:
 
 ## Pre-existing Rows (from Column Definition)
 
-**Note: We already have {{PRE_ROW_COUNT}} rows from extracted tables. These are PRE-APPROVED - do NOT include them in your `rows` output (they will be automatically added).**
+**Note: We already have {{PRE_ROW_COUNT}} rows from extracted tables. These are PRE-APPROVED - do NOT include them in your output (they will be automatically added).**
 
 {{PREPOPULATED_ROWS_MARKDOWN}}
 
@@ -43,27 +43,30 @@ Review discovered rows and choose ONE action:
 
 {{DISCOVERED_ROWS}}
 
-**IMPORTANT: Your `rows` output should contain ONLY the discovered rows you approve, NOT the pre-existing rows above.**
+**IMPORTANT: Your output should reference ONLY the discovered rows above, NOT the pre-existing rows.**
 
 ---
 
 ## Decision Guide
 
-**IMPORTANT: Pre-existing rows ({{PRE_ROW_COUNT}}) are automatically included. Your decision is about the {{ROW_COUNT}} DISCOVERED rows.**
+**IMPORTANT:**
+- Pre-existing rows ({{PRE_ROW_COUNT}}) are automatically included
+- **ALL discovered rows are KEPT BY DEFAULT** - only specify rows to REMOVE
+- Your decision is about the {{ROW_COUNT}} DISCOVERED rows
 
 ### Action: "pass"
 **When:** All discovered rows look good, OR discovery found 0 rows but pre-existing rows are sufficient
-**Output:** `rows` (approved discovered rows, best-first), `overall_score`
-**Note:** If discovery found 0 rows and pre-existing rows meet requirements, use "pass" with empty `rows: []`
+**Output:** `overall_score` only (no need to list rows - all are kept by default)
 
 ### Action: "filter"
 **When:** Need to remove some discovered rows (duplicates, fake entries, requirement violations)
-**Output:** `rows` (approved discovered rows), `removed` (with 1-sentence reasons), `overall_score`
+**Output:** `remove_row_ids` (rows to remove with 1-sentence reasons), `overall_score`
+**Note:** Only list rows to REMOVE. All other rows are kept automatically.
 
 ### Action: "retrigger_discovery"
 **When:** Need MORE ENTITIES beyond pre-existing rows
 **NOT for:** Filling empty columns (validator handles that downstream)
-**Output:** `rows` (current discovered rows), `discovery_guidance`, `new_subdomains`, `overall_score`
+**Output:** `discovery_guidance`, `new_subdomains`, `overall_score`
 **Important:** Focus on finding MORE entities, NOT populating columns
 
 **Example discovery_guidance:**
@@ -79,18 +82,17 @@ Review discovered rows and choose ONE action:
 
 ## Output Format
 
-Choose ONE action and provide ALL fields (use null for fields not applicable to your action).
+**IMPORTANT: All discovered rows are KEPT BY DEFAULT.** Only specify rows to REMOVE.
 
-**IMPORTANT: All fields must be present. Use null for unused fields.**
+Do NOT rewrite the markdown table. Just specify which rows to remove (if any).
 
-**IMPORTANT: `rows` must be a markdown table string, NOT a JSON array.**
+**All fields must be present. Use null for fields not applicable to your action.**
 
 ```json
 {
   "action": "pass",
-  "rows": "| row_id | Company Name | Score |\n|---|---|---|\n| 1-Acme | Acme Corp | 0.95 |\n| 2-Beta | Beta Inc | 0.88 |",
+  "remove_row_ids": null,
   "overall_score": 0.85,
-  "removed": null,
   "discovery_guidance": null,
   "new_subdomains": null,
   "restructuring_guidance": null,
@@ -98,28 +100,66 @@ Choose ONE action and provide ALL fields (use null for fields not applicable to 
 }
 ```
 
-### `rows` Format (Markdown Table)
-
-Return approved rows as a markdown table string with these columns:
-- `row_id` (from the input - use exact same row_id)
-- All ID columns from the input
-- `Score` (the discovery score)
-
-**Example rows value:**
+### Example: Filter Action (remove specific rows)
+```json
+{
+  "action": "filter",
+  "remove_row_ids": [
+    {"row_id": "3-FakeCompany", "reason": "Not a real Fortune 500 company"},
+    {"row_id": "5-Duplicate", "reason": "Duplicate of row 2"}
+  ],
+  "overall_score": 0.85,
+  "discovery_guidance": null,
+  "new_subdomains": null,
+  "restructuring_guidance": null,
+  "user_message": null
+}
 ```
-| row_id | Company Name | Ticker | Score |
-|---|---|---|---|
-| 1-Acme | Acme Corp | ACME | 0.95 |
-| 2-Beta | Beta Inc | BETA | 0.88 |
+
+### Example: Retrigger Discovery Action
+```json
+{
+  "action": "retrigger_discovery",
+  "remove_row_ids": null,
+  "overall_score": 0.6,
+  "discovery_guidance": "Have 3 pre-existing + 2 discovered = 5 total. Need 15 more tech companies.",
+  "new_subdomains": [
+    {
+      "name": "Enterprise Software Companies",
+      "focus": "Large B2B software companies with $1B+ revenue",
+      "search_queries": ["enterprise software companies list 2024", "B2B software unicorns"],
+      "target_rows": 10
+    }
+  ],
+  "restructuring_guidance": null,
+  "user_message": null
+}
+```
+
+### Example: Restructure Action
+```json
+{
+  "action": "restructure",
+  "remove_row_ids": null,
+  "overall_score": null,
+  "discovery_guidance": null,
+  "new_subdomains": null,
+  "restructuring_guidance": {
+    "column_changes": "Simplify ID columns to just 'Company Name'",
+    "requirement_changes": "Remove revenue requirement, make it a research column instead",
+    "search_broadening": "Search for companies in any industry, not just tech"
+  },
+  "user_message": "The table requirements are too specific. Restructuring with simpler columns and broader criteria."
+}
 ```
 
 ### Field Requirements by Action:
 
-| Action | rows | overall_score | removed | discovery_guidance | new_subdomains | restructuring_guidance | user_message |
-|--------|------|---------------|---------|-------------------|----------------|----------------------|--------------|
-| pass | ✅ markdown | ✅ number | null | null | null | null | null |
-| filter | ✅ markdown | ✅ number | ✅ array | null | null | null | null |
-| retrigger_discovery | ✅ markdown | ✅ number | null | ✅ string | ✅ array | null | null |
-| restructure | null | null | null | null | null | ✅ object | ✅ string |
+| Action | remove_row_ids | overall_score | discovery_guidance | new_subdomains | restructuring_guidance | user_message |
+|--------|----------------|---------------|-------------------|----------------|----------------------|--------------|
+| pass | null | ✅ number | null | null | null | null |
+| filter | ✅ array (rows to remove) | ✅ number | null | null | null | null |
+| retrigger_discovery | null | ✅ number | ✅ string | ✅ array | null | null |
+| restructure | null | null | null | null | ✅ object | ✅ string |
 
 **Keep it concise - avoid verbose explanations.**

@@ -51,26 +51,30 @@ Find entities within **{{SUBDOMAIN_NAME}}** matching:
 ---
 
 ═══════════════════════════════════════════════════════════════
-## 📊 RESEARCH FIELDS - Optional (Populate If Readily Available)
+## 📊 TABLE COLUMNS - Your Output Must Include These
 ═══════════════════════════════════════════════════════════════
 
-**Opportunistic Population:** If you find this information during your search, include it in additional columns after the ID columns in your markdown table. If not readily available, leave cells blank.
+**Your markdown table MUST have these exact columns (in this order):**
 
-{{RESEARCH_COLUMNS}}
+{{COLUMN_HEADERS}}
+
+**Column Descriptions:**
+{{COLUMN_DESCRIPTIONS}}
 
 **Instructions:**
-- Try to populate as many as possible from search results
-- If information is in search snippets or easily accessible pages, include it
-- If information requires deep research or isn't found, leave cell blank
-- Don't fabricate - only include what you actually found
-- Focus on finding good ID matches first, research data is secondary
-- Add research columns between ID columns and the Score columns in your table
+- Use the EXACT column names shown above in your table header
+- For ID columns: Always populate (these identify the entity)
+- For RESEARCH columns: Populate if information is readily available from search results
+- Leave cells blank if data not found (don't fabricate)
+- Use inline citations [n] after each value you find (e.g., "Anthropic[1]")
 
 ---
 
 ═══════════════════════════════════════════════════════════════
 ## 📈 SCORING - Rate Each Entity on 3 Dimensions (0-1.0 scale)
 ═══════════════════════════════════════════════════════════════
+
+Provide scores in the separate `scoring` array (NOT as columns in the table).
 
 ### 1. Relevancy (0-1.0)
 How well does this entity match the requirements?
@@ -98,44 +102,71 @@ How recent is the information?
 {{PREVIOUS_SEARCH_IMPROVEMENTS}}
 
 ═══════════════════════════════════════════════════════════════
-## 📤 OUTPUT FORMAT - Return JSON with Markdown Table for Candidates
+## 📤 OUTPUT FORMAT - JSON with Markdown Table + Citations Map
 ═══════════════════════════════════════════════════════════════
 
-**IMPORTANT: `candidates` must be a MARKDOWN TABLE STRING, not a JSON array.**
+**IMPORTANT: Output as JSON with a markdown table string and citations dictionary.**
 
 ```json
 {
   "subdomain": "{{SUBDOMAIN_NAME}}",
-  "candidates": "| ID Column 1 | ID Column 2 | Relevancy | Reliability | Recency | Rationale | Sources |\n|---|---|---|---|---|---|---|\n| Value 1 | Value 2 | 0.95 | 1.0 | 0.9 | Brief explanation | url1, url2 |"
+  "candidates_markdown": "| Company Name | CEO Name | CEO Education |\n|---|---|---|\n| Anthropic[1] | Dario Amodei[1][2] | Princeton[2] |\n| OpenAI[3] | Sam Altman[3] | Stanford[4] |",
+  "citations": {
+    "1": "https://anthropic.com/about",
+    "2": "https://en.wikipedia.org/wiki/Dario_Amodei",
+    "3": "https://openai.com/about",
+    "4": "https://en.wikipedia.org/wiki/Sam_Altman"
+  },
+  "scoring": [
+    {"row_id": "Anthropic", "relevancy": 0.95, "reliability": 1.0, "recency": 0.9, "rationale": "Leading AI safety company, meets all requirements"},
+    {"row_id": "OpenAI", "relevancy": 0.90, "reliability": 1.0, "recency": 0.95, "rationale": "Major AI research lab, strong match"}
+  ]
 }
 ```
 
 ### Candidates Table Format
 
-The `candidates` field is a markdown table with these columns (in order):
-1. **ID columns** - All ID fields from the specification above (use exact names)
-2. **Relevancy** - Score 0-1
-3. **Reliability** - Score 0-1
-4. **Recency** - Score 0-1
-5. **Rationale** - 1-2 sentence explanation (keep brief, no pipes)
-6. **Sources** - Comma-separated URLs
+The `candidates_markdown` field must be a markdown table with:
+1. **ALL columns from the specification above** (ID columns first, then RESEARCH columns)
+2. **Inline citations** [n] after each value (e.g., "Value[1][2]")
+3. **Standard markdown table format** with header row and separator row
 
-**Example candidates table:**
+**Example with ALL columns:**
 ```
-| Company Name | Industry | Relevancy | Reliability | Recency | Rationale | Sources |
-|---|---|---|---|---|---|---|
-| Anthropic | AI | 0.95 | 1.0 | 0.9 | Leading AI safety company, meets all requirements | anthropic.com, crunchbase.com/anthropic |
-| OpenAI | AI | 0.90 | 1.0 | 0.95 | Major AI research lab, strong match | openai.com, techcrunch.com/openai |
-| Scale AI | AI/Data | 0.85 | 0.9 | 0.8 | AI data platform, good fit | scale.com, forbes.com/scale-ai |
+| Company Name | Industry | Revenue | CEO Name |
+|---|---|---|---|
+| Anthropic[1] | AI Safety[1] | $500M[2] | Dario Amodei[1] |
+| OpenAI[3] | AI Research[3] | $1.3B[4] | Sam Altman[3] |
 ```
 
-**Requirements:**
-- ✅ Use EXACT field names from ID fields list above (copy them exactly)
-- ✅ Each row must be UNIQUE (different from other entries)
-- ✅ Always include all three scores (Relevancy, Reliability, Recency)
-- ✅ Keep Rationale brief (no pipe characters `|` in text)
-- ✅ List source URLs comma-separated in Sources column
-- ✅ Include header row and separator row (`|---|---|...`)
+### Citations Format
+
+The `citations` field maps citation numbers to URLs:
+```json
+{
+  "1": "https://source1.com",
+  "2": "https://source2.com"
+}
+```
+
+**Citation Rules:**
+- Start numbering from 1 (or from {{CITATION_START_NUMBER}} if provided)
+- Each unique source gets a unique number
+- The same source can be cited multiple times using the same number
+- Include ALL sources used for any value in the table
+
+### Scoring Format
+
+The `scoring` array contains one entry per row:
+```json
+{
+  "row_id": "First ID column value",
+  "relevancy": 0.95,
+  "reliability": 1.0,
+  "recency": 0.9,
+  "rationale": "Brief 1-sentence explanation"
+}
+```
 
 ---
 
@@ -150,16 +181,18 @@ If you absolutely cannot find ANY entities that meet the hard requirements, expl
 ```json
 {
   "subdomain": "{{SUBDOMAIN_NAME}}",
-  "no_matches_reason": "Specific explanation of why no matches were found (e.g., search queries returned general information but no specific entities, database was not accessible, etc.)",
+  "candidates_markdown": "",
+  "citations": {},
+  "scoring": [],
+  "no_matches_reason": "Specific explanation of why no matches were found",
   "search_improvements": [
     "Suggestion 1 for improving search strategy",
     "Suggestion 2 for different query approaches"
-  ],
-  "candidates": ""
+  ]
 }
 ```
 
-**Note:** When no matches found, `candidates` should be an empty string `""`.
+**Note:** When no matches found, `candidates_markdown` should be an empty string `""`.
 
 **Possible reasons to report:**
 - "Search queries too broad/narrow, no specific entity results"
@@ -181,19 +214,6 @@ If you experienced difficulties finding candidates or had to try multiple search
 - Certain search terms or approaches proved more effective than others
 - You discovered missing context that would help narrow results
 
-**Example:**
-```json
-{
-  "subdomain": "{{SUBDOMAIN_NAME}}",
-  "search_improvements": [
-    "Faculty directories work better than general web search for researchers",
-    "Adding institution name to queries improves result specificity",
-    "Grant databases provide more complete contact information than publications"
-  ],
-  "candidates": "| Researcher Name | Institution | Relevancy | ... |..."
-}
-```
-
 ---
 
 ═══════════════════════════════════════════════════════════════
@@ -204,10 +224,6 @@ If you notice patterns about which domains provided poor results, provide feedba
 
 **IMPORTANT: You can only recommend EXCLUSIONS, not inclusions.**
 
-**Provide domain_filtering_recommendations if:**
-- You encountered noise or low-quality results from certain domains
-- Specific domains consistently provided irrelevant or low-quality information
-
 **Format:**
 ```json
 {
@@ -216,7 +232,8 @@ If you notice patterns about which domains provided poor results, provide feedba
     "add_to_excluded": ["domain1.com", "domain2.com"],
     "reasoning": "Specific explanation of why these domains should be excluded"
   },
-  "candidates": "| ID Column | ... | Relevancy | ... |..."
+  "candidates_markdown": "| ... |",
+  "citations": {...}
 }
 ```
 
@@ -232,8 +249,10 @@ If you notice patterns about which domains provided poor results, provide feedba
 1. ✅ If authoritative source provided above → **SEARCH THERE FIRST**
 2. ✅ Use example entities to understand what types of entities to find
 3. ✅ Only include REAL entities you actually found (never fabricate)
-4. ✅ Use EXACT field names from ID fields list
-5. ✅ Include entities even with moderate scores (we filter later)
-6. ✅ Return valid JSON in the format specified above
+4. ✅ Use EXACT column names from the specification above
+5. ✅ Include ALL columns (ID + RESEARCH) in your markdown table
+6. ✅ Use inline citations [n] after each value
+7. ✅ Include entities even with moderate scores (we filter later)
+8. ✅ Return valid JSON in the format specified above
 
 **Return your findings as valid JSON.**

@@ -1,7 +1,7 @@
 # Table Maker - Independent Row Discovery System
 
-**Version:** 2.7 (Unified Rows Model + Table Extraction)
-**Last Updated:** November 5, 2025
+**Version:** 2.8 (Unified Row Discovery Output Format + Citation Tracking)
+**Last Updated:** January 29, 2026
 **Status:** Production Ready (Lambda Integrated)
 
 ---
@@ -54,6 +54,68 @@ python test_local_e2e_sequential.py
 - Duration: 1-3 minutes
 - Cost: $0.05-0.15
 - Output: 8-15 validated companies in `output/local_tests/`
+
+---
+
+## What's New in Version 2.8
+
+### Unified Row Discovery Output Format (MAJOR ENHANCEMENT)
+**Problem:** Row discovery used different columns than column_definition, citations were lost during parsing, QC rewrote entire rows instead of filtering, and parallel subdomains had colliding citation numbers.
+
+**Solution:** Unified output format with citation tracking across the entire pipeline.
+
+**Key Changes:**
+- **Same columns everywhere** - Row discovery outputs ALL columns (ID + RESEARCH) matching column_definition
+- **Inline citations preserved** - Citations `[n]` are tracked per-cell and flow through to final output
+- **Citation numbering coordination** - Global counter prevents collisions across subdomains and retrigger cycles
+- **QC simplified** - Rows kept by default, only specify `remove_row_ids` (no more rewriting full table)
+- **Separate scoring array** - Scoring data moved out of markdown table for cleaner parsing
+
+**New Row Discovery Output Format:**
+```json
+{
+  "subdomain": "AI Research Companies",
+  "candidates_markdown": "| Company Name | CEO Name | Funding |\n|---|---|---|\n| Anthropic[1] | Dario Amodei[1][2] | $7.3B[3] |",
+  "citations": {
+    "1": "https://anthropic.com/about",
+    "2": "https://en.wikipedia.org/wiki/Dario_Amodei",
+    "3": "https://crunchbase.com/anthropic"
+  },
+  "scoring": [
+    {"row_id": "Anthropic", "relevancy": 0.95, "reliability": 1.0, "recency": 0.9, "rationale": "Leading AI safety company"}
+  ]
+}
+```
+
+**New QC Output Format:**
+```json
+{
+  "action": "filter",
+  "remove_row_ids": [
+    {"row_id": "3-FakeCompany", "reason": "Not a real Fortune 500 company"}
+  ],
+  "overall_score": 0.85
+}
+```
+
+**Citation Flow:**
+```
+Column Definition (citations 1-10)
+    ↓
+Row Discovery Subdomain A (citations 11-20)
+    ↓
+Row Discovery Subdomain B (citations 21-30)
+    ↓
+QC Review (prunes unused citations)
+    ↓
+Final Output (all citations preserved with correct numbering)
+```
+
+**Benefits:**
+- Cell-level citation tracking enables Excel footnotes
+- No citation collisions in parallel or retrigger scenarios
+- QC filtering is faster (no table rewriting)
+- Research column data discovered during row discovery is preserved
 
 ---
 
@@ -358,13 +420,19 @@ For obvious, exhaustive, well-defined lists that don't require web research.
      │                    │      │  • Row Discovery (60-120s)          │
      │ Use initial rows   │      │  • Uses discovery_guidance          │
      │ (already complete) │      │  • 3-Level escalation               │
-     │                    │      │  • Merge initial + discovered rows   │
-     │ Saves 60-120s      │      └──────────┬──────────────────────────┘
+     │                    │      │  • Merge initial + discovered rows  │
+     │ Saves 60-120s      │      │  • Citation tracking across streams │
+     │                    │      │  • Outputs: candidates_markdown +   │
+     │                    │      │    citations dict + scoring array   │
+     │                    │      └──────────┬──────────────────────────┘
      └────────┬───────────┘                 ↓
               │                  ┌─────────────────────────────────────┐
               │                  │ Step 3: QC Review                   │
-              │                  │  • Review merged rows                │
-              │                  │  • Autonomous recovery if 0 rows     │
+              │                  │  • Review merged rows (with row_ids)│
+              │                  │  • Rows KEPT by default (v2.8)      │
+              │                  │  • Only specify remove_row_ids      │
+              │                  │  • Prune unused citations           │
+              │                  │  • Autonomous recovery if 0 rows    │
               │                  └──────────┬──────────────────────────┘
               │                             │
               └─────────────────────────────┘
@@ -393,6 +461,133 @@ For obvious, exhaustive, well-defined lists that don't require web research.
 12. **Quality Over Quantity**: QC layer ensures relevance
 13. **Simple ID Columns**: Short, repeatable identifiers (1-5 words)
 14. **Strategic Overshooting**: Target 30-50% more rows to ensure delivery after QC
+15. **Unified Output Format** (v2.8): Row discovery outputs same columns as column_definition
+16. **Citation Tracking** (v2.8): Global citation counter prevents collisions across subdomains
+17. **QC Simplification** (v2.8): Rows kept by default, only specify removals
+
+### Complete Data Flow Algorithm (v2.8)
+
+This section details the exact data transformations at each step:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STEP 0: BACKGROUND RESEARCH                                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Input:  User request, conversation history                                  │
+│ Output: authoritative_sources, starting_tables_markdown, citations          │
+│                                                                             │
+│ Example Output:                                                             │
+│   starting_tables_markdown: "| Company | Funding |\n|---|---|\n| Anthropic[1] | $7.3B[2] |"
+│   citations: {"1": "https://anthropic.com", "2": "https://crunchbase.com"}  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STEP 0b: TABLE EXTRACTION (Optional)                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Input:  identified_tables from Step 0                                       │
+│ Output: extracted_tables with complete rows                                 │
+│                                                                             │
+│ Example Output:                                                             │
+│   extracted_tables: [{                                                      │
+│     "markdown_table": "| Company | CEO | Revenue |\n...",                   │
+│     "source_urls": ["https://forbes.com/ai50"],                             │
+│     "rows_count": 50                                                        │
+│   }]                                                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STEP 1: COLUMN DEFINITION                                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Input:  research results, extracted_tables, starting_tables                 │
+│ Output: columns[], prepopulated_rows_markdown, citations, subdomains        │
+│                                                                             │
+│ Example Output:                                                             │
+│   columns: [                                                                │
+│     {"name": "Company Name", "importance": "ID"},                           │
+│     {"name": "CEO Name", "importance": "RESEARCH"},                         │
+│     {"name": "Funding", "importance": "RESEARCH"}                           │
+│   ]                                                                         │
+│   prepopulated_rows_markdown: "| Company Name | CEO Name | Funding |\n..."  │
+│   citations: {"1": "url1", "2": "url2", ...}  ← Starting citation count     │
+│   trigger_row_discovery: true                                               │
+│   subdomains: [{name: "Tech Giants", target_rows: 10, ...}]                 │
+│                                                                             │
+│ Citation Counter: next = max(citations.keys()) + 1 = 11                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STEP 2: ROW DISCOVERY (if trigger_row_discovery=true)                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Input:  columns, subdomains, citation_start_number=11                       │
+│ Output: candidates_markdown, citations, scoring per subdomain               │
+│                                                                             │
+│ Processing (Sequential Mode):                                               │
+│   Subdomain A (citation_start=11):                                          │
+│     Round 1: Finds 5 rows → citations [11]-[15]                             │
+│     Round 2: Finds 3 rows → citations [16]-[18]                             │
+│     Returns: candidates_markdown + citations + max_citation=18              │
+│                                                                             │
+│   Subdomain B (citation_start=19):                                          │
+│     Round 1: Finds 4 rows → citations [19]-[22]                             │
+│     Returns: candidates_markdown + citations + max_citation=22              │
+│                                                                             │
+│ Processing (Parallel Mode - pre-allocated ranges):                          │
+│   Subdomain A (citation_start=11, range 11-110)                             │
+│   Subdomain B (citation_start=111, range 111-210)                           │
+│   Subdomain C (citation_start=211, range 211-310)                           │
+│                                                                             │
+│ Combined Output:                                                            │
+│   candidates_markdown: merged from all subdomains (same columns as Step 1)  │
+│   citations: {"11": "url", "12": "url", ..., "22": "url"}                   │
+│   scoring: [{"row_id": "Anthropic", "relevancy": 0.95, ...}]                │
+│   max_citation_number: 22                                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STEP 3: QC REVIEW                                                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Input:  prepopulated_rows + discovered_rows (with row_ids), all citations   │
+│ Output: action, remove_row_ids (if filtering), overall_score                │
+│                                                                             │
+│ QC Sees (with row_ids added):                                               │
+│   | row_id | Company Name | CEO Name | Funding |                            │
+│   |--------|--------------|----------|---------|                            │
+│   | 1-Anthropic | Anthropic[1] | Dario Amodei[11] | $7.3B[12] |             │
+│   | 2-OpenAI | OpenAI[2] | Sam Altman[13] | $10B[14] |                      │
+│                                                                             │
+│ QC Output (simplified - rows KEPT by default):                              │
+│   {                                                                         │
+│     "action": "filter",                                                     │
+│     "remove_row_ids": [                                                     │
+│       {"row_id": "5-FakeCompany", "reason": "Not a real company"}           │
+│     ],                                                                      │
+│     "overall_score": 0.85                                                   │
+│   }                                                                         │
+│                                                                             │
+│ Post-processing:                                                            │
+│   - Keep all rows NOT in remove_row_ids                                     │
+│   - Prune citations no longer referenced in kept rows                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FINAL OUTPUT                                                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ approved_rows: List of row dicts with:                                      │
+│   - id_values: {"Company Name": "Anthropic"}                                │
+│   - research_values: {"CEO Name": "Dario Amodei", "Funding": "$7.3B"}       │
+│   - cell_citations: {"Company Name": ["1"], "CEO Name": ["11"]}             │
+│   - source_urls: ["https://anthropic.com", ...]                             │
+│   - row_id: "1-Anthropic"                                                   │
+│   - match_score, qc_score, etc.                                             │
+│                                                                             │
+│ citations: {"1": "url1", "11": "url11", ...}  (pruned, only referenced)     │
+│                                                                             │
+│ CSV generation uses:                                                        │
+│   - id_values for ID columns                                                │
+│   - research_values for RESEARCH columns                                    │
+│   - cell_citations for Excel footnotes (future)                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -602,21 +797,30 @@ The subdomain strategy works synergistically with the global counter:
 ```
 
 ### 2. Row Discovery Orchestrator
-**File:** `table_maker/src/row_discovery.py`
+**File:** `src/lambdas/interface/actions/table_maker/table_maker_lib/row_discovery.py`
 
-**Purpose:** Coordinate subdomain discovery with progressive escalation
+**Purpose:** Coordinate subdomain discovery with progressive escalation and citation tracking
 
 **Key Features:**
 - Processes subdomains (sequential or parallel)
 - Implements escalation strategy from config
 - Consolidates results (deduplication, scoring)
 - Tracks which model/round found each candidate
+- **NEW (v2.8):** Global citation counter across all subdomains
+- **NEW (v2.8):** Pre-allocates citation ranges for parallel execution (100 per subdomain)
+- **NEW (v2.8):** Combines citations from all streams in final output
 
 **Output:**
 ```json
 {
   "final_rows": [...],  // Consolidated, deduplicated candidates
-  "stream_results": [...],  // Per-subdomain details
+  "stream_results": [...],  // Per-subdomain details with citations
+  "citations": {  // Combined citations from all subdomains (NEW v2.8)
+    "1": "https://source1.com",
+    "11": "https://source11.com",
+    "101": "https://parallel-source.com"
+  },
+  "max_citation_number": 115,  // For next cycle (NEW v2.8)
   "stats": {
     "total_candidates_found": 25,
     "duplicates_removed": 5,
@@ -625,10 +829,21 @@ The subdomain strategy works synergistically with the global counter:
 }
 ```
 
+**Citation Coordination (v2.8):**
+```
+Sequential Mode:
+  Subdomain A (start=1) → max=10 → Subdomain B (start=11) → max=20
+
+Parallel Mode (pre-allocated ranges):
+  Subdomain A (start=1, range 1-100)
+  Subdomain B (start=101, range 101-200)
+  Subdomain C (start=201, range 201-300)
+```
+
 ### 3. Row Discovery Stream
 **File:** `src/lambdas/interface/actions/table_maker/table_maker_lib/row_discovery_stream.py`
 
-**Purpose:** Execute progressive escalation for a single subdomain
+**Purpose:** Execute progressive escalation for a single subdomain with unified output format
 
 **Key Features:**
 - 3-level escalation (sonar → sonar-pro → claude-haiku)
@@ -637,6 +852,25 @@ The subdomain strategy works synergistically with the global counter:
 - Passes accumulated improvements to next round
 - Tags each candidate with model_used, round, context
 - Uses web searches from subdomain.search_queries
+- **NEW (v2.8):** Outputs ALL columns (ID + RESEARCH) with inline citations
+- **NEW (v2.8):** Citation renumbering to avoid collisions across rounds/subdomains
+
+**Unified Output Format (v2.8):**
+```json
+{
+  "subdomain": "AI Research Companies",
+  "candidates_markdown": "| Company Name | CEO Name | Funding |\n|---|---|---|\n| Anthropic[1] | Dario Amodei[2] | $7.3B[3] |",
+  "citations": {
+    "1": "https://anthropic.com/about",
+    "2": "https://wikipedia.org/Dario_Amodei",
+    "3": "https://crunchbase.com/anthropic"
+  },
+  "scoring": [
+    {"row_id": "Anthropic", "relevancy": 0.95, "reliability": 1.0, "recency": 0.9, "rationale": "Leading AI safety"}
+  ],
+  "max_citation_number": 3
+}
+```
 
 **Escalation Logic:**
 ```python
@@ -644,16 +878,31 @@ Level 1: sonar (high context) - cheap, fast
   → If found >= 75% of target: STOP
   → Else: Continue to Level 2
   → Collects search_improvements, passes to Level 2
+  → Citations renumbered from citation_start_number
 
 Level 2: sonar-pro (high context) - premium quality
   → If found >= 90% of target: STOP
   → Else: Continue to Level 3
   → Receives improvements from Level 1, adds its own
+  → Citations continue from Level 1's max
 
 Level 3: claude-haiku-4-5 (3 web searches) - fallback
   → Always completes (final level)
   → Receives all previous improvements
   → Ensures results even for difficult topics
+  → Citations continue from Level 2's max
+```
+
+**Citation Numbering Flow:**
+```
+Column Definition: prepopulated rows with citations [1]-[10]
+  → citation_counter = 11
+Subdomain A Round 1: citations [11]-[15]
+  → citation_counter = 16
+Subdomain A Round 2: citations [16]-[20]
+  → citation_counter = 21
+Subdomain B (parallel, pre-allocated): citations [101]-[115]
+  → Ranges pre-allocated for parallel execution (100 per subdomain)
 ```
 
 **Search Improvements Flow:**
@@ -675,6 +924,8 @@ Round 2 discovers: "Date ranges improve relevance"
 - Recalculates match scores (don't trust LLM math)
 - Prefers candidates from better models
 - Merges source URLs from duplicates
+- **NEW (v2.8):** Preserves cell-level citations when merging duplicates
+- **NEW (v2.8):** Merges research_values from candidates
 
 ### 5. QC Reviewer
 **File:** `src/lambdas/interface/actions/table_maker/table_maker_lib/qc_reviewer.py`
@@ -687,6 +938,17 @@ Round 2 discovers: "Date ranges improve relevance"
 - Assigns qc_score (0-1), more flexible than discovery rubric
 - Can promote/demote based on strategic value
 - No max_rows cutoff - keeps all quality rows
+- **NEW (v2.8):** Simplified output - rows kept by default
+- **NEW (v2.8):** Only specifies `remove_row_ids` (not full table rewrite)
+- **NEW (v2.8):** Prunes unused citations from final output
+
+**QC Actions (v2.8):**
+| Action | Output | Description |
+|--------|--------|-------------|
+| `pass` | `overall_score` only | All rows approved as-is |
+| `filter` | `remove_row_ids` + `overall_score` | Remove specific rows (others kept) |
+| `retrigger_discovery` | `new_subdomains` + `discovery_guidance` | Need more entities |
+| `restructure` | `restructuring_guidance` + `user_message` | Table needs redesign |
 
 **Decision Criteria:**
 - Does it match user requirements?

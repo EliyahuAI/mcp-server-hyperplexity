@@ -105,7 +105,8 @@ class RowDiscovery:
         check_targets_between_subdomains: bool = False,
         early_stop_threshold_percentage: float = 120,
         websocket_callback: Optional[callable] = None,
-        soft_schema: bool = True
+        soft_schema: bool = True,
+        citation_start_number: int = 1
     ) -> Dict[str, Any]:
         """
         Discover rows using subdomains from search_strategy.
@@ -129,6 +130,7 @@ class RowDiscovery:
             escalation_strategy: Optional progressive model escalation strategy (default: None)
             check_targets_between_subdomains: Check if enough candidates found between subdomains (default: False)
             early_stop_threshold_percentage: Percentage threshold for early stopping (default: 120)
+            citation_start_number: Starting number for inline citations to avoid collisions (default: 1)
 
         Returns:
             Dictionary with:
@@ -235,6 +237,10 @@ class RowDiscovery:
             # ================================================================
             # STEP 2: EXECUTE STREAMS (SEQUENTIAL OR PARALLEL)
             # ================================================================
+            # Track citation numbers across all streams
+            current_citation_number = citation_start_number
+            all_citations = {}  # Combined citations from all streams
+
             if max_parallel_streams == 1:
                 # SEQUENTIAL MODE (for initial testing)
                 logger.info("Step 2/3: Processing subdomains SEQUENTIALLY (testing mode)")
@@ -270,9 +276,18 @@ class RowDiscovery:
                         global_counter,
                         None,  # No lock needed for sequential mode
                         aggregated_search_improvements,
-                        soft_schema
+                        soft_schema,
+                        current_citation_number
                     )
                     stream_results.append(result_item)
+
+                    # Update citation counter from stream result
+                    stream_citations = result_item.get('citations', {})
+                    if stream_citations:
+                        all_citations.update(stream_citations)
+                        max_cite = max(int(k) for k in stream_citations.keys())
+                        current_citation_number = max_cite + 1
+                        logger.info(f"[CITATION] Subdomain '{subdomain['name']}': {len(stream_citations)} citations, next starts at {current_citation_number}")
 
                     # Collect search improvements from this subdomain for next ones
                     subdomain_improvements = result_item.get('search_improvements', [])
@@ -327,6 +342,7 @@ class RowDiscovery:
 
                 # Execute streams in parallel
                 # NOTE: websocket_callback is NOT passed to avoid bouncing progress
+                # For parallel mode, pre-allocate citation ranges (100 citations per subdomain)
                 stream_results = await self._execute_parallel_streams(
                     subdomains_to_process,
                     columns,
@@ -337,8 +353,18 @@ class RowDiscovery:
                     global_counter_lock,
                     websocket_callback=None,  # Do NOT pass - prevents bouncing
                     target_row_count=target_row_count,
-                    soft_schema=soft_schema
+                    soft_schema=soft_schema,
+                    citation_start_number=current_citation_number
                 )
+
+                # Collect citations from parallel results
+                for stream_result in stream_results:
+                    stream_citations = stream_result.get('citations', {})
+                    if stream_citations:
+                        all_citations.update(stream_citations)
+                        max_cite = max(int(k) for k in stream_citations.keys())
+                        if max_cite >= current_citation_number:
+                            current_citation_number = max_cite + 1
 
             result['stats']['parallel_streams'] = len(stream_results)
 
@@ -413,6 +439,10 @@ class RowDiscovery:
             # PHASE 1: Include stream_results with all_rounds data for API tracking
             result['stream_results'] = successful_streams
 
+            # Include combined citations and max citation number for downstream use
+            result['citations'] = all_citations
+            result['max_citation_number'] = current_citation_number - 1 if current_citation_number > citation_start_number else citation_start_number
+
             # Aggregate domain_filtering_recommendations from all subdomain results
             aggregated_domain_recommendations = self._aggregate_domain_recommendations(successful_streams)
             result['domain_filtering_recommendations'] = aggregated_domain_recommendations
@@ -458,7 +488,8 @@ class RowDiscovery:
         global_counter: Optional[Dict[str, Any]] = None,
         global_counter_lock: Optional[asyncio.Lock] = None,
         previous_search_improvements: Optional[List[str]] = None,
-        soft_schema: bool = True
+        soft_schema: bool = True,
+        citation_start_number: int = 1
     ) -> Dict[str, Any]:
         """
         Execute a single row discovery stream.
@@ -470,6 +501,7 @@ class RowDiscovery:
             target_rows: Number of rows to find for this subdomain
             scoring_model: Model for integrated scoring
             escalation_strategy: Optional progressive escalation strategy
+            citation_start_number: Starting number for citations (default: 1)
 
         Returns:
             Stream result dictionary
@@ -492,7 +524,8 @@ class RowDiscovery:
             global_counter=global_counter,
             global_counter_lock=global_counter_lock,
             previous_search_improvements=previous_search_improvements,
-            soft_schema=soft_schema
+            soft_schema=soft_schema,
+            citation_start_number=citation_start_number
         )
 
         return result
@@ -508,7 +541,8 @@ class RowDiscovery:
         global_counter_lock: Optional[asyncio.Lock] = None,
         websocket_callback: Optional[callable] = None,
         target_row_count: int = 20,
-        soft_schema: bool = True
+        soft_schema: bool = True,
+        citation_start_number: int = 1
     ) -> List[Dict[str, Any]]:
         """
         Execute row discovery streams in parallel using asyncio.gather().
@@ -529,11 +563,17 @@ class RowDiscovery:
         """
         logger.info(f"Launching {len(subdomains)} parallel discovery stream(s)")
 
+        # Pre-allocate citation ranges for parallel streams (100 citations per subdomain)
+        CITATIONS_PER_SUBDOMAIN = 100
+
         # Create wrapper function for each subdomain to handle websocket updates
         async def discover_with_updates(subdomain_info: Dict[str, Any], idx: int):
             # DO NOT send WebSocket updates from within parallel streams
             # This causes progress indicator to bounce around between streams
             # Only the orchestrator (this file) should send progress updates
+
+            # Calculate citation start for this subdomain (pre-allocated range)
+            subdomain_citation_start = citation_start_number + (idx * CITATIONS_PER_SUBDOMAIN)
 
             # Create stream instance
             stream = self.row_discovery_stream_class(
@@ -553,7 +593,8 @@ class RowDiscovery:
                 escalation_strategy=escalation_strategy,
                 global_counter=global_counter,
                 global_counter_lock=global_counter_lock,
-                soft_schema=soft_schema
+                soft_schema=soft_schema,
+                citation_start_number=subdomain_citation_start
             )
 
             return result
@@ -780,7 +821,8 @@ async def discover_rows(
     check_targets_between_subdomains: bool = False,
     early_stop_threshold_percentage: float = 120,
     websocket_callback: Optional[callable] = None,
-    soft_schema: bool = True
+    soft_schema: bool = True,
+    citation_start_number: int = 1
 ) -> Dict[str, Any]:
     """
     Convenience function to discover rows without creating RowDiscovery instance.
@@ -799,6 +841,7 @@ async def discover_rows(
         escalation_strategy: Optional progressive model escalation strategy (default: None)
         check_targets_between_subdomains: Check if enough candidates found between subdomains (default: False)
         early_stop_threshold_percentage: Percentage threshold for early stopping (default: 120)
+        citation_start_number: Starting number for inline citations (default: 1)
 
     Returns:
         Row discovery results dictionary
@@ -816,5 +859,6 @@ async def discover_rows(
         check_targets_between_subdomains=check_targets_between_subdomains,
         early_stop_threshold_percentage=early_stop_threshold_percentage,
         websocket_callback=websocket_callback,
-        soft_schema=soft_schema
+        soft_schema=soft_schema,
+        citation_start_number=citation_start_number
     )

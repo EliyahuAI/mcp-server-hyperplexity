@@ -1,27 +1,13 @@
 {
   "type": "object",
-  "required": ["action", "rows", "overall_score"],
+  "required": ["action", "overall_score"],
   "properties": {
     "action": {
       "type": "string",
       "enum": ["pass", "filter", "retrigger_discovery", "restructure"],
       "description": "QC decision: pass=approve all as-is, filter=remove some rows, retrigger_discovery=need more rows, restructure=0 rows need table redesign"
     },
-    "rows": {
-      "oneOf": [
-        { "type": "string" },
-        { "type": "null" }
-      ],
-      "description": "Approved rows as markdown table string (row_id | ID columns | Score). Null only for restructure action."
-    },
-    "overall_score": {
-      "oneOf": [
-        { "type": "number", "minimum": 0, "maximum": 1 },
-        { "type": "null" }
-      ],
-      "description": "Overall quality score for the set (0-1). Null only for restructure action."
-    },
-    "removed": {
+    "remove_row_ids": {
       "oneOf": [
         {
           "type": "array",
@@ -35,7 +21,14 @@
         },
         { "type": "null" }
       ],
-      "description": "Removed rows with explanations. Required for filter action, null otherwise."
+      "description": "Rows to remove with explanations. Required for filter action, null/empty otherwise. All rows NOT in this list are kept by default."
+    },
+    "overall_score": {
+      "oneOf": [
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "null" }
+      ],
+      "description": "Overall quality score for the set (0-1). Null only for restructure action."
     },
     "discovery_guidance": {
       "oneOf": [

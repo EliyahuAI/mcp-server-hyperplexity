@@ -588,6 +588,8 @@ class QCReviewer:
         Since the schema is now flat (no allOf/if/then), we validate action-specific
         requirements here in code.
 
+        New format: rows are KEPT BY DEFAULT, only remove_row_ids specified.
+
         Args:
             response: Parsed QC response
 
@@ -597,24 +599,19 @@ class QCReviewer:
         action = response.get('action')
 
         if action == 'pass':
-            if response.get('rows') is None:
-                raise ValueError("rows required for pass action")
             if response.get('overall_score') is None:
                 raise ValueError("overall_score required for pass action")
-            if response.get('removed') is not None:
-                logger.warning("removed should be null for pass action, ignoring")
+            # remove_row_ids should be null or empty for pass action
+            if response.get('remove_row_ids'):
+                logger.warning("remove_row_ids should be null/empty for pass action, treating as filter")
 
         elif action == 'filter':
-            if response.get('rows') is None:
-                raise ValueError("rows required for filter action")
             if response.get('overall_score') is None:
                 raise ValueError("overall_score required for filter action")
-            if response.get('removed') is None:
-                raise ValueError("removed required for filter action")
+            if not response.get('remove_row_ids'):
+                raise ValueError("remove_row_ids required for filter action (must specify rows to remove)")
 
         elif action == 'retrigger_discovery':
-            if response.get('rows') is None:
-                raise ValueError("rows required for retrigger_discovery action")
             if response.get('overall_score') is None:
                 raise ValueError("overall_score required for retrigger_discovery action")
             if response.get('new_subdomains') is None:
@@ -623,9 +620,7 @@ class QCReviewer:
                 raise ValueError("discovery_guidance required for retrigger_discovery action")
 
         elif action == 'restructure':
-            # rows and overall_score should be null for restructure
-            if response.get('rows') is not None:
-                logger.warning("rows should be null for restructure action, will be ignored")
+            # overall_score should be null for restructure
             if response.get('restructuring_guidance') is None:
                 raise ValueError("restructuring_guidance required for restructure action")
             if response.get('user_message') is None:
@@ -958,6 +953,68 @@ class QCReviewer:
 
         return '\n'.join(lines)
 
+    def _filter_markdown_by_row_ids(
+        self,
+        markdown: str,
+        keep_row_ids: List[str],
+        citations: Dict[str, str]
+    ) -> tuple:
+        """
+        Filter markdown table to only include rows in keep_row_ids.
+        Also prune citations that are no longer referenced.
+
+        Args:
+            markdown: Markdown table string
+            keep_row_ids: List of row_ids to keep
+            citations: Map of citation numbers to URLs
+
+        Returns:
+            (filtered_markdown, pruned_citations)
+        """
+        import re
+
+        if not markdown:
+            return markdown, citations
+
+        lines = markdown.strip().split('\n')
+        kept_lines = []
+        used_citations = set()
+
+        # Convert keep_row_ids to set for faster lookup
+        keep_set = set(keep_row_ids)
+
+        for line in lines:
+            stripped = line.strip()
+
+            # Keep header and separator lines
+            if '---' in stripped or not stripped.startswith('|'):
+                kept_lines.append(line)
+                continue
+
+            # Check if this is the header row (contains "row_id" or first row after start)
+            if 'row_id' in stripped.lower():
+                kept_lines.append(line)
+                continue
+
+            # Extract row_id from first column
+            parts = [p.strip() for p in stripped.split('|')[1:-1]]
+            if not parts:
+                continue
+
+            row_id = parts[0]
+
+            # Check if this row should be kept
+            if row_id in keep_set:
+                kept_lines.append(line)
+                # Track citations used in this line
+                for cite_num in re.findall(r'\[(\d+)\]', line):
+                    used_citations.add(cite_num)
+
+        # Prune citations that are no longer referenced
+        pruned_citations = {k: v for k, v in citations.items() if k in used_citations}
+
+        return '\n'.join(kept_lines), pruned_citations
+
     def _log_qc_summary(self, qc_summary: Dict, final_approved: int) -> None:
         """
         Log QC summary statistics.
@@ -1013,8 +1070,10 @@ class QCReviewer:
         """
         Convert new simplified QC response format to old format for backward compatibility.
 
-        New format: {action, rows (markdown string), overall_score, removed, discovery_guidance, new_subdomains, ...}
+        New format: {action, remove_row_ids, overall_score, discovery_guidance, new_subdomains, ...}
         Old format: {reviewed_rows, qc_summary, rejected_rows, retrigger_discovery, recovery_decision, ...}
+
+        Key change: Rows are KEPT BY DEFAULT. Only removed rows are specified.
 
         Args:
             simplified: New simplified response
@@ -1024,69 +1083,68 @@ class QCReviewer:
             Response in old format
         """
         action = simplified.get('action', 'pass')
-        rows_markdown = simplified.get('rows', '')
         overall_score = simplified.get('overall_score', 0.8)
 
-        # Parse markdown table to extract row_ids
-        reviewed_rows = []
-        if rows_markdown and isinstance(rows_markdown, str):
-            # Parse markdown table: | row_id | ... | Score | Source |
-            # Score is second-to-last column, Source is last
-            lines = rows_markdown.strip().split('\n')
-            for line in lines:
-                stripped = line.strip()
-                # Skip header and separator lines
-                if not stripped or stripped.startswith('|---') or stripped.lower().startswith('| row_id'):
-                    continue
-                # Skip if line doesn't start with | (not a table row)
-                if not stripped.startswith('|'):
-                    continue
-                # Extract parts from table row
-                parts = [p.strip() for p in stripped.split('|') if p.strip()]
-                if parts:
-                    row_id = parts[0]
-                    # Try to extract score - it's the second-to-last column (before Source)
-                    # Format: | row_id | ID cols... | Score | Source |
-                    row_score = overall_score
-                    if len(parts) >= 2:
-                        # Try second-to-last first (Score column)
-                        for idx in [-2, -1]:
-                            try:
-                                candidate = parts[idx].replace('.', '', 1)
-                                if candidate.replace('-', '').isdigit():
-                                    row_score = float(parts[idx])
-                                    break
-                            except (ValueError, IndexError):
-                                continue
+        # Build row_id -> row mapping from discovered_rows
+        row_id_to_row = {}
+        for idx, row in enumerate(discovered_rows, 1):
+            id_vals = row.get('id_values', {})
+            first_id_value = list(id_vals.values())[0] if id_vals else 'Unknown'
+            row_id = f"{idx}-{first_id_value}"
+            row_id_to_row[row_id] = row
+            # Also store by just the first_id_value for flexible matching
+            row_id_to_row[first_id_value] = row
 
-                    reviewed_rows.append({
-                        'row_id': row_id,
-                        'row_score': row_score,
-                        'qc_score': overall_score,
-                        'qc_rationale': '',  # No verbose rationales in simplified format
-                        'keep': True,  # All rows in markdown are kept
-                        'priority_adjustment': 'none'
-                    })
+        # Get removed row_ids (new format)
+        remove_row_ids = simplified.get('remove_row_ids', []) or []
 
-        # Handle removed rows
-        removed = simplified.get('removed', []) or []
+        # Build set of row_ids to remove
+        removed_row_ids = set()
         rejected_rows = []
-        for item in removed:
+        for item in remove_row_ids:
+            row_id = item.get('row_id', '') if isinstance(item, dict) else str(item)
+            reason = item.get('reason', 'No reason provided') if isinstance(item, dict) else 'Removed by QC'
+            removed_row_ids.add(row_id)
             rejected_rows.append({
-                'row_id': item.get('row_id', 'unknown'),
-                'rejection_reason': item.get('reason', 'No reason provided')
+                'row_id': row_id,
+                'rejection_reason': reason
             })
+
+        # All discovered rows are KEPT BY DEFAULT, except those in remove_row_ids
+        reviewed_rows = []
+        for idx, row in enumerate(discovered_rows, 1):
+            id_vals = row.get('id_values', {})
+            first_id_value = list(id_vals.values())[0] if id_vals else 'Unknown'
+            row_id = f"{idx}-{first_id_value}"
+
+            # Check if this row should be removed
+            should_remove = (
+                row_id in removed_row_ids or
+                first_id_value in removed_row_ids or
+                str(idx) in removed_row_ids
+            )
+
+            if not should_remove:
+                row_score = row.get('match_score', 0.7)
+                reviewed_rows.append({
+                    'row_id': row_id,
+                    'row_score': row_score,
+                    'qc_score': overall_score if overall_score else row_score,
+                    'qc_rationale': '',  # Default kept - no explanation needed
+                    'keep': True,
+                    'priority_adjustment': 'none'
+                })
 
         # Build qc_summary
         kept_count = len(reviewed_rows)
-        total_reviewed = kept_count + len(removed)
+        total_reviewed = len(discovered_rows)
         qc_summary = {
             'total_reviewed': total_reviewed,
             'kept': kept_count,
-            'rejected': len(removed),
+            'rejected': len(rejected_rows),
             'promoted': 0,
             'demoted': 0,
-            'reasoning': f'QC {action}: {kept_count} rows approved'
+            'reasoning': f'QC {action}: {kept_count} rows kept, {len(rejected_rows)} removed'
         }
 
         # Build old format response
@@ -1113,7 +1171,7 @@ class QCReviewer:
                 'user_facing_message': simplified.get('user_message', 'Restructuring table...')
             }
 
-        logger.info(f"[QC] Converted simplified response: action={action}, kept={kept_count}, removed={len(removed)}")
+        logger.info(f"[QC] Converted simplified response: action={action}, kept={kept_count}, removed={len(rejected_rows)}")
 
         return old_format
 

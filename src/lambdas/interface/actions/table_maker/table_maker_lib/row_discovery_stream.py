@@ -18,24 +18,43 @@ from typing import Dict, Any, List, Optional
 logger = logging.getLogger(__name__)
 
 
-def parse_candidates_markdown(markdown_str: str, id_column_names: List[str]) -> List[Dict[str, Any]]:
+def parse_candidates_markdown(
+    markdown_str: str,
+    columns: List[Dict[str, Any]],
+    citations: Dict[str, str] = None,
+    scoring: List[Dict[str, Any]] = None
+) -> List[Dict[str, Any]]:
     """
-    Parse a markdown table of candidates into a list of candidate dictionaries.
+    Parse a markdown table of candidates with ALL columns (ID + RESEARCH) and inline citations.
 
-    Expected markdown format:
-    | ID Col 1 | ID Col 2 | ... | Relevancy | Reliability | Recency | Rationale | Sources |
-    |---|---|---|---|---|---|---|---|
-    | val1 | val2 | ... | 0.95 | 1.0 | 0.9 | Brief explanation | url1, url2 |
+    Expected markdown format (new unified format):
+    | Company Name | CEO Name | CEO Education |
+    |---|---|---|
+    | Anthropic[1] | Dario Amodei[1][2] | Princeton[2] |
 
     Args:
-        markdown_str: Markdown table string
-        id_column_names: List of ID column names to extract
+        markdown_str: Markdown table string with inline citations [n]
+        columns: Full column definitions (ID + RESEARCH columns)
+        citations: Map of citation numbers to URLs (e.g., {"1": "https://..."})
+        scoring: List of scoring dicts with row_id, relevancy, reliability, recency, rationale
 
     Returns:
-        List of candidate dictionaries with id_values, score_breakdown, etc.
+        List of candidate dictionaries with id_values, research_values, cell_citations, etc.
     """
+    import re
+
     if not markdown_str or not isinstance(markdown_str, str):
         return []
+
+    citations = citations or {}
+    scoring = scoring or []
+
+    # Build scoring lookup by row_id
+    scoring_map = {}
+    for score_entry in scoring:
+        row_id = score_entry.get('row_id', '')
+        if row_id:
+            scoring_map[row_id] = score_entry
 
     candidates = []
     lines = markdown_str.strip().split('\n')
@@ -57,6 +76,197 @@ def parse_candidates_markdown(markdown_str: str, id_column_names: List[str]) -> 
     headers = [h.strip() for h in header_line.split('|') if h.strip()]
     logger.info(f"[PARSE_MD] Found headers: {headers}")
 
+    # Identify ID vs RESEARCH columns
+    id_column_names = set()
+    research_column_names = set()
+    for col in columns:
+        col_name = col.get('name', '')
+        if col.get('importance', '').upper() == 'ID' or col.get('is_identification'):
+            id_column_names.add(col_name)
+        else:
+            research_column_names.add(col_name)
+
+    # Build header to column index mapping (case-insensitive)
+    header_to_idx = {}
+    header_lower_map = {}
+    for i, h in enumerate(headers):
+        header_to_idx[h] = i
+        header_lower_map[h.lower().strip()] = i
+
+    # Parse data rows (skip header and separator)
+    row_num = 0
+    for line in lines[header_idx + 1:]:
+        stripped = line.strip()
+        if not stripped or '---' in stripped or not stripped.startswith('|'):
+            continue
+
+        row_num += 1
+
+        # Parse table row: split by | and skip first/last empty strings from |...|
+        raw_parts = stripped.split('|')
+        values = [v.strip() for v in raw_parts[1:-1]]  # Skip first/last empty from |...|
+
+        # Tolerate rows with fewer values
+        if len(values) < len(headers):
+            logger.warning(f"[PARSE_MD] Row {row_num} has fewer values than headers: {len(values)} < {len(headers)}")
+
+        # Extract values and citations for each cell
+        id_values = {}
+        research_values = {}
+        cell_citations = {}  # column_name -> list of citation URLs
+        all_source_urls = set()
+
+        for col_idx, header in enumerate(headers):
+            if col_idx >= len(values):
+                continue
+
+            cell_value = values[col_idx]
+
+            # Extract citation numbers [n] from cell
+            citation_pattern = r'\[(\d+)\]'
+            citation_nums = re.findall(citation_pattern, cell_value)
+
+            # Remove citations from value for clean display
+            clean_value = re.sub(citation_pattern, '', cell_value).strip()
+
+            # Collect citation URLs for this cell
+            cell_urls = []
+            for cite_num in citation_nums:
+                if cite_num in citations:
+                    url = citations[cite_num]
+                    cell_urls.append(url)
+                    all_source_urls.add(url)
+
+            if cell_urls:
+                cell_citations[header] = cell_urls
+
+            # Determine if this is an ID or RESEARCH column
+            # Try exact match first
+            if header in id_column_names:
+                id_values[header] = clean_value
+            elif header in research_column_names:
+                if clean_value:  # Only add non-empty research values
+                    research_values[header] = clean_value
+            else:
+                # Try case-insensitive match
+                matched = False
+                for col_name in id_column_names:
+                    if col_name.lower() == header.lower():
+                        id_values[col_name] = clean_value
+                        matched = True
+                        break
+                if not matched:
+                    for col_name in research_column_names:
+                        if col_name.lower() == header.lower():
+                            if clean_value:
+                                research_values[col_name] = clean_value
+                            matched = True
+                            break
+                # If still not matched, treat first columns as ID
+                if not matched and col_idx < len(id_column_names):
+                    id_col_name = list(id_column_names)[col_idx] if col_idx < len(list(id_column_names)) else header
+                    id_values[id_col_name] = clean_value
+
+        # Generate row_id from first ID column value
+        first_id_value = list(id_values.values())[0] if id_values else f"Row{row_num}"
+        row_id = first_id_value
+
+        # Get scoring for this row
+        score_entry = scoring_map.get(row_id, scoring_map.get(first_id_value, {}))
+        relevancy = score_entry.get('relevancy', 0.7)
+        reliability = score_entry.get('reliability', 0.7)
+        recency = score_entry.get('recency', 0.7)
+        rationale = score_entry.get('rationale', '')
+
+        # Build candidate dict
+        candidate = {
+            'id_values': id_values,
+            'research_values': research_values,
+            'cell_citations': cell_citations,
+            'source_urls': sorted(list(all_source_urls)),
+            'row_id': f"{row_num}-{first_id_value}",
+            'score_breakdown': {
+                'relevancy': relevancy,
+                'reliability': reliability,
+                'recency': recency
+            },
+            'match_rationale': rationale,
+            'match_score': (relevancy * 0.5 + reliability * 0.3 + recency * 0.2)
+        }
+
+        candidates.append(candidate)
+
+    logger.info(f"[PARSE_MD] Parsed {len(candidates)} candidates from markdown table with {len(citations)} citations")
+    return candidates
+
+
+def _renumber_citations(
+    markdown: str,
+    citations: Dict[str, str],
+    start_number: int
+) -> tuple:
+    """
+    Renumber citations starting from start_number to avoid collisions.
+
+    Args:
+        markdown: Markdown text with [1], [2], etc.
+        citations: {"1": "url1", "2": "url2"}
+        start_number: First citation number to use
+
+    Returns:
+        (renumbered_markdown, renumbered_citations)
+    """
+    import re
+
+    if not citations:
+        return markdown, {}
+
+    # Sort by number descending to avoid replacement collisions
+    # e.g., replace [10] before [1] so we don't turn [10] into [1]0
+    sorted_nums = sorted(citations.keys(), key=lambda x: int(x), reverse=True)
+
+    renumbered_citations = {}
+    renumbered_md = markdown
+
+    # First pass: replace with temporary placeholders
+    for old_num in sorted_nums:
+        new_num = str(int(old_num) - 1 + start_number)
+        renumbered_citations[new_num] = citations[old_num]
+        # Use a unique placeholder that won't conflict with real citations
+        renumbered_md = renumbered_md.replace(f'[{old_num}]', f'[__CITE_{new_num}__]')
+
+    # Second pass: convert placeholders to final format
+    for new_num in renumbered_citations.keys():
+        renumbered_md = renumbered_md.replace(f'[__CITE_{new_num}__]', f'[{new_num}]')
+
+    return renumbered_md, renumbered_citations
+
+
+# Legacy function for backward compatibility
+def parse_candidates_markdown_legacy(markdown_str: str, id_column_names: List[str]) -> List[Dict[str, Any]]:
+    """
+    Legacy parser for old format with scoring columns in table.
+    Kept for backward compatibility.
+    """
+    if not markdown_str or not isinstance(markdown_str, str):
+        return []
+
+    candidates = []
+    lines = markdown_str.strip().split('\n')
+
+    header_line = None
+    header_idx = 0
+    for i, line in enumerate(lines):
+        if line.strip().startswith('|') and '---' not in line:
+            header_line = line
+            header_idx = i
+            break
+
+    if not header_line:
+        return []
+
+    headers = [h.strip() for h in header_line.split('|') if h.strip()]
+
     # Find indices for known columns
     relevancy_idx = None
     reliability_idx = None
@@ -77,66 +287,27 @@ def parse_candidates_markdown(markdown_str: str, id_column_names: List[str]) -> 
         elif 'source' in h_lower or 'url' in h_lower:
             sources_idx = i
 
-    # Parse data rows (skip header and separator)
+    header_lower_map = {h.lower().strip(): i for i, h in enumerate(headers)}
+
     for line in lines[header_idx + 1:]:
         stripped = line.strip()
         if not stripped or '---' in stripped or not stripped.startswith('|'):
             continue
 
-        # Parse table row: split by | and skip first/last empty strings from |...|
         raw_parts = stripped.split('|')
-        values = [v.strip() for v in raw_parts[1:-1]]  # Skip first/last empty from |...|
+        values = [v.strip() for v in raw_parts[1:-1]]
 
-        # Tolerate rows with fewer values - just warn and use what we have
-        if len(values) < len(headers):
-            logger.warning(f"[PARSE_MD] Row has fewer values than headers: {len(values)} < {len(headers)}, will use available values")
-            # Don't skip - continue with partial data
-
-        # Extract ID values with flexible column matching
         id_values = {}
-
-        # Build a lowercase header mapping for case-insensitive matching
-        header_lower_map = {h.lower().strip(): i for i, h in enumerate(headers)}
-
         for col_name in id_column_names:
-            # Try exact match first
             if col_name in headers:
                 col_idx = headers.index(col_name)
                 if col_idx < len(values):
                     id_values[col_name] = values[col_idx]
-            # Try case-insensitive match
             elif col_name.lower() in header_lower_map:
                 col_idx = header_lower_map[col_name.lower()]
                 if col_idx < len(values):
                     id_values[col_name] = values[col_idx]
-            # Try partial match (header contains column name or vice versa)
-            else:
-                for h, idx in header_lower_map.items():
-                    if col_name.lower() in h or h in col_name.lower():
-                        if idx < len(values):
-                            id_values[col_name] = values[idx]
-                            break
 
-        # If no ID values found, try to use first columns as IDs
-        # Skip known score/metadata columns
-        score_cols = {'relevancy', 'reliability', 'recency', 'rationale', 'reason', 'source', 'sources', 'url', 'score'}
-        if not id_values and len(values) > 0:
-            id_col_idx = 0
-            for i, col_name in enumerate(id_column_names):
-                # Find next non-score column
-                while id_col_idx < len(values) and id_col_idx < len(headers):
-                    header_lower = headers[id_col_idx].lower() if id_col_idx < len(headers) else ''
-                    if not any(sc in header_lower for sc in score_cols):
-                        id_values[col_name] = values[id_col_idx]
-                        id_col_idx += 1
-                        break
-                    id_col_idx += 1
-                else:
-                    # Fallback: just use position
-                    if i < len(values):
-                        id_values[col_name] = values[i]
-
-        # Extract scores
         try:
             relevancy = float(values[relevancy_idx]) if relevancy_idx is not None and relevancy_idx < len(values) else 0.7
         except (ValueError, TypeError):
@@ -150,14 +321,10 @@ def parse_candidates_markdown(markdown_str: str, id_column_names: List[str]) -> 
         except (ValueError, TypeError):
             recency = 0.7
 
-        # Extract rationale
         rationale = values[rationale_idx] if rationale_idx is not None and rationale_idx < len(values) else ""
-
-        # Extract sources
         sources_str = values[sources_idx] if sources_idx is not None and sources_idx < len(values) else ""
         source_urls = [s.strip() for s in sources_str.split(',') if s.strip()]
 
-        # Build candidate dict
         candidate = {
             'id_values': id_values,
             'score_breakdown': {
@@ -166,15 +333,12 @@ def parse_candidates_markdown(markdown_str: str, id_column_names: List[str]) -> 
                 'recency': recency
             },
             'match_rationale': rationale,
-            'source_urls': source_urls
+            'source_urls': source_urls,
+            'match_score': (relevancy * 0.5 + reliability * 0.3 + recency * 0.2)
         }
-
-        # Calculate match_score as weighted average
-        candidate['match_score'] = (relevancy * 0.5 + reliability * 0.3 + recency * 0.2)
 
         candidates.append(candidate)
 
-    logger.info(f"[PARSE_MD] Parsed {len(candidates)} candidates from markdown table")
     return candidates
 
 
@@ -223,7 +387,8 @@ class RowDiscoveryStream:
         global_counter: Optional[Dict[str, Any]] = None,
         global_counter_lock: Optional['asyncio.Lock'] = None,
         previous_search_improvements: Optional[List[str]] = None,
-        soft_schema: bool = True
+        soft_schema: bool = True,
+        citation_start_number: int = 1
     ) -> Dict[str, Any]:
         """
         Discover rows using progressive model escalation.
@@ -286,6 +451,8 @@ class RowDiscoveryStream:
             all_rounds = []
             accumulated_candidates = []
             all_search_improvements = []
+            all_citations = {}  # Combined citations from all rounds
+            current_citation = citation_start_number
 
             # Combine previous improvements from other subdomains with current subdomain's improvements
             combined_improvements = list(previous_search_improvements) if previous_search_improvements else []
@@ -356,8 +523,16 @@ class RowDiscoveryStream:
                     max_web_searches,
                     findall,        # Pass findall flag for the-clone (position 9)
                     soft_schema,    # Pass soft_schema flag (position 10)
-                    findall_iterations  # Pass findall_iterations for the-clone (position 11)
+                    findall_iterations,  # Pass findall_iterations for the-clone (position 11)
+                    current_citation  # Pass citation_start_number (position 12)
                 )
+
+                # Collect and renumber citations from this round
+                round_citations = round_candidates.get('citations', {})
+                if round_citations:
+                    all_citations.update(round_citations)
+                    max_cite = max(int(k) for k in round_citations.keys())
+                    current_citation = max_cite + 1
 
                 # Tag each candidate with model/context info
                 candidates = round_candidates.get('candidates', [])
@@ -459,6 +634,8 @@ class RowDiscoveryStream:
                 'subdomain': subdomain_name,
                 'all_rounds': all_rounds,
                 'candidates': accumulated_candidates,
+                'citations': all_citations,
+                'max_citation_number': current_citation - 1 if current_citation > citation_start_number else citation_start_number,
                 'total_candidates': len(accumulated_candidates),
                 'rounds_executed': rounds_executed,
                 'rounds_skipped': rounds_skipped,
@@ -502,7 +679,8 @@ class RowDiscoveryStream:
         global_counter: Optional[Dict[str, Any]] = None,
         global_counter_lock: Optional['asyncio.Lock'] = None,
         previous_search_improvements: Optional[List[str]] = None,
-        soft_schema: bool = True
+        soft_schema: bool = True,
+        citation_start_number: int = 1
     ) -> Dict[str, Any]:
         """
         Discover candidate rows for a single subdomain using integrated scoring.
@@ -557,12 +735,15 @@ class RowDiscoveryStream:
         if escalation_strategy is not None:
             result = await self.discover_rows_progressive(
                 subdomain, columns, search_strategy, target_rows, escalation_strategy,
-                global_counter, global_counter_lock, previous_search_improvements, soft_schema
+                global_counter, global_counter_lock, previous_search_improvements, soft_schema,
+                citation_start_number
             )
             # Return progressive result with all_rounds for detailed tracking
             return {
                 'subdomain': result['subdomain'],
                 'candidates': result['candidates'],
+                'citations': result.get('citations', {}),
+                'max_citation_number': result.get('max_citation_number', citation_start_number),
                 'processing_time': result['processing_time'],
                 'rounds_executed': result.get('rounds_executed', 0),
                 'rounds_skipped': result.get('rounds_skipped', 0),
@@ -713,7 +894,8 @@ class RowDiscoveryStream:
         max_web_searches: int = 3,
         findall: bool = False,
         soft_schema: bool = True,
-        findall_iterations: int = 1
+        findall_iterations: int = 1,
+        citation_start_number: int = 1
     ) -> Dict[str, Any]:
         """
         Execute web search with integrated scoring in ONE call.
@@ -745,7 +927,8 @@ class RowDiscoveryStream:
             columns,
             search_strategy,
             target_rows,
-            previous_search_improvements
+            previous_search_improvements,
+            citation_start_number
         )
 
         # Load schema for structured output
@@ -820,15 +1003,36 @@ class RowDiscoveryStream:
             # Ensure subdomain is set correctly
             response_data['subdomain'] = subdomain['name']
 
-            # Get candidates - may be markdown string or list (for backward compatibility)
+            # Get candidates - handle both new format (candidates_markdown) and old format (candidates)
+            candidates_markdown = response_data.get('candidates_markdown', '')
             candidates_raw = response_data.get('candidates', '')
+            citations = response_data.get('citations', {})
+            scoring = response_data.get('scoring', [])
 
-            # Parse markdown table if candidates is a string
-            if isinstance(candidates_raw, str):
-                # Get ID column names for parsing
+            # Renumber citations if needed to avoid collisions
+            if citations and citation_start_number > 1:
+                candidates_markdown, citations = _renumber_citations(
+                    candidates_markdown,
+                    citations,
+                    citation_start_number
+                )
+                logger.info(f"[CITATION] Renumbered {len(citations)} citations starting from {citation_start_number}")
+
+            # Parse candidates from new format (candidates_markdown with citations)
+            if candidates_markdown and isinstance(candidates_markdown, str):
+                # New format: parse with full columns and citations
+                candidates = parse_candidates_markdown(
+                    candidates_markdown,
+                    columns,
+                    citations,
+                    scoring
+                )
+                logger.info(f"[DISCOVERY] Parsed {len(candidates)} candidates from new format (candidates_markdown with {len(citations)} citations)")
+            elif isinstance(candidates_raw, str) and candidates_raw:
+                # Legacy format: markdown in 'candidates' field with scoring columns
                 id_column_names = [col.get('name', '') for col in columns if col.get('importance', '').upper() == 'ID']
-                candidates = parse_candidates_markdown(candidates_raw, id_column_names)
-                logger.info(f"[DISCOVERY] Parsed {len(candidates)} candidates from markdown table")
+                candidates = parse_candidates_markdown_legacy(candidates_raw, id_column_names)
+                logger.info(f"[DISCOVERY] Parsed {len(candidates)} candidates from legacy markdown format")
             elif isinstance(candidates_raw, list):
                 # Legacy format - already a list
                 candidates = candidates_raw
@@ -844,9 +1048,8 @@ class RowDiscoveryStream:
                 logger.warning(f"[DEBUG] Prompt (first 500 chars): {prompt[:500]}")
                 logger.warning(f"[DEBUG] Response type: {type(response_data)}")
                 logger.warning(f"[DEBUG] Response keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'N/A'}")
-                logger.warning(f"[DEBUG] Candidates raw type: {type(candidates_raw)}")
-                if isinstance(candidates_raw, str):
-                    logger.warning(f"[DEBUG] Candidates raw (first 500 chars): {candidates_raw[:500]}")
+                logger.warning(f"[DEBUG] candidates_markdown: {candidates_markdown[:500] if candidates_markdown else 'empty'}")
+                logger.warning(f"[DEBUG] candidates raw type: {type(candidates_raw)}")
 
                 # Try to extract any text content
                 raw_response = result.get('response', {})
@@ -858,6 +1061,8 @@ class RowDiscoveryStream:
                         logger.warning(f"[DEBUG] Could not extract response content: {e}")
 
             response_data['candidates'] = candidates[:target_rows]
+            # Preserve citations in response for downstream use
+            response_data['citations'] = citations
 
             # PHASE 1: Include enhanced_data in return
             response_data['enhanced_data'] = result.get('enhanced_data', {})
@@ -907,7 +1112,8 @@ class RowDiscoveryStream:
         columns: List[Dict[str, Any]],
         search_strategy: Dict[str, Any],
         target_rows: int,
-        previous_search_improvements: Optional[List[str]] = None
+        previous_search_improvements: Optional[List[str]] = None,
+        citation_start_number: int = 1
     ) -> str:
         """
         Build prompt with integrated scoring rubric using template.
@@ -944,6 +1150,19 @@ class RowDiscoveryStream:
             name = col['name']
             desc = col.get('description', 'No description')
             research_columns_text.append(f"- **{name}**: {desc}")
+
+        # Build table header from ALL columns (ID first, then RESEARCH)
+        all_column_names = [col['name'] for col in id_columns] + [col['name'] for col in research_columns]
+        column_headers = "| " + " | ".join(all_column_names) + " |"
+        column_separator = "|" + "|".join(["---"] * len(all_column_names)) + "|"
+        column_headers_full = f"{column_headers}\n{column_separator}"
+
+        # Format column descriptions for guidance
+        column_descriptions = []
+        for col in id_columns:
+            column_descriptions.append(f"- **{col['name']}** (ID): {col.get('description', 'Identification column')}")
+        for col in research_columns:
+            column_descriptions.append(f"- **{col['name']}** (RESEARCH): {col.get('description', 'Research column')}")
 
         # Format previous search improvements if provided
         improvements_text = ""
@@ -1018,6 +1237,8 @@ class RowDiscoveryStream:
                 'TARGET_ROWS': str(target_rows),
                 'ID_COLUMNS': '\n'.join(id_columns_text),
                 'RESEARCH_COLUMNS': '\n'.join(research_columns_text) if research_columns_text else '(No research columns defined)',
+                'COLUMN_HEADERS': column_headers_full,
+                'COLUMN_DESCRIPTIONS': '\n'.join(column_descriptions),
                 'USER_CONTEXT': search_strategy.get('user_context', 'General research table'),
                 'TABLE_PURPOSE': search_strategy.get('table_purpose', search_strategy.get('description', '')),
                 'TABLEWIDE_RESEARCH': search_strategy.get('tablewide_research', ''),
@@ -1025,7 +1246,8 @@ class RowDiscoveryStream:
                 'DISCOVERED_LIST_INFO': discovered_list_info,
                 'AUTHORITATIVE_SOURCE': authoritative_source,
                 'PRIORITY_SEARCH_QUERIES': priority_queries,
-                'EXAMPLE_ENTITIES': example_entities
+                'EXAMPLE_ENTITIES': example_entities,
+                'CITATION_START_NUMBER': str(citation_start_number)
             }
 
             # Try template first

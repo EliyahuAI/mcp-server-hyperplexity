@@ -381,6 +381,17 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             else:
                 format_info = f"{row_count} rows (array format)"
 
+            # If trigger_row_discovery=true but no prepopulated_rows_markdown,
+            # create a header-only template so row discovery knows the column structure
+            trigger_discovery = result['trigger_row_discovery']
+            if trigger_discovery and not has_markdown:
+                columns_list = result['columns']
+                column_names = [col['name'] for col in columns_list]
+                header = "| " + " | ".join(column_names) + " |"
+                separator = "|" + "|".join(["---"] * len(column_names)) + "|"
+                result['prepopulated_rows_markdown'] = f"{header}\n{separator}"
+                logger.info(f"Created header-only markdown template for {len(column_names)} columns")
+
             trigger_discovery = result['trigger_row_discovery']
 
             if trigger_discovery:
