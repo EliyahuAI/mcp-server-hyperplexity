@@ -18,6 +18,53 @@ from typing import Dict, Any, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _filter_numeric_citations(citations: Dict[str, str]) -> Dict[str, str]:
+    """
+    Filter citations to only include numeric keys.
+
+    Some models (e.g., the-clone) may return citations with non-standard keys like 'S1.1.2.0'.
+    This function filters to only keep valid integer keys.
+
+    Args:
+        citations: Dictionary with citation keys and URL values
+
+    Returns:
+        Dictionary with only numeric keys
+    """
+    if not citations:
+        return {}
+
+    numeric_citations = {}
+    non_numeric_keys = []
+
+    for key, value in citations.items():
+        if key.isdigit():
+            numeric_citations[key] = value
+        else:
+            non_numeric_keys.append(key)
+
+    if non_numeric_keys:
+        logger.warning(f"[CITATION] Filtered out {len(non_numeric_keys)} non-numeric citation keys: {non_numeric_keys[:5]}{'...' if len(non_numeric_keys) > 5 else ''}")
+
+    return numeric_citations
+
+
+def _get_max_citation_number(citations: Dict[str, str]) -> int:
+    """
+    Get the maximum citation number from a citations dictionary.
+
+    Args:
+        citations: Dictionary with citation keys and URL values
+
+    Returns:
+        Maximum citation number, or 0 if no valid numeric citations
+    """
+    numeric_citations = _filter_numeric_citations(citations)
+    if not numeric_citations:
+        return 0
+    return max(int(k) for k in numeric_citations.keys())
+
+
 def parse_candidates_markdown(
     markdown_str: str,
     columns: List[Dict[str, Any]],
@@ -221,9 +268,15 @@ def _renumber_citations(
     if not citations:
         return markdown, {}
 
+    # Filter to only numeric citation keys (some models return non-standard formats)
+    numeric_citations = _filter_numeric_citations(citations)
+    if not numeric_citations:
+        logger.warning("[CITATION] No numeric citation keys found, returning original markdown")
+        return markdown, {}
+
     # Sort by number descending to avoid replacement collisions
     # e.g., replace [10] before [1] so we don't turn [10] into [1]0
-    sorted_nums = sorted(citations.keys(), key=lambda x: int(x), reverse=True)
+    sorted_nums = sorted(numeric_citations.keys(), key=lambda x: int(x), reverse=True)
 
     renumbered_citations = {}
     renumbered_md = markdown
@@ -231,7 +284,7 @@ def _renumber_citations(
     # First pass: replace with temporary placeholders
     for old_num in sorted_nums:
         new_num = str(int(old_num) - 1 + start_number)
-        renumbered_citations[new_num] = citations[old_num]
+        renumbered_citations[new_num] = numeric_citations[old_num]
         # Use a unique placeholder that won't conflict with real citations
         renumbered_md = renumbered_md.replace(f'[{old_num}]', f'[__CITE_{new_num}__]')
 
@@ -530,9 +583,12 @@ class RowDiscoveryStream:
                 # Collect and renumber citations from this round
                 round_citations = round_candidates.get('citations', {})
                 if round_citations:
-                    all_citations.update(round_citations)
-                    max_cite = max(int(k) for k in round_citations.keys())
-                    current_citation = max_cite + 1
+                    # Filter to numeric keys only (some models return non-standard formats)
+                    numeric_citations = _filter_numeric_citations(round_citations)
+                    all_citations.update(numeric_citations)
+                    max_cite = _get_max_citation_number(numeric_citations)
+                    if max_cite > 0:
+                        current_citation = max_cite + 1
 
                 # Tag each candidate with model/context info
                 candidates = round_candidates.get('candidates', [])

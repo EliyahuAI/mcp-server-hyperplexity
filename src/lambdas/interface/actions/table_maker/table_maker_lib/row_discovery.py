@@ -16,6 +16,8 @@ import logging
 import time
 from typing import Dict, Any, List, Optional
 
+from .row_discovery_stream import _filter_numeric_citations, _get_max_citation_number
+
 logger = logging.getLogger(__name__)
 
 
@@ -284,10 +286,13 @@ class RowDiscovery:
                     # Update citation counter from stream result
                     stream_citations = result_item.get('citations', {})
                     if stream_citations:
-                        all_citations.update(stream_citations)
-                        max_cite = max(int(k) for k in stream_citations.keys())
-                        current_citation_number = max_cite + 1
-                        logger.info(f"[CITATION] Subdomain '{subdomain['name']}': {len(stream_citations)} citations, next starts at {current_citation_number}")
+                        # Filter to numeric keys only (some models return non-standard formats)
+                        numeric_citations = _filter_numeric_citations(stream_citations)
+                        all_citations.update(numeric_citations)
+                        max_cite = _get_max_citation_number(numeric_citations)
+                        if max_cite > 0:
+                            current_citation_number = max_cite + 1
+                        logger.info(f"[CITATION] Subdomain '{subdomain['name']}': {len(numeric_citations)} citations, next starts at {current_citation_number}")
 
                     # Collect search improvements from this subdomain for next ones
                     subdomain_improvements = result_item.get('search_improvements', [])
@@ -361,9 +366,11 @@ class RowDiscovery:
                 for stream_result in stream_results:
                     stream_citations = stream_result.get('citations', {})
                     if stream_citations:
-                        all_citations.update(stream_citations)
-                        max_cite = max(int(k) for k in stream_citations.keys())
-                        if max_cite >= current_citation_number:
+                        # Filter to numeric keys only (some models return non-standard formats)
+                        numeric_citations = _filter_numeric_citations(stream_citations)
+                        all_citations.update(numeric_citations)
+                        max_cite = _get_max_citation_number(numeric_citations)
+                        if max_cite > 0 and max_cite >= current_citation_number:
                             current_citation_number = max_cite + 1
 
             result['stats']['parallel_streams'] = len(stream_results)
