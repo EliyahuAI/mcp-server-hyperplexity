@@ -188,12 +188,16 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             else:
                 restructuring_section = ""  # Empty for normal mode
 
+            # Calculate word limit: max_tokens * 0.75 (words/token) * 0.75 (buffer)
+            word_limit = int(max_tokens * 0.75 * 0.75)
+
             # Build prompt with variables
             variables = {
                 'CONVERSATION_CONTEXT': conversation_history,
                 'USER_REQUIREMENTS': user_requirements,
                 'BACKGROUND_RESEARCH': formatted_research,
-                'RESTRUCTURING_SECTION': restructuring_section
+                'RESTRUCTURING_SECTION': restructuring_section,
+                'WORD_LIMIT': str(word_limit)
             }
 
             logger.debug(f"Loading prompt template with {len(variables)} variables (restructure={is_restructure})")
