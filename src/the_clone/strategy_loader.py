@@ -126,7 +126,7 @@ def get_default_models(provider: str = "deepseek") -> Dict[str, str]:
     return get_models_for_tier(provider, 'tier2')
 
 
-def get_model_with_backups(model: str, provider: str = None) -> list:
+def get_model_with_backups(model, provider: str = None) -> list:
     """
     Get model with appropriate backup chain for The Clone.
 
@@ -137,12 +137,15 @@ def get_model_with_backups(model: str, provider: str = None) -> list:
     - Final fallback to DeepSeek/Claude for cross-provider safety
 
     Args:
-        model: Primary model name
+        model: Primary model name (str) or pre-defined model chain (list)
         provider: Clone provider context ("baseten", "deepseek", or "claude")
 
     Returns:
         List of models [primary, backup1, backup2, ...]
     """
+    # If already a list, return as-is (pre-defined chain)
+    if isinstance(model, list):
+        return model
     # Gemini 2.5 Flash Lite (primary extraction model) → other Gemini variants → DeepSeek/Haiku
     if model == 'gemini-2.5-flash-lite':
         if provider == 'baseten':

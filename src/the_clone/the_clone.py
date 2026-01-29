@@ -490,10 +490,10 @@ class TheClone2Refined:
             global_limits['max_sources_total'] = max_per_search * len(search_terms)
             logger.debug(f"[CLONE] FINDALL mode: Overriding max_sources_total to {global_limits['max_sources_total']}")
 
-            # FINDALL mode: Use Gemini 2.5 Flash for synthesis (faster for entity enumeration)
+            # FINDALL mode: Use specific model chain for synthesis (faster for entity enumeration)
             if not model_override:
-                models['synthesis'] = 'gemini-2.5-flash'
-                logger.debug(f"[CLONE] FINDALL mode: Using Gemini 2.5 Flash for synthesis")
+                models['synthesis'] = ['gemini-2.5-flash', 'deepseek-v3.2', 'claude-sonnet-4-5']
+                logger.debug(f"[CLONE] FINDALL mode: Using model chain {models['synthesis']} for synthesis")
 
         logger.debug(f"[CLONE] Strategy: {strategy['name']} (breadth={breadth}, depth={depth})")
         logger.debug(f"[CLONE] Synthesis tier: {synthesis_tier} (model: {models['synthesis']})")
