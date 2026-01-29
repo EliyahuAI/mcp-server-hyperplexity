@@ -688,11 +688,11 @@ Query: {query}
                                     seen.add(existing_id)
                                 break
 
-            # Strategy 2: Starts with S and has -p - try as snippet ID (or if Strategy 1 extracted an ID but didn't match)
-            # Matches search (S1.x), memory (SM.x), and citation recall (SC.x) formats with -p suffix
-            if not matched and (extracted_sid or (item.startswith('S') and '-p' in item)):
+            # Strategy 2: Starts with S - try as snippet ID (or if Strategy 1 extracted an ID but didn't match)
+            # Matches search (S1.x), memory (SM.x), and citation recall (SC.x) formats with or without -p suffix
+            if not matched and (extracted_sid or item.startswith('S')):
                 sid = extracted_sid if extracted_sid else item
-                # Pattern matches both search (S1.x.x.x) and memory (SM.x.x.x) snippet IDs
+                # Pattern matches both search (S1.x.x.x) and memory (SM.x.x.x) snippet IDs, with optional -p suffix
                 sid_match = re.search(r'S(?:M|C|\d+)(?:\.\d+)+(?:-p\d+\.\d+)?', sid)
                 if sid_match:
                     sid = sid_match.group(0)
@@ -702,9 +702,10 @@ Query: {query}
                         if sid not in seen:
                             snippet_ids.append(sid)
                             seen.add(sid)
-                    # Prefix match for shortened IDs (e.g., S1.1.3-p0.95 -> S1.1.3.X-p0.95)
+                    # Prefix match for shortened IDs (e.g., S1.1.3 -> S1.1.3.X-p0.95, or S1.1.3-p0.95 -> S1.1.3.X-p0.95)
                     elif not matched:
-                        sid_prefix = sid.rsplit('-p', 1)[0]  # Get part before p-score
+                        # Get the base ID without p-score (if present)
+                        sid_prefix = sid.rsplit('-p', 1)[0] if '-p' in sid else sid
                         p_score = sid.split('-p')[1] if '-p' in sid else None
                         for full_id in snippet_map.keys():
                             full_prefix = full_id.rsplit('-p', 1)[0]
