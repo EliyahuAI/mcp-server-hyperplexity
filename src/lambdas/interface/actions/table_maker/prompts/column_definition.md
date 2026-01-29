@@ -516,4 +516,6 @@ if trigger_row_discovery == true AND len(subdomains) == 0:
 - [ ] Mark populated_columns and missing_columns
 - [ ] Design for discoverability (if triggering discovery)
 
+**⚠️ RESPONSE LENGTH LIMIT: Keep your total response under 18000 words.**
+
 **Return your response as valid JSON matching the format above.**
