@@ -54,33 +54,17 @@ Find entities within **{{SUBDOMAIN_NAME}}** matching:
 ## 📊 RESEARCH FIELDS - Optional (Populate If Readily Available)
 ═══════════════════════════════════════════════════════════════
 
-**Opportunistic Population:** If you find this information during your search, include it. If not readily available, leave blank or omit.
+**Opportunistic Population:** If you find this information during your search, include it in additional columns after the ID columns in your markdown table. If not readily available, leave cells blank.
 
 {{RESEARCH_COLUMNS}}
 
 **Instructions:**
 - Try to populate as many as possible from search results
 - If information is in search snippets or easily accessible pages, include it
-- If information requires deep research or isn't found, leave blank or omit
+- If information requires deep research or isn't found, leave cell blank
 - Don't fabricate - only include what you actually found
 - Focus on finding good ID matches first, research data is secondary
-
-**Example:**
-```json
-{
-  "id_values": {
-    "Researcher Name": "Elizabeth Hillman",
-    "Institution": "Columbia University"
-  },
-  "research_values": {
-    "Title": "Professor of Biomedical Engineering",
-    "Country": "United States",
-    "Research Focus Area": "Optical imaging and microscopy for neuroscience"
-  },
-  "populated_columns": ["Researcher Name", "Institution", "Title", "Country", "Research Focus Area"],
-  "missing_columns": ["Email Address", "LinkedIn Profile", "Funding Amount"]
-}
-```
+- Add research columns between ID columns and the Score columns in your table
 
 ---
 
@@ -114,46 +98,44 @@ How recent is the information?
 {{PREVIOUS_SEARCH_IMPROVEMENTS}}
 
 ═══════════════════════════════════════════════════════════════
-## 📤 OUTPUT FORMAT - Return Exactly This JSON Structure
+## 📤 OUTPUT FORMAT - Return JSON with Markdown Table for Candidates
 ═══════════════════════════════════════════════════════════════
+
+**IMPORTANT: `candidates` must be a MARKDOWN TABLE STRING, not a JSON array.**
 
 ```json
 {
   "subdomain": "{{SUBDOMAIN_NAME}}",
-  "candidates": [
-    {
-      "id_values": {
-        "Field Name 1": "value",
-        "Field Name 2": "value"
-      },
-      "research_values": {
-        "Optional Field 1": "value",
-        "Optional Field 2": "value"
-      },
-      "populated_columns": ["Field Name 1", "Field Name 2", "Optional Field 1"],
-      "missing_columns": ["Optional Field 3", "Optional Field 4"],
-      "score_breakdown": {
-        "relevancy": 0.95,
-        "reliability": 1.0,
-        "recency": 0.9
-      },
-      "match_rationale": "Brief 1-2 sentence explanation of why this entity is a good match",
-      "source_urls": [
-        "https://source1.com/page",
-        "https://source2.com/page"
-      ]
-    }
-  ]
+  "candidates": "| ID Column 1 | ID Column 2 | Relevancy | Reliability | Recency | Rationale | Sources |\n|---|---|---|---|---|---|---|\n| Value 1 | Value 2 | 0.95 | 1.0 | 0.9 | Brief explanation | url1, url2 |"
 }
+```
+
+### Candidates Table Format
+
+The `candidates` field is a markdown table with these columns (in order):
+1. **ID columns** - All ID fields from the specification above (use exact names)
+2. **Relevancy** - Score 0-1
+3. **Reliability** - Score 0-1
+4. **Recency** - Score 0-1
+5. **Rationale** - 1-2 sentence explanation (keep brief, no pipes)
+6. **Sources** - Comma-separated URLs
+
+**Example candidates table:**
+```
+| Company Name | Industry | Relevancy | Reliability | Recency | Rationale | Sources |
+|---|---|---|---|---|---|---|
+| Anthropic | AI | 0.95 | 1.0 | 0.9 | Leading AI safety company, meets all requirements | anthropic.com, crunchbase.com/anthropic |
+| OpenAI | AI | 0.90 | 1.0 | 0.95 | Major AI research lab, strong match | openai.com, techcrunch.com/openai |
+| Scale AI | AI/Data | 0.85 | 0.9 | 0.8 | AI data platform, good fit | scale.com, forbes.com/scale-ai |
 ```
 
 **Requirements:**
 - ✅ Use EXACT field names from ID fields list above (copy them exactly)
-- ✅ Each entity must be UNIQUE (different from other entries)
-- ✅ Always include all three dimension scores (relevancy, reliability, recency)
-- ✅ Keep match_rationale to 1-2 sentences
-- ✅ Include specific source URLs where you found the information
-- ✅ `research_values`, `populated_columns`, and `missing_columns` are OPTIONAL
+- ✅ Each row must be UNIQUE (different from other entries)
+- ✅ Always include all three scores (Relevancy, Reliability, Recency)
+- ✅ Keep Rationale brief (no pipe characters `|` in text)
+- ✅ List source URLs comma-separated in Sources column
+- ✅ Include header row and separator row (`|---|---|...`)
 
 ---
 
@@ -173,9 +155,11 @@ If you absolutely cannot find ANY entities that meet the hard requirements, expl
     "Suggestion 1 for improving search strategy",
     "Suggestion 2 for different query approaches"
   ],
-  "candidates": []
+  "candidates": ""
 }
 ```
+
+**Note:** When no matches found, `candidates` should be an empty string `""`.
 
 **Possible reasons to report:**
 - "Search queries too broad/narrow, no specific entity results"
@@ -206,7 +190,7 @@ If you experienced difficulties finding candidates or had to try multiple search
     "Adding institution name to queries improves result specificity",
     "Grant databases provide more complete contact information than publications"
   ],
-  "candidates": [...]
+  "candidates": "| Researcher Name | Institution | Relevancy | ... |..."
 }
 ```
 
@@ -232,7 +216,7 @@ If you notice patterns about which domains provided poor results, provide feedba
     "add_to_excluded": ["domain1.com", "domain2.com"],
     "reasoning": "Specific explanation of why these domains should be excluded"
   },
-  "candidates": [...]
+  "candidates": "| ID Column | ... | Relevancy | ... |..."
 }
 ```
 

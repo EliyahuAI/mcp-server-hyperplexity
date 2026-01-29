@@ -1,132 +1,90 @@
 {
   "type": "object",
-  "required": ["action"],
+  "required": ["action", "rows", "overall_score"],
   "properties": {
     "action": {
       "type": "string",
       "enum": ["pass", "filter", "retrigger_discovery", "restructure"],
       "description": "QC decision: pass=approve all as-is, filter=remove some rows, retrigger_discovery=need more rows, restructure=0 rows need table redesign"
-    }
-  },
-  "allOf": [
-    {
-      "if": {
-        "properties": { "action": { "const": "pass" } }
-      },
-      "then": {
-        "required": ["action", "rows", "overall_score"],
-        "properties": {
-          "rows": {
-            "type": "array",
-            "description": "All rows in priority order (best first)",
-            "items": { "type": "object" }
-          },
-          "overall_score": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "Overall quality score for the set"
-          }
-        }
-      }
     },
-    {
-      "if": {
-        "properties": { "action": { "const": "filter" } }
-      },
-      "then": {
-        "required": ["action", "rows", "removed", "overall_score"],
-        "properties": {
-          "rows": {
-            "type": "array",
-            "description": "Approved rows in priority order (best first)",
-            "items": { "type": "object" }
-          },
-          "removed": {
-            "type": "array",
-            "description": "Removed rows with explanations",
-            "items": {
-              "type": "object",
-              "required": ["row_id", "reason"],
-              "properties": {
-                "row_id": { "type": "string" },
-                "reason": { "type": "string", "description": "1 sentence why removed" }
-              }
-            }
-          },
-          "overall_score": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          }
-        }
-      }
+    "rows": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "null" }
+      ],
+      "description": "Approved rows as markdown table string (row_id | ID columns | Score). Null only for restructure action."
     },
-    {
-      "if": {
-        "properties": { "action": { "const": "retrigger_discovery" } }
-      },
-      "then": {
-        "required": ["action", "rows", "discovery_guidance", "new_subdomains", "overall_score"],
-        "properties": {
-          "rows": {
-            "type": "array",
-            "description": "Current approved rows",
-            "items": { "type": "object" }
-          },
-          "discovery_guidance": {
-            "type": "string",
-            "description": "What discovery needs to find (focus on MORE ROWS, not filling columns)"
-          },
-          "new_subdomains": {
-            "type": "array",
-            "description": "New search subdomains to find more entities",
-            "minItems": 1,
-            "items": {
-              "type": "object",
-              "required": ["name", "focus", "search_queries", "target_rows"],
-              "properties": {
-                "name": { "type": "string" },
-                "focus": { "type": "string" },
-                "search_queries": {
-                  "type": "array",
-                  "items": { "type": "string" },
-                  "minItems": 2
-                },
-                "target_rows": { "type": "integer", "minimum": 1 }
-              }
-            }
-          },
-          "overall_score": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          }
-        }
-      }
+    "overall_score": {
+      "oneOf": [
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "null" }
+      ],
+      "description": "Overall quality score for the set (0-1). Null only for restructure action."
     },
-    {
-      "if": {
-        "properties": { "action": { "const": "restructure" } }
-      },
-      "then": {
-        "required": ["action", "restructuring_guidance", "user_message"],
-        "properties": {
-          "restructuring_guidance": {
+    "removed": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
             "type": "object",
-            "required": ["column_changes", "requirement_changes", "search_broadening"],
             "properties": {
-              "column_changes": { "type": "string" },
-              "requirement_changes": { "type": "string" },
-              "search_broadening": { "type": "string" }
+              "row_id": { "type": "string" },
+              "reason": { "type": "string", "description": "1 sentence why removed" }
             }
-          },
-          "user_message": {
-            "type": "string",
-            "description": "User-facing message explaining the restructure"
           }
-        }
-      }
+        },
+        { "type": "null" }
+      ],
+      "description": "Removed rows with explanations. Required for filter action, null otherwise."
+    },
+    "discovery_guidance": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "null" }
+      ],
+      "description": "What discovery needs to find (focus on MORE ROWS, not filling columns). Required for retrigger_discovery action."
+    },
+    "new_subdomains": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "focus": { "type": "string" },
+              "search_queries": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "target_rows": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        { "type": "null" }
+      ],
+      "description": "New search subdomains to find more entities. Required for retrigger_discovery action."
+    },
+    "restructuring_guidance": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "column_changes": { "type": "string" },
+            "requirement_changes": { "type": "string" },
+            "search_broadening": { "type": "string" }
+          }
+        },
+        { "type": "null" }
+      ],
+      "description": "How to restructure the table. Required for restructure action."
+    },
+    "user_message": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "null" }
+      ],
+      "description": "User-facing message explaining the restructure. Required for restructure action."
     }
-  ]
+  }
 }

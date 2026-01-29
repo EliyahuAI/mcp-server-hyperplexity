@@ -1095,7 +1095,8 @@ async def handle_table_conversation_start(request_data, context):
             'messages': interview_handler.get_interview_history(),
             'interview_context': interview_handler.get_interview_context(),
             'context_web_research': result['context_web_research'],  # Background research items for config generation
-            'trigger_execution': result['trigger_execution']
+            'trigger_execution': result['trigger_execution'],
+            'target_row_count': interview_result.get('target_row_count', -1)  # -1 = find all
         }
 
         # Store confirmation_response for quick approval bypass (skips redundant AI call)

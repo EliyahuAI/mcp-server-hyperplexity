@@ -79,19 +79,47 @@ Review discovered rows and choose ONE action:
 
 ## Output Format
 
-Choose ONE action and populate ONLY the required fields for that action. No verbose per-row rationales unless removing rows.
+Choose ONE action and provide ALL fields (use null for fields not applicable to your action).
+
+**IMPORTANT: All fields must be present. Use null for unused fields.**
+
+**IMPORTANT: `rows` must be a markdown table string, NOT a JSON array.**
 
 ```json
 {
-  "action": "pass|filter|retrigger_discovery|restructure",
-  "rows": [...],  // If pass/filter/retrigger
-  "overall_score": 0.85,  // If pass/filter/retrigger
-  "removed": [...],  // If filter (with reasons)
-  "discovery_guidance": "...",  // If retrigger (what entities to find)
-  "new_subdomains": [...],  // If retrigger (where to search)
-  "restructuring_guidance": {...},  // If restructure
-  "user_message": "..."  // If restructure
+  "action": "pass",
+  "rows": "| row_id | Company Name | Score |\n|---|---|---|\n| 1-Acme | Acme Corp | 0.95 |\n| 2-Beta | Beta Inc | 0.88 |",
+  "overall_score": 0.85,
+  "removed": null,
+  "discovery_guidance": null,
+  "new_subdomains": null,
+  "restructuring_guidance": null,
+  "user_message": null
 }
 ```
+
+### `rows` Format (Markdown Table)
+
+Return approved rows as a markdown table string with these columns:
+- `row_id` (from the input - use exact same row_id)
+- All ID columns from the input
+- `Score` (the discovery score)
+
+**Example rows value:**
+```
+| row_id | Company Name | Ticker | Score |
+|---|---|---|---|
+| 1-Acme | Acme Corp | ACME | 0.95 |
+| 2-Beta | Beta Inc | BETA | 0.88 |
+```
+
+### Field Requirements by Action:
+
+| Action | rows | overall_score | removed | discovery_guidance | new_subdomains | restructuring_guidance | user_message |
+|--------|------|---------------|---------|-------------------|----------------|----------------------|--------------|
+| pass | ✅ markdown | ✅ number | null | null | null | null | null |
+| filter | ✅ markdown | ✅ number | ✅ array | null | null | null | null |
+| retrigger_discovery | ✅ markdown | ✅ number | null | ✅ string | ✅ array | null | null |
+| restructure | null | null | null | null | null | ✅ object | ✅ string |
 
 **Keep it concise - avoid verbose explanations.**

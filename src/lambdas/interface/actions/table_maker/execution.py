@@ -152,6 +152,10 @@ except ImportError:
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# Row discovery constants
+FIND_ALL_SAFETY_CAP = 200  # Maximum rows when user requests "find all"
+DISCOVERY_AMPLIFICATION = 1.5  # Amplify target for discovery, QC will trim back
+
 
 def send_execution_progress(
     session_id: str,
@@ -1526,10 +1530,22 @@ async def execute_full_table_generation(
 
                 # Run row discovery (wait for completion before starting QC)
                 logger.info("[EXECUTION] Starting row discovery")
+
+                # Handle target_row_count: -1 = find all, positive = specific count
+                user_target = conversation_state.get('target_row_count', -1)
+                if user_target == -1:
+                    # Find all mode - capped at safety limit
+                    target_row_count = FIND_ALL_SAFETY_CAP
+                    logger.info(f"[EXECUTION] Find-all mode: targeting up to {FIND_ALL_SAFETY_CAP} rows")
+                else:
+                    # Amplify for discovery, QC will trim back
+                    target_row_count = int(user_target * DISCOVERY_AMPLIFICATION)
+                    logger.info(f"[EXECUTION] User requested {user_target} rows, discovery targeting {target_row_count} (1.5x)")
+
                 discovery_result = await row_discovery.discover_rows(
                     search_strategy=search_strategy,
                     columns=columns,
-                    target_row_count=conversation_state.get('target_row_count', 15),
+                    target_row_count=target_row_count,
                     discovery_multiplier=1.5,
                     min_match_score=min_match_score,
                     max_parallel_streams=max_parallel_streams,

@@ -248,27 +248,38 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             discovery_guidance = ai_response.get('discovery_guidance', '')
 
             if trigger_row_discovery and len(subdomains) == 0:
-                # Auto-generate a subdomain based on table context
+                # Auto-generate a subdomain based on table context with smarter queries
                 description = search_strategy.get('description', table_name)
+                requirements = search_strategy.get('requirements', [])
 
-                # Build search queries from description and table name
-                search_queries = [
-                    f"{description} list",
-                    f"{table_name} directory database"
-                ]
+                # Extract key terms from hard requirements for better queries
+                hard_reqs = [r.get('requirement', '') for r in requirements if r.get('type') == 'hard']
 
-                # Create a basic subdomain with clean name truncation
                 # Truncate table_name at word boundary if too long
                 if len(table_name) > 35:
-                    truncated_name = table_name[:35].rsplit(' ', 1)[0]  # Cut at last space before 35 chars
+                    truncated_name = table_name[:35].rsplit(' ', 1)[0]
                 else:
                     truncated_name = table_name
 
+                # Build smarter search queries with year modifiers and list-finding terms
+                search_queries = [
+                    f"{description} complete list 2024 2025",
+                    f"top {table_name} comprehensive database",
+                    f"{description} directory all entries"
+                ]
+
+                # Add requirement-based query if available
+                if hard_reqs and hard_reqs[0]:
+                    search_queries.append(f"{hard_reqs[0]} list database 2024")
+
+                # Limit to 4 queries max
+                search_queries = search_queries[:4]
+
                 auto_subdomain = {
                     "name": f"General {truncated_name}",
-                    "focus": discovery_guidance if discovery_guidance else f"Find entities for {description}",
+                    "focus": discovery_guidance if discovery_guidance else f"Find all {description}",
                     "search_queries": search_queries,
-                    "target_rows": max(15, num_rows)  # Target at least 15 or match existing rows
+                    "target_rows": max(20, num_rows)  # Target at least 20 or match existing rows
                 }
 
                 # Inject the auto-generated subdomain
@@ -278,7 +289,8 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
                 logger.warning(
                     f"[AUTO-FIX] AI set trigger_row_discovery=true but provided no subdomains. "
                     f"Auto-generated subdomain: '{auto_subdomain['name']}' with {auto_subdomain['target_rows']} target rows. "
-                    f"Discovery guidance: {discovery_guidance[:100]}..."
+                    f"Queries: {search_queries}. "
+                    f"Discovery guidance: {discovery_guidance[:100] if discovery_guidance else 'None'}..."
                 )
 
             # Validate response against schema

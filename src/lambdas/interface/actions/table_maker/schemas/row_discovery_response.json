@@ -8,7 +8,7 @@
     },
     "no_matches_reason": {
       "type": "string",
-      "description": "If candidates array is empty, explain why no matches were found (search issues, no results, unclear queries, etc.)"
+      "description": "If candidates is empty, explain why no matches were found (search issues, no results, unclear queries, etc.)"
     },
     "search_improvements": {
       "type": "array",
@@ -35,78 +35,8 @@
       }
     },
     "candidates": {
-      "type": "array",
-      "description": "List of candidate rows discovered for this subdomain",
-      "items": {
-        "type": "object",
-        "required": ["id_values", "score_breakdown", "match_rationale"],
-        "properties": {
-          "id_values": {
-            "type": "object",
-            "description": "Dictionary mapping ID column names to their values",
-            "additionalProperties": {
-              "type": "string"
-            }
-          },
-          "research_values": {
-            "type": "object",
-            "description": "Optional dictionary mapping research column names to their values (populated during discovery if information found)",
-            "additionalProperties": {
-              "type": "string"
-            }
-          },
-          "populated_columns": {
-            "type": "array",
-            "description": "Optional list of column names that have data (includes both ID and research columns)",
-            "items": {
-              "type": "string"
-            }
-          },
-          "missing_columns": {
-            "type": "array",
-            "description": "Optional list of column names that are still empty",
-            "items": {
-              "type": "string"
-            }
-          },
-          "score_breakdown": {
-            "type": "object",
-            "description": "Breakdown of the match score into individual dimensions",
-            "required": ["relevancy", "reliability", "recency"],
-            "properties": {
-              "relevancy": {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1,
-                "description": "How well the entity matches requirements (0-1 scale)"
-              },
-              "reliability": {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1,
-                "description": "How reliable the information sources are (0-1 scale)"
-              },
-              "recency": {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1,
-                "description": "How recent the information is (0-1 scale)"
-              }
-            }
-          },
-          "match_rationale": {
-            "type": "string",
-            "description": "Explanation of why this candidate received this score (1-2 sentences)"
-          },
-          "source_urls": {
-            "type": "array",
-            "description": "URLs where information about this candidate was found",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      }
+      "type": "string",
+      "description": "Markdown table of candidate rows. Columns: ID columns, then Relevancy, Reliability, Recency scores, Rationale, Sources. Empty string if no matches."
     }
   }
 }

@@ -72,6 +72,11 @@ Output:
 
 **Use when:** You can propose a concrete table and need user approval.
 
+**ALWAYS CAPTURE target_row_count:**
+- If user says "find 20 companies" → target_row_count: 20
+- If user says "as many as possible" / "all" / "comprehensive" → target_row_count: -1
+- If user doesn't specify a number → target_row_count: -1 (default to finding all)
+
 **CRITICAL - Column Guidelines:**
 When proposing what information to track, ensure simple identifiers are:
 - SHORT and simple (1-5 words typically)
@@ -99,7 +104,8 @@ This is pre-generated so when the user clicks confirm or sends a blank message, 
   "ai_message": "Building out rows and columns for {table_name}. I will validate the first 3 rows (3-4 minutes) - hang tight.",
   "context_web_research": [same as above],
   "processing_steps": [same as above],
-  "table_name": "Same as above"
+  "table_name": "Same as above",
+  "target_row_count": [same as above]
 }
 ```
 

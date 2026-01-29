@@ -68,6 +68,10 @@
     "table_name": {
       "type": "string",
       "description": "Table name in Title Case. Required when trigger_execution=true or show_structure=true. Empty when asking questions."
+    },
+    "target_row_count": {
+      "type": "integer",
+      "description": "User's desired row count. -1 = find as many as possible. Defaults to -1 if not specified by user."
     }
   }
 }

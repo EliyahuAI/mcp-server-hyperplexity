@@ -294,12 +294,12 @@ Provide 1-2 sentences of overall guidance.
 **Example:** "Focus on well-known companies. Innovation matters more than size."
 
 ═══════════════════════════════════════════════════════════════
-## 📊 SUBDOMAINS (Only if trigger_row_discovery=true)
+## 📊 SUBDOMAINS (CRITICAL - Only if trigger_row_discovery=true)
 ═══════════════════════════════════════════════════════════════
 
-**If you set trigger_row_discovery=true, provide 2-10 subdomains.**
+**🚨 IF trigger_row_discovery=true, YOU MUST provide 2-10 subdomains. EXECUTION WILL FAIL WITHOUT THEM.**
 
-### Subdomain Count
+### Subdomain Count Guide
 
 | User Wants | Subdomains | Rationale |
 |------------|-----------|-----------|
@@ -308,21 +308,55 @@ Provide 1-2 sentences of overall guidance.
 | 51-100 rows | 6-8 | Wide net |
 | 100+ rows | 8-10 | Maximum coverage |
 
-### Per-Subdomain Fields
+### Per-Subdomain Fields (ALL REQUIRED)
 
-**Required:**
-- `name`: Concise subdomain name
-- `focus`: Detailed description
-- `search_queries`: 2-5 queries that find LISTS
-- `target_rows`: How many to find
+Each subdomain MUST have:
+- `name`: Short identifier (e.g., "biotech_startups", "fortune_500_tech")
+- `focus`: What specific entities to find in this segment
+- `search_queries`: 2-5 queries that find LISTS of entities, not individuals
+- `target_rows`: How many rows to find in this subdomain (minimum 5)
 
 **Optional:**
-- `discovered_list_url`: URL from authoritative_sources
-- `candidates`: 3-10 sample entities from starting_tables_markdown
+- `discovered_list_url`: URL from authoritative_sources (boosts search)
+- `candidates`: 3-10 sample entity names from starting_tables_markdown
 
-**Search Queries Must Find LISTS:**
-- ❌ BAD: "AI researcher Stanford" → individuals
-- ✅ GOOD: "Stanford AI faculty list" → many at once
+### Good vs Bad Subdomain Examples
+
+**✅ GOOD subdomain structure:**
+```json
+{
+  "name": "Forbes AI Companies",
+  "focus": "AI companies featured in Forbes AI 50 list 2024-2025",
+  "search_queries": [
+    "Forbes AI 50 2024 complete list",
+    "Forbes artificial intelligence companies ranking 2025",
+    "site:forbes.com AI 50 list"
+  ],
+  "target_rows": 25
+}
+```
+
+**❌ BAD subdomain structure:**
+```json
+{
+  "name": "AI",
+  "focus": "Find AI companies",
+  "search_queries": ["AI company"],  // Too vague, only 1 query
+  "target_rows": 5  // Too few
+}
+```
+
+### Search Query Guidelines
+
+**Queries MUST find LISTS, not individual entities:**
+- ❌ BAD: "AI researcher Stanford" → finds individual profiles
+- ✅ GOOD: "Stanford AI faculty list 2024" → finds directory pages
+- ❌ BAD: "OpenAI company" → finds company homepage
+- ✅ GOOD: "top AI companies list 2024 2025" → finds ranking articles
+- ❌ BAD: "company funding" → too generic
+- ✅ GOOD: "AI startups Series B funding list database" → finds aggregators
+
+**Include year modifiers (2024, 2025) to get current results.**
 
 ### Target Row Calculation
 
@@ -332,6 +366,8 @@ dedup_compensation = 1.0 + ((subdomain_count - 2) * 0.10)
 total_target = user_requested * overshoot_factor * dedup_compensation
 target_per_subdomain = total_target / subdomain_count
 ```
+
+**Minimum target_rows per subdomain: 5**
 
 ═══════════════════════════════════════════════════════════════
 ## 📤 OUTPUT FORMAT

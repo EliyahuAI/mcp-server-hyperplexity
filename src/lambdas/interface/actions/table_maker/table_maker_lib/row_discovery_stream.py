@@ -18,6 +18,166 @@ from typing import Dict, Any, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def parse_candidates_markdown(markdown_str: str, id_column_names: List[str]) -> List[Dict[str, Any]]:
+    """
+    Parse a markdown table of candidates into a list of candidate dictionaries.
+
+    Expected markdown format:
+    | ID Col 1 | ID Col 2 | ... | Relevancy | Reliability | Recency | Rationale | Sources |
+    |---|---|---|---|---|---|---|---|
+    | val1 | val2 | ... | 0.95 | 1.0 | 0.9 | Brief explanation | url1, url2 |
+
+    Args:
+        markdown_str: Markdown table string
+        id_column_names: List of ID column names to extract
+
+    Returns:
+        List of candidate dictionaries with id_values, score_breakdown, etc.
+    """
+    if not markdown_str or not isinstance(markdown_str, str):
+        return []
+
+    candidates = []
+    lines = markdown_str.strip().split('\n')
+
+    # Find header line (first line with |)
+    header_line = None
+    header_idx = 0
+    for i, line in enumerate(lines):
+        if line.strip().startswith('|') and '---' not in line:
+            header_line = line
+            header_idx = i
+            break
+
+    if not header_line:
+        logger.warning("[PARSE_MD] No header line found in candidates markdown")
+        return []
+
+    # Parse header to get column names
+    headers = [h.strip() for h in header_line.split('|') if h.strip()]
+    logger.info(f"[PARSE_MD] Found headers: {headers}")
+
+    # Find indices for known columns
+    relevancy_idx = None
+    reliability_idx = None
+    recency_idx = None
+    rationale_idx = None
+    sources_idx = None
+
+    for i, h in enumerate(headers):
+        h_lower = h.lower()
+        if 'relevancy' in h_lower or h_lower == 'rel':
+            relevancy_idx = i
+        elif 'reliability' in h_lower:
+            reliability_idx = i
+        elif 'recency' in h_lower:
+            recency_idx = i
+        elif 'rationale' in h_lower or 'reason' in h_lower:
+            rationale_idx = i
+        elif 'source' in h_lower or 'url' in h_lower:
+            sources_idx = i
+
+    # Parse data rows (skip header and separator)
+    for line in lines[header_idx + 1:]:
+        stripped = line.strip()
+        if not stripped or '---' in stripped or not stripped.startswith('|'):
+            continue
+
+        # Parse table row: split by | and skip first/last empty strings from |...|
+        raw_parts = stripped.split('|')
+        values = [v.strip() for v in raw_parts[1:-1]]  # Skip first/last empty from |...|
+
+        # Tolerate rows with fewer values - just warn and use what we have
+        if len(values) < len(headers):
+            logger.warning(f"[PARSE_MD] Row has fewer values than headers: {len(values)} < {len(headers)}, will use available values")
+            # Don't skip - continue with partial data
+
+        # Extract ID values with flexible column matching
+        id_values = {}
+
+        # Build a lowercase header mapping for case-insensitive matching
+        header_lower_map = {h.lower().strip(): i for i, h in enumerate(headers)}
+
+        for col_name in id_column_names:
+            # Try exact match first
+            if col_name in headers:
+                col_idx = headers.index(col_name)
+                if col_idx < len(values):
+                    id_values[col_name] = values[col_idx]
+            # Try case-insensitive match
+            elif col_name.lower() in header_lower_map:
+                col_idx = header_lower_map[col_name.lower()]
+                if col_idx < len(values):
+                    id_values[col_name] = values[col_idx]
+            # Try partial match (header contains column name or vice versa)
+            else:
+                for h, idx in header_lower_map.items():
+                    if col_name.lower() in h or h in col_name.lower():
+                        if idx < len(values):
+                            id_values[col_name] = values[idx]
+                            break
+
+        # If no ID values found, try to use first columns as IDs
+        # Skip known score/metadata columns
+        score_cols = {'relevancy', 'reliability', 'recency', 'rationale', 'reason', 'source', 'sources', 'url', 'score'}
+        if not id_values and len(values) > 0:
+            id_col_idx = 0
+            for i, col_name in enumerate(id_column_names):
+                # Find next non-score column
+                while id_col_idx < len(values) and id_col_idx < len(headers):
+                    header_lower = headers[id_col_idx].lower() if id_col_idx < len(headers) else ''
+                    if not any(sc in header_lower for sc in score_cols):
+                        id_values[col_name] = values[id_col_idx]
+                        id_col_idx += 1
+                        break
+                    id_col_idx += 1
+                else:
+                    # Fallback: just use position
+                    if i < len(values):
+                        id_values[col_name] = values[i]
+
+        # Extract scores
+        try:
+            relevancy = float(values[relevancy_idx]) if relevancy_idx is not None and relevancy_idx < len(values) else 0.7
+        except (ValueError, TypeError):
+            relevancy = 0.7
+        try:
+            reliability = float(values[reliability_idx]) if reliability_idx is not None and reliability_idx < len(values) else 0.7
+        except (ValueError, TypeError):
+            reliability = 0.7
+        try:
+            recency = float(values[recency_idx]) if recency_idx is not None and recency_idx < len(values) else 0.7
+        except (ValueError, TypeError):
+            recency = 0.7
+
+        # Extract rationale
+        rationale = values[rationale_idx] if rationale_idx is not None and rationale_idx < len(values) else ""
+
+        # Extract sources
+        sources_str = values[sources_idx] if sources_idx is not None and sources_idx < len(values) else ""
+        source_urls = [s.strip() for s in sources_str.split(',') if s.strip()]
+
+        # Build candidate dict
+        candidate = {
+            'id_values': id_values,
+            'score_breakdown': {
+                'relevancy': relevancy,
+                'reliability': reliability,
+                'recency': recency
+            },
+            'match_rationale': rationale,
+            'source_urls': source_urls
+        }
+
+        # Calculate match_score as weighted average
+        candidate['match_score'] = (relevancy * 0.5 + reliability * 0.3 + recency * 0.2)
+
+        candidates.append(candidate)
+
+    logger.info(f"[PARSE_MD] Parsed {len(candidates)} candidates from markdown table")
+    return candidates
+
+
 class RowDiscoveryStream:
     """
     Discover and score candidate rows for a single subdomain.
@@ -660,8 +820,21 @@ class RowDiscoveryStream:
             # Ensure subdomain is set correctly
             response_data['subdomain'] = subdomain['name']
 
-            # Limit to target_rows
-            candidates = response_data.get('candidates', [])
+            # Get candidates - may be markdown string or list (for backward compatibility)
+            candidates_raw = response_data.get('candidates', '')
+
+            # Parse markdown table if candidates is a string
+            if isinstance(candidates_raw, str):
+                # Get ID column names for parsing
+                id_column_names = [col.get('name', '') for col in columns if col.get('importance', '').upper() == 'ID']
+                candidates = parse_candidates_markdown(candidates_raw, id_column_names)
+                logger.info(f"[DISCOVERY] Parsed {len(candidates)} candidates from markdown table")
+            elif isinstance(candidates_raw, list):
+                # Legacy format - already a list
+                candidates = candidates_raw
+                logger.info(f"[DISCOVERY] Using {len(candidates)} candidates from JSON array (legacy)")
+            else:
+                candidates = []
 
             # PHASE 2: DEBUG logging when 0 candidates found
             if len(candidates) == 0:
@@ -671,6 +844,9 @@ class RowDiscoveryStream:
                 logger.warning(f"[DEBUG] Prompt (first 500 chars): {prompt[:500]}")
                 logger.warning(f"[DEBUG] Response type: {type(response_data)}")
                 logger.warning(f"[DEBUG] Response keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'N/A'}")
+                logger.warning(f"[DEBUG] Candidates raw type: {type(candidates_raw)}")
+                if isinstance(candidates_raw, str):
+                    logger.warning(f"[DEBUG] Candidates raw (first 500 chars): {candidates_raw[:500]}")
 
                 # Try to extract any text content
                 raw_response = result.get('response', {})
@@ -756,7 +932,11 @@ class RowDiscoveryStream:
             id_columns_text.append(f"- **{name}**: {desc}")
 
         # Extract research columns (non-ID columns) with descriptions
-        research_columns = [col for col in columns if not col.get('is_identification')]
+        # Check both importance='ID' and is_identification for compatibility
+        research_columns = [
+            col for col in columns
+            if col.get('importance', '').upper() != 'ID' and not col.get('is_identification')
+        ]
 
         # Format research columns with descriptions
         research_columns_text = []

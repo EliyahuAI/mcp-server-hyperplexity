@@ -262,6 +262,9 @@ class QCReviewer:
                 logger.error(error_msg)
                 raise Exception(error_msg)
 
+            # Additional action-specific validation (since schema is now flat)
+            self._validate_qc_response(ai_response)
+
             # Extract results
             reviewed_rows = ai_response.get('reviewed_rows', [])
             qc_summary = ai_response.get('qc_summary', {})
@@ -579,6 +582,57 @@ class QCReviewer:
 
         return result
 
+    def _validate_qc_response(self, response: Dict) -> None:
+        """
+        Validate QC response fields match action type.
+        Since the schema is now flat (no allOf/if/then), we validate action-specific
+        requirements here in code.
+
+        Args:
+            response: Parsed QC response
+
+        Raises:
+            ValueError: If response doesn't match action requirements
+        """
+        action = response.get('action')
+
+        if action == 'pass':
+            if response.get('rows') is None:
+                raise ValueError("rows required for pass action")
+            if response.get('overall_score') is None:
+                raise ValueError("overall_score required for pass action")
+            if response.get('removed') is not None:
+                logger.warning("removed should be null for pass action, ignoring")
+
+        elif action == 'filter':
+            if response.get('rows') is None:
+                raise ValueError("rows required for filter action")
+            if response.get('overall_score') is None:
+                raise ValueError("overall_score required for filter action")
+            if response.get('removed') is None:
+                raise ValueError("removed required for filter action")
+
+        elif action == 'retrigger_discovery':
+            if response.get('rows') is None:
+                raise ValueError("rows required for retrigger_discovery action")
+            if response.get('overall_score') is None:
+                raise ValueError("overall_score required for retrigger_discovery action")
+            if response.get('new_subdomains') is None:
+                raise ValueError("new_subdomains required for retrigger_discovery action")
+            if response.get('discovery_guidance') is None:
+                raise ValueError("discovery_guidance required for retrigger_discovery action")
+
+        elif action == 'restructure':
+            # rows and overall_score should be null for restructure
+            if response.get('rows') is not None:
+                logger.warning("rows should be null for restructure action, will be ignored")
+            if response.get('restructuring_guidance') is None:
+                raise ValueError("restructuring_guidance required for restructure action")
+            if response.get('user_message') is None:
+                raise ValueError("user_message required for restructure action")
+
+        logger.info(f"[QC] Action-specific validation passed for action: {action}")
+
     def _format_requirements_for_prompt(self, search_strategy: Dict, type_filter: str) -> str:
         """
         Format requirements as bullet list for prompt.
@@ -815,7 +869,11 @@ class QCReviewer:
         Returns:
             Formatted ID columns string with descriptions
         """
-        id_cols = [col for col in columns if col.get('is_identification')]
+        # Check both importance='ID' and is_identification for compatibility
+        id_cols = [
+            col for col in columns
+            if col.get('importance', '').upper() == 'ID' or col.get('is_identification')
+        ]
         lines = []
         for col in id_cols:
             col_name = col.get('name', 'Unknown')
@@ -838,7 +896,9 @@ class QCReviewer:
         for col in columns:
             col_name = col.get('name', 'Unknown')
             col_desc = col.get('description', 'No description')
-            col_type = "ID" if col.get('is_identification') else "CRITICAL"
+            # Check both importance='ID' and is_identification for compatibility
+            is_id = col.get('importance', '').upper() == 'ID' or col.get('is_identification')
+            col_type = "ID" if is_id else "CRITICAL"
             val_strat = col.get('validation_strategy', '')
 
             line = f"- **{col_name}** ({col_type}): {col_desc}"
@@ -850,56 +910,51 @@ class QCReviewer:
 
     def _format_rows(self, rows: List[Dict], columns: List[Dict]) -> str:
         """
-        Format discovered rows for prompt with row_id.
+        Format discovered rows as a markdown table for the prompt.
 
         Args:
             rows: List of discovered row dictionaries
             columns: List of column definition dictionaries
 
         Returns:
-            Formatted rows string
+            Formatted markdown table string
         """
-        # Calculate total research columns (non-ID columns)
-        total_research_cols = len([c for c in columns if not c.get('is_identification')])
+        if not rows:
+            return "(No discovered rows)"
 
-        lines = []
+        # Get ID column names - check both importance='ID' and is_identification for compatibility
+        id_column_names = [
+            c.get('name', '') for c in columns
+            if c.get('importance', '').upper() == 'ID' or c.get('is_identification')
+        ]
+
+        # Build markdown table header: row_id | ID columns... | Score | Source
+        header_cols = ['row_id'] + id_column_names + ['Score', 'Source']
+        header = '| ' + ' | '.join(header_cols) + ' |'
+        separator = '|' + '|'.join(['---'] * len(header_cols)) + '|'
+
+        lines = [header, separator]
+
         for idx, row in enumerate(rows, 1):
             id_values = row.get('id_values', {})
             row_score = row.get('match_score', 0)
-            match_rationale = row.get('match_rationale', '')
-            found_by = row.get('found_by_models', [])
             source_subdomain = row.get('source_subdomain', 'Unknown')
 
             # Create row_id: row number + first ID column value
             first_id_value = list(id_values.values())[0] if id_values else 'Unknown'
             row_id = f"{idx}-{first_id_value}"
 
-            # Format full ID values for context
-            id_str = ', '.join(f"{k}: {v}" for k, v in id_values.items())
+            # Build row values
+            row_values = [row_id]
+            for col_name in id_column_names:
+                val = id_values.get(col_name, '')
+                # Escape pipe characters in values
+                val_str = str(val).replace('|', '\\|') if val else ''
+                row_values.append(val_str)
+            row_values.append(f"{row_score:.2f}")
+            row_values.append(source_subdomain)
 
-            lines.append(f"\n**Row {idx}:**")
-            lines.append(f"- **row_id (use this in your response):** `{row_id}`")
-            lines.append(f"- Full ID: {id_str}")
-            lines.append(f"- Discovery Score: {row_score:.2f}")
-            lines.append(f"- Rationale: {match_rationale}")
-            if found_by:
-                lines.append(f"- Found by: {', '.join(found_by)}")
-            lines.append(f"- Source: {source_subdomain}")
-
-            # Show populated research columns count only (not values)
-            research_values = row.get('research_values', {})
-            populated_columns = row.get('populated_columns', [])
-
-            if research_values or populated_columns:
-                # Count populated research columns (exclude ID columns)
-                if research_values:
-                    populated_count = len(research_values)
-                else:
-                    populated_count = len([c for c in populated_columns if c not in id_values])
-
-                # Show simple ratio: X/Y columns populated
-                if populated_count > 0:
-                    lines.append(f"- Research Data: {populated_count}/{total_research_cols} columns populated")
+            lines.append('| ' + ' | '.join(row_values) + ' |')
 
         return '\n'.join(lines)
 
@@ -958,7 +1013,7 @@ class QCReviewer:
         """
         Convert new simplified QC response format to old format for backward compatibility.
 
-        New format: {action, rows, overall_score, removed, discovery_guidance, new_subdomains, ...}
+        New format: {action, rows (markdown string), overall_score, removed, discovery_guidance, new_subdomains, ...}
         Old format: {reviewed_rows, qc_summary, rejected_rows, retrigger_discovery, recovery_decision, ...}
 
         Args:
@@ -969,27 +1024,52 @@ class QCReviewer:
             Response in old format
         """
         action = simplified.get('action', 'pass')
-        rows = simplified.get('rows', [])
+        rows_markdown = simplified.get('rows', '')
         overall_score = simplified.get('overall_score', 0.8)
 
-        # Build reviewed_rows with row_ids
+        # Parse markdown table to extract row_ids
         reviewed_rows = []
-        for idx, row in enumerate(rows, 1):
-            id_vals = row.get('id_values', {})
-            first_id_value = list(id_vals.values())[0] if id_vals else 'Unknown'
-            row_id = f"{idx}-{first_id_value}"
+        if rows_markdown and isinstance(rows_markdown, str):
+            # Parse markdown table: | row_id | ... | Score | Source |
+            # Score is second-to-last column, Source is last
+            lines = rows_markdown.strip().split('\n')
+            for line in lines:
+                stripped = line.strip()
+                # Skip header and separator lines
+                if not stripped or stripped.startswith('|---') or stripped.lower().startswith('| row_id'):
+                    continue
+                # Skip if line doesn't start with | (not a table row)
+                if not stripped.startswith('|'):
+                    continue
+                # Extract parts from table row
+                parts = [p.strip() for p in stripped.split('|') if p.strip()]
+                if parts:
+                    row_id = parts[0]
+                    # Try to extract score - it's the second-to-last column (before Source)
+                    # Format: | row_id | ID cols... | Score | Source |
+                    row_score = overall_score
+                    if len(parts) >= 2:
+                        # Try second-to-last first (Score column)
+                        for idx in [-2, -1]:
+                            try:
+                                candidate = parts[idx].replace('.', '', 1)
+                                if candidate.replace('-', '').isdigit():
+                                    row_score = float(parts[idx])
+                                    break
+                            except (ValueError, IndexError):
+                                continue
 
-            reviewed_rows.append({
-                'row_id': row_id,
-                'row_score': row.get('row_score', row.get('match_score', overall_score)),
-                'qc_score': overall_score,
-                'qc_rationale': '',  # No verbose rationales in simplified format
-                'keep': True,  # All rows in 'rows' array are kept
-                'priority_adjustment': 'none'
-            })
+                    reviewed_rows.append({
+                        'row_id': row_id,
+                        'row_score': row_score,
+                        'qc_score': overall_score,
+                        'qc_rationale': '',  # No verbose rationales in simplified format
+                        'keep': True,  # All rows in markdown are kept
+                        'priority_adjustment': 'none'
+                    })
 
         # Handle removed rows
-        removed = simplified.get('removed', [])
+        removed = simplified.get('removed', []) or []
         rejected_rows = []
         for item in removed:
             rejected_rows.append({
@@ -998,14 +1078,15 @@ class QCReviewer:
             })
 
         # Build qc_summary
-        total_reviewed = len(rows) + len(removed)
+        kept_count = len(reviewed_rows)
+        total_reviewed = kept_count + len(removed)
         qc_summary = {
             'total_reviewed': total_reviewed,
-            'kept': len(rows),
+            'kept': kept_count,
             'rejected': len(removed),
             'promoted': 0,
             'demoted': 0,
-            'reasoning': f'QC {action}: {len(rows)} rows approved'
+            'reasoning': f'QC {action}: {kept_count} rows approved'
         }
 
         # Build old format response
@@ -1032,7 +1113,7 @@ class QCReviewer:
                 'user_facing_message': simplified.get('user_message', 'Restructuring table...')
             }
 
-        logger.info(f"[QC] Converted simplified response: action={action}, kept={len(rows)}, removed={len(removed)}")
+        logger.info(f"[QC] Converted simplified response: action={action}, kept={kept_count}, removed={len(removed)}")
 
         return old_format
 
