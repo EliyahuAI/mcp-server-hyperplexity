@@ -612,6 +612,276 @@ def _save_to_s3(
         logger.error(f"[EXECUTION] Failed to save to S3: {e}")
 
 
+def _save_text_to_s3(
+    storage_manager: UnifiedS3Manager,
+    email: str,
+    session_id: str,
+    conversation_id: str,
+    file_name: str,
+    content: str,
+    content_type: str = 'text/markdown'
+) -> None:
+    """Save text content to S3."""
+    try:
+        s3_key = storage_manager.get_table_maker_path(
+            email=email,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            file_name=file_name
+        )
+
+        storage_manager.s3_client.put_object(
+            Bucket=storage_manager.bucket_name,
+            Key=s3_key,
+            Body=content,
+            ContentType=content_type
+        )
+
+        logger.info(f"[EXECUTION] Saved text to S3: {s3_key}")
+
+    except Exception as e:
+        logger.error(f"[EXECUTION] Failed to save text to S3: {e}")
+
+
+def _format_citations_section(citations: Dict[str, str]) -> str:
+    """Format citations as a markdown section below a table."""
+    if not citations:
+        return ""
+
+    lines = ["\n**Citations:**"]
+    # Sort by numeric key if possible
+    sorted_keys = sorted(citations.keys(), key=lambda x: int(x) if x.isdigit() else float('inf'))
+    for key in sorted_keys:
+        url = citations[key]
+        lines.append(f"- [{key}] {url}")
+    return "\n".join(lines) + "\n"
+
+
+def _generate_md_tables_content(
+    background_research_result: Dict,
+    column_definition_result: Dict,
+    discovery_result: Dict,
+    qc_result: Dict,
+    approved_rows: List[Dict],
+    columns: List[Dict]
+) -> str:
+    """
+    Generate combined markdown file with all tables from the pipeline.
+
+    Sections:
+    0. Background Research (starting tables, extracted tables)
+    1. Column Definition (prepopulated rows) + citations
+    2. Row Discovery (per round/subdomain) + citations
+    3. Final Approved Table (post-QC) + citations
+    """
+    sections = []
+
+    # Header
+    sections.append("# Table Maker - Pipeline Tables\n")
+    sections.append(f"Generated: {__import__('datetime').datetime.now().isoformat()}\n")
+
+    # ================================================================
+    # SECTION 0: Background Research
+    # ================================================================
+    sections.append("\n---\n")
+    sections.append("## 0. Background Research\n")
+
+    if background_research_result:
+        # Tablewide Research Summary
+        tablewide_research = background_research_result.get('tablewide_research', '')
+        if tablewide_research:
+            sections.append("### Tablewide Research Summary\n")
+            sections.append(tablewide_research)
+            sections.append("\n")
+
+        # Authoritative Sources
+        sources = background_research_result.get('authoritative_sources', [])
+        if sources:
+            sections.append("\n### Authoritative Sources\n")
+            for src in sources:
+                name = src.get('name', 'Unknown')
+                url = src.get('url', '')
+                description = src.get('description', '')
+                sections.append(f"- **{name}**: {description}")
+                if url:
+                    sections.append(f"  - URL: {url}")
+            sections.append("\n")
+
+        # Starting Tables (from background research)
+        starting_markdown = background_research_result.get('starting_tables_markdown', '')
+        starting_citations = background_research_result.get('citations', {})
+        if starting_markdown:
+            sections.append("\n### Starting Tables (from Background Research)\n")
+            sections.append(starting_markdown)
+            sections.append(_format_citations_section(starting_citations))
+        else:
+            sections.append("\n*No starting tables from background research*\n")
+
+        # Extracted Tables (from Step 0b)
+        extracted_tables = background_research_result.get('extracted_tables', [])
+        if extracted_tables:
+            sections.append("\n### Extracted Tables (Step 0b)\n")
+            for idx, table in enumerate(extracted_tables, 1):
+                table_name = table.get('table_name', f'Table {idx}')
+                source_url = table.get('source_url', '')
+                rows_count = table.get('rows_extracted', len(table.get('rows', [])))
+
+                sections.append(f"\n#### {idx}. {table_name}\n")
+                sections.append(f"- Source: {source_url}")
+                sections.append(f"- Rows extracted: {rows_count}\n")
+
+                # If there's markdown table data
+                if table.get('markdown_table'):
+                    sections.append(table['markdown_table'])
+                elif table.get('rows'):
+                    # Convert rows to markdown
+                    rows_data = table['rows']
+                    if rows_data:
+                        headers = list(rows_data[0].keys())
+                        header_line = "| " + " | ".join(headers) + " |"
+                        sep_line = "| " + " | ".join(["---"] * len(headers)) + " |"
+                        data_lines = []
+                        for row in rows_data[:20]:  # Limit to 20 rows
+                            data_lines.append("| " + " | ".join(str(row.get(h, '')) for h in headers) + " |")
+                        sections.append(header_line)
+                        sections.append(sep_line)
+                        sections.append("\n".join(data_lines))
+                        if len(rows_data) > 20:
+                            sections.append(f"\n*... and {len(rows_data) - 20} more rows*\n")
+                sections.append("\n")
+    else:
+        sections.append("*No background research performed*\n")
+
+    # ================================================================
+    # SECTION 1: Column Definition (Prepopulated Rows)
+    # ================================================================
+    sections.append("\n---\n")
+    sections.append("## 1. Column Definition (Prepopulated Rows)\n")
+
+    col_def_markdown = column_definition_result.get('prepopulated_rows_markdown', '')
+    col_def_citations = column_definition_result.get('citations', {})
+
+    if col_def_markdown:
+        sections.append(col_def_markdown)
+        sections.append(_format_citations_section(col_def_citations))
+    else:
+        sections.append("*No prepopulated rows from column definition*\n")
+
+    # ================================================================
+    # SECTION 2: Row Discovery (Per Round/Subdomain)
+    # ================================================================
+    sections.append("\n---\n")
+    sections.append("## 2. Row Discovery\n")
+
+    stream_results = discovery_result.get('stream_results', [])
+
+    if stream_results:
+        for stream_idx, stream in enumerate(stream_results, 1):
+            subdomain_name = stream.get('subdomain', f'Subdomain {stream_idx}')
+            sections.append(f"\n### 2.{stream_idx}. {subdomain_name}\n")
+
+            all_rounds = stream.get('all_rounds', [])
+
+            if all_rounds:
+                for round_data in all_rounds:
+                    round_num = round_data.get('round', '?')
+                    model = round_data.get('model', 'unknown')
+                    context = round_data.get('context', '')
+                    count = round_data.get('count', 0)
+
+                    sections.append(f"\n#### Round {round_num} ({model}, {context}) - {count} candidates\n")
+
+                    round_markdown = round_data.get('candidates_markdown', '')
+                    round_citations = round_data.get('citations', {})
+
+                    if round_markdown:
+                        sections.append(round_markdown)
+                        sections.append(_format_citations_section(round_citations))
+                    else:
+                        sections.append("*No markdown table for this round*\n")
+            else:
+                # Fallback to stream-level markdown
+                stream_markdown = stream.get('candidates_markdown', '')
+                stream_citations = stream.get('citations', {})
+
+                if stream_markdown:
+                    sections.append(stream_markdown)
+                    sections.append(_format_citations_section(stream_citations))
+                else:
+                    sections.append("*No rows discovered in this subdomain*\n")
+    else:
+        sections.append("*No row discovery performed*\n")
+
+    # ================================================================
+    # SECTION 3: Final Approved Table (Post-QC)
+    # ================================================================
+    sections.append("\n---\n")
+    sections.append("## 3. Final Approved Table (Post-QC)\n")
+
+    if approved_rows:
+        # Get column names
+        id_columns = [col.get('name', '') for col in columns if col.get('importance', '').upper() == 'ID']
+        research_columns = [col.get('name', '') for col in columns if col.get('importance', '').upper() != 'ID']
+        all_columns = id_columns + research_columns
+
+        # Build markdown table
+        header = "| " + " | ".join(all_columns) + " |"
+        separator = "| " + " | ".join(["---"] * len(all_columns)) + " |"
+
+        rows = []
+        all_citations = {}
+        citation_counter = 1
+
+        for row in approved_rows:
+            id_values = row.get('id_values', {})
+            research_values = row.get('research_values', {})
+            cell_citations = row.get('cell_citations', {})
+
+            cells = []
+            for col in all_columns:
+                value = id_values.get(col, research_values.get(col, ''))
+                # Add citation references if available
+                col_citations = cell_citations.get(col, [])
+                if col_citations:
+                    cite_refs = []
+                    for url in col_citations:
+                        # Find or create citation number
+                        found = False
+                        for num, existing_url in all_citations.items():
+                            if existing_url == url:
+                                cite_refs.append(f"[{num}]")
+                                found = True
+                                break
+                        if not found:
+                            all_citations[str(citation_counter)] = url
+                            cite_refs.append(f"[{citation_counter}]")
+                            citation_counter += 1
+                    value = f"{value}{''.join(cite_refs)}"
+                cells.append(str(value) if value else '')
+
+            rows.append("| " + " | ".join(cells) + " |")
+
+        sections.append(header)
+        sections.append(separator)
+        sections.append("\n".join(rows))
+        sections.append(_format_citations_section(all_citations))
+
+        sections.append(f"\n**Total Approved Rows: {len(approved_rows)}**\n")
+    else:
+        sections.append("*No rows approved after QC*\n")
+
+    # QC Summary
+    if qc_result:
+        qc_summary = qc_result.get('qc_summary', {})
+        sections.append("\n### QC Summary\n")
+        sections.append(f"- Promoted: {qc_summary.get('promoted', 0)}")
+        sections.append(f"- Demoted: {qc_summary.get('demoted', 0)}")
+        sections.append(f"- Rejected: {qc_summary.get('rejected', 0)}")
+        sections.append(f"- Overall Score: {qc_summary.get('overall_score', 'N/A')}\n")
+
+    return "\n".join(sections)
+
+
 def _load_config() -> Dict:
     """Load table_maker_config.json."""
     try:
@@ -2280,6 +2550,42 @@ async def execute_full_table_generation(
             logger.info("[EXECUTION] QC was bypassed - rows sorted by discovery score only")
 
         logger.info(f"[EXECUTION] Step 4 complete: {len(approved_rows)} approved rows (after {retry_count} retrigger(s))")
+
+        # ======================================================================
+        # Generate and save md_tables.md with all pipeline tables
+        # ======================================================================
+        try:
+            # Get background_research_result from locals
+            bg_research_result = background_research_result if 'background_research_result' in dir() else {}
+
+            # Get column_definition_result from result or locals
+            col_def_result = result.get('column_definition_result', {})
+            if not col_def_result and 'column_definition_result' in locals():
+                col_def_result = column_definition_result
+
+            # Get discovery_result (may be merged result after retrigger)
+            disc_result = discovery_result if 'discovery_result' in dir() else {}
+
+            # Get qc_result
+            qc_res = qc_result if 'qc_result' in locals() else {}
+
+            md_tables_content = _generate_md_tables_content(
+                background_research_result=bg_research_result,
+                column_definition_result=col_def_result,
+                discovery_result=disc_result,
+                qc_result=qc_res,
+                approved_rows=approved_rows,
+                columns=columns
+            )
+
+            _save_text_to_s3(
+                storage_manager, email, session_id, conversation_id,
+                'md_tables.md', md_tables_content
+            )
+            logger.info("[EXECUTION] Saved md_tables.md with all pipeline tables")
+
+        except Exception as md_err:
+            logger.warning(f"[EXECUTION] Failed to generate md_tables.md: {md_err}")
 
         # Build progress message based on what's still running
         # At this point, QC is done but config might still be running
