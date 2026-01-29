@@ -657,6 +657,316 @@ def _format_citations_section(citations: Dict[str, str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _init_md_tables(
+    storage_manager,
+    email: str,
+    session_id: str,
+    conversation_id: str
+) -> None:
+    """Initialize md_tables.md with header."""
+    content = "# Table Maker - Pipeline Tables\n\n"
+    content += f"Generated: {__import__('datetime').datetime.now().isoformat()}\n"
+    content += "\n*This file is updated continuously as each pipeline stage completes.*\n"
+
+    _save_text_to_s3(
+        storage_manager, email, session_id, conversation_id,
+        'md_tables.md', content
+    )
+    logger.info("[MD_TABLES] Initialized md_tables.md")
+
+
+def _append_md_tables(
+    storage_manager,
+    email: str,
+    session_id: str,
+    conversation_id: str,
+    new_content: str
+) -> None:
+    """Append content to md_tables.md."""
+    try:
+        # Read existing content
+        s3_key = storage_manager.get_table_maker_path(
+            email=email,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            file_name='md_tables.md'
+        )
+
+        existing_content = ""
+        try:
+            response = storage_manager.s3_client.get_object(
+                Bucket=storage_manager.bucket_name,
+                Key=s3_key
+            )
+            existing_content = response['Body'].read().decode('utf-8')
+        except Exception:
+            # File doesn't exist yet, initialize it
+            existing_content = "# Table Maker - Pipeline Tables\n\n"
+            existing_content += f"Generated: {__import__('datetime').datetime.now().isoformat()}\n"
+
+        # Append new content
+        updated_content = existing_content + "\n" + new_content
+
+        storage_manager.s3_client.put_object(
+            Bucket=storage_manager.bucket_name,
+            Key=s3_key,
+            Body=updated_content,
+            ContentType='text/markdown'
+        )
+
+        logger.info(f"[MD_TABLES] Appended to md_tables.md")
+
+    except Exception as e:
+        logger.warning(f"[MD_TABLES] Failed to append to md_tables.md: {e}")
+
+
+def _write_background_research_section(
+    storage_manager,
+    email: str,
+    session_id: str,
+    conversation_id: str,
+    background_research_result: Dict
+) -> None:
+    """Write Section 0: Background Research to md_tables.md."""
+    sections = []
+    sections.append("\n---\n")
+    sections.append("## 0. Background Research\n")
+
+    if background_research_result:
+        # Tablewide Research Summary
+        tablewide_research = background_research_result.get('tablewide_research', '')
+        if tablewide_research:
+            sections.append("### Tablewide Research Summary\n")
+            sections.append(tablewide_research)
+            sections.append("\n")
+
+        # Authoritative Sources
+        sources = background_research_result.get('authoritative_sources', [])
+        if sources:
+            sections.append("\n### Authoritative Sources\n")
+            for src in sources:
+                name = src.get('name', 'Unknown')
+                url = src.get('url', '')
+                description = src.get('description', '')
+                sections.append(f"- **{name}**: {description}")
+                if url:
+                    sections.append(f"  - URL: {url}")
+            sections.append("\n")
+
+        # Starting Tables (from background research)
+        starting_markdown = background_research_result.get('starting_tables_markdown', '')
+        starting_citations = background_research_result.get('citations', {})
+        if starting_markdown:
+            sections.append("\n### Starting Tables (from Background Research)\n")
+            sections.append(starting_markdown)
+            sections.append(_format_citations_section(starting_citations))
+        else:
+            sections.append("\n*No starting tables from background research*\n")
+    else:
+        sections.append("*No background research performed*\n")
+
+    _append_md_tables(storage_manager, email, session_id, conversation_id, "\n".join(sections))
+
+
+def _write_extracted_tables_section(
+    storage_manager,
+    email: str,
+    session_id: str,
+    conversation_id: str,
+    extracted_tables: List[Dict]
+) -> None:
+    """Write extracted tables (Step 0b) to md_tables.md."""
+    sections = []
+    sections.append("\n### Extracted Tables (Step 0b)\n")
+
+    if extracted_tables:
+        for idx, table in enumerate(extracted_tables, 1):
+            table_name = table.get('table_name', f'Table {idx}')
+            source_url = table.get('source_url', '')
+            rows_count = table.get('rows_extracted', len(table.get('rows', [])))
+
+            sections.append(f"\n#### {idx}. {table_name}\n")
+            sections.append(f"- Source: {source_url}")
+            sections.append(f"- Rows extracted: {rows_count}\n")
+
+            # If there's markdown table data
+            if table.get('markdown_table'):
+                sections.append(table['markdown_table'])
+            elif table.get('rows'):
+                # Convert rows to markdown
+                rows_data = table['rows']
+                if rows_data:
+                    headers = list(rows_data[0].keys())
+                    header_line = "| " + " | ".join(headers) + " |"
+                    sep_line = "| " + " | ".join(["---"] * len(headers)) + " |"
+                    data_lines = []
+                    for row in rows_data[:20]:  # Limit to 20 rows
+                        data_lines.append("| " + " | ".join(str(row.get(h, '')) for h in headers) + " |")
+                    sections.append(header_line)
+                    sections.append(sep_line)
+                    sections.append("\n".join(data_lines))
+                    if len(rows_data) > 20:
+                        sections.append(f"\n*... and {len(rows_data) - 20} more rows*\n")
+            sections.append("\n")
+    else:
+        sections.append("*No tables extracted*\n")
+
+    _append_md_tables(storage_manager, email, session_id, conversation_id, "\n".join(sections))
+
+
+def _write_column_definition_section(
+    storage_manager,
+    email: str,
+    session_id: str,
+    conversation_id: str,
+    column_definition_result: Dict
+) -> None:
+    """Write Section 1: Column Definition to md_tables.md."""
+    sections = []
+    sections.append("\n---\n")
+    sections.append("## 1. Column Definition (Prepopulated Rows)\n")
+
+    col_def_markdown = column_definition_result.get('prepopulated_rows_markdown', '')
+    col_def_citations = column_definition_result.get('citations', {})
+
+    if col_def_markdown:
+        sections.append(col_def_markdown)
+        sections.append(_format_citations_section(col_def_citations))
+    else:
+        sections.append("*No prepopulated rows from column definition*\n")
+
+    _append_md_tables(storage_manager, email, session_id, conversation_id, "\n".join(sections))
+
+
+def _write_discovery_subdomain_header(
+    storage_manager,
+    email: str,
+    session_id: str,
+    conversation_id: str,
+    subdomain_name: str,
+    subdomain_idx: int,
+    is_first: bool = False
+) -> None:
+    """Write subdomain header for discovery section."""
+    sections = []
+
+    if is_first:
+        sections.append("\n---\n")
+        sections.append("## 2. Row Discovery\n")
+
+    sections.append(f"\n### 2.{subdomain_idx}. {subdomain_name}\n")
+
+    _append_md_tables(storage_manager, email, session_id, conversation_id, "\n".join(sections))
+
+
+def _write_discovery_round_section(
+    storage_manager,
+    email: str,
+    session_id: str,
+    conversation_id: str,
+    subdomain_name: str,
+    round_data: Dict
+) -> None:
+    """Write a single discovery round to md_tables.md."""
+    sections = []
+
+    round_num = round_data.get('round', '?')
+    model = round_data.get('model', 'unknown')
+    context = round_data.get('context', '')
+    count = round_data.get('count', 0)
+
+    sections.append(f"\n#### Round {round_num} ({model}, {context}) - {count} candidates\n")
+
+    round_markdown = round_data.get('candidates_markdown', '')
+    round_citations = round_data.get('citations', {})
+
+    if round_markdown:
+        sections.append(round_markdown)
+        sections.append(_format_citations_section(round_citations))
+    else:
+        sections.append("*No markdown table for this round*\n")
+
+    _append_md_tables(storage_manager, email, session_id, conversation_id, "\n".join(sections))
+
+
+def _write_qc_section(
+    storage_manager,
+    email: str,
+    session_id: str,
+    conversation_id: str,
+    qc_result: Dict,
+    approved_rows: List[Dict],
+    columns: List[Dict]
+) -> None:
+    """Write Section 3: Final Approved Table to md_tables.md."""
+    sections = []
+    sections.append("\n---\n")
+    sections.append("## 3. Final Approved Table (Post-QC)\n")
+
+    if approved_rows:
+        # Get column names
+        id_columns = [col.get('name', '') for col in columns if col.get('importance', '').upper() == 'ID']
+        research_columns = [col.get('name', '') for col in columns if col.get('importance', '').upper() != 'ID']
+        all_columns = id_columns + research_columns
+
+        # Build markdown table
+        header = "| " + " | ".join(all_columns) + " |"
+        separator = "| " + " | ".join(["---"] * len(all_columns)) + " |"
+
+        rows = []
+        all_citations = {}
+        citation_counter = 1
+
+        for row in approved_rows:
+            id_values = row.get('id_values', {})
+            research_values = row.get('research_values', {})
+            cell_citations = row.get('cell_citations', {})
+
+            cells = []
+            for col in all_columns:
+                value = id_values.get(col, research_values.get(col, ''))
+                # Add citation references if available
+                col_citations = cell_citations.get(col, [])
+                if col_citations:
+                    cite_refs = []
+                    for url in col_citations:
+                        # Find or create citation number
+                        found = False
+                        for num, existing_url in all_citations.items():
+                            if existing_url == url:
+                                cite_refs.append(f"[{num}]")
+                                found = True
+                                break
+                        if not found:
+                            all_citations[str(citation_counter)] = url
+                            cite_refs.append(f"[{citation_counter}]")
+                            citation_counter += 1
+                    value = f"{value}{''.join(cite_refs)}"
+                cells.append(str(value) if value else '')
+
+            rows.append("| " + " | ".join(cells) + " |")
+
+        sections.append(header)
+        sections.append(separator)
+        sections.append("\n".join(rows))
+        sections.append(_format_citations_section(all_citations))
+
+        sections.append(f"\n**Total Approved Rows: {len(approved_rows)}**\n")
+    else:
+        sections.append("*No rows approved after QC*\n")
+
+    # QC Summary
+    if qc_result:
+        qc_summary = qc_result.get('qc_summary', {})
+        sections.append("\n### QC Summary\n")
+        sections.append(f"- Promoted: {qc_summary.get('promoted', 0)}")
+        sections.append(f"- Demoted: {qc_summary.get('demoted', 0)}")
+        sections.append(f"- Rejected: {qc_summary.get('rejected', 0)}")
+        sections.append(f"- Overall Score: {qc_summary.get('overall_score', 'N/A')}\n")
+
+    _append_md_tables(storage_manager, email, session_id, conversation_id, "\n".join(sections))
+
+
 def _generate_md_tables_content(
     background_research_result: Dict,
     column_definition_result: Dict,
@@ -1245,6 +1555,13 @@ async def execute_full_table_generation(
                 'background_research_result.json', background_research_result
             )
 
+            # Initialize and write to md_tables.md
+            _init_md_tables(storage_manager, email, session_id, conversation_id)
+            _write_background_research_section(
+                storage_manager, email, session_id, conversation_id,
+                background_research_result
+            )
+
             # NOTE: We intentionally do NOT store background research sources to agent_memory here.
             # authoritative_sources contains brief descriptions, not actual URL content.
             # Storing them would pollute memory with snippets that pass keyword validation
@@ -1397,6 +1714,12 @@ async def execute_full_table_generation(
                             'background_research_result.json', background_research_result
                         )
                         logger.info("[STEP 0b] Updated background_research_result in S3 with extracted_tables")
+
+                        # Write extracted tables to md_tables.md
+                        _write_extracted_tables_section(
+                            storage_manager, email, session_id, conversation_id,
+                            extracted_tables
+                        )
 
                         # CRITICAL: Store extracted tables to agent_memory for validation
                         # This makes the full table content available when validation looks up source URLs
@@ -1562,6 +1885,12 @@ async def execute_full_table_generation(
             _save_to_s3(
                 storage_manager, email, session_id, conversation_id,
                 'column_definition_result.json', column_result
+            )
+
+            # Write column definition section to md_tables.md
+            _write_column_definition_section(
+                storage_manager, email, session_id, conversation_id,
+                column_result
             )
 
             logger.info(f"[EXECUTION] Step 1 complete: {len(columns)} columns, table: {table_name}")
@@ -1917,10 +2246,16 @@ async def execute_full_table_generation(
                     else:
                         final_rows = discovery_only_rows
 
-                # Track each subdomain's API calls (outside timeout check block)
-                for stream_result in stream_results:
+                # Track each subdomain's API calls and write to md_tables.md
+                for subdomain_idx, stream_result in enumerate(stream_results, 1):
                     subdomain_name = stream_result.get('subdomain', 'Unknown')
                     all_rounds = stream_result.get('all_rounds', [])
+
+                    # Write subdomain header to md_tables.md
+                    _write_discovery_subdomain_header(
+                        storage_manager, email, session_id, conversation_id,
+                        subdomain_name, subdomain_idx, is_first=(subdomain_idx == 1)
+                    )
 
                     for round_data in all_rounds:
                         round_num = round_data.get('round', '?')
@@ -1937,6 +2272,12 @@ async def execute_full_table_generation(
                             call_type='row_discovery',
                             status='IN_PROGRESS',
                             verbose_status=f'Row discovery: {subdomain_name} round {round_num}'
+                        )
+
+                        # Write round to md_tables.md
+                        _write_discovery_round_section(
+                            storage_manager, email, session_id, conversation_id,
+                            subdomain_name, round_data
                         )
 
                 # Save discovery results to S3
@@ -2552,40 +2893,18 @@ async def execute_full_table_generation(
         logger.info(f"[EXECUTION] Step 4 complete: {len(approved_rows)} approved rows (after {retry_count} retrigger(s))")
 
         # ======================================================================
-        # Generate and save md_tables.md with all pipeline tables
+        # Write QC section to md_tables.md (incremental update)
         # ======================================================================
         try:
-            # Get background_research_result from locals
-            bg_research_result = background_research_result if 'background_research_result' in dir() else {}
-
-            # Get column_definition_result from result or locals
-            col_def_result = result.get('column_definition_result', {})
-            if not col_def_result and 'column_definition_result' in locals():
-                col_def_result = column_definition_result
-
-            # Get discovery_result (may be merged result after retrigger)
-            disc_result = discovery_result if 'discovery_result' in dir() else {}
-
-            # Get qc_result
             qc_res = qc_result if 'qc_result' in locals() else {}
-
-            md_tables_content = _generate_md_tables_content(
-                background_research_result=bg_research_result,
-                column_definition_result=col_def_result,
-                discovery_result=disc_result,
-                qc_result=qc_res,
-                approved_rows=approved_rows,
-                columns=columns
-            )
-
-            _save_text_to_s3(
+            _write_qc_section(
                 storage_manager, email, session_id, conversation_id,
-                'md_tables.md', md_tables_content
+                qc_res, approved_rows, columns
             )
-            logger.info("[EXECUTION] Saved md_tables.md with all pipeline tables")
+            logger.info("[MD_TABLES] Wrote QC section to md_tables.md")
 
         except Exception as md_err:
-            logger.warning(f"[EXECUTION] Failed to generate md_tables.md: {md_err}")
+            logger.warning(f"[MD_TABLES] Failed to write QC section: {md_err}")
 
         # Build progress message based on what's still running
         # At this point, QC is done but config might still be running
