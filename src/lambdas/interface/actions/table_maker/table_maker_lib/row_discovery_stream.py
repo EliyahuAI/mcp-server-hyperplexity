@@ -1066,35 +1066,69 @@ class RowDiscoveryStream:
             scoring = response_data.get('scoring', [])
 
             # Renumber citations if needed to avoid collisions
+            # Wrapped in try-except to preserve rows even if citation processing fails
             if citations and citation_start_number > 1:
-                candidates_markdown, citations = _renumber_citations(
-                    candidates_markdown,
-                    citations,
-                    citation_start_number
-                )
-                logger.info(f"[CITATION] Renumbered {len(citations)} citations starting from {citation_start_number}")
+                try:
+                    candidates_markdown, citations = _renumber_citations(
+                        candidates_markdown,
+                        citations,
+                        citation_start_number
+                    )
+                    logger.info(f"[CITATION] Renumbered {len(citations)} citations starting from {citation_start_number}")
+                except Exception as cite_err:
+                    logger.warning(f"[CITATION] Failed to renumber citations: {cite_err}. Continuing without citation renumbering.")
+                    # Filter to numeric citations only and continue
+                    citations = _filter_numeric_citations(citations)
 
             # Parse candidates from new format (candidates_markdown with citations)
+            # Each parsing attempt is wrapped in try-except for robustness
+            candidates = []
+            parse_method_used = None
+
             if candidates_markdown and isinstance(candidates_markdown, str):
-                # New format: parse with full columns and citations
-                candidates = parse_candidates_markdown(
-                    candidates_markdown,
-                    columns,
-                    citations,
-                    scoring
-                )
-                logger.info(f"[DISCOVERY] Parsed {len(candidates)} candidates from new format (candidates_markdown with {len(citations)} citations)")
-            elif isinstance(candidates_raw, str) and candidates_raw:
-                # Legacy format: markdown in 'candidates' field with scoring columns
-                id_column_names = [col.get('name', '') for col in columns if col.get('importance', '').upper() == 'ID']
-                candidates = parse_candidates_markdown_legacy(candidates_raw, id_column_names)
-                logger.info(f"[DISCOVERY] Parsed {len(candidates)} candidates from legacy markdown format")
-            elif isinstance(candidates_raw, list):
-                # Legacy format - already a list
-                candidates = candidates_raw
-                logger.info(f"[DISCOVERY] Using {len(candidates)} candidates from JSON array (legacy)")
-            else:
-                candidates = []
+                # Try new format: parse with full columns and citations
+                try:
+                    candidates = parse_candidates_markdown(
+                        candidates_markdown,
+                        columns,
+                        citations,
+                        scoring
+                    )
+                    parse_method_used = "new_format"
+                    logger.info(f"[DISCOVERY] Parsed {len(candidates)} candidates from new format (candidates_markdown with {len(citations)} citations)")
+                except Exception as parse_err:
+                    logger.warning(f"[DISCOVERY] Failed to parse candidates_markdown: {parse_err}. Trying legacy format...")
+                    # Fall through to try legacy parsing
+
+            # Try legacy format if new format failed or wasn't available
+            if not candidates and isinstance(candidates_raw, str) and candidates_raw:
+                try:
+                    # Legacy format: markdown in 'candidates' field with scoring columns
+                    id_column_names = [col.get('name', '') for col in columns if col.get('importance', '').upper() == 'ID']
+                    candidates = parse_candidates_markdown_legacy(candidates_raw, id_column_names)
+                    parse_method_used = "legacy_markdown"
+                    logger.info(f"[DISCOVERY] Parsed {len(candidates)} candidates from legacy markdown format")
+                except Exception as legacy_err:
+                    logger.warning(f"[DISCOVERY] Failed to parse legacy markdown: {legacy_err}")
+
+            # Try JSON array format if still no candidates
+            if not candidates and isinstance(candidates_raw, list):
+                try:
+                    candidates = candidates_raw
+                    parse_method_used = "json_array"
+                    logger.info(f"[DISCOVERY] Using {len(candidates)} candidates from JSON array (legacy)")
+                except Exception as json_err:
+                    logger.warning(f"[DISCOVERY] Failed to use JSON array candidates: {json_err}")
+
+            # Last resort: try to parse candidates_markdown as legacy if we have it but parsing failed
+            if not candidates and candidates_markdown and isinstance(candidates_markdown, str) and parse_method_used != "legacy_markdown":
+                try:
+                    id_column_names = [col.get('name', '') for col in columns if col.get('importance', '').upper() == 'ID']
+                    candidates = parse_candidates_markdown_legacy(candidates_markdown, id_column_names)
+                    parse_method_used = "fallback_legacy"
+                    logger.info(f"[DISCOVERY] Parsed {len(candidates)} candidates using fallback legacy parser on candidates_markdown")
+                except Exception as fallback_err:
+                    logger.warning(f"[DISCOVERY] Fallback legacy parser also failed: {fallback_err}")
 
             # PHASE 2: DEBUG logging when 0 candidates found
             if len(candidates) == 0:
