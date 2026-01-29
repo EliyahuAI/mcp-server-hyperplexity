@@ -446,6 +446,20 @@ class RowDiscovery:
             # PHASE 1: Include stream_results with all_rounds data for API tracking
             result['stream_results'] = successful_streams
 
+            # Combine candidates_markdown from all streams for output
+            combined_markdown_parts = []
+            combined_scoring = []
+            for stream in successful_streams:
+                stream_md = stream.get('candidates_markdown', '')
+                if stream_md:
+                    combined_markdown_parts.append(f"### {stream.get('subdomain', 'Unknown')}\n\n{stream_md}")
+                stream_scoring = stream.get('scoring', [])
+                if stream_scoring:
+                    combined_scoring.extend(stream_scoring)
+
+            result['candidates_markdown'] = '\n\n'.join(combined_markdown_parts) if combined_markdown_parts else ''
+            result['scoring'] = combined_scoring
+
             # Include combined citations and max citation number for downstream use
             result['citations'] = all_citations
             result['max_citation_number'] = current_citation_number - 1 if current_citation_number > citation_start_number else citation_start_number

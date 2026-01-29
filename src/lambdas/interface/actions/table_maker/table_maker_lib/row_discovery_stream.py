@@ -620,6 +620,9 @@ class RowDiscoveryStream:
                     'model': model,
                     'context': context,
                     'candidates': candidates,
+                    'candidates_markdown': round_candidates.get('candidates_markdown', ''),  # Preserve markdown table
+                    'citations': round_candidates.get('citations', {}),  # Preserve citations for this round
+                    'scoring': round_candidates.get('scoring', []),  # Preserve scoring data
                     'count': len(candidates),
                     'search_improvements': search_improvements,
                     'domain_filtering_recommendations': domain_recommendations,
@@ -686,10 +689,34 @@ class RowDiscoveryStream:
             rounds_executed = len(all_rounds)
             rounds_skipped = len(escalation_strategy) - rounds_executed
 
+            # Combine candidates_markdown from all rounds
+            combined_markdown_parts = []
+            combined_scoring = []
+            for round_data in all_rounds:
+                round_md = round_data.get('candidates_markdown', '')
+                if round_md:
+                    combined_markdown_parts.append(round_md)
+                round_scoring = round_data.get('scoring', [])
+                if round_scoring:
+                    combined_scoring.extend(round_scoring)
+
+            # Merge markdown tables (keep headers from first, append data rows from rest)
+            combined_markdown = ''
+            if combined_markdown_parts:
+                combined_markdown = combined_markdown_parts[0]
+                for md in combined_markdown_parts[1:]:
+                    # Skip header rows (first 2 lines: header + separator)
+                    lines = md.strip().split('\n')
+                    if len(lines) > 2:
+                        data_rows = '\n'.join(lines[2:])
+                        combined_markdown += '\n' + data_rows
+
             result = {
                 'subdomain': subdomain_name,
                 'all_rounds': all_rounds,
-                'candidates': accumulated_candidates,
+                'candidates': accumulated_candidates,  # Parsed (for internal processing)
+                'candidates_markdown': combined_markdown,  # Raw markdown (for output)
+                'scoring': combined_scoring,  # Combined scoring data
                 'citations': all_citations,
                 'max_citation_number': current_citation - 1 if current_citation > citation_start_number else citation_start_number,
                 'total_candidates': len(accumulated_candidates),
@@ -1153,6 +1180,10 @@ class RowDiscoveryStream:
             response_data['candidates'] = candidates[:target_rows]
             # Preserve citations in response for downstream use
             response_data['citations'] = citations
+
+            # Preserve original candidates_markdown for debugging and downstream use
+            response_data['candidates_markdown'] = candidates_markdown
+            response_data['scoring'] = scoring
 
             # PHASE 1: Include enhanced_data in return
             response_data['enhanced_data'] = result.get('enhanced_data', {})
