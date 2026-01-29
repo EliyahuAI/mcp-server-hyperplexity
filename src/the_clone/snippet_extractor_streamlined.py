@@ -846,13 +846,18 @@ class SnippetExtractorStreamlined:
             "nuanced": f"**DEEP MODE:** Extract up to {max_snippets} snippets per source per search term. Include context, methodology, and supporting details."
         }.get(extraction_mode, "")
 
+        # Calculate word limit: max_tokens * 0.75 (words/token) * 0.75 (buffer)
+        # Default max_tokens is 8000 for extraction
+        word_limit = int(8000 * 0.75 * 0.75)  # ~4500 words
+
         prompt = template.format(
             current_date=current_date,
             all_search_terms_formatted=formatted_terms,
             formatted_sources=formatted_sources,
             extraction_mode_guidance=mode_guidance,
             mode_rules=mode_rules,
-            max_snippets=max_snippets
+            max_snippets=max_snippets,
+            word_limit=word_limit
         )
 
         return prompt
@@ -1096,6 +1101,10 @@ class SnippetExtractorStreamlined:
         # Get primary search term (primary_search_index is 1-indexed)
         primary_search_term = all_search_terms[primary_search_index - 1] if primary_search_index <= len(all_search_terms) else query
 
+        # Calculate word limit: max_tokens * 0.75 (words/token) * 0.75 (buffer)
+        # Default max_tokens is 8000 for extraction
+        word_limit = int(8000 * 0.75 * 0.75)  # ~4500 words
+
         prompt = template.format(
             primary_search_term=primary_search_term,
             source_title=source_title,
@@ -1106,7 +1115,8 @@ class SnippetExtractorStreamlined:
             all_search_terms_formatted=all_search_terms_formatted,
             source_full_text=source_text,
             extraction_mode_guidance=mode_guidance,
-            max_snippets=max_snippets
+            max_snippets=max_snippets,
+            word_limit=word_limit
         )
 
         return prompt

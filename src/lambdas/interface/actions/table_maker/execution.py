@@ -107,6 +107,7 @@ This is the THIRD info box in the UI sequence:
 import logging
 import json
 import asyncio
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -155,6 +156,45 @@ logger.setLevel(logging.INFO)
 # Row discovery constants
 FIND_ALL_SAFETY_CAP = 200  # Maximum rows when user requests "find all"
 DISCOVERY_AMPLIFICATION = 1.5  # Amplify target for discovery, QC will trim back
+
+# Timeout constants
+LAMBDA_MAX_SECONDS = 900  # Lambda 15-minute timeout
+TIMEOUT_SAFETY_BUFFER = 120  # 2-minute safety buffer
+MIN_TIME_FOR_DISCOVERY_QC = 360  # 6 minutes minimum for row discovery + QC cycle
+
+
+class TimeoutGuard:
+    """
+    Track elapsed time and provide timeout-aware decisions.
+
+    Used to ensure graceful completion before Lambda timeout.
+    """
+
+    def __init__(self, max_seconds: int = LAMBDA_MAX_SECONDS, safety_buffer: int = TIMEOUT_SAFETY_BUFFER):
+        self.start_time = time.time()
+        self.max_seconds = max_seconds
+        self.safety_buffer = safety_buffer
+        self.deadline = self.start_time + max_seconds - safety_buffer
+
+    def elapsed(self) -> float:
+        """Get elapsed time in seconds."""
+        return time.time() - self.start_time
+
+    def remaining(self) -> float:
+        """Get remaining time before deadline in seconds."""
+        return self.deadline - time.time()
+
+    def has_time_for(self, estimated_seconds: int) -> bool:
+        """Check if there's enough time for an operation."""
+        return self.remaining() > estimated_seconds
+
+    def should_stop(self) -> bool:
+        """Check if we've exceeded the deadline."""
+        return self.remaining() <= 0
+
+    def can_do_discovery_qc_cycle(self) -> bool:
+        """Check if there's enough time for a full discovery + QC cycle."""
+        return self.remaining() > MIN_TIME_FOR_DISCOVERY_QC
 
 
 def send_execution_progress(
@@ -810,6 +850,10 @@ async def execute_full_table_generation(
 
     try:
         logger.info(f"[EXECUTION] Starting Independent Row Discovery pipeline for {conversation_id}")
+
+        # Initialize timeout guard to track elapsed time
+        timeout_guard = TimeoutGuard()
+        logger.info(f"[TIMEOUT] Initialized timeout guard. Deadline in {timeout_guard.remaining():.0f}s")
 
         # Initialize storage manager
         storage_manager = UnifiedS3Manager()
@@ -1528,60 +1572,82 @@ async def execute_full_table_generation(
                     )
                 )
 
-                # Run row discovery (wait for completion before starting QC)
-                logger.info("[EXECUTION] Starting row discovery")
-
-                # Handle target_row_count: -1 = find all, positive = specific count
-                user_target = conversation_state.get('target_row_count', -1)
-                if user_target == -1:
-                    # Find all mode - capped at safety limit
-                    target_row_count = FIND_ALL_SAFETY_CAP
-                    logger.info(f"[EXECUTION] Find-all mode: targeting up to {FIND_ALL_SAFETY_CAP} rows")
-                else:
-                    # Amplify for discovery, QC will trim back
-                    target_row_count = int(user_target * DISCOVERY_AMPLIFICATION)
-                    logger.info(f"[EXECUTION] User requested {user_target} rows, discovery targeting {target_row_count} (1.5x)")
-
-                discovery_result = await row_discovery.discover_rows(
-                    search_strategy=search_strategy,
-                    columns=columns,
-                    target_row_count=target_row_count,
-                    discovery_multiplier=1.5,
-                    min_match_score=min_match_score,
-                    max_parallel_streams=max_parallel_streams,
-                    escalation_strategy=escalation_strategy,
-                    check_targets_between_subdomains=check_targets_between_subdomains,
-                    early_stop_threshold_percentage=early_stop_threshold_percentage,
-                    websocket_callback=websocket_callback,
-                    soft_schema=soft_schema
-                )
-
-                # Check if row discovery succeeded (critical)
-                if not discovery_result.get('success'):
-                    result['error'] = f"Row discovery failed: {discovery_result.get('error')}"
-                    logger.error(f"[EXECUTION] {result['error']}")
-                    return result
-
-                # Get rows from discovery (BEFORE merging with initial_rows)
-                # This is what QC should review as "discovered" rows
-                discovery_only_rows = discovery_result.get('final_rows', [])
-                stream_results = discovery_result.get('stream_results', [])
-
-                logger.info(f"[DISCOVERY] Row discovery found {len(discovery_only_rows)} new rows")
-
-                # Merge initial_rows from column definition with discovered rows for final output
-                if initial_rows:
-                    logger.info(f"[MERGE] Merging {len(initial_rows)} initial rows with {len(discovery_only_rows)} discovered rows")
-                    final_rows = _merge_rows_with_preference(
-                        initial_rows=initial_rows,
-                        discovered_rows=discovery_only_rows,
-                        id_column_names=[col['name'] for col in columns if col.get('importance') == 'ID']
+                # Check timeout before starting row discovery
+                if not timeout_guard.can_do_discovery_qc_cycle():
+                    logger.warning(
+                        f"[TIMEOUT] Insufficient time for discovery+QC cycle. "
+                        f"Remaining: {timeout_guard.remaining():.0f}s, needed: {MIN_TIME_FOR_DISCOVERY_QC}s. "
+                        f"Skipping row discovery and using initial rows only."
                     )
-                    logger.info(f"[MERGE] After merge: {len(final_rows)} total rows")
+                    # Skip row discovery, use initial rows only
+                    final_rows = initial_rows if initial_rows else []
+                    discovery_result = {'success': True, 'final_rows': [], 'stream_results': [], 'timeout_skip': True}
+                    stream_results = []
+                    discovery_only_rows = []
+                    # Send WebSocket update about timeout
+                    send_execution_progress(
+                        session_id=session_id,
+                        conversation_id=conversation_id,
+                        current_step=2,
+                        total_steps=4,
+                        status='Time constraints - using initial rows only',
+                        progress_percent=60
+                    )
                 else:
-                    final_rows = discovery_only_rows
+                    # Run row discovery (wait for completion before starting QC)
+                    logger.info(f"[EXECUTION] Starting row discovery (time remaining: {timeout_guard.remaining():.0f}s)")
 
-                # Track each subdomain's API calls
+                    # Handle target_row_count: -1 = find all, positive = specific count
+                    user_target = conversation_state.get('target_row_count', -1)
+                    if user_target == -1:
+                        # Find all mode - capped at safety limit
+                        target_row_count = FIND_ALL_SAFETY_CAP
+                        logger.info(f"[EXECUTION] Find-all mode: targeting up to {FIND_ALL_SAFETY_CAP} rows")
+                    else:
+                        # Amplify for discovery, QC will trim back
+                        target_row_count = int(user_target * DISCOVERY_AMPLIFICATION)
+                        logger.info(f"[EXECUTION] User requested {user_target} rows, discovery targeting {target_row_count} (1.5x)")
+
+                    discovery_result = await row_discovery.discover_rows(
+                        search_strategy=search_strategy,
+                        columns=columns,
+                        target_row_count=target_row_count,
+                        discovery_multiplier=1.5,
+                        min_match_score=min_match_score,
+                        max_parallel_streams=max_parallel_streams,
+                        escalation_strategy=escalation_strategy,
+                        check_targets_between_subdomains=check_targets_between_subdomains,
+                        early_stop_threshold_percentage=early_stop_threshold_percentage,
+                        websocket_callback=websocket_callback,
+                        soft_schema=soft_schema
+                    )
+
+                    # Check if row discovery succeeded (critical)
+                    if not discovery_result.get('success'):
+                        result['error'] = f"Row discovery failed: {discovery_result.get('error')}"
+                        logger.error(f"[EXECUTION] {result['error']}")
+                        return result
+
+                    # Get rows from discovery (BEFORE merging with initial_rows)
+                    # This is what QC should review as "discovered" rows
+                    discovery_only_rows = discovery_result.get('final_rows', [])
+                    stream_results = discovery_result.get('stream_results', [])
+
+                    logger.info(f"[DISCOVERY] Row discovery found {len(discovery_only_rows)} new rows")
+
+                    # Merge initial_rows from column definition with discovered rows for final output
+                    if initial_rows:
+                        logger.info(f"[MERGE] Merging {len(initial_rows)} initial rows with {len(discovery_only_rows)} discovered rows")
+                        final_rows = _merge_rows_with_preference(
+                            initial_rows=initial_rows,
+                            discovered_rows=discovery_only_rows,
+                            id_column_names=[col['name'] for col in columns if col.get('importance') == 'ID']
+                        )
+                        logger.info(f"[MERGE] After merge: {len(final_rows)} total rows")
+                    else:
+                        final_rows = discovery_only_rows
+
+                # Track each subdomain's API calls (outside timeout check block)
                 for stream_result in stream_results:
                     subdomain_name = stream_result.get('subdomain', 'Unknown')
                     all_rounds = stream_result.get('all_rounds', [])
@@ -1956,6 +2022,24 @@ async def execute_full_table_generation(
                     # ======================================================================
                     retrigger_data = qc_result.get('retrigger_discovery', {})
                     should_retrigger = retrigger_data.get('should_retrigger', False)
+
+                    # Check timeout before allowing retrigger
+                    if should_retrigger and not timeout_guard.can_do_discovery_qc_cycle():
+                        logger.warning(
+                            f"[TIMEOUT] QC requested retrigger but insufficient time remaining. "
+                            f"Remaining: {timeout_guard.remaining():.0f}s, needed: {MIN_TIME_FOR_DISCOVERY_QC}s. "
+                            f"Skipping retrigger and using current results."
+                        )
+                        should_retrigger = False
+                        # Send WebSocket update about timeout skip
+                        send_execution_progress(
+                            session_id=session_id,
+                            conversation_id=conversation_id,
+                            current_step=4,
+                            total_steps=4,
+                            status='Time constraints - completing with current results',
+                            progress_percent=90
+                        )
 
                     if should_retrigger and retry_count < max_retriggers:
                         retry_count += 1

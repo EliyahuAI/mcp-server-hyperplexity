@@ -172,4 +172,6 @@ Format: `[code, p_score, reason_abbrev, verbal_handle]`
 - ❌ WRONG: Separate snippets for rows: `` §H5.0 ``, `` §H5.1 ``, `` §H5.2 ``
 - ✅ CORRECT: Single snippet for table: `` §H5.0-5.7 `` (header + all relevant rows)
 
-Return `{{}}` if nothing clear. Essential facts only. Minimal quotes. 
+Return `{{}}` if nothing clear. Essential facts only. Minimal quotes.
+
+**⚠️ RESPONSE LENGTH LIMIT: Keep your total response under {word_limit} words.** 

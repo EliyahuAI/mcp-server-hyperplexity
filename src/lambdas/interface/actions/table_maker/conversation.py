@@ -826,8 +826,8 @@ async def _trigger_execution(
             return
 
         # Send completion message via WebSocket
-        # NOTE: csv_s3_key, config_s3_key, and approved_rows are NOT included to avoid
-        # exceeding WebSocket 128KB limit. Preview handler fetches full data from S3.
+        # NOTE: approved_rows is NOT included to avoid exceeding WebSocket 128KB limit.
+        # Preview handler fetches full data from S3.
         if execution_result['success']:
             if websocket_client and session_id:
                 try:
@@ -837,7 +837,11 @@ async def _trigger_execution(
                         'phase': 'execution',
                         'status': 'Table ready for validation!',
                         'table_name': execution_result.get('table_name'),
-                        'row_count': execution_result.get('row_count', 0)
+                        'row_count': execution_result.get('row_count', 0),
+                        # Include file paths so frontend knows files are ready
+                        'excel_s3_key': execution_result.get('excel_s3_key'),
+                        'csv_s3_key': execution_result.get('csv_s3_key'),
+                        'config_s3_key': execution_result.get('config_s3_key')
                         # approved_rows excluded - can cause 413 error with large tables (>50 rows)
                     }
                     websocket_client.send_to_session(session_id, completion_message)

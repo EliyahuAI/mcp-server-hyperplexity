@@ -75,3 +75,5 @@ Return **codes with backtick prefix** (not full text) for essential quotes.
 ```
 
 Return `{{}}` if nothing clear. Extract only concrete, checkable facts.
+
+**⚠️ RESPONSE LENGTH LIMIT: Keep your total response under {word_limit} words.**

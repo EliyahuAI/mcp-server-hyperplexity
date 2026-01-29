@@ -171,11 +171,12 @@ If background_research has `extracted_tables`:
 **🚨 CRITICAL REQUIREMENT - READ CAREFULLY:**
 
 **IF YOU SET trigger_row_discovery=true, YOU MUST:**
-1. ✅ Include `subdomains` array (2-10 subdomains) in search_strategy object
+1. ✅ Include `subdomains` array (2-5 subdomains, MAXIMUM 5) in search_strategy object
 2. ✅ Provide discovery_guidance explaining what discovery should do
 3. ✅ Each subdomain MUST have: name, focus, search_queries (2-5), target_rows
 
 **FAILURE TO INCLUDE SUBDOMAINS WILL CAUSE EXECUTION ERROR!**
+**MAXIMUM 5 SUBDOMAINS - Using more than 5 will cause timeout issues.**
 
 **The system will reject your response if:**
 - trigger_row_discovery=true AND subdomains is missing → ERROR
@@ -297,16 +298,20 @@ Provide 1-2 sentences of overall guidance.
 ## 📊 SUBDOMAINS (CRITICAL - Only if trigger_row_discovery=true)
 ═══════════════════════════════════════════════════════════════
 
-**🚨 IF trigger_row_discovery=true, YOU MUST provide 2-10 subdomains. EXECUTION WILL FAIL WITHOUT THEM.**
+**🚨 IF trigger_row_discovery=true, YOU MUST provide 2-5 subdomains. EXECUTION WILL FAIL WITHOUT THEM.**
+
+**⚠️ MAXIMUM 5 SUBDOMAINS - This is a hard limit to ensure timely completion.**
 
 ### Subdomain Count Guide
 
 | User Wants | Subdomains | Rationale |
 |------------|-----------|-----------|
 | ≤20 rows | 2-3 | Efficient |
-| 21-50 rows | 4-5 | Balanced |
-| 51-100 rows | 6-8 | Wide net |
-| 100+ rows | 8-10 | Maximum coverage |
+| 21-50 rows | 3-4 | Balanced |
+| 51-100 rows | 4-5 | Wide net |
+| 100+ rows | 5 | Maximum (hard limit) |
+
+**NOTE:** Even for very large requests (100+ rows), use exactly 5 subdomains with higher target_rows per subdomain rather than more subdomains.
 
 ### Per-Subdomain Fields (ALL REQUIRED)
 

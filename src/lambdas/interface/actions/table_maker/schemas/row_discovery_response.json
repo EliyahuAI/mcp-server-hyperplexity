@@ -12,7 +12,6 @@
     },
     "citations": {
       "type": "object",
-      "additionalProperties": { "type": "string" },
       "description": "Map of citation numbers to URLs, e.g., {\"1\": \"https://example.com\", \"2\": \"https://other.com\"}"
     },
     "scoring": {
@@ -27,20 +26,14 @@
           },
           "relevancy": {
             "type": "number",
-            "minimum": 0,
-            "maximum": 1,
             "description": "How well entity matches requirements (0-1)"
           },
           "reliability": {
             "type": "number",
-            "minimum": 0,
-            "maximum": 1,
             "description": "Source reliability score (0-1)"
           },
           "recency": {
             "type": "number",
-            "minimum": 0,
-            "maximum": 1,
             "description": "Information recency score (0-1)"
           },
           "rationale": {

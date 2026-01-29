@@ -17,16 +17,16 @@
   "background_research": {
     "_comment": "Step 0 - ALWAYS runs before column definition. Finds authoritative sources and starting tables to guide column design. On restructure, cached research is ALWAYS reused (never re-run)",
 
-    "model": "the-clone",
-    "_note_model": "Uses the-clone for comprehensive research with search + extraction",
+    "model": "sonar-pro",
+    "_note_model": "Uses sonar-pro with high context for fast comprehensive research",
     "max_tokens": 8000,
     "_note_max_tokens": "Background research only outputs 15 sample entities max, so 8000 tokens is sufficient. Token boost for large entity counts happens in column_definition instead.",
 
-    "_web_search_params_info": "Web search parameters for the-clone:",
+    "_web_search_params_info": "Web search parameters for sonar-pro:",
     "search_context_size": "high",
     "_note_search_context": "High = comprehensive research",
     "max_web_searches": 5,
-    "_note_max_web_searches": "Not used by the-clone (it uses internal search strategy)",
+    "_note_max_web_searches": "Not used by sonar-pro (it uses search_context_size)",
 
     "min_starting_tables": 0,
     "_note_min_tables": "Minimum number of starting tables with sample entities required before proceeding to column definition",
@@ -54,14 +54,15 @@
 
   "column_definition": {
     "_comment": "Step 1 - Defines column specifications and search strategy using background research output as input. Generates initial rows from available data.",
-    "model": "deepseek-v3.2",
-    "_note_model": "Recommended: claude-sonnet-4-5 (receives formatted research, no web search needed)",
+    "model": "gemini-2.5-flash",
+    "_note_model": "Uses gemini-2.5-flash for fast column definition (no web search needed)",
     "max_tokens": 32000,
     "_note_max_tokens": "Set to 32000 to handle large entity counts (50+ rows). No auto-boost logic - uses this value directly.",
     "show_preview_table": false,
     "include_subdomains": true,
     "subdomain_count_min": 2,
-    "subdomain_count_max": 10,
+    "subdomain_count_max": 5,
+    "_note_subdomain_max": "Limited to 5 subdomains max to ensure completion within Lambda timeout",
     "default_target_rows_total": 30,
     "_subdomain_strategy": "Use more subdomains (6-10) for challenging/niche topics or complex requirements. More subdomains = better coverage but more overlap. If authoritative lists found, structure subdomains as SEGMENTS of those lists (e.g., 'Countries A-E', 'NIH Awardees A-D')",
     "overshoot_factor_min": 1.3,

@@ -25,7 +25,7 @@
     },
     "overall_score": {
       "oneOf": [
-        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number" },
         { "type": "null" }
       ],
       "description": "Overall quality score for the set (0-1). Null only for restructure action."
@@ -50,7 +50,7 @@
                 "type": "array",
                 "items": { "type": "string" }
               },
-              "target_rows": { "type": "integer", "minimum": 1 }
+              "target_rows": { "type": "integer" }
             }
           }
         },

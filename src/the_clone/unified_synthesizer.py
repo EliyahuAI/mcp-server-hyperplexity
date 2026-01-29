@@ -452,7 +452,9 @@ Imagine a client paid an expert researcher for this answer. Would they be satisf
 - You MUST always provide an answer that satisfies the schema structure, even if incomplete.
 - We will only re-run searches if you provide `suggested_search_terms` OR set `request_capability_upgrade=true`.
 
-Return JSON with 'comparison', 'self_assessment', and optional 'suggested_search_terms', 'request_capability_upgrade', and 'note_to_self' fields."""
+Return JSON with 'comparison', 'self_assessment', and optional 'suggested_search_terms', 'request_capability_upgrade', and 'note_to_self' fields.
+
+**⚠️ RESPONSE LENGTH LIMIT: Keep your total response under 36000 words.**"""
 
         else:
             # Evaluation + synthesis mode
@@ -506,6 +508,8 @@ Query: {query}
 - ❌ WRONG: `[handle, S1.1.5-p0.95]` - shortened ID
 - ✅ CORRECT: Copy exact IDs and handles from snippet listings
 - **REQUIRED:** Always include citations when providing answers
+
+**⚠️ RESPONSE LENGTH LIMIT: Keep your total response under 36000 words.**
 
 **Output Structure Example:**
 ```json

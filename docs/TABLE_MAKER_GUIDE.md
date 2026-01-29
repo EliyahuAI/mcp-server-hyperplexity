@@ -1,6 +1,6 @@
 # Table Maker - Independent Row Discovery System
 
-**Version:** 2.8 (Unified Row Discovery Output Format + Citation Tracking)
+**Version:** 2.8.1 (Lambda Timeout Protection + Model Updates)
 **Last Updated:** January 29, 2026
 **Status:** Production Ready (Lambda Integrated)
 
@@ -283,11 +283,11 @@ For obvious, exhaustive, well-defined lists that don't require web research.
 
 ## What's New in Version 2.3
 
-### Strategic Subdomain Scaling (2-10 Subdomains)
-- **Raised Limit**: Subdomain max increased from 5 to 10
-- **Adaptive Scaling**: More subdomains for challenging/niche topics
-- **Decision Matrix**: Clear guidelines for when to use 2-3 vs 8-10 subdomains
-- **Examples**: Fortune 500 (2-3) vs Government AI Initiatives (8-10)
+### Strategic Subdomain Scaling (2-5 Subdomains)
+- **Lambda Timeout Protection**: Subdomain max limited to 5 to ensure completion within Lambda's 15-minute timeout
+- **Adaptive Scaling**: More subdomains for challenging/niche topics (up to limit)
+- **Decision Matrix**: Clear guidelines for when to use 2-3 vs 4-5 subdomains
+- **Examples**: Fortune 500 (2-3) vs Government AI Initiatives (5 max)
 
 ### Intelligent Overshoot Targeting
 - **30-50% Buffer**: Always target more rows than promised to user
@@ -305,7 +305,7 @@ For obvious, exhaustive, well-defined lists that don't require web research.
 - **Decision Matrix**: Table showing subdomain count by difficulty/complexity
 - **Calculation Examples**: Step-by-step worked examples with math
 - **Rationale Explained**: Why more subdomains for challenging topics
-- **Clear Guidelines**: When to use 2-3 vs 6-8 vs 8-10 subdomains
+- **Clear Guidelines**: When to use 2-3 vs 4-5 subdomains (max 5 for Lambda timeout)
 
 **Result:** Reliable delivery of promised row counts, even for challenging/niche topics.
 
@@ -404,7 +404,7 @@ For obvious, exhaustive, well-defined lists that don't require web research.
 │    - Model knowledge (well-known finite sets)                   │
 │  • Populate ALL columns with reliable data (ID + research)      │
 │  • Decide: trigger_row_discovery (true/false)                   │
-│  • Model: claude-sonnet-4-5 (no web search needed)              │
+│  • Model: gemini-2.5-flash (fast, no web search needed)         │
 └─────────────────────────────────────────────────────────────────┘
                             ↓
                    ┌────────┴────────┐
@@ -609,15 +609,15 @@ The system automatically adjusts subdomain count and row targets based on:
 | User Requested | Topic Difficulty | Complexity | Subdomains | Rationale |
 |----------------|------------------|------------|------------|-----------|
 | ≤20 rows | Common/Easy | Simple | 2-3 | Efficient, minimal overlap |
-| 21-50 rows | Moderate | Moderate | 4-5 | Balanced coverage |
-| 51-100 rows | Challenging/Niche | Complex | 6-8 | Wide net for rare entities |
-| 100+ rows | Very Niche | Very Complex | 8-10 | Maximum parallel coverage |
+| 21-50 rows | Moderate | Moderate | 3-4 | Balanced coverage |
+| 51-100 rows | Challenging/Niche | Complex | 4-5 | Wide net for rare entities |
+| 100+ rows | Very Niche | Very Complex | 5 | Maximum (hard limit for Lambda timeout) |
 
 **Examples:**
 - "Fortune 500 companies" → 2-3 subdomains (well-known, easy to find)
-- "Biotech companies hiring AI engineers" → 5-6 subdomains (niche intersection, multiple criteria)
-- "Academic papers on quantum AI from 2024" → 7-8 subdomains (very specific, time-bound)
-- "Local government AI initiatives globally" → 9-10 subdomains (very rare, geographically dispersed)
+- "Biotech companies hiring AI engineers" → 4-5 subdomains (niche intersection, multiple criteria)
+- "Academic papers on quantum AI from 2024" → 5 subdomains (max limit, very specific)
+- "Local government AI initiatives globally" → 5 subdomains (max limit, very rare)
 
 ### Row Target Calculation Formula
 
@@ -772,7 +772,7 @@ The subdomain strategy works synergistically with the global counter:
 - Populates ALL columns with reliable data (not just ID columns)
 - Decides trigger_row_discovery (true/false)
 - Creates subdomains (only if triggering discovery)
-- Model: claude-sonnet-4-5 (no web search needed)
+- Model: gemini-2.5-flash (fast, no web search needed)
 
 **Output:**
 ```json
@@ -966,10 +966,10 @@ Round 2 discovers: "Date ranges improve relevance"
 ```json
 {
   "column_definition": {
-    "model": "claude-haiku-4-5",
-    "max_tokens": 8000,
+    "model": "gemini-2.5-flash",
+    "max_tokens": 32000,
     "subdomain_count_min": 2,
-    "subdomain_count_max": 10,
+    "subdomain_count_max": 5,
     "overshoot_factor_min": 1.3,
     "overshoot_factor_max": 1.5
   }

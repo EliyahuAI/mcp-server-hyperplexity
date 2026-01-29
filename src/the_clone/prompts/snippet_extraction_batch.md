@@ -172,3 +172,5 @@ Max 25 chars. **MUST be unique across ALL sources in this batch** (append _2, _3
 - **ORDERING: List quotes sequentially by source (all S1, then all S2, then S3...), and within each source by code order (1.1, 1.2, 2.1...)**
 
 Return empty `{{}}` if nothing clear.
+
+**⚠️ RESPONSE LENGTH LIMIT: Keep your total response under {word_limit} words.**
