@@ -4884,6 +4884,42 @@ def handle_main_processing(event, context):
                                             ContentType='application/json'
                                         )
                                         logger.info(f"[FULL_VALIDATION] Saved full table_metadata.json with {len(full_table_metadata.get('rows', []))} rows to {full_metadata_key}")
+
+                                        # Generate and save static HTML viewer
+                                        try:
+                                            from interface_lambda.utils.static_html_generator import StaticHTMLGenerator
+
+                                            html_generator = StaticHTMLGenerator()
+
+                                            # Get clean table name from session info or config
+                                            # session_info may be None if load failed
+                                            static_title = (session_info.get('clean_table_name') if session_info else None) or config_data.get('table_name', 'Validation Results')
+                                            static_subtitle = f"Generated {datetime.now().strftime('%B %d, %Y')}"
+
+                                            # Build interactive URL for linking
+                                            viewer_base = os.environ.get('VIEWER_BASE_URL', 'https://eliyahu.ai/hyperplexity')
+                                            interactive_url = f"{viewer_base}?mode=viewer&session={clean_session_id}&version={config_version}"
+
+                                            static_html = html_generator.generate(
+                                                table_metadata=full_table_metadata,
+                                                title=static_title,
+                                                subtitle=static_subtitle,
+                                                description=f"Validation results for {static_title}",
+                                                seo_content="",  # Can be populated from config or user input
+                                                interactive_url=interactive_url
+                                            )
+
+                                            # Save static HTML
+                                            static_html_key = f"{session_path}v{config_version}_results/static_viewer.html"
+                                            s3_client.put_object(
+                                                Bucket=storage_manager.bucket_name,
+                                                Key=static_html_key,
+                                                Body=static_html.encode('utf-8'),
+                                                ContentType='text/html'
+                                            )
+                                            logger.info(f"[FULL_VALIDATION] Saved static_viewer.html to {static_html_key}")
+                                        except Exception as html_error:
+                                            logger.warning(f"[FULL_VALIDATION] Failed to generate static HTML (non-fatal): {html_error}")
                                 except Exception as meta_error:
                                     logger.error(f"[FULL_VALIDATION] Failed to save full table_metadata.json: {meta_error}")
                             else:

@@ -425,6 +425,162 @@ function showFullValidationResults(validationData) {
     return cardId;
 }
 
+// ============================================
+// DEMO MODE (PUBLIC TABLES - NO EMAIL REQUIRED)
+// ============================================
+
+/**
+ * Initialize demo mode (called from 99-init.js when ?demo= detected)
+ * No email required - loads public demo table directly
+ */
+function initDemoMode() {
+    const params = getDemoParams();
+
+    if (!params.tableName) {
+        // No table name specified - show error
+        const cardId = generateCardId();
+        createCard({
+            id: cardId,
+            icon: '📊',
+            title: 'Demo Not Found',
+            subtitle: 'No demo table specified',
+            content: `
+                <div class="message message-error">
+                    <span class="message-icon">⚠️</span>
+                    <span>Please provide a demo table name in the URL.</span>
+                </div>
+                <p style="margin-top: 1rem; color: var(--text-secondary);">
+                    Example: <code>?demo=example-table</code>
+                </p>
+            `
+        });
+        return;
+    }
+
+    // Load demo directly - no email required
+    loadAndDisplayDemo(params.tableName);
+}
+
+/**
+ * Load demo table from S3 demos folder
+ * @param {string} tableName - Name of the demo table to load
+ */
+async function loadAndDisplayDemo(tableName) {
+    // Create the viewer card
+    const { cardId } = createResultsViewerCard({
+        title: 'Demo Table',
+        subtitle: `Loading ${tableName}...`,
+        infoHeaderText: 'Explore this demo table. Click cells for details.'
+    });
+
+    // Show loading state
+    showThinkingInCard(cardId, 'Loading demo...', true);
+
+    try {
+        // Call backend to get demo data (no email required)
+        const response = await fetch(`${API_BASE}/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'getDemoData',
+                table_name: tableName
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Demo not found');
+        }
+
+        // Hide loading indicator
+        completeThinkingInCard(cardId, 'Demo loaded');
+
+        // Update card title with clean name
+        const card = document.getElementById(cardId);
+        if (card) {
+            const titleEl = card.querySelector('.card-title');
+            if (titleEl) {
+                titleEl.textContent = data.clean_table_name || tableName;
+            }
+            const subtitleEl = card.querySelector('.card-subtitle');
+            if (subtitleEl) {
+                subtitleEl.textContent = 'Public Demo Table';
+            }
+        }
+
+        // Display demo results with special button handling
+        displayDemoResultsInCard(cardId, data, tableName);
+
+    } catch (error) {
+        console.error('[DEMO] Error loading demo:', error);
+        completeThinkingInCard(cardId, 'Error loading demo');
+        showMessage(`${cardId}-messages`, `Error: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Display demo results with special button handling
+ * Downloads work without email, "Create Your Own Table" requires email
+ *
+ * @param {string} cardId - Card ID to update
+ * @param {Object} data - Demo data from API
+ * @param {string} tableName - Original table name for downloads
+ */
+function displayDemoResultsInCard(cardId, data, tableName) {
+    const container = document.getElementById(`${cardId}-table-container`);
+    if (!container) {
+        console.error(`[DEMO] Container ${cardId}-table-container not found`);
+        return;
+    }
+
+    // Update the info header
+    const infoText = document.getElementById(`${cardId}-info-text`);
+    if (infoText) {
+        infoText.innerHTML = '<strong>Demo Table</strong> - Click cells for details, or create your own validated table.';
+    }
+
+    // Render table if metadata available
+    if (data.table_metadata && typeof InteractiveTable !== 'undefined') {
+        const tableHtml = InteractiveTable.render(data.table_metadata, {
+            showGeneralNotes: true,
+            showLegend: true
+        });
+        container.innerHTML = tableHtml;
+        InteractiveTable.init();
+    } else {
+        container.innerHTML = '<p class="table-empty-message">No table data available.</p>';
+        // Still show "Create Your Own" button even if no table data
+    }
+
+    // Build buttons - Create Your Own requires email
+    const buttons = [
+        {
+            text: 'Download JSON',
+            icon: '📋',
+            variant: 'secondary',
+            callback: (e) => {
+                const button = e.target.closest('button');
+                downloadJsonMetadata(data.table_metadata, button);
+            }
+        },
+        {
+            text: 'Create Your Own Table',
+            icon: '✨',
+            variant: 'primary',
+            callback: () => {
+                // Require email, then redirect to main app
+                requireEmailThen(() => {
+                    // Remove demo param and go to main app
+                    window.location.href = window.location.pathname;
+                }, 'create your own table');
+            }
+        }
+    ];
+
+    createButtonRow(`${cardId}-buttons`, buttons);
+}
+
 /**
  * Handle the Update Table button click.
  * Creates a new validation session from the current enhanced results.

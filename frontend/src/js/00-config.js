@@ -293,6 +293,11 @@ function checkForTestingOverrides() {
 function detectPageType() {
     const urlParams = new URLSearchParams(window.location.search);
 
+    // Check for demo mode first (highest priority) - public tables without email
+    if (urlParams.get('demo')) {
+        return 'demo';
+    }
+
     // Check for viewer mode (results viewer)
     if (urlParams.get('mode') === 'viewer' || urlParams.get('page') === 'viewer') {
         return 'viewer';
@@ -332,6 +337,18 @@ function getViewerParams() {
         session: urlParams.get('session') || urlParams.get('id'),
         version: urlParams.get('version') || urlParams.get('v'),
         path: urlParams.get('path')
+    };
+}
+
+/**
+ * Get demo parameters from URL
+ * @returns {Object} { tableName } - demo table name (trimmed)
+ */
+function getDemoParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const demo = urlParams.get('demo');
+    return {
+        tableName: demo ? demo.trim() : null
     };
 }
 

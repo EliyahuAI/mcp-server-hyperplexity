@@ -225,7 +225,10 @@ setTimeout(() => {
     if (!window.isRestoringState && !hasHandledState && !warningBasedRestoreTriggered) {
         const pageType = detectPageType();
 
-        if (pageType === 'viewer') {
+        if (pageType === 'demo') {
+            // Demo mode - show public demo table (no email required)
+            initDemoMode();
+        } else if (pageType === 'viewer') {
             // Viewer mode - show results viewer
             // Email validation handled within initViewerMode
             initViewerMode();

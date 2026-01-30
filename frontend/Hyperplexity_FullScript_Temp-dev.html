@@ -4184,6 +4184,11 @@ function checkForTestingOverrides() {
 function detectPageType() {
     const urlParams = new URLSearchParams(window.location.search);
 
+    // Check for demo mode first (highest priority) - public tables without email
+    if (urlParams.get('demo')) {
+        return 'demo';
+    }
+
     // Check for viewer mode (results viewer)
     if (urlParams.get('mode') === 'viewer' || urlParams.get('page') === 'viewer') {
         return 'viewer';
@@ -4223,6 +4228,18 @@ function getViewerParams() {
         session: urlParams.get('session') || urlParams.get('id'),
         version: urlParams.get('version') || urlParams.get('v'),
         path: urlParams.get('path')
+    };
+}
+
+/**
+ * Get demo parameters from URL
+ * @returns {Object} { tableName } - demo table name (trimmed)
+ */
+function getDemoParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const demo = urlParams.get('demo');
+    return {
+        tableName: demo ? demo.trim() : null
     };
 }
 
@@ -11005,6 +11022,15 @@ function handleTableExecutionUpdate(message) {
 
                 // Show colored boxes
                 showColumnsBoxes(conversationId, message.columns);
+
+                // Show prepopulated rows if available (from column definition)
+                if (message.prepopulated_rows && message.prepopulated_rows.length > 0) {
+                    showPrepopulatedRowsBox(
+                        conversationId,
+                        message.prepopulated_rows,
+                        message.total_prepopulated || message.prepopulated_rows.length
+                    );
+                }
             }
             break;
 
@@ -11403,6 +11429,69 @@ function showColumnsBoxes(conversationId, columns) {
 
     // Add both boxes to progress content
     progressContent.innerHTML += idBoxHtml + researchBoxHtml;
+
+    // Scroll card into view
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function showPrepopulatedRowsBox(conversationId, prepopulatedRows, totalCount) {
+    console.log('[DEBUG] showPrepopulatedRowsBox called with:', prepopulatedRows.length, 'rows, total:', totalCount);
+
+    // Find the most recent card
+    if (cardHandlers.size === 0) {
+        console.log('[DEBUG] No card handlers found');
+        return;
+    }
+
+    const latestCardId = Array.from(cardHandlers.keys()).pop();
+    const card = document.getElementById(latestCardId);
+    if (!card) {
+        console.log('[DEBUG] Card not found:', latestCardId);
+        return;
+    }
+
+    // Find the progress-content container created in step 1
+    let progressContent = document.getElementById(`${latestCardId}-progress-content`);
+    if (!progressContent) {
+        console.log('[DEBUG] progress-content not found, using fallback');
+        progressContent = card.querySelector('.card-content');
+    }
+    if (!progressContent) {
+        console.log('[DEBUG] No progress content found at all');
+        return;
+    }
+
+    console.log('[DEBUG] Found progress content, building prepopulated rows box');
+
+    // Build rows list (top 15 rows)
+    const rowsToShow = prepopulatedRows.slice(0, 15);
+    const rowsListHtml = rowsToShow.map(row => {
+        // Build display string from ID values
+        const idValues = row.id_values || {};
+        const displayParts = Object.entries(idValues)
+            .filter(([k, v]) => v)
+            .map(([k, v]) => `${k}: ${v}`);
+
+        // No score for prepopulated rows
+        return `• ${displayParts.join(', ')}`;
+    }).join('<br>');
+
+    // Add "more rows" indicator if needed
+    const moreRowsHtml = totalCount > 15
+        ? `<br><em>+ ${totalCount - 15} more rows</em>`
+        : '';
+
+    // Create prepopulated rows box (cyan/teal color - similar to ID columns)
+    const rowsBoxHtml = `
+        <div class="message prepopulated-rows-box" data-total-count="${totalCount}" style="margin-bottom: 1rem; background-color: #e0f2f1; color: #00695c; border: 1px solid #80cbc4;">
+            <span class="message-icon">📋</span>
+            <div class="prepopulated-rows-content">
+                <strong>Prepopulated Rows: <span class="row-count-text">${totalCount} total</span></strong> (from research)<br>
+                ${rowsListHtml}${moreRowsHtml}
+            </div>
+        </div>
+    `;
+    progressContent.innerHTML += rowsBoxHtml;
 
     // Scroll card into view
     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -12282,6 +12371,33 @@ if (refinementDiv) refinementDiv.style.display = 'none';
 // Show thinking indicator in card (buttons will remain showing "Thinking...")
 showThinkingInCard(cardId, 'Processing your request...', true);
 
+// Validate required state before making request
+if (!globalState.sessionId) {
+    console.error('[TABLE_MAKER] Cannot continue: globalState.sessionId is not set');
+    completeThinkingInCard(cardId, 'Error');
+    showMessage(`${cardId}-messages`,
+        'Session not available. Please refresh and try again.',
+        'error');
+    return;
+}
+
+if (!tableMakerState.conversationId) {
+    console.error('[TABLE_MAKER] Cannot continue: tableMakerState.conversationId is not set');
+    completeThinkingInCard(cardId, 'Error');
+    showMessage(`${cardId}-messages`,
+        'Conversation not started. Please start a new conversation.',
+        'error');
+    return;
+}
+
+// Log the request details for debugging
+console.log('[TABLE_MAKER] Continuing conversation:', {
+    sessionId: globalState.sessionId,
+    conversationId: tableMakerState.conversationId,
+    email: globalState.email,
+    messageLength: messageToSend.length
+});
+
 // Send to backend
 try {
     const response = await fetch(`${API_BASE}/validate`, {
@@ -12308,11 +12424,25 @@ try {
             'error');
     }
 } catch (error) {
-    console.error('Error continuing conversation:', error);
+    // Log detailed error information for debugging
+    console.error('[TABLE_MAKER] Error continuing conversation:', {
+        error: error.message,
+        name: error.name,
+        sessionId: globalState.sessionId,
+        conversationId: tableMakerState.conversationId
+    });
+
     completeThinkingInCard(cardId, 'Error');
-    showMessage(`${cardId}-messages`,
-        'Failed to send message. Please try again.',
-        'error');
+
+    // Provide more specific error message based on error type
+    let errorMessage = 'Failed to send message. ';
+    if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+        errorMessage += 'Network error - please check your connection or try refreshing the page.';
+    } else {
+        errorMessage += 'Please try again.';
+    }
+
+    showMessage(`${cardId}-messages`, errorMessage, 'error');
 }
 }
 
@@ -17644,6 +17774,162 @@ function showFullValidationResults(validationData) {
     return cardId;
 }
 
+// ============================================
+// DEMO MODE (PUBLIC TABLES - NO EMAIL REQUIRED)
+// ============================================
+
+/**
+ * Initialize demo mode (called from 99-init.js when ?demo= detected)
+ * No email required - loads public demo table directly
+ */
+function initDemoMode() {
+    const params = getDemoParams();
+
+    if (!params.tableName) {
+        // No table name specified - show error
+        const cardId = generateCardId();
+        createCard({
+            id: cardId,
+            icon: '📊',
+            title: 'Demo Not Found',
+            subtitle: 'No demo table specified',
+            content: `
+                <div class="message message-error">
+                    <span class="message-icon">⚠️</span>
+                    <span>Please provide a demo table name in the URL.</span>
+                </div>
+                <p style="margin-top: 1rem; color: var(--text-secondary);">
+                    Example: <code>?demo=example-table</code>
+                </p>
+            `
+        });
+        return;
+    }
+
+    // Load demo directly - no email required
+    loadAndDisplayDemo(params.tableName);
+}
+
+/**
+ * Load demo table from S3 demos folder
+ * @param {string} tableName - Name of the demo table to load
+ */
+async function loadAndDisplayDemo(tableName) {
+    // Create the viewer card
+    const { cardId } = createResultsViewerCard({
+        title: 'Demo Table',
+        subtitle: `Loading ${tableName}...`,
+        infoHeaderText: 'Explore this demo table. Click cells for details.'
+    });
+
+    // Show loading state
+    showThinkingInCard(cardId, 'Loading demo...', true);
+
+    try {
+        // Call backend to get demo data (no email required)
+        const response = await fetch(`${API_BASE}/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'getDemoData',
+                table_name: tableName
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Demo not found');
+        }
+
+        // Hide loading indicator
+        completeThinkingInCard(cardId, 'Demo loaded');
+
+        // Update card title with clean name
+        const card = document.getElementById(cardId);
+        if (card) {
+            const titleEl = card.querySelector('.card-title');
+            if (titleEl) {
+                titleEl.textContent = data.clean_table_name || tableName;
+            }
+            const subtitleEl = card.querySelector('.card-subtitle');
+            if (subtitleEl) {
+                subtitleEl.textContent = 'Public Demo Table';
+            }
+        }
+
+        // Display demo results with special button handling
+        displayDemoResultsInCard(cardId, data, tableName);
+
+    } catch (error) {
+        console.error('[DEMO] Error loading demo:', error);
+        completeThinkingInCard(cardId, 'Error loading demo');
+        showMessage(`${cardId}-messages`, `Error: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Display demo results with special button handling
+ * Downloads work without email, "Create Your Own Table" requires email
+ *
+ * @param {string} cardId - Card ID to update
+ * @param {Object} data - Demo data from API
+ * @param {string} tableName - Original table name for downloads
+ */
+function displayDemoResultsInCard(cardId, data, tableName) {
+    const container = document.getElementById(`${cardId}-table-container`);
+    if (!container) {
+        console.error(`[DEMO] Container ${cardId}-table-container not found`);
+        return;
+    }
+
+    // Update the info header
+    const infoText = document.getElementById(`${cardId}-info-text`);
+    if (infoText) {
+        infoText.innerHTML = '<strong>Demo Table</strong> - Click cells for details, or create your own validated table.';
+    }
+
+    // Render table if metadata available
+    if (data.table_metadata && typeof InteractiveTable !== 'undefined') {
+        const tableHtml = InteractiveTable.render(data.table_metadata, {
+            showGeneralNotes: true,
+            showLegend: true
+        });
+        container.innerHTML = tableHtml;
+        InteractiveTable.init();
+    } else {
+        container.innerHTML = '<p class="table-empty-message">No table data available.</p>';
+        // Still show "Create Your Own" button even if no table data
+    }
+
+    // Build buttons - Create Your Own requires email
+    const buttons = [
+        {
+            text: 'Download JSON',
+            icon: '📋',
+            variant: 'secondary',
+            callback: (e) => {
+                const button = e.target.closest('button');
+                downloadJsonMetadata(data.table_metadata, button);
+            }
+        },
+        {
+            text: 'Create Your Own Table',
+            icon: '✨',
+            variant: 'primary',
+            callback: () => {
+                // Require email, then redirect to main app
+                requireEmailThen(() => {
+                    // Remove demo param and go to main app
+                    window.location.href = window.location.pathname;
+                }, 'create your own table');
+            }
+        }
+    ];
+
+    createButtonRow(`${cardId}-buttons`, buttons);
+}
+
 /**
  * Handle the Update Table button click.
  * Creates a new validation session from the current enhanced results.
@@ -17947,7 +18233,10 @@ setTimeout(() => {
     if (!window.isRestoringState && !hasHandledState && !warningBasedRestoreTriggered) {
         const pageType = detectPageType();
 
-        if (pageType === 'viewer') {
+        if (pageType === 'demo') {
+            // Demo mode - show public demo table (no email required)
+            initDemoMode();
+        } else if (pageType === 'viewer') {
             // Viewer mode - show results viewer
             // Email validation handled within initViewerMode
             initViewerMode();
