@@ -2,15 +2,29 @@
 """
 Demo Upload and Validation Script
 
-This script validates a local demos folder structure and uploads it to S3.
-Each demo folder should contain:
-- A data file (Excel or CSV)
-- A JSON configuration file
-- A markdown file with description
+This script validates and uploads two types of demos to S3:
+
+1. Onboarding Demos (--demos-folder):
+   - For new users to try the full validation flow
+   - Each folder needs: data file (.xlsx/.csv), config.json, description.md
+   - Uploaded to: s3://{bucket}/demos/{demo_name}/
+
+2. Interactive Table Demos (--interactive-tables):
+   - Pre-built tables for the public viewer
+   - Each folder needs: table_metadata.json, optionally info.json
+   - Uploaded to: s3://{bucket}/demos/interactive_tables/{table_name}/
 
 Usage:
+    # Onboarding demos
     python upload_demos.py --demos-folder ./demos --bucket hyperplexity-storage --dry-run
     python upload_demos.py --demos-folder ./demos --bucket hyperplexity-storage --upload
+
+    # Interactive table demos
+    python upload_demos.py --interactive-tables ./demos/interactive_tables --bucket hyperplexity-storage --dry-run
+    python upload_demos.py --interactive-tables ./demos/interactive_tables --bucket hyperplexity-storage --upload
+
+    # Both at once
+    python upload_demos.py --demos-folder ./demos --interactive-tables ./demos/interactive_tables --bucket hyperplexity-storage --upload
 """
 
 import os
@@ -352,22 +366,270 @@ class DemoValidator:
             print(f"\n✅ Upload complete! Demos available at s3://{self.bucket_name}/demos/")
 
 
+class InteractiveTableValidator:
+    """Validator for interactive table demos (pre-built tables for the viewer)."""
+
+    def __init__(self, bucket_name: str, dry_run: bool = True):
+        self.bucket_name = bucket_name
+        self.dry_run = dry_run
+        self.s3_client = boto3.client('s3') if not dry_run else None
+        self.errors = []
+        self.warnings = []
+
+    def log_error(self, message: str):
+        self.errors.append(message)
+        print(f"[ERROR] {message}")
+
+    def log_warning(self, message: str):
+        self.warnings.append(message)
+        print(f"[WARNING] {message}")
+
+    def log_info(self, message: str):
+        print(f"[INFO] {message}")
+
+    def validate_table_folder(self, table_path: Path) -> Optional[Dict]:
+        """Validate a single interactive table folder and return metadata if valid."""
+        table_name = table_path.name
+        self.log_info(f"Validating interactive table: {table_name}")
+
+        # Check if folder exists
+        if not table_path.is_dir():
+            self.log_error(f"Table path is not a directory: {table_path}")
+            return None
+
+        # Find required files
+        metadata_file = table_path / "table_metadata.json"
+        info_file = table_path / "info.json"
+
+        if not metadata_file.exists():
+            self.log_error(f"No table_metadata.json found in {table_name}")
+            return None
+
+        # Validate table_metadata.json
+        metadata = self.validate_metadata_file(metadata_file)
+        if metadata is None:
+            return None
+
+        # Check for optional info.json
+        info_data = None
+        if info_file.exists():
+            info_data = self.validate_info_file(info_file)
+            if info_data:
+                self.log_info(f"Found info.json with display_name: {info_data.get('display_name', 'N/A')}")
+
+        # Generate display name
+        display_name = table_name.replace('-', ' ').replace('_', ' ').title()
+        if info_data and info_data.get('display_name'):
+            display_name = info_data['display_name']
+
+        # Create table metadata
+        table_data = {
+            'name': table_name,
+            'display_name': display_name,
+            'metadata_file_path': str(metadata_file),
+            'info_file_path': str(info_file) if info_file.exists() else None,
+            'has_info': info_file.exists(),
+            'row_count': len(metadata.get('rows', [])),
+            'column_count': len(metadata.get('columns', []))
+        }
+
+        self.log_info(f"Interactive table {table_name} validation passed ({table_data['row_count']} rows, {table_data['column_count']} columns)")
+        return table_data
+
+    def validate_metadata_file(self, metadata_file: Path) -> Optional[Dict]:
+        """Validate that table_metadata.json is valid and has required structure."""
+        try:
+            with open(metadata_file, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+
+            # Check for required fields
+            if 'rows' not in metadata:
+                self.log_error(f"table_metadata.json missing 'rows' field")
+                return None
+
+            if 'columns' not in metadata:
+                self.log_error(f"table_metadata.json missing 'columns' field")
+                return None
+
+            if not isinstance(metadata['rows'], list):
+                self.log_error(f"table_metadata.json 'rows' must be a list")
+                return None
+
+            if not isinstance(metadata['columns'], list):
+                self.log_error(f"table_metadata.json 'columns' must be a list")
+                return None
+
+            if len(metadata['rows']) == 0:
+                self.log_warning(f"table_metadata.json has no rows")
+
+            if len(metadata['columns']) == 0:
+                self.log_error(f"table_metadata.json has no columns")
+                return None
+
+            return metadata
+
+        except json.JSONDecodeError as e:
+            self.log_error(f"table_metadata.json is not valid JSON: {e}")
+            return None
+        except Exception as e:
+            self.log_error(f"Failed to read table_metadata.json: {e}")
+            return None
+
+    def validate_info_file(self, info_file: Path) -> Optional[Dict]:
+        """Validate optional info.json file."""
+        try:
+            with open(info_file, 'r', encoding='utf-8') as f:
+                info = json.load(f)
+            return info
+        except json.JSONDecodeError as e:
+            self.log_warning(f"info.json is not valid JSON: {e}")
+            return None
+        except Exception as e:
+            self.log_warning(f"Failed to read info.json: {e}")
+            return None
+
+    def validate_tables_folder(self, tables_folder: Path) -> List[Dict]:
+        """Validate all interactive table folders."""
+        self.log_info(f"Validating interactive tables folder: {tables_folder}")
+
+        if not tables_folder.exists():
+            self.log_error(f"Interactive tables folder does not exist: {tables_folder}")
+            return []
+
+        if not tables_folder.is_dir():
+            self.log_error(f"Interactive tables path is not a directory: {tables_folder}")
+            return []
+
+        # Find all subdirectories (table folders)
+        table_folders = [d for d in tables_folder.iterdir() if d.is_dir()]
+
+        if not table_folders:
+            self.log_error(f"No table folders found in: {tables_folder}")
+            return []
+
+        self.log_info(f"Found {len(table_folders)} table folders")
+
+        validated_tables = []
+        for table_folder in sorted(table_folders):
+            table_data = self.validate_table_folder(table_folder)
+            if table_data:
+                validated_tables.append(table_data)
+
+        return validated_tables
+
+    def upload_table_to_s3(self, table: Dict) -> bool:
+        """Upload a single interactive table to S3."""
+        if self.dry_run:
+            self.log_info(f"[DRY RUN] Would upload interactive table: {table['name']}")
+            return True
+
+        try:
+            # S3 key prefix for interactive tables
+            s3_prefix = f"demos/interactive_tables/{table['name']}/"
+
+            # Upload table_metadata.json
+            self.log_info(f"Uploading table_metadata.json to s3://{self.bucket_name}/{s3_prefix}table_metadata.json")
+            self.s3_client.upload_file(
+                table['metadata_file_path'],
+                self.bucket_name,
+                f"{s3_prefix}table_metadata.json"
+            )
+
+            # Upload info.json if it exists
+            if table['has_info'] and table['info_file_path']:
+                self.log_info(f"Uploading info.json to s3://{self.bucket_name}/{s3_prefix}info.json")
+                self.s3_client.upload_file(
+                    table['info_file_path'],
+                    self.bucket_name,
+                    f"{s3_prefix}info.json"
+                )
+
+            self.log_info(f"Successfully uploaded interactive table: {table['name']}")
+            return True
+
+        except Exception as e:
+            self.log_error(f"Failed to upload interactive table {table['name']}: {e}")
+            return False
+
+    def upload_tables(self, tables: List[Dict]) -> int:
+        """Upload all validated interactive tables to S3."""
+        if not tables:
+            self.log_error("No interactive tables to upload")
+            return 0
+
+        if self.dry_run:
+            self.log_info(f"[DRY RUN] Would upload {len(tables)} interactive tables to s3://{self.bucket_name}/demos/interactive_tables/")
+            for table in tables:
+                self.log_info(f"  - {table['name']}: {table['display_name']} ({table['row_count']} rows)")
+            return len(tables)
+
+        uploaded_count = 0
+        for table in tables:
+            if self.upload_table_to_s3(table):
+                uploaded_count += 1
+
+        return uploaded_count
+
+    def generate_summary(self, tables: List[Dict]):
+        """Generate and print a summary of the validation/upload process."""
+        print("\n" + "="*60)
+        print("INTERACTIVE TABLE VALIDATION SUMMARY")
+        print("="*60)
+
+        if tables:
+            print(f"✅ Validated interactive tables: {len(tables)}")
+            for table in tables:
+                print(f"   - {table['name']}: {table['display_name']}")
+                print(f"     Size: {table['row_count']} rows, {table['column_count']} columns")
+                print(f"     Has info.json: {'Yes' if table['has_info'] else 'No'}")
+                print()
+        else:
+            print("❌ No valid interactive tables found")
+
+        if self.warnings:
+            print(f"⚠️  Warnings: {len(self.warnings)}")
+            for warning in self.warnings:
+                print(f"   - {warning}")
+            print()
+
+        if self.errors:
+            print(f"❌ Errors: {len(self.errors)}")
+            for error in self.errors:
+                print(f"   - {error}")
+            print()
+        else:
+            print("✅ No errors found")
+
+        if self.dry_run:
+            print("\n[DRY RUN] Use --upload to actually upload to S3")
+        else:
+            print(f"\n✅ Upload complete! Interactive tables available at s3://{self.bucket_name}/demos/interactive_tables/")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Validate and upload demo folders to S3",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Validate demos folder (dry run)
+  # Validate onboarding demos (dry run)
   python upload_demos.py --demos-folder ./demos --bucket hyperplexity-storage --dry-run
 
-  # Upload demos to S3
+  # Upload onboarding demos to S3
   python upload_demos.py --demos-folder ./demos --bucket hyperplexity-storage --upload
 
-  # Upload to specific environment bucket
-  python upload_demos.py --demos-folder ./demos --bucket hyperplexity-storage-dev --upload
+  # Validate interactive table demos (dry run)
+  python upload_demos.py --interactive-tables ./demos/interactive_tables --bucket hyperplexity-storage --dry-run
 
-Expected folder structure:
+  # Upload interactive table demos to S3
+  python upload_demos.py --interactive-tables ./demos/interactive_tables --bucket hyperplexity-storage --upload
+
+  # Upload both types at once
+  python upload_demos.py --demos-folder ./demos --interactive-tables ./demos/interactive_tables --bucket hyperplexity-storage --upload
+
+Expected folder structures:
+
+  Onboarding demos (--demos-folder):
   demos/
   ├── financial_portfolio/
   │   ├── portfolio_data.xlsx
@@ -377,14 +639,27 @@ Expected folder structure:
       ├── leads_data.csv
       ├── leads_config.json
       └── description.md
+
+  Interactive tables (--interactive-tables):
+  demos/interactive_tables/
+  ├── ai_research_tools/
+  │   ├── table_metadata.json
+  │   └── info.json (optional)
+  └── competitive_analysis/
+      └── table_metadata.json
         """
     )
 
     parser.add_argument(
         '--demos-folder',
         type=str,
-        required=True,
-        help='Path to local demos folder containing demo subfolders'
+        help='Path to local demos folder containing onboarding demo subfolders'
+    )
+
+    parser.add_argument(
+        '--interactive-tables',
+        type=str,
+        help='Path to local folder containing interactive table demos (table_metadata.json)'
     )
 
     parser.add_argument(
@@ -414,34 +689,63 @@ Expected folder structure:
 
     args = parser.parse_args()
 
-    # Initialize validator
-    validator = DemoValidator(
-        bucket_name=args.bucket,
-        dry_run=args.dry_run
-    )
+    # Require at least one demo type
+    if not args.demos_folder and not args.interactive_tables:
+        parser.error("At least one of --demos-folder or --interactive-tables is required")
 
-    # Convert path
-    demos_folder = Path(args.demos_folder).resolve()
+    has_errors = False
 
     print(f"Demo Upload Script")
-    print(f"Demos folder: {demos_folder}")
     print(f"S3 bucket: {args.bucket}")
     print(f"Mode: {'DRY RUN' if args.dry_run else 'UPLOAD'}")
-    print("-" * 60)
+    print("="*60)
 
-    # Validate demos
-    validated_demos = validator.validate_demos_folder(demos_folder)
+    # Handle onboarding demos
+    if args.demos_folder:
+        demos_folder = Path(args.demos_folder).resolve()
+        print(f"\n[ONBOARDING DEMOS] Folder: {demos_folder}")
+        print("-" * 60)
 
-    # Upload if requested and demos are valid
-    if validated_demos and args.upload:
-        uploaded_count = validator.upload_demos(validated_demos)
-        print(f"\n✅ Successfully uploaded {uploaded_count}/{len(validated_demos)} demos")
+        validator = DemoValidator(
+            bucket_name=args.bucket,
+            dry_run=args.dry_run
+        )
 
-    # Generate summary
-    validator.generate_summary(validated_demos)
+        validated_demos = validator.validate_demos_folder(demos_folder)
+
+        if validated_demos and args.upload:
+            uploaded_count = validator.upload_demos(validated_demos)
+            print(f"\n✅ Successfully uploaded {uploaded_count}/{len(validated_demos)} onboarding demos")
+
+        validator.generate_summary(validated_demos)
+
+        if validator.errors:
+            has_errors = True
+
+    # Handle interactive table demos
+    if args.interactive_tables:
+        tables_folder = Path(args.interactive_tables).resolve()
+        print(f"\n[INTERACTIVE TABLES] Folder: {tables_folder}")
+        print("-" * 60)
+
+        table_validator = InteractiveTableValidator(
+            bucket_name=args.bucket,
+            dry_run=args.dry_run
+        )
+
+        validated_tables = table_validator.validate_tables_folder(tables_folder)
+
+        if validated_tables and args.upload:
+            uploaded_count = table_validator.upload_tables(validated_tables)
+            print(f"\n✅ Successfully uploaded {uploaded_count}/{len(validated_tables)} interactive tables")
+
+        table_validator.generate_summary(validated_tables)
+
+        if table_validator.errors:
+            has_errors = True
 
     # Exit with error code if there were errors
-    if validator.errors:
+    if has_errors:
         sys.exit(1)
 
 

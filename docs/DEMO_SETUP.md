@@ -1,10 +1,19 @@
 # Demo System Setup Guide
 
-This guide explains how to set up the demo system for new users in the Hyperplexity Validator.
+This guide explains how to set up demo systems for the Hyperplexity Validator.
 
 ## Overview
 
-The demo system allows new users to try pre-configured example tables without needing to upload their own data. When a user with no prior validation history logs in, they'll see an option to "Try a Demo Table" alongside the regular upload option.
+There are two types of demos:
+
+1. **Onboarding Demos** - Allow new users to try pre-configured example tables through the full validation flow
+2. **Interactive Table Demos** - Pre-built tables displayed in the public viewer (no validation needed)
+
+---
+
+## 1. Onboarding Demos
+
+These demos allow new users to try pre-configured example tables without needing to upload their own data. When a user with no prior validation history logs in, they'll see an option to "Try a Demo Table" alongside the regular upload option.
 
 ## Demo Folder Structure
 
@@ -154,3 +163,103 @@ To test the demo system:
 - **Testing**: `hyperplexity-storage-test`
 
 Make sure to upload demos to the appropriate bucket for each environment.
+
+---
+
+## 2. Interactive Table Demos
+
+Interactive table demos are pre-built tables that can be displayed in the public viewer without going through the validation pipeline. These are useful for showcasing example tables or competitive analysis data.
+
+### Interactive Tables Folder Structure
+
+Interactive tables are stored at `s3://{bucket}/demos/interactive_tables/` with the following structure:
+
+```
+s3://hyperplexity-storage/demos/interactive_tables/
+├── ai_research_tools/
+│   ├── table_metadata.json    (required)
+│   └── info.json              (optional)
+├── competitive_analysis/
+│   └── table_metadata.json
+└── market_comparison/
+    ├── table_metadata.json
+    └── info.json
+```
+
+### Required Files per Interactive Table
+
+Each interactive table folder must contain:
+
+1. **table_metadata.json** (required): The table data in the InteractiveTable format with:
+   - `rows`: Array of row data
+   - `columns`: Array of column definitions
+   - `table_name`: Display name (optional)
+   - `general_notes`: Notes shown above the table (optional)
+
+2. **info.json** (optional): Additional metadata:
+   ```json
+   {
+     "display_name": "AI Research Tools Comparison"
+   }
+   ```
+
+### Setting Up Interactive Tables
+
+#### 1. Prepare Table Files Locally
+
+Create a local `demos/interactive_tables/` folder:
+
+```
+demos/interactive_tables/
+├── ai_research_tools/
+│   ├── table_metadata.json
+│   └── info.json
+└── competitive_analysis/
+    └── table_metadata.json
+```
+
+#### 2. Validate and Upload
+
+Use the upload script with the `--interactive-tables` flag:
+
+```bash
+# Validate interactive tables (dry run)
+python deployment/upload_demos.py --interactive-tables ./demos/interactive_tables --bucket hyperplexity-storage --dry-run
+
+# Upload interactive tables to production
+python deployment/upload_demos.py --interactive-tables ./demos/interactive_tables --bucket hyperplexity-storage --upload
+
+# Upload to development environment
+python deployment/upload_demos.py --interactive-tables ./demos/interactive_tables --bucket hyperplexity-storage-dev --upload
+
+# Upload both onboarding demos and interactive tables at once
+python deployment/upload_demos.py --demos-folder ./demos --interactive-tables ./demos/interactive_tables --bucket hyperplexity-storage --upload
+```
+
+### Accessing Interactive Tables
+
+Interactive tables are accessed via the `getDemoData` API action:
+
+```javascript
+// Frontend call
+const response = await apiCall('getDemoData', { table_name: 'ai_research_tools' });
+// Returns: { table_metadata, clean_table_name, is_demo: true }
+```
+
+Or via URL: `https://hyperplexity.ai?mode=viewer&demo=ai_research_tools`
+
+### Interactive Table Troubleshooting
+
+#### Table Not Found
+- Verify the folder exists at `demos/interactive_tables/{table_name}/`
+- Check that `table_metadata.json` exists in the folder
+- Ensure table name uses only letters, numbers, hyphens, and underscores
+
+#### Table Renders Empty
+- Verify `table_metadata.json` has valid `rows` and `columns` arrays
+- Check browser console for JavaScript errors
+- Validate JSON syntax with `python -m json.tool table_metadata.json`
+
+#### Display Name Not Showing
+- Add `info.json` with a `display_name` field
+- Or set `table_name` in the `table_metadata.json` file
