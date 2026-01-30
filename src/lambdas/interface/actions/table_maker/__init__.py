@@ -8,6 +8,8 @@ import asyncio
 import inspect
 import logging
 
+from interface_lambda.utils.helpers import create_response
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -46,16 +48,13 @@ def route_table_maker_action(action, request_data, context):
         context: Lambda context
 
     Returns:
-        Handler response
+        Handler response with CORS headers
     """
     handler = TABLE_MAKER_ACTIONS.get(action)
 
     if not handler:
         logger.error(f"Unknown table maker action: {action}")
-        return {
-            'statusCode': 400,
-            'body': {'error': f'Unknown table maker action: {action}'}
-        }
+        return create_response(400, {'error': f'Unknown table maker action: {action}'})
 
     logger.info(f"Routing table maker action: {action}")
 
@@ -69,13 +68,16 @@ def route_table_maker_action(action, request_data, context):
             logger.error(f"Error running async handler {action}: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
-            return {
-                'statusCode': 500,
-                'body': {'error': f'Handler execution failed: {str(e)}'}
-            }
+            return create_response(500, {'error': f'Handler execution failed: {str(e)}'})
     else:
         logger.info(f"Handler {action} is sync, calling directly")
-        return handler(request_data, context)
+        try:
+            return handler(request_data, context)
+        except Exception as e:
+            logger.error(f"Error running sync handler {action}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return create_response(500, {'error': f'Handler execution failed: {str(e)}'})
 
 __all__ = [
     'route_table_maker_action',

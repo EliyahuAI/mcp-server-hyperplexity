@@ -3311,10 +3311,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Track which batch each row_key was processed in (for enhanced_data aggregation)
             row_key_to_batch_mapping = {}
 
+            # Track which input row indices map to each row_key (for duplicate remapping)
+            # This allows us to expand results back to all input rows when duplicates exist
+            row_key_to_input_indices = {}
+
             logger.debug(f"[ROW_KEY_INIT] Building row key mappings for {len(rows)} rows")
             duplicate_count = 0
             skipped_validated_count = 0
-            for row in rows:
+            for input_idx, row in enumerate(rows):
                 # Generate row key (handles both dict and list rows)
                 if isinstance(row, dict):
                     row_data = row
@@ -3332,10 +3336,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Note: We can't detect duplicates here without scanning all rows first
                     # Interface lambda should have set _row_key already
 
+                # Track input index → row_key mapping (for duplicate remapping)
+                if row_key not in row_key_to_input_indices:
+                    row_key_to_input_indices[row_key] = []
+                row_key_to_input_indices[row_key].append(input_idx)
+
                 # Detect duplicate rows (same row_key)
                 if row_key in row_key_to_row_data:
                     duplicate_count += 1
-                    logger.debug(f"[ROW_KEY_INIT] Duplicate row detected: {row_key[:16]}... (will be deduplicated)")
+                    logger.debug(f"[ROW_KEY_INIT] Duplicate row detected: {row_key[:16]}... at input index {input_idx} (will be deduplicated)")
 
                 # Store mapping for all rows (needed for retry logic)
                 # NOTE: If duplicate, this overwrites the previous row with same key
@@ -3353,6 +3362,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if duplicate_count > 0:
                 logger.debug(f"[ROW_KEY_INIT] Found {duplicate_count} duplicate rows (same row_key) - these will be deduplicated")
                 logger.debug(f"[ROW_KEY_INIT] Input: {len(rows)} rows -> {len(row_key_to_row_data)} unique row keys")
+                # Log which row_keys have multiple input indices (for debugging)
+                for rk, indices in row_key_to_input_indices.items():
+                    if len(indices) > 1:
+                        logger.debug(f"[ROW_KEY_INIT] row_key {rk[:16]}... maps to input indices: {indices}")
 
             logger.debug(f"[ROW_KEY_INIT] Pending: {len(pending_row_keys)}, Already validated: {skipped_validated_count}, Total unique: {len(row_key_to_row_data)}")
 
@@ -5641,15 +5654,53 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                 logger.debug(f"[S3_SAVE] Merged token usage: existing keys={list(existing_token_usage.keys())}, current keys={list(current_token_usage.keys())}, merged keys={list(merged_token_usage.keys())}")
 
+                # ========== DUPLICATE ROW REMAPPING ==========
+                # Expand validation_results to cover ALL input rows, including duplicates
+                # If multiple input rows share the same row_key, copy the result to each
+                expanded_validation_results = {}
+                duplicate_remapped_count = 0
+
+                if 'row_key_to_input_indices' in locals() and row_key_to_input_indices:
+                    for row_key, result in validation_results.items():
+                        input_indices = row_key_to_input_indices.get(row_key, [])
+                        if len(input_indices) > 1:
+                            # Multiple input rows share this row_key - create entries for each
+                            for idx in input_indices:
+                                # Use composite key: original row_key + input index
+                                # This preserves the original row_key while making each entry unique
+                                expanded_key = f"{row_key}__idx_{idx}"
+                                expanded_result = result.copy() if isinstance(result, dict) else result
+                                if isinstance(expanded_result, dict):
+                                    expanded_result['_input_index'] = idx
+                                    expanded_result['_original_row_key'] = row_key
+                                expanded_validation_results[expanded_key] = expanded_result
+                                if idx != input_indices[0]:
+                                    duplicate_remapped_count += 1
+                        else:
+                            # Single input row - use original row_key
+                            expanded_validation_results[row_key] = result
+
+                    if duplicate_remapped_count > 0:
+                        logger.info(f"[DUPLICATE_REMAP] Expanded {len(validation_results)} unique results to {len(expanded_validation_results)} entries ({duplicate_remapped_count} duplicates remapped)")
+
+                    # Use expanded results
+                    final_validation_results = expanded_validation_results
+                else:
+                    # No duplicate tracking available - use original results
+                    final_validation_results = validation_results
+
                 # Create cumulative results structure
                 # CRITICAL: Use validation_results directly, not from response (async responses don't have 'rows')
+                # After duplicate remapping, total_rows_processed should match total_rows (input count)
                 cumulative_results = {
-                    'validation_results': validation_results,  # Use actual validation_results dict
+                    'validation_results': final_validation_results,  # Use expanded validation_results
                     'token_usage': merged_token_usage,
                     'enhanced_metrics': merged_enhanced_metrics,
                     'metadata': {
-                        'total_rows_processed': response['body']['metadata']['completed_rows'],
+                        'total_rows_processed': len(final_validation_results),  # Use expanded count
                         'total_rows': response['body']['metadata']['total_rows'],
+                        'unique_rows_validated': len(validation_results),  # Original unique count
+                        'duplicate_rows_remapped': duplicate_remapped_count if 'duplicate_remapped_count' in locals() else 0,
                         'processing_complete': True,  # Will be updated for continuation
                         'cache_hits': response['body']['metadata']['cache_hits'],
                         'cache_misses': response['body']['metadata']['cache_misses'],

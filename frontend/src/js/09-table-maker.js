@@ -119,6 +119,15 @@ function handleTableExecutionUpdate(message) {
 
                 // Show colored boxes
                 showColumnsBoxes(conversationId, message.columns);
+
+                // Show prepopulated rows if available (from column definition)
+                if (message.prepopulated_rows && message.prepopulated_rows.length > 0) {
+                    showPrepopulatedRowsBox(
+                        conversationId,
+                        message.prepopulated_rows,
+                        message.total_prepopulated || message.prepopulated_rows.length
+                    );
+                }
             }
             break;
 
@@ -517,6 +526,69 @@ function showColumnsBoxes(conversationId, columns) {
 
     // Add both boxes to progress content
     progressContent.innerHTML += idBoxHtml + researchBoxHtml;
+
+    // Scroll card into view
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function showPrepopulatedRowsBox(conversationId, prepopulatedRows, totalCount) {
+    console.log('[DEBUG] showPrepopulatedRowsBox called with:', prepopulatedRows.length, 'rows, total:', totalCount);
+
+    // Find the most recent card
+    if (cardHandlers.size === 0) {
+        console.log('[DEBUG] No card handlers found');
+        return;
+    }
+
+    const latestCardId = Array.from(cardHandlers.keys()).pop();
+    const card = document.getElementById(latestCardId);
+    if (!card) {
+        console.log('[DEBUG] Card not found:', latestCardId);
+        return;
+    }
+
+    // Find the progress-content container created in step 1
+    let progressContent = document.getElementById(`${latestCardId}-progress-content`);
+    if (!progressContent) {
+        console.log('[DEBUG] progress-content not found, using fallback');
+        progressContent = card.querySelector('.card-content');
+    }
+    if (!progressContent) {
+        console.log('[DEBUG] No progress content found at all');
+        return;
+    }
+
+    console.log('[DEBUG] Found progress content, building prepopulated rows box');
+
+    // Build rows list (top 15 rows)
+    const rowsToShow = prepopulatedRows.slice(0, 15);
+    const rowsListHtml = rowsToShow.map(row => {
+        // Build display string from ID values
+        const idValues = row.id_values || {};
+        const displayParts = Object.entries(idValues)
+            .filter(([k, v]) => v)
+            .map(([k, v]) => `${k}: ${v}`);
+
+        // No score for prepopulated rows
+        return `• ${displayParts.join(', ')}`;
+    }).join('<br>');
+
+    // Add "more rows" indicator if needed
+    const moreRowsHtml = totalCount > 15
+        ? `<br><em>+ ${totalCount - 15} more rows</em>`
+        : '';
+
+    // Create prepopulated rows box (cyan/teal color - similar to ID columns)
+    const rowsBoxHtml = `
+        <div class="message prepopulated-rows-box" data-total-count="${totalCount}" style="margin-bottom: 1rem; background-color: #e0f2f1; color: #00695c; border: 1px solid #80cbc4;">
+            <span class="message-icon">📋</span>
+            <div class="prepopulated-rows-content">
+                <strong>Prepopulated Rows: <span class="row-count-text">${totalCount} total</span></strong> (from research)<br>
+                ${rowsListHtml}${moreRowsHtml}
+            </div>
+        </div>
+    `;
+    progressContent.innerHTML += rowsBoxHtml;
 
     // Scroll card into view
     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1396,6 +1468,33 @@ if (refinementDiv) refinementDiv.style.display = 'none';
 // Show thinking indicator in card (buttons will remain showing "Thinking...")
 showThinkingInCard(cardId, 'Processing your request...', true);
 
+// Validate required state before making request
+if (!globalState.sessionId) {
+    console.error('[TABLE_MAKER] Cannot continue: globalState.sessionId is not set');
+    completeThinkingInCard(cardId, 'Error');
+    showMessage(`${cardId}-messages`,
+        'Session not available. Please refresh and try again.',
+        'error');
+    return;
+}
+
+if (!tableMakerState.conversationId) {
+    console.error('[TABLE_MAKER] Cannot continue: tableMakerState.conversationId is not set');
+    completeThinkingInCard(cardId, 'Error');
+    showMessage(`${cardId}-messages`,
+        'Conversation not started. Please start a new conversation.',
+        'error');
+    return;
+}
+
+// Log the request details for debugging
+console.log('[TABLE_MAKER] Continuing conversation:', {
+    sessionId: globalState.sessionId,
+    conversationId: tableMakerState.conversationId,
+    email: globalState.email,
+    messageLength: messageToSend.length
+});
+
 // Send to backend
 try {
     const response = await fetch(`${API_BASE}/validate`, {
@@ -1422,11 +1521,25 @@ try {
             'error');
     }
 } catch (error) {
-    console.error('Error continuing conversation:', error);
+    // Log detailed error information for debugging
+    console.error('[TABLE_MAKER] Error continuing conversation:', {
+        error: error.message,
+        name: error.name,
+        sessionId: globalState.sessionId,
+        conversationId: tableMakerState.conversationId
+    });
+
     completeThinkingInCard(cardId, 'Error');
-    showMessage(`${cardId}-messages`,
-        'Failed to send message. Please try again.',
-        'error');
+
+    // Provide more specific error message based on error type
+    let errorMessage = 'Failed to send message. ';
+    if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+        errorMessage += 'Network error - please check your connection or try refreshing the page.';
+    } else {
+        errorMessage += 'Please try again.';
+    }
+
+    showMessage(`${cardId}-messages`, errorMessage, 'error');
 }
 }
 

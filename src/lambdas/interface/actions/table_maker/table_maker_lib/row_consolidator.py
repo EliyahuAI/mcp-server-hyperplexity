@@ -158,14 +158,26 @@ class RowConsolidator:
                 id_columns = self._detect_id_columns(all_candidates)
                 logger.debug(f"Auto-detected ID columns: {id_columns}")
 
-            # Step 2: Deduplicate using fuzzy matching
-            deduplicated = self._deduplicate_candidates(all_candidates, id_columns)
-            duplicates_removed = total_count - len(deduplicated)
-            result["stats"]["duplicates_removed"] = duplicates_removed
+            # Step 1.75: Remove exact duplicates (100% identical ID values)
+            # This catches duplicates within the same stream that fuzzy matching might miss
+            exact_deduplicated, exact_duplicates_removed = self._remove_exact_duplicates(all_candidates, id_columns)
+            if exact_duplicates_removed > 0:
+                logger.warning(
+                    f"[EXACT_DEDUP] Removed {exact_duplicates_removed} exact duplicate row(s) "
+                    f"(identical ID values within same or different streams)"
+                )
+                result["stats"]["exact_duplicates_removed"] = exact_duplicates_removed
+
+            # Step 2: Deduplicate using fuzzy matching (for near-matches like "Anthropic" vs "Anthropic Inc")
+            deduplicated = self._deduplicate_candidates(exact_deduplicated, id_columns)
+            fuzzy_duplicates_removed = len(exact_deduplicated) - len(deduplicated)
+            total_duplicates_removed = exact_duplicates_removed + fuzzy_duplicates_removed
+            result["stats"]["duplicates_removed"] = total_duplicates_removed
+            result["stats"]["fuzzy_duplicates_removed"] = fuzzy_duplicates_removed
 
             logger.info(
                 f"Deduplication complete: {len(deduplicated)} unique candidates "
-                f"({duplicates_removed} duplicates merged)"
+                f"({total_duplicates_removed} total duplicates merged: {exact_duplicates_removed} exact + {fuzzy_duplicates_removed} fuzzy)"
             )
 
             # Step 3: Filter by minimum match score
@@ -267,6 +279,81 @@ class RowConsolidator:
                 all_candidates.append(candidate_copy)
 
         return all_candidates
+
+    def _remove_exact_duplicates(
+        self,
+        candidates: List[Dict[str, Any]],
+        id_columns: List[str]
+    ) -> tuple:
+        """
+        Remove exact duplicates (100% identical ID column values).
+
+        This catches duplicates that might slip through when an LLM outputs
+        the same row twice in a single response, or when identical rows
+        appear across different subdomains.
+
+        When exact duplicates are found:
+        - Keep the candidate with the highest match_score
+        - Merge source_urls from all duplicates
+
+        Args:
+            candidates: List of candidate dictionaries
+            id_columns: List of ID column names to compare
+
+        Returns:
+            Tuple of (deduplicated_candidates, count_removed)
+        """
+        if not candidates or not id_columns:
+            return candidates, 0
+
+        # Build a key from ID column values for exact matching
+        seen_keys = {}  # key -> best candidate
+        duplicates_removed = 0
+
+        for candidate in candidates:
+            id_values = candidate.get('id_values', {})
+            # Create a tuple of (column_name, value) pairs for exact matching
+            # Normalize values: lowercase, strip whitespace
+            key_parts = []
+            for col in sorted(id_columns):  # Sort for consistent ordering
+                value = id_values.get(col, '')
+                normalized = str(value).lower().strip() if value else ''
+                key_parts.append((col, normalized))
+
+            exact_key = tuple(key_parts)
+
+            if exact_key in seen_keys:
+                # Exact duplicate found - keep the one with higher score
+                existing = seen_keys[exact_key]
+                existing_score = existing.get('match_score', 0)
+                current_score = candidate.get('match_score', 0)
+
+                if current_score > existing_score:
+                    # Current is better - merge source_urls and replace
+                    existing_urls = existing.get('source_urls', [])
+                    current_urls = candidate.get('source_urls', [])
+                    merged_urls = list(set(existing_urls + current_urls))
+                    candidate['source_urls'] = merged_urls
+                    candidate['_merged_from_exact_duplicate'] = True
+                    seen_keys[exact_key] = candidate
+                else:
+                    # Existing is better - just merge source_urls
+                    existing_urls = existing.get('source_urls', [])
+                    current_urls = candidate.get('source_urls', [])
+                    merged_urls = list(set(existing_urls + current_urls))
+                    existing['source_urls'] = merged_urls
+                    existing['_merged_from_exact_duplicate'] = True
+
+                duplicates_removed += 1
+                logger.debug(
+                    f"[EXACT_DEDUP] Exact duplicate found: {dict(key_parts)} "
+                    f"(scores: {existing_score:.2f} vs {current_score:.2f})"
+                )
+            else:
+                seen_keys[exact_key] = candidate
+
+        deduplicated = list(seen_keys.values())
+        return deduplicated, duplicates_removed
 
     def _recalculate_scores(self, candidates: List[Dict[str, Any]]) -> None:
         """
