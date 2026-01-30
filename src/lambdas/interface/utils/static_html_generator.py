@@ -53,6 +53,35 @@ class StaticHTMLGenerator:
         self._template_cache = None
         self._css_cache = {}
         self._js_cache = None
+        self._competitive_data_cache = None
+
+    def get_competitive_data(self) -> Optional[Dict[str, Any]]:
+        """
+        Load competitive intelligence data from bundled templates.
+        Returns cached data on subsequent calls.
+        """
+        if self._competitive_data_cache is not None:
+            return self._competitive_data_cache
+
+        json_paths = [
+            os.path.join(os.path.dirname(__file__), '..', 'templates', 'seo', 'HyperplexityVsCompetition.json'),
+            os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..',
+                        'frontend', 'HyperplexityVsCompetition_20260130.json'),
+        ]
+
+        for json_path in json_paths:
+            try:
+                if os.path.exists(json_path):
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        self._competitive_data_cache = json.load(f)
+                        logger.info(f"[STATIC_HTML] Loaded competitive SEO data from {json_path}")
+                        return self._competitive_data_cache
+            except Exception as e:
+                logger.warning(f"[STATIC_HTML] Could not load competitive data from {json_path}: {e}")
+
+        logger.warning("[STATIC_HTML] No competitive SEO data found")
+        self._competitive_data_cache = {}  # Cache empty result to avoid repeated lookups
+        return None
 
     @staticmethod
     def hash_string(s: str) -> int:

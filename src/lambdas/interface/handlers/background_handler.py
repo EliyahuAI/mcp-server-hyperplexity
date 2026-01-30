@@ -4966,18 +4966,8 @@ def handle_main_processing(event, context):
                                             viewer_base = os.environ.get('VIEWER_BASE_URL', 'https://eliyahu.ai/hyperplexity')
                                             interactive_url = f"{viewer_base}?mode=viewer&session={clean_session_id}&version={config_version}"
 
-                                            # Load competitive intelligence for rich SEO content
-                                            competitive_data = None
-                                            try:
-                                                seo_key = "seo/HyperplexityVsCompetition.json"
-                                                seo_response = s3_client.get_object(
-                                                    Bucket=storage_manager.bucket_name,
-                                                    Key=seo_key
-                                                )
-                                                competitive_data = json.loads(seo_response['Body'].read().decode('utf-8'))
-                                                logger.info(f"[FULL_VALIDATION] Loaded competitive SEO data from {seo_key}")
-                                            except Exception as seo_err:
-                                                logger.debug(f"[FULL_VALIDATION] No competitive SEO data available: {seo_err}")
+                                            # Load competitive intelligence for rich SEO content (bundled locally)
+                                            competitive_data = html_generator.get_competitive_data()
 
                                             static_html = html_generator.generate(
                                                 table_metadata=full_table_metadata,
