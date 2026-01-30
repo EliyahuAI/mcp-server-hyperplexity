@@ -153,6 +153,25 @@ class StaticHTMLGenerator:
         table_css = self._get_css()
         table_js = self._get_js()
 
+        # Auto-generate methodology from table metadata if not provided
+        if not methodology:
+            rows = table_metadata.get('rows', [])
+            columns = table_metadata.get('columns', [])
+            methodology = f"Validated {len(rows)} entities across {len(columns)} research dimensions with web-sourced citations and confidence scoring."
+
+        # Auto-generate last_updated if not provided
+        if not last_updated:
+            last_updated = datetime.utcnow().strftime("%Y-%m-%d")
+
+        # Auto-get FAQs from SEO extractor if not provided and competitive data available
+        if not faqs and competitive_data:
+            try:
+                from interface_lambda.utils.seo_content_extractor import SEOContentExtractor
+                extractor = SEOContentExtractor(competitive_data)
+                faqs = extractor.get_faqs(slug or title, count=6)
+            except Exception as e:
+                logger.debug(f"[STATIC_HTML] Could not auto-load FAQs: {e}")
+
         # Generate JSON-LD structured data (can include multiple schemas)
         json_ld_blocks = self._generate_json_ld_blocks(
             title=title,
@@ -168,15 +187,13 @@ class StaticHTMLGenerator:
         if interactive_url:
             footer_link = f' | <a href="{self._escape_html(interactive_url)}" target="_blank" rel="noopener">View Interactive Version</a>'
 
-        # Generate methodology block if provided
-        methodology_html = ""
-        if methodology or last_updated:
-            methodology_html = self._generate_methodology_block(
-                methodology=methodology,
-                last_updated=last_updated or datetime.utcnow().strftime("%Y-%m-%d")
-            )
+        # Generate methodology block (auto-generated above if not provided)
+        methodology_html = self._generate_methodology_block(
+            methodology=methodology,
+            last_updated=last_updated
+        )
 
-        # Generate FAQ HTML if provided (must be visible for Google)
+        # Generate FAQ HTML (visible accordion - required by Google for FAQ rich snippets)
         faq_html = ""
         if faqs:
             faq_html = self._generate_faq_html(faqs)

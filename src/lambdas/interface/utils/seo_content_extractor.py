@@ -203,6 +203,89 @@ COMPARISON_SECTIONS = {
 }
 
 
+# =============================================================================
+# FAQ CONTENT - Comprehensive FAQs with links (visible on page, generates JSON-LD)
+# =============================================================================
+
+HYPERPLEXITY_FAQS = [
+    # Core product questions
+    {
+        "question": "What is Hyperplexity?",
+        "answer": f'<a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> is an AI-powered research platform that generates validated data tables with citations. Unlike general AI assistants that answer one question at a time, <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> researches dozens or hundreds of entities in parallel—filling entire spreadsheets with fact-checked data. Every cell includes confidence scoring and links to source citations, so you can verify any claim instantly. Built by <a href="{ELIYAHU_URL}">Eliyahu.AI</a>.'
+    },
+    {
+        "question": "How does Hyperplexity validate data?",
+        "answer": f'<a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> uses a multi-stage validation pipeline: (1) AI generates initial research from web sources, (2) a separate validation system checks each claim against primary sources, (3) confidence scores are assigned based on source authority and corroboration, (4) citations with URLs and excerpts are attached to every cell. The result is research you can trust—and verify yourself.'
+    },
+    {
+        "question": "What are confidence scores in Hyperplexity?",
+        "answer": f'<a href="{HYPERPLEXITY_URL}">Hyperplexity</a> rates each data point with a confidence level: <strong>HIGH</strong> (green) means multiple authoritative sources agree, <strong>MEDIUM</strong> (yellow) indicates limited sources or some uncertainty, <strong>LOW</strong> (red) flags single-source data or potential issues. This visual system helps you instantly identify which cells need human review, supporting responsible AI use and human oversight.'
+    },
+    # Pricing and trial
+    {
+        "question": "How much does Hyperplexity cost?",
+        "answer": f'<a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> uses transparent pay-per-use pricing—no monthly subscriptions, no per-seat licenses, no minimum commitments. You only pay for research actually performed. Small projects cost pennies; large competitive analyses remain affordable at scale. Estimated costs are shown before you start any validation run, so there are no surprises.'
+    },
+    {
+        "question": "Can I try Hyperplexity for free?",
+        "answer": f'Yes! <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> offers a free 3-row preview with just your email. Upload your spreadsheet, define your columns, and see exactly how <a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> handles your specific data—complete with citations and confidence scores—before spending any credits. New users also receive free credits to evaluate the full platform.'
+    },
+    # Workflow and features
+    {
+        "question": "Does Hyperplexity work with Excel?",
+        "answer": f'Absolutely. <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> is designed for Excel-based workflows. Upload any .xlsx or .csv file, define which columns need research, and <a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> fills in the blanks. When validation completes, download your enriched spreadsheet with all citations embedded as cell comments. You can also view results in the interactive web viewer or export to multiple formats.'
+    },
+    {
+        "question": "What is the Hyperplexity interactive viewer?",
+        "answer": f'The <a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> viewer transforms data tables into explorable web interfaces. Features include: filtering by confidence level, expandable cells showing full citations and source excerpts, sortable columns, and shareable links for team collaboration. Tables render in any modern browser with no installation required. You can share validated research with stakeholders via a simple URL.'
+    },
+    {
+        "question": "Can Hyperplexity update existing tables?",
+        "answer": f'Yes. <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> tables can be refreshed on demand—re-validating data against current web sources while preserving your table structure. This is ideal for competitive intelligence that needs to stay current. The system flags stale data automatically and tracks version history so you can see how information has changed over time.'
+    },
+    # Chex reference checker
+    {
+        "question": "What is Chex?",
+        "answer": f'<a href="{CHEX_URL}">Chex</a> is <a href="{ELIYAHU_URL}">Eliyahu.AI\'s</a> dedicated AI reference checker. Paste any text containing citations, and <a href="{CHEX_URL}">Chex</a> verifies each claim against its cited source. It\'s perfect for fact-checking articles, validating AI-generated content, auditing research papers, or verifying competitor claims. Each reference receives an accuracy score with detailed explanations of any discrepancies found.'
+    },
+    {
+        "question": "How is Chex different from Hyperplexity?",
+        "answer": f'<a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> generates new research tables with citations from scratch. <a href="{CHEX_URL}">Chex</a> validates existing documents—checking whether citations actually support the claims they\'re attached to. Use <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> when you need to research and fill in data; use <a href="{CHEX_URL}">Chex</a> when you need to verify references in content you already have.'
+    },
+    # Use cases
+    {
+        "question": "What is Hyperplexity best for?",
+        "answer": f'<a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> excels at systematic research across many entities: competitive intelligence (comparing 50+ companies), market analysis (surveying industry segments), due diligence (validating claims across portfolios), academic research (literature review tables), and any project requiring consistent, comparable data with citations. It\'s built for research that needs to be trusted and verified.'
+    },
+    {
+        "question": "Can Hyperplexity help with competitive intelligence?",
+        "answer": f'<a href="{HYPERPLEXITY_URL}">Hyperplexity</a> was designed for competitive intelligence. Define your competitors and the dimensions you want to compare (pricing, features, market position, etc.), and <a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> researches them all in parallel with consistent methodology. The result is a validated comparison matrix you can trust for strategic decisions—not a one-off AI answer you can\'t verify.'
+    },
+    # Technical and trust
+    {
+        "question": "How accurate is Hyperplexity?",
+        "answer": f'<a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> prioritizes transparency over false confidence. Every data point includes: the confidence level (HIGH/MEDIUM/LOW), direct links to source URLs, relevant excerpts from sources, and validator reasoning. This means you can verify any claim yourself. The system is designed for human oversight—you see exactly what the AI found and why it believes it\'s accurate.'
+    },
+    {
+        "question": "Is Hyperplexity compliant with AI regulations?",
+        "answer": f'<a href="{HYPERPLEXITY_URL}">Hyperplexity</a> is built for the EU AI Act (2025) era. The platform provides full transparency: confidence scores, source citations, validation reasoning, and audit trails. This supports human oversight requirements and responsible AI use. <a href="{ELIYAHU_URL}">Eliyahu.AI</a> specializes in helping organizations implement AI responsibly—contact us for enterprise compliance guidance.'
+    },
+    # Company and services
+    {
+        "question": "Who makes Hyperplexity?",
+        "answer": f'<a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> and <a href="{CHEX_URL}">Chex</a> are built by <a href="{ELIYAHU_URL}">Eliyahu.AI</a>, a generative AI consultancy specializing in research automation and responsible AI implementation. We also offer <a href="{PPP_URL}">PPP</a> (Professional Prompt Generator) and enterprise AI training services. Our tools are designed for professionals who need AI they can trust and verify.'
+    },
+    {
+        "question": "Does Eliyahu.AI offer consulting services?",
+        "answer": f'Yes. <a href="{ELIYAHU_URL}">Eliyahu.AI</a> provides enterprise generative AI consulting and upskilling services. We help teams adopt AI tools like <a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a>, <a href="{CHEX_URL}">Chex</a>, and <a href="{PPP_URL}">PPP</a> effectively, and we design custom AI solutions for research and data validation workflows. From hands-on workshops to strategic implementation, we help organizations use AI responsibly.'
+    },
+    {
+        "question": "What is PPP?",
+        "answer": f'<a href="{PPP_URL}">PPP</a> (Professional Prompt Generator) is <a href="{ELIYAHU_URL}">Eliyahu.AI\'s</a> tool for creating optimized prompts for any AI task. Whether you\'re using <a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> for research, ChatGPT for writing, or Claude for analysis, well-crafted prompts dramatically improve results. <a href="{PPP_URL}">PPP</a> helps you structure requests, include context, and get better outputs from any large language model.'
+    },
+]
+
+
 class SEOContentExtractor:
     """
     Generates listicle-style SEO content with rotating headers and rich linked content.
@@ -315,12 +398,53 @@ class SEOContentExtractor:
 
         return selected
 
+    def get_faqs(self, slug: str, count: int = 6) -> List[Dict[str, str]]:
+        """
+        Get rotated FAQs based on page slug.
+
+        Args:
+            slug: Page identifier for deterministic selection
+            count: Number of FAQs to return (default 6 for good coverage)
+
+        Returns:
+            List of FAQ dicts with 'question' and 'answer' keys
+        """
+        seed = self.hash_string(slug)
+        selected = []
+        used_indices = set()
+
+        # Always include first 3 core FAQs (What is, How validate, Pricing)
+        # Then rotate the rest
+        core_count = min(3, count)
+        for i in range(core_count):
+            selected.append(HYPERPLEXITY_FAQS[i])
+            used_indices.add(i)
+
+        # Fill remaining slots with rotated FAQs
+        remaining = count - core_count
+        for i in range(remaining):
+            idx = (seed + i * 13 + 3) % len(HYPERPLEXITY_FAQS)  # Start after core FAQs
+            attempts = 0
+            while idx in used_indices and attempts < len(HYPERPLEXITY_FAQS):
+                idx = (idx + 1) % len(HYPERPLEXITY_FAQS)
+                attempts += 1
+            if idx not in used_indices:
+                used_indices.add(idx)
+                selected.append(HYPERPLEXITY_FAQS[idx])
+
+        return selected
+
+    def get_all_faqs(self) -> List[Dict[str, str]]:
+        """Get all FAQs (for JSON-LD schema)."""
+        return HYPERPLEXITY_FAQS
+
     def render_seo_html(
         self,
         slug: str,
         include_header: bool = True,
         item_count: int = 5,
-        comparison_count: int = 3
+        comparison_count: int = 3,
+        faq_count: int = 6
     ) -> str:
         """
         Render complete listicle-style SEO content as HTML.
@@ -330,6 +454,7 @@ class SEOContentExtractor:
             include_header: Include H1/H2 headers
             item_count: Number of listicle items (features)
             comparison_count: Number of competitor comparisons
+            faq_count: Number of FAQs to include (visible accordion)
 
         Returns:
             HTML string with rich linked content
@@ -388,10 +513,27 @@ class SEOContentExtractor:
 
             html_parts.append('</div></section>')
 
+        # FAQ section (visible accordion - required by Google for FAQ rich snippets)
+        faqs = self.get_faqs(slug, faq_count)
+        if faqs:
+            html_parts.append(f'''
+<section class="seo-faq">
+    <h2>Frequently Asked Questions About <a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a></h2>
+    <div class="faq-list">
+''')
+            for faq in faqs:
+                html_parts.append(f'''
+        <details class="faq-item">
+            <summary class="faq-question">{faq['question']}</summary>
+            <div class="faq-answer">{faq['answer']}</div>
+        </details>
+''')
+            html_parts.append('</div></section>')
+
         # CTA section with all product links
         html_parts.append(f'''
 <section class="seo-cta">
-    <h2>Try Eliyahu.AI Tools Free</h2>
+    <h2>Try <a href="{ELIYAHU_URL}">Eliyahu.AI</a> Tools Free</h2>
     <p>Generate your first validated research table with free credits. No subscription required.</p>
     <ul class="seo-links">
         <li><a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> – AI research table generation with citations</li>
