@@ -188,8 +188,8 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             else:
                 restructuring_section = ""  # Empty for normal mode
 
-            # Calculate word limit: max_tokens * 0.75 (words/token) * 0.75 (buffer)
-            word_limit = int(max_tokens * 0.75 * 0.75)
+            # Calculate word limit: max_tokens * 0.75 (words/token) * 0.5 (aggressive buffer to prevent max token issues)
+            word_limit = int(max_tokens * 0.75 * 0.5)
 
             # Build prompt with variables
             variables = {

@@ -146,30 +146,23 @@ def get_model_with_backups(model, provider: str = None) -> list:
     # If already a list, return as-is (pre-defined chain)
     if isinstance(model, list):
         return model
-    # Gemini 2.5 Flash Lite (primary extraction model) → other Gemini variants → DeepSeek/Haiku
+    # Gemini 2.5 Flash Lite (primary extraction model) → other 65K+ models → Haiku
     if model == 'gemini-2.5-flash-lite':
         if provider == 'baseten':
-            return ['gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.5-flash', 'deepseek-v3.2-baseten', 'claude-haiku-4-5']
+            return ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'deepseek-v3.2-baseten', 'claude-haiku-4-5']
         else:
-            return ['gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.5-flash', 'deepseek-v3.2', 'claude-haiku-4-5']
+            return ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'deepseek-v3.2', 'claude-haiku-4-5']
 
-    # Gemini 2.0 Flash (routing model) → 2.5-flash-lite → 2.5-flash → DeepSeek/Haiku
-    if model == 'gemini-2.0-flash':
-        if provider == 'baseten':
-            return ['gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-flash', 'deepseek-v3.2-baseten', 'claude-haiku-4-5']
-        else:
-            return ['gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-flash', 'deepseek-v3.2', 'claude-haiku-4-5']
-
-    # Gemini 2.5 Flash (synthesis/complex tasks) → 2.0-flash → 2.5-flash-lite → DeepSeek
+    # Gemini 2.5 Flash (synthesis/complex tasks) → other 65K+ models → Haiku
     if model == 'gemini-2.5-flash':
         if provider == 'baseten':
-            return ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite', 'deepseek-v3.2-baseten', 'claude-haiku-4-5']
+            return ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'deepseek-v3.2-baseten', 'claude-haiku-4-5']
         else:
-            return ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite', 'deepseek-v3.2', 'claude-haiku-4-5']
+            return ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'deepseek-v3.2', 'claude-haiku-4-5']
 
     # Other Gemini models → standard Gemini chain
     if model.startswith('gemini-'):
-        return [model, 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'claude-haiku-4-5']
+        return [model, 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'claude-haiku-4-5']
 
     # DeepSeek Baseten → DeepSeek → Claude Sonnet
     if model == 'deepseek-v3.2-baseten':

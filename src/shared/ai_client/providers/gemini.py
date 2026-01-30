@@ -555,7 +555,7 @@ class GeminiProvider:
 
         return restored
 
-    async def make_single_call(self, prompt: str, schema: Dict, model: str, use_cache: bool, cache_key: str, start_time: datetime, max_tokens: int = 8000, soft_schema: bool = False, timeout_override: int = None) -> Dict:
+    async def make_single_call(self, prompt: str, schema: Dict, model: str, use_cache: bool, cache_key: str, start_time: datetime, max_tokens: int = 64000, soft_schema: bool = False, timeout_override: int = None) -> Dict:
         """Make a single call to Gemini via Vertex AI."""
         enforced_max_tokens = self.usage_handler.enforce_provider_token_limit(model, max_tokens)
 

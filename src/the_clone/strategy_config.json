@@ -86,7 +86,7 @@
   "global_limits": {
     "max_iterations": 2,
     "max_sources_total": 20,
-    "max_search_terms": 5
+    "max_search_terms": 3
   },
 
   "providers": {

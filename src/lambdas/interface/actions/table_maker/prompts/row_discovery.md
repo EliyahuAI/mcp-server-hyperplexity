@@ -1,5 +1,7 @@
 # Row Discovery Task
 
+**⚠️ BE TERSE: Entity names and key identifiers only. Validation expands details later.**
+
 ═══════════════════════════════════════════════════════════════
 ## 🔍 YOUR SEARCH TASK
 ═══════════════════════════════════════════════════════════════
@@ -67,6 +69,7 @@ Find entities within **{{SUBDOMAIN_NAME}}** matching:
 - For RESEARCH columns: Populate if information is readily available from search results
 - Leave cells blank if data not found (don't fabricate)
 - Use inline citations [n] after each value you find (e.g., "Anthropic[1]")
+- **BE TERSE:** Short values only. Validation expands later.
 
 ---
 
@@ -164,7 +167,7 @@ The `scoring` array contains one entry per row:
   "relevancy": 0.95,
   "reliability": 1.0,
   "recency": 0.9,
-  "rationale": "Brief 1-sentence explanation"
+  "rationale": "Brief reason"
 }
 ```
 
@@ -254,5 +257,6 @@ If you notice patterns about which domains provided poor results, provide feedba
 6. ✅ Use inline citations [n] after each value
 7. ✅ Include entities even with moderate scores (we filter later)
 8. ✅ Return valid JSON in the format specified above
+9. ✅ **BE TERSE** - validation expands later
 
 **Return your findings as valid JSON.**

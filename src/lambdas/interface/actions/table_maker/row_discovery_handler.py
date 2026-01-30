@@ -256,7 +256,7 @@ def _get_default_row_discovery_config() -> Dict[str, Any]:
         "row_discovery": {
             "target_row_count": 20,
             "min_match_score": 0.6,
-            "max_parallel_streams": 5,
+            "max_parallel_streams": 3,
             "web_searches_per_stream": 3,
             "model": "claude-sonnet-4-5",
             "max_tokens": 8000
@@ -439,7 +439,7 @@ async def handle_row_discovery(event: Dict[str, Any], context: Any) -> Dict[str,
         # Extract parameters from config
         target_row_count = row_discovery_config.get('target_row_count', 20)
         min_match_score = row_discovery_config.get('min_match_score', 0.6)
-        max_parallel_streams = row_discovery_config.get('max_parallel_streams', 5)
+        max_parallel_streams = row_discovery_config.get('max_parallel_streams', 3)
         web_searches_per_stream = row_discovery_config.get('web_searches_per_stream', 3)
         model = row_discovery_config.get('model', 'claude-sonnet-4-5')
         max_tokens = row_discovery_config.get('max_tokens', 8000)

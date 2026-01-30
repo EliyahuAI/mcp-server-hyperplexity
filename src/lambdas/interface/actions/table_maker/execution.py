@@ -26,7 +26,12 @@ After Step 1 (Column Definition) completes, a WebSocket message is sent with:
     "requirements": {
         "hard": str,  # Formatted as bullet list, e.g., "- Requirement 1\n- Requirement 2"
         "soft": str   # Formatted as bullet list, e.g., "- Requirement 3\n- Requirement 4"
-    }
+    },
+    "prepopulated_rows": [  # Rows from column definition (no score)
+        {"id_values": {"Company": "ABC Corp"}, "row_score": null},
+        ...  # First 15 rows only
+    ],
+    "total_prepopulated": 27  # Total count of prepopulated rows
 }
 
 FRONTEND DISPLAY REQUIREMENTS:
@@ -826,8 +831,40 @@ def _write_column_definition_section(
     sections.append("\n---\n")
     sections.append("## 1. Column Definition (Prepopulated Rows)\n")
 
+    # Debug: Log what keys are available and the markdown value
+    logger.info(f"[MD_TABLES] column_definition_result keys: {list(column_definition_result.keys())}")
     col_def_markdown = column_definition_result.get('prepopulated_rows_markdown', '')
+    logger.info(f"[MD_TABLES] prepopulated_rows_markdown length: {len(col_def_markdown) if col_def_markdown else 0}, first 200 chars: {col_def_markdown[:200] if col_def_markdown else 'EMPTY'}")
     col_def_citations = column_definition_result.get('citations', {})
+
+    # Fallback: Convert rows array to markdown if markdown is empty but rows exist
+    if not col_def_markdown:
+        rows = column_definition_result.get('rows', [])
+        columns = column_definition_result.get('columns', [])
+        if rows and columns:
+            logger.info(f"[MD_TABLES] Converting {len(rows)} rows from array format to markdown")
+            col_names = [col.get('name', f'Column{i}') for i, col in enumerate(columns)]
+            # Build markdown table
+            header = "| " + " | ".join(col_names) + " |"
+            separator = "|" + "|".join(["---"] * len(col_names)) + "|"
+            data_lines = []
+            for row in rows:
+                # Handle both dict format and old format
+                if isinstance(row, dict):
+                    values = row.get('values', row)
+                    if isinstance(values, dict):
+                        row_values = [str(values.get(col, '')) for col in col_names]
+                    elif isinstance(values, list):
+                        row_values = [str(v) if v else '' for v in values]
+                    else:
+                        row_values = [str(values)]
+                else:
+                    row_values = [str(row)]
+                # Escape pipe characters
+                row_values = [v.replace('|', '\\|') for v in row_values]
+                data_lines.append("| " + " | ".join(row_values) + " |")
+            col_def_markdown = header + "\n" + separator + "\n" + "\n".join(data_lines)
+            logger.info(f"[MD_TABLES] Generated markdown table with {len(data_lines)} rows")
 
     if col_def_markdown:
         sections.append(col_def_markdown)
@@ -1070,6 +1107,30 @@ def _generate_md_tables_content(
 
     col_def_markdown = column_definition_result.get('prepopulated_rows_markdown', '')
     col_def_citations = column_definition_result.get('citations', {})
+
+    # Fallback: Convert rows array to markdown if markdown is empty but rows exist
+    if not col_def_markdown:
+        rows = column_definition_result.get('rows', [])
+        columns = column_definition_result.get('columns', [])
+        if rows and columns:
+            col_names = [col.get('name', f'Column{i}') for i, col in enumerate(columns)]
+            header = "| " + " | ".join(col_names) + " |"
+            separator = "|" + "|".join(["---"] * len(col_names)) + "|"
+            data_lines = []
+            for row in rows:
+                if isinstance(row, dict):
+                    values = row.get('values', row)
+                    if isinstance(values, dict):
+                        row_values = [str(values.get(col, '')) for col in col_names]
+                    elif isinstance(values, list):
+                        row_values = [str(v) if v else '' for v in values]
+                    else:
+                        row_values = [str(values)]
+                else:
+                    row_values = [str(row)]
+                row_values = [v.replace('|', '\\|') for v in row_values]
+                data_lines.append("| " + " | ".join(row_values) + " |")
+            col_def_markdown = header + "\n" + separator + "\n" + "\n".join(data_lines)
 
     if col_def_markdown:
         sections.append(col_def_markdown)
@@ -1881,6 +1942,10 @@ async def execute_full_table_generation(
                 percent_complete=20
             )
 
+            # Debug: Log prepopulated_rows_markdown before saving
+            pre_md = column_result.get('prepopulated_rows_markdown', '')
+            logger.info(f"[EXECUTION] Before save - prepopulated_rows_markdown present: {bool(pre_md)}, length: {len(pre_md) if pre_md else 0}")
+
             # Save to S3
             _save_to_s3(
                 storage_manager, email, session_id, conversation_id,
@@ -1950,8 +2015,18 @@ async def execute_full_table_generation(
                 f"has_requirements={bool(formatted_hard_requirements or formatted_soft_requirements)}"
             )
 
+            # Format prepopulated rows for frontend (no score - they're from column definition)
+            prepopulated_rows_for_frontend = [
+                {
+                    "id_values": row.get("id_values", {}),
+                    "row_score": None  # No score for prepopulated rows
+                }
+                for row in initial_rows[:15]  # First 15 rows only
+            ] if initial_rows else []
+
             logger.info(
-                f"[DEBUG] Sending WebSocket with columns and requirements"
+                f"[DEBUG] Sending WebSocket with columns, requirements, and prepopulated_rows: "
+                f"{len(prepopulated_rows_for_frontend)} rows (total: {len(initial_rows)})"
             )
 
             send_execution_progress(
@@ -1966,7 +2041,9 @@ async def execute_full_table_generation(
                 requirements={
                     'hard': formatted_hard_requirements,
                     'soft': formatted_soft_requirements
-                }
+                },
+                prepopulated_rows=prepopulated_rows_for_frontend,
+                total_prepopulated=len(initial_rows)
             )
 
         except Exception as e:
@@ -2119,10 +2196,10 @@ async def execute_full_table_generation(
                 soft_schema = discovery_config.get('soft_schema', True)
                 config_max_parallel = discovery_config.get('max_parallel_streams')
                 if config_max_parallel is None:
-                    max_parallel_streams = min(num_subdomains, 5)
+                    max_parallel_streams = min(num_subdomains, 3)
                     logger.info(
                         f"[EXECUTION] Dynamic max_parallel_streams: {max_parallel_streams} "
-                        f"(min of {num_subdomains} subdomains and 5)"
+                        f"(min of {num_subdomains} subdomains and 3)"
                     )
                 else:
                     max_parallel_streams = config_max_parallel
@@ -2410,6 +2487,13 @@ async def execute_full_table_generation(
                     min_qc_score = qc_config.get('min_qc_score', 0.5)
                     min_row_count = qc_config.get('min_row_count', 4)
                     min_row_count_for_frontend = qc_config.get('min_row_count_for_frontend', 4)
+
+                    # Debug: Log column_result markdown before QC call
+                    # Count actual table rows (lines starting with | but not |---)
+                    pre_qc_md = column_result.get('prepopulated_rows_markdown', '')
+                    pre_qc_table_rows = len([l for l in pre_qc_md.split('\n') if l.strip().startswith('|') and not l.strip().startswith('|---')]) if pre_qc_md else 0
+                    pre_qc_data_rows = max(0, pre_qc_table_rows - 1)  # Subtract header row
+                    logger.info(f"[BEFORE_QC] prepopulated_rows_markdown length: {len(pre_qc_md)}, table rows: {pre_qc_table_rows}, data rows: {pre_qc_data_rows}, retrigger_allowed: {retrigger_allowed}")
 
                     # Call QC reviewer
                     # IMPORTANT: Pass discovery_only_rows (not merged final_rows) to avoid
@@ -2723,7 +2807,7 @@ async def execute_full_table_generation(
 
                         # Calculate dynamic max_parallel_streams for retrigger
                         num_subdomains = len(search_strategy.get('subdomains', []))
-                        max_parallel_streams_retrigger = min(num_subdomains, 5)
+                        max_parallel_streams_retrigger = min(num_subdomains, 3)
 
                         # TODO: Pass exclusion_list when row_discovery.py is updated to support it
                         # For now, the new subdomains and updated requirements will help avoid duplicates

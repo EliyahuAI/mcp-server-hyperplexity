@@ -491,6 +491,7 @@ class TheClone2Refined:
             logger.debug(f"[CLONE] FINDALL mode: Overriding max_sources_total to {global_limits['max_sources_total']}")
 
             # FINDALL mode: Use specific model chain for synthesis (faster for entity enumeration)
+            # Only use models with 65K+ output limit for synthesis
             if not model_override:
                 models['synthesis'] = ['gemini-2.5-flash', 'deepseek-v3.2', 'claude-sonnet-4-5']
                 logger.debug(f"[CLONE] FINDALL mode: Using model chain {models['synthesis']} for synthesis")
