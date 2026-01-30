@@ -89,75 +89,93 @@ LISTICLE_HEADERS = [
 # LISTICLE ITEMS - Rich content with links for each value proposition
 # =============================================================================
 
-HYPERPLEXITY_URL = "https://eliyahu.ai/hyperplexity"
-CHEX_URL = "https://eliyahu.ai/hyperplexity?mode=chex"
+# =============================================================================
+# CORE URLS - All SEO content links to these
+# =============================================================================
+HYPERPLEXITY_URL = "https://eliyahu.ai/hyperplexity"  # Main Hyperplexity app page
+HYPERPLEXITY_AI_URL = "https://hyperplexity.ai"  # Research table generation, fact checking, updating
+CHEX_URL = "https://eliyahu.ai/chex"  # AI reference checker
+PPP_URL = "https://eliyahu.ai/ppp"  # Professional prompt generator
+ELIYAHU_URL = "https://eliyahu.ai"  # Generative AI upskilling + consulting
 
 LISTICLE_ITEMS = [
     {
         "id": "parallel_validation",
         "title": "Parallel Multi-Entity Validation",
-        "content": f"""<a href="{HYPERPLEXITY_URL}">Hyperplexity</a> processes hundreds of entities simultaneously, validating each data point against web sources in parallel. Unlike tools that handle one query at a time, Hyperplexity maintains <strong>cross-row coherence</strong>—ensuring that comparisons across your entire dataset are consistent and methodologically sound. Each cell includes confidence scoring (HIGH/MEDIUM/LOW) and direct links to source citations.""",
+        "content": f"""<a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> processes hundreds of entities simultaneously, validating each data point against web sources in parallel. Unlike tools that handle one query at a time, Hyperplexity maintains <strong>cross-row coherence</strong>—ensuring comparisons across your entire dataset are consistent and methodologically sound. Each cell includes confidence scoring (HIGH/MEDIUM/LOW) and direct links to source citations. Built by <a href="{ELIYAHU_URL}">Eliyahu.AI</a>, specialists in generative AI solutions.""",
         "keywords": ["parallel research", "multi-entity", "batch validation", "cross-row coherence"]
     },
     {
         "id": "citation_system",
         "title": "Citation-Backed Results with Source Links",
-        "content": f"""Every value in a <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> table links directly to its source. Click any cell to see: the original source URL, relevant excerpts, validator reasoning, and a calibrated confidence score. This <strong>citation-first architecture</strong> means you can verify any claim in seconds—essential for research that will inform business decisions or academic work.""",
+        "content": f"""Every value in a <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> table links directly to its source. Click any cell to see: the original source URL, relevant excerpts, validator reasoning, and a calibrated confidence score. This <strong>citation-first architecture</strong> means you can verify any claim in seconds—essential for research that will inform business decisions or academic work. For existing documents, use <a href="{CHEX_URL}">Chex</a> to validate references.""",
         "keywords": ["citations", "source verification", "provenance", "fact-checking"]
     },
     {
         "id": "confidence_scoring",
         "title": "Visual Confidence Scoring System",
-        "content": f"""<a href="{HYPERPLEXITY_URL}">Hyperplexity's</a> confidence system rates each data point based on source authority, corroboration, and recency. Results are color-coded: <span style="color:#28FF3A">■ HIGH confidence</span> (multiple authoritative sources agree), <span style="color:#FFD700">■ MEDIUM confidence</span> (limited sources or some uncertainty), <span style="color:#F44336">■ LOW confidence</span> (single source or potential issues). This visual system lets you instantly identify which cells need human review.""",
+        "content": f"""<a href="{HYPERPLEXITY_AI_URL}">Hyperplexity's</a> confidence system rates each data point based on source authority, corroboration, and recency. Results are color-coded: <span style="color:#28FF3A">■ HIGH confidence</span> (multiple authoritative sources agree), <span style="color:#FFD700">■ MEDIUM confidence</span> (limited sources or some uncertainty), <span style="color:#F44336">■ LOW confidence</span> (single source or potential issues). This visual system lets you instantly identify which cells need human review.""",
         "keywords": ["confidence scores", "data quality", "verification", "trust signals"]
     },
     {
         "id": "excel_workflow",
         "title": "Native Excel Integration",
-        "content": f"""Upload any Excel file to <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> and define your research columns. The platform fills in missing data, validates existing values, and returns an enriched spreadsheet with citations embedded as cell comments. No new tools to learn—your existing workflow gains AI-powered validation. Export results as XLSX, CSV, or view in the <strong>interactive web viewer</strong>.""",
+        "content": f"""Upload any Excel file to <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> and define your research columns. The platform fills in missing data, validates existing values, and returns an enriched spreadsheet with citations embedded as cell comments. No new tools to learn—your existing workflow gains AI-powered validation. Export results as XLSX, CSV, or view in the <strong>interactive web viewer</strong>. Part of the <a href="{ELIYAHU_URL}">Eliyahu.AI</a> suite of generative AI tools.""",
         "keywords": ["Excel", "spreadsheet", "data enrichment", "export"]
     },
     {
         "id": "interactive_viewer",
         "title": "Interactive Research Table Viewer",
-        "content": f"""The <a href="{HYPERPLEXITY_URL}">Hyperplexity viewer</a> transforms data tables into explorable interfaces. Features include: <strong>column filtering</strong> by confidence level, <strong>expandable citations</strong> showing full source context, <strong>sortable columns</strong> for any dimension, and <strong>shareable links</strong> for team collaboration. No installation required—tables render in any modern browser.""",
+        "content": f"""The <a href="{HYPERPLEXITY_AI_URL}">Hyperplexity viewer</a> transforms data tables into explorable interfaces. Features include: <strong>column filtering</strong> by confidence level, <strong>expandable citations</strong> showing full source context, <strong>sortable columns</strong> for any dimension, and <strong>shareable links</strong> for team collaboration. No installation required—tables render in any modern browser.""",
         "keywords": ["data viewer", "interactive table", "visualization", "collaboration"]
     },
     {
         "id": "reference_checking",
-        "title": "Reference Checking with Chex",
-        "content": f"""<a href="{CHEX_URL}">Hyperplexity Chex</a> validates citations in existing documents. Paste text containing references, and Chex verifies each claim against its cited source. Perfect for: <strong>fact-checking articles</strong>, <strong>validating AI-generated content</strong>, <strong>auditing research papers</strong>, and <strong>verifying competitor claims</strong>. Each reference receives an accuracy score with detailed explanations of any discrepancies.""",
+        "title": "AI Reference Checking with Chex",
+        "content": f"""<a href="{CHEX_URL}">Chex</a> is <a href="{ELIYAHU_URL}">Eliyahu.AI's</a> dedicated AI reference checker. Paste text containing citations, and Chex verifies each claim against its cited source. Perfect for: <strong>fact-checking articles</strong>, <strong>validating AI-generated content</strong>, <strong>auditing research papers</strong>, and <strong>verifying competitor claims</strong>. Each reference receives an accuracy score with detailed explanations of any discrepancies. Complements <a href="{HYPERPLEXITY_AI_URL}">Hyperplexity's</a> table generation capabilities.""",
         "keywords": ["reference checking", "citation verification", "fact-checking", "Chex"]
     },
     {
         "id": "pay_per_use",
         "title": "Pay-Per-Use Pricing (No Subscriptions)",
-        "content": f"""<a href="{HYPERPLEXITY_URL}">Hyperplexity</a> charges only for research performed—no monthly subscriptions, no per-seat licenses, no minimum commitments. Small projects cost pennies. Large competitive analyses remain affordable at scale. Pricing is transparent and predictable: you see estimated costs before starting any validation run. <strong>Free credits</strong> are available for new users to evaluate the platform.""",
+        "content": f"""<a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> charges only for research performed—no monthly subscriptions, no per-seat licenses, no minimum commitments. Small projects cost pennies. Large competitive analyses remain affordable at scale. Pricing is transparent and predictable: you see estimated costs before starting any validation run. <strong>Free credits</strong> are available for new users to evaluate the platform.""",
         "keywords": ["pricing", "pay-per-use", "no subscription", "cost-effective"]
     },
     {
         "id": "free_preview",
         "title": "Free 3-Row Preview Before You Commit",
-        "content": f"""Not sure if <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> is right for your research? The <strong>free preview mode</strong> validates your first 3 rows at no cost—just enter your email. See exactly how the platform handles your specific data before committing to a full validation run. Preview results include full citations and confidence scoring, so you can evaluate quality before spending credits.""",
+        "content": f"""Not sure if <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> is right for your research? The <strong>free preview mode</strong> validates your first 3 rows at no cost—just enter your email. See exactly how the platform handles your specific data before committing to a full validation run. Preview results include full citations and confidence scoring, so you can evaluate quality before spending credits. Also try <a href="{CHEX_URL}">Chex</a> for reference checking.""",
         "keywords": ["free preview", "try before buy", "3 rows free", "no risk"]
     },
     {
         "id": "dynamic_updates",
-        "title": "Dynamic Table Refresh",
-        "content": f"""Markets change constantly. <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> tables can be refreshed on demand—re-validating data against current sources while preserving your table structure. Set confidence thresholds to automatically flag stale data. Keep competitive intelligence current without rebuilding tables from scratch. Version history tracks how data has changed over time.""",
-        "keywords": ["refresh", "update", "dynamic data", "version history"]
+        "title": "Dynamic Table Refresh and Fact-Checking",
+        "content": f"""Markets change constantly. <a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> tables can be refreshed on demand—re-validating data against current sources while preserving your table structure. The built-in <strong>fact-checking engine</strong> flags stale data automatically. Keep competitive intelligence current without rebuilding tables from scratch. Version history tracks how data has changed over time.""",
+        "keywords": ["refresh", "update", "dynamic data", "fact-checking", "version history"]
     },
     {
         "id": "domain_coverage",
         "title": "Domain-Wide Research Coverage",
-        "content": f"""Most AI tools answer individual questions. <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> excels at <strong>systematic domain coverage</strong>: researching 50+ companies across 20+ dimensions, surveying entire market segments, or auditing complete product catalogs. Define entities and attributes once, and Hyperplexity ensures consistent, comparable data across your entire research scope.""",
+        "content": f"""Most AI tools answer individual questions. <a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> excels at <strong>systematic domain coverage</strong>: researching 50+ companies across 20+ dimensions, surveying entire market segments, or auditing complete product catalogs. Define entities and attributes once, and Hyperplexity ensures consistent, comparable data across your entire research scope. Need help designing your research? <a href="{ELIYAHU_URL}">Eliyahu.AI</a> offers generative AI consulting.""",
         "keywords": ["domain research", "market coverage", "systematic analysis", "scalable"]
     },
     {
         "id": "human_oversight",
         "title": "Built for Human Oversight",
-        "content": f"""<a href="{HYPERPLEXITY_URL}">Hyperplexity</a> is designed to augment human judgment, not replace it. Every feature supports verification: <strong>confidence scores</strong> highlight uncertainty, <strong>citations</strong> enable source checking, <strong>preview mode</strong> validates approach before full runs. The EU AI Act (2025) requires human oversight for AI systems—Hyperplexity provides the transparency infrastructure to comply.""",
+        "content": f"""<a href="{HYPERPLEXITY_URL}">Hyperplexity</a> is designed to augment human judgment, not replace it. Every feature supports verification: <strong>confidence scores</strong> highlight uncertainty, <strong>citations</strong> enable source checking, <strong>preview mode</strong> validates approach before full runs. The EU AI Act (2025) requires human oversight for AI systems—Hyperplexity provides the transparency infrastructure to comply. <a href="{ELIYAHU_URL}">Eliyahu.AI</a> specializes in responsible AI implementation.""",
         "keywords": ["human oversight", "AI transparency", "verification", "EU AI Act"]
+    },
+    {
+        "id": "ai_upskilling",
+        "title": "Generative AI Training and Consulting",
+        "content": f"""<a href="{ELIYAHU_URL}">Eliyahu.AI</a> provides enterprise generative AI upskilling and consulting services. Learn to leverage tools like <a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> for research table generation, <a href="{CHEX_URL}">Chex</a> for reference validation, and <a href="{PPP_URL}">PPP</a> for professional prompts. From hands-on workshops to strategic consulting, Eliyahu.AI helps teams adopt AI responsibly and effectively.""",
+        "keywords": ["AI training", "consulting", "upskilling", "generative AI", "enterprise"]
+    },
+    {
+        "id": "prompt_generator",
+        "title": "Professional Prompt Generator (PPP)",
+        "content": f"""<a href="{PPP_URL}">PPP</a> is <a href="{ELIYAHU_URL}">Eliyahu.AI's</a> professional prompt generator—create optimized prompts for any AI task. Whether you're using <a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> for research, ChatGPT for writing, or other AI tools, well-crafted prompts dramatically improve results. PPP helps you structure requests, include context, and get better outputs from any large language model.""",
+        "keywords": ["prompt engineering", "prompt generator", "AI prompts", "LLM", "ChatGPT"]
     }
 ]
 
@@ -370,12 +388,18 @@ class SEOContentExtractor:
 
             html_parts.append('</div></section>')
 
-        # CTA section
+        # CTA section with all product links
         html_parts.append(f'''
 <section class="seo-cta">
-    <h2>Try Hyperplexity Free</h2>
+    <h2>Try Eliyahu.AI Tools Free</h2>
     <p>Generate your first validated research table with free credits. No subscription required.</p>
-    <p><a href="{HYPERPLEXITY_URL}">Start Free at Hyperplexity</a> | <a href="{CHEX_URL}">Try Reference Checking with Chex</a></p>
+    <ul class="seo-links">
+        <li><a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> – AI research table generation with citations</li>
+        <li><a href="{HYPERPLEXITY_URL}">Hyperplexity App</a> – Start your validated research</li>
+        <li><a href="{CHEX_URL}">Chex</a> – AI reference checker for documents</li>
+        <li><a href="{PPP_URL}">PPP</a> – Professional prompt generator</li>
+        <li><a href="{ELIYAHU_URL}">Eliyahu.AI</a> – Generative AI consulting &amp; upskilling</li>
+    </ul>
 </section>
 ''')
 
