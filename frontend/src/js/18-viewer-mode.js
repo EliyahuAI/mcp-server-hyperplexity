@@ -569,11 +569,13 @@ function displayDemoResultsInCard(cardId, data, tableName) {
             icon: '✨',
             variant: 'primary',
             callback: () => {
-                // Require email, then redirect to main app
-                requireEmailThen(() => {
-                    // Remove demo param and go to main app
+                // Show Get Started card (handles email validation itself)
+                if (typeof createUploadOrDemoCard === 'function') {
+                    createUploadOrDemoCard();
+                } else {
+                    // Fallback: redirect to main app
                     window.location.href = window.location.pathname;
-                }, 'create your own table');
+                }
             }
         }
     ];
