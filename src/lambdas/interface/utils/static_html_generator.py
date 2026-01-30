@@ -96,7 +96,8 @@ class StaticHTMLGenerator:
         schema_type: str = "Dataset",
         last_updated: Optional[str] = None,
         methodology: Optional[str] = None,
-        slug: Optional[str] = None
+        slug: Optional[str] = None,
+        competitive_data: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Generate a complete standalone HTML file with SEO optimization.
@@ -106,13 +107,14 @@ class StaticHTMLGenerator:
             title: Page title (also used in <h1>)
             subtitle: Subtitle text (shown below title)
             description: Meta description for SEO (max 160 chars recommended)
-            seo_content: Hidden SEO content (accessible to crawlers)
+            seo_content: Hidden SEO content (accessible to crawlers) - legacy param
             interactive_url: Link to interactive version
             faqs: List of FAQ dicts with 'question' and 'answer' keys
             schema_type: JSON-LD schema type ('Dataset', 'SoftwareApplication', 'FAQPage')
             last_updated: ISO date string for freshness signals
             methodology: Short methodology description for verification context
             slug: URL slug for deterministic content rotation
+            competitive_data: Competitive intelligence JSON for rich SEO content
 
         Returns:
             Complete HTML string ready to save to file
@@ -150,6 +152,13 @@ class StaticHTMLGenerator:
         if faqs:
             faq_html = self._generate_faq_html(faqs)
 
+        # Generate rich SEO content from competitive data
+        seo_layer_html = self._generate_seo_layer(
+            slug=slug or title,
+            competitive_data=competitive_data,
+            legacy_content=seo_content
+        )
+
         # Build the HTML by replacing placeholders
         html = template
         html = html.replace('{{TITLE}}', self._escape_html(title))
@@ -161,12 +170,59 @@ class StaticHTMLGenerator:
         html = html.replace('{{TABLE_JS}}', table_js)
         html = html.replace('{{METADATA_JSON}}', json.dumps(table_metadata))
         html = html.replace('{{JSON_LD}}', json_ld_blocks)
-        html = html.replace('{{SEO_CONTENT}}', self._escape_html(seo_content))
+        html = html.replace('{{SEO_CONTENT}}', seo_layer_html)
         html = html.replace('{{FOOTER_LINK}}', footer_link)
         html = html.replace('{{METHODOLOGY_BLOCK}}', methodology_html)
         html = html.replace('{{FAQ_BLOCK}}', faq_html)
 
         return html
+
+    def _generate_seo_layer(
+        self,
+        slug: str,
+        competitive_data: Optional[Dict[str, Any]] = None,
+        legacy_content: str = ""
+    ) -> str:
+        """
+        Generate hidden SEO content layer with rich marketing content.
+
+        Uses clip-path technique to render content that's accessible to
+        crawlers but not visible to users.
+
+        Args:
+            slug: Page identifier for deterministic content rotation
+            competitive_data: Competitive intelligence JSON
+            legacy_content: Legacy seo_content string (fallback)
+
+        Returns:
+            HTML string for the SEO layer
+        """
+        # If no competitive data, fall back to legacy content
+        if not competitive_data:
+            if legacy_content:
+                return legacy_content
+            return ""
+
+        try:
+            from interface_lambda.utils.seo_content_extractor import SEOContentExtractor
+
+            extractor = SEOContentExtractor(competitive_data)
+            seo_html = extractor.render_seo_html(
+                slug=slug,
+                include_hero=True,
+                paragraph_count=3,
+                comparison_count=2
+            )
+
+            # Combine with any legacy content
+            if legacy_content:
+                seo_html = f"{seo_html}\n<div class='seo-legacy'>{self._escape_html(legacy_content)}</div>"
+
+            return seo_html
+
+        except Exception as e:
+            logger.warning(f"[STATIC_HTML] Failed to generate SEO layer: {e}")
+            return legacy_content if legacy_content else ""
 
     def _truncate_description(self, desc: str, max_length: int = 160) -> str:
         """Truncate description to recommended SEO length."""
@@ -436,7 +492,13 @@ class StaticHTMLGenerator:
         .viewer-subtitle { color: var(--text-secondary); margin: 0; }
         .viewer-footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee; text-align: center; color: var(--text-secondary); font-size: 13px; }
         .viewer-footer a { color: var(--primary-color); text-decoration: none; }
-        .seo-content { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+        .seo-content { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); clip-path: inset(50%); white-space: nowrap; border: 0; }
+        .seo-content .seo-hero h2 { font-size: 1.5rem; margin: 0 0 0.5rem 0; }
+        .seo-content .seo-tagline { font-size: 1.1rem; margin: 0 0 1rem 0; }
+        .seo-content .seo-feature { margin-bottom: 1rem; }
+        .seo-content .seo-feature h3 { font-size: 1.1rem; margin: 0 0 0.5rem 0; }
+        .seo-content .seo-comparison { margin-bottom: 1rem; }
+        .seo-content .seo-comparison h3 { font-size: 1rem; margin: 0 0 0.5rem 0; }
         .methodology-block { font-size: 12px; color: var(--text-secondary); margin-bottom: 16px; padding: 8px 12px; background: #f8f9fa; border-radius: 4px; }
         .faq-section { margin-top: 32px; padding-top: 24px; border-top: 1px solid #eee; }
         .faq-title { font-size: 1.25rem; margin: 0 0 16px 0; }

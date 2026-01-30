@@ -3253,7 +3253,19 @@ def handle_main_processing(event, context):
             )
             total_rows_in_file = len(table_data.get('data', []))
             rows_to_process = min(max_rows, total_rows_in_file) if max_rows else total_rows_in_file
-            logger.info(f"Parser generated row keys and extracted history for {total_rows_in_file} rows")
+
+            # Count unique row keys (for duplicate handling)
+            # Validation processes unique row keys, so duplicates share the same result
+            parsed_rows = table_data.get('data', [])
+            unique_row_keys = set(row.get('_row_key') for row in parsed_rows if row.get('_row_key'))
+            unique_row_count = len(unique_row_keys)
+            duplicate_row_count = total_rows_in_file - unique_row_count
+
+            if duplicate_row_count > 0:
+                logger.warning(f"[DUPLICATE_ROWS] Found {duplicate_row_count} duplicate row(s) in input file (same _row_key)")
+                logger.info(f"[DUPLICATE_ROWS] Total rows: {total_rows_in_file}, Unique row keys: {unique_row_count}")
+
+            logger.info(f"Parser generated row keys and extracted history for {total_rows_in_file} rows ({unique_row_count} unique)")
 
             # The actual batching loop
             all_validation_results = {}
@@ -4219,10 +4231,31 @@ def handle_main_processing(event, context):
                     body = validation_results.get('body', {}) if validation_results else {}
                     data = body.get('data', {})
                     final_validation_results = data.get('rows', {})
-                    expected_row_count = total_rows_in_file
+
+                    # Calculate unique row count from table_data (handles duplicates with same _row_key)
+                    # Validation processes unique row keys, so N unique keys = N results expected
+                    unique_row_count_for_check = total_rows_in_file  # Fallback
+                    row_key_to_indices = {}  # Track which input indices map to each row_key
+                    if 'table_data' in locals() and table_data and table_data.get('data'):
+                        parsed_rows = table_data.get('data', [])
+                        unique_keys = set()
+                        for idx, row in enumerate(parsed_rows):
+                            row_key = row.get('_row_key')
+                            if row_key:
+                                unique_keys.add(row_key)
+                                # Track input index → row_key mapping for duplicate remapping
+                                if row_key not in row_key_to_indices:
+                                    row_key_to_indices[row_key] = []
+                                row_key_to_indices[row_key].append(idx)
+                        unique_row_count_for_check = len(unique_keys)
+                        duplicate_count = total_rows_in_file - unique_row_count_for_check
+                        if duplicate_count > 0:
+                            logger.info(f"[EARLY_COMPLETENESS_CHECK] Found {duplicate_count} duplicate row(s) - expecting {unique_row_count_for_check} unique results for {total_rows_in_file} input rows")
+
+                    expected_row_count = unique_row_count_for_check
                     actual_results_count = len(final_validation_results) if isinstance(final_validation_results, dict) else 0
 
-                    logger.debug(f"[EARLY_COMPLETENESS_CHECK] Expected rows: {expected_row_count}, Actual results: {actual_results_count}")
+                    logger.debug(f"[EARLY_COMPLETENESS_CHECK] Expected rows: {expected_row_count} (unique), Actual results: {actual_results_count}, Total in file: {total_rows_in_file}")
                     logger.debug(f"[EARLY_COMPLETENESS_CHECK] validation_results keys: {list(validation_results.keys()) if validation_results else 'None'}")
                     logger.debug(f"[EARLY_COMPLETENESS_CHECK] body keys: {list(body.keys()) if body else 'None'}")
 
@@ -4280,6 +4313,39 @@ def handle_main_processing(event, context):
                         }
                     else:
                         logger.debug(f"[EARLY_COMPLETENESS_CHECK] ✅ Validation results are COMPLETE - proceeding with billing")
+
+                        # ========== DUPLICATE ROW REMAPPING ==========
+                        # If there are duplicate input rows (same _row_key), expand results to cover all input indices
+                        # This ensures 99 input rows → 99 output results (even if only 98 unique row keys)
+                        if row_key_to_indices and any(len(indices) > 1 for indices in row_key_to_indices.values()):
+                            logger.info(f"[DUPLICATE_REMAPPING] Expanding {len(final_validation_results)} unique results to {total_rows_in_file} input rows")
+                            expanded_results = {}
+                            duplicate_remapped_count = 0
+
+                            for row_key, result in final_validation_results.items():
+                                indices = row_key_to_indices.get(row_key, [])
+                                if len(indices) > 1:
+                                    # Multiple input rows share this row_key - create a result for each
+                                    for idx in indices:
+                                        expanded_key = f"{row_key}__idx_{idx}"
+                                        expanded_result = result.copy() if isinstance(result, dict) else result
+                                        if isinstance(expanded_result, dict):
+                                            expanded_result['_input_index'] = idx
+                                            expanded_result['_original_row_key'] = row_key
+                                        expanded_results[expanded_key] = expanded_result
+                                        duplicate_remapped_count += 1
+                                else:
+                                    # Single input row with this row_key - keep as-is
+                                    expanded_results[row_key] = result
+
+                            if duplicate_remapped_count > 0:
+                                logger.info(f"[DUPLICATE_REMAPPING] Created {duplicate_remapped_count} duplicate entries, total results: {len(expanded_results)}")
+                                # Update final_validation_results with expanded version
+                                final_validation_results = expanded_results
+                                # Also update in validation_results for downstream use
+                                if validation_results and 'body' in validation_results:
+                                    validation_results['body']['data']['rows'] = final_validation_results
+                                    logger.debug(f"[DUPLICATE_REMAPPING] Updated validation_results.body.data.rows with expanded results")
 
                 # Initialize billing variables for later use (after email success)
                 initial_balance = check_user_balance(email)
@@ -4900,13 +4966,28 @@ def handle_main_processing(event, context):
                                             viewer_base = os.environ.get('VIEWER_BASE_URL', 'https://eliyahu.ai/hyperplexity')
                                             interactive_url = f"{viewer_base}?mode=viewer&session={clean_session_id}&version={config_version}"
 
+                                            # Load competitive intelligence for rich SEO content
+                                            competitive_data = None
+                                            try:
+                                                seo_key = "seo/HyperplexityVsCompetition.json"
+                                                seo_response = s3_client.get_object(
+                                                    Bucket=storage_manager.bucket_name,
+                                                    Key=seo_key
+                                                )
+                                                competitive_data = json.loads(seo_response['Body'].read().decode('utf-8'))
+                                                logger.info(f"[FULL_VALIDATION] Loaded competitive SEO data from {seo_key}")
+                                            except Exception as seo_err:
+                                                logger.debug(f"[FULL_VALIDATION] No competitive SEO data available: {seo_err}")
+
                                             static_html = html_generator.generate(
                                                 table_metadata=full_table_metadata,
                                                 title=static_title,
                                                 subtitle=static_subtitle,
                                                 description=f"Validation results for {static_title}",
-                                                seo_content="",  # Can be populated from config or user input
-                                                interactive_url=interactive_url
+                                                seo_content="",  # Legacy param, competitive_data preferred
+                                                interactive_url=interactive_url,
+                                                slug=static_title,  # Use title for deterministic content rotation
+                                                competitive_data=competitive_data
                                             )
 
                                             # Save static HTML
