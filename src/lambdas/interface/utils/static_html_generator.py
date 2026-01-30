@@ -4,6 +4,11 @@ Static HTML Generator for Validation Results
 Creates self-contained HTML files with embedded table data, CSS, and JavaScript.
 These files can be viewed offline and include SEO metadata (JSON-LD and hidden text).
 
+Supports multiple JSON-LD schema types:
+- Dataset (default for table results)
+- SoftwareApplication (for product pages)
+- FAQPage (for FAQ content)
+
 Usage:
     from interface_lambda.utils.static_html_generator import StaticHTMLGenerator
 
@@ -14,25 +19,70 @@ Usage:
         subtitle="Generated 2024-01-15",
         description="Validation results for My Table",
         seo_content="Additional keywords for search engines",
-        interactive_url="https://hyperplexity.com?mode=viewer&session=xxx"
+        interactive_url="https://hyperplexity.com?mode=viewer&session=xxx",
+        faqs=[
+            {"question": "How does this work?", "answer": "It validates data..."},
+        ]
     )
 """
 import json
 import os
 import logging
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
+# Organization schema - reused across all pages
+ORGANIZATION_SCHEMA = {
+    "@type": "Organization",
+    "name": "Eliyahu.AI",
+    "url": "https://eliyahu.ai",
+    "logo": "https://eliyahu.ai/logo.png",
+    "sameAs": [
+        "https://www.linkedin.com/company/eliyahu-ai"
+    ]
+}
+
+
 class StaticHTMLGenerator:
-    """Generates standalone HTML files for validation results."""
+    """Generates standalone HTML files for validation results with SEO optimization."""
 
     def __init__(self):
         self._template_cache = None
         self._css_cache = {}
         self._js_cache = None
+
+    @staticmethod
+    def hash_string(s: str) -> int:
+        """
+        Deterministic hash function for module rotation.
+        Based on FNV-1a hash algorithm - produces consistent results across runs.
+        Use this to select content variants based on slug/URL.
+        """
+        h = 2166136261
+        for char in s:
+            h = h ^ ord(char)
+            h = (h * 16777619) & 0xFFFFFFFF
+        return h
+
+    @staticmethod
+    def pick_variant(variants: List[Any], seed: int, offset: int = 0) -> Any:
+        """
+        Deterministically pick a variant from a list based on seed.
+
+        Args:
+            variants: List of content variants
+            seed: Hash seed (e.g., from hash_string)
+            offset: Offset for picking different variants with same seed
+
+        Returns:
+            Selected variant
+        """
+        if not variants:
+            return None
+        return variants[(seed + offset) % len(variants)]
 
     def generate(
         self,
@@ -41,18 +91,28 @@ class StaticHTMLGenerator:
         subtitle: str = "",
         description: str = "",
         seo_content: str = "",
-        interactive_url: str = ""
+        interactive_url: str = "",
+        faqs: Optional[List[Dict[str, str]]] = None,
+        schema_type: str = "Dataset",
+        last_updated: Optional[str] = None,
+        methodology: Optional[str] = None,
+        slug: Optional[str] = None
     ) -> str:
         """
-        Generate a complete standalone HTML file.
+        Generate a complete standalone HTML file with SEO optimization.
 
         Args:
             table_metadata: The table_metadata.json content
             title: Page title (also used in <h1>)
             subtitle: Subtitle text (shown below title)
-            description: Meta description for SEO
-            seo_content: Hidden SEO content (white text)
+            description: Meta description for SEO (max 160 chars recommended)
+            seo_content: Hidden SEO content (accessible to crawlers)
             interactive_url: Link to interactive version
+            faqs: List of FAQ dicts with 'question' and 'answer' keys
+            schema_type: JSON-LD schema type ('Dataset', 'SoftwareApplication', 'FAQPage')
+            last_updated: ISO date string for freshness signals
+            methodology: Short methodology description for verification context
+            slug: URL slug for deterministic content rotation
 
         Returns:
             Complete HTML string ready to save to file
@@ -62,11 +122,14 @@ class StaticHTMLGenerator:
         table_css = self._get_css()
         table_js = self._get_js()
 
-        # Generate JSON-LD structured data
-        json_ld = self._generate_json_ld(
+        # Generate JSON-LD structured data (can include multiple schemas)
+        json_ld_blocks = self._generate_json_ld_blocks(
             title=title,
             description=description,
-            table_metadata=table_metadata
+            table_metadata=table_metadata,
+            schema_type=schema_type,
+            faqs=faqs,
+            interactive_url=interactive_url
         )
 
         # Generate footer link if interactive URL provided
@@ -74,19 +137,186 @@ class StaticHTMLGenerator:
         if interactive_url:
             footer_link = f' | <a href="{self._escape_html(interactive_url)}" target="_blank" rel="noopener">View Interactive Version</a>'
 
+        # Generate methodology block if provided
+        methodology_html = ""
+        if methodology or last_updated:
+            methodology_html = self._generate_methodology_block(
+                methodology=methodology,
+                last_updated=last_updated or datetime.utcnow().strftime("%Y-%m-%d")
+            )
+
+        # Generate FAQ HTML if provided (must be visible for Google)
+        faq_html = ""
+        if faqs:
+            faq_html = self._generate_faq_html(faqs)
+
         # Build the HTML by replacing placeholders
         html = template
         html = html.replace('{{TITLE}}', self._escape_html(title))
         html = html.replace('{{SUBTITLE}}', self._escape_html(subtitle))
-        html = html.replace('{{DESCRIPTION}}', self._escape_html(description or f"Validation results for {title}"))
+        html = html.replace('{{DESCRIPTION}}', self._escape_html(
+            self._truncate_description(description or f"Validation results for {title}")
+        ))
         html = html.replace('{{TABLE_CSS}}', table_css)
         html = html.replace('{{TABLE_JS}}', table_js)
         html = html.replace('{{METADATA_JSON}}', json.dumps(table_metadata))
-        html = html.replace('{{JSON_LD}}', json.dumps(json_ld, indent=2))
+        html = html.replace('{{JSON_LD}}', json_ld_blocks)
         html = html.replace('{{SEO_CONTENT}}', self._escape_html(seo_content))
         html = html.replace('{{FOOTER_LINK}}', footer_link)
+        html = html.replace('{{METHODOLOGY_BLOCK}}', methodology_html)
+        html = html.replace('{{FAQ_BLOCK}}', faq_html)
 
         return html
+
+    def _truncate_description(self, desc: str, max_length: int = 160) -> str:
+        """Truncate description to recommended SEO length."""
+        if len(desc) <= max_length:
+            return desc
+        return desc[:max_length - 3].rsplit(' ', 1)[0] + '...'
+
+    def _generate_json_ld_blocks(
+        self,
+        title: str,
+        description: str,
+        table_metadata: Dict[str, Any],
+        schema_type: str,
+        faqs: Optional[List[Dict[str, str]]],
+        interactive_url: str
+    ) -> str:
+        """Generate all JSON-LD schema blocks as a single string."""
+        schemas = []
+
+        # Main schema based on type
+        if schema_type == "Dataset":
+            schemas.append(self._generate_dataset_schema(title, description, table_metadata))
+        elif schema_type == "SoftwareApplication":
+            schemas.append(self._generate_software_schema(title, description, interactive_url))
+
+        # Add FAQ schema if FAQs provided (in addition to main schema)
+        if faqs:
+            schemas.append(self._generate_faq_schema(faqs))
+
+        # Combine all schemas
+        return "\n    ".join(
+            f'<script type="application/ld+json">\n{json.dumps(schema, indent=2)}\n    </script>'
+            for schema in schemas
+        )
+
+    def _generate_dataset_schema(
+        self,
+        title: str,
+        description: str,
+        table_metadata: Dict[str, Any]
+    ) -> Dict:
+        """Generate JSON-LD Dataset schema for table results."""
+        rows = table_metadata.get('rows', [])
+        columns = table_metadata.get('columns', [])
+        column_names = [col.get('name', '') for col in columns if col.get('name')]
+
+        return {
+            "@context": "https://schema.org",
+            "@type": "Dataset",
+            "name": title,
+            "description": description or f"Research data table with {len(rows)} rows and {len(columns)} columns, validated with citations and confidence scoring.",
+            "creator": ORGANIZATION_SCHEMA,
+            "dateCreated": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "variableMeasured": column_names[:20],
+            "distribution": {
+                "@type": "DataDownload",
+                "encodingFormat": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "contentUrl": "#download"
+            }
+        }
+
+    def _generate_software_schema(
+        self,
+        title: str,
+        description: str,
+        url: str
+    ) -> Dict:
+        """Generate JSON-LD SoftwareApplication schema for product pages."""
+        return {
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            "@id": f"{url}#software" if url else None,
+            "name": title,
+            "operatingSystem": "Web",
+            "applicationCategory": "BusinessApplication",
+            "url": url or "https://eliyahu.ai/hyperplexity",
+            "description": description or "Generates, validates, and updates research matrices (tables) with citations and confidence scoring.",
+            "provider": ORGANIZATION_SCHEMA,
+            "offers": {
+                "@type": "Offer",
+                "price": "0",
+                "priceCurrency": "USD",
+                "description": "Pay-per-use pricing"
+            }
+        }
+
+    def _generate_faq_schema(self, faqs: List[Dict[str, str]]) -> Dict:
+        """Generate JSON-LD FAQPage schema. FAQs must be visible on page."""
+        return {
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            "mainEntity": [
+                {
+                    "@type": "Question",
+                    "name": faq.get('question', ''),
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": faq.get('answer', '')
+                    }
+                }
+                for faq in faqs if faq.get('question') and faq.get('answer')
+            ]
+        }
+
+    def _generate_methodology_block(self, methodology: str, last_updated: str) -> str:
+        """Generate visible methodology/freshness block for verification context."""
+        parts = []
+        if last_updated:
+            parts.append(f'<span class="last-updated">Last updated: {self._escape_html(last_updated)}</span>')
+        if methodology:
+            parts.append(f'<span class="methodology">{self._escape_html(methodology)}</span>')
+
+        if not parts:
+            return ""
+
+        return f'''
+        <div class="methodology-block">
+            {" | ".join(parts)}
+        </div>
+        '''
+
+    def _generate_faq_html(self, faqs: List[Dict[str, str]]) -> str:
+        """
+        Generate visible FAQ HTML section.
+        Google requires FAQ content to be visible on page (accordions OK).
+        """
+        if not faqs:
+            return ""
+
+        faq_items = []
+        for i, faq in enumerate(faqs):
+            question = self._escape_html(faq.get('question', ''))
+            answer = self._escape_html(faq.get('answer', ''))
+            if question and answer:
+                faq_items.append(f'''
+                <details class="faq-item">
+                    <summary class="faq-question">{question}</summary>
+                    <div class="faq-answer">{answer}</div>
+                </details>
+                ''')
+
+        if not faq_items:
+            return ""
+
+        return f'''
+        <div class="faq-section">
+            <h2 class="faq-title">Frequently Asked Questions</h2>
+            {"".join(faq_items)}
+        </div>
+        '''
 
     def _get_template(self) -> str:
         """Load the HTML template."""
@@ -167,33 +397,6 @@ class StaticHTMLGenerator:
         self._js_cache = '/* Interactive table JS not found - table will not be interactive */'
         return self._js_cache
 
-    def _generate_json_ld(
-        self,
-        title: str,
-        description: str,
-        table_metadata: Dict[str, Any]
-    ) -> Dict:
-        """Generate JSON-LD structured data for SEO (schema.org Dataset)."""
-        rows = table_metadata.get('rows', [])
-        columns = table_metadata.get('columns', [])
-
-        # Extract column names for variableMeasured
-        column_names = [col.get('name', '') for col in columns if col.get('name')]
-
-        return {
-            "@context": "https://schema.org",
-            "@type": "Dataset",
-            "name": title,
-            "description": description or f"Data table with {len(rows)} rows and {len(columns)} columns",
-            "creator": {
-                "@type": "Organization",
-                "name": "Hyperplexity",
-                "url": "https://hyperplexity.com"
-            },
-            "dateCreated": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "variableMeasured": column_names[:20]  # Limit to first 20 columns
-        }
-
     def _escape_html(self, text: str) -> str:
         """Escape HTML special characters to prevent XSS."""
         if not text:
@@ -214,7 +417,7 @@ class StaticHTMLGenerator:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{TITLE}}</title>
     <meta name="description" content="{{DESCRIPTION}}">
-    <script type="application/ld+json">{{JSON_LD}}</script>
+    {{JSON_LD}}
     <style>
         :root {
             --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -234,6 +437,13 @@ class StaticHTMLGenerator:
         .viewer-footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee; text-align: center; color: var(--text-secondary); font-size: 13px; }
         .viewer-footer a { color: var(--primary-color); text-decoration: none; }
         .seo-content { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+        .methodology-block { font-size: 12px; color: var(--text-secondary); margin-bottom: 16px; padding: 8px 12px; background: #f8f9fa; border-radius: 4px; }
+        .faq-section { margin-top: 32px; padding-top: 24px; border-top: 1px solid #eee; }
+        .faq-title { font-size: 1.25rem; margin: 0 0 16px 0; }
+        .faq-item { margin-bottom: 12px; border: 1px solid #e0e0e0; border-radius: 6px; }
+        .faq-question { padding: 12px 16px; cursor: pointer; font-weight: 500; }
+        .faq-question:hover { background: #f8f9fa; }
+        .faq-answer { padding: 0 16px 12px 16px; color: var(--text-secondary); line-height: 1.6; }
         {{TABLE_CSS}}
     </style>
 </head>
@@ -244,8 +454,10 @@ class StaticHTMLGenerator:
             <h1 class="viewer-title">{{TITLE}}</h1>
             <p class="viewer-subtitle">{{SUBTITLE}}</p>
         </div>
+        {{METHODOLOGY_BLOCK}}
         <div id="table-container"></div>
-        <div class="viewer-footer">Generated by <a href="https://hyperplexity.com" target="_blank">Hyperplexity</a>{{FOOTER_LINK}}</div>
+        {{FAQ_BLOCK}}
+        <div class="viewer-footer">Generated by <a href="https://eliyahu.ai/hyperplexity" target="_blank">Hyperplexity</a>{{FOOTER_LINK}}</div>
     </div>
     <script>window.TABLE_METADATA={{METADATA_JSON}};</script>
     <script>
