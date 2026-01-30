@@ -16529,7 +16529,15 @@ const InteractiveTable = (function() {
                 // Add column name and row ID info to cell data for modal display
                 // Get ID values from cells marked as ID columns
                 const idColumns = columns.filter(c => c.importance && c.importance.toUpperCase() === 'ID');
-                const rowIdValues = idColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
+                let rowIdValues = '';
+                if (idColumns.length > 0) {
+                    // Use explicitly marked ID columns
+                    rowIdValues = idColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
+                } else {
+                    // Fallback: use first 2 columns as ID when none are marked
+                    const fallbackIdColumns = columns.slice(0, 2);
+                    rowIdValues = fallbackIdColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
+                }
                 cellData._columnName = col.name;
                 cellData._rowId = rowIdValues || `Row ${colIdx + 1}`;
 
