@@ -279,7 +279,7 @@ def generate_html_with_interactive_table(
     faq_html = f'''
         <div class="faq-section collapsed" id="faq-section">
             <div class="faq-toggle" onclick="document.getElementById('faq-section').classList.toggle('collapsed')">
-                <h2 class="faq-title">Frequently Asked Questions</h2>
+                <h2 class="faq-title">FAQ</h2>
                 <span class="faq-toggle-icon">▼</span>
             </div>
             <div class="faq-content">
@@ -456,11 +456,11 @@ def generate_html_with_interactive_table(
             border-radius: 4px;
         }}
 
-        /* FAQ Styles - Hidden by default */
+        /* FAQ Styles - Subtle/near-invisible for SEO */
         .faq-section {{
-            margin-top: 32px;
-            padding-top: 24px;
-            border-top: 1px solid #eee;
+            margin-top: 16px;
+            padding-top: 8px;
+            border-top: 1px solid #f8f8f8;
         }}
 
         .faq-section.collapsed .faq-content {{
@@ -472,16 +472,16 @@ def generate_html_with_interactive_table(
             align-items: center;
             justify-content: space-between;
             cursor: pointer;
-            padding: 8px 0;
+            padding: 4px 0;
         }}
 
         .faq-toggle:hover .faq-title {{
-            color: #28FF3A;
+            color: #e8e8e8;
         }}
 
         .faq-toggle-icon {{
-            font-size: 1.2rem;
-            color: var(--text-secondary);
+            font-size: 0.7rem;
+            color: #f0f0f0;
             transition: transform 0.2s ease;
         }}
 
@@ -490,25 +490,29 @@ def generate_html_with_interactive_table(
         }}
 
         .faq-content {{
-            margin-top: 16px;
+            margin-top: 8px;
         }}
 
         .faq-title {{
-            font-size: 1.25rem;
-            margin: 0 0 16px 0;
+            font-size: 0.7rem;
+            margin: 0;
+            color: #f0f0f0;
+            font-weight: normal;
         }}
 
         .faq-item {{
-            margin-bottom: 12px;
-            border: 1px solid #e0e0e0;
-            border-radius: 6px;
+            margin-bottom: 4px;
+            border: 1px solid #f8f8f8;
+            border-radius: 4px;
             background: #fff;
         }}
 
         .faq-question {{
-            padding: 12px 16px;
+            padding: 6px 10px;
             cursor: pointer;
-            font-weight: 500;
+            font-weight: normal;
+            font-size: 0.7rem;
+            color: #f0f0f0;
             list-style: none;
         }}
 
@@ -518,8 +522,8 @@ def generate_html_with_interactive_table(
 
         .faq-question::before {{
             content: "+";
-            margin-right: 10px;
-            font-weight: bold;
+            margin-right: 6px;
+            color: #f0f0f0;
         }}
 
         details[open] .faq-question::before {{
@@ -527,13 +531,14 @@ def generate_html_with_interactive_table(
         }}
 
         .faq-question:hover {{
-            background: #f8f9fa;
+            background: #fefefe;
         }}
 
         .faq-answer {{
-            padding: 0 16px 12px 16px;
-            color: var(--text-secondary);
-            line-height: 1.6;
+            padding: 0 10px 6px 10px;
+            color: #f0f0f0;
+            line-height: 1.4;
+            font-size: 0.7rem;
         }}
 
         @media (max-width: 768px) {{

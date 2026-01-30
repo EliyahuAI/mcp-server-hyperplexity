@@ -449,7 +449,7 @@ class StaticHTMLGenerator:
         return f'''
         <div class="faq-section collapsed" id="faq-section">
             <div class="faq-toggle" onclick="document.getElementById('faq-section').classList.toggle('collapsed')">
-                <h2 class="faq-title">Frequently Asked Questions</h2>
+                <h2 class="faq-title">FAQ</h2>
                 <span class="faq-toggle-icon">▼</span>
             </div>
             <div class="faq-content">
@@ -584,18 +584,18 @@ class StaticHTMLGenerator:
         .seo-content .seo-comparison { margin-bottom: 1rem; }
         .seo-content .seo-comparison h3 { font-size: 1rem; margin: 0 0 0.5rem 0; }
         .methodology-block { font-size: 12px; color: var(--text-secondary); margin-bottom: 16px; padding: 8px 12px; background: #f8f9fa; border-radius: 4px; }
-        .faq-section { margin-top: 32px; padding-top: 24px; border-top: 1px solid #eee; }
+        .faq-section { margin-top: 16px; padding-top: 8px; border-top: 1px solid #f8f8f8; }
         .faq-section.collapsed .faq-content { display: none; }
-        .faq-toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 8px 0; }
-        .faq-toggle:hover .faq-title { color: #28FF3A; }
-        .faq-toggle-icon { font-size: 1.2rem; color: var(--text-secondary); transition: transform 0.2s ease; }
+        .faq-toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 4px 0; }
+        .faq-toggle:hover .faq-title { color: #e8e8e8; }
+        .faq-toggle-icon { font-size: 0.7rem; color: #f0f0f0; transition: transform 0.2s ease; }
         .faq-section:not(.collapsed) .faq-toggle-icon { transform: rotate(180deg); }
-        .faq-content { margin-top: 16px; }
-        .faq-title { font-size: 1.25rem; margin: 0; }
-        .faq-item { margin-bottom: 12px; border: 1px solid #e0e0e0; border-radius: 6px; }
-        .faq-question { padding: 12px 16px; cursor: pointer; font-weight: 500; }
-        .faq-question:hover { background: #f8f9fa; }
-        .faq-answer { padding: 0 16px 12px 16px; color: var(--text-secondary); line-height: 1.6; }
+        .faq-content { margin-top: 8px; }
+        .faq-title { font-size: 0.7rem; margin: 0; color: #f0f0f0; font-weight: normal; }
+        .faq-item { margin-bottom: 4px; border: 1px solid #f8f8f8; border-radius: 4px; }
+        .faq-question { padding: 6px 10px; cursor: pointer; font-weight: normal; font-size: 0.7rem; color: #f0f0f0; }
+        .faq-question:hover { background: #fefefe; }
+        .faq-answer { padding: 0 10px 6px 10px; color: #f0f0f0; line-height: 1.4; font-size: 0.7rem; }
         .generated-by { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-bottom: 12px; font-size: 12px; color: var(--text-secondary); }
         .generated-by a { color: #28FF3A; text-decoration: none; font-weight: 500; }
         .generated-by a:hover { text-decoration: underline; }

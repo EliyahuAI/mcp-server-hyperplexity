@@ -102,7 +102,7 @@ LISTICLE_ITEMS = [
     {
         "id": "parallel_validation",
         "title": "Parallel Multi-Entity Validation",
-        "content": f"""<a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> processes hundreds of entities simultaneously, validating each data point against web sources in parallel. Unlike tools that handle one query at a time, <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> maintains <strong>cross-row coherence</strong>—ensuring comparisons across your entire dataset are consistent and methodologically sound. Each cell includes confidence scoring (HIGH/MEDIUM/LOW) and direct links to source citations. Built by <a href="{ELIYAHU_URL}">Eliyahu.AI</a>, specialists in generative AI solutions.""",
+        "content": f"""<a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> processes hundreds of entities simultaneously, validating each data point against web sources in parallel. Unlike tools that handle one query at a time, <a href="{HYPERPLEXITY_URL}">Hyperplexity</a> maintains <strong>cross-row coherence</strong>—ensuring comparisons across your entire dataset are consistent and methodologically sound. Each cell includes confidence scoring (HIGH/MEDIUM/LOW) and direct links to source citations. Built by <a href="{ELIYAHU_URL}">Eliyahu.AI</a>, a generative AI upskilling and tool development group.""",
         "keywords": ["parallel research", "multi-entity", "batch validation", "cross-row coherence"]
     },
     {
@@ -273,7 +273,7 @@ HYPERPLEXITY_FAQS = [
     # Company and services
     {
         "question": "Who makes Hyperplexity?",
-        "answer": f'<a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> and <a href="{CHEX_URL}">Chex</a> are built by <a href="{ELIYAHU_URL}">Eliyahu.AI</a>, a generative AI consultancy specializing in research automation and responsible AI implementation. We also offer <a href="{PPP_URL}">PPP</a> (Professional Prompt Generator) and enterprise AI training services. Our tools are designed for professionals who need AI they can trust and verify.'
+        "answer": f'<a href="{HYPERPLEXITY_AI_URL}">Hyperplexity</a> and <a href="{CHEX_URL}">Chex</a> are built by <a href="{ELIYAHU_URL}">Eliyahu.AI</a>, a generative AI upskilling and tool development group. We also offer <a href="{PPP_URL}">PPP</a> (Professional Prompt Generator) and enterprise AI training services. Our tools are designed for professionals who need AI they can trust and verify.'
     },
     {
         "question": "Does Eliyahu.AI offer consulting services?",
@@ -540,7 +540,7 @@ class SEOContentExtractor:
         <li><a href="{HYPERPLEXITY_URL}">Hyperplexity App</a> – Start your validated research</li>
         <li><a href="{CHEX_URL}">Chex</a> – AI reference checker for documents</li>
         <li><a href="{PPP_URL}">PPP</a> – Professional prompt generator</li>
-        <li><a href="{ELIYAHU_URL}">Eliyahu.AI</a> – Generative AI consulting &amp; upskilling</li>
+        <li><a href="{ELIYAHU_URL}">Eliyahu.AI</a> – Generative AI upskilling &amp; tool development</li>
     </ul>
 </section>
 ''')
