@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Primary Meta Tags -->
+    <title>Hyperplexity - AI Research Table Generator | Eliyahu.AI</title>
+    <meta name="title" content="Hyperplexity - AI Research Table Generator | Eliyahu.AI">
+    <meta name="description" content="Generate, validate, and update research tables automatically with AI. Hyperplexity uses Perplexity and Claude APIs to create accurate, cited data tables. Pay only for results you approve.">
+    <meta name="keywords" content="AI research tables, automated research, data validation, Perplexity API, Claude AI, research automation, table generator, AI data synthesis, market research tool">
+    <meta name="author" content="Eliyahu.AI">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://hyperplexity.ai/">
+    <meta property="og:title" content="Hyperplexity - AI Research Table Generator | Eliyahu.AI">
+    <meta property="og:description" content="Generate, validate, and update research tables automatically with AI. Hyperplexity uses Perplexity and Claude APIs to create accurate, cited data tables. Pay only for results you approve.">
+    <meta property="og:image" content="https://hyperplexity.ai/og-image.png">
+    <meta property="og:site_name" content="Hyperplexity">
+    <meta property="og:locale" content="en_US">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="https://hyperplexity.ai/">
+    <meta name="twitter:title" content="Hyperplexity - AI Research Table Generator">
+    <meta name="twitter:description" content="Generate, validate, and update research tables automatically with AI. Pay only for results you approve.">
+    <meta name="twitter:image" content="https://hyperplexity.ai/twitter-card.png">
+
+    <!-- Additional SEO Meta Tags -->
+    <meta name="robots" content="index, follow">
+    <meta name="googlebot" content="index, follow">
+    <meta name="language" content="English">
+    <meta name="revisit-after" content="7 days">
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://hyperplexity.ai/">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+
+    <!-- Schema.org Structured Data for LLM Optimization -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Hyperplexity",
+      "applicationCategory": "BusinessApplication",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2025-12-31",
+        "description": "Pay-on-satisfaction pricing model - only pay for results you approve"
+      },
+      "description": "AI-powered research table generation and validation tool that uses Perplexity and Claude APIs to create accurate, cited data tables automatically.",
+      "operatingSystem": "Web Browser",
+      "url": "https://hyperplexity.ai",
+      "provider": {
+        "@type": "Organization",
+        "name": "Eliyahu.AI",
+        "url": "https://eliyahu.ai"
+      },
+      "featureList": [
+        "Automated research table generation",
+        "AI-powered data validation",
+        "Citation tracking",
+        "Table updates and refinements",
+        "Perplexity API integration",
+        "Claude AI integration",
+        "Pay-on-satisfaction pricing"
+      ],
+      "screenshot": "https://hyperplexity.ai/screenshot.png",
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.8",
+        "ratingCount": "127"
+      }
+    }
+    </script>
+
+    <!-- Internal Site Links for SEO (invisible) -->
+    <link rel="alternate" href="https://hyperplexity.ai/chex" title="Chex - AI Citation Validator">
+    <link rel="alternate" href="https://hyperplexity.ai/compare/best-ai-research-tools" title="Best AI Research Tools">
+    <link rel="alternate" href="https://hyperplexity.ai/compare/ai-citation-tools" title="AI Citation Tools Comparison">
+
+    <style>
+        body {
+            margin: 0;
+            padding: 50px;
+            background: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+
+        .animation-container {
+            text-align: center;
+            background: white;
+            padding: 40px;
+            border-radius: 0px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        .initializing {
+            font-size: 16px;
+            color: #999;
+            margin-bottom: 20px;
+            opacity: 0;
+            animation: fadeInText 0.4s ease-in-out forwards;
+        }
+
+        .intro-text {
+            font-size: 32px;
+            font-weight: normal;
+            margin-bottom: 20px;
+            opacity: 0;
+            animation: fadeInText 0.5s ease-in-out 0.6s forwards;
+        }
+
+        .powered-by {
+            font-size: 18px;
+            color: #666;
+            margin-bottom: 30px;
+            opacity: 0;
+            animation: fadeInText 0.5s ease-in-out 0.9s forwards;
+        }
+
+        #eliyahu-logo-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100px;
+            margin: 0 auto;
+            cursor: pointer;
+            font-family: Arial, sans-serif !important;
+            opacity: 0;
+            animation: fadeInLogo 0.5s ease-in-out 1.2s forwards;
+        }
+
+        .logo-wrapper {
+            width: 100px;
+            height: 100px;
+            margin: 0 auto;
+        }
+
+        .logo-outline {
+            width: 100%;
+            height: 100%;
+            border: 8px solid black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .logo-square {
+            width: 70%;
+            height: 70%;
+            background-color: #2DFF45;
+            transform-origin: center;
+        }
+
+        .text-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 3px;
+        }
+
+        .logo-text {
+            font-size: 32px;
+            font-weight: bold;
+            line-height: 1;
+            text-align: center;
+            margin: 0;
+            font-family: Arial, sans-serif !important;
+            text-transform: none !important;
+            letter-spacing: normal !important;
+        }
+
+        .pronunciation {
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+            margin: 2px 0 0 0;
+            font-family: Arial, sans-serif !important;
+            text-transform: none !important;
+            letter-spacing: normal !important;
+            opacity: 0;
+            animation: fadeInText 0.8s ease-in-out 2.0s forwards;
+        }
+
+        /* SEO Links - invisible but crawlable */
+        .seo-links {
+            position: absolute;
+            left: -9999px;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+        }
+
+        @keyframes fadeInText {
+            to { opacity: 1; }
+        }
+
+        @keyframes pulseEffectBeat1 {
+            0% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+            15% { background-color: #00FF1D; transform: scale(1.05); box-shadow: 0 0 8px rgba(45, 255, 69, 0.5); }
+            45% { background-color: #00FF1D; transform: scale(1.02); box-shadow: 0 0 5px rgba(45, 255, 69, 0.3); }
+            100% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+        }
+
+        @keyframes pulseEffectBeat2 {
+            0% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+            15% { background-color: #00FF1D; transform: scale(1.07); box-shadow: 0 0 12px rgba(45, 255, 69, 0.6); }
+            45% { background-color: #00FF1D; transform: scale(1.03); box-shadow: 0 0 8px rgba(45, 255, 69, 0.4); }
+            100% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+        }
+
+        @keyframes pulseEffectBeat3 {
+            0% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+            15% { background-color: #00FF1D; transform: scale(1.09); box-shadow: 0 0 16px rgba(45, 255, 69, 0.7); }
+            45% { background-color: #00FF1D; transform: scale(1.04); box-shadow: 0 0 12px rgba(45, 255, 69, 0.5); }
+            100% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+        }
+
+        @keyframes pulseEffectBeat4 {
+            0% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+            15% { background-color: #00FF1D; transform: scale(1.12); box-shadow: 0 0 20px rgba(45, 255, 69, 0.8); }
+            45% { background-color: #00FF1D; transform: scale(1.06); box-shadow: 0 0 16px rgba(45, 255, 69, 0.6); }
+            100% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+        }
+
+        @keyframes fadeInLogo {
+            to { opacity: 1; }
+        }
+
+        @keyframes pulseEffect {
+            0% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+            15% { background-color: #00FF1D; transform: scale(1.05); box-shadow: 0 0 8px rgba(45, 255, 69, 0.5); }
+            45% { background-color: #00FF1D; transform: scale(1.02); box-shadow: 0 0 5px rgba(45, 255, 69, 0.3); }
+            100% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+        }
+
+        @keyframes pulseEffectHover {
+            0% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+            15% { background-color: #6FFF80; transform: scale(1.08); box-shadow: 0 0 15px rgba(45, 255, 69, 0.7); }
+            45% { background-color: #6FFF80; transform: scale(1.05); box-shadow: 0 0 10px rgba(45, 255, 69, 0.5); }
+            100% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+        }
+
+        @keyframes pulseEffectClick {
+            0% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+            10% { background-color: #00FF1D; transform: scale(1.15); box-shadow: 0 0 20px rgba(45, 255, 69, 0.8); }
+            25% { background-color: #4AFF65; transform: scale(1.20); box-shadow: 0 0 25px rgba(45, 255, 69, 0.9); }
+            45% { background-color: #25FF45; transform: scale(1.25); box-shadow: 0 0 30px rgba(102, 45, 255, 0.4), 0 0 20px rgba(45, 255, 69, 0.8); }
+            65% { background-color: #1EE83F; transform: scale(1.30); box-shadow: 0 0 35px rgba(138, 43, 226, 0.6), 0 0 25px rgba(45, 255, 69, 0.9); }
+            85% { background-color: #19E336; transform: scale(1.35); box-shadow: 0 0 40px rgba(138, 43, 226, 0.7), 0 0 30px rgba(45, 255, 69, 1); }
+            100% { background-color: #1EE83F; transform: scale(1.40); box-shadow: 0 0 45px rgba(138, 43, 226, 0.8), 0 0 35px rgba(45, 255, 69, 1); }
+        }
+
+        #eliyahu-logo-container * {
+            font-family: Arial, sans-serif !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="animation-container">
+        <div class="initializing">Initializing...</div>
+        <div class="intro-text">Hyperplexity</div>
+        <div class="powered-by">powered by:</div>
+
+        <div id="eliyahu-logo-container" class="cursor-pointer">
+            <div class="logo-wrapper">
+                <div class="logo-outline">
+                    <div id="animated-square" class="logo-square"></div>
+                </div>
+            </div>
+            <div class="text-wrapper">
+                <div class="logo-text">eliyahu</div>
+                <div class="pronunciation">(ey-lee-ya-hoo)</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SEO Internal Links (invisible but crawlable) -->
+    <nav class="seo-links" aria-label="Site Navigation">
+        <a href="/chex">Chex - AI Citation Validator</a>
+        <a href="/compare/best-ai-research-tools">Best AI Research Tools 2026</a>
+        <a href="/compare/ai-citation-tools">AI Citation Tools Comparison</a>
+        <a href="/compare/ai-tools-competitive-intelligence">AI Tools for Competitive Intelligence</a>
+        <a href="/compare/ai-tools-for-literature-review">AI Tools for Literature Review</a>
+        <a href="/compare/best-ai-data-validation-tools">Best AI Data Validation Tools</a>
+        <a href="/compare/academic-research-ai-platforms">Academic Research AI Platforms</a>
+        <a href="/compare/chatgpt-vs-research-ai-tools">ChatGPT vs Research AI Tools</a>
+        <a href="/compare/free-vs-paid-ai-research-tools">Free vs Paid AI Research Tools</a>
+        <a href="/compare/perplexity-alternatives-research">Perplexity Alternatives for Research</a>
+        <a href="/compare/top-fact-checking-ai-tools">Top Fact Checking AI Tools</a>
+    </nav>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const container = document.getElementById('eliyahu-logo-container');
+            const square = document.getElementById('animated-square');
+            const pronunciation = document.querySelector('.pronunciation');
+
+            let animationPhase = 0;
+            let beatCount = 0;
+            let hoverBeatCount = 0;
+
+            setTimeout(() => {
+                startAnimationSequence();
+            }, 1700);
+
+            function startAnimationSequence() {
+                animationPhase = 1;
+                beatCount = 0;
+
+                square.style.animation = 'pulseEffectBeat1 1.2s ease-in-out';
+
+                setTimeout(() => {
+                    square.style.animation = 'pulseEffectBeat2 1.0s ease-in-out';
+
+                    setTimeout(() => {
+                        square.style.animation = 'pulseEffectBeat3 0.8s ease-in-out';
+
+                        setTimeout(() => {
+                            square.style.animation = 'pulseEffectBeat4 0.6s ease-in-out';
+
+                            setTimeout(() => {
+                                triggerAutoClick();
+                            }, 600);
+                        }, 800);
+                    }, 1000);
+                }, 1200);
+            }
+
+            function triggerAutoClick() {
+                if (animationPhase === 3) return;
+                animationPhase = 3;
+
+                try {
+                    square.style.animation = 'pulseEffectClick 1.8s ease-out forwards';
+
+                    setTimeout(() => {
+                        try {
+                            window.location.href = 'https://eliyahu.ai/hyperplexity';
+                        } catch (err) {
+                            console.error('Navigation failed:', err);
+                            window.open('https://eliyahu.ai/hyperplexity', '_blank');
+                        }
+                    }, 1200);
+                } catch (err) {
+                    console.error('Animation failed:', err);
+                    setTimeout(() => {
+                        window.location.href = 'https://eliyahu.ai/hyperplexity';
+                    }, 500);
+                }
+            }
+
+            container.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (animationPhase < 3) {
+                    triggerAutoClick();
+                }
+            });
+
+            container.addEventListener('mouseenter', () => {
+                if (animationPhase === 1) {
+                    pronunciation.style.opacity = '1';
+                    square.style.animation = 'pulseEffectHover 0.8s infinite';
+                }
+            });
+
+            container.addEventListener('mouseleave', () => {
+                if (animationPhase === 1) {
+                    pronunciation.style.opacity = '0';
+                    square.style.animation = 'pulseEffect 1.5s infinite';
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Primary Meta Tags -->
+    <title>Chex - AI Citation Validator | Verify Your Sources | Eliyahu.AI</title>
+    <meta name="title" content="Chex - AI Citation Validator | Verify Your Sources | Eliyahu.AI">
+    <meta name="description" content="Validate citations and fact-check AI-generated content automatically. Chex reads source documents, verifies claims, and catches hallucinated citations before publication.">
+    <meta name="keywords" content="citation validator, fact checking AI, verify citations, AI hallucination detection, academic writing tool, source verification, claim validation, citation checker">
+    <meta name="author" content="Eliyahu.AI">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://hyperplexity.ai/chex">
+    <meta property="og:title" content="Chex - AI Citation Validator | Verify Your Sources">
+    <meta property="og:description" content="Validate citations and fact-check AI-generated content automatically. Chex reads source documents and catches hallucinated citations.">
+    <meta property="og:image" content="https://hyperplexity.ai/chex-og-image.png">
+    <meta property="og:site_name" content="Hyperplexity">
+    <meta property="og:locale" content="en_US">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="https://hyperplexity.ai/chex">
+    <meta name="twitter:title" content="Chex - AI Citation Validator">
+    <meta name="twitter:description" content="Validate citations and fact-check AI-generated content automatically. Catches hallucinated citations before publication.">
+    <meta name="twitter:image" content="https://hyperplexity.ai/chex-twitter-card.png">
+
+    <!-- Additional SEO Meta Tags -->
+    <meta name="robots" content="index, follow">
+    <meta name="googlebot" content="index, follow">
+    <meta name="language" content="English">
+    <meta name="revisit-after" content="7 days">
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://hyperplexity.ai/chex">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+
+    <!-- Schema.org Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Chex",
+      "applicationCategory": "BusinessApplication",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "description": "Free citation validation tool"
+      },
+      "description": "AI-powered citation validator that reads source documents, verifies claims against citations, and catches hallucinated references before publication.",
+      "operatingSystem": "Web Browser",
+      "url": "https://hyperplexity.ai/chex",
+      "provider": {
+        "@type": "Organization",
+        "name": "Eliyahu.AI",
+        "url": "https://eliyahu.ai"
+      },
+      "featureList": [
+        "Citation verification",
+        "Source document analysis",
+        "Hallucination detection",
+        "Claim-citation matching",
+        "PDF manuscript support",
+        "Suggested corrections"
+      ],
+      "isPartOf": {
+        "@type": "SoftwareApplication",
+        "name": "Hyperplexity",
+        "url": "https://hyperplexity.ai"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is Chex?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Chex is an AI citation validator that reads your source documents and verifies whether your citations actually support the claims you're making. It catches hallucinated citations and suggests corrections."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How does Chex verify citations?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Chex extracts claims and their associated citations from your document, then reads the actual source materials to evaluate whether each citation genuinely supports the claim. It flags unsupported claims and offers precise replacement text."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can Chex check PDF manuscripts?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes, Chex accepts PDF uploads of manuscripts. It extracts all claims with their citations, reads the source documents, and verifies each citation supports its claim - essential for catching errors before peer review."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What's the difference between Chex and Hyperplexity?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Hyperplexity generates research tables with citations from scratch. Chex validates existing content - it takes your document and verifies that the citations you've used actually support your claims."
+          }
+        }
+      ]
+    }
+    </script>
+
+    <!-- Internal Site Links for SEO -->
+    <link rel="alternate" href="https://hyperplexity.ai/" title="Hyperplexity - AI Research Table Generator">
+    <link rel="alternate" href="https://hyperplexity.ai/compare/ai-citation-tools" title="AI Citation Tools Comparison">
+
+    <style>
+        body {
+            margin: 0;
+            padding: 50px;
+            background: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+
+        .animation-container {
+            text-align: center;
+            background: white;
+            padding: 40px;
+            border-radius: 0px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        .initializing {
+            font-size: 16px;
+            color: #999;
+            margin-bottom: 20px;
+            opacity: 0;
+            animation: fadeInText 0.4s ease-in-out forwards;
+        }
+
+        .intro-text {
+            font-size: 32px;
+            font-weight: normal;
+            margin-bottom: 20px;
+            opacity: 0;
+            animation: fadeInText 0.5s ease-in-out 0.6s forwards;
+        }
+
+        .powered-by {
+            font-size: 18px;
+            color: #666;
+            margin-bottom: 30px;
+            opacity: 0;
+            animation: fadeInText 0.5s ease-in-out 0.9s forwards;
+        }
+
+        #eliyahu-logo-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100px;
+            margin: 0 auto;
+            cursor: pointer;
+            font-family: Arial, sans-serif !important;
+            opacity: 0;
+            animation: fadeInLogo 0.5s ease-in-out 1.2s forwards;
+        }
+
+        .logo-wrapper {
+            width: 100px;
+            height: 100px;
+            margin: 0 auto;
+        }
+
+        .logo-outline {
+            width: 100%;
+            height: 100%;
+            border: 8px solid black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .logo-square {
+            width: 70%;
+            height: 70%;
+            background-color: #2DFF45;
+            transform-origin: center;
+        }
+
+        .text-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 3px;
+        }
+
+        .logo-text {
+            font-size: 32px;
+            font-weight: bold;
+            line-height: 1;
+            text-align: center;
+            margin: 0;
+            font-family: Arial, sans-serif !important;
+        }
+
+        .pronunciation {
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+            margin: 2px 0 0 0;
+            font-family: Arial, sans-serif !important;
+            opacity: 0;
+            animation: fadeInText 0.8s ease-in-out 2.0s forwards;
+        }
+
+        .seo-links {
+            position: absolute;
+            left: -9999px;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+        }
+
+        @keyframes fadeInText { to { opacity: 1; } }
+        @keyframes fadeInLogo { to { opacity: 1; } }
+
+        @keyframes pulseEffectBeat1 {
+            0% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+            15% { background-color: #00FF1D; transform: scale(1.05); box-shadow: 0 0 8px rgba(45, 255, 69, 0.5); }
+            45% { background-color: #00FF1D; transform: scale(1.02); box-shadow: 0 0 5px rgba(45, 255, 69, 0.3); }
+            100% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+        }
+
+        @keyframes pulseEffectBeat2 {
+            0% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+            15% { background-color: #00FF1D; transform: scale(1.07); box-shadow: 0 0 12px rgba(45, 255, 69, 0.6); }
+            45% { background-color: #00FF1D; transform: scale(1.03); box-shadow: 0 0 8px rgba(45, 255, 69, 0.4); }
+            100% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+        }
+
+        @keyframes pulseEffectBeat3 {
+            0% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+            15% { background-color: #00FF1D; transform: scale(1.09); box-shadow: 0 0 16px rgba(45, 255, 69, 0.7); }
+            45% { background-color: #00FF1D; transform: scale(1.04); box-shadow: 0 0 12px rgba(45, 255, 69, 0.5); }
+            100% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+        }
+
+        @keyframes pulseEffectBeat4 {
+            0% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+            15% { background-color: #00FF1D; transform: scale(1.12); box-shadow: 0 0 20px rgba(45, 255, 69, 0.8); }
+            45% { background-color: #00FF1D; transform: scale(1.06); box-shadow: 0 0 16px rgba(45, 255, 69, 0.6); }
+            100% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+        }
+
+        @keyframes pulseEffect {
+            0% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+            15% { background-color: #00FF1D; transform: scale(1.05); box-shadow: 0 0 8px rgba(45, 255, 69, 0.5); }
+            45% { background-color: #00FF1D; transform: scale(1.02); box-shadow: 0 0 5px rgba(45, 255, 69, 0.3); }
+            100% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+        }
+
+        @keyframes pulseEffectHover {
+            0% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+            15% { background-color: #6FFF80; transform: scale(1.08); box-shadow: 0 0 15px rgba(45, 255, 69, 0.7); }
+            45% { background-color: #6FFF80; transform: scale(1.05); box-shadow: 0 0 10px rgba(45, 255, 69, 0.5); }
+            100% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+        }
+
+        @keyframes pulseEffectClick {
+            0% { background-color: #2DFF45; transform: scale(1); box-shadow: 0 0 0px rgba(45, 255, 69, 0); }
+            10% { background-color: #00FF1D; transform: scale(1.15); box-shadow: 0 0 20px rgba(45, 255, 69, 0.8); }
+            25% { background-color: #4AFF65; transform: scale(1.20); box-shadow: 0 0 25px rgba(45, 255, 69, 0.9); }
+            45% { background-color: #25FF45; transform: scale(1.25); box-shadow: 0 0 30px rgba(102, 45, 255, 0.4), 0 0 20px rgba(45, 255, 69, 0.8); }
+            65% { background-color: #1EE83F; transform: scale(1.30); box-shadow: 0 0 35px rgba(138, 43, 226, 0.6), 0 0 25px rgba(45, 255, 69, 0.9); }
+            85% { background-color: #19E336; transform: scale(1.35); box-shadow: 0 0 40px rgba(138, 43, 226, 0.7), 0 0 30px rgba(45, 255, 69, 1); }
+            100% { background-color: #1EE83F; transform: scale(1.40); box-shadow: 0 0 45px rgba(138, 43, 226, 0.8), 0 0 35px rgba(45, 255, 69, 1); }
+        }
+
+        #eliyahu-logo-container * { font-family: Arial, sans-serif !important; }
+    </style>
+</head>
+<body>
+    <div class="animation-container">
+        <div class="initializing">Initializing...</div>
+        <div class="intro-text">Chex</div>
+        <div class="powered-by">powered by:</div>
+
+        <div id="eliyahu-logo-container" class="cursor-pointer">
+            <div class="logo-wrapper">
+                <div class="logo-outline">
+                    <div id="animated-square" class="logo-square"></div>
+                </div>
+            </div>
+            <div class="text-wrapper">
+                <div class="logo-text">eliyahu</div>
+                <div class="pronunciation">(ey-lee-ya-hoo)</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SEO Internal Links -->
+    <nav class="seo-links" aria-label="Site Navigation">
+        <a href="/">Hyperplexity - AI Research Table Generator</a>
+        <a href="/compare/best-ai-research-tools">Best AI Research Tools 2026</a>
+        <a href="/compare/ai-citation-tools">AI Citation Tools Comparison</a>
+        <a href="/compare/top-fact-checking-ai-tools">Top Fact Checking AI Tools</a>
+    </nav>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const container = document.getElementById('eliyahu-logo-container');
+            const square = document.getElementById('animated-square');
+            const pronunciation = document.querySelector('.pronunciation');
+
+            let animationPhase = 0;
+
+            setTimeout(() => {
+                startAnimationSequence();
+            }, 1700);
+
+            function startAnimationSequence() {
+                animationPhase = 1;
+
+                square.style.animation = 'pulseEffectBeat1 1.2s ease-in-out';
+
+                setTimeout(() => {
+                    square.style.animation = 'pulseEffectBeat2 1.0s ease-in-out';
+
+                    setTimeout(() => {
+                        square.style.animation = 'pulseEffectBeat3 0.8s ease-in-out';
+
+                        setTimeout(() => {
+                            square.style.animation = 'pulseEffectBeat4 0.6s ease-in-out';
+
+                            setTimeout(() => {
+                                triggerAutoClick();
+                            }, 600);
+                        }, 800);
+                    }, 1000);
+                }, 1200);
+            }
+
+            function triggerAutoClick() {
+                if (animationPhase === 3) return;
+                animationPhase = 3;
+
+                try {
+                    square.style.animation = 'pulseEffectClick 1.8s ease-out forwards';
+
+                    setTimeout(() => {
+                        try {
+                            window.location.href = 'https://eliyahu.ai/chex';
+                        } catch (err) {
+                            console.error('Navigation failed:', err);
+                            window.open('https://eliyahu.ai/chex', '_blank');
+                        }
+                    }, 1200);
+                } catch (err) {
+                    console.error('Animation failed:', err);
+                    setTimeout(() => {
+                        window.location.href = 'https://eliyahu.ai/chex';
+                    }, 500);
+                }
+            }
+
+            container.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (animationPhase < 3) {
+                    triggerAutoClick();
+                }
+            });
+
+            container.addEventListener('mouseenter', () => {
+                if (animationPhase === 1) {
+                    pronunciation.style.opacity = '1';
+                    square.style.animation = 'pulseEffectHover 0.8s infinite';
+                }
+            });
+
+            container.addEventListener('mouseleave', () => {
+                if (animationPhase === 1) {
+                    pronunciation.style.opacity = '0';
+                    square.style.animation = 'pulseEffect 1.5s infinite';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
