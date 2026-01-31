@@ -533,6 +533,16 @@ class RowConsolidator:
         if not s1 or not s2:
             return 1.0 if s1 == s2 else 0.0
 
+        # Remove trademark symbols first (®, ™, etc.)
+        trademark_symbols = ['®', '™', '©', '℠']
+        for sym in trademark_symbols:
+            s1 = s1.replace(sym, '')
+            s2 = s2.replace(sym, '')
+
+        # Normalize whitespace after symbol removal
+        s1 = ' '.join(s1.split())
+        s2 = ' '.join(s2.split())
+
         # Remove common business suffixes to improve matching
         # This helps "Anthropic" match "Anthropic Inc"
         suffixes = [
@@ -569,6 +579,27 @@ class RowConsolidator:
                 # One is a prefix - likely the same entity
                 prefix_similarity = len(shorter) / len(longer)
                 base_similarity = max(base_similarity, prefix_similarity)
+
+            # Token-based matching: check if the core product name matches
+            # This catches "EarPopper" vs "EarPopper Middle Ear Inflation Device"
+            s1_tokens = set(s1_clean.split())
+            s2_tokens = set(s2_clean.split())
+
+            if s1_tokens and s2_tokens:
+                # Check if one token set is a subset of the other
+                if s1_tokens.issubset(s2_tokens) or s2_tokens.issubset(s1_tokens):
+                    # The shorter name is fully contained in the longer name
+                    subset_similarity = len(min(s1_tokens, s2_tokens)) / len(max(s1_tokens, s2_tokens))
+                    # Only boost if the subset is significant (>50% of longer)
+                    if subset_similarity >= 0.3:
+                        base_similarity = max(base_similarity, 0.90)
+
+                # Check token overlap ratio (for cases like "Ear Popper" vs "EarPopper")
+                # Merge compound words for comparison
+                s1_merged = s1_clean.replace(' ', '')
+                s2_merged = s2_clean.replace(' ', '')
+                merged_similarity = SequenceMatcher(None, s1_merged, s2_merged).ratio()
+                base_similarity = max(base_similarity, merged_similarity)
 
         return base_similarity
 

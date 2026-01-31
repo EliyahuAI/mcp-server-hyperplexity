@@ -63,6 +63,15 @@ Review discovered rows and choose ONE action:
 **Output:** `remove_row_ids` (rows to remove with 1-sentence reasons), `overall_score`
 **Note:** Only list rows to REMOVE. All other rows are kept automatically.
 
+**🔍 DUPLICATE DETECTION - Check carefully for:**
+- **Same entity, different names:** "EarPopper" vs "EarPopper®" vs "Ear Popper" (keep ONE, remove others)
+- **Same entity, different verbosity:** "Anthropic" vs "Anthropic AI Safety Company" (same entity)
+- **Same product, different manufacturers/distributors:** If it's the SAME product sold by multiple companies, keep ONE authoritative entry
+- **Trademark variations:** ®, ™ symbols don't make entries unique
+- **Abbreviations:** "AERA" vs "Acclarent AERA" vs "ACCLARENT AERA™" (same product)
+
+**When you find duplicates:** Keep the row with the MOST COMPLETE information (more columns filled, better sources). Remove the others with reason "Duplicate of row X".
+
 ### Action: "retrigger_discovery"
 **When:** Need MORE ENTITIES beyond pre-existing rows
 **NOT for:** Filling empty columns (validator handles that downstream)

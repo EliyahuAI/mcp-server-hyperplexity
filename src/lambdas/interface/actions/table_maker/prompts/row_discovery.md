@@ -31,6 +31,12 @@ Find entities within **{{SUBDOMAIN_NAME}}** matching:
 - Only include REAL entities you actually found (never fabricate)
 - Include entities even with moderate scores (we filter later)
 
+**🚨 DUPLICATE PREVENTION - Add each entity ONCE:**
+- Same entity with different names = ONE entry (e.g., "EarPopper" and "Ear Popper®" are the SAME)
+- Same entity from different sources = ONE entry (use the most authoritative name)
+- Trademark symbols (®, ™) don't make entries unique
+- If multiple search results describe the same entity differently, pick the CANONICAL name
+
 ═══════════════════════════════════════════════════════════════
 ## 📋 ADDITIONAL CONTEXT
 ═══════════════════════════════════════════════════════════════

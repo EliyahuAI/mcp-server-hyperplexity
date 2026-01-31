@@ -116,6 +116,12 @@ If background_research has `extracted_tables`:
 - If you know the US state capitals → Include them
 - Mark populated_columns and missing_columns for each row
 
+**🚨 AVOID DUPLICATES - Before adding a row, check if it already exists:**
+- Same entity with different names: "EarPopper" = "EarPopper®" = "Ear Popper" (add ONCE)
+- Same entity with different verbosity: "Anthropic" = "Anthropic AI" (add ONCE)
+- Trademark symbols (®, ™) don't make entries unique
+- If multiple sources list the same entity differently, use the MOST AUTHORITATIVE name
+
 ═══════════════════════════════════════════════════════════════
 ## ⚡ DECISION: Trigger Row Discovery?
 ═══════════════════════════════════════════════════════════════
