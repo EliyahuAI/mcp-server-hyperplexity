@@ -10,6 +10,8 @@ Extract quotable snippets with codes for synthesis. **Synthesis will NOT see ori
 **RULES:**
 - **Merge contiguous:** Adjacent sentences = ONE snippet (use ranges), even if addressing different aspects
 - **No duplication:** Once a passage is extracted, trust it's available to synthesis - do NOT extract again for other terms
+- **Self-contained:** Each snippet MUST make a complete point in isolation - no sentence fragments
+- **Skip redundant:** If a point was already made by a snippet of same/higher quality, do NOT extract again
 
 {mode_rules}
 
@@ -75,17 +77,20 @@ Judge extracts all atomic claims from source and tests each. Pass = precisely ac
 **Pass-all flag:** `` §SX:* `` → Use entire source if dense/interconnected or would extract >50%
 
 **Snippet Requirements:**
-- **Self-contained:** [SHORT CONTEXT] + DIRECT FACT (never paraphrase)
-- **Context in brackets:** Max 10 words, clean summary
+- **Self-contained:** Each snippet MUST make a complete point in isolation
+- **Context in brackets:** Max 5 words, shorthand preferred (e.g., [re: IF] not [regarding intermittent fasting])
+- **Ellipsis for gaps:** Use ... to join non-adjacent sentences into one coherent snippet
 - **Must be testable:** Given only URL, title, and snippet, a judge can verify all claims
+- **No redundancy:** Skip if same point already made by another snippet of same/higher quality
 
 **Code Syntax:**
 - Single: `` §S1:1.1 ``
-- **Range (REQUIRED for consecutive sentences):** `` §S1:1.5-1.7 ``
+- **Range (REQUIRED for consecutive):** `` §S1:1.5-1.7 ``
+- **Ellipsis join (non-adjacent):** `` §S1:1.2 ... §S1:1.5 `` → resolves to "text1 ... text5"
 - Word range: `` §S2:1.1.w5-7 `` (1-indexed)
 - Heading context: `` [§S1:2.0] §S1:2.1 ``
 - Attribution: `` [§S1:2.1.w1-4] §S1:1.3 `` (REQUIRED for c:A sources)
-- Clarification: `` §S1:1.1 [of Gemini] ``
+- Clarification: `` §S1:1.1 [re: Gemini] `` (max 5 words, shorthand)
 
 **Consecutive Lines (CRITICAL):**
 - **Contiguous sentences = ONE snippet** - even if they address different search terms or aspects
@@ -118,18 +123,18 @@ For each snippet, provide: `detail_limitation` (NO source prefix here)
 - If two snippets have the same handle, synthesis cannot distinguish them
 - **ALWAYS ensure uniqueness** - append _2, _3, _4, etc. if a handle already exists
 
-**Format:** `detail_limitation`
-- **detail** (1-2 words hyphenated): mortgage-rate, weight-loss, efficiency-table
-- **limitation** (1-2 words hyphenated): dec-2025, solar-2024, us-only, post-2020
+**Format:** `detail_limit` (max 2 words total, shorthand preferred)
+- **detail**: 1 word, abbreviated (mtg-rate, wt-loss, eff-tbl)
+- **limit**: 1 word, abbreviated (dec25, us, 2024)
 
 **Examples:**
-- `mortgage-rate_dec-2025`
-- `weight-loss_if-protocol`
-- `efficiency-table_solar-2024`
-- `weight-loss_if-protocol_2` ← **Second snippet on same topic**
-- `weight-loss_if-protocol_3` ← **Third snippet on same topic**
+- `mtg-rate_dec25` (mortgage rate, December 2025)
+- `wt-loss_if` (weight loss, intermittent fasting)
+- `eff-tbl_solar` (efficiency table, solar)
+- `wt-loss_if_2` ← Second snippet on same topic
+- `wt-loss_if_3` ← Third snippet
 
-Max 25 chars. **MUST be unique across ALL sources in this batch** (append _2, _3 if needed).
+Max 15 chars. **MUST be unique** (append _2, _3 if needed). Use common abbreviations.
 
 **Full handle assembled later:** `{{source_handle}}_{{detail}}_{{limitation}}`
 - freddie_mortgage-rate_dec-2025

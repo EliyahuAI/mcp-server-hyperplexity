@@ -62,17 +62,38 @@ class SnippetExtractorStreamlined:
             existing_snippets: List of existing snippets to check for handle collisions
 
         Returns:
-            Unique handle (e.g., "intermittent_fasting_weight", "intermittent_fasting_weight_2")
+            Unique handle (e.g., "mtg_rate", "wt_loss_2") - max 2 words, abbreviated
         """
+        # Common abbreviations for shorter handles
+        abbreviations = {
+            'intermittent': 'if', 'fasting': 'fast', 'weight': 'wt', 'loss': 'loss',
+            'mortgage': 'mtg', 'rate': 'rate', 'rates': 'rate', 'interest': 'int',
+            'efficiency': 'eff', 'table': 'tbl', 'comparison': 'cmp', 'compare': 'cmp',
+            'analysis': 'anlys', 'performance': 'perf', 'review': 'rev', 'price': 'prc',
+            'pricing': 'prc', 'cost': 'cost', 'feature': 'feat', 'features': 'feat',
+            'specification': 'spec', 'specifications': 'spec', 'battery': 'bat',
+            'camera': 'cam', 'display': 'disp', 'screen': 'scrn', 'processor': 'proc',
+            'memory': 'mem', 'storage': 'stor', 'december': 'dec', 'january': 'jan',
+            'february': 'feb', 'march': 'mar', 'april': 'apr', 'november': 'nov',
+            'october': 'oct', 'september': 'sep', 'august': 'aug', 'current': 'cur',
+            'average': 'avg', 'maximum': 'max', 'minimum': 'min', 'information': 'info',
+            'research': 'rsrch', 'clinical': 'clin', 'study': 'stdy', 'studies': 'stdy',
+            'benefit': 'bnft', 'benefits': 'bnft', 'effect': 'efct', 'effects': 'efct',
+            'treatment': 'tx', 'therapy': 'tx', 'protein': 'prot', 'vitamin': 'vit',
+            'supplement': 'supp', 'nutrition': 'nutr', 'exercise': 'exer', 'health': 'hlth',
+        }
+
         # Clean and create slug from search term
         handle = search_term.lower()
-        # Remove common words
-        for word in ['what', 'is', 'the', 'how', 'does', 'compare', 'to', 'in', 'for', 'a', 'an', 'of', 'and', 'or']:
-            handle = handle.replace(f' {word} ', ' ')
-        # Take first 2-3 meaningful words, create slug
-        words = [w for w in handle.split() if len(w) > 2][:3]
-        base_handle = '_'.join(words) if words else 'snippet'
-        base_handle = base_handle[:28]  # Leave room for _XX suffix
+        # Remove common words (filter from word list, not string replace)
+        stop_words = {'what', 'is', 'the', 'how', 'does', 'compare', 'to', 'in', 'for', 'a', 'an', 'of', 'and', 'or', 'vs', 'versus', 'are', 'can', 'do', 'will', 'would', 'should', 'could', 'be', 'been', 'being', 'have', 'has', 'had', 'with', 'at', 'by', 'on', 'from', 'about'}
+        handle = ' '.join(w for w in handle.split() if w not in stop_words)
+
+        # Take first 2 meaningful words only, abbreviate, create slug
+        words = [w for w in handle.split() if len(w) > 2][:2]
+        abbreviated = [abbreviations.get(w, w[:4]) for w in words]  # Use abbreviation or first 4 chars
+        base_handle = '_'.join(abbreviated) if abbreviated else 'snip'
+        base_handle = base_handle[:12]  # Shorter limit for 2-word max
 
         # Check for collisions and increment if needed
         if existing_snippets:
@@ -458,6 +479,9 @@ class SnippetExtractorStreamlined:
                     query=query
                 )
 
+            # Post-extraction: collapse sequential entries (LLM handles deduplication)
+            snippets = self.collapse_sequential_snippets(snippets)
+
             return {
                 "snippets": snippets,
                 "source_info": {
@@ -782,6 +806,9 @@ class SnippetExtractorStreamlined:
                 source_p = convert_p_string_to_number(meta.get('p', 0.50))
                 source_c = meta.get('c', 'M/O')
 
+                # Post-extraction: collapse sequential entries (LLM handles deduplication)
+                snippets = self.collapse_sequential_snippets(snippets)
+
                 logger.debug(f"[BATCH EXTRACTOR] {source_id} ({source_handle}): {len(snippets)} quotes extracted (dropped {dropped_count} low quality), p={source_p}, c={source_c}")
 
                 results.append({
@@ -1057,6 +1084,94 @@ class SnippetExtractorStreamlined:
                 i += 1
 
         return merged
+
+    def collapse_sequential_snippets(self, snippets: List[Dict]) -> List[Dict]:
+        """
+        Post-extraction collapsing: merge sequential snippets from same source.
+
+        This runs AFTER extraction as a safety net when the LLM doesn't follow
+        merge instructions. Consecutive snippets (same URL, sequential codes)
+        are merged into one with space-separated text (consecutive = no gap).
+
+        Args:
+            snippets: List of extracted snippets
+
+        Returns:
+            List of snippets with sequential entries collapsed
+        """
+        if not snippets or len(snippets) <= 1:
+            return snippets
+
+        # Group by source URL
+        by_url = {}
+        for snip in snippets:
+            url = snip.get('_source_url', '')
+            if url not in by_url:
+                by_url[url] = []
+            by_url[url].append(snip)
+
+        collapsed = []
+
+        for url, url_snippets in by_url.items():
+            if len(url_snippets) <= 1:
+                collapsed.extend(url_snippets)
+                continue
+
+            # Sort by code to detect consecutive
+            def get_code_key(snip):
+                code = snip.get('_code', '')
+                match = re.search(r'(\d+)\.(\d+)', code)
+                if match:
+                    return (int(match.group(1)), int(match.group(2)))
+                return (999, 999)
+
+            sorted_snips = sorted(url_snippets, key=get_code_key)
+
+            i = 0
+            while i < len(sorted_snips):
+                current = sorted_snips[i]
+                current_key = get_code_key(current)
+
+                # Look ahead for consecutive snippets
+                merge_candidates = [current]
+                j = i + 1
+                prev_key = current_key
+
+                while j < len(sorted_snips):
+                    next_snip = sorted_snips[j]
+                    next_key = get_code_key(next_snip)
+
+                    # Check if consecutive (same section, next sentence)
+                    is_consecutive = (next_key[0] == prev_key[0] and
+                                    next_key[1] == prev_key[1] + 1)
+
+                    if is_consecutive:
+                        merge_candidates.append(next_snip)
+                        prev_key = next_key
+                        j += 1
+                    else:
+                        break
+
+                if len(merge_candidates) > 1:
+                    # Merge consecutive snippets with space (they're sequential, not gapped)
+                    # Note: ellipsis is for non-adjacent; consecutive = space join
+                    merged_texts = ' '.join(s.get('text', '') for s in merge_candidates)
+                    # Use highest p-score
+                    best_p = max(s.get('p', 0.5) for s in merge_candidates)
+
+                    merged_snip = current.copy()
+                    merged_snip['text'] = merged_texts
+                    merged_snip['p'] = best_p
+                    merged_snip['_merged_count'] = len(merge_candidates)
+
+                    logger.debug(f"[EXTRACTOR] Post-collapsed {len(merge_candidates)} sequential snippets from {url[:50]}...")
+                    collapsed.append(merged_snip)
+                    i = j
+                else:
+                    collapsed.append(current)
+                    i += 1
+
+        return collapsed
 
     def _build_prompt(
         self,

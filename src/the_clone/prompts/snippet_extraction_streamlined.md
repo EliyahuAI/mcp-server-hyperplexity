@@ -74,24 +74,33 @@ If a quote partially overlaps the main query but does **not** add new factual in
 1. **Essential quotes only**
    Must contain **concrete, checkable factual claims** that help answer the query.
 
-2. **Return empty if no clear quotes**
+2. **Self-contained points**
+   Each snippet MUST make a complete point in isolation - no sentence fragments.
+
+3. **Collapse consecutive**
+   Adjacent sentences = ONE quote. Use "..." to join non-adjacent sentences.
+
+4. **Skip redundant**
+   If a point was already made by another quote of same/higher quality, skip it.
+
+5. **Return empty if no clear quotes**
    Do not force extraction.
 
-3. **Exact quotes only**
+6. **Exact quotes only**
    Word-for-word from the source.
 
-4. **Brackets for orientation**
-   Use brackets only to clarify context:
-   `[of DeepSeek V3]`, `[in 2024]`
+7. **Brackets for orientation (short)**
+   Use brackets only to clarify context, max 5 words, shorthand preferred:
+   `[re: DeepSeek]`, `[2024]`
 
-5. **Use "…" for omissions**
+8. **Use "…" for omissions**
    Skip non-essential text.
 
-6. **Keep it minimal**
+9. **Keep it minimal**
    1–5 quotes maximum total.
 
-7. **Avoid false off-topic marking**
-   Do not mark quotes as off-topic if they directly address the main query.
+10. **Avoid false off-topic marking**
+    Do not mark quotes as off-topic if they directly address the main query.
 
 ---
 

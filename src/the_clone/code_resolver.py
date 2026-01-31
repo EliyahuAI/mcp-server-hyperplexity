@@ -67,10 +67,14 @@ class CodeResolver:
 
         code_clean = code.strip()
 
-        # Strip trailing marker if present (AI sometimes adds it)
+        # Strip trailing marker if present (AI sometimes adds it) - do this FIRST
         if code_clean.endswith('`') or code_clean.endswith('§'):
             code_clean = code_clean[:-1]
             logger.debug(f"[RESOLVER] Stripped trailing marker from code: {code} -> {code_clean}")
+
+        # Handle ellipsis join syntax: §1.2 ... §1.5 or H1.2 ... H1.5
+        if ' ... ' in code_clean or '...' in code_clean:
+            return self._resolve_ellipsis_join(code_clean)
 
         try:
             # Special case: §* or `* means pass entire source
@@ -112,6 +116,8 @@ class CodeResolver:
                     # Strip § or backtick prefix if present
                     if bracket_content.startswith('§') or bracket_content.startswith('`'):
                         bracket_content = bracket_content[1:]
+                    # Strip {snippet_char} or similar template variables
+                    bracket_content = re.sub(r'\{[^}]+\}', '', bracket_content).strip()
                     # Try to resolve as location code
                     if self._is_location_code(bracket_content):
                         resolved_text = self._resolve_location_code(bracket_content)
@@ -168,6 +174,54 @@ class CodeResolver:
                 prev_line = line_stripped
 
         return '\n'.join(deduped)
+
+    def _resolve_ellipsis_join(self, code: str) -> str:
+        """
+        Resolve ellipsis join syntax: §1.2 ... §1.5 or H1.2 ... H1.5
+
+        Joins non-adjacent sentences with " ... " between them.
+
+        Args:
+            code: Code string containing ... separator
+
+        Returns:
+            Resolved text with ellipsis joining non-adjacent parts
+        """
+        # Normalize ellipsis variants
+        code_normalized = code.replace('...', ' ... ').replace('  ', ' ')
+
+        # Split on ellipsis
+        parts = [p.strip() for p in re.split(r'\s*\.\.\.\s*', code_normalized) if p.strip()]
+
+        if len(parts) < 2:
+            # No valid split, try regular resolution
+            return self._resolve_location_code(code.replace('...', '').strip())
+
+        # Resolve each part
+        resolved_parts = []
+        for part in parts:
+            # Strip § or backtick prefix
+            part_clean = part
+            if part_clean.startswith('§') or part_clean.startswith('`'):
+                part_clean = part_clean[1:]
+
+            # Strip template variables like {snippet_char}
+            part_clean = re.sub(r'\{[^}]+\}', '', part_clean).strip()
+
+            if self._is_location_code(part_clean):
+                resolved = self._resolve_location_code(part_clean)
+                if resolved:
+                    resolved_parts.append(resolved)
+                else:
+                    logger.warning(f"[RESOLVER] Ellipsis part '{part_clean}' failed to resolve")
+            else:
+                # Literal text, keep as-is
+                resolved_parts.append(part)
+
+        # Join with ellipsis
+        result = ' ... '.join(resolved_parts)
+        logger.debug(f"[RESOLVER] Ellipsis join: {len(parts)} parts → {len(result)} chars")
+        return result
 
     def _is_location_code(self, text: str) -> bool:
         """Check if text matches location code pattern."""
