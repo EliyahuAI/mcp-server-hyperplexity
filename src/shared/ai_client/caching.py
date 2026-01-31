@@ -133,24 +133,24 @@ class CacheHandler:
 
     async def save_debug_data(self, api_provider: str, model: str, request_data: Dict,
                               response_data: Any, error: Exception = None, context: str = "", debug_name: str = None,
-                              cache_key: str = None):
-        """Save debug data for API calls."""
+                              cache_key: str = None) -> Optional[str]:
+        """Save debug data for API calls. Returns S3 URI if saved, None otherwise."""
         if os.environ.get('DISABLE_AI_DEBUG_SAVES', '').lower() == 'true':
-            return
+            return None
 
         try:
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]
             status = "ERROR" if error else "SUCCESS"
             model_clean = model.replace('/', '_').replace(':', '_')
-            
+
             if debug_name:
                 name_clean = ''.join(c for c in debug_name if c.isalnum() or c in '_-').strip()[:30]
                 content_description = name_clean if name_clean else 'custom'
             else:
                 content_description = extract_content_description(request_data)
-            
+
             debug_filename = f"{timestamp}_{api_provider}_{model_clean}_{status}_{content_description}.json"
-            
+
             debug_entry = {
                 'timestamp': datetime.now(timezone.utc).isoformat(),
                 'api_provider': api_provider,
@@ -172,7 +172,7 @@ class CacheHandler:
                 path = "debug/refusals" if self.use_unified_structure else "api_debug/refusals"
             else:
                 path = f"debug/{api_provider}" if self.use_unified_structure else f"api_debug/{api_provider}"
-            
+
             s3_key = f"{path}/{debug_filename}"
 
             async with self.s3_session.client('s3') as s3_client:
@@ -182,15 +182,18 @@ class CacheHandler:
                     Body=json.dumps(debug_entry, indent=2, ensure_ascii=False),
                     ContentType='application/json'
                 )
-            
+
             if error:
                 logger.error(f"Saved error debug: {s3_key}")
-            
+
+            return f"s3://{self.s3_bucket}/{s3_key}"
+
         except Exception as e:
             logger.error(f"Failed to save debug data: {e}")
+            return None
 
-    async def save_markdown_log(self, api_provider: str, model: str, markdown_content: str, debug_name: str = None):
-        """Save markdown log alongside standard debug data."""
+    async def save_markdown_log(self, api_provider: str, model: str, markdown_content: str, debug_name: str = None) -> Optional[str]:
+        """Save markdown log alongside standard debug data. Returns S3 URI if saved, None otherwise."""
         try:
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]
             model_clean = model.replace('/', '_').replace(':', '_')
@@ -212,10 +215,11 @@ class CacheHandler:
                     ContentType='text/markdown'
                 )
 
-            logger.info(f"Saved markdown log: {s3_key}")
+            return f"s3://{self.s3_bucket}/{s3_key}"
 
         except Exception as e:
             logger.error(f"Failed to save markdown log: {e}")
+            return None
 
     async def save_haiku_repair_data(self, original_provider: str, original_model: str,
                                       malformed_input: str, repaired_output: Dict,

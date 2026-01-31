@@ -140,14 +140,16 @@ class CloneProvider:
                 'stop_reason': 'stop'
             }
             
-            # Save debug data
+            # Save debug data and capture S3 URIs
+            debug_json_uri = None
+            debug_md_uri = None
             if debug_name:
-                await self.cache_handler.save_debug_data('clone', model, {'prompt': prompt}, response_json, context="agent_success", debug_name=debug_name)
+                debug_json_uri = await self.cache_handler.save_debug_data('clone', model, {'prompt': prompt}, response_json, context="agent_success", debug_name=debug_name)
 
                 # Also save markdown log if available
                 debug_log = metadata.get('debug_log', '')
                 if debug_log:
-                    await self.cache_handler.save_markdown_log('clone', model, debug_log, debug_name=debug_name)
+                    debug_md_uri = await self.cache_handler.save_markdown_log('clone', model, debug_log, debug_name=debug_name)
 
             # Generate enhanced metrics BEFORE caching (needed for time_estimated preservation)
             # We pass pre_extracted_token_usage because we constructed it manually
@@ -173,7 +175,9 @@ class CloneProvider:
                 'processing_time': processing_time,
                 'is_cached': False,
                 'citations': citations,
-                'enhanced_data': enhanced_data
+                'enhanced_data': enhanced_data,
+                'debug_json_uri': debug_json_uri,
+                'debug_md_uri': debug_md_uri
             }
 
         except Exception as e:

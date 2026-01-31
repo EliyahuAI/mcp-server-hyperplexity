@@ -2196,10 +2196,10 @@ async def execute_full_table_generation(
                 soft_schema = discovery_config.get('soft_schema', True)
                 config_max_parallel = discovery_config.get('max_parallel_streams')
                 if config_max_parallel is None:
-                    max_parallel_streams = min(num_subdomains, 3)
+                    max_parallel_streams = min(num_subdomains, 5)
                     logger.info(
                         f"[EXECUTION] Dynamic max_parallel_streams: {max_parallel_streams} "
-                        f"(min of {num_subdomains} subdomains and 3)"
+                        f"(min of {num_subdomains} subdomains and 5)"
                     )
                 else:
                     max_parallel_streams = config_max_parallel
@@ -2807,7 +2807,7 @@ async def execute_full_table_generation(
 
                         # Calculate dynamic max_parallel_streams for retrigger
                         num_subdomains = len(search_strategy.get('subdomains', []))
-                        max_parallel_streams_retrigger = min(num_subdomains, 3)
+                        max_parallel_streams_retrigger = min(num_subdomains, 5)
 
                         # TODO: Pass exclusion_list when row_discovery.py is updated to support it
                         # For now, the new subdomains and updated requirements will help avoid duplicates

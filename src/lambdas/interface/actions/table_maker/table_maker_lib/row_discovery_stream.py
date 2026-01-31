@@ -1050,6 +1050,10 @@ class RowDiscoveryStream:
             )
 
         try:
+            # Build debug_name for log identification (truncated to 30 chars)
+            subdomain_name_clean = subdomain['name'].replace(' ', '_')[:20]
+            debug_name = f"row_disc_{subdomain_name_clean}"
+
             # Single call with structured output (Perplexity or Claude with web search)
             result = await self.ai_client.call_structured_api(
                 prompt=prompt,
@@ -1064,13 +1068,31 @@ class RowDiscoveryStream:
                 include_domains=include_domains,  # Domain filtering
                 exclude_domains=exclude_domains,   # Domain filtering
                 findall=findall,  # For the-clone models
-                findall_iterations=findall_iterations  # Max self-correction iterations for the-clone
+                findall_iterations=findall_iterations,  # Max self-correction iterations for the-clone
+                debug_name=debug_name  # For S3 debug logs (debug/clone/)
             )
 
             # call_structured_api returns dict with 'response', 'token_usage', etc.
             # Check if we got a valid response
             if 'response' not in result:
                 raise ValueError(f"LLM call failed: {result.get('error', 'No response returned')}")
+
+            # Log call metrics and debug paths for CloudWatch visibility
+            processing_time = result.get('processing_time', 0)
+            enhanced_data = result.get('enhanced_data', {})
+            total_cost = enhanced_data.get('costs', {}).get('actual', {}).get('total', 0)
+            debug_md_uri = result.get('debug_md_uri')
+            debug_json_uri = result.get('debug_json_uri')
+            is_cached = result.get('is_cached', False)
+
+            logger.info(
+                f"[ROW_DISCOVERY] '{subdomain['name']}' complete: "
+                f"time={processing_time:.1f}s, cost=${total_cost:.4f}, cached={is_cached}"
+            )
+            if debug_md_uri:
+                logger.info(f"[ROW_DISCOVERY] Debug log: {debug_md_uri}")
+            if debug_json_uri:
+                logger.info(f"[ROW_DISCOVERY] Debug JSON: {debug_json_uri}")
 
             # Extract structured response
             response_data = result.get('response', {})
