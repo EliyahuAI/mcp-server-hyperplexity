@@ -313,6 +313,53 @@ def _add_api_call_to_runs(
 
 
 # ============================================================================
+# LIGHTWEIGHT SESSION INITIALIZATION - Warmup endpoint
+# ============================================================================
+
+def handle_init_table_maker_session(request_data, context):
+    """
+    Lightweight session initialization endpoint for table maker.
+
+    This endpoint:
+    1. Generates a session_id if not provided
+    2. Returns immediately (no AI processing, no SQS)
+    3. Warms the lambda as a side effect
+
+    Called when user selects "Create Table from Prompt" BEFORE they submit their first message.
+    This reduces perceived latency by pre-warming the lambda and allowing the frontend to
+    establish WebSocket connection early.
+    """
+    try:
+        import uuid
+
+        email = request_data.get('email')
+        session_id = request_data.get('session_id')
+
+        # Generate session ID if not provided
+        if not session_id:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            random_hex = uuid.uuid4().hex[:8]
+            session_id = f"session_{timestamp}_{random_hex}"
+            logger.info(f"[TABLE_MAKER_INIT] Generated new session ID: {session_id}")
+        else:
+            logger.info(f"[TABLE_MAKER_INIT] Using existing session ID: {session_id}")
+
+        # Return immediately - this is just for warmup and session ID generation
+        response_body = {
+            'success': True,
+            'session_id': session_id,
+            'status': 'ready'
+        }
+
+        logger.info(f"[TABLE_MAKER_INIT] Session initialized: {session_id}")
+        return create_response(200, response_body)
+
+    except Exception as e:
+        logger.error(f"[TABLE_MAKER_INIT] Error: {str(e)}")
+        return create_response(500, {'success': False, 'error': str(e)})
+
+
+# ============================================================================
 # ASYNC WRAPPERS - Queue to SQS and return immediately
 # ============================================================================
 

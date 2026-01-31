@@ -196,7 +196,7 @@ def handle(event, context):
             elif action in ['listDemos', 'selectDemo', 'clearUserHistoryForTesting']:
                 demo_management = lazy_import('interface_lambda.actions', 'demo_management')
                 return demo_management.handle(request_data, context)
-            elif action in ['startTableConversation', 'continueTableConversation', 'generateTablePreview', 'acceptTableAndValidate', 'getTableDownloadUrl']:
+            elif action in ['startTableConversation', 'continueTableConversation', 'generateTablePreview', 'acceptTableAndValidate', 'getTableDownloadUrl', 'initTableMakerSession']:
                 route_table_maker_action = lazy_import('interface_lambda.actions.table_maker', 'route_table_maker_action')
                 return route_table_maker_action(action, request_data, context)
             elif action in ['startReferenceCheck']:

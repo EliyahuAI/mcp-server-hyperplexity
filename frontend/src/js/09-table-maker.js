@@ -12,10 +12,89 @@ const tableMakerState = {
     cardId: null,
     conversationId: null,
     messages: [],
-    confirmationResponse: null
+    confirmationResponse: null,
+    preInitialized: false,      // Track if warmup/session init has been done
+    warmupPromise: null         // Track ongoing warmup request
 };
 
+// ============================================
+// EARLY INITIALIZATION / WARMUP
+// ============================================
+
+/**
+ * Pre-initialize table maker session: warm up lambda, get session from backend, connect WebSocket.
+ * Call this when user selects "Create Table from Prompt" to reduce latency on first submit.
+ *
+ * Uses the dedicated initTableMakerSession endpoint which:
+ * 1. Goes through the same routing as startTableConversation (proper warmup)
+ * 2. Imports and initializes table maker modules
+ * 3. Returns a session ID from the backend (authoritative source)
+ */
+async function preInitializeTableMaker() {
+    // Skip if already initialized
+    if (tableMakerState.preInitialized) {
+        console.log('[TABLE_MAKER] Already pre-initialized, skipping');
+        return;
+    }
+
+    console.log('[TABLE_MAKER] Pre-initializing: warmup + session + WebSocket');
+
+    // Use initTableMakerSession endpoint - this warms up the actual table maker code path
+    // (not just /health which may hit different code). This fires immediately (don't await
+    // in main flow) but we store the promise so awaitWarmup() can wait for it.
+    const warmupPromise = fetch(`${API_BASE}/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            action: 'initTableMakerSession',
+            email: globalState.email || ''
+            // Don't pass session_id - let backend generate fresh one
+        })
+    })
+    .then(async resp => {
+        if (!resp.ok) {
+            console.warn('[TABLE_MAKER] Init endpoint returned:', resp.status);
+            return null;
+        }
+        const data = await resp.json();
+        if (data.success && data.session_id) {
+            // Store session ID from backend (authoritative source)
+            globalState.sessionId = data.session_id;
+            localStorage.setItem('sessionId', data.session_id);
+            console.log('[TABLE_MAKER] Session initialized from backend:', data.session_id);
+
+            // Connect WebSocket now that we have a confirmed session
+            if (typeof connectToSession === 'function') {
+                console.log('[TABLE_MAKER] Pre-connecting WebSocket for session:', data.session_id);
+                connectToSession(data.session_id);
+            }
+            return data;
+        }
+        return null;
+    })
+    .catch(err => {
+        // Non-fatal - startTableConversation will get session from backend if this fails
+        console.warn('[TABLE_MAKER] Lambda warmup failed (non-fatal):', err.message);
+        return null;
+    });
+
+    tableMakerState.warmupPromise = warmupPromise;
+    tableMakerState.preInitialized = true;
+}
+
+/**
+ * Wait for warmup to complete (call before first API request)
+ */
+async function awaitWarmup() {
+    if (tableMakerState.warmupPromise) {
+        await tableMakerState.warmupPromise;
+        tableMakerState.warmupPromise = null;
+    }
+}
+
 // Reset table maker state - call when starting a new conversation
+// NOTE: Does NOT reset preInitialized/warmupPromise - those track Lambda warmup
+// which should persist across conversation resets within the same user session
 function resetTableMakerState() {
     console.log('[TABLE_MAKER] Resetting state for new conversation');
     tableMakerState.cardId = null;
@@ -27,6 +106,9 @@ function resetTableMakerState() {
     tableMakerState.table_name = null;
     tableMakerState.reasoning = null;
     tableMakerState.clarifying_questions = null;
+    // NOTE: Do NOT reset preInitialized/warmupPromise here!
+    // Those track Lambda warmup state which persists across conversations.
+    // They are only reset when the user explicitly starts a fresh table maker flow.
 }
 
 function handleTableExecutionUpdate(message) {
@@ -214,6 +296,14 @@ function showInsufficientRowsMessage(conversationId, statement, recommendations,
 }
 
 function restartTableMaker(conversationId) {
+    // Reset warmup state so we get a fresh session for the new conversation
+    tableMakerState.preInitialized = false;
+    tableMakerState.warmupPromise = null;
+    // Clear the old session so backend generates a new one
+    globalState.sessionId = null;
+    localStorage.removeItem('sessionId');
+    // Pre-initialize for the new conversation (will now actually run since preInitialized is false)
+    preInitializeTableMaker();
     // Create a new table maker card to start fresh
     createTableMakerCard();
 }
@@ -919,30 +1009,33 @@ if (subtitle) {
 
 // Send to backend - this will queue the work and return immediately
 try {
-    // IMPORTANT: If sessionId looks stale (from restored state), let backend generate fresh one
-    // This prevents CORS errors from using expired sessions
+    // Wait for warmup to complete before making the request
+    // This ensures the Lambda is warm and reduces chance of 504 timeout
+    if (typeof awaitWarmup === 'function') {
+        await awaitWarmup();
+    }
+
+    // Use session ID from warmup, or let backend generate one
+    // After warmup, globalState.sessionId should be set from initTableMakerSession
     let sessionIdToUse = globalState.sessionId;
 
-    // Check if we should clear potentially stale sessionId
-    // If there's no active WebSocket for this session, it might be stale
+    // If we have a session but WebSocket isn't connected, clear it and let backend generate fresh
     if (sessionIdToUse && typeof sessionWebSockets !== 'undefined') {
         const existingWs = sessionWebSockets.get(sessionIdToUse);
         if (!existingWs || existingWs.readyState !== WebSocket.OPEN) {
-            // WebSocket not connected - session might be stale
-            // Let backend generate new session to be safe
             console.log('[TABLE_MAKER] No active WebSocket for session, letting backend generate new one');
             sessionIdToUse = null;
         }
     }
 
-    // Backend will generate session ID in session_YYYYMMDD_HHMMSS_hex format
+    // Send request - backend will generate session_id if not provided
     const response = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             action: 'startTableConversation',
             email: globalState.email,
-            session_id: sessionIdToUse,  // Let backend generate if null/stale
+            session_id: sessionIdToUse,  // Backend generates if null
             user_message: userMessage
         })
     });
@@ -953,8 +1046,8 @@ try {
         // Request queued successfully - save conversation ID and session ID
         tableMakerState.conversationId = data.conversation_id;
 
-        // Store session_id if backend generated one
-        if (data.session_id && !globalState.sessionId) {
+        // Store session_id from backend (always use backend's authoritative value)
+        if (data.session_id) {
             globalState.sessionId = data.session_id;
             localStorage.setItem('sessionId', data.session_id);
             // Stored session ID

@@ -18,7 +18,8 @@ from .conversation import (
     handle_table_conversation_start_async,
     handle_table_conversation_continue_async,
     handle_table_conversation_start,
-    handle_table_conversation_continue
+    handle_table_conversation_continue,
+    handle_init_table_maker_session
 )
 from .preview import handle_table_preview_generate, handle_table_preview_generate_async
 from .finalize import handle_table_accept_and_validate_async, handle_table_accept_and_validate
@@ -28,6 +29,7 @@ from .download import handle_table_download_url
 
 # Action routing dictionary - uses ASYNC wrappers for HTTP requests to prevent timeouts
 TABLE_MAKER_ACTIONS = {
+    'initTableMakerSession': handle_init_table_maker_session,  # Lightweight warmup - returns session_id immediately
     'startTableConversation': handle_table_conversation_start_async,
     'continueTableConversation': handle_table_conversation_continue_async,
     'generateTablePreview': handle_table_preview_generate_async,  # Use async wrapper to prevent timeouts
@@ -81,6 +83,7 @@ def route_table_maker_action(action, request_data, context):
 
 __all__ = [
     'route_table_maker_action',
+    'handle_init_table_maker_session',
     'handle_table_conversation_start',
     'handle_table_conversation_continue',
     'handle_table_preview_generate',

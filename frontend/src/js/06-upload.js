@@ -89,6 +89,13 @@ function proceedWithTableMaker(cardId) {
     // Show completion state
     showFinalCardState(cardId, 'Starting table maker...', 'success');
 
+    // EARLY WARMUP: Start lambda warmup and session initialization IMMEDIATELY
+    // This runs in parallel while we show the card, so by the time user submits,
+    // the lambda is warm and WebSocket is connected
+    if (typeof preInitializeTableMaker === 'function') {
+        preInitializeTableMaker();
+    }
+
     // Create table maker card
     setTimeout(() => {
         createTableMakerCard();
