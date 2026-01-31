@@ -245,6 +245,7 @@ The `table_metadata` object structure:
 
 ```javascript
 {
+    "table_name": "Clinical Trials Analysis",  // Display name from session info
     "columns": [
         {
             "name": "Column Name",

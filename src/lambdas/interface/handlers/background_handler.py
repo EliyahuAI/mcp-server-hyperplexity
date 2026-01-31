@@ -2145,6 +2145,7 @@ def handle_main_processing(event, context):
                     logger.debug(f"[CONFIG_VERSION] Extracted version {config_version} from config_data for preview_payload")
 
                 # Count how many versions exist in THIS session (for accurate revert button logic)
+                session_info = None  # Initialize for use in table_metadata generation
                 try:
                     from ..core.unified_s3_manager import UnifiedS3Manager
                     session_storage_manager = UnifiedS3Manager()
@@ -2167,12 +2168,15 @@ def handle_main_processing(event, context):
                 table_metadata = None
                 try:
                     from excel_report_qc_unified import generate_table_preview_metadata
+                    # Get clean table name from session_info if available
+                    clean_table_name = (session_info.get('clean_table_name') if session_info else None) or config_data.get('table_name')
                     table_metadata = generate_table_preview_metadata(
                         validation_results=real_results,
                         config_data=config_data,
-                        preview_row_count=3
+                        preview_row_count=3,
+                        table_name=clean_table_name
                     )
-                    logger.info(f"[TABLE_METADATA] Generated metadata for {len(table_metadata.get('rows', []))} rows, {len(table_metadata.get('columns', []))} columns")
+                    logger.info(f"[TABLE_METADATA] Generated metadata for {len(table_metadata.get('rows', []))} rows, {len(table_metadata.get('columns', []))} columns, table_name={clean_table_name}")
                 except Exception as e:
                     logger.error(f"[TABLE_METADATA] Failed to generate table metadata: {e}")
                     import traceback
@@ -4451,6 +4455,7 @@ def handle_main_processing(event, context):
                     logger.debug(f"[CONFIG_VERSION] Extracted version {config_version} from config_data for preview_payload (preview_completed path)")
 
                 # Count how many versions exist in THIS session (for accurate revert button logic)
+                session_info = None  # Initialize for use in table_metadata generation
                 try:
                     from ..core.unified_s3_manager import UnifiedS3Manager
                     session_storage_manager = UnifiedS3Manager()
@@ -4934,10 +4939,13 @@ def handle_main_processing(event, context):
                                 # Generate and save full table metadata (all rows) for interactive viewer
                                 try:
                                     from excel_report_qc_unified import generate_table_preview_metadata
+                                    # Get clean table name from session_info if available
+                                    full_clean_table_name = (session_info.get('clean_table_name') if session_info else None) or config_data.get('table_name')
                                     full_table_metadata = generate_table_preview_metadata(
                                         validation_results=real_results,
                                         config_data=config_data,
-                                        preview_row_count=None  # None = include ALL rows
+                                        preview_row_count=None,  # None = include ALL rows
+                                        table_name=full_clean_table_name
                                     )
                                     if full_table_metadata:
                                         session_path = storage_manager.get_session_path(email, clean_session_id)

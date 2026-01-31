@@ -2052,7 +2052,8 @@ def preserve_citations_through_qc(validation_results, qc_results):
 def generate_table_preview_metadata(
     validation_results: dict,
     config_data: dict,
-    preview_row_count: int = 3
+    preview_row_count: int = 3,
+    table_name: str = None
 ) -> dict:
     """
     Generate JSON metadata for interactive table preview.
@@ -2063,10 +2064,12 @@ def generate_table_preview_metadata(
                            QC data is embedded in validation_results[row_key]['_qc']
         config_data: Config dict with validation_targets
         preview_row_count: Number of rows to include in preview (default 3)
+        table_name: Display name for the table (e.g., "Clinical Trials Analysis")
 
     Returns:
         Dict with structure:
         {
+            "table_name": str,  # Display name for the table
             "columns": [{"name": str, "importance": str, "description": str, "notes": str}],
             "rows": [{
                 "row_key": str,
@@ -2091,7 +2094,7 @@ def generate_table_preview_metadata(
         }
     """
     if not validation_results or not config_data:
-        return {"columns": [], "rows": [], "is_transposed": True, "general_notes": ""}
+        return {"table_name": table_name, "columns": [], "rows": [], "is_transposed": True, "general_notes": ""}
 
     # Extract column metadata from config_data['validation_targets']
     columns = []
@@ -2167,6 +2170,7 @@ def generate_table_preview_metadata(
         })
 
     return {
+        'table_name': table_name,
         'columns': columns,
         'rows': rows,
         'is_transposed': True,
