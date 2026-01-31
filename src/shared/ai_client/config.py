@@ -24,8 +24,8 @@ MODEL_TIMEOUTS: Dict[str, int] = {
     # Fast models (60s)
     'claude-haiku-4-5': TIMEOUT_FAST,
     'claude-3-5-haiku-20241022': TIMEOUT_FAST,
-    'gemini-2.0-flash': TIMEOUT_FAST,
-    'gemini-2.0-flash-exp': TIMEOUT_FAST,
+    'gemini-2.5-flash-lite': TIMEOUT_FAST,
+    'gemini-2.5-flash-lite-exp': TIMEOUT_FAST,
 
     # Medium models (4 mins)
     'sonar': TIMEOUT_MEDIUM,
@@ -110,7 +110,7 @@ MODEL_HIERARCHY = [
     "deepseek-v3.2-baseten",      # Baseten-hosted DeepSeek V3.2
     "deepseek-v3.2",         # Ultra-low cost, most capable DeepSeek
     "sonar-pro",
-    "gemini-2.0-flash",       # Google's latest multimodal model (FREE in preview!) 
+    "gemini-2.5-flash-lite",       # Google's latest multimodal model (FREE in preview!) 
     "claude-haiku-4-5",
     "sonar"
 ]

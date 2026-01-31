@@ -70,7 +70,7 @@ class BasetenProvider:
                             normalized['_repair_meta'] = {
                                 'repaired': True,
                                 'cost': repair_cost,
-                                'model': 'gemini-2.0-flash',
+                                'model': 'gemini-2.5-flash-lite',
                                 'provider': 'gemini',
                                 'explanation': repair_explanation
                             }
@@ -129,7 +129,7 @@ class BasetenProvider:
                                     normalized['_repair_meta'] = {
                                         'repaired': True,
                                         'cost': repair_cost,
-                                        'model': 'gemini-2.0-flash',
+                                        'model': 'gemini-2.5-flash-lite',
                                         'provider': 'gemini',
                                         'explanation': repair_explanation
                                     }

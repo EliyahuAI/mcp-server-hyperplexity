@@ -259,7 +259,7 @@ Example: [1, 3, 4] means include sources 1, 3, and 4."""
                     selection_response = await self.ai_client.call_structured_api(
                         prompt=selection_prompt,
                         schema=schema,
-                        model="gemini-2.0-flash",
+                        model="gemini-2.5-flash-lite",
                         max_tokens=500,  # Just need list of integers
                         use_cache=True,
                         tool_name="source_selection"
@@ -408,7 +408,7 @@ Example: [1, 3, 4] means include sources 1, 3, and 4."""
         estimated_rows: int = None,
         url_quality: float = 0.85,
         max_iterations: int = 5,
-        model: str = "gemini-2.0-flash",
+        model: str = "gemini-2.5-flash-lite",
         max_tokens: int = 8000,
         use_search_fallback: bool = True
     ) -> Dict[str, Any]:
@@ -905,7 +905,7 @@ Extract ALL complete rows you can find."""
                 task = self.ai_client.call_structured_api(
                     prompt=prompt,
                     schema=schema,
-                    model=["gemini-2.0-flash", "gemini-2.5-flash"],  # Try both Gemini models
+                    model=["gemini-2.5-flash-lite", "gemini-2.5-flash"],  # Try both Gemini models
                     max_tokens=8000,
                     use_cache=True,
                     tool_name=f"parallel_extraction_{i}"
@@ -1354,7 +1354,7 @@ Return only the NEW rows (not the ones already extracted)."""
                 api_response = await self.ai_client.call_structured_api(
                     prompt=prompt,
                     schema=schema,
-                    model=["gemini-2.0-flash", "gemini-2.5-flash"],  # Try both Gemini models
+                    model=["gemini-2.5-flash-lite", "gemini-2.5-flash"],  # Try both Gemini models
                     max_tokens=max_tokens,
                     use_cache=False,  # Don't cache iterative calls
                     include_domains=[domain],

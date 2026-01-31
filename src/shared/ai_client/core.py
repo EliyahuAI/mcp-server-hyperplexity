@@ -175,7 +175,7 @@ class AIAPIClient:
             return backup_models
         except ValueError:
             # Model not in hierarchy - use fast/cheap models as fallback
-            return ["claude-haiku-4-5", "gemini-2.0-flash"][:count]
+            return ["claude-haiku-4-5", "gemini-2.5-flash-lite"][:count]
 
     async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-sonnet-4-5",
                                  tool_name: str = "structured_response", use_cache: bool = True,

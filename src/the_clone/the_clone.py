@@ -1038,7 +1038,7 @@ class TheClone2Refined:
                     else:
                         provider_str = "gemini"
                     clone_logger.record_step_metric(
-                        "Memory Recall", provider_str, "gemini-2.0-flash",
+                        "Memory Recall", provider_str, "gemini-2.5-flash-lite",
                         total_memory_cost, step_time_phase,
                         f"{len(memory_sources)} sources, {len(memory_snippets)} snippets, confidence={confidence:.2f}"
                     )

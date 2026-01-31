@@ -486,7 +486,7 @@ class SnippetExtractorStreamlined:
         query: str,
         snippet_id_prefix: str,
         all_search_terms: List[str],
-        model: str = "gemini-2.0-flash",
+        model: str = "gemini-2.5-flash-lite",
         soft_schema: bool = False,
         min_quality_threshold: float = 0.0,
         extraction_mode: str = "simple_facts",

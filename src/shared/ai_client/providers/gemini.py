@@ -47,7 +47,7 @@ def get_gemini_semaphore(model: str) -> asyncio.Semaphore:
     loop = asyncio.get_running_loop()
     loop_id = id(loop)
 
-    # Normalize model name for env var lookup (e.g., "gemini-2.0-flash" -> "2_0_FLASH")
+    # Normalize model name for env var lookup (e.g., "gemini-2.5-flash-lite" -> "2_0_FLASH")
     model_suffix = model.replace('gemini-', '').replace('.', '_').replace('-', '_').upper()
     env_var = f'GEMINI_MAX_CONCURRENT_{model_suffix}'
 
@@ -191,7 +191,7 @@ class GeminiProvider:
                             normalized['_repair_meta'] = {
                                 'repaired': True,
                                 'cost': repair_cost,
-                                'model': 'gemini-2.0-flash',
+                                'model': 'gemini-2.5-flash-lite',
                                 'provider': 'gemini',
                                 'explanation': repair_explanation
                             }

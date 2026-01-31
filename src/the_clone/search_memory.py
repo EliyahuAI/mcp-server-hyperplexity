@@ -1143,7 +1143,7 @@ class SearchMemory:
             response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
-                model="gemini-2.0-flash",
+                model="gemini-2.5-flash-lite",
                 use_cache=False,
                 context="memory_recall",
                 soft_schema=True
@@ -1328,7 +1328,7 @@ Consider data freshness - old memories about dynamic topics should lower confide
             response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
-                model="gemini-2.0-flash",
+                model="gemini-2.5-flash-lite",
                 use_cache=False,
                 context="memory_verification",
                 soft_schema=True

@@ -148,7 +148,7 @@ class VertexProvider:
                             repair_cost = repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
 
                             # Log the repair explanation
-                            logger.info(f"[HAIKU_REPAIR] Original model: {model or 'unknown'}, Repair model: gemini-2.0-flash")
+                            logger.info(f"[HAIKU_REPAIR] Original model: {model or 'unknown'}, Repair model: gemini-2.5-flash-lite")
                             logger.info(f"[HAIKU_REPAIR] Explanation: {repair_explanation}")
                             logger.info(f"[HAIKU_REPAIR] Cost: ${repair_cost:.6f}")
 
@@ -156,7 +156,7 @@ class VertexProvider:
                             normalized['_repair_meta'] = {
                                 'repaired': True,
                                 'cost': repair_cost,
-                                'model': 'gemini-2.0-flash',
+                                'model': 'gemini-2.5-flash-lite',
                                 'provider': 'gemini',
                                 'explanation': repair_explanation
                             }
@@ -207,7 +207,7 @@ class VertexProvider:
                                     repair_cost = repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
 
                                     # Log the repair explanation
-                                    logger.info(f"[HAIKU_REPAIR] Original model: {model or 'unknown'}, Repair model: gemini-2.0-flash")
+                                    logger.info(f"[HAIKU_REPAIR] Original model: {model or 'unknown'}, Repair model: gemini-2.5-flash-lite")
                                     logger.info(f"[HAIKU_REPAIR] Explanation: {repair_explanation}")
                                     logger.info(f"[HAIKU_REPAIR] Cost: ${repair_cost:.6f}")
 
@@ -215,7 +215,7 @@ class VertexProvider:
                                     normalized['_repair_meta'] = {
                                         'repaired': True,
                                         'cost': repair_cost,
-                                        'model': 'gemini-2.0-flash',
+                                        'model': 'gemini-2.5-flash-lite',
                                         'provider': 'gemini',
                                         'explanation': repair_explanation
                                     }

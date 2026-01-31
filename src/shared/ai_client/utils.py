@@ -808,7 +808,7 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is)."
         cleanup_result = await ai_client.call_structured_api(
             prompt=cleanup_prompt,
             schema=enhanced_schema,
-            model="gemini-2.0-flash",  # Stable production model, FREE tier available!
+            model="gemini-2.5-flash-lite",  # Stable production model, FREE tier available!
             use_cache=False,
             max_web_searches=0,
             soft_schema=False  # Use hard schema to ensure valid output

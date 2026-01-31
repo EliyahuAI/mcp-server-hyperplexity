@@ -97,7 +97,7 @@ def get_models_for_tier(provider: str, synthesis_tier: str, strategy: Dict = Non
     extraction_model = provider_config['default_extraction_model']
 
     # Use Gemini 2.0 Flash for initial decision across all providers (fast, cost-effective routing)
-    routing_model = 'gemini-2.0-flash'
+    routing_model = 'gemini-2.5-flash-lite'
 
     # Check if strategy overrides synthesis model (for extraction mode)
     synthesis_model = tier_config['synthesis']
