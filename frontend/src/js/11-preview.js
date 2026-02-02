@@ -355,20 +355,15 @@ async function startFullProcessing(cardId) {
         console.warn(`[SECURITY] Payment bypass attempt blocked - insufficient balance (balance: ${currentBalance}, effectiveCost: ${effectiveCost})`);
         completeThinkingInCard(cardId, 'Insufficient Balance');
 
-        // Mark that user attempted processing
-        globalState.userAttemptedProcessing = true;
-        globalState.pendingProcessingTrigger = () => {
-
-            // Find and click the Process Table button to trigger normal processing
-            const buttons = document.querySelectorAll('button');
-            for (const button of buttons) {
-                const buttonText = button.querySelector('.button-text, span');
-                if (buttonText && buttonText.textContent.includes('Process Table')) {
-                    button.click();
-                    break;
-                }
-            }
-        };
+        // Use centralized payment state controller to record intent
+        // This replaces the fragile function reference approach
+        if (typeof setPendingProcessingIntent === 'function') {
+            setPendingProcessingIntent(cardId, effectiveCost);
+        } else {
+            // Fallback: set legacy flags directly
+            globalState.userAttemptedProcessing = true;
+            globalState.hasInsufficientBalance = true;
+        }
 
         // Reset any buttons that might be in "Processing..." state
         setTimeout(() => {

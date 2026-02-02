@@ -406,106 +406,20 @@ function setupBalanceRefreshOnReturn(messageContainer = 'messages') {
             const newBalance = globalState.accountBalance || 0;
 
             if (oldBalance !== newBalance) {
-
                 // Update all balance displays
                 updateAllBalanceDisplays();
-
-                // If balance improved and user had insufficient balance, update buttons
-                if (globalState.hasInsufficientBalance && newBalance > oldBalance) {
-                    globalState.hasInsufficientBalance = false;
-
-                    // Check if we can auto-trigger processing
-                    const estimatedCost = globalState.estimatedCost || 0;
-                    const effectiveCost = globalState.effectiveCost ?? estimatedCost; // Use ?? not || so 0 doesn't fall back
-                    const canProcess = newBalance >= effectiveCost;
-
-                    if (canProcess && globalState.userAttemptedProcessing && globalState.pendingProcessingTrigger) {
-
-                        // Clear blue message and show green success message
-                        const messageContainers = document.querySelectorAll('[id$="-messages"]');
-                        if (messageContainers.length > 0) {
-                            const lastContainer = messageContainers[messageContainers.length - 1];
-                            const containerId = lastContainer.id;
-
-                            // Clear existing messages (especially the blue "Credits added to cart" message)
-                            const container = document.getElementById(containerId);
-                            if (container) {
-                                container.innerHTML = '';
-                            }
-
-                            showMessage(containerId, `🎉 Balance updated! Auto-starting validation...`, 'success', false, 'auto-process');
-                        }
-
-                        // Disable all Process Table buttons immediately to prevent double-clicking
-                        const allButtons = document.querySelectorAll('button');
-                        allButtons.forEach(button => {
-                            const buttonText = button.querySelector('.button-text, span');
-                            if (buttonText && buttonText.textContent.includes('Process Table')) {
-                                button.disabled = true;
-                                buttonText.textContent = 'Processing...';
-                            }
-                        });
-
-                        // Trigger the pending processing after a brief delay
-                        setTimeout(() => {
-                            const triggerFunc = globalState.pendingProcessingTrigger;
-                            globalState.pendingProcessingTrigger = null;
-                            globalState.userAttemptedProcessing = false;
-                            triggerFunc();
-                        }, 2000);
-                    } else {
-                        // Re-check all preview cards for sufficient balance
-                        setTimeout(() => {
-                            updatePreviewBalanceDisplay();
-                        }, 500);
-                    }
-                }
             }
 
-            // ALSO check for auto-processing when balance is already sufficient (webhook processed before user returned)
-            // This handles the case where oldBalance === newBalance but user has pending processing
-            if (globalState.userAttemptedProcessing && globalState.pendingProcessingTrigger) {
-                const finalBalance = globalState.accountBalance || 0;
-                const estCost = globalState.estimatedCost || 0;
-                const effCost = globalState.effectiveCost ?? estCost;
-                const canProcessNow = finalBalance >= effCost;
-
-                if (canProcessNow) {
-                    // Balance is sufficient and user was waiting for credits - auto-trigger!
-                    globalState.hasInsufficientBalance = false;
-
-                    // Clear blue message and show green success message
-                    const messageContainers = document.querySelectorAll('[id$="-messages"]');
-                    if (messageContainers.length > 0) {
-                        const lastContainer = messageContainers[messageContainers.length - 1];
-                        const containerId = lastContainer.id;
-
-                        const container = document.getElementById(containerId);
-                        if (container) {
-                            container.innerHTML = '';
-                        }
-
-                        showMessage(containerId, `🎉 Credits detected! Auto-starting validation...`, 'success', false, 'auto-process');
-                    }
-
-                    // Disable all Process Table buttons immediately
-                    const allButtons = document.querySelectorAll('button');
-                    allButtons.forEach(button => {
-                        const buttonText = button.querySelector('.button-text, span');
-                        if (buttonText && buttonText.textContent.includes('Process Table')) {
-                            button.disabled = true;
-                            buttonText.textContent = 'Processing...';
-                        }
-                    });
-
-                    // Trigger the pending processing
-                    setTimeout(() => {
-                        const triggerFunc = globalState.pendingProcessingTrigger;
-                        globalState.pendingProcessingTrigger = null;
-                        globalState.userAttemptedProcessing = false;
-                        triggerFunc();
-                    }, 2000);
-                }
+            // Delegate auto-trigger logic to central payment controller
+            // This handles ALL cases: balance changed, balance already sufficient, etc.
+            if (typeof checkAndTriggerProcessing === 'function') {
+                console.log('[FOCUS] Balance check complete, delegating to payment controller');
+                checkAndTriggerProcessing('focus');
+            } else {
+                // Fallback: just update displays if controller not available
+                setTimeout(() => {
+                    updatePreviewBalanceDisplay();
+                }, 500);
             }
         }
     };
@@ -551,35 +465,23 @@ window.checkBalanceAndUpdate = async function(buttonElement) {
         // Update all displays
         updateAllBalanceDisplays();
 
+        // Show button feedback based on balance change
         if (newBalance !== oldBalance) {
-            // Balance changed - update interface
-            if (globalState.hasInsufficientBalance && newBalance > oldBalance) {
-                globalState.hasInsufficientBalance = false;
-
-                // Update preview cards
-                setTimeout(() => {
-                    updatePreviewBalanceDisplay();
-                }, 500);
-
-                // Show success message
-                buttonText.textContent = `✅ $${newBalance.toFixed(2)}`;
-                setTimeout(() => {
-                    buttonText.textContent = originalText;
-                }, 2000);
-            } else {
-                // Balance updated but still insufficient or decreased
-                buttonText.textContent = `💰 $${newBalance.toFixed(2)}`;
-                setTimeout(() => {
-                    buttonText.textContent = originalText;
-                }, 2000);
-            }
+            buttonText.textContent = `✅ $${newBalance.toFixed(2)}`;
         } else {
-            // No change
             buttonText.textContent = `✓ $${newBalance.toFixed(2)}`;
-            setTimeout(() => {
-                buttonText.textContent = originalText;
-            }, 2000);
         }
+
+        // Delegate auto-trigger logic to central payment controller
+        if (typeof checkAndTriggerProcessing === 'function') {
+            console.log('[MANUAL] Balance checked, delegating to payment controller');
+            checkAndTriggerProcessing('manual');
+        }
+
+        // Reset button text after delay
+        setTimeout(() => {
+            buttonText.textContent = originalText;
+        }, 2000);
 
     } catch (error) {
         console.error('[BALANCE_CHECK] Error:', error);
@@ -719,32 +621,17 @@ window.checkForNewOrders = async function checkForNewOrders(messageContainer = '
 
                 // Immediately refresh the balance and update UI
                 await refreshCurrentBalance();
-                const currentBalance = globalState.accountBalance || 0;
-                const estimatedCost = globalState.estimatedCost || 0;
-                const effectiveCost = globalState.effectiveCost ?? estimatedCost; // Use ?? not || so 0 doesn't fall back
-                const hasSufficientBalance = currentBalance >= effectiveCost;
 
-                // Show appropriate message based on balance sufficiency
-                if (hasSufficientBalance) {
-                    showMessage(messageContainer, `Balance updated: $${currentBalance.toFixed(2)}, press Process Table to continue`, 'success');
-                    // Stop any ongoing polling since we have sufficient balance
-                    stopOrderPolling();
-                } else {
-                    const additionalNeeded = effectiveCost - currentBalance;
-                    showMessage(messageContainer, `Balance updated: $${currentBalance.toFixed(2)}, purchase $${Math.ceil(additionalNeeded).toFixed(2)} credit to process table`, 'success');
+                // Update all displays
+                updatePreviewBalanceDisplay();
+                updateAllBalanceDisplays();
+
+                // Delegate auto-trigger logic to central payment controller
+                // Don't show redundant messages - the controller handles messaging
+                if (typeof checkAndTriggerProcessing === 'function') {
+                    console.log('[POLLING] Credits added, delegating to payment controller');
+                    checkAndTriggerProcessing('polling');
                 }
-
-                // Force a longer delay to ensure balance is updated and DOM is ready
-                setTimeout(() => {
-                    // Update all displays first
-                    updatePreviewBalanceDisplay();
-                    updateAllBalanceDisplays();
-
-                    // Then reset buttons after displays are updated
-                    setTimeout(() => {
-                        resetProcessButtons();
-                    }, 50);
-                }, 200);
 
                 return true; // Credits were added
             }

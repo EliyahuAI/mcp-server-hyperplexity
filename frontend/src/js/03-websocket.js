@@ -824,6 +824,14 @@ function handleBalanceUpdate(data) {
     if (globalState) {
         globalState.accountBalance = newBalance;
     }
+
+    // CRITICAL: Check if we should auto-trigger processing
+    // This is the PRIMARY fix for the bug where WebSocket balance updates
+    // don't trigger auto-processing when user stays on tab
+    if (typeof checkAndTriggerProcessing === 'function') {
+        console.log('[WEBSOCKET] Balance updated, checking for pending processing...');
+        checkAndTriggerProcessing('websocket');
+    }
 }
 
 function showBalanceNotification(newBalance, transaction) {
