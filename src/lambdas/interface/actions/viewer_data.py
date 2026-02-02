@@ -199,20 +199,25 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         max_requests = 200 if env == 'dev' else 20
         is_allowed, remaining = check_rate_limit(email, 'getViewerData', max_requests=max_requests, window_minutes=1)
         if not is_allowed:
-            log_rate_limit_exceeded(email, action='getViewerData', limit=10, ip_address=ip_address)
+            log_rate_limit_exceeded(email, action='getViewerData', limit=max_requests, ip_address=ip_address)
             logger.warning(f"[SECURITY] Rate limit exceeded for {email}")
 
-            # SECURITY: Revoke token on excessive rate limit violations (security flag)
-            session_token = headers.get('X-Session-Token') or headers.get('x-session-token')
-            if session_token:
-                revoke_token(session_token, reason="excessive_rate_limit_violations")
-                logger.warning(f"[SECURITY] Revoked token for {email} due to rate limit abuse")
+            # SECURITY: Only revoke token in prod (dev needs flexibility for testing)
+            token_revoked = False
+            if env == 'prod':
+                session_token = headers.get('X-Session-Token') or headers.get('x-session-token')
+                if session_token:
+                    revoke_token(session_token, reason="excessive_rate_limit_violations")
+                    logger.warning(f"[SECURITY] Revoked token for {email} due to rate limit abuse")
+                    token_revoked = True
+
+            error_msg = 'Rate limit exceeded. Your session has been revoked for security. Please re-validate your email.' if token_revoked else 'Rate limit exceeded. Please wait a moment before retrying.'
 
             return create_response(429, {
                 'success': False,
-                'error': 'Rate limit exceeded. Your session has been revoked for security. Please re-validate your email.',
+                'error': error_msg,
                 'retry_after': 60,
-                'token_revoked': True
+                'token_revoked': token_revoked
             })
 
         # SECURITY: Verify email is validated in DynamoDB
