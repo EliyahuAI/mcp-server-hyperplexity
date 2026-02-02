@@ -2410,7 +2410,9 @@ body {
     border-right: 1px solid #c0c0c0;
     text-align: left;
     vertical-align: top;
-    max-width: 200px;
+    min-width: 120px;
+    max-width: 250px;
+    max-height: 80px;
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -2442,8 +2444,8 @@ body {
     left: 0;
     background: #fff;
     z-index: 1;
-    min-width: 150px;
-    max-width: 200px;
+    min-width: 180px;
+    max-width: 250px;
     box-shadow: 2px 0 4px rgba(0,0,0,0.06);
     border-right: 2px solid #e0e0e0;
 }
@@ -2453,9 +2455,15 @@ body {
     background: #f8f9fa;
 }
 
-/* ID column styling */
+/* ID column styling - larger text for row titles */
 .interactive-table .id-column {
     color: #1565c0;
+    font-size: 1rem;
+}
+
+.interactive-table .id-column strong {
+    font-size: 1.05rem;
+    font-weight: 700;
 }
 
 /* Column header with tooltip (no icon, just cursor change) */
@@ -2589,6 +2597,16 @@ body {
     filter: brightness(0.95);
 }
 
+/* Constrain cell value height to prevent row expansion */
+.interactive-table .cell-value {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-height: 4.5em;
+    line-height: 1.5;
+}
+
 .truncated-indicator {
     color: #999;
     font-style: italic;
@@ -2623,6 +2641,26 @@ body {
     font-style: italic;
 }
 
+/* Modal transparency transition for cell navigation */
+.cell-detail-overlay.modal-nav-fade .cell-detail-modal {
+    opacity: 0.5;
+    transition: opacity 0.25s ease;
+}
+
+/* Skip fade-in animation when reopening during navigation */
+.cell-detail-overlay.no-animate {
+    animation: none;
+}
+
+.cell-detail-overlay.no-animate .cell-detail-modal {
+    animation: none;
+}
+
+/* Row highlight class for navigation */
+.interactive-table tbody tr.row-highlight > td.sticky-column {
+    background-color: #ce93d8;
+}
+
 /* Cell Detail Modal */
 .cell-detail-overlay {
     position: fixed;
@@ -2636,6 +2674,21 @@ body {
     justify-content: center;
     z-index: 10000;
     padding: 20px;
+    animation: modalOverlayFadeIn 0.15s ease-out;
+}
+
+@keyframes modalOverlayFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.cell-detail-overlay.modal-closing {
+    animation: modalOverlayFadeOut 0.1s ease-out forwards;
+}
+
+@keyframes modalOverlayFadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
 }
 
 .cell-detail-modal {
@@ -2646,6 +2699,18 @@ body {
     max-height: 80vh;
     overflow-y: auto;
     box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    animation: modalSlideIn 0.15s ease-out;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .cell-detail-header {
@@ -15032,7 +15097,7 @@ function showPreviewResults(cardId, previewData) {
  * This avoids WebSocket payload size limits
  * ======================================== */
 
-async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdown) {
+async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdown, retryCount = 0) {
     const container = document.getElementById(containerId);
     if (!container) {
         console.warn('[PREVIEW] Table container not found:', containerId);
@@ -15046,9 +15111,12 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
         return;
     }
 
+    const maxRetries = 3;
+    const retryDelay = 2000; // 2 seconds
+
     try {
-        console.log('[PREVIEW] Fetching table metadata via API for session:', sessionId);
-        console.log('[PREVIEW] Session ID format check:', /^session_\d{8}_\d{6}_[a-f0-9]{8}$/.test(sessionId));
+        console.log(`[PREVIEW] Fetching table metadata via API for session: ${sessionId} (attempt ${retryCount + 1}/${maxRetries + 1})`);
+        console.log('[PREVIEW] Session ID format check:', /^session_(demo_)?\d{8}_\d{6}_[a-f0-9]{8}$/.test(sessionId));
 
         // SECURITY: Prepare headers with session token
         const requestHeaders = { 'Content-Type': 'application/json' };
@@ -15094,6 +15162,16 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
                 container.innerHTML = renderMarkdown(fallbackMarkdown || '');
             }
         } else {
+            // Check if this is a 404 "session not found" (race condition) and retry
+            if (response.status === 404 && data.session_not_found && retryCount < maxRetries) {
+                console.log(`[PREVIEW] Session not found yet (race condition), retrying in ${retryDelay}ms...`);
+                container.innerHTML = `<p style="color: #999; font-style: italic; text-align: center; padding: 1rem;">Loading table data (attempt ${retryCount + 2}/${maxRetries + 1})...</p>`;
+                setTimeout(() => {
+                    fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdown, retryCount + 1);
+                }, retryDelay);
+                return;
+            }
+
             console.warn('[PREVIEW] API returned no table_metadata, using markdown fallback:', data.error || 'unknown');
             container.innerHTML = renderMarkdown(fallbackMarkdown || '');
         }
@@ -17100,6 +17178,7 @@ const InteractiveTable = (function() {
     let currentHoverCell = null;
     let currentModalCell = null;
     let isTouchDevice = false;
+    let isNavigating = false;
 
     /* ========================================
      * Default Options
@@ -17502,7 +17581,7 @@ const InteractiveTable = (function() {
     /**
      * Show cell detail modal
      */
-    function showCellModal(cellElement) {
+    function showCellModal(cellElement, skipScroll = false, noAnimate = false) {
         // Track current cell for navigation
         currentModalCell = cellElement;
 
@@ -17635,7 +17714,7 @@ const InteractiveTable = (function() {
 
         // Create modal overlay
         const overlay = document.createElement('div');
-        overlay.className = 'cell-detail-overlay';
+        overlay.className = 'cell-detail-overlay' + (noAnimate ? ' no-animate' : '');
         overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
         overlay.innerHTML = modalContent;
         document.body.appendChild(overlay);
@@ -17647,9 +17726,16 @@ const InteractiveTable = (function() {
     /**
      * Close cell detail modal
      */
-    function closeModal() {
+    function closeModal(animate = false) {
         const overlay = document.querySelector('.cell-detail-overlay');
-        if (overlay) overlay.remove();
+        if (overlay) {
+            if (animate) {
+                overlay.classList.add('modal-closing');
+                setTimeout(() => overlay.remove(), 100);
+            } else {
+                overlay.remove();
+            }
+        }
         currentModalCell = null;
         document.removeEventListener('keydown', handleModalKeydown);
     }
@@ -17720,8 +17806,58 @@ const InteractiveTable = (function() {
         }
 
         if (targetCell) {
-            closeModal();
-            showCellModal(targetCell);
+            // Prevent rapid navigation
+            if (isNavigating) return;
+            isNavigating = true;
+
+            const overlay = document.querySelector('.cell-detail-overlay');
+
+            // Scroll only within the table container (not the whole page)
+            const container = targetCell.closest('.interactive-table-container');
+            if (container) {
+                const cellRect = targetCell.getBoundingClientRect();
+                const containerRect = container.getBoundingClientRect();
+
+                // Check if cell is outside visible area horizontally
+                if (cellRect.left < containerRect.left || cellRect.right > containerRect.right) {
+                    const scrollLeft = targetCell.offsetLeft - container.offsetWidth / 2 + targetCell.offsetWidth / 2;
+                    container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+                }
+            }
+
+            // Trigger hover state on target cell (highlight row/column)
+            targetCell.classList.add('cell-hover-active');
+            const colIndex = targetCell.dataset.colIndex;
+            if (colIndex) {
+                const colCells = document.querySelectorAll(`.interactive-table [data-col-index="${colIndex}"]`);
+                colCells.forEach(c => c.classList.add('column-highlight'));
+            }
+            // Highlight the row (sticky column)
+            const row = targetCell.closest('tr');
+            if (row) {
+                row.classList.add('row-highlight');
+            }
+
+            // Fade modal to transparent to reveal the highlighted cell
+            if (overlay) {
+                overlay.classList.add('modal-nav-fade');
+            }
+
+            // After fade, close and reopen with new cell
+            setTimeout(() => {
+                // Clear hover state
+                targetCell.classList.remove('cell-hover-active');
+                const highlighted = document.querySelectorAll('.interactive-table .column-highlight');
+                highlighted.forEach(c => c.classList.remove('column-highlight'));
+                // Clear row highlight
+                const highlightedRows = document.querySelectorAll('.interactive-table .row-highlight');
+                highlightedRows.forEach(r => r.classList.remove('row-highlight'));
+
+                if (overlay) overlay.remove();
+                currentModalCell = targetCell;
+                showCellModal(targetCell, true, true); // skipScroll=true, noAnimate=true
+                isNavigating = false;
+            }, 400);
         }
     }
 

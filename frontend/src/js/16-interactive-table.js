@@ -23,6 +23,7 @@ const InteractiveTable = (function() {
     let currentHoverCell = null;
     let currentModalCell = null;
     let isTouchDevice = false;
+    let isNavigating = false;
 
     /* ========================================
      * Default Options
@@ -425,7 +426,7 @@ const InteractiveTable = (function() {
     /**
      * Show cell detail modal
      */
-    function showCellModal(cellElement) {
+    function showCellModal(cellElement, skipScroll = false, noAnimate = false) {
         // Track current cell for navigation
         currentModalCell = cellElement;
 
@@ -558,7 +559,7 @@ const InteractiveTable = (function() {
 
         // Create modal overlay
         const overlay = document.createElement('div');
-        overlay.className = 'cell-detail-overlay';
+        overlay.className = 'cell-detail-overlay' + (noAnimate ? ' no-animate' : '');
         overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
         overlay.innerHTML = modalContent;
         document.body.appendChild(overlay);
@@ -570,9 +571,16 @@ const InteractiveTable = (function() {
     /**
      * Close cell detail modal
      */
-    function closeModal() {
+    function closeModal(animate = false) {
         const overlay = document.querySelector('.cell-detail-overlay');
-        if (overlay) overlay.remove();
+        if (overlay) {
+            if (animate) {
+                overlay.classList.add('modal-closing');
+                setTimeout(() => overlay.remove(), 100);
+            } else {
+                overlay.remove();
+            }
+        }
         currentModalCell = null;
         document.removeEventListener('keydown', handleModalKeydown);
     }
@@ -643,8 +651,58 @@ const InteractiveTable = (function() {
         }
 
         if (targetCell) {
-            closeModal();
-            showCellModal(targetCell);
+            // Prevent rapid navigation
+            if (isNavigating) return;
+            isNavigating = true;
+
+            const overlay = document.querySelector('.cell-detail-overlay');
+
+            // Scroll only within the table container (not the whole page)
+            const container = targetCell.closest('.interactive-table-container');
+            if (container) {
+                const cellRect = targetCell.getBoundingClientRect();
+                const containerRect = container.getBoundingClientRect();
+
+                // Check if cell is outside visible area horizontally
+                if (cellRect.left < containerRect.left || cellRect.right > containerRect.right) {
+                    const scrollLeft = targetCell.offsetLeft - container.offsetWidth / 2 + targetCell.offsetWidth / 2;
+                    container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+                }
+            }
+
+            // Trigger hover state on target cell (highlight row/column)
+            targetCell.classList.add('cell-hover-active');
+            const colIndex = targetCell.dataset.colIndex;
+            if (colIndex) {
+                const colCells = document.querySelectorAll(`.interactive-table [data-col-index="${colIndex}"]`);
+                colCells.forEach(c => c.classList.add('column-highlight'));
+            }
+            // Highlight the row (sticky column)
+            const row = targetCell.closest('tr');
+            if (row) {
+                row.classList.add('row-highlight');
+            }
+
+            // Fade modal to transparent to reveal the highlighted cell
+            if (overlay) {
+                overlay.classList.add('modal-nav-fade');
+            }
+
+            // After fade, close and reopen with new cell
+            setTimeout(() => {
+                // Clear hover state
+                targetCell.classList.remove('cell-hover-active');
+                const highlighted = document.querySelectorAll('.interactive-table .column-highlight');
+                highlighted.forEach(c => c.classList.remove('column-highlight'));
+                // Clear row highlight
+                const highlightedRows = document.querySelectorAll('.interactive-table .row-highlight');
+                highlightedRows.forEach(r => r.classList.remove('row-highlight'));
+
+                if (overlay) overlay.remove();
+                currentModalCell = targetCell;
+                showCellModal(targetCell, true, true); // skipScroll=true, noAnimate=true
+                isNavigating = false;
+            }, 400);
         }
     }
 

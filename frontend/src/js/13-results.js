@@ -307,7 +307,7 @@ function showPreviewResults(cardId, previewData) {
  * This avoids WebSocket payload size limits
  * ======================================== */
 
-async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdown) {
+async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdown, retryCount = 0) {
     const container = document.getElementById(containerId);
     if (!container) {
         console.warn('[PREVIEW] Table container not found:', containerId);
@@ -321,9 +321,12 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
         return;
     }
 
+    const maxRetries = 3;
+    const retryDelay = 2000; // 2 seconds
+
     try {
-        console.log('[PREVIEW] Fetching table metadata via API for session:', sessionId);
-        console.log('[PREVIEW] Session ID format check:', /^session_\d{8}_\d{6}_[a-f0-9]{8}$/.test(sessionId));
+        console.log(`[PREVIEW] Fetching table metadata via API for session: ${sessionId} (attempt ${retryCount + 1}/${maxRetries + 1})`);
+        console.log('[PREVIEW] Session ID format check:', /^session_(demo_)?\d{8}_\d{6}_[a-f0-9]{8}$/.test(sessionId));
 
         // SECURITY: Prepare headers with session token
         const requestHeaders = { 'Content-Type': 'application/json' };
@@ -369,6 +372,16 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
                 container.innerHTML = renderMarkdown(fallbackMarkdown || '');
             }
         } else {
+            // Check if this is a 404 "session not found" (race condition) and retry
+            if (response.status === 404 && data.session_not_found && retryCount < maxRetries) {
+                console.log(`[PREVIEW] Session not found yet (race condition), retrying in ${retryDelay}ms...`);
+                container.innerHTML = `<p style="color: #999; font-style: italic; text-align: center; padding: 1rem;">Loading table data (attempt ${retryCount + 2}/${maxRetries + 1})...</p>`;
+                setTimeout(() => {
+                    fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdown, retryCount + 1);
+                }, retryDelay);
+                return;
+            }
+
             console.warn('[PREVIEW] API returned no table_metadata, using markdown fallback:', data.error || 'unknown');
             container.innerHTML = renderMarkdown(fallbackMarkdown || '');
         }
