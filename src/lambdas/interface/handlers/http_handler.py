@@ -92,6 +92,9 @@ def handle(event, context):
             
             try:
                 request_data = json.loads(body)
+                # SECURITY: Add headers and requestContext to request_data for action handlers
+                request_data['_headers'] = headers
+                request_data['_requestContext'] = event.get('requestContext', {})
             except json.JSONDecodeError as e:
                 logger.error(f"Invalid JSON in request body: {e}")
                 return create_response(400, {'error': 'Invalid JSON format'})

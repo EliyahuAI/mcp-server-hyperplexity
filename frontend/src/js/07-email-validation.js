@@ -1,100 +1,108 @@
 /* ========================================
- * 07-email-validation.js - Email Verification
+ * 07-email-validation.js - Email Validation
  *
- * Handles email validation, code sending,
- * and verification flow.
+ * Handles email validation for gating access to premium features.
+ * Provides a reusable email validation card that can be used
+ * standalone or as part of a larger flow.
  *
- * Dependencies: 00-config.js, 04-cards.js, 05-chat.js
+ * Dependencies: 00-config.js, 01-state.js, 02-analytics.js,
+ *               03-utility.js, 04-cards.js
  * ======================================== */
 
-function validateEmail(email) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
+/**
+ * Creates an email validation card
+ * @param {Object} options - Card options
+ * @param {string} options.id - Card ID (default: generateCardId())
+ * @param {string} options.title - Card title (default: "Email Verification Required")
+ * @param {string} options.subtitle - Card subtitle (default: "Verify your email to continue")
+ * @param {string} options.infoHeaderText - Info header text
+ * @returns {Object} Card info {cardId, card}
+ */
+function createEmailValidationCard(options = {}) {
+    const cardId = options.id || generateCardId();
+    const title = options.title || "Email Verification Required";
+    const subtitle = options.subtitle || "Verify your email to continue";
+    const infoHeaderText = options.infoHeaderText || 'Enter your email address to access this feature. We\'ll send you a verification code.';
 
-function createEmailCard() {
-    const cardId = generateCardId();
-    const content = `
-        <div id="${cardId}-form">
-            <div class="form-row">
-                <div class="form-group">
-                    <label class="form-label" for="${cardId}-email">Email Address</label>
-                    <input type="email" id="${cardId}-email" class="form-input"
-                        placeholder="your.email@example.com" required>
-                </div>
+    const cardHTML = `
+        <div class="info-header">
+            ${infoHeaderText}
+        </div>
+        <form id="${cardId}-form" class="email-form">
+            <label for="${cardId}-email">Email Address</label>
+            <input
+                type="email"
+                id="${cardId}-email"
+                name="email"
+                placeholder="you@example.com"
+                required
+                autocomplete="email"
+            />
+
+            <div id="${cardId}-code-section" style="display: none; margin-top: 1rem;">
+                <label for="${cardId}-code">Verification Code</label>
+                <input
+                    type="text"
+                    id="${cardId}-code"
+                    name="code"
+                    placeholder="Enter 6-digit code"
+                    maxlength="6"
+                    pattern="[0-9]{6}"
+                    autocomplete="one-time-code"
+                />
             </div>
-            <div id="${cardId}-code-section" style="display: none;">
-                <div class="privacy-checkbox">
+
+            <div id="${cardId}-terms-section" style="margin-top: 1rem;">
+                <label class="checkbox-label">
                     <input type="checkbox" id="${cardId}-terms" required>
-                    <label for="${cardId}-terms">
-                        I agree to the <a href="${ENV_CONFIG.termsUrl}" target="_blank" style="color: var(--primary-color); text-decoration: underline;">Terms and Conditions</a>
-                    </label>
-                </div>
-                <div class="privacy-checkbox">
-                    <input type="checkbox" id="${cardId}-privacy">
-                    <label for="${cardId}-privacy">
-                        I accept the <a href="${ENV_CONFIG.privacyUrl}" target="_blank" style="color: var(--primary-color); text-decoration: underline;">Privacy Notice</a>
-                    </label>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label" for="${cardId}-code">Verification Code</label>
-                        <input type="text" id="${cardId}-code" class="form-input"
-                            placeholder="Enter 6-digit code" maxlength="6">
-                    </div>
-                </div>
+                    <span>I agree to the <a href="https://eliyahu.ai/terms" target="_blank">Terms and Conditions</a></span>
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="${cardId}-privacy" required>
+                    <span>I accept the <a href="https://eliyahu.ai/privacy" target="_blank">Privacy Notice</a></span>
+                </label>
             </div>
+
             <div id="${cardId}-messages"></div>
-        </div>
-        <div id="${cardId}-success" style="display: none;">
-            <div class="message message-success">
-                <span class="message-icon">✓</span>
-                <span>Email validated successfully!</span>
-            </div>
-        </div>
+        </form>
+        <div id="${cardId}-buttons"></div>
     `;
 
     const card = createCard({
-        id: cardId,  // Pass explicit ID
+        id: cardId,
         icon: '✉️',
-        title: 'Email Validation',
-        subtitle: 'Verify your email to access the validator',
-        content,
-        statusBadge: { type: 'pending', text: 'Not Validated' },
-        buttons: [
-            {
-                text: 'Validate Email',
-                icon: '📤',
-                callback: async (e) => {
-                    const button = e.target.closest('button');
-                    await sendValidationCode(cardId, button);
-                }
-            }
-        ]
+        title: title,
+        subtitle: subtitle,
+        content: cardHTML
     });
 
-    // Check for stored email
-    const storedEmail = localStorage.getItem('validatedEmail');
-    if (storedEmail) {
-        document.getElementById(`${cardId}-email`).value = storedEmail;
-    }
+    // Create validate button
+    createButtonRow(`${cardId}-buttons`, [
+        {
+            text: 'Send Code',
+            icon: '📧',
+            variant: 'primary',
+            callback: async (e) => {
+                const button = e.target.closest('button');
+                await sendEmailCode(cardId, button);
+            }
+        }
+    ]);
 
-    return card;
+    return { cardId, card };
 }
 
-// Email validation functions
-async function sendValidationCode(cardId, button) {
-    const emailInput = document.getElementById(`${cardId}-email`);
-    const email = emailInput.value.trim();
+async function sendEmailCode(cardId, button) {
+    const email = document.getElementById(`${cardId}-email`).value.trim();
 
-    // Validate inputs
-    if (!validateEmail(email)) {
-        showMessage(`${cardId}-messages`, 'Please enter a valid email address', 'error');
-        throw new Error('Invalid email');
+    if (!email) {
+        showMessage(`${cardId}-messages`, 'Please enter an email address', 'error');
+        throw new Error('Email required');
     }
 
-    globalState.email = email;
-
     try {
+        globalState.email = email;
+
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -108,6 +116,11 @@ async function sendValidationCode(cardId, button) {
 
         if (response.ok && data.success) {
             if (data.validated) {
+                // SECURITY: Store session token from backend
+                if (data.session_token) {
+                    sessionStorage.setItem('sessionToken', data.session_token);
+                    globalState.sessionToken = data.session_token;
+                }
                 // Already validated - ALWAYS TREAT AS NEW USER FOR NOW
                 globalState.isNewUser = true; // Override backend response
                 handleEmailValidated(cardId);
@@ -177,6 +190,11 @@ async function verifyCode(cardId, button) {
         const data = await response.json();
 
         if (response.ok && data.success) {
+            // SECURITY: Store session token from backend
+            if (data.session_token) {
+                sessionStorage.setItem('sessionToken', data.session_token);
+                globalState.sessionToken = data.session_token;
+            }
             markButtonSelected(button, '✓ Verified');
             // ALWAYS TREAT AS NEW USER FOR NOW
             globalState.isNewUser = true; // Override - show demo to everyone
@@ -196,6 +214,9 @@ function handleEmailValidated(cardId) {
 
     // Track email validation conversion
     trackEmailValidationConversion(globalState.email);
+
+    // SECURITY: Show signed-in badge
+    showSignedInBadge(globalState.email);
 
     // Check for pending action (deferred email validation mode)
     if (globalState.pendingActionAfterEmail) {
@@ -230,24 +251,17 @@ function handleEmailValidated(cardId) {
             pendingAction();
         }, 500);
 
-        return; // Skip normal card flow
+        return;
     }
 
-    // Update card UI with error checking
-    const formEl = document.getElementById(`${cardId}-form`);
-    const successEl = document.getElementById(`${cardId}-success`);
-
-    if (formEl) {
-        formEl.style.display = 'none';
-    } else {
-        console.error(`Form element ${cardId}-form not found`);
+    // Hide email form
+    const formElement = document.getElementById(`${cardId}-form`);
+    if (formElement) {
+        formElement.style.display = 'none';
     }
 
-    if (successEl) {
-        successEl.style.display = 'block';
-    } else {
-        console.error(`Success element ${cardId}-success not found`);
-    }
+    // Show completion message
+    showFinalCardState(cardId, 'Email validated! ✓', 'success');
 
     // Update status badge
     const card = document.getElementById(cardId);
@@ -282,4 +296,92 @@ function handleEmailValidated(cardId) {
             createUploadCard();
         }
     }, 500);
+}
+
+/* ========================================
+ * Signed-In Badge (Top Left)
+ * Shows user email with logout option
+ * ======================================== */
+
+function showSignedInBadge(email) {
+    // Remove existing badge if any
+    const existingBadge = document.querySelector('.signed-in-badge');
+    if (existingBadge) {
+        existingBadge.remove();
+    }
+
+    // Create badge
+    const badge = document.createElement('div');
+    badge.className = 'signed-in-badge';
+    badge.title = 'Click to logout';
+    badge.innerHTML = `
+        <span class="email">${email}</span>
+        <span class="logout-icon">⎋</span>
+    `;
+
+    // Add click handler for logout
+    badge.addEventListener('click', handleLogout);
+
+    // Add to body
+    document.body.appendChild(badge);
+
+    // Show with animation
+    setTimeout(() => {
+        badge.style.display = 'flex';
+        badge.style.alignItems = 'center';
+    }, 100);
+}
+
+function hideSignedInBadge() {
+    const badge = document.querySelector('.signed-in-badge');
+    if (badge) {
+        badge.style.display = 'none';
+        setTimeout(() => badge.remove(), 300);
+    }
+}
+
+function handleLogout() {
+    // Confirm logout
+    if (!confirm('Are you sure you want to logout?')) {
+        return;
+    }
+
+    // Clear all auth data
+    localStorage.removeItem('validatedEmail');
+    sessionStorage.removeItem('sessionToken');
+    globalState.email = null;
+    globalState.sessionToken = null;
+
+    // Hide badge
+    hideSignedInBadge();
+
+    // Show logout message
+    const cardId = generateCardId();
+    createCard({
+        id: cardId,
+        icon: '👋',
+        title: 'Logged Out',
+        subtitle: 'You have been logged out successfully',
+        content: `
+            <div class="info-header">
+                Your session has been cleared. Reload the page to login again.
+            </div>
+        `
+    });
+
+    console.log('[AUTH] User logged out');
+}
+
+// Initialize signed-in badge on page load if user is validated
+if (typeof window !== 'undefined') {
+    window.addEventListener('DOMContentLoaded', () => {
+        const validatedEmail = localStorage.getItem('validatedEmail');
+        const sessionToken = sessionStorage.getItem('sessionToken');
+
+        if (validatedEmail && sessionToken) {
+            showSignedInBadge(validatedEmail);
+            globalState.email = validatedEmail;
+            globalState.sessionToken = sessionToken;
+        }
+    });
 }

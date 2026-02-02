@@ -869,6 +869,48 @@
     background: rgba(3, 169, 244, 0.9);
 }
 
+/* Signed-in indicator (top left) */
+.signed-in-badge {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    background: rgba(76, 175, 80, 0.9);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    z-index: 10000;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    display: none; /* Hidden by default */
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.signed-in-badge:hover {
+    background: rgba(76, 175, 80, 1);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+}
+
+.signed-in-badge:active {
+    transform: translateY(0);
+}
+
+.signed-in-badge .email {
+    margin-right: 8px;
+}
+
+.signed-in-badge .logout-icon {
+    opacity: 0.8;
+    font-size: 14px;
+}
+
+.signed-in-badge:hover .logout-icon {
+    opacity: 1;
+}
+
 /* Media Queries for Balance Notifications */
 @media (max-width: 768px) {
     .balance-notification {

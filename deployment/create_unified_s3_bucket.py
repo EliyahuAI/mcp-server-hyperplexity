@@ -261,23 +261,43 @@ def create_unified_s3_bucket(bucket_name='hyperplexity-storage'):
         )
         print("Enabled bucket versioning")
         
-        # Configure CORS for web access
+        # SECURITY: Configure CORS with specific allowed origins (no wildcard)
+        # Replace these with your actual production domains
         cors_config = {
             'CORSRules': [
                 {
-                    'AllowedHeaders': ['*'],
-                    'AllowedMethods': ['GET', 'HEAD', 'PUT', 'POST'],
-                    'AllowedOrigins': ['*'],
-                    'MaxAgeSeconds': 3600
+                    'ID': 'DownloadRule',
+                    'AllowedHeaders': ['Content-Type', 'Authorization', 'X-Session-Token'],
+                    'AllowedMethods': ['GET', 'HEAD'],  # Only read operations for downloads
+                    'AllowedOrigins': [
+                        'https://eliyahu.ai',  # Production domain
+                        'https://www.eliyahu.ai',
+                        'http://localhost:8000',  # Local development only
+                        'http://localhost:3000'   # Additional local dev port
+                    ],
+                    'ExposeHeaders': ['ETag', 'Content-Length', 'Content-Disposition'],
+                    'MaxAgeSeconds': 600  # Reduced from 3600 for security
+                },
+                {
+                    'ID': 'UploadRule',
+                    'AllowedHeaders': ['Content-Type', 'Authorization', 'X-Session-Token'],
+                    'AllowedMethods': ['PUT', 'POST'],  # Write operations
+                    'AllowedOrigins': [
+                        'https://eliyahu.ai',
+                        'https://www.eliyahu.ai',
+                        'http://localhost:8000',
+                        'http://localhost:3000'
+                    ],
+                    'MaxAgeSeconds': 600
                 }
             ]
         }
-        
+
         s3_client.put_bucket_cors(
             Bucket=bucket_name,
             CORSConfiguration=cors_config
         )
-        print("Configured CORS for web access")
+        print("SECURITY: Configured CORS with specific allowed origins (no wildcard)")
         
         # Create folder structure with placeholder objects
         folder_structure = [

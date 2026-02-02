@@ -1517,20 +1517,56 @@ def create_email_validation_request(email: str) -> Dict[str, Any]:
         }
 
 
-def validate_email_code(email: str, code: str) -> Dict[str, Any]:
+def validate_email_code(email: str, code: str, ip_address: str = None) -> Dict[str, Any]:
     """
     Validate email with provided code.
-    Returns validation result.
+
+    SECURITY ENHANCEMENTS:
+    - IP-based rate limiting (10 attempts per hour per IP)
+    - Progressive delays after failed attempts (exponential backoff)
+    - 15-minute lockout after 3 failed attempts per email
+    - Tracks lockout state in DynamoDB
+
+    Args:
+        email: Email address to validate
+        code: 6-digit validation code
+        ip_address: Optional IP address for rate limiting
+
+    Returns:
+        Dict with success/error status and message
     """
     try:
         # Normalize email to lowercase
         email = email.lower().strip()
-        
+
         table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.USER_VALIDATION_TABLE)
-        
+
+        # SECURITY: Check IP-based rate limit (10 attempts per hour per IP)
+        if ip_address:
+            ip_key = f"rate_limit:validateCode:ip:{ip_address}"
+            try:
+                ip_response = table.get_item(Key={'email': ip_key})
+                if 'Item' in ip_response:
+                    ip_item = ip_response['Item']
+                    ip_count = int(ip_item.get('request_count', 0))
+                    ip_ttl = ip_item.get('ttl', 0)
+
+                    # Check if rate limit still active
+                    if ip_ttl > int(datetime.now(timezone.utc).timestamp()):
+                        if ip_count >= 10:
+                            logger.warning(f"[SECURITY] IP rate limit exceeded: {ip_address}")
+                            return {
+                                'success': False,
+                                'validated': False,
+                                'error': 'rate_limit_exceeded',
+                                'message': 'Too many validation attempts from your IP address. Please try again in 1 hour.'
+                            }
+            except Exception as e:
+                logger.debug(f"Error checking IP rate limit: {e}")
+
         # Get validation record
         response = table.get_item(Key={'email': email})
-        
+
         if 'Item' not in response:
             return {
                 'success': False,
@@ -1538,9 +1574,9 @@ def validate_email_code(email: str, code: str) -> Dict[str, Any]:
                 'error': 'no_validation_request',
                 'message': 'No validation request found for this email'
             }
-        
+
         validation_record = response['Item']
-        
+
         # Check if already validated
         if validation_record.get('validated', False):
             return {
@@ -1548,6 +1584,19 @@ def validate_email_code(email: str, code: str) -> Dict[str, Any]:
                 'validated': True,
                 'message': 'Email already validated'
             }
+
+        # SECURITY: Check if email is locked out
+        if 'locked_until' in validation_record:
+            locked_until = datetime.fromisoformat(validation_record['locked_until'].replace('Z', '+00:00'))
+            if datetime.now(timezone.utc) < locked_until:
+                remaining_minutes = int((locked_until - datetime.now(timezone.utc)).total_seconds() / 60)
+                logger.warning(f"[SECURITY] Email locked out: {email}")
+                return {
+                    'success': False,
+                    'validated': False,
+                    'error': 'account_locked',
+                    'message': f'Too many failed attempts. Account locked for {remaining_minutes} more minutes.'
+                }
         
         # Check expiry
         expires_at = datetime.fromisoformat(validation_record['expires_at'].replace('Z', '+00:00'))
@@ -1564,28 +1613,67 @@ def validate_email_code(email: str, code: str) -> Dict[str, Any]:
         # Check attempts limit
         attempts = validation_record.get('attempts', 0)
         if attempts >= 3:
-            # Clean up after too many attempts
-            table.delete_item(Key={'email': email})
+            # SECURITY: 15-minute lockout after 3 failed attempts
+            lockout_until = datetime.now(timezone.utc) + timedelta(minutes=15)
+            lockout_ttl = int((lockout_until + timedelta(hours=1)).timestamp())
+
+            table.update_item(
+                Key={'email': email},
+                UpdateExpression="SET locked_until = :lockout, #ttl = :ttl",
+                ExpressionAttributeNames={'#ttl': 'ttl'},
+                ExpressionAttributeValues={
+                    ':lockout': lockout_until.isoformat(),
+                    ':ttl': lockout_ttl
+                }
+            )
+
+            logger.warning(f"[SECURITY] Email locked out after 3 failed attempts: {email}")
             return {
                 'success': False,
                 'validated': False,
-                'error': 'too_many_attempts',
-                'message': 'Too many validation attempts'
+                'error': 'account_locked',
+                'message': 'Too many failed attempts. Account locked for 15 minutes.'
             }
-        
+
         # Check code
         if validation_record['validation_code'] != code:
+            # SECURITY: Progressive delay after failed attempts (exponential backoff)
+            if attempts > 0:
+                delay_seconds = min(2 ** attempts, 60)  # 2s, 4s, 8s, max 60s
+                logger.info(f"[SECURITY] Adding {delay_seconds}s delay after {attempts} failed attempts")
+                time.sleep(delay_seconds)
+
             # Increment attempts
+            new_attempts = attempts + 1
             table.update_item(
                 Key={'email': email},
-                UpdateExpression="SET attempts = attempts + :inc",
-                ExpressionAttributeValues={':inc': 1}
+                UpdateExpression="SET attempts = :attempts",
+                ExpressionAttributeValues={':attempts': new_attempts}
             )
+
+            # SECURITY: Track IP attempt if provided
+            if ip_address:
+                ip_key = f"rate_limit:validateCode:ip:{ip_address}"
+                ip_ttl = int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp())
+                try:
+                    table.update_item(
+                        Key={'email': ip_key},
+                        UpdateExpression='ADD request_count :inc SET #ttl = :ttl',
+                        ExpressionAttributeNames={'#ttl': 'ttl'},
+                        ExpressionAttributeValues={
+                            ':inc': 1,
+                            ':ttl': ip_ttl
+                        }
+                    )
+                except Exception as e:
+                    logger.debug(f"Error tracking IP attempt: {e}")
+
+            remaining_attempts = 3 - new_attempts
             return {
                 'success': False,
                 'validated': False,
                 'error': 'invalid_code',
-                'message': 'Invalid validation code'
+                'message': f'Invalid validation code. {remaining_attempts} attempts remaining.'
             }
         
         # Code is correct - mark as validated and remove TTL

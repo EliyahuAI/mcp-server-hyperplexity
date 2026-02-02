@@ -77,17 +77,30 @@ async function loadAndDisplayResults(params) {
                 table_name: params.path.split('/').pop().replace('.json', '')
             };
         } else {
+            // SECURITY: Get session token from sessionStorage
+            const sessionToken = sessionStorage.getItem('sessionToken');
+
             // Fetch metadata from API
+            const requestHeaders = { 'Content-Type': 'application/json' };
+            const requestBody = {
+                action: 'getViewerData',
+                session_id: params.session,
+                version: params.version,
+                path: params.path
+            };
+
+            // SECURITY: Prefer session token in header, fallback to email in body for backward compatibility
+            if (sessionToken) {
+                requestHeaders['X-Session-Token'] = sessionToken;
+            } else {
+                // Legacy: include email in body if no token available
+                requestBody.email = globalState.email;
+            }
+
             const response = await fetch(`${API_BASE}/validate`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'getViewerData',
-                    email: globalState.email,
-                    session_id: params.session,
-                    version: params.version,
-                    path: params.path
-                })
+                headers: requestHeaders,
+                body: JSON.stringify(requestBody)
             });
 
             data = await response.json();

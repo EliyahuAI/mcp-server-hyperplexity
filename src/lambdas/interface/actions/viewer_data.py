@@ -6,15 +6,110 @@ import json
 import logging
 import boto3
 import os
+import re
+import time
 from typing import Optional, Dict, Any
 
 from interface_lambda.utils.helpers import create_response
+from interface_lambda.utils.session_manager import extract_email_from_request
+from interface_lambda.utils.rate_limiter import check_rate_limit
+from interface_lambda.utils.security_logger import (
+    log_ownership_violation,
+    log_rate_limit_exceeded,
+    log_invalid_session_format,
+    log_path_traversal_attempt,
+    log_unvalidated_email_access
+)
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 s3_client = boto3.client('s3')
+
+# Lambda instance-level cache (persists across warm invocations for performance)
+_SESSION_OWNERSHIP_CACHE = {}
+_CACHE_TTL_SECONDS = 300  # 5 minutes
+
+# Session ID validation pattern: session_YYYYMMDD_HHMMSS_xxxxxxxx
+SESSION_ID_PATTERN = re.compile(r'^session_\d{8}_\d{6}_[a-f0-9]{8}$')
+
+
+def _verify_session_ownership(email: str, session_id: str) -> bool:
+    """
+    Verify that email owns the session_id in DynamoDB (no caching).
+
+    Args:
+        email: User's email address (normalized)
+        session_id: Session ID to verify
+
+    Returns:
+        True if email owns the session, False otherwise
+    """
+    try:
+        runs_table = boto3.resource('dynamodb', region_name='us-east-1').Table('perplexity-validator-runs')
+        response = runs_table.get_item(Key={'session_id': session_id})
+
+        if 'Item' not in response:
+            logger.warning(f"[SECURITY] Session not found: {session_id}")
+            return False
+
+        session_email = response['Item'].get('email', '').lower().strip()
+        request_email = email.lower().strip()
+
+        if session_email != request_email:
+            logger.error(f"[SECURITY] Ownership violation: {request_email} attempted to access session owned by {session_email}")
+            return False
+
+        return True
+    except Exception as e:
+        logger.error(f"[SECURITY] Error verifying ownership: {e}")
+        return False
+
+
+def _verify_session_ownership_cached(email: str, session_id: str) -> bool:
+    """
+    Verify session ownership with 5-minute Lambda cache.
+
+    Performance:
+    - Cache hit: ~2ms (dictionary lookup)
+    - Cache miss: ~30ms (DynamoDB read)
+    - Expected hit rate: >95% (users repeatedly access same sessions)
+
+    Args:
+        email: User's email address (normalized)
+        session_id: Session ID to verify
+
+    Returns:
+        True if email owns the session, False otherwise
+    """
+    cache_key = f"{email}:{session_id}"
+    now = time.time()
+
+    # Check cache first
+    cached = _SESSION_OWNERSHIP_CACHE.get(cache_key)
+    if cached and (now - cached['timestamp']) < _CACHE_TTL_SECONDS:
+        logger.debug(f"[CACHE_HIT] Session ownership for {cache_key}")
+        return cached['is_owner']
+
+    # Cache miss - query DynamoDB
+    logger.debug(f"[CACHE_MISS] Querying DynamoDB for {cache_key}")
+    is_owner = _verify_session_ownership(email, session_id)
+
+    # Store in cache
+    _SESSION_OWNERSHIP_CACHE[cache_key] = {
+        'is_owner': is_owner,
+        'timestamp': now
+    }
+
+    # Limit cache size (prevent memory bloat)
+    if len(_SESSION_OWNERSHIP_CACHE) > 1000:
+        # Remove oldest entries
+        sorted_items = sorted(_SESSION_OWNERSHIP_CACHE.items(), key=lambda x: x[1]['timestamp'])
+        for old_key, _ in sorted_items[:500]:  # Remove oldest 500
+            del _SESSION_OWNERSHIP_CACHE[old_key]
+
+    return is_owner
 
 
 def handle(request_data: Dict[str, Any], context) -> Dict:
@@ -40,8 +135,22 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
     logger.info(f"[VIEWER_DATA] Starting handle with request_data: {request_data}")
 
     try:
+        # SECURITY: Extract headers and IP from request_data (added by http_handler)
+        headers = request_data.get('_headers', {})
+        request_context = request_data.get('_requestContext', {})
+        ip_address = request_context.get('identity', {}).get('sourceIp')
+
+        # SECURITY: Extract email from verified session token (preferred)
+        # Falls back to email field in request body for backward compatibility
+        email = extract_email_from_request(request_data, headers)
+
+        # Backward compatibility: if no token, try email field (legacy support)
+        if not email:
+            email = request_data.get('email', '').lower().strip()
+            if email:
+                logger.warning(f"[SECURITY] Legacy email field used (no session token): {email}")
+
         # Extract and validate parameters
-        email = request_data.get('email', '').lower().strip()
         session_id = request_data.get('session_id', '').strip()
         version = request_data.get('version')
         is_preview = request_data.get('is_preview')  # None = auto, False = full only, True = preview only
@@ -49,13 +158,61 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         if not email:
             return create_response(400, {
                 'success': False,
-                'error': 'Email address is required'
+                'error': 'Email address is required (please provide session token or email)'
             })
 
         if not session_id:
             return create_response(400, {
                 'success': False,
                 'error': 'Session ID is required'
+            })
+
+        # SECURITY: Validate session ID format to prevent path traversal
+        if not SESSION_ID_PATTERN.match(session_id):
+            log_invalid_session_format(session_id, email=email, ip_address=ip_address)
+            logger.error(f"[SECURITY] Invalid session ID format: {session_id}")
+            return create_response(400, {
+                'success': False,
+                'error': 'Invalid session ID format'
+            })
+
+        if '..' in session_id or '/' in session_id or '\\' in session_id:
+            log_path_traversal_attempt(session_id, email=email, ip_address=ip_address)
+            logger.error(f"[SECURITY] Path traversal attempt: {session_id}")
+            return create_response(400, {
+                'success': False,
+                'error': 'Invalid session ID'
+            })
+
+        # SECURITY: Check rate limit (10 requests per minute per email)
+        is_allowed, remaining = check_rate_limit(email, 'getViewerData', max_requests=10, window_minutes=1)
+        if not is_allowed:
+            log_rate_limit_exceeded(email, action='getViewerData', limit=10, ip_address=ip_address)
+            logger.warning(f"[SECURITY] Rate limit exceeded for {email}")
+            return create_response(429, {
+                'success': False,
+                'error': 'Rate limit exceeded. Please try again later.',
+                'retry_after': 60  # seconds
+            })
+
+        # SECURITY: Verify email is validated in DynamoDB
+        from dynamodb_schemas import is_email_validated
+
+        if not is_email_validated(email):
+            log_unvalidated_email_access(email, ip_address=ip_address)
+            logger.warning(f"[SECURITY] Unvalidated email attempted access: {email}")
+            return create_response(401, {
+                'success': False,
+                'error': 'Email not validated. Please validate your email first.'
+            })
+
+        # SECURITY: Verify session ownership (with Lambda caching for performance)
+        if not _verify_session_ownership_cached(email, session_id):
+            log_ownership_violation(email, session_id, ip_address=ip_address)
+            logger.error(f"[SECURITY] Ownership violation - {email} attempted to access {session_id}")
+            return create_response(403, {
+                'success': False,
+                'error': 'Access denied: you do not own this session'
             })
 
         # Initialize storage manager
@@ -152,14 +309,18 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
             enhanced_download_url = _generate_presigned_url(
                 active_bucket,
                 excel_key,
-                excel_filename or 'results.xlsx'
+                excel_filename or 'results.xlsx',
+                email=email,
+                session_id=session_id
             )
 
         # Generate JSON download URL
         json_download_url = _generate_presigned_url(
             active_bucket,
             metadata_key,
-            f"table_metadata_v{config_version}.json"
+            f"table_metadata_v{config_version}.json",
+            email=email,
+            session_id=session_id
         )
 
         # Extract table name from metadata or session
@@ -438,8 +599,36 @@ def _find_excel_file(bucket: str, prefix: str, is_full_validation: bool = False)
         return None, None
 
 
-def _generate_presigned_url(bucket: str, key: str, filename: str, expiration: int = 3600) -> Optional[str]:
-    """Generate a presigned download URL."""
+def _generate_presigned_url(
+    bucket: str,
+    key: str,
+    filename: str,
+    email: str,
+    session_id: str,
+    expiration: int = 300  # REDUCED from 3600 to 5 minutes for security
+) -> Optional[str]:
+    """
+    Generate a presigned download URL with ownership verification.
+
+    SECURITY: Verifies that the requesting email owns the session before
+    generating download URLs. Prevents unauthorized file access.
+
+    Args:
+        bucket: S3 bucket name
+        key: S3 object key
+        filename: Filename for Content-Disposition header
+        email: User's email (must own the session)
+        session_id: Session ID (for ownership verification)
+        expiration: URL expiration in seconds (default: 300 = 5 minutes)
+
+    Returns:
+        Presigned URL if ownership verified, None otherwise
+    """
+    # SECURITY: Verify ownership before generating URL
+    if not _verify_session_ownership_cached(email, session_id):
+        logger.error(f"[SECURITY] Ownership check failed for presigned URL: {email} -> {session_id}")
+        return None
+
     try:
         url = s3_client.generate_presigned_url(
             'get_object',
