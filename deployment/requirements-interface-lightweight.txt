@@ -32,6 +32,9 @@ typing-extensions>=4.0.0
 # JSON schema validation (lightweight)
 jsonschema>=4.0.0
 
+# JWT session tokens (SECURITY - Required for authentication)
+PyJWT>=2.8.0
+
 # Note: Removed heavy dependencies that are in background Lambda:
 # - PyMuPDF (24MB) - PDF generation (background only)
 # - xlsxwriter (175KB) - Excel writing (background only)
