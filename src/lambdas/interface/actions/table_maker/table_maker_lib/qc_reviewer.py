@@ -134,8 +134,12 @@ class QCReviewer:
                 prepopulated_citations = column_result.get('citations', {})
                 # Count rows in markdown (lines minus header and separator)
                 if prepopulated_markdown:
-                    lines = [l for l in prepopulated_markdown.split('\n') if l.strip() and not l.startswith('|---')]
-                    pre_row_count = max(0, len(lines) - 1)  # Subtract header row
+                    # Count actual table rows (lines starting with | but not |---)
+                    table_rows = [l for l in prepopulated_markdown.split('\n') if l.strip().startswith('|') and not l.strip().startswith('|---')]
+                    pre_row_count = max(0, len(table_rows) - 1)  # Subtract header row
+                    # Debug: Log the markdown length and row count
+                    logger.info(f"[QC_PREPOPULATED] Markdown length: {len(prepopulated_markdown)}, table rows: {len(table_rows)}, data rows (pre_row_count): {pre_row_count}")
+                    logger.info(f"[QC_PREPOPULATED] First 500 chars: {prepopulated_markdown[:500]}")
 
             if not prepopulated_markdown:
                 prepopulated_markdown = "(No pre-existing rows from column_definition)"
@@ -204,12 +208,24 @@ class QCReviewer:
             if 'choices' in raw_response and len(raw_response['choices']) > 0:
                 content = raw_response['choices'][0]['message']['content']
                 ai_response = json.loads(content) if isinstance(content, str) else content
-                logger.info(f"[QC_RESPONSE] Parsed from choices format, action={ai_response.get('action', 'N/A')}")
+                logger.info(f"[QC_RESPONSE] Parsed from choices format, keys={list(ai_response.keys())}")
+
+                # Check if parsed content is in simplified format (has 'action' but not 'reviewed_rows')
+                # and needs conversion to old format
+                if 'action' in ai_response and 'reviewed_rows' not in ai_response:
+                    action = ai_response.get('action', 'unknown')
+                    remove_count = len(ai_response.get('remove_row_ids', []) or [])
+                    logger.info(f"[QC_RESPONSE] Simplified format inside choices: action={action}, remove_row_ids={remove_count}")
+                    ai_response = self._convert_simplified_response(ai_response, discovered_rows)
+                elif 'reviewed_rows' in ai_response:
+                    logger.info(f"[QC_RESPONSE] Old format inside choices: reviewed_rows={len(ai_response.get('reviewed_rows', []))}")
+                else:
+                    logger.warning(f"[QC_RESPONSE] Unknown format inside choices, keys={list(ai_response.keys())}")
             elif 'action' in raw_response:
                 # New simplified format - convert to old format for backward compatibility
                 action = raw_response.get('action', 'unknown')
-                rows_count = len(raw_response.get('rows', []))
-                logger.info(f"[QC_RESPONSE] Simplified format: action={action}, rows={rows_count}")
+                remove_count = len(raw_response.get('remove_row_ids', []) or [])
+                logger.info(f"[QC_RESPONSE] Simplified format: action={action}, remove_row_ids={remove_count}")
                 ai_response = self._convert_simplified_response(raw_response, discovered_rows)
             elif 'reviewed_rows' in raw_response and 'qc_summary' in raw_response:
                 # Old format - already structured
@@ -1089,7 +1105,8 @@ class QCReviewer:
         row_id_to_row = {}
         for idx, row in enumerate(discovered_rows, 1):
             id_vals = row.get('id_values', {})
-            first_id_value = list(id_vals.values())[0] if id_vals else 'Unknown'
+            # Fix: Check for non-empty dict to avoid IndexError on empty {}
+            first_id_value = list(id_vals.values())[0] if id_vals and len(id_vals) > 0 else 'Unknown'
             row_id = f"{idx}-{first_id_value}"
             row_id_to_row[row_id] = row
             # Also store by just the first_id_value for flexible matching
@@ -1114,7 +1131,8 @@ class QCReviewer:
         reviewed_rows = []
         for idx, row in enumerate(discovered_rows, 1):
             id_vals = row.get('id_values', {})
-            first_id_value = list(id_vals.values())[0] if id_vals else 'Unknown'
+            # Fix: Check for non-empty dict to avoid IndexError on empty {}
+            first_id_value = list(id_vals.values())[0] if id_vals and len(id_vals) > 0 else 'Unknown'
             row_id = f"{idx}-{first_id_value}"
 
             # Check if this row should be removed
@@ -1129,7 +1147,8 @@ class QCReviewer:
                 reviewed_rows.append({
                     'row_id': row_id,
                     'row_score': row_score,
-                    'qc_score': overall_score if overall_score else row_score,
+                    # Fix: Use 'is not None' to handle 0.0 as valid score
+                    'qc_score': overall_score if overall_score is not None else row_score,
                     'qc_rationale': '',  # Default kept - no explanation needed
                     'keep': True,
                     'priority_adjustment': 'none'
@@ -1148,11 +1167,19 @@ class QCReviewer:
         }
 
         # Build old format response
+        # IMPORTANT: Preserve action, overall_score, and action-specific fields for schema validation
         old_format = {
+            'action': action,  # Required by schema
+            'overall_score': overall_score,  # Required by schema (except restructure)
             'reviewed_rows': reviewed_rows,
             'rejected_rows': rejected_rows,
             'qc_summary': qc_summary
         }
+
+        # Preserve action-specific fields required by _validate_qc_response
+        if action == 'filter':
+            # filter action requires remove_row_ids
+            old_format['remove_row_ids'] = remove_row_ids
 
         # Handle retrigger_discovery action
         if action == 'retrigger_discovery':
@@ -1161,6 +1188,9 @@ class QCReviewer:
                 'reason': simplified.get('discovery_guidance', 'Need more rows'),
                 'new_subdomains': simplified.get('new_subdomains', [])
             }
+            # Also preserve fields needed for action-specific validation
+            old_format['new_subdomains'] = simplified.get('new_subdomains', [])
+            old_format['discovery_guidance'] = simplified.get('discovery_guidance', '')
 
         # Handle restructure action
         if action == 'restructure':
@@ -1170,6 +1200,9 @@ class QCReviewer:
                 'restructuring_guidance': simplified.get('restructuring_guidance', {}),
                 'user_facing_message': simplified.get('user_message', 'Restructuring table...')
             }
+            # Also preserve fields needed for action-specific validation
+            old_format['restructuring_guidance'] = simplified.get('restructuring_guidance', {})
+            old_format['user_message'] = simplified.get('user_message', '')
 
         logger.info(f"[QC] Converted simplified response: action={action}, kept={kept_count}, removed={len(rejected_rows)}")
 
