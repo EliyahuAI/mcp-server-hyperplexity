@@ -8852,19 +8852,8 @@ async function handleLogout() {
     console.log('[AUTH] User logged out from all devices');
 }
 
-// Initialize signed-in badge on page load if user is validated
-if (typeof window !== 'undefined') {
-    window.addEventListener('DOMContentLoaded', () => {
-        const validatedEmail = localStorage.getItem('validatedEmail');
-        const sessionToken = sessionStorage.getItem('sessionToken');
-
-        if (validatedEmail && sessionToken) {
-            showSignedInBadge(validatedEmail);
-            globalState.email = validatedEmail;
-            globalState.sessionToken = sessionToken;
-        }
-    });
-}
+// Note: Signed-in badge initialization moved to 99-init.js
+// This ensures it runs after all modules are loaded
 
 
 /* ========== 08-config-generation.js ========== */
@@ -18912,8 +18901,20 @@ if (IS_PAGE_RELOAD) {
 
 // Restore email from localStorage if available
 const storedEmail = localStorage.getItem('validatedEmail');
+const storedToken = sessionStorage.getItem('sessionToken');
 if (storedEmail && storedEmail.includes('@')) {
     globalState.email = storedEmail;
+
+    // SECURITY: Restore session token if available
+    if (storedToken) {
+        globalState.sessionToken = storedToken;
+
+        // Show signed-in badge if both email and token are present
+        if (typeof showSignedInBadge === 'function') {
+            showSignedInBadge(storedEmail);
+            console.log('[AUTH] Restored session for:', storedEmail);
+        }
+    }
 }
 
 // Balance refresh system will be initialized when needed (when insufficient balance occurs)

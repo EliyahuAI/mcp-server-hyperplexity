@@ -396,16 +396,5 @@ async function handleLogout() {
     console.log('[AUTH] User logged out from all devices');
 }
 
-// Initialize signed-in badge on page load if user is validated
-if (typeof window !== 'undefined') {
-    window.addEventListener('DOMContentLoaded', () => {
-        const validatedEmail = localStorage.getItem('validatedEmail');
-        const sessionToken = sessionStorage.getItem('sessionToken');
-
-        if (validatedEmail && sessionToken) {
-            showSignedInBadge(validatedEmail);
-            globalState.email = validatedEmail;
-            globalState.sessionToken = sessionToken;
-        }
-    });
-}
+// Note: Signed-in badge initialization moved to 99-init.js
+// This ensures it runs after all modules are loaded

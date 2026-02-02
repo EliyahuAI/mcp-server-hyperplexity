@@ -147,8 +147,20 @@ if (IS_PAGE_RELOAD) {
 
 // Restore email from localStorage if available
 const storedEmail = localStorage.getItem('validatedEmail');
+const storedToken = sessionStorage.getItem('sessionToken');
 if (storedEmail && storedEmail.includes('@')) {
     globalState.email = storedEmail;
+
+    // SECURITY: Restore session token if available
+    if (storedToken) {
+        globalState.sessionToken = storedToken;
+
+        // Show signed-in badge if both email and token are present
+        if (typeof showSignedInBadge === 'function') {
+            showSignedInBadge(storedEmail);
+            console.log('[AUTH] Restored session for:', storedEmail);
+        }
+    }
 }
 
 // Balance refresh system will be initialized when needed (when insufficient balance occurs)
