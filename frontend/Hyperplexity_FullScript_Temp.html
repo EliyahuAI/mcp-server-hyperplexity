@@ -18902,6 +18902,13 @@ if (IS_PAGE_RELOAD) {
 // Restore email from localStorage if available
 const storedEmail = localStorage.getItem('validatedEmail');
 const storedToken = sessionStorage.getItem('sessionToken');
+
+console.log('[AUTH] Checking for existing session...', {
+    storedEmail: storedEmail ? storedEmail : 'none',
+    hasToken: storedToken ? 'yes' : 'no',
+    showSignedInBadgeExists: typeof showSignedInBadge === 'function'
+});
+
 if (storedEmail && storedEmail.includes('@')) {
     globalState.email = storedEmail;
 
@@ -18911,10 +18918,19 @@ if (storedEmail && storedEmail.includes('@')) {
 
         // Show signed-in badge if both email and token are present
         if (typeof showSignedInBadge === 'function') {
-            showSignedInBadge(storedEmail);
-            console.log('[AUTH] Restored session for:', storedEmail);
+            // Defer badge display to ensure DOM is ready
+            setTimeout(() => {
+                showSignedInBadge(storedEmail);
+                console.log('[AUTH] Restored session for:', storedEmail);
+            }, 100);
+        } else {
+            console.warn('[AUTH] showSignedInBadge function not available yet');
         }
+    } else {
+        console.log('[AUTH] Email found but no token - user needs to re-authenticate');
     }
+} else {
+    console.log('[AUTH] No existing session found');
 }
 
 // Balance refresh system will be initialized when needed (when insufficient balance occurs)

@@ -136,7 +136,7 @@ def create_response(status_code, body, is_json=True):
     headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Session-Token'
     }
     if is_json:
         headers['Content-Type'] = 'application/json'
