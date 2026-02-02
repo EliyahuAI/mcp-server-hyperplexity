@@ -42,7 +42,10 @@ async function preInitializeTableMaker() {
     // Use initTableMakerSession endpoint - this warms up the actual table maker code path
     // (not just /health which may hit different code). This fires immediately (don't await
     // in main flow) but we store the promise so awaitWarmup() can wait for it.
-    const warmupPromise = fetch(`${API_BASE}/validate`, {
+    //
+    // Small delay to avoid CORS issues with file:// origins on fresh navigation.
+    // Some browsers have timing issues with the first network request after navigation.
+    const warmupPromise = new Promise(resolve => setTimeout(resolve, 100)).then(() => fetch(`${API_BASE}/validate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -50,7 +53,7 @@ async function preInitializeTableMaker() {
             email: globalState.email || ''
             // Don't pass session_id - let backend generate fresh one
         })
-    })
+    }))
     .then(async resp => {
         if (!resp.ok) {
             console.warn('[TABLE_MAKER] Init endpoint returned:', resp.status);
