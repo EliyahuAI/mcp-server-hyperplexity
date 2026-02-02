@@ -31,8 +31,8 @@ s3_client = boto3.client('s3')
 _SESSION_OWNERSHIP_CACHE = {}
 _CACHE_TTL_SECONDS = 300  # 5 minutes
 
-# Session ID validation pattern: session_YYYYMMDD_HHMMSS_xxxxxxxx
-SESSION_ID_PATTERN = re.compile(r'^session_\d{8}_\d{6}_[a-f0-9]{8}$')
+# Session ID validation pattern: session_YYYYMMDD_HHMMSS_xxxxxxxx OR session_demo_YYYYMMDD_HHMMSS_xxxxxxxx
+SESSION_ID_PATTERN = re.compile(r'^session_(demo_)?\d{8}_\d{6}_[a-f0-9]{8}$')
 
 
 def _verify_session_ownership(email: str, session_id: str) -> bool:
@@ -223,21 +223,41 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
             })
 
         # SECURITY: Verify session ownership (with Lambda caching for performance)
-        if not _verify_session_ownership_cached(email, session_id):
-            log_ownership_violation(email, session_id, ip_address=ip_address)
-            logger.error(f"[SECURITY] Ownership violation - {email} attempted to access {session_id}")
+        ownership_result = _verify_session_ownership_cached(email, session_id)
+        if not ownership_result:
+            # Check if session exists first to distinguish between "not found" and "unauthorized"
+            try:
+                runs_table = boto3.resource('dynamodb', region_name='us-east-1').Table('perplexity-validator-runs')
+                response = runs_table.get_item(Key={'session_id': session_id})
+                session_exists = 'Item' in response
+            except:
+                session_exists = False
 
-            # SECURITY FLAG: Revoke token immediately on ownership violation (most severe)
-            session_token = headers.get('X-Session-Token') or headers.get('x-session-token')
-            if session_token:
-                revoke_token(session_token, reason="ownership_violation")
-                logger.critical(f"[SECURITY] REVOKED token for {email} - attempted unauthorized access to {session_id}")
+            if not session_exists:
+                # Session not found - likely race condition or invalid session_id
+                # Don't revoke token for this (user didn't do anything wrong)
+                logger.warning(f"[SECURITY] Session not found (may be processing): {session_id} for {email}")
+                return create_response(404, {
+                    'success': False,
+                    'error': 'Session not found. If preview just completed, please try again in a moment.',
+                    'session_not_found': True
+                })
+            else:
+                # Session exists but belongs to someone else - actual ownership violation
+                log_ownership_violation(email, session_id, ip_address=ip_address)
+                logger.error(f"[SECURITY] Ownership violation - {email} attempted to access {session_id}")
 
-            return create_response(403, {
-                'success': False,
-                'error': 'Access denied: you do not own this session. Your session has been revoked for security.',
-                'token_revoked': True
-            })
+                # SECURITY FLAG: Revoke token immediately on ownership violation (most severe)
+                session_token = headers.get('X-Session-Token') or headers.get('x-session-token')
+                if session_token:
+                    revoke_token(session_token, reason="ownership_violation")
+                    logger.critical(f"[SECURITY] REVOKED token for {email} - attempted unauthorized access to {session_id}")
+
+                return create_response(403, {
+                    'success': False,
+                    'error': 'Access denied: you do not own this session. Your session has been revoked for security.',
+                    'token_revoked': True
+                })
 
         # Initialize storage manager
         storage_manager = UnifiedS3Manager()

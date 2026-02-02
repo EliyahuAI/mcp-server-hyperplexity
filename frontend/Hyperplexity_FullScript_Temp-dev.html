@@ -8811,6 +8811,9 @@ async function handleLogout() {
         return;
     }
 
+    // Set flag to prevent state saving during logout
+    window.isLoggingOut = true;
+
     const email = globalState.email;
 
     // SECURITY: Notify backend to revoke all tokens (logout all devices)
@@ -8835,6 +8838,22 @@ async function handleLogout() {
         // Continue with client-side logout anyway
     }
 
+    // Close any active WebSocket connections
+    if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+        console.log('[AUTH] Closing WebSocket connection');
+        window.ws.close();
+    }
+
+    // Close all session WebSocket connections if they exist
+    if (typeof sessionWebSockets !== 'undefined' && sessionWebSockets) {
+        console.log('[AUTH] Closing all session WebSockets');
+        sessionWebSockets.forEach((ws, sessionId) => {
+            ws._intentionallyClosed = true;
+            ws.close();
+        });
+        sessionWebSockets.clear();
+    }
+
     // Clear all auth data
     localStorage.removeItem('validatedEmail');
 
@@ -8846,6 +8865,7 @@ async function handleLogout() {
 
     globalState.email = null;
     globalState.sessionToken = null;
+    globalState.sessionId = null;
 
     console.log('[AUTH] User logged out from all devices, cleared all session state');
 
@@ -15019,8 +15039,16 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
         return;
     }
 
+    // Validate session ID format
+    if (!sessionId || typeof sessionId !== 'string') {
+        console.error('[PREVIEW] Invalid sessionId:', sessionId);
+        container.innerHTML = `<p style="color: #999; font-style: italic; text-align: center; padding: 1rem;">Unable to load table: invalid session ID</p>`;
+        return;
+    }
+
     try {
         console.log('[PREVIEW] Fetching table metadata via API for session:', sessionId);
+        console.log('[PREVIEW] Session ID format check:', /^session_\d{8}_\d{6}_[a-f0-9]{8}$/.test(sessionId));
 
         // SECURITY: Prepare headers with session token
         const requestHeaders = { 'Content-Type': 'application/json' };
@@ -19428,8 +19456,8 @@ modal.addEventListener('click', (e) => {
 
         // State Persistence Implementation
         function saveApplicationState() {
-// Don't save if we're resetting or restoring
-if (window.isResetting || window.isRestoringState) {
+// Don't save if we're resetting, restoring, or logging out
+if (window.isResetting || window.isRestoringState || window.isLoggingOut) {
     return;
 }
 

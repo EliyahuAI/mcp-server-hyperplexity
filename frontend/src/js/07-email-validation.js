@@ -25,46 +25,37 @@ function createEmailValidationCard(options = {}) {
     const infoHeaderText = options.infoHeaderText || 'Enter your email address to access this feature. We\'ll send you a verification code.';
 
     const cardHTML = `
-        <div class="info-header">
-            ${infoHeaderText}
-        </div>
-        <form id="${cardId}-form" class="email-form">
-            <label for="${cardId}-email">Email Address</label>
-            <input
-                type="email"
-                id="${cardId}-email"
-                name="email"
-                placeholder="you@example.com"
-                required
-                autocomplete="email"
-            />
-
-            <div id="${cardId}-code-section" style="display: none; margin-top: 1rem;">
-                <label for="${cardId}-code">Verification Code</label>
-                <input
-                    type="text"
-                    id="${cardId}-code"
-                    name="code"
-                    placeholder="Enter 6-digit code"
-                    maxlength="6"
-                    pattern="[0-9]{6}"
-                    autocomplete="one-time-code"
-                />
+        <div id="${cardId}-form">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="${cardId}-email">Email Address</label>
+                    <input type="email" id="${cardId}-email" class="form-input"
+                        placeholder="your.email@example.com" required>
+                </div>
             </div>
-
-            <div id="${cardId}-terms-section" style="margin-top: 1rem;">
-                <label class="checkbox-label">
+            <div id="${cardId}-code-section" style="display: none;">
+                <div class="privacy-checkbox">
                     <input type="checkbox" id="${cardId}-terms" required>
-                    <span>I agree to the <a href="https://eliyahu.ai/terms" target="_blank">Terms and Conditions</a></span>
-                </label>
-                <label class="checkbox-label">
+                    <label for="${cardId}-terms">
+                        I agree to the <a href="https://eliyahu.ai/terms" target="_blank" style="color: var(--primary-color); text-decoration: underline;">Terms and Conditions</a>
+                    </label>
+                </div>
+                <div class="privacy-checkbox">
                     <input type="checkbox" id="${cardId}-privacy" required>
-                    <span>I accept the <a href="https://eliyahu.ai/privacy" target="_blank">Privacy Notice</a></span>
-                </label>
+                    <label for="${cardId}-privacy">
+                        I accept the <a href="https://eliyahu.ai/privacy" target="_blank" style="color: var(--primary-color); text-decoration: underline;">Privacy Notice</a>
+                    </label>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="${cardId}-code">Verification Code</label>
+                        <input type="text" id="${cardId}-code" class="form-input"
+                            placeholder="Enter 6-digit code" maxlength="6">
+                    </div>
+                </div>
             </div>
-
             <div id="${cardId}-messages"></div>
-        </form>
+        </div>
         <div id="${cardId}-buttons"></div>
     `;
 
@@ -103,29 +94,45 @@ async function sendEmailCode(cardId, button) {
     try {
         globalState.email = email;
 
+        // Check if we should force re-verification (e.g., after logout)
+        const forceReverify = sessionStorage.getItem('forceReverify') === 'true';
+        if (forceReverify) {
+            sessionStorage.removeItem('forceReverify');
+        }
+
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 action: 'checkOrSendValidation',
-                email: email
+                email: email,
+                force_reverify: forceReverify  // Tell backend to send new code
             })
         });
 
         const data = await response.json();
 
         if (response.ok && data.success) {
-            if (data.validated) {
-                // SECURITY: Store session token from backend
-                if (data.session_token) {
-                    sessionStorage.setItem('sessionToken', data.session_token);
-                    globalState.sessionToken = data.session_token;
-                }
-                // Already validated - ALWAYS TREAT AS NEW USER FOR NOW
-                globalState.isNewUser = true; // Override backend response
-                handleEmailValidated(cardId);
+            if (data.validated && data.session_token) {
+                // Email already validated, backend issued token without sending code
+                console.log('[EMAIL] Email already validated, token issued');
+
+                // Store session token
+                sessionStorage.setItem('sessionToken', data.session_token);
+                globalState.sessionToken = data.session_token;
+
+                // Show message that email is already validated
+                showMessage(`${cardId}-messages`, 'Welcome back! Your email is already verified.', 'success');
+
+                // Mark as validated
+                globalState.isNewUser = false; // Returning user
+
+                // Brief delay then proceed
+                setTimeout(() => {
+                    handleEmailValidated(cardId);
+                }, 800);
             } else {
-                // Show code input
+                // Code was sent, show verification form
                 document.getElementById(`${cardId}-code-section`).style.display = 'block';
                 showMessage(`${cardId}-messages`, 'Validation code sent to your email!', 'success');
                 document.getElementById(`${cardId}-code`).focus();
@@ -161,6 +168,13 @@ async function verifyCode(cardId, button) {
     const termsCheckbox = document.getElementById(`${cardId}-terms`);
     const privacyCheckbox = document.getElementById(`${cardId}-privacy`);
 
+    // Validate code first
+    if (code.length !== 6) {
+        showMessage(`${cardId}-messages`, 'Please enter a 6-digit code', 'error');
+        throw new Error('Invalid code');
+    }
+
+    // Validate checkboxes
     if (!termsCheckbox.checked) {
         showMessage(`${cardId}-messages`, 'Please agree to the Terms and Conditions to continue', 'error');
         throw new Error('Terms not accepted');
@@ -169,11 +183,6 @@ async function verifyCode(cardId, button) {
     if (!privacyCheckbox.checked) {
         showMessage(`${cardId}-messages`, 'Please accept the Privacy Notice to continue', 'error');
         throw new Error('Privacy not accepted');
-    }
-
-    if (code.length !== 6) {
-        showMessage(`${cardId}-messages`, 'Please enter a 6-digit code', 'error');
-        throw new Error('Invalid code');
     }
 
     try {
@@ -346,6 +355,9 @@ async function handleLogout() {
         return;
     }
 
+    // Set flag to prevent state saving during logout
+    window.isLoggingOut = true;
+
     const email = globalState.email;
 
     // SECURITY: Notify backend to revoke all tokens (logout all devices)
@@ -370,30 +382,39 @@ async function handleLogout() {
         // Continue with client-side logout anyway
     }
 
+    // Close any active WebSocket connections
+    if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+        console.log('[AUTH] Closing WebSocket connection');
+        window.ws.close();
+    }
+
+    // Close all session WebSocket connections if they exist
+    if (typeof sessionWebSockets !== 'undefined' && sessionWebSockets) {
+        console.log('[AUTH] Closing all session WebSockets');
+        sessionWebSockets.forEach((ws, sessionId) => {
+            ws._intentionallyClosed = true;
+            ws.close();
+        });
+        sessionWebSockets.clear();
+    }
+
     // Clear all auth data
     localStorage.removeItem('validatedEmail');
-    sessionStorage.removeItem('sessionToken');
+
+    // Clear all session storage (including saved state)
+    sessionStorage.clear();
+
+    // Re-set only the forceReverify flag after clearing
+    sessionStorage.setItem('forceReverify', 'true');
+
     globalState.email = null;
     globalState.sessionToken = null;
+    globalState.sessionId = null;
 
-    // Hide badge
-    hideSignedInBadge();
+    console.log('[AUTH] User logged out from all devices, cleared all session state');
 
-    // Show logout message
-    const cardId = generateCardId();
-    createCard({
-        id: cardId,
-        icon: '👋',
-        title: 'Logged Out',
-        subtitle: 'You have been logged out on all devices',
-        content: `
-            <div class="info-header">
-                Your session has been cleared across all devices. Reload the page to login again.
-            </div>
-        `
-    });
-
-    console.log('[AUTH] User logged out from all devices');
+    // Hard refresh without reload warning
+    window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now();
 }
 
 // Note: Signed-in badge initialization moved to 99-init.js

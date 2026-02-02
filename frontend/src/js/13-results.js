@@ -314,8 +314,16 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
         return;
     }
 
+    // Validate session ID format
+    if (!sessionId || typeof sessionId !== 'string') {
+        console.error('[PREVIEW] Invalid sessionId:', sessionId);
+        container.innerHTML = `<p style="color: #999; font-style: italic; text-align: center; padding: 1rem;">Unable to load table: invalid session ID</p>`;
+        return;
+    }
+
     try {
         console.log('[PREVIEW] Fetching table metadata via API for session:', sessionId);
+        console.log('[PREVIEW] Session ID format check:', /^session_\d{8}_\d{6}_[a-f0-9]{8}$/.test(sessionId));
 
         // SECURITY: Prepare headers with session token
         const requestHeaders = { 'Content-Type': 'application/json' };

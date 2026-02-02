@@ -59,7 +59,9 @@ def handle(request_data, context):
                 result['session_token'] = session_token
 
         elif action == 'checkOrSendValidation':
-            result = check_or_send_validation(email)
+            # Support force_reverify parameter (e.g., after logout)
+            force_reverify = request_data.get('force_reverify', False)
+            result = check_or_send_validation(email, force_reverify=force_reverify)
 
             # SECURITY: Issue session token if email is validated
             if result.get('success') and result.get('validated'):

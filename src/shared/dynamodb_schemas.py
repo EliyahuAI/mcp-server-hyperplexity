@@ -2020,36 +2020,40 @@ def get_user_stats(email: str) -> Dict[str, Any]:
         return {'exists': False, 'error': str(e)}
 
 
-def check_or_send_validation(email: str) -> Dict[str, Any]:
+def check_or_send_validation(email: str, force_reverify: bool = False) -> Dict[str, Any]:
     """
     Single function to check if email is validated or send validation code.
-    
+
+    Args:
+        email: Email address to validate
+        force_reverify: If True, send a new code even if email is already validated (e.g., after logout)
+
     Returns:
-        - If validated: {'success': True, 'validated': True, 'message': 'Email is already validated'}
-        - If not validated: Sends code and returns {'success': True, 'validated': False, 'message': 'Validation code sent to email', 'expires_at': '...'}
+        - If validated and not force_reverify: {'success': True, 'validated': True, 'message': 'Email is already validated'}
+        - If not validated or force_reverify: Sends code and returns {'success': True, 'validated': False, 'message': 'Validation code sent to email', 'expires_at': '...'}
         - On error: {'success': False, 'error': '...', 'message': '...'}
     """
     try:
         # Normalize email to lowercase
         email = email.lower().strip()
-        
-        # First check if email is already validated
-        if is_email_validated(email):
+
+        # Check if email is already validated (skip if force_reverify)
+        if not force_reverify and is_email_validated(email):
             return {
                 'success': True,
                 'validated': True,
                 'message': 'Email is already validated'
             }
-        
-        # Email not validated, send validation code
+
+        # Email not validated OR force_reverify requested, send validation code
         result = create_email_validation_request(email)
-        
+
         # Add validated flag to response
         if result.get('success'):
             result['validated'] = False
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"Error in check_or_send_validation: {e}")
         return {

@@ -267,7 +267,7 @@ function requireEmailThen(action, description = 'continue') {
     console.log(`[EMAIL] Deferring action until email validated: ${description}`);
 
     // Show email validation card
-    createEmailCard();
+    createEmailValidationCard();
 }
 
 // ============================================

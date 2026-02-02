@@ -312,7 +312,7 @@ setTimeout(() => {
             createUploadOrDemoCard();
         } else {
             // Traditional flow: require email upfront
-            createEmailCard();
+            createEmailValidationCard();
         }
     } else {
     }
@@ -651,8 +651,8 @@ modal.addEventListener('click', (e) => {
 
         // State Persistence Implementation
         function saveApplicationState() {
-// Don't save if we're resetting or restoring
-if (window.isResetting || window.isRestoringState) {
+// Don't save if we're resetting, restoring, or logging out
+if (window.isResetting || window.isRestoringState || window.isLoggingOut) {
     return;
 }
 
@@ -1056,7 +1056,7 @@ try {
 
         // Email validation buttons
         if (buttonText.includes('Send Code') || buttonText.includes('Validate Email') || button.id.includes('send-code')) {
-            button.onclick = () => sendValidationCode(cardId, button);
+            button.onclick = () => sendEmailCode(cardId, button);
 
         } else if (buttonText.includes('Verify') || buttonText.includes('Submit Code') || button.id.includes('verify-code')) {
             button.onclick = () => verifyCode(cardId, button);
