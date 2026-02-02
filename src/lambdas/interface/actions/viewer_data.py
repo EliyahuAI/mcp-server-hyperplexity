@@ -145,7 +145,7 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
             })
 
         # Find Excel file and generate download URL
-        excel_key, excel_filename = _find_excel_file(active_bucket, actual_results_prefix)
+        excel_key, excel_filename = _find_excel_file(active_bucket, actual_results_prefix, is_full_validation)
 
         enhanced_download_url = None
         if excel_key:
@@ -166,28 +166,35 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         table_name = table_metadata.get('table_name') or _extract_table_name(session_id)
 
         # Load session_info to get clean_table_name and analysis date
+        # IMPORTANT: Load from active_bucket (not default bucket) since results may be in -dev bucket
         clean_table_name = None
         original_filename = None
         analysis_date = None
 
         try:
-            session_info = storage_manager.load_session_info(email, session_id)
-            clean_table_name = session_info.get('clean_table_name')
-            original_filename = session_info.get('original_filename')
+            # Load session_info directly from the active bucket where we found results
+            session_info_key = f"{session_path}session_info.json"
+            session_info = _load_json_from_s3(active_bucket, session_info_key)
 
-            # Try to get analysis date from session_info versions
-            versions_info = session_info.get('versions', {})
-            version_key = f"v{config_version}"
-            if version_key in versions_info:
-                version_info = versions_info[version_key]
-                # Look for validation completion time
-                analysis_date = version_info.get('validation_completed_at') or version_info.get('created_at')
+            if session_info:
+                clean_table_name = session_info.get('clean_table_name')
+                original_filename = session_info.get('original_filename')
 
-            # Fallback: use table_metadata timestamp if available
-            if not analysis_date and table_metadata:
-                analysis_date = table_metadata.get('generated_at') or table_metadata.get('created_at')
+                # Try to get analysis date from session_info versions
+                versions_info = session_info.get('versions', {})
+                version_key = f"v{config_version}"
+                if version_key in versions_info:
+                    version_info = versions_info[version_key]
+                    # Look for validation completion time
+                    analysis_date = version_info.get('validation_completed_at') or version_info.get('created_at')
 
-            logger.info(f"[VIEWER_DATA] Loaded session_info: clean_table_name='{clean_table_name}', analysis_date='{analysis_date}'")
+                # Fallback: use table_metadata timestamp if available
+                if not analysis_date and table_metadata:
+                    analysis_date = table_metadata.get('generated_at') or table_metadata.get('created_at')
+
+                logger.info(f"[VIEWER_DATA] Loaded session_info from {active_bucket}: clean_table_name='{clean_table_name}', analysis_date='{analysis_date}'")
+            else:
+                logger.warning(f"[VIEWER_DATA] No session_info.json found in {active_bucket}")
         except Exception as e:
             logger.warning(f"[VIEWER_DATA] Could not load session_info: {e}")
 
@@ -348,29 +355,83 @@ def _load_json_from_s3(bucket: str, key: str) -> Optional[Dict]:
         return None
 
 
-def _find_excel_file(bucket: str, prefix: str) -> tuple:
-    """Find enhanced Excel file in the results folder."""
+def _find_excel_file(bucket: str, prefix: str, is_full_validation: bool = False) -> tuple:
+    """Find enhanced Excel file in the results folder.
+
+    Args:
+        bucket: S3 bucket name
+        prefix: Results folder prefix
+        is_full_validation: If True, exclude preview Excel files
+
+    Returns:
+        Tuple of (s3_key, filename) or (None, None) if not found
+    """
     try:
         response = s3_client.list_objects_v2(
             Bucket=bucket,
             Prefix=prefix
         )
 
-        for obj in response.get('Contents', []):
-            key = obj['Key']
-            # Look for enhanced Excel files
-            if key.endswith('.xlsx') and 'enhanced' in key.lower():
-                filename = key.split('/')[-1]
-                return key, filename
-
-        # Fallback: any xlsx file
+        # Collect all Excel files
+        excel_files = []
         for obj in response.get('Contents', []):
             key = obj['Key']
             if key.endswith('.xlsx'):
                 filename = key.split('/')[-1]
-                return key, filename
+                excel_files.append((key, filename))
 
-        return None, None
+        if not excel_files:
+            return None, None
+
+        # Filter based on validation type
+        if is_full_validation:
+            # For full validation, EXCLUDE preview files and prefer enhanced files
+            non_preview_files = [
+                (key, filename) for key, filename in excel_files
+                if 'preview' not in filename.lower()
+            ]
+
+            if non_preview_files:
+                # Prefer enhanced files
+                enhanced_files = [
+                    (key, filename) for key, filename in non_preview_files
+                    if 'enhanced' in filename.lower()
+                ]
+                if enhanced_files:
+                    logger.info(f"[VIEWER_DATA] Found full validation enhanced Excel: {enhanced_files[0][1]}")
+                    return enhanced_files[0]
+
+                # Fallback to any non-preview xlsx
+                logger.info(f"[VIEWER_DATA] Found full validation Excel: {non_preview_files[0][1]}")
+                return non_preview_files[0]
+        else:
+            # For preview, prefer preview files
+            preview_files = [
+                (key, filename) for key, filename in excel_files
+                if 'preview' in filename.lower()
+            ]
+
+            if preview_files:
+                # Prefer enhanced preview files
+                enhanced_preview = [
+                    (key, filename) for key, filename in preview_files
+                    if 'enhanced' in filename.lower()
+                ]
+                if enhanced_preview:
+                    logger.info(f"[VIEWER_DATA] Found preview enhanced Excel: {enhanced_preview[0][1]}")
+                    return enhanced_preview[0]
+
+                logger.info(f"[VIEWER_DATA] Found preview Excel: {preview_files[0][1]}")
+                return preview_files[0]
+
+        # Last resort fallback: any enhanced file, then any xlsx file
+        enhanced_files = [(key, filename) for key, filename in excel_files if 'enhanced' in filename.lower()]
+        if enhanced_files:
+            logger.warning(f"[VIEWER_DATA] Using fallback enhanced Excel: {enhanced_files[0][1]}")
+            return enhanced_files[0]
+
+        logger.warning(f"[VIEWER_DATA] Using fallback Excel: {excel_files[0][1]}")
+        return excel_files[0]
 
     except Exception as e:
         logger.error(f"[VIEWER_DATA] Error finding Excel file: {e}")
