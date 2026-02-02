@@ -1322,7 +1322,6 @@ Listen for `table_interview_progress`, `table_execution_update`, and `table_exec
 - `handleTableExecutionComplete()` - 2.5s transition sequence
 - `showColumnsBoxes()` - Blue/purple colored boxes
 - `showDiscoveredRowsBox()` - Orange box with top 10 rows
-- `collapseConversation()` - Smooth fade animation
 - `autoTriggerPreview()` - Auto-trigger validation preview
 
 ### Phase-Aware Updates
@@ -1354,7 +1353,7 @@ Listen for `table_interview_progress`, `table_execution_update`, and `table_exec
 ### UI Flow
 
 **Step 1 Complete (Columns Defined):**
-- Conversation collapses with smooth animation
+- Conversation remains visible (preserved during execution)
 - Blue box appears: ID Columns (Company Name, Website)
 - Purple box appears: Research Columns (Is Hiring?, Team Size)
 

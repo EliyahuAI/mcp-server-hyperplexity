@@ -170,25 +170,18 @@ function handleTableExecutionUpdate(message) {
                     const card = document.getElementById(latestCardId);
 
                     if (card) {
-                        // Preserve the thinking indicator if it exists
-                        const thinkingIndicator = document.getElementById(`${latestCardId}-thinking`);
-
-                        // Clear the card-content but keep the container
+                        // Keep conversation visible - only add progress container for boxes
                         const cardContent = card.querySelector('.card-content');
                         if (cardContent) {
-                            // Clear all existing content EXCEPT the thinking indicator
-                            const elementsToRemove = [];
-                            for (let child of cardContent.children) {
-                                if (child.id !== `${latestCardId}-thinking`) {
-                                    elementsToRemove.push(child);
-                                }
+                            // Check if progress container already exists
+                            let progressContainer = document.getElementById(`${latestCardId}-progress-content`);
+                            if (!progressContainer) {
+                                // Add a container for the progress messages and boxes (below conversation)
+                                progressContainer = document.createElement('div');
+                                progressContainer.id = `${latestCardId}-progress-content`;
+                                progressContainer.style.marginTop = '1rem';
+                                cardContent.appendChild(progressContainer);
                             }
-                            elementsToRemove.forEach(el => el.remove());
-
-                            // Add a container for the progress messages and boxes
-                            const progressContainer = document.createElement('div');
-                            progressContainer.id = `${latestCardId}-progress-content`;
-                            cardContent.appendChild(progressContainer);
                         }
 
                         // Hide buttons during execution
