@@ -387,8 +387,8 @@
 
 /* Modal transparency transition for cell navigation */
 .cell-detail-overlay.modal-nav-fade .cell-detail-modal {
-    opacity: 0.5;
-    transition: opacity 0.25s ease;
+    opacity: 0.15;
+    transition: opacity 0.2s ease-out;
 }
 
 /* Skip fade-in animation when reopening during navigation */
@@ -443,13 +443,13 @@
     max-height: 80vh;
     overflow-y: auto;
     box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-    animation: modalSlideIn 0.15s ease-out;
+    animation: modalSlideIn 0.4s ease-out;
 }
 
 @keyframes modalSlideIn {
     from {
-        opacity: 0;
-        transform: translateY(-10px) scale(0.98);
+        opacity: 0.15;
+        transform: translateY(-5px) scale(0.99);
     }
     to {
         opacity: 1;

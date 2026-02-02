@@ -23,7 +23,7 @@ const InteractiveTable = (function() {
     let currentHoverCell = null;
     let currentModalCell = null;
     let isTouchDevice = false;
-    let isNavigating = false;
+    let navSettleTimeout = null;
 
     /* ========================================
      * Default Options
@@ -651,9 +651,10 @@ const InteractiveTable = (function() {
         }
 
         if (targetCell) {
-            // Prevent rapid navigation
-            if (isNavigating) return;
-            isNavigating = true;
+            // Clear any pending settle timeout
+            if (navSettleTimeout) {
+                clearTimeout(navSettleTimeout);
+            }
 
             const overlay = document.querySelector('.cell-detail-overlay');
 
@@ -669,6 +670,14 @@ const InteractiveTable = (function() {
                     container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
                 }
             }
+
+            // Clear previous highlights
+            const prevHighlighted = document.querySelectorAll('.interactive-table .column-highlight');
+            prevHighlighted.forEach(c => c.classList.remove('column-highlight'));
+            const prevRows = document.querySelectorAll('.interactive-table .row-highlight');
+            prevRows.forEach(r => r.classList.remove('row-highlight'));
+            const prevCells = document.querySelectorAll('.interactive-table .cell-hover-active');
+            prevCells.forEach(c => c.classList.remove('cell-hover-active'));
 
             // Trigger hover state on target cell (highlight row/column)
             targetCell.classList.add('cell-hover-active');
@@ -688,21 +697,22 @@ const InteractiveTable = (function() {
                 overlay.classList.add('modal-nav-fade');
             }
 
-            // After fade, close and reopen with new cell
-            setTimeout(() => {
+            // Update current cell reference
+            currentModalCell = targetCell;
+
+            // Settle after 1s of no movement - show new modal
+            navSettleTimeout = setTimeout(() => {
                 // Clear hover state
                 targetCell.classList.remove('cell-hover-active');
                 const highlighted = document.querySelectorAll('.interactive-table .column-highlight');
                 highlighted.forEach(c => c.classList.remove('column-highlight'));
-                // Clear row highlight
                 const highlightedRows = document.querySelectorAll('.interactive-table .row-highlight');
                 highlightedRows.forEach(r => r.classList.remove('row-highlight'));
 
                 if (overlay) overlay.remove();
-                currentModalCell = targetCell;
-                showCellModal(targetCell, true, true); // skipScroll=true, noAnimate=true
-                isNavigating = false;
-            }, 400);
+                showCellModal(targetCell, true, true);
+                navSettleTimeout = null;
+            }, 1000);
         }
     }
 
