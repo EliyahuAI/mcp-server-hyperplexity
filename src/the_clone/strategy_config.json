@@ -51,18 +51,18 @@
       "batch_extraction": true
     },
     "findall_breadth": {
-      "description": "Maximum breadth: Up to 5 searches × 20 results, batch extraction",
+      "description": "Maximum breadth: 3 searches × 15 results, batch extraction",
       "breadth": "findall",
       "depth": "shallow",
-      "sources_per_batch": 20,
+      "sources_per_batch": 15,
       "extraction_mode": "simple_facts",
-      "max_snippets_per_source": 10,
+      "max_snippets_per_source": 7,
       "min_p_threshold": 0.65,
       "accept_all_quality_levels": true,
       "stop_condition": null,
       "max_tokens_per_page": 512,
       "batch_extraction": true,
-      "max_results_per_search": 20,
+      "max_results_per_search": 15,
       "bypass_global_source_limit": true
     },
     "extraction": {
@@ -100,9 +100,9 @@
           "description": "Fast, cost-effective synthesis for simple queries"
         },
         "tier2": {
-          "synthesis": "deepseek-v3.2",
+          "synthesis": "claude-haiku-4-5",
           "label": "Balanced",
-          "description": "Balanced performance for typical queries"
+          "description": "Fast synthesis for findall mode (was deepseek-v3.2)"
         },
         "tier3": {
           "synthesis": "claude-sonnet-4-5",

@@ -8,6 +8,18 @@ Synthesize answer to query using labeled sources. Cite with codes, probability, 
 
 {synthesis_guidance}
 
+**CRITICAL - YOU MUST USE THE SNIPPETS PROVIDED BELOW:**
+- Your ONLY job is to synthesize the answer FROM the snippets below
+- DO NOT create your own citations or reference sources not in the snippets
+- EVERY factual claim MUST cite a snippet code from the labeled sources
+- If you cannot find a snippet that supports a claim, DO NOT make that claim
+
+**Response Length Management:**
+- **Standard format:** Use full verbose citations: `{{§S1:1.1, 0.95, c:H/P}} [Anthropic official]`
+- **If approaching max words:** Use minimal format to save space: `[S1.1.1]` (no § symbol, no p/c scores)
+- The minimal format still tracks which snippet was used, just more compact
+- Example: "Autoinflation improved outcomes [S1.2.3] [S1.2.5] [S2.1.1]"
+
 ---
 
 ## Labeled Sources
@@ -124,18 +136,19 @@ Below you'll see sources with text labeled with codes. Each sentence ends with a
 
 ## Your Task
 
-1. Synthesize structured answer with logical organization
-2. Cite every factual claim: `{{§S#:code, p, c:classification}}`
-3. Use only codes that exist in sources
-4. Add verbose context after citations in square brackets
+1. **USE THE SNIPPETS** - Synthesize ONLY from the labeled sources below
+2. Cite every factual claim with snippet codes
+3. Use only codes that exist in sources (check "Available codes" for each source)
+4. Choose citation format based on response length:
+   - **Standard:** `{{§S1:1.1, 0.95, c:H/P}} [verbose context]`
+   - **Compact (if approaching max words):** `[S1.1.1]` or `[S1.1.1-1.3]` for ranges
 5. **Prefer H (high authority) sources** for critical claims
 
 **Checklist:**
-- ✓ Every claim has citation with code, p, and c
-- ✓ p is exact source-level value (0.05-0.95)
-- ✓ **c has c: prefix** (c:H/P, c:M/A/O, c:H/P/D)
-- ✓ c includes authority (H/M/L) + ALL applicable quality codes
-- ✓ Codes exist in sources (don't invent)
-- ✓ Source prefix included (`` §S1: ``, `` §S2: ``, etc.)
-- ✓ Verbose context added after citations
+- ✓ **Every claim cites a snippet** (no unsourced claims)
+- ✓ Codes match those in labeled sources (don't invent)
+- ✓ For verbose format: include p, c, and context
+- ✓ For compact format: just [S#.#.#] to save space
+- ✓ Source prefix included (S1, S2, etc.)
 - ✓ Critical claims preferentially cite H sources
+- ✓ NO fabricated information - if no snippet supports it, omit it

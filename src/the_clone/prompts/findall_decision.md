@@ -41,15 +41,15 @@ Combine approaches for maximum independence
 
 ## Search Term Requirements
 
-**Generate EXACTLY 5 search terms using this pattern:**
+**Generate EXACTLY 3 search terms using this pattern:**
 
-**Strategy: 1 General + 4 Subdomain Searches**
+**Strategy: 1 General + 2 Subdomain Searches**
 
 1. **Search 1 (General/Broad):** Main topic with comprehensive list focus
    - Example: "complete list top athletes 2025 rankings"
    - Goal: Capture primary authoritative lists
 
-2-5. **Searches 2-5 (Subdomain Segmentation):** Target specific segments
+2-3. **Searches 2-3 (Subdomain Segmentation):** Target specific segments
    - Use subcategory, temporal, geographic, or demographic splits
    - Each should yield DIFFERENT entities from the general search
    - Cover complementary aspects to fill gaps
@@ -61,37 +61,29 @@ Each search should:
 - Together provide comprehensive domain coverage
 
 **Good Example (Drug Trials):**
-1. "ClinicalTrials.gov phase 3 lung cancer 2024" ← Database + subcategory + time
-2. "FDA approved breast cancer drugs 2024" ← Regulatory + subcategory + time
-3. "immunotherapy phase 3 trials melanoma" ← Mechanism + disease
-4. "European EMA oncology drug approvals 2023" ← Geographic + regulatory
-5. "rare cancer orphan drug trials phase 3" ← Population segment
+1. "ClinicalTrials.gov phase 3 oncology 2024-2025" ← Database + time (broad)
+2. "FDA approved cancer drugs 2024" ← Regulatory + recent approvals
+3. "immunotherapy phase 3 trials" ← Specific mechanism
 
 **Bad Example (Overlapping domains):**
 1. "phase 3 oncology drugs"
 2. "phase 3 cancer drugs"
 3. "oncology clinical trials phase 3"
-4. "cancer treatment trials"
-5. "phase III oncology"
 ← All will return similar sources!
 
 ## Examples by Query Type
 
 **Query: "AI image generation models"**
 Domain Independence Strategy:
-1. "Stable Diffusion image generation 2024" ← Specific model + time
-2. "DALL-E 3 OpenAI capabilities" ← Different model + company
-3. "Midjourney commercial image generation" ← Different model + use case
-4. "open source image generation models GitHub" ← Source type (open source)
-5. "enterprise AI image APIs pricing" ← Commercial perspective
+1. "Stable Diffusion DALL-E Midjourney 2024-2025" ← Major models + recent
+2. "open source image generation models GitHub" ← Source type (open source)
+3. "enterprise AI image APIs comparison" ← Commercial perspective
 
 **Query: "renewable energy storage"**
 Domain Independence Strategy:
-1. "lithium-ion battery storage utility scale" ← Technology + scale
-2. "pumped hydro energy storage projects" ← Different technology
-3. "residential solar battery systems 2024" ← Different scale + time
-4. "emerging solid-state battery storage" ← Innovation segment
-5. "energy storage cost comparison analysis" ← Economic perspective
+1. "battery storage projects 2024 lithium-ion" ← Recent projects + dominant tech
+2. "pumped hydro energy storage installations" ← Alternative technology
+3. "residential solar battery systems cost" ← Consumer segment
 
 ---
 
@@ -137,9 +129,7 @@ When true, search prioritizes academic databases over general web.
   "search_terms": [
     "term1 covering dimension 1",
     "term2 covering dimension 2",
-    "term3 covering dimension 3",
-    "term4 covering dimension 4",
-    "term5 covering dimension 5"
+    "term3 covering dimension 3"
   ],
   "required_keywords": ["entity1|variant1", "entity2|variant2"],
   "positive_keywords": ["technical_term1", "methodology1", "abbreviation1"],
@@ -151,7 +141,7 @@ When true, search prioritizes academic databases over general web.
 ---
 
 **Remember:**
-- EXACTLY 5 search terms targeting INDEPENDENT DOMAINS
+- EXACTLY 3 search terms targeting INDEPENDENT DOMAINS
 - Minimize source overlap between searches
 - Use subcategory, temporal, geographic, or institutional segmentation
 - Goal: Maximum entity coverage across different information sources

@@ -125,14 +125,18 @@ class InitialDecision:
                 search_terms = data.get('search_terms', [])
                 synthesis_tier = 'tier2'  # Always tier2 for findall
 
-                # Validate exactly 5 search terms
-                if len(search_terms) != 5:
-                    logger.warning(f"[INITIAL] FINDALL: Expected 5 search terms but got {len(search_terms)}")
-                    if len(search_terms) > 5:
-                        search_terms = search_terms[:5]
-                        logger.debug(f"[INITIAL] FINDALL: Truncated to 5 terms")
-                    elif len(search_terms) < 5:
-                        logger.error(f"[INITIAL] FINDALL: LLM did not generate 5 terms as instructed. Using {len(search_terms)} terms.")
+                # Get max_search_terms from global limits (default 3)
+                from .strategy_loader import get_global_limits
+                global_limits = get_global_limits()
+                max_terms = global_limits.get('max_search_terms', 3)
+
+                # Validate and truncate to max_search_terms
+                if len(search_terms) > max_terms:
+                    logger.warning(f"[INITIAL] FINDALL: Got {len(search_terms)} search terms, truncating to {max_terms}")
+                    search_terms = search_terms[:max_terms]
+                    logger.debug(f"[INITIAL] FINDALL: Truncated to {max_terms} terms")
+                elif len(search_terms) < max_terms:
+                    logger.warning(f"[INITIAL] FINDALL: LLM generated {len(search_terms)} terms, expected {max_terms}. Using {len(search_terms)} terms.")
 
                 logger.debug(f"[INITIAL] FINDALL: breadth='findall', depth='shallow', tier='tier2', {len(search_terms)} search terms")
                 logger.debug(f"[INITIAL] FINDALL search terms: {search_terms}")

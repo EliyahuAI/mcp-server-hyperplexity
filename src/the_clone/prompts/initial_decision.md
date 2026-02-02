@@ -78,9 +78,9 @@ Choose based on synthesis complexity only:
 
 **Search Term Count:**
 - **Narrow queries: 1-2 terms** for focused information
-- **Broad queries: 3-5 terms** to cover different aspects or facets
-- **FINDALL queries: EXACTLY 5 terms** - required for maximum breadth coverage
-- **Max: 5 terms** for maximum breadth coverage
+- **Broad queries: 2-3 terms** to cover different aspects or facets
+- **FINDALL queries: EXACTLY 3 terms** - required for maximum breadth coverage
+- **Max: 3 terms** for maximum breadth coverage
 - Each term should capture a distinct angle or facet of the query
 
 **Examples:**
