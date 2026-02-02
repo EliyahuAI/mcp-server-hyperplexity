@@ -4832,13 +4832,18 @@ function resetCompletionState() {
 }
 
 function connectToSession(sessionId, reconnectAttempt = 0) {
-    // Return existing connection if available and truly healthy
+    // Return existing connection if available and healthy (OPEN or CONNECTING)
     if (sessionWebSockets.has(sessionId)) {
         const existingWs = sessionWebSockets.get(sessionId);
         if (existingWs.readyState === WebSocket.OPEN) {
+            console.log(`[WEBSOCKET] Reusing existing OPEN connection for session ${sessionId}`);
+            return existingWs;
+        } else if (existingWs.readyState === WebSocket.CONNECTING) {
+            // Connection is still being established - don't create a duplicate
+            console.log(`[WEBSOCKET] Connection still CONNECTING for session ${sessionId}, waiting...`);
             return existingWs;
         } else {
-            // Clean up old connection
+            // Clean up old connection (CLOSING or CLOSED state)
             if (existingWs._healthCheckInterval) {
                 clearInterval(existingWs._healthCheckInterval);
             }
@@ -11928,17 +11933,13 @@ try {
         await awaitWarmup();
     }
 
-    // Use session ID from warmup, or let backend generate one
+    // Use session ID from warmup if available
     // After warmup, globalState.sessionId should be set from initTableMakerSession
+    // Trust the session ID even if WebSocket is still connecting (avoid race condition)
     let sessionIdToUse = globalState.sessionId;
 
-    // If we have a session but WebSocket isn't connected, clear it and let backend generate fresh
-    if (sessionIdToUse && typeof sessionWebSockets !== 'undefined') {
-        const existingWs = sessionWebSockets.get(sessionIdToUse);
-        if (!existingWs || existingWs.readyState !== WebSocket.OPEN) {
-            console.log('[TABLE_MAKER] No active WebSocket for session, letting backend generate new one');
-            sessionIdToUse = null;
-        }
+    if (sessionIdToUse) {
+        console.log('[TABLE_MAKER] Using pre-warmed session:', sessionIdToUse);
     }
 
     // Send request - backend will generate session_id if not provided

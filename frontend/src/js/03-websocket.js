@@ -160,13 +160,18 @@ function resetCompletionState() {
 }
 
 function connectToSession(sessionId, reconnectAttempt = 0) {
-    // Return existing connection if available and truly healthy
+    // Return existing connection if available and healthy (OPEN or CONNECTING)
     if (sessionWebSockets.has(sessionId)) {
         const existingWs = sessionWebSockets.get(sessionId);
         if (existingWs.readyState === WebSocket.OPEN) {
+            console.log(`[WEBSOCKET] Reusing existing OPEN connection for session ${sessionId}`);
+            return existingWs;
+        } else if (existingWs.readyState === WebSocket.CONNECTING) {
+            // Connection is still being established - don't create a duplicate
+            console.log(`[WEBSOCKET] Connection still CONNECTING for session ${sessionId}, waiting...`);
             return existingWs;
         } else {
-            // Clean up old connection
+            // Clean up old connection (CLOSING or CLOSED state)
             if (existingWs._healthCheckInterval) {
                 clearInterval(existingWs._healthCheckInterval);
             }

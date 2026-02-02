@@ -1018,17 +1018,13 @@ try {
         await awaitWarmup();
     }
 
-    // Use session ID from warmup, or let backend generate one
+    // Use session ID from warmup if available
     // After warmup, globalState.sessionId should be set from initTableMakerSession
+    // Trust the session ID even if WebSocket is still connecting (avoid race condition)
     let sessionIdToUse = globalState.sessionId;
 
-    // If we have a session but WebSocket isn't connected, clear it and let backend generate fresh
-    if (sessionIdToUse && typeof sessionWebSockets !== 'undefined') {
-        const existingWs = sessionWebSockets.get(sessionIdToUse);
-        if (!existingWs || existingWs.readyState !== WebSocket.OPEN) {
-            console.log('[TABLE_MAKER] No active WebSocket for session, letting backend generate new one');
-            sessionIdToUse = null;
-        }
+    if (sessionIdToUse) {
+        console.log('[TABLE_MAKER] Using pre-warmed session:', sessionIdToUse);
     }
 
     // Send request - backend will generate session_id if not provided
