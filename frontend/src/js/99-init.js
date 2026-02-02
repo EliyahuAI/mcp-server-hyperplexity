@@ -173,7 +173,50 @@ if (storedEmail && storedEmail.includes('@')) {
             console.warn('[AUTH] showSignedInBadge function not available yet');
         }
     } else {
-        console.log('[AUTH] Email found but no token - user needs to re-authenticate');
+        console.warn('[AUTH] Email found but no token - attempting auto-reauth');
+
+        // AUTO-REAUTH: Email is validated but token is missing
+        // This can happen if:
+        // 1. sessionStorage cleared (browser restart, different tab)
+        // 2. Token expired and wasn't renewed
+        // 3. Manual testing/debugging
+
+        // Attempt to get a new token automatically
+        setTimeout(async () => {
+            try {
+                console.log('[AUTH] Requesting new token for validated email...');
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'checkOrSendValidation',
+                        email: storedEmail
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.validated && data.session_token) {
+                    // Got new token!
+                    sessionStorage.setItem('sessionToken', data.session_token);
+                    globalState.sessionToken = data.session_token;
+
+                    // Show badge
+                    if (typeof showSignedInBadge === 'function') {
+                        showSignedInBadge(storedEmail);
+                    }
+
+                    console.log('[AUTH] ✓ Auto-reauth successful - new token acquired');
+                } else if (data.success && !data.validated) {
+                    // Email needs validation code
+                    console.log('[AUTH] Email not validated - user will need to enter code');
+                } else {
+                    console.warn('[AUTH] Auto-reauth failed:', data);
+                }
+            } catch (error) {
+                console.error('[AUTH] Auto-reauth error:', error);
+            }
+        }, 500);  // Small delay to ensure API_BASE is defined
     }
 } else {
     console.log('[AUTH] No existing session found');
