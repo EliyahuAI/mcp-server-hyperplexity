@@ -28,7 +28,28 @@ API Gateway → Interface Lambda → Validation Lambda
 
 ## Quick Start
 
-See [QUICK_START.md](QUICK_START.md) for detailed setup and usage instructions.
+### Local Development
+
+Start a local development server:
+
+```bash
+# Development mode (uses -dev.html)
+./start-local.sh
+
+# Production mode (uses .html)
+./start-local.sh prod
+
+# Custom port
+./start-local.sh --port 3000
+```
+
+### Documentation
+
+- **[QUICK_START.md](QUICK_START.md)** - Setup and usage instructions
+- **[SECURITY.md](SECURITY.md)** - Comprehensive security guide (NEW)
+- **[INFRASTRUCTURE_GUIDE.md](INFRASTRUCTURE_GUIDE.md)** - System architecture
+- **[../DEPLOYMENT_INSTRUCTIONS.md](../DEPLOYMENT_INSTRUCTIONS.md)** - Deployment steps
+- **[../SECURITY_FIXES_IMPLEMENTED.md](../SECURITY_FIXES_IMPLEMENTED.md)** - Security audit results
 
 
 

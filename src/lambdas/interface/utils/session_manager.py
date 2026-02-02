@@ -22,11 +22,58 @@ from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 
-# Use environment variable for secret key in production
-# WARNING: Change this in production deployment!
-JWT_SECRET = os.environ.get('JWT_SECRET_KEY', 'CHANGE-THIS-IN-PRODUCTION-DEPLOYMENT')
+# JWT Configuration
 JWT_ALGORITHM = 'HS256'
 TOKEN_EXPIRATION_HOURS = 24
+PARAMETER_STORE_KEY = '/perplexity-validator/jwt-secret-key'
+
+# Cache for JWT secret (Lambda instances persist across invocations)
+_JWT_SECRET_CACHE = None
+
+
+def _get_jwt_secret():
+    """
+    Get JWT secret from AWS Parameter Store (with caching).
+
+    Falls back to environment variable if Parameter Store is unavailable.
+
+    Returns:
+        str: JWT secret key
+    """
+    global _JWT_SECRET_CACHE
+
+    # Return cached value if available
+    if _JWT_SECRET_CACHE:
+        return _JWT_SECRET_CACHE
+
+    try:
+        # Try to load from AWS Systems Manager Parameter Store (recommended)
+        import boto3
+        ssm = boto3.client('ssm', region_name='us-east-1')
+        response = ssm.get_parameter(
+            Name=PARAMETER_STORE_KEY,
+            WithDecryption=True
+        )
+        _JWT_SECRET_CACHE = response['Parameter']['Value']
+        logger.info(f"[SECURITY] Loaded JWT secret from Parameter Store: {PARAMETER_STORE_KEY}")
+        return _JWT_SECRET_CACHE
+    except Exception as e:
+        logger.warning(f"[SECURITY] Could not load JWT secret from Parameter Store: {e}")
+
+        # Fallback to environment variable
+        secret = os.environ.get('JWT_SECRET_KEY', 'CHANGE-THIS-IN-PRODUCTION-DEPLOYMENT')
+
+        if secret == 'CHANGE-THIS-IN-PRODUCTION-DEPLOYMENT':
+            logger.critical("[SECURITY] Using default JWT secret - NOT SECURE FOR PRODUCTION!")
+        else:
+            logger.info("[SECURITY] Using JWT secret from environment variable")
+
+        _JWT_SECRET_CACHE = secret
+        return secret
+
+
+# Get JWT secret on module load
+JWT_SECRET = _get_jwt_secret()
 
 
 def create_session_token(email: str) -> str:
