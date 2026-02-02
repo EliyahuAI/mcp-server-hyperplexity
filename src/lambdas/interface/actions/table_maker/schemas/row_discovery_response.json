@@ -8,40 +8,11 @@
     },
     "candidates_markdown": {
       "type": "string",
-      "description": "Markdown table with ALL columns (ID + RESEARCH columns from column_definition). Use inline citations [n] after values. Empty string if no matches found."
+      "description": "Markdown table with ALL columns (ID + RESEARCH + scoring columns: Rel, Src, Rec, Rationale). Use inline citations [n] after data values. Empty string if no matches found."
     },
     "citations": {
       "type": "object",
       "description": "Map of citation numbers to URLs, e.g., {\"1\": \"https://example.com\", \"2\": \"https://other.com\"}"
-    },
-    "scoring": {
-      "type": "array",
-      "description": "Scoring breakdown per row (separate from main table)",
-      "items": {
-        "type": "object",
-        "properties": {
-          "row_id": {
-            "type": "string",
-            "description": "Row identifier matching first ID column value"
-          },
-          "relevancy": {
-            "type": "number",
-            "description": "How well entity matches requirements (0-1)"
-          },
-          "reliability": {
-            "type": "number",
-            "description": "Source reliability score (0-1)"
-          },
-          "recency": {
-            "type": "number",
-            "description": "Information recency score (0-1)"
-          },
-          "rationale": {
-            "type": "string",
-            "description": "Brief explanation of scoring"
-          }
-        }
-      }
     },
     "no_matches_reason": {
       "type": "string",

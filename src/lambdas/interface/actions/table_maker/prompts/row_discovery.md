@@ -80,31 +80,25 @@ Find entities within **{{SUBDOMAIN_NAME}}** matching:
 ---
 
 ═══════════════════════════════════════════════════════════════
-## 📈 SCORING - Rate Each Entity on 3 Dimensions (0-1.0 scale)
+## 📈 SCORING COLUMNS - Include These at End of Every Row
 ═══════════════════════════════════════════════════════════════
 
-Provide scores in the separate `scoring` array (NOT as columns in the table).
+**Add these 4 scoring columns AFTER all data columns in your table:**
 
-### 1. Relevancy (0-1.0)
-How well does this entity match the requirements?
-- **1.0** = Perfect match (meets all hard + most soft requirements)
-- **0.7** = Strong match (meets all hard + some soft requirements)
-- **0.4** = Moderate match (meets all hard requirements, few soft)
-- **0.0** = Weak match (violates hard requirements - don't include)
+| ... data columns ... | Rel | Src | Rec | Rationale |
 
-### 2. Source Reliability (0-1.0)
-How reliable are your information sources?
-- **1.0** = Primary sources (official website, government database, official docs)
-- **0.7** = Secondary sources (LinkedIn, major news outlets, TechCrunch)
-- **0.4** = Tertiary sources (blogs, forums, aggregators)
-- **0.0** = Unreliable or unverified
+**Scoring Guide (0-1.0 scale, use decimals like 0.7, 0.9):**
 
-### 3. Recency (0-1.0)
-How recent is the information?
-- **1.0** = Less than 3 months old
-- **0.7** = 3-6 months old
-- **0.4** = 6-12 months old
-- **0.0** = More than 12 months or date unknown
+- **Rel** (Relevancy): How well entity matches requirements
+  - 1.0 = Perfect match | 0.7 = Strong | 0.4 = Moderate | Skip if < 0.3
+
+- **Src** (Source Reliability): How reliable are your sources
+  - 1.0 = Official/primary | 0.7 = Major news/LinkedIn | 0.4 = Blogs/forums
+
+- **Rec** (Recency): How recent is the information
+  - 1.0 = < 3 months | 0.7 = 3-6 months | 0.4 = 6-12 months | 0.0 = > 12 months
+
+- **Rationale**: Brief reason (5-10 words max)
 
 ---
 
@@ -119,33 +113,29 @@ How recent is the information?
 ```json
 {
   "subdomain": "{{SUBDOMAIN_NAME}}",
-  "candidates_markdown": "| Company Name | CEO Name | CEO Education |\n|---|---|---|\n| Anthropic[1] | Dario Amodei[1][2] | Princeton[2] |\n| OpenAI[3] | Sam Altman[3] | Stanford[4] |",
+  "candidates_markdown": "| Company Name | CEO Name | Rel | Src | Rec | Rationale |\n|---|---|---|---|---|---|\n| Anthropic[1] | Dario Amodei[2] | 0.95 | 1.0 | 0.9 | Leading AI safety co |\n| OpenAI[3] | Sam Altman[3] | 0.90 | 1.0 | 0.95 | Major AI research lab |",
   "citations": {
     "1": "https://anthropic.com/about",
     "2": "https://en.wikipedia.org/wiki/Dario_Amodei",
-    "3": "https://openai.com/about",
-    "4": "https://en.wikipedia.org/wiki/Sam_Altman"
-  },
-  "scoring": [
-    {"row_id": "Anthropic", "relevancy": 0.95, "reliability": 1.0, "recency": 0.9, "rationale": "Leading AI safety company, meets all requirements"},
-    {"row_id": "OpenAI", "relevancy": 0.90, "reliability": 1.0, "recency": 0.95, "rationale": "Major AI research lab, strong match"}
-  ]
+    "3": "https://openai.com/about"
+  }
 }
 ```
 
 ### Candidates Table Format
 
 The `candidates_markdown` field must be a markdown table with:
-1. **ALL columns from the specification above** (ID columns first, then RESEARCH columns)
-2. **Inline citations** [n] after each value (e.g., "Value[1][2]")
-3. **Standard markdown table format** with header row and separator row
+1. **ALL data columns** (ID columns first, then RESEARCH columns)
+2. **Scoring columns at the end:** Rel | Src | Rec | Rationale
+3. **Inline citations** [n] after data values (NOT on scores)
+4. **Standard markdown table format** with header row and separator row
 
-**Example with ALL columns:**
+**Example with data + scoring columns:**
 ```
-| Company Name | Industry | Revenue | CEO Name |
-|---|---|---|---|
-| Anthropic[1] | AI Safety[1] | $500M[2] | Dario Amodei[1] |
-| OpenAI[3] | AI Research[3] | $1.3B[4] | Sam Altman[3] |
+| Company Name | Industry | Revenue | Rel | Src | Rec | Rationale |
+|---|---|---|---|---|---|---|
+| Anthropic[1] | AI Safety[1] | $500M[2] | 0.95 | 1.0 | 0.9 | Leading AI safety company |
+| OpenAI[3] | AI Research[3] | $1.3B[4] | 0.90 | 1.0 | 0.95 | Major AI research lab |
 ```
 
 ### Citations Format
@@ -162,20 +152,7 @@ The `citations` field maps citation numbers to URLs:
 - Start numbering from 1 (or from {{CITATION_START_NUMBER}} if provided)
 - Each unique source gets a unique number
 - The same source can be cited multiple times using the same number
-- Include ALL sources used for any value in the table
-
-### Scoring Format
-
-The `scoring` array contains one entry per row:
-```json
-{
-  "row_id": "First ID column value",
-  "relevancy": 0.95,
-  "reliability": 1.0,
-  "recency": 0.9,
-  "rationale": "Brief reason"
-}
-```
+- Include ALL sources used for any data value in the table
 
 ---
 
@@ -192,7 +169,6 @@ If you absolutely cannot find ANY entities that meet the hard requirements, expl
   "subdomain": "{{SUBDOMAIN_NAME}}",
   "candidates_markdown": "",
   "citations": {},
-  "scoring": [],
   "no_matches_reason": "Specific explanation of why no matches were found",
   "search_improvements": [
     "Suggestion 1 for improving search strategy",

@@ -72,18 +72,18 @@ def parse_candidates_markdown(
     scoring: List[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
-    Parse a markdown table of candidates with ALL columns (ID + RESEARCH) and inline citations.
+    Parse a markdown table of candidates with ALL columns (ID + RESEARCH + SCORING) and inline citations.
 
-    Expected markdown format (new unified format):
-    | Company Name | CEO Name | CEO Education |
-    |---|---|---|
-    | Anthropic[1] | Dario Amodei[1][2] | Princeton[2] |
+    Expected markdown format (unified format with scoring columns):
+    | Company Name | CEO Name | Rel | Src | Rec | Rationale |
+    |---|---|---|---|---|---|
+    | Anthropic[1] | Dario Amodei[2] | 0.95 | 1.0 | 0.9 | Leading AI safety co |
 
     Args:
         markdown_str: Markdown table string with inline citations [n]
         columns: Full column definitions (ID + RESEARCH columns)
         citations: Map of citation numbers to URLs (e.g., {"1": "https://..."})
-        scoring: List of scoring dicts with row_id, relevancy, reliability, recency, rationale
+        scoring: DEPRECATED - scoring now extracted from table columns (kept for backward compat)
 
     Returns:
         List of candidate dictionaries with id_values, research_values, cell_citations, etc.
@@ -94,14 +94,9 @@ def parse_candidates_markdown(
         return []
 
     citations = citations or {}
-    scoring = scoring or []
 
-    # Build scoring lookup by row_id
-    scoring_map = {}
-    for score_entry in scoring:
-        row_id = score_entry.get('row_id', '')
-        if row_id:
-            scoring_map[row_id] = score_entry
+    # Scoring column names (case-insensitive matching)
+    SCORING_COLUMNS = {'rel', 'src', 'rec', 'rationale', 'relevancy', 'reliability', 'recency'}
 
     candidates = []
     lines = markdown_str.strip().split('\n')
@@ -123,7 +118,7 @@ def parse_candidates_markdown(
     headers = [h.strip() for h in header_line.split('|') if h.strip()]
     logger.info(f"[PARSE_MD] Found headers: {headers}")
 
-    # Identify ID vs RESEARCH columns
+    # Identify ID vs RESEARCH columns (exclude scoring columns)
     id_column_names = set()
     research_column_names = set()
     for col in columns:
@@ -133,12 +128,14 @@ def parse_candidates_markdown(
         else:
             research_column_names.add(col_name)
 
-    # Build header to column index mapping (case-insensitive)
-    header_to_idx = {}
-    header_lower_map = {}
+    # Identify scoring column indices in headers
+    scoring_col_indices = {}
     for i, h in enumerate(headers):
-        header_to_idx[h] = i
-        header_lower_map[h.lower().strip()] = i
+        h_lower = h.lower().strip()
+        if h_lower in SCORING_COLUMNS:
+            scoring_col_indices[h_lower] = i
+
+    logger.info(f"[PARSE_MD] Scoring columns found at indices: {scoring_col_indices}")
 
     # Parse data rows (skip header and separator)
     row_num = 0
@@ -163,11 +160,40 @@ def parse_candidates_markdown(
         cell_citations = {}  # column_name -> list of citation URLs
         all_source_urls = set()
 
+        # Extract scoring values from table columns
+        relevancy = 0.7  # default
+        reliability = 0.7  # default
+        recency = 0.7  # default
+        rationale = ''
+
         for col_idx, header in enumerate(headers):
             if col_idx >= len(values):
                 continue
 
             cell_value = values[col_idx]
+            h_lower = header.lower().strip()
+
+            # Check if this is a scoring column
+            if h_lower in SCORING_COLUMNS:
+                # Extract scoring value (no citations expected on scores)
+                if h_lower in ('rel', 'relevancy'):
+                    try:
+                        relevancy = float(cell_value) if cell_value else 0.7
+                    except ValueError:
+                        relevancy = 0.7
+                elif h_lower in ('src', 'reliability'):
+                    try:
+                        reliability = float(cell_value) if cell_value else 0.7
+                    except ValueError:
+                        reliability = 0.7
+                elif h_lower in ('rec', 'recency'):
+                    try:
+                        recency = float(cell_value) if cell_value else 0.7
+                    except ValueError:
+                        recency = 0.7
+                elif h_lower == 'rationale':
+                    rationale = cell_value
+                continue  # Don't add scoring columns to id_values or research_values
 
             # Extract citation numbers [n] from cell
             citation_pattern = r'\[(\d+)\]'
@@ -209,23 +235,15 @@ def parse_candidates_markdown(
                                 research_values[col_name] = clean_value
                             matched = True
                             break
-                # If still not matched, treat first columns as ID
+                # If still not matched and not a scoring column, treat first columns as ID
                 if not matched and col_idx < len(id_column_names):
                     id_col_name = list(id_column_names)[col_idx] if col_idx < len(list(id_column_names)) else header
                     id_values[id_col_name] = clean_value
 
         # Generate row_id from first ID column value
         first_id_value = list(id_values.values())[0] if id_values else f"Row{row_num}"
-        row_id = first_id_value
 
-        # Get scoring for this row
-        score_entry = scoring_map.get(row_id, scoring_map.get(first_id_value, {}))
-        relevancy = score_entry.get('relevancy', 0.7)
-        reliability = score_entry.get('reliability', 0.7)
-        recency = score_entry.get('recency', 0.7)
-        rationale = score_entry.get('rationale', '')
-
-        # Build candidate dict
+        # Build candidate dict with scoring from table columns
         candidate = {
             'id_values': id_values,
             'research_values': research_values,
@@ -620,9 +638,8 @@ class RowDiscoveryStream:
                     'model': model,
                     'context': context,
                     'candidates': candidates,
-                    'candidates_markdown': round_candidates.get('candidates_markdown', ''),  # Preserve markdown table
+                    'candidates_markdown': round_candidates.get('candidates_markdown', ''),  # Markdown table with scoring columns
                     'citations': round_candidates.get('citations', {}),  # Preserve citations for this round
-                    'scoring': round_candidates.get('scoring', []),  # Preserve scoring data
                     'count': len(candidates),
                     'search_improvements': search_improvements,
                     'domain_filtering_recommendations': domain_recommendations,
@@ -690,15 +707,12 @@ class RowDiscoveryStream:
             rounds_skipped = len(escalation_strategy) - rounds_executed
 
             # Combine candidates_markdown from all rounds
+            # Note: scoring is now embedded in the markdown table (Rel, Src, Rec, Rationale columns)
             combined_markdown_parts = []
-            combined_scoring = []
             for round_data in all_rounds:
                 round_md = round_data.get('candidates_markdown', '')
                 if round_md:
                     combined_markdown_parts.append(round_md)
-                round_scoring = round_data.get('scoring', [])
-                if round_scoring:
-                    combined_scoring.extend(round_scoring)
 
             # Merge markdown tables (keep headers from first, append data rows from rest)
             combined_markdown = ''
@@ -714,9 +728,8 @@ class RowDiscoveryStream:
             result = {
                 'subdomain': subdomain_name,
                 'all_rounds': all_rounds,
-                'candidates': accumulated_candidates,  # Parsed (for internal processing)
-                'candidates_markdown': combined_markdown,  # Raw markdown (for output)
-                'scoring': combined_scoring,  # Combined scoring data
+                'candidates': accumulated_candidates,  # Parsed (with scoring from table columns)
+                'candidates_markdown': combined_markdown,  # Raw markdown (includes scoring columns)
                 'citations': all_citations,
                 'max_citation_number': current_citation - 1 if current_citation > citation_start_number else citation_start_number,
                 'total_candidates': len(accumulated_candidates),
@@ -1204,8 +1217,8 @@ class RowDiscoveryStream:
             response_data['citations'] = citations
 
             # Preserve original candidates_markdown for debugging and downstream use
+            # Note: scoring is now extracted from table columns (Rel, Src, Rec, Rationale)
             response_data['candidates_markdown'] = candidates_markdown
-            response_data['scoring'] = scoring
 
             # PHASE 1: Include enhanced_data in return
             response_data['enhanced_data'] = result.get('enhanced_data', {})
@@ -1294,10 +1307,13 @@ class RowDiscoveryStream:
             desc = col.get('description', 'No description')
             research_columns_text.append(f"- **{name}**: {desc}")
 
-        # Build table header from ALL columns (ID first, then RESEARCH)
+        # Build table header from ALL columns (ID first, then RESEARCH, then SCORING)
         all_column_names = [col['name'] for col in id_columns] + [col['name'] for col in research_columns]
-        column_headers = "| " + " | ".join(all_column_names) + " |"
-        column_separator = "|" + "|".join(["---"] * len(all_column_names)) + "|"
+        # Add scoring columns at the end
+        scoring_columns = ['Rel', 'Src', 'Rec', 'Rationale']
+        all_column_names_with_scoring = all_column_names + scoring_columns
+        column_headers = "| " + " | ".join(all_column_names_with_scoring) + " |"
+        column_separator = "|" + "|".join(["---"] * len(all_column_names_with_scoring)) + "|"
         column_headers_full = f"{column_headers}\n{column_separator}"
 
         # Format column descriptions for guidance
