@@ -193,10 +193,10 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
             })
 
         # SECURITY: Check rate limit (higher limit for dev environment)
-        # Dev: 100 requests/min for testing, Prod: 10 requests/min
+        # Dev: 200 requests/min for testing, Prod: 20 requests/min (accounts for WebSocket checks)
         import os
         env = os.environ.get('ENVIRONMENT', 'prod')
-        max_requests = 100 if env == 'dev' else 10
+        max_requests = 200 if env == 'dev' else 20
         is_allowed, remaining = check_rate_limit(email, 'getViewerData', max_requests=max_requests, window_minutes=1)
         if not is_allowed:
             log_rate_limit_exceeded(email, action='getViewerData', limit=10, ip_address=ip_address)
