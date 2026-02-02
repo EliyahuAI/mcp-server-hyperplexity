@@ -4522,6 +4522,20 @@ def handle_main_processing(event, context):
                     config_data = json.loads(config_response['Body'].read().decode('utf-8'))
                     logger.info(f"Loaded config data from S3")
 
+                # Load session_info for metadata generation (clean_table_name)
+                session_info = None  # Initialize for use in table_metadata generation
+                try:
+                    from ..core.unified_s3_manager import UnifiedS3Manager
+                    session_storage_manager = UnifiedS3Manager()
+                    session_info = session_storage_manager.load_session_info(email, clean_session_id)
+                    if session_info:
+                        logger.debug(f"[FULL_VALIDATION] Loaded session_info for metadata generation")
+                    else:
+                        logger.debug(f"[FULL_VALIDATION] No session info found")
+                except Exception as e:
+                    logger.warning(f"[FULL_VALIDATION] Failed to load session info: {e}")
+                    session_info = None
+
                 # Try to get original filename from S3 object metadata first
                 try:
                     s3_response = s3_client.head_object(Bucket=S3_UNIFIED_BUCKET, Key=excel_s3_key)
