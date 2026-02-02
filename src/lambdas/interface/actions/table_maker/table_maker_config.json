@@ -76,11 +76,9 @@
     "_escalation_info": "The escalation_strategy array defines progressive model fallback. Each level is tried until sufficient candidates found (based on min_candidates_percentage). This REPLACES the old 'model', 'web_search_model', 'scoring_model', 'progressive_context' settings",
     "escalation_strategy": [
       {
-        "model": "the-clone",
+        "model": "sonar",
         "search_context_size": "high",
-        "findall": true,
-        "findall_iterations": 1,
-        "description": "Round 1: the_clone findall (single iteration for speed)",
+        "description": "Round 1: sonar with high context for fast initial discovery",
         "min_candidates_percentage": 50,
         "_note": "First discovery round. Low threshold (50%) to continue to round 2 for more entities."
       },
