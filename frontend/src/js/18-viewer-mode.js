@@ -105,6 +105,38 @@ async function loadAndDisplayResults(params) {
 
             data = await response.json();
 
+            // SECURITY: Handle token revocation
+            if (data.token_revoked) {
+                logger.error('[SECURITY] Token revoked by server - clearing session');
+
+                // Clear session data
+                sessionStorage.removeItem('sessionToken');
+                localStorage.removeItem('validatedEmail');
+                globalState.sessionToken = null;
+                globalState.email = null;
+
+                // Hide signed-in badge if function exists
+                if (typeof hideSignedInBadge === 'function') {
+                    hideSignedInBadge();
+                }
+
+                // Show security warning
+                hideThinkingInCard(cardId);
+                updateCardContent(cardId, `
+                    <div class="message message-error">
+                        <span class="message-icon">⚠️</span>
+                        <span><strong>Security Alert:</strong> ${data.error || 'Your session has been revoked due to suspicious activity.'}</span>
+                    </div>
+                    <div style="margin-top: 1rem; color: var(--text-secondary);">
+                        <p>Please validate your email again to continue.</p>
+                        <button onclick="location.reload()" style="margin-top: 1rem;">
+                            Reload Page
+                        </button>
+                    </div>
+                `);
+                return;
+            }
+
             if (!response.ok || !data.success) {
                 throw new Error(data.error || data.message || 'Failed to load results');
             }

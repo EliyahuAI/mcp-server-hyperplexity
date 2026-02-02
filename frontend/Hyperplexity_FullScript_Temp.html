@@ -8796,10 +8796,34 @@ function hideSignedInBadge() {
     }
 }
 
-function handleLogout() {
+async function handleLogout() {
     // Confirm logout
-    if (!confirm('Are you sure you want to logout?')) {
+    if (!confirm('Are you sure you want to logout?\n\nThis will log you out on all devices.')) {
         return;
+    }
+
+    const email = globalState.email;
+
+    // SECURITY: Notify backend to revoke all tokens (logout all devices)
+    try {
+        const response = await fetch(`${API_BASE}/validate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Token': sessionStorage.getItem('sessionToken') || ''
+            },
+            body: JSON.stringify({
+                action: 'logout',
+                email: email
+            })
+        });
+
+        if (response.ok) {
+            console.log('[AUTH] Server-side logout successful');
+        }
+    } catch (error) {
+        console.warn('[AUTH] Could not notify server of logout:', error);
+        // Continue with client-side logout anyway
     }
 
     // Clear all auth data
@@ -8817,15 +8841,15 @@ function handleLogout() {
         id: cardId,
         icon: '👋',
         title: 'Logged Out',
-        subtitle: 'You have been logged out successfully',
+        subtitle: 'You have been logged out on all devices',
         content: `
             <div class="info-header">
-                Your session has been cleared. Reload the page to login again.
+                Your session has been cleared across all devices. Reload the page to login again.
             </div>
         `
     });
 
-    console.log('[AUTH] User logged out');
+    console.log('[AUTH] User logged out from all devices');
 }
 
 // Initialize signed-in badge on page load if user is validated
@@ -18139,6 +18163,38 @@ async function loadAndDisplayResults(params) {
             });
 
             data = await response.json();
+
+            // SECURITY: Handle token revocation
+            if (data.token_revoked) {
+                logger.error('[SECURITY] Token revoked by server - clearing session');
+
+                // Clear session data
+                sessionStorage.removeItem('sessionToken');
+                localStorage.removeItem('validatedEmail');
+                globalState.sessionToken = null;
+                globalState.email = null;
+
+                // Hide signed-in badge if function exists
+                if (typeof hideSignedInBadge === 'function') {
+                    hideSignedInBadge();
+                }
+
+                // Show security warning
+                hideThinkingInCard(cardId);
+                updateCardContent(cardId, `
+                    <div class="message message-error">
+                        <span class="message-icon">⚠️</span>
+                        <span><strong>Security Alert:</strong> ${data.error || 'Your session has been revoked due to suspicious activity.'}</span>
+                    </div>
+                    <div style="margin-top: 1rem; color: var(--text-secondary);">
+                        <p>Please validate your email again to continue.</p>
+                        <button onclick="location.reload()" style="margin-top: 1rem;">
+                            Reload Page
+                        </button>
+                    </div>
+                `);
+                return;
+            }
 
             if (!response.ok || !data.success) {
                 throw new Error(data.error || data.message || 'Failed to load results');

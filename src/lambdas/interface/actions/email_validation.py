@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from interface_lambda.utils.helpers import create_response
-from interface_lambda.utils.session_manager import create_session_token
+from interface_lambda.utils.session_manager import create_session_token, revoke_all_user_tokens
 from dynamodb_schemas import (
     create_email_validation_request,
     validate_email_code,
@@ -69,6 +69,18 @@ def handle(request_data, context):
             # New user detection removed for performance - no longer needed
             # if result.get('success') and result.get('validated'):
             #     result['is_new_user'] = is_new_user(email)
+
+        elif action == 'logout':
+            # SECURITY: Logout user on all devices (revoke all tokens)
+            revoked_count = revoke_all_user_tokens(email, reason='user_logout')
+            logger.info(f"[AUTH] User logout: {email} - Revoked {revoked_count} sessions")
+
+            result = {
+                'success': True,
+                'message': 'Logged out successfully on all devices',
+                'revoked_count': revoked_count
+            }
+
         else:
             return create_response(400, {'error': f'Unknown email action: {action}'})
 

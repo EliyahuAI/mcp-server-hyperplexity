@@ -11,7 +11,7 @@ import time
 from typing import Optional, Dict, Any
 
 from interface_lambda.utils.helpers import create_response
-from interface_lambda.utils.session_manager import extract_email_from_request
+from interface_lambda.utils.session_manager import extract_email_from_request, revoke_token
 from interface_lambda.utils.rate_limiter import check_rate_limit
 from interface_lambda.utils.security_logger import (
     log_ownership_violation,
@@ -179,9 +179,17 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         if '..' in session_id or '/' in session_id or '\\' in session_id:
             log_path_traversal_attempt(session_id, email=email, ip_address=ip_address)
             logger.error(f"[SECURITY] Path traversal attempt: {session_id}")
+
+            # SECURITY FLAG: Revoke token on path traversal attempt (attack indicator)
+            session_token = headers.get('X-Session-Token') or headers.get('x-session-token')
+            if session_token:
+                revoke_token(session_token, reason="path_traversal_attempt")
+                logger.critical(f"[SECURITY] REVOKED token for {email} - path traversal attack attempt")
+
             return create_response(400, {
                 'success': False,
-                'error': 'Invalid session ID'
+                'error': 'Invalid session ID. Your session has been revoked for security.',
+                'token_revoked': True
             })
 
         # SECURITY: Check rate limit (10 requests per minute per email)
@@ -189,10 +197,18 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         if not is_allowed:
             log_rate_limit_exceeded(email, action='getViewerData', limit=10, ip_address=ip_address)
             logger.warning(f"[SECURITY] Rate limit exceeded for {email}")
+
+            # SECURITY: Revoke token on excessive rate limit violations (security flag)
+            session_token = headers.get('X-Session-Token') or headers.get('x-session-token')
+            if session_token:
+                revoke_token(session_token, reason="excessive_rate_limit_violations")
+                logger.warning(f"[SECURITY] Revoked token for {email} due to rate limit abuse")
+
             return create_response(429, {
                 'success': False,
-                'error': 'Rate limit exceeded. Please try again later.',
-                'retry_after': 60  # seconds
+                'error': 'Rate limit exceeded. Your session has been revoked for security. Please re-validate your email.',
+                'retry_after': 60,
+                'token_revoked': True
             })
 
         # SECURITY: Verify email is validated in DynamoDB
@@ -210,9 +226,17 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         if not _verify_session_ownership_cached(email, session_id):
             log_ownership_violation(email, session_id, ip_address=ip_address)
             logger.error(f"[SECURITY] Ownership violation - {email} attempted to access {session_id}")
+
+            # SECURITY FLAG: Revoke token immediately on ownership violation (most severe)
+            session_token = headers.get('X-Session-Token') or headers.get('x-session-token')
+            if session_token:
+                revoke_token(session_token, reason="ownership_violation")
+                logger.critical(f"[SECURITY] REVOKED token for {email} - attempted unauthorized access to {session_id}")
+
             return create_response(403, {
                 'success': False,
-                'error': 'Access denied: you do not own this session'
+                'error': 'Access denied: you do not own this session. Your session has been revoked for security.',
+                'token_revoked': True
             })
 
         # Initialize storage manager

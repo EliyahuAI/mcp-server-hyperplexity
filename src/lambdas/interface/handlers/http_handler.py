@@ -103,10 +103,11 @@ def handle(event, context):
             action = request_data.get('action')
             
             email_actions = [
-                'requestEmailValidation', 
-                'validateEmailCode', 
-                'checkEmailValidation', 
-                'checkOrSendValidation'
+                'requestEmailValidation',
+                'validateEmailCode',
+                'checkEmailValidation',
+                'checkOrSendValidation',
+                'logout'  # User-initiated logout (revokes all tokens)
             ]
 
             if action == 'processExcel':

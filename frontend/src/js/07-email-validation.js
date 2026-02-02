@@ -340,10 +340,34 @@ function hideSignedInBadge() {
     }
 }
 
-function handleLogout() {
+async function handleLogout() {
     // Confirm logout
-    if (!confirm('Are you sure you want to logout?')) {
+    if (!confirm('Are you sure you want to logout?\n\nThis will log you out on all devices.')) {
         return;
+    }
+
+    const email = globalState.email;
+
+    // SECURITY: Notify backend to revoke all tokens (logout all devices)
+    try {
+        const response = await fetch(`${API_BASE}/validate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Token': sessionStorage.getItem('sessionToken') || ''
+            },
+            body: JSON.stringify({
+                action: 'logout',
+                email: email
+            })
+        });
+
+        if (response.ok) {
+            console.log('[AUTH] Server-side logout successful');
+        }
+    } catch (error) {
+        console.warn('[AUTH] Could not notify server of logout:', error);
+        // Continue with client-side logout anyway
     }
 
     // Clear all auth data
@@ -361,15 +385,15 @@ function handleLogout() {
         id: cardId,
         icon: '👋',
         title: 'Logged Out',
-        subtitle: 'You have been logged out successfully',
+        subtitle: 'You have been logged out on all devices',
         content: `
             <div class="info-header">
-                Your session has been cleared. Reload the page to login again.
+                Your session has been cleared across all devices. Reload the page to login again.
             </div>
         `
     });
 
-    console.log('[AUTH] User logged out');
+    console.log('[AUTH] User logged out from all devices');
 }
 
 // Initialize signed-in badge on page load if user is validated
