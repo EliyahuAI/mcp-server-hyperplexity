@@ -1,7 +1,7 @@
 # Security Guide - Hyperplexity Validator
 
-**Last Updated:** 2026-02-02
-**Version:** 1.0
+**Last Updated:** 2026-02-03
+**Version:** 1.1
 **Classification:** Internal Use
 
 ---
@@ -86,6 +86,27 @@ The Hyperplexity Validator implements **defense in depth** with multiple securit
 - ✅ IP-based lockouts (prevents distributed attacks)
 - ✅ Session ownership verification (prevents data exfiltration)
 - ✅ Security event logging (enables detection & response)
+- ✅ Token revocation handling (automatic session cleanup on security violations)
+- ✅ Universal ownership checks (all sessions including demos require ownership verification)
+
+### Recent Security Improvements (v1.1 - 2026-02-03)
+
+**Token Revocation Detection:**
+- Backend now explicitly signals `token_revoked: true` when invalid/expired tokens are used
+- Frontend automatically clears revoked tokens and prompts re-authentication
+- Users see clear error messages instead of silent failures
+- Prevents indefinite use of revoked session tokens
+
+**Demo Session Security:**
+- Fixed vulnerability where demo sessions (`session_demo_*`) bypassed ownership checks
+- All demo sessions now undergo full ownership verification in DynamoDB
+- Demo sessions create proper ownership records and must be enforced consistently
+- Prevents unauthorized access to other users' preview/demo validation results
+
+**Impact:**
+- Closes potential attack vector where users could access others' demo sessions
+- Improves user experience when tokens expire or are revoked
+- Enforces defense-in-depth consistently across all session types
 
 ---
 
@@ -204,10 +225,14 @@ def _verify_session_ownership_cached(email: str, session_id: str) -> bool:
 ```
 
 **Security Guarantees:**
-- ✅ Users can only access their own sessions
+- ✅ Users can only access their own sessions (including demo/preview sessions)
 - ✅ Email cannot be spoofed (verified via JWT)
 - ✅ Session IDs validated for format (prevents path traversal)
 - ✅ All violations logged to CloudWatch
+- ✅ Demo sessions (`session_demo_*`) undergo same ownership checks as regular sessions
+- ✅ Automatic token revocation on ownership violations
+
+**Note:** As of v1.1 (2026-02-03), ALL session types require ownership verification. Previous versions incorrectly bypassed ownership checks for demo sessions.
 
 ---
 
@@ -926,6 +951,7 @@ https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.1 | 2026-02-03 | Claude/Elliott | Fixed demo session security bypass, added token revocation handling |
 | 1.0 | 2026-02-02 | Claude/Elliott | Initial security documentation |
 
 ---
