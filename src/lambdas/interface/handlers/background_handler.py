@@ -4979,9 +4979,9 @@ def handle_main_processing(event, context):
 
                                             html_generator = StaticHTMLGenerator()
 
-                                            # Get clean table name from session info or config
+                                            # Get clean table name from metadata, session info, or config
                                             # session_info may be None if load failed
-                                            static_title = (session_info.get('clean_table_name') if session_info else None) or config_data.get('table_name', 'Validation Results')
+                                            static_title = full_table_metadata.get('table_name') or (session_info.get('clean_table_name') if session_info else None) or config_data.get('table_name', 'Validation Results')
                                             static_subtitle = f"Generated {datetime.now().strftime('%B %d, %Y')}"
 
                                             # Build interactive URL for linking

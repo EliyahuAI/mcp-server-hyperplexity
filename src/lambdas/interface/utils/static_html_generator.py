@@ -434,7 +434,7 @@ class StaticHTMLGenerator:
         faq_items = []
         for i, faq in enumerate(faqs):
             question = self._escape_html(faq.get('question', ''))
-            answer = self._escape_html(faq.get('answer', ''))
+            answer = faq.get('answer', '')  # Allow HTML links in answers (content is from our own code, not user input)
             if question and answer:
                 faq_items.append(f'''
                 <details class="faq-item">
@@ -596,6 +596,7 @@ class StaticHTMLGenerator:
         .faq-question { padding: 6px 10px; cursor: pointer; font-weight: normal; font-size: 0.7rem; color: #f0f0f0; }
         .faq-question:hover { background: #fefefe; }
         .faq-answer { padding: 0 10px 6px 10px; color: #f0f0f0; line-height: 1.4; font-size: 0.7rem; }
+        .faq-answer a { color: #f0f0f0; text-decoration: none; }
         .generated-by { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-bottom: 12px; font-size: 12px; color: var(--text-secondary); }
         .generated-by a { color: #28FF3A; text-decoration: none; font-weight: 500; }
         .generated-by a:hover { text-decoration: underline; }

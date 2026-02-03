@@ -152,6 +152,13 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         # Falls back to email field in request body for backward compatibility
         email = extract_email_from_request(request_data, headers)
 
+        # Check if a token was provided but failed verification (revoked/expired)
+        session_token = headers.get('X-Session-Token') or headers.get('x-session-token')
+        if not session_token:
+            session_token = request_data.get('session_token')
+
+        token_was_provided = bool(session_token)
+
         # Backward compatibility: if no token, try email field (legacy support)
         if not email:
             email = request_data.get('email', '').lower().strip()
@@ -164,10 +171,18 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         is_preview = request_data.get('is_preview')  # None = auto, False = full only, True = preview only
 
         if not email:
-            return create_response(400, {
-                'success': False,
-                'error': 'Email address is required (please provide session token or email)'
-            })
+            # If a token was provided but email is None, it means the token was invalid/revoked
+            if token_was_provided:
+                return create_response(400, {
+                    'success': False,
+                    'error': 'Your session has expired or been revoked. Please log in again.',
+                    'token_revoked': True
+                })
+            else:
+                return create_response(400, {
+                    'success': False,
+                    'error': 'Email address is required (please provide session token or email)'
+                })
 
         if not session_id:
             return create_response(400, {
@@ -239,54 +254,48 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
                 'error': 'Email not validated. Please validate your email first.'
             })
 
-        # SECURITY: Skip ownership check for demo sessions (no DynamoDB record needed)
-        is_demo_session = 'demo' in session_id.lower() if session_id else False
+        # SECURITY: Verify session ownership for ALL sessions (including demo sessions)
+        # Demo sessions DO create DynamoDB records with email ownership, so they must be verified
+        ownership_result = _verify_session_ownership_cached(email, session_id)
+        if not ownership_result:
+            # Check if session exists first to distinguish between "not found" and "unauthorized"
+            try:
+                from boto3.dynamodb.conditions import Key
 
-        if is_demo_session:
-            logger.info(f"[VIEWER_DATA] Demo session detected, skipping ownership check: {session_id}")
-        else:
-            # SECURITY: Verify session ownership (with Lambda caching for performance)
-            ownership_result = _verify_session_ownership_cached(email, session_id)
-            if not ownership_result:
-                # Check if session exists first to distinguish between "not found" and "unauthorized"
-                try:
-                    from boto3.dynamodb.conditions import Key
+                runs_table = boto3.resource('dynamodb', region_name='us-east-1').Table('perplexity-validator-runs')
+                response = runs_table.query(
+                    KeyConditionExpression=Key('session_id').eq(session_id),
+                    Limit=1
+                )
+                session_exists = len(response.get('Items', [])) > 0
+            except:
+                session_exists = False
 
-                    runs_table = boto3.resource('dynamodb', region_name='us-east-1').Table('perplexity-validator-runs')
-                    response = runs_table.query(
-                        KeyConditionExpression=Key('session_id').eq(session_id),
-                        Limit=1
-                    )
-                    session_exists = len(response.get('Items', [])) > 0
-                except:
-                    session_exists = False
+            if not session_exists:
+                # Session not found - likely race condition or invalid session_id
+                # Don't revoke token for this (user didn't do anything wrong)
+                logger.warning(f"[SECURITY] Session not found (may be processing): {session_id} for {email}")
+                return create_response(404, {
+                    'success': False,
+                    'error': 'Session not found. If preview just completed, please try again in a moment.',
+                    'session_not_found': True
+                })
+            else:
+                # Session exists but belongs to someone else - actual ownership violation
+                log_ownership_violation(email, session_id, ip_address=ip_address)
+                logger.error(f"[SECURITY] Ownership violation - {email} attempted to access {session_id}")
 
-                if not session_exists:
-                    # Session not found - likely race condition or invalid session_id
-                    # Don't revoke token for this (user didn't do anything wrong)
-                    logger.warning(f"[SECURITY] Session not found (may be processing): {session_id} for {email}")
-                    return create_response(404, {
-                        'success': False,
-                        'error': 'Session not found. If preview just completed, please try again in a moment.',
-                        'session_not_found': True
-                    })
-                else:
-                    # Session exists but belongs to someone else - actual ownership violation
-                    log_ownership_violation(email, session_id, ip_address=ip_address)
-                    logger.error(f"[SECURITY] Ownership violation - {email} attempted to access {session_id}")
+                # SECURITY FLAG: Revoke token immediately on ownership violation (most severe)
+                session_token = headers.get('X-Session-Token') or headers.get('x-session-token')
+                if session_token:
+                    revoke_token(session_token, reason="ownership_violation")
+                    logger.critical(f"[SECURITY] REVOKED token for {email} - attempted unauthorized access to {session_id}")
 
-                    # SECURITY FLAG: Revoke token immediately on ownership violation (most severe)
-                    session_token = headers.get('X-Session-Token') or headers.get('x-session-token')
-                    if session_token:
-                        revoke_token(session_token, reason="ownership_violation")
-                        logger.critical(f"[SECURITY] REVOKED token for {email} - attempted unauthorized access to {session_id}")
-
-                    return create_response(403, {
-                        'success': False,
-                        'error': 'Access denied: you do not own this session. Your session has been revoked for security.',
-                        'token_revoked': True
-                    })
-                # End of ownership check block
+                return create_response(403, {
+                    'success': False,
+                    'error': 'Access denied: you do not own this session. Your session has been revoked for security.',
+                    'token_revoked': True
+                })
 
         # Initialize storage manager
         storage_manager = UnifiedS3Manager()

@@ -15145,6 +15145,43 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
 
         const data = await response.json();
 
+        // SECURITY: Handle token revocation
+        if (data.token_revoked) {
+            console.error('[SECURITY] Token revoked by server - clearing session');
+
+            // Clear session data
+            sessionStorage.removeItem('sessionToken');
+            localStorage.removeItem('validatedEmail');
+            if (typeof globalState !== 'undefined') {
+                globalState.sessionToken = null;
+                globalState.email = null;
+            }
+
+            // Hide signed-in badge if function exists
+            if (typeof hideSignedInBadge === 'function') {
+                hideSignedInBadge();
+            }
+
+            // Show error message with reload button
+            container.innerHTML = `
+                <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 1.5rem; margin: 1rem 0;">
+                    <div style="display: flex; align-items: start; gap: 0.75rem;">
+                        <span style="font-size: 1.5rem;">⚠️</span>
+                        <div>
+                            <strong style="color: var(--text-primary);">Session Expired</strong>
+                            <p style="color: var(--text-secondary); margin: 0.5rem 0 0 0;">
+                                ${data.error || 'Your session has been revoked. Please log in again to view this data.'}
+                            </p>
+                            <button onclick="location.reload()" style="margin-top: 1rem; padding: 0.5rem 1rem; background: var(--primary-color); color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                Reload Page
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
         if (data.success && data.table_metadata) {
             // Store for JSON download
             globalState.previewTableMetadata = data.table_metadata;

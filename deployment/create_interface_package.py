@@ -215,6 +215,25 @@ def copy_source_files():
     shutil.copytree(LAMBDA_SRC_DIR, PACKAGE_DIR / "interface_lambda", dirs_exist_ok=True)
     logger.info("Copied the 'interface_lambda' package directory.")
 
+    # 2b. Copy static HTML template assets from frontend source (single source of truth)
+    # These are used by static_html_generator.py for standalone HTML output files
+    frontend_src = PROJECT_DIR / "frontend" / "src"
+    templates_dest = PACKAGE_DIR / "interface_lambda" / "templates"
+    templates_dest.mkdir(parents=True, exist_ok=True)
+
+    static_template_assets = [
+        (frontend_src / "standalone-table-template.html", templates_dest / "standalone-table-template.html"),
+        (frontend_src / "styles" / "07-tables.css", templates_dest / "css" / "07-tables.css"),
+        (frontend_src / "js" / "16-interactive-table.js", templates_dest / "js" / "16-interactive-table.js"),
+    ]
+    for src_file, dest_file in static_template_assets:
+        if src_file.exists():
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(src_file, dest_file)
+            logger.info(f"Copied frontend asset: {src_file.name} -> templates/")
+        else:
+            logger.warning(f"Frontend asset not found: {src_file}")
+
     # 3. Copy only the necessary shared modules directly into the package root
     shared_modules = [
         "dynamodb_schemas.py",
