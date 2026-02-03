@@ -105,7 +105,7 @@ def transform_html(
     if increase_font:
         html = re.sub(
             r'(\.viewer-title\s*\{[^}]*font-size:\s*)1\.5rem',
-            r'\g<1>2rem',
+            r'\g<1>1.75rem',
             html
         )
         print("✓ Increased title size (1.5rem → 2rem)")
