@@ -151,31 +151,20 @@ def should_update_value(original_confidence, validation_confidence):
     """
     Determine if original value should be updated based on confidence comparison.
     Only update when validation confidence is higher than or equal to original confidence.
-    
-    Confidence hierarchy: HIGH > MEDIUM > LOW > None
-    Special case: If original has no confidence (blank/empty values), any validation confidence is better.
+
+    Confidence hierarchy: HIGH > MEDIUM > LOW = None (LOW and null are equivalent).
     """
-    # If we have no validation confidence, never update
-    if is_null_confidence(validation_confidence):
-        return False
-    
-    # If original has no confidence but we have validation confidence, always update
-    # (any confidence is better than no confidence for blank/empty values)
-    if is_null_confidence(original_confidence):
-        return True
-    
-    # Define confidence hierarchy (higher number = higher confidence)
-    confidence_levels = {
-        'HIGH': 3,
-        'MEDIUM': 2, 
-        'LOW': 1
-    }
-    
-    original_level = confidence_levels.get(str(original_confidence).strip().upper(), 0)
-    validation_level = confidence_levels.get(str(validation_confidence).strip().upper(), 0)
-    
-    # Only update if validation confidence is higher than or equal to original
-    return validation_level >= original_level
+    confidence_levels = {'HIGH': 3, 'MEDIUM': 2, 'LOW': 1}
+
+    orig_null = is_null_confidence(original_confidence)
+    val_null = is_null_confidence(validation_confidence)
+
+    # Map null to LOW level (1) since they are equivalent
+    orig_level = 1 if orig_null else confidence_levels.get(str(original_confidence).strip().upper(), 0)
+    val_level = 1 if val_null else confidence_levels.get(str(validation_confidence).strip().upper(), 0)
+
+    # Update if validation confidence is higher than or equal to original
+    return val_level >= orig_level
 
 
 def normalize_citation_references(text: str) -> str:

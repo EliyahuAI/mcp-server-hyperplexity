@@ -4756,6 +4756,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         row_results[target.column]['original_confidence'] = None
                         logger.debug(f"[CONFIDENCE_ENFORCE] {target.column}: Original blank, enforcing null original_confidence")
 
+                    # ENFORCE: Blank answer + LOW confidence → null confidence
+                    # (null = low-confidence blank, code-derived classification)
+                    answer_value = row_results[target.column].get('answer')
+                    if (answer_value is None or str(answer_value).strip() == ''):
+                        current_conf = row_results[target.column].get('confidence')
+                        if current_conf is not None and str(current_conf).strip().upper() == 'LOW':
+                            row_results[target.column]['confidence'] = None
+                            logger.debug(f"[CONFIDENCE_ENFORCE] {target.column}: Blank answer + LOW confidence → null")
+
                     processed_count += 1
                     
                 else:

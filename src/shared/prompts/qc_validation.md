@@ -132,14 +132,10 @@ Assign confidence levels using this rubric:
 - **MEDIUM**: Good estimates, confident projections, or respectable but not definitive sources that are consistent with the guidance .provided.
 
 - **LOW**: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value it is low confidence
-
-- **None/null** (Blank):
-  - For `confidence`: Use when field should remain blank (no information found, absence of evidence)
-  - For `original_confidence`: **ALWAYS use null when the original value was blank/empty**, regardless of whether validator added content. The original had no content, so it gets no confidence rating. If validator passed through null, keep it null.
-  - **Evidence of absence vs Absence of evidence**:
-    - Confident something is NOT APPLICABLE → Use text "N/A" with confidence, not blank
-    - Simply no data found → Blank with null confidence (absence of evidence)
-  - **Removing false data**: If original has LOW confidence false data, going to blank is acceptable
+  - **Only LOW confidence answers may be blank.** If no data was found, use null for answer with LOW confidence.
+  - **Confident absence is NOT blank** — if you are confident something does not exist or is not applicable, say so explicitly with language appropriate to the measure (e.g., "N/A", "Not applicable", "No website", "Not publicly traded") and assign an appropriate confidence level. Do not leave it blank.
+  - **Blank originals**: Assign LOW for `original_confidence` when the original value was blank/empty (the system will reclassify LOW and null as equivalent).
+  - **Removing false data**: If original has LOW confidence false data, going to blank with LOW confidence is acceptable
 
 ---
 
@@ -150,9 +146,9 @@ Assign confidence levels using this rubric:
 **YOU MUST PROVIDE QC OUTPUT FOR EVERY SINGLE FIELD** - no exceptions. For each field:
 
 1. **Always provide your QC answer** - either confirm the original or updated value or provide a replacement
-2. **Always assign your QC confidence** - H (HIGH), M (MEDIUM), L (LOW), or null
-3. **Always review and confirm/adjust original_confidence** - ensure hierarchy compliance (H/M/L/null)
-4. **Always provide updated_confidence** - your assessment of the validator's proposed value (H/M/L/null)
+2. **Always assign your QC confidence** - H (HIGH), M (MEDIUM), or L (LOW)
+3. **Always review and confirm/adjust original_confidence** - ensure hierarchy compliance (H/M/L)
+4. **Always provide updated_confidence** - your assessment of the validator's proposed value (H/M/L)
 5. **Always provide key_citation** - reference validation citations using [V*] format (e.g., [V1], [V2])
 6. **Always provide update_importance** - rate the importance of changes (0-5 scale)
 
@@ -170,9 +166,9 @@ Return a JSON array where each item is a cell array with 8 elements:
 
 - **column**: Exact field name
 - **answer**: Your final QC value. Use `=` if accepting the Updated Value unchanged (saves tokens). Use string value for corrections, or null for blank.
-- **confidence**: H (HIGH), M (MEDIUM), L (LOW), or null - YOUR confidence in the QC value
-- **original_confidence**: H, M, L, or null - YOUR assessment of the original value
-- **updated_confidence**: H, M, L, or null - YOUR assessment of the validator's proposed value
+- **confidence**: H (HIGH), M (MEDIUM), or L (LOW) - YOUR confidence in the QC value
+- **original_confidence**: H, M, or L - YOUR assessment of the original value
+- **updated_confidence**: H, M, or L - YOUR assessment of the validator's proposed value
 - **key_citation**: Use `=` to accept the validator's first citation [V1] unchanged. Or use [V*] reference (e.g., [V1], [V2]), [KNOWLEDGE], or [UNVERIFIED].
 - **update_importance**: Integer 0-5 rating the net change importance
 - **qc_reasoning**: Use `=` if the validator's explanation is adequate (will be left blank). Only provide reasoning when you change a value or need to correct the explanation.
@@ -204,25 +200,21 @@ Return a JSON array where each item is a cell array with 8 elements:
 
 * **CONFIDENCE HIERARCHY ENFORCEMENT:** original_confidence ≤ confidence
   - You MUST ensure: Original Confidence ≤ QC Confidence (generally cannot degrade confidence)
-  - **Hierarchy Scale:** HIGH > MEDIUM > LOW > Blank/null
-  - **NULL HANDLING FOR ENFORCEMENT**:
-    - If original was blank (null): QC can be any level (null ≤ anything)
-    - If original was HIGH/MEDIUM: QC cannot be blank or LOW (no degrading without strong reason)
-    - If original was LOW: QC can be blank ONLY if data is clearly false/harmful and no reliable alternative exists
-  - **NULL PRESERVATION**: If original_confidence is null (blank original value), keep it null in your output - don't convert to "LOW"
-  - **CONFIDENT ABSENCE**: If you're confident something should be absent/not applicable, use text like "N/A" or "Not applicable" with HIGH/MEDIUM confidence, NOT blank
+  - **Hierarchy Scale:** HIGH > MEDIUM > LOW (LOW and null are treated as equivalent by the system)
+  - If original was HIGH/MEDIUM: QC cannot be LOW (no degrading without strong reason)
+  - If original was LOW: QC can go to blank with LOW only if data is clearly false/harmful and no reliable alternative exists
+  - **CONFIDENT ABSENCE**: If you're confident something should be absent/not applicable, use language appropriate to the measure (e.g., "N/A", "Not applicable", "No website", "Not publicly traded") with HIGH/MEDIUM confidence, NOT blank. Only LOW confidence answers may be truly blank.
   - If hierarchy is violated, you MUST adjust confidence levels or explain in qc_reasoning
   - Examples:
-    - Original=MEDIUM, Updated=Blank → INVALID (use "N/A" text with MEDIUM confidence if not applicable, or keep MEDIUM if just unverified)
-    - Original=LOW (false data), Updated=Blank → ACCEPTABLE (removing harmful false data when no replacement exists)
-    - Original=LOW, Updated="N/A" with HIGH → VALID (confident statement of non-applicability)
-    - Original=null, Updated=HIGH → VALID (adding reliable data)
+    - Original=MEDIUM, Updated=Blank → INVALID (use measure-appropriate text with MEDIUM confidence if not applicable, or keep MEDIUM if just unverified)
+    - Original=LOW (false data), Updated=Blank with LOW → ACCEPTABLE (removing harmful false data when no replacement exists)
+    - Original=LOW, Updated="Not applicable" with HIGH → VALID (confident statement of non-applicability)
+    - Original=LOW, Updated=HIGH → VALID (adding reliable data)
     - Original=HIGH, Updated=MEDIUM → INVALID → Must adjust to maintain hierarchy
 
 * **CRITICAL EQUAL CONFIDENCE RULE:**
   - When final answer equals original value (no meaningful change), original_confidence MUST equal confidence
   - When update_importance is 0 or 1, original_confidence MUST equal confidence
-  - **EXCEPTION**: If original value was blank (null original_confidence), keep it null even when confirming blank should stay blank
   - This is NON-NEGOTIABLE and takes precedence over other confidence considerations
 
 * **MANDATORY QC VALUE:** When any QC action is taken, the `answer` field is REQUIRED - it cannot be optional, and you must also explicitly state the confidence of of this entry, and your reviewed confidence of the Original entry.
@@ -242,7 +234,7 @@ Return a JSON array where each item is a cell array with 8 elements:
 * Include exact column name as defined in FIELD input
 * Use [V*] format to reference validation citations (e.g., [V1], [V2])
 * Use proper newline formatting for Excel cells (bullets, lists, etc.)
-* Assign **None confidence** for blank values that should remain blank
+* Assign **LOW confidence** for blank values that should remain blank (system reclassifies blank+LOW to null)
 * Response must be valid JSON array with all required fields
 * Respect original entries when there is not evidence to change them - maintain the value and provide a low confidence
 
@@ -250,9 +242,9 @@ Return a JSON array where each item is a cell array with 8 elements:
 
 * `column`: Field name being QC'd (required)
 * `answer`: The QC Entry **MANDATORY FOR ALL QC RESPONSES**
-* `confidence`: **MANDATORY** - H/M/L/null for the QC Entry (must be >= original confidence)
-* `original_confidence`: **MANDATORY** - H/M/L/null for the original value (null if original was blank)
-* `updated_confidence`: **MANDATORY** - H/M/L/null for the validator's proposed value
+* `confidence`: **MANDATORY** - H/M/L for the QC Entry (must be >= original confidence)
+* `original_confidence`: **MANDATORY** - H/M/L for the original value (LOW if original was blank)
+* `updated_confidence`: **MANDATORY** - H/M/L for the validator's proposed value
 * `key_citation`: **MANDATORY** - Use [V*] to reference validation citations shown above (e.g., [V1], [V2]). Use [KNOWLEDGE] for model knowledge or [UNVERIFIED] if no citation available.
 * `update_importance`: **MANDATORY** - Integer 0-5 rating the net change importance
 

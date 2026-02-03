@@ -11,8 +11,8 @@ Parsing code handles "null" -> None and string -> int conversions.
 # Element positions:
 #   0: Column name (string)
 #   1: Answer value (string or "null")
-#   2: Confidence: "H", "M", "L", or "null"
-#   3: Original confidence: "H", "M", "L", or "null"
+#   2: Confidence: "H", "M", or "L" (code reclassifies blank+LOW to null)
+#   3: Original confidence: "H", "M", or "L" (code reclassifies blank+LOW to null)
 #   4: Consistent with model knowledge: "T", "F", or "null"
 #   5: Explanation (string)
 MULTIPLEX_RESPONSE_SCHEMA = {
@@ -59,9 +59,9 @@ def get_qc_response_format_schema():
     Element positions:
       0: Column name (string)
       1: Answer value, or "=" to keep updated value (string or "null")
-      2: Confidence: "H", "M", "L", or "null"
-      3: Original confidence: "H", "M", "L", or "null" (null if original was blank)
-      4: Updated confidence: "H", "M", "L", or "null"
+      2: Confidence: "H", "M", or "L" (code reclassifies blank+LOW to null)
+      3: Original confidence: "H", "M", or "L" (code reclassifies blank+LOW to null)
+      4: Updated confidence: "H", "M", or "L" (code reclassifies blank+LOW to null)
       5: Key citation: [V1], [V2], "=" for first citation, [KNOWLEDGE], or [UNVERIFIED]
       6: Update importance: "0"-"5" (string, parsed to int)
       7: QC reasoning: "=" if validator's explanation adequate, otherwise updated reasoning

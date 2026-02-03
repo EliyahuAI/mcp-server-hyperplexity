@@ -913,11 +913,12 @@ class QCModule:
                 for qc_result in qc_results:
                     column = qc_result.get('column', '')
                     if column:
-                        # ENFORCE 1: If QC answer is blank, force confidence to null
+                        # ENFORCE 1: Blank QC answer + LOW confidence → null (low-confidence blank)
                         qc_answer = qc_result.get('answer')
                         if qc_answer is None or str(qc_answer).strip() == '':
-                            if qc_result.get('confidence') is not None:
-                                logger.info(f"[QC_NULL_ENFORCE] {column}: QC answer is blank, forcing confidence to null (was: {qc_result.get('confidence')})")
+                            current_conf = qc_result.get('confidence')
+                            if current_conf is not None and str(current_conf).strip().upper() == 'LOW':
+                                logger.info(f"[QC_NULL_ENFORCE] {column}: Blank answer + LOW confidence → null")
                                 qc_result['confidence'] = None
 
                         # ENFORCE 2: Check original row data - if it was blank, force null original_confidence
