@@ -47,14 +47,22 @@ def _verify_session_ownership(email: str, session_id: str) -> bool:
         True if email owns the session, False otherwise
     """
     try:
-        runs_table = boto3.resource('dynamodb', region_name='us-east-1').Table('perplexity-validator-runs')
-        response = runs_table.get_item(Key={'session_id': session_id})
+        from boto3.dynamodb.conditions import Key
 
-        if 'Item' not in response:
+        runs_table = boto3.resource('dynamodb', region_name='us-east-1').Table('perplexity-validator-runs')
+
+        # Query by session_id (partition key) - table has composite key (session_id + run_key)
+        response = runs_table.query(
+            KeyConditionExpression=Key('session_id').eq(session_id),
+            Limit=1  # We only need to check if any run exists for this session
+        )
+
+        if not response.get('Items'):
             logger.warning(f"[SECURITY] Session not found: {session_id}")
             return False
 
-        session_email = response['Item'].get('email', '').lower().strip()
+        # Check the first item (all items in a session should have the same email)
+        session_email = response['Items'][0].get('email', '').lower().strip()
         request_email = email.lower().strip()
 
         if session_email != request_email:
@@ -242,9 +250,14 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
             if not ownership_result:
                 # Check if session exists first to distinguish between "not found" and "unauthorized"
                 try:
+                    from boto3.dynamodb.conditions import Key
+
                     runs_table = boto3.resource('dynamodb', region_name='us-east-1').Table('perplexity-validator-runs')
-                    response = runs_table.get_item(Key={'session_id': session_id})
-                    session_exists = 'Item' in response
+                    response = runs_table.query(
+                        KeyConditionExpression=Key('session_id').eq(session_id),
+                        Limit=1
+                    )
+                    session_exists = len(response.get('Items', [])) > 0
                 except:
                     session_exists = False
 

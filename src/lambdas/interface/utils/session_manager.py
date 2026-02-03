@@ -260,10 +260,12 @@ def verify_session_token(token: str) -> Optional[Dict]:
     """
     try:
         # Decode and verify token
+        logger.info(f"[SECURITY] Decoding JWT token (length: {len(token)})")
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
 
         email = payload.get('email')
         jti = payload.get('jti')
+        logger.info(f"[SECURITY] Token decoded successfully - email: {email}, jti: {jti}")
 
         # SECURITY: Check if token is revoked (individual token blocklist)
         if jti and is_token_revoked(jti, email):
@@ -286,17 +288,21 @@ def verify_session_token(token: str) -> Optional[Dict]:
                     logger.warning(f"[SECURITY] Token issued before logout: {email}")
                     return None
 
+        logger.info(f"[SECURITY] Token verification successful for {email}")
         return {
             'email': payload['email'],
             'exp': payload['exp'],
             'iat': payload['iat'],
             'jti': jti
         }
-    except jwt.ExpiredSignatureError:
-        logger.warning("[SECURITY] Expired session token")
+    except jwt.ExpiredSignatureError as e:
+        logger.warning(f"[SECURITY] Expired session token: {e}")
         return None
     except jwt.InvalidTokenError as e:
         logger.warning(f"[SECURITY] Invalid session token: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"[SECURITY] Unexpected error verifying token: {e}")
         return None
 
 
@@ -321,21 +327,32 @@ def extract_email_from_request(request_data: Dict, headers: Dict = None) -> Opti
     """
     # Try to get token from headers first (preferred method)
     token = None
+    token_source = None
     if headers:
         token = headers.get('X-Session-Token') or headers.get('x-session-token')
+        if token:
+            token_source = 'header'
+            logger.info(f"[SECURITY] Token found in header (length: {len(token)})")
+        else:
+            logger.warning(f"[SECURITY] No token in headers. Available headers: {list(headers.keys())}")
 
     # Fallback to request body (for backward compatibility during migration)
     if not token:
         token = request_data.get('session_token')
+        if token:
+            token_source = 'body'
+            logger.info(f"[SECURITY] Token found in request body (length: {len(token)})")
 
     if not token:
-        logger.warning("[SECURITY] No session token provided in request")
+        logger.warning("[SECURITY] No session token provided in request (checked headers and body)")
         return None
 
     # Verify token and extract email
+    logger.info(f"[SECURITY] Verifying token from {token_source} (preview: {token[:20]}...{token[-10:]})")
     token_data = verify_session_token(token)
     if not token_data:
-        logger.warning("[SECURITY] Invalid or expired session token")
+        logger.warning(f"[SECURITY] Invalid or expired session token from {token_source}")
         return None
 
+    logger.info(f"[SECURITY] Successfully extracted email from token: {token_data['email']}")
     return token_data['email']
