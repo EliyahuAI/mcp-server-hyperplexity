@@ -107,7 +107,7 @@ async function loadAndDisplayResults(params) {
 
             // SECURITY: Handle token revocation
             if (data.token_revoked) {
-                logger.error('[SECURITY] Token revoked by server - clearing session');
+                console.error('[SECURITY] Token revoked by server - clearing session');
 
                 // Clear session data
                 sessionStorage.removeItem('sessionToken');
