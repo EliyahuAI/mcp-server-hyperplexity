@@ -5765,76 +5765,195 @@ function handleTickerUpdate(data) {
         return;
     }
 
-    // Extract ticker information
-    const rowIds = data.row_ids || '';
-    const column = data.column || '';
-    const confidence = data.confidence || '';
-    const confidenceEmoji = data.confidence_emoji || '';
-    const finalValue = data.final_value || '';
-    const explanation = data.explanation || '';
+    // Handle ticker_update WebSocket messages
+    const tickerMessage = {
+        priority: data.priority || 4,
+        row_ids: data.row_ids || '',
+        column: data.column || '',
+        final_value: data.final_value || '',
+        confidence_emoji: data.confidence_emoji || '🟢',
+        timestamp: new Date().toISOString(),
+        key: `${data.row_ids || ''}|${data.column || ''}`, // Unique key for deduplication
+        seen: false // Track if message has been displayed
+    };
 
-    // Create ticker message
-    let tickerMessage = '';
-    if (rowIds && column) {
-        tickerMessage = `${confidenceEmoji} ${rowIds} - ${column}`;
+    // Deduplicate: check if message with same key already exists
+    const existingIndex = globalState.tickerMessages.findIndex(msg => msg.key === tickerMessage.key);
 
-        // Add truncated value if present
-        if (finalValue && finalValue.length > 50) {
-            tickerMessage += `: ${finalValue.substring(0, 50)}...`;
-        } else if (finalValue) {
-            tickerMessage += `: ${finalValue}`;
+    if (existingIndex !== -1) {
+        // Message exists - replace if new one has higher priority or is more recent
+        const existing = globalState.tickerMessages[existingIndex];
+        if (tickerMessage.priority > existing.priority ||
+            (tickerMessage.priority === existing.priority && tickerMessage.timestamp > existing.timestamp)) {
+            // Preserve 'seen' status - if old message was seen, keep it seen
+            tickerMessage.seen = existing.seen;
+            globalState.tickerMessages[existingIndex] = tickerMessage;
         }
     } else {
-        tickerMessage = data.message || 'Processing...';
+        // New message - add to queue
+        globalState.tickerMessages.push(tickerMessage);
     }
 
-    // Display ticker message if we have an active validation card
-    if (globalState.activeCardId) {
-        const tickerContainer = document.querySelector(`#${globalState.activeCardId} .ticker-message`);
-        if (tickerContainer) {
-            tickerContainer.textContent = tickerMessage;
+    // Sort: unseen first, then by priority (high to low), then by timestamp (newest first)
+    globalState.tickerMessages.sort((a, b) => {
+        // Unseen messages come first
+        if (a.seen !== b.seen) {
+            return a.seen ? 1 : -1;
         }
+        // Within same seen status, sort by priority
+        if (a.priority !== b.priority) {
+            return b.priority - a.priority; // Higher priority first
+        }
+        // Within same priority, sort by timestamp (newest first)
+        return b.timestamp.localeCompare(a.timestamp);
+    });
+
+    // Keep only top 10 messages
+    if (globalState.tickerMessages.length > 10) {
+        globalState.tickerMessages = globalState.tickerMessages.slice(0, 10);
     }
 
-    // Also update progress text with confidence info
-    if (explanation) {
-        const progressText = document.querySelector('.progress-text');
-        if (progressText) {
-            const currentText = progressText.textContent;
-            // Only update if not showing more important information
-            if (!currentText.includes('Completing') && !currentText.includes('Processing')) {
-                progressText.textContent = explanation;
+    // Find active card (one with visible thinking indicator)
+    let cardId = globalState.activeCardId;
+    if (!cardId) {
+        // Find any card with a visible progress indicator
+        const cards = document.querySelectorAll('.card');
+        for (const card of cards) {
+            const indicator = card.querySelector('.thinking-indicator.with-progress');
+            if (indicator && window.getComputedStyle(indicator).display !== 'none') {
+                cardId = card.id;
+                break;
             }
         }
     }
-}
 
-function hideTicker() {
-    // Hide all ticker containers
-    const tickers = document.querySelectorAll('.ticker-container');
-    tickers.forEach(ticker => {
-        ticker.style.display = 'none';
-    });
-
-    // Clear ticker message
-    const tickerMessages = document.querySelectorAll('.ticker-message');
-    tickerMessages.forEach(msg => {
-        msg.textContent = '';
-    });
-
-    // Clear global ticker state
-    if (globalState) {
-        globalState.tickerMessages = [];
-        globalState.currentTickerIndex = 0;
+    // Update ticker display for active card
+    if (cardId) {
+        showTicker(cardId);
     }
 }
 
-function showTicker() {
-    // Show ticker container
-    const tickers = document.querySelectorAll('.ticker-container');
-    tickers.forEach(ticker => {
-        ticker.style.display = 'block';
-    });
+function isPortraitMode() {
+    // Check if device is in portrait orientation (matches CSS media query)
+    return window.innerWidth < 768 && window.matchMedia('(orientation: portrait)').matches;
+}
+
+function truncateTickerText(text, maxLength) {
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength - 3) + '...';
+}
+
+function updateTickerDisplay(cardId) {
+    if (!cardId) return;
+
+    const tickerContent = document.getElementById(`${cardId}-ticker-content`);
+
+    if (!tickerContent) {
+        return;
+    }
+
+    if (globalState.tickerMessages.length === 0) {
+        // No messages - hide ticker content
+        tickerContent.classList.remove('visible');
+        tickerContent.textContent = '';
+        return;
+    }
+
+    // Show current message from queue
+    const msg = globalState.tickerMessages[globalState.currentTickerIndex % globalState.tickerMessages.length];
+
+    // Mark this message as seen
+    if (!msg.seen) {
+        msg.seen = true;
+    }
+
+    // Determine max lengths based on orientation
+    const isPortrait = isPortraitMode();
+    const maxRowIdsLength = isPortrait ? 40 : 100;
+    const maxColumnLength = isPortrait ? 30 : 80;
+    const maxValueLength = isPortrait ? 30 : 100;
+
+    // Truncate components
+    const rowIds = truncateTickerText(msg.row_ids, maxRowIdsLength);
+    const column = truncateTickerText(msg.column.trim(), maxColumnLength);
+    const finalValue = truncateTickerText(msg.final_value, maxValueLength);
+
+    // Format: "Row IDs, Column: emoji Value"
+    const displayText = `${rowIds}, ${column}: ${msg.confidence_emoji} ${finalValue}`;
+
+    // Fade out
+    tickerContent.classList.remove('visible');
+
+    // Wait for fade out, then update text and fade in
+    setTimeout(() => {
+        tickerContent.textContent = displayText;
+        tickerContent.classList.add('visible');
+    }, 500); // Match CSS transition duration
+}
+
+function startTickerCycle(cardId) {
+    if (!cardId) return;
+
+    // Clear any existing interval
+    if (globalState.tickerInterval) {
+        clearInterval(globalState.tickerInterval);
+    }
+
+    // Reset index
+    globalState.currentTickerIndex = 0;
+
+    // Show first message immediately
+    updateTickerDisplay(cardId);
+
+    // Only cycle if there are multiple messages
+    if (globalState.tickerMessages.length > 1) {
+        // Cycle through messages every 3.5s (3s display + 0.5s transition)
+        globalState.tickerInterval = setInterval(() => {
+            globalState.currentTickerIndex++;
+            updateTickerDisplay(cardId);
+        }, 3500);
+    }
+}
+
+function stopTickerCycle() {
+    if (globalState.tickerInterval) {
+        clearInterval(globalState.tickerInterval);
+        globalState.tickerInterval = null;
+    }
+}
+
+function showTicker(cardId) {
+    if (!cardId) return;
+
+    const tickerRow = document.getElementById(`${cardId}-ticker`);
+    if (tickerRow && tickerRow.style.display === 'none') {
+        tickerRow.style.display = 'block';
+    }
+
+    // Start or restart cycling based on message count
+    if (globalState.tickerMessages.length > 0) {
+        // If we have > 1 message and no interval, start cycling
+        // If we have > 1 message and had 1 before, restart to enable cycling
+        if (globalState.tickerMessages.length > 1 && !globalState.tickerInterval) {
+            startTickerCycle(cardId);
+        } else if (!globalState.tickerInterval && globalState.tickerMessages.length === 1) {
+            // Just show the single message, don't cycle
+            startTickerCycle(cardId);
+        }
+    }
+}
+
+function hideTicker(cardId) {
+    if (!cardId) return;
+
+    // Stop cycling
+    stopTickerCycle();
+
+    const tickerRow = document.getElementById(`${cardId}-ticker`);
+    if (tickerRow) {
+        tickerRow.style.display = 'none';
+    }
 }
 
 function handleProcessingWebSocketMessage(data, cardId) {
@@ -5847,6 +5966,9 @@ function handleProcessingWebSocketMessage(data, cardId) {
 window.hideTicker = hideTicker;
 window.showTicker = showTicker;
 window.handleTickerUpdate = handleTickerUpdate;
+window.updateTickerDisplay = updateTickerDisplay;
+window.startTickerCycle = startTickerCycle;
+window.stopTickerCycle = stopTickerCycle;
 
 // Export status recovery functions
 window.checkValidationStatus = checkValidationStatus;
@@ -7632,62 +7754,72 @@ function createUploadOrDemoCard() {
         <div id="${cardId}-buttons"></div>
     `;
 
+    // Base buttons available in all environments
+    const baseButtons = [
+        {
+            text: '✨ Create Table from Prompt',
+            icon: '',
+            variant: 'primary',
+            callback: async function() {
+                if (DEFER_EMAIL_VALIDATION) {
+                    requireEmailThen(() => proceedWithTableMaker(cardId), 'create your table');
+                } else {
+                    proceedWithTableMaker(cardId);
+                }
+            }
+        },
+        {
+            text: '📁 Upload Your Own Table',
+            icon: '',
+            variant: 'secondary',
+            callback: async function() {
+                if (DEFER_EMAIL_VALIDATION) {
+                    requireEmailThen(() => proceedWithUpload(cardId), 'upload your table');
+                } else {
+                    proceedWithUpload(cardId);
+                }
+            }
+        }
+    ];
+
+    // Dev-only buttons
+    const devButtons = [
+        {
+            text: '🎯 Explore a Demo Table',
+            icon: '',
+            variant: 'tertiary',
+            callback: async function() {
+                if (DEFER_EMAIL_VALIDATION) {
+                    requireEmailThen(() => proceedWithDemo(cardId), 'explore the demo');
+                } else {
+                    proceedWithDemo(cardId);
+                }
+            }
+        },
+        {
+            text: '🔍 Check Text References',
+            icon: '',
+            variant: 'quaternary',
+            callback: async function() {
+                if (DEFER_EMAIL_VALIDATION) {
+                    requireEmailThen(() => proceedWithReferenceCheck(cardId), 'check your references');
+                } else {
+                    proceedWithReferenceCheck(cardId);
+                }
+            }
+        }
+    ];
+
+    // Only include dev buttons in dev environment
+    const allButtons = CURRENT_ENV === 'dev' ? [...baseButtons, ...devButtons] : baseButtons;
+
     const card = createCard({
         id: cardId,
         icon: '🚀',
         title: 'Get Started',
         subtitle: 'Choose your own adventure!',
         content,
-        buttons: [
-            {
-                text: '✨ Create Table from Prompt',
-                icon: '',
-                variant: 'primary',
-                callback: async function() {
-                    if (DEFER_EMAIL_VALIDATION) {
-                        requireEmailThen(() => proceedWithTableMaker(cardId), 'create your table');
-                    } else {
-                        proceedWithTableMaker(cardId);
-                    }
-                }
-            },
-            {
-                text: '📁 Upload Your Own Table',
-                icon: '',
-                variant: 'secondary',
-                callback: async function() {
-                    if (DEFER_EMAIL_VALIDATION) {
-                        requireEmailThen(() => proceedWithUpload(cardId), 'upload your table');
-                    } else {
-                        proceedWithUpload(cardId);
-                    }
-                }
-            },
-            {
-                text: '🎯 Explore a Demo Table',
-                icon: '',
-                variant: 'tertiary',
-                callback: async function() {
-                    if (DEFER_EMAIL_VALIDATION) {
-                        requireEmailThen(() => proceedWithDemo(cardId), 'explore the demo');
-                    } else {
-                        proceedWithDemo(cardId);
-                    }
-                }
-            },
-            {
-                text: '🔍 Check Text References',
-                icon: '',
-                variant: 'quaternary',
-                callback: async function() {
-                    if (DEFER_EMAIL_VALIDATION) {
-                        requireEmailThen(() => proceedWithReferenceCheck(cardId), 'check your references');
-                    } else {
-                        proceedWithReferenceCheck(cardId);
-                    }
-                }
-            }
-        ]
+        buttons: allButtons
     });
 
     return card;

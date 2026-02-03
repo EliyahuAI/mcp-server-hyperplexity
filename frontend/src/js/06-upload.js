@@ -24,62 +24,72 @@ function createUploadOrDemoCard() {
         <div id="${cardId}-buttons"></div>
     `;
 
+    // Base buttons available in all environments
+    const baseButtons = [
+        {
+            text: '✨ Create Table from Prompt',
+            icon: '',
+            variant: 'primary',
+            callback: async function() {
+                if (DEFER_EMAIL_VALIDATION) {
+                    requireEmailThen(() => proceedWithTableMaker(cardId), 'create your table');
+                } else {
+                    proceedWithTableMaker(cardId);
+                }
+            }
+        },
+        {
+            text: '📁 Upload Your Own Table',
+            icon: '',
+            variant: 'secondary',
+            callback: async function() {
+                if (DEFER_EMAIL_VALIDATION) {
+                    requireEmailThen(() => proceedWithUpload(cardId), 'upload your table');
+                } else {
+                    proceedWithUpload(cardId);
+                }
+            }
+        }
+    ];
+
+    // Dev-only buttons
+    const devButtons = [
+        {
+            text: '🎯 Explore a Demo Table',
+            icon: '',
+            variant: 'tertiary',
+            callback: async function() {
+                if (DEFER_EMAIL_VALIDATION) {
+                    requireEmailThen(() => proceedWithDemo(cardId), 'explore the demo');
+                } else {
+                    proceedWithDemo(cardId);
+                }
+            }
+        },
+        {
+            text: '🔍 Check Text References',
+            icon: '',
+            variant: 'quaternary',
+            callback: async function() {
+                if (DEFER_EMAIL_VALIDATION) {
+                    requireEmailThen(() => proceedWithReferenceCheck(cardId), 'check your references');
+                } else {
+                    proceedWithReferenceCheck(cardId);
+                }
+            }
+        }
+    ];
+
+    // Only include dev buttons in dev environment
+    const allButtons = CURRENT_ENV === 'dev' ? [...baseButtons, ...devButtons] : baseButtons;
+
     const card = createCard({
         id: cardId,
         icon: '🚀',
         title: 'Get Started',
         subtitle: 'Choose your own adventure!',
         content,
-        buttons: [
-            {
-                text: '✨ Create Table from Prompt',
-                icon: '',
-                variant: 'primary',
-                callback: async function() {
-                    if (DEFER_EMAIL_VALIDATION) {
-                        requireEmailThen(() => proceedWithTableMaker(cardId), 'create your table');
-                    } else {
-                        proceedWithTableMaker(cardId);
-                    }
-                }
-            },
-            {
-                text: '📁 Upload Your Own Table',
-                icon: '',
-                variant: 'secondary',
-                callback: async function() {
-                    if (DEFER_EMAIL_VALIDATION) {
-                        requireEmailThen(() => proceedWithUpload(cardId), 'upload your table');
-                    } else {
-                        proceedWithUpload(cardId);
-                    }
-                }
-            },
-            {
-                text: '🎯 Explore a Demo Table',
-                icon: '',
-                variant: 'tertiary',
-                callback: async function() {
-                    if (DEFER_EMAIL_VALIDATION) {
-                        requireEmailThen(() => proceedWithDemo(cardId), 'explore the demo');
-                    } else {
-                        proceedWithDemo(cardId);
-                    }
-                }
-            },
-            {
-                text: '🔍 Check Text References',
-                icon: '',
-                variant: 'quaternary',
-                callback: async function() {
-                    if (DEFER_EMAIL_VALIDATION) {
-                        requireEmailThen(() => proceedWithReferenceCheck(cardId), 'check your references');
-                    } else {
-                        proceedWithReferenceCheck(cardId);
-                    }
-                }
-            }
-        ]
+        buttons: allButtons
     });
 
     return card;
