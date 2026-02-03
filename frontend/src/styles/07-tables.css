@@ -387,7 +387,7 @@
 
 /* Modal transparency transition for cell navigation */
 .cell-detail-overlay.modal-nav-fade .cell-detail-modal {
-    opacity: 0.15;
+    opacity: 0;
     transition: opacity 0.2s ease-out;
 }
 
@@ -448,7 +448,7 @@
 
 @keyframes modalSlideIn {
     from {
-        opacity: 0.15;
+        opacity: 0;
         transform: translateY(-5px) scale(0.99);
     }
     to {
