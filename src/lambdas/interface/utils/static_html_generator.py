@@ -181,11 +181,22 @@ class StaticHTMLGenerator:
         table_css = self._get_css()
         table_js = self._get_js()
 
+        # Count research columns (skip ID, IGNORED, and underscore-prefixed columns)
+        all_columns = table_metadata.get('columns', [])
+        research_columns = [
+            c for c in all_columns
+            if c.get('importance', '').upper() not in ('ID', 'IGNORED')
+            and not c.get('name', '').startswith('_')
+        ]
+        row_count = len(table_metadata.get('rows', []))
+        col_count = len(research_columns)
+
+        # Build info box text with stats
+        info_text = f"Validated {row_count} entities across {col_count} research dimensions. Rows shown as columns. Color-coded by confidence. Hover for quick info, click for citations and details."
+
         # Auto-generate methodology from table metadata if not provided
         if not methodology:
-            rows = table_metadata.get('rows', [])
-            columns = table_metadata.get('columns', [])
-            methodology = f"Validated {len(rows)} entities across {len(columns)} research dimensions with web-sourced citations and confidence scoring."
+            methodology = None  # No separate methodology block needed; info is in the blue box
 
         # Auto-generate last_updated if not provided
         if not last_updated:
@@ -214,16 +225,7 @@ class StaticHTMLGenerator:
             interactive_url=interactive_url
         )
 
-        # Generate footer link if interactive URL provided
         footer_link = ""
-        if interactive_url:
-            footer_link = f' | <a href="{self._escape_html(interactive_url)}" target="_blank" rel="noopener">View Interactive Version</a>'
-
-        # Generate methodology block (auto-generated above if not provided)
-        methodology_html = self._generate_methodology_block(
-            methodology=methodology,
-            last_updated=last_updated
-        )
 
         # Generate FAQ HTML (visible accordion - required by Google for FAQ rich snippets)
         faq_html = ""
@@ -250,7 +252,8 @@ class StaticHTMLGenerator:
         html = html.replace('{{JSON_LD}}', json_ld_blocks)
         html = html.replace('{{SEO_CONTENT}}', seo_layer_html)
         html = html.replace('{{FOOTER_LINK}}', footer_link)
-        html = html.replace('{{METHODOLOGY_BLOCK}}', methodology_html)
+        html = html.replace('{{METHODOLOGY_BLOCK}}', '')
+        html = html.replace('{{INFO_BOX_TEXT}}', self._escape_html(info_text))
         html = html.replace('{{FAQ_BLOCK}}', faq_html)
 
         return html
@@ -408,8 +411,7 @@ class StaticHTMLGenerator:
     def _generate_methodology_block(self, methodology: str, last_updated: str) -> str:
         """Generate visible methodology/freshness block for verification context."""
         parts = []
-        if last_updated:
-            parts.append(f'<span class="last-updated">Last updated: {self._escape_html(last_updated)}</span>')
+        # Note: last_updated date is intentionally omitted here since the subtitle already shows it
         if methodology:
             parts.append(f'<span class="methodology">{self._escape_html(methodology)}</span>')
 
@@ -597,6 +599,8 @@ class StaticHTMLGenerator:
         .faq-question:hover { background: #fefefe; }
         .faq-answer { padding: 0 10px 6px 10px; color: #f0f0f0; line-height: 1.4; font-size: 0.7rem; }
         .faq-answer a { color: #f0f0f0; text-decoration: none; }
+        .viewer-info-box { display: flex; align-items: center; gap: 8px; padding: 10px 14px; margin-bottom: 12px; background-color: #e3f2fd; color: #1565c0; border: 1px solid #bbdefb; border-radius: var(--border-radius); font-size: var(--font-size-small); }
+        .viewer-info-icon { font-size: 1.1em; font-weight: 700; }
         .generated-by { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-bottom: 12px; font-size: 12px; color: var(--text-secondary); }
         .generated-by a { color: #28FF3A; text-decoration: none; font-weight: 500; }
         .generated-by a:hover { text-decoration: underline; }
@@ -623,7 +627,7 @@ class StaticHTMLGenerator:
         (function(){
             var c=document.getElementById('table-container');
             if(window.TABLE_METADATA && typeof InteractiveTable!=='undefined'){
-                c.innerHTML=InteractiveTable.render(window.TABLE_METADATA,{showGeneralNotes:true,showLegend:true});
+                c.innerHTML=InteractiveTable.render(window.TABLE_METADATA,{showGeneralNotes:true,showLegend:true,infoBoxText:'{{INFO_BOX_TEXT}}'});
                 InteractiveTable.init();
             } else {
                 c.innerHTML='<p style="color:#666;text-align:center;">Table could not be rendered.</p>';

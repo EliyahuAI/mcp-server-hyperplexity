@@ -2410,9 +2410,8 @@ body {
     border-right: 1px solid #c0c0c0;
     text-align: left;
     vertical-align: top;
-    min-width: 120px;
-    max-width: 250px;
-    max-height: 80px;
+    min-width: 200px;
+    max-width: 300px;
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -2455,15 +2454,9 @@ body {
     background: #f8f9fa;
 }
 
-/* ID column styling - larger text for row titles */
+/* ID column styling */
 .interactive-table .id-column {
     color: #1565c0;
-    font-size: 1rem;
-}
-
-.interactive-table .id-column strong {
-    font-size: 1.05rem;
-    font-weight: 700;
 }
 
 /* Column header with tooltip (no icon, just cursor change) */
@@ -2478,6 +2471,25 @@ body {
     border-radius: var(--border-radius);
     padding: 12px 16px;
     margin-bottom: 12px;
+}
+
+/* Blue info box (rendered by InteractiveTable when infoBoxText provided) */
+.viewer-info-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    background-color: #e3f2fd;
+    color: #1565c0;
+    border: 1px solid #bbdefb;
+    border-radius: var(--border-radius);
+    font-size: var(--font-size-small);
+}
+
+.viewer-info-icon {
+    font-size: 1.1em;
+    font-weight: 700;
 }
 
 .general-notes-box.collapsible {
@@ -2597,13 +2609,11 @@ body {
     filter: brightness(0.95);
 }
 
-/* Constrain cell value height to prevent row expansion */
+/* Constrain cell value to single line height */
 .interactive-table .cell-value {
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
+    display: block;
     overflow: hidden;
-    max-height: 4.5em;
+    max-height: 1.5em;
     line-height: 1.5;
 }
 
@@ -17224,6 +17234,7 @@ const InteractiveTable = (function() {
         showGeneralNotes: true,    // Show collapsible notes box
         showLegend: true,          // Show confidence color legend
         maxRows: null,             // Limit rows (null = all)
+        infoBoxText: null,         // Blue info box text (shown after general notes)
     };
 
     /* ========================================
@@ -17329,6 +17340,14 @@ const InteractiveTable = (function() {
                     ${isLong ? '<span class="general-notes-expand-hint">(click to expand)</span><span class="general-notes-toggle">▼</span>' : ''}
                 </div>
                 <div class="general-notes-content">${escapeHtml(general_notes)}</div>
+            </div>`;
+        }
+
+        // Blue info box (after general notes)
+        if (opts.infoBoxText) {
+            html += `<div class="viewer-info-box">
+                <span class="viewer-info-icon">ℹ</span>
+                <span>${escapeHtml(opts.infoBoxText)}</span>
             </div>`;
         }
 
@@ -17480,7 +17499,7 @@ const InteractiveTable = (function() {
                         const colName = col.name || (typeof col === 'string' ? col : String(col));
                         const value = String(row[colName] ?? '');
                         return [colName, {
-                            display_value: value.slice(0, 50) + (value.length > 50 ? '...' : ''),
+                            display_value: value.slice(0, 30) + (value.length > 30 ? '...' : ''),
                             full_value: value,
                             confidence: (col.importance || '').toUpperCase() === 'ID' ? 'ID' : 'MEDIUM',
                             comment: {}

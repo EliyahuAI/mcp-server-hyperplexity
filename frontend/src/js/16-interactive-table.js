@@ -32,6 +32,7 @@ const InteractiveTable = (function() {
         showGeneralNotes: true,    // Show collapsible notes box
         showLegend: true,          // Show confidence color legend
         maxRows: null,             // Limit rows (null = all)
+        infoBoxText: null,         // Blue info box text (shown after general notes)
     };
 
     /* ========================================
@@ -137,6 +138,14 @@ const InteractiveTable = (function() {
                     ${isLong ? '<span class="general-notes-expand-hint">(click to expand)</span><span class="general-notes-toggle">▼</span>' : ''}
                 </div>
                 <div class="general-notes-content">${escapeHtml(general_notes)}</div>
+            </div>`;
+        }
+
+        // Blue info box (after general notes)
+        if (opts.infoBoxText) {
+            html += `<div class="viewer-info-box">
+                <span class="viewer-info-icon">ℹ</span>
+                <span>${escapeHtml(opts.infoBoxText)}</span>
             </div>`;
         }
 
@@ -288,7 +297,7 @@ const InteractiveTable = (function() {
                         const colName = col.name || (typeof col === 'string' ? col : String(col));
                         const value = String(row[colName] ?? '');
                         return [colName, {
-                            display_value: value.slice(0, 50) + (value.length > 50 ? '...' : ''),
+                            display_value: value.slice(0, 30) + (value.length > 30 ? '...' : ''),
                             full_value: value,
                             confidence: (col.importance || '').toUpperCase() === 'ID' ? 'ID' : 'MEDIUM',
                             comment: {}

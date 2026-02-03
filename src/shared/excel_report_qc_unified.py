@@ -2130,7 +2130,7 @@ def generate_table_preview_metadata(
 
             # Get the value (QC-merged value if available)
             full_value = str(field_data.get('value', ''))
-            display_value = full_value[:50] + '...' if len(full_value) > 50 else full_value
+            display_value = full_value[:30] + '...' if len(full_value) > 30 else full_value
 
             # Get confidence (may have been overridden by QC)
             confidence = field_data.get('confidence_level', 'UNKNOWN')
