@@ -219,6 +219,9 @@ function handleProcessingWebSocketMessage(data, cardId) {
                 </div>
                 <div style="display: flex; gap: 10px; margin-top: 0.5rem; flex-wrap: wrap;">
                     ${revertButtonHtml}
+                    <button class="std-button quaternary" id="${actualCardId}-share-btn" style="flex: 1;">
+                        <span class="button-text">🔗 Share Table</span>
+                    </button>
                     <button class="std-button ${newValidationColor}" onclick="window.resetPage()" style="flex: 1;">
                         <span class="button-text">🔄 New Validation</span>
                     </button>
@@ -231,6 +234,7 @@ function handleProcessingWebSocketMessage(data, cardId) {
                 const jsonBtn = document.getElementById(`${actualCardId}-json-btn`);
                 const refineBtn = document.getElementById(`${actualCardId}-refine-btn`);
                 const revertBtn = document.getElementById(`${actualCardId}-revert-btn`);
+                const shareBtn = document.getElementById(`${actualCardId}-share-btn`);
                 const balanceInfo = document.getElementById(`${actualCardId}-balance-info`);
 
                 // Fetch and render interactive table
@@ -259,6 +263,13 @@ function handleProcessingWebSocketMessage(data, cardId) {
                             revertBtn.disabled = false;
                         }
                     }));
+                }
+
+                // Share button handler
+                if (shareBtn) {
+                    shareBtn.addEventListener('click', async () => {
+                        await handleShareTable(actualCardId, shareBtn, data);
+                    });
                 }
 
                 // JSON download button handler
@@ -451,6 +462,18 @@ if (isPartial) {
             }
         });
     }
+
+    buttons.push({
+        text: 'Share Table',
+        icon: '🔗',
+        variant: 'quaternary',
+        width: 'half',
+        callback: async function(e) {
+            const button = e.target.closest('button');
+            const parentCardId = button.closest('[id^="card-"]')?.id;
+            await handleShareTable(parentCardId, button, completionData);
+        }
+    });
 
     buttons.push({
         text: 'New Validation',

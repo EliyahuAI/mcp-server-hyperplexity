@@ -14711,6 +14711,9 @@ function handleProcessingWebSocketMessage(data, cardId) {
                 </div>
                 <div style="display: flex; gap: 10px; margin-top: 0.5rem; flex-wrap: wrap;">
                     ${revertButtonHtml}
+                    <button class="std-button quaternary" id="${actualCardId}-share-btn" style="flex: 1;">
+                        <span class="button-text">🔗 Share Table</span>
+                    </button>
                     <button class="std-button ${newValidationColor}" onclick="window.resetPage()" style="flex: 1;">
                         <span class="button-text">🔄 New Validation</span>
                     </button>
@@ -14723,6 +14726,7 @@ function handleProcessingWebSocketMessage(data, cardId) {
                 const jsonBtn = document.getElementById(`${actualCardId}-json-btn`);
                 const refineBtn = document.getElementById(`${actualCardId}-refine-btn`);
                 const revertBtn = document.getElementById(`${actualCardId}-revert-btn`);
+                const shareBtn = document.getElementById(`${actualCardId}-share-btn`);
                 const balanceInfo = document.getElementById(`${actualCardId}-balance-info`);
 
                 // Fetch and render interactive table
@@ -14751,6 +14755,13 @@ function handleProcessingWebSocketMessage(data, cardId) {
                             revertBtn.disabled = false;
                         }
                     }));
+                }
+
+                // Share button handler
+                if (shareBtn) {
+                    shareBtn.addEventListener('click', async () => {
+                        await handleShareTable(actualCardId, shareBtn, data);
+                    });
                 }
 
                 // JSON download button handler
@@ -14943,6 +14954,18 @@ if (isPartial) {
             }
         });
     }
+
+    buttons.push({
+        text: 'Share Table',
+        icon: '🔗',
+        variant: 'quaternary',
+        width: 'half',
+        callback: async function(e) {
+            const button = e.target.closest('button');
+            const parentCardId = button.closest('[id^="card-"]')?.id;
+            await handleShareTable(parentCardId, button, completionData);
+        }
+    });
 
     buttons.push({
         text: 'New Validation',
@@ -18902,6 +18925,15 @@ function displayResultsInCard(cardId, data) {
             }
         },
         {
+            text: 'Share Table',
+            icon: '🔗',
+            variant: 'quaternary',
+            callback: async (e) => {
+                const button = e.target.closest('button');
+                await handleShareTable(cardId, button, data);
+            }
+        },
+        {
             text: 'Update Table',
             icon: '🔄',
             variant: 'tertiary',
@@ -19260,6 +19292,253 @@ async function handleUpdateTable(cardId, button, data) {
         showMessage(`${cardId}-messages`, `Update failed: ${error.message}`, 'error');
         markButtonUnselected(button);
     }
+}
+
+/**
+ * Handle the Share Table button click.
+ * Checks if already shared, then shows dialog with share/unshare/copy-link options.
+ *
+ * @param {string} cardId - Card ID for showing messages (can be null for completion card)
+ * @param {HTMLElement} button - Button element for state updates
+ * @param {Object} data - Results data containing session info
+ */
+async function handleShareTable(cardId, button, data) {
+    const params = getViewerParams();
+    const sessionId = params.session || data.session_id || globalState.sessionId;
+    const messagesId = cardId ? `${cardId}-messages` : null;
+
+    if (!sessionId) {
+        if (messagesId) showMessage(messagesId, 'No session ID available to share.', 'error');
+        return;
+    }
+
+    // Check current share status first
+    markButtonSelected(button, '🔗 Checking...');
+    let shareStatus = null;
+    try {
+        const statusResp = await fetch(`${API_BASE}/validate`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ action: 'checkShareStatus', session_id: sessionId })
+        });
+        const statusData = await statusResp.json();
+        if (statusData.success) {
+            shareStatus = statusData;
+        }
+    } catch (err) {
+        console.warn('[SHARE] Could not check share status:', err);
+    }
+    markButtonUnselected(button);
+
+    const isCurrentlyShared = shareStatus && shareStatus.is_shared;
+    const existingDemoName = isCurrentlyShared ? shareStatus.table_name : null;
+
+    // Show dialog with appropriate options
+    const action = await showShareConfirmationDialog(isCurrentlyShared, existingDemoName);
+    if (!action) return; // cancelled
+
+    if (action === 'copy') {
+        // Copy existing link
+        const shareUrl = `${window.location.origin}${window.location.pathname}?demo=${existingDemoName}`;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            if (messagesId) showMessage(messagesId,
+                `Link copied! <a href="${shareUrl}" target="_blank" style="color: inherit; text-decoration: underline;">${shareUrl}</a>`,
+                'success');
+        } catch (clipErr) {
+            if (messagesId) showMessage(messagesId,
+                `Share link: <a href="${shareUrl}" target="_blank" style="color: inherit; text-decoration: underline;">${shareUrl}</a>`,
+                'success');
+        }
+        return;
+    }
+
+    if (action === 'unshare') {
+        try {
+            markButtonSelected(button, '🔗 Removing...');
+            const resp = await fetch(`${API_BASE}/validate`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({
+                    action: 'unshareTable',
+                    session_id: sessionId,
+                    table_name: existingDemoName
+                })
+            });
+            const result = await resp.json();
+            if (!resp.ok || !result.success) {
+                throw new Error(result.error || 'Failed to unshare');
+            }
+            if (messagesId) showMessage(messagesId, 'Table is no longer shared publicly.', 'success');
+            markButtonSelected(button, '🔗 Unshared');
+            setTimeout(() => {
+                markButtonUnselected(button);
+                const btnText = button.querySelector('.button-text');
+                if (btnText) btnText.textContent = '🔗 Share Table';
+            }, 2000);
+        } catch (error) {
+            console.error('[SHARE] Unshare error:', error);
+            if (messagesId) showMessage(messagesId, `Unshare failed: ${error.message}`, 'error');
+            markButtonUnselected(button);
+        }
+        return;
+    }
+
+    // action === 'share'
+    try {
+        markButtonSelected(button, '🔗 Sharing...');
+
+        const response = await fetch(`${API_BASE}/validate`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+                action: 'shareTable',
+                session_id: sessionId,
+                version: params.version || data.version
+            })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || 'Failed to share table');
+        }
+
+        // Build the share URL
+        const shareUrl = `${window.location.origin}${window.location.pathname}?demo=${result.table_name}`;
+
+        // Copy to clipboard
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            if (messagesId) showMessage(messagesId,
+                `Share link copied to clipboard! <a href="${shareUrl}" target="_blank" style="color: inherit; text-decoration: underline;">${shareUrl}</a>`,
+                'success');
+        } catch (clipErr) {
+            console.warn('[SHARE] Clipboard write failed:', clipErr);
+            if (messagesId) showMessage(messagesId,
+                `Share link: <a href="${shareUrl}" target="_blank" style="color: inherit; text-decoration: underline;">${shareUrl}</a> (copy manually)`,
+                'success');
+        }
+
+        markButtonSelected(button, '🔗 Shared! Link copied');
+        setTimeout(() => {
+            markButtonUnselected(button);
+            const btnText = button.querySelector('.button-text');
+            if (btnText) btnText.textContent = '🔗 Share Table';
+        }, 3000);
+
+    } catch (error) {
+        console.error('[SHARE] Error:', error);
+        if (messagesId) showMessage(messagesId, `Share failed: ${error.message}`, 'error');
+        markButtonUnselected(button);
+    }
+}
+
+/**
+ * Show share confirmation dialog. If the table is already shared, offers
+ * Copy Link, Unshare, and Re-share options. Otherwise shows the standard
+ * share warning with Cancel/Share buttons.
+ *
+ * @param {boolean} isCurrentlyShared - Whether the table is already shared
+ * @param {string} existingDemoName - The current demo slug if shared
+ * @returns {Promise<string|false>} 'share', 'unshare', 'copy', or false (cancelled)
+ */
+function showShareConfirmationDialog(isCurrentlyShared, existingDemoName) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'table-maker-modal-overlay';
+
+        let bodyHtml, buttonsHtml;
+
+        if (isCurrentlyShared) {
+            const shareUrl = `${window.location.origin}${window.location.pathname}?demo=${existingDemoName}`;
+            bodyHtml = `
+                <div class="table-maker-modal-header">
+                    <h2 class="table-maker-modal-title">Table Already Shared</h2>
+                    <p class="table-maker-modal-subtitle">This table has a public share link</p>
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <div class="message message-info" style="display: flex;">
+                        <span class="message-icon">🔗</span>
+                        <span style="word-break: break-all;"><a href="${shareUrl}" target="_blank" style="color: inherit;">${shareUrl}</a></span>
+                    </div>
+                </div>
+            `;
+            buttonsHtml = `
+                <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
+                    <button class="std-button secondary" id="share-dialog-cancel" style="min-width: 80px;">
+                        <span class="button-text">Cancel</span>
+                    </button>
+                    <button class="std-button tertiary" id="share-dialog-unshare" style="min-width: 100px;">
+                        <span class="button-text">Unshare</span>
+                    </button>
+                    <button class="std-button primary" id="share-dialog-copy" style="min-width: 120px;">
+                        <span class="button-text">Copy Link</span>
+                    </button>
+                </div>
+            `;
+        } else {
+            bodyHtml = `
+                <div class="table-maker-modal-header">
+                    <h2 class="table-maker-modal-title">Share Table Publicly</h2>
+                    <p class="table-maker-modal-subtitle">This will create a public link to your results</p>
+                </div>
+                <div style="margin-bottom: 1.5rem;">
+                    <div class="message message-warning" style="display: flex;">
+                        <span class="message-icon">⚠️</span>
+                        <span><strong>Anyone with the link</strong> will be able to view this table without signing in. The shared table includes all validated data and the Excel file.</span>
+                    </div>
+                </div>
+            `;
+            buttonsHtml = `
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button class="std-button secondary" id="share-dialog-cancel" style="min-width: 100px;">
+                        <span class="button-text">Cancel</span>
+                    </button>
+                    <button class="std-button primary" id="share-dialog-confirm" style="min-width: 140px;">
+                        <span class="button-text">Share Publicly</span>
+                    </button>
+                </div>
+            `;
+        }
+
+        overlay.innerHTML = `
+            <div class="table-maker-modal" style="max-width: 480px;">
+                <button class="table-maker-modal-close" id="share-dialog-close">&times;</button>
+                ${bodyHtml}
+                ${buttonsHtml}
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        function cleanup(result) {
+            overlay.remove();
+            document.removeEventListener('keydown', onKeydown);
+            resolve(result);
+        }
+
+        function onKeydown(e) {
+            if (e.key === 'Escape') cleanup(false);
+        }
+
+        document.addEventListener('keydown', onKeydown);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) cleanup(false);
+        });
+
+        document.getElementById('share-dialog-close').addEventListener('click', () => cleanup(false));
+        document.getElementById('share-dialog-cancel').addEventListener('click', () => cleanup(false));
+
+        const confirmBtn = document.getElementById('share-dialog-confirm');
+        if (confirmBtn) confirmBtn.addEventListener('click', () => cleanup('share'));
+
+        const copyBtn = document.getElementById('share-dialog-copy');
+        if (copyBtn) copyBtn.addEventListener('click', () => cleanup('copy'));
+
+        const unshareBtn = document.getElementById('share-dialog-unshare');
+        if (unshareBtn) unshareBtn.addEventListener('click', () => cleanup('unshare'));
+    });
 }
 
 

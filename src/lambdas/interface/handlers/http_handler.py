@@ -262,6 +262,15 @@ def handle(event, context):
             elif action == 'createUpdateSession':
                 create_update_session = lazy_import('interface_lambda.actions', 'create_update_session')
                 return create_update_session.handle_create_update_session(request_data, context)
+            elif action == 'shareTable':
+                share_table = lazy_import('interface_lambda.actions', 'share_table')
+                return share_table.handle(request_data, context)
+            elif action == 'unshareTable':
+                share_table = lazy_import('interface_lambda.actions', 'share_table')
+                return share_table.handle_unshare(request_data, context)
+            elif action == 'checkShareStatus':
+                share_table = lazy_import('interface_lambda.actions', 'share_table')
+                return share_table.handle_check_share_status(request_data, context)
             else:
                 logger.warning(f"Unknown action in JSON body: {action}")
                 return create_response(400, {'error': f'Unknown or unsupported action: {action}'})
