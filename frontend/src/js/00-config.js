@@ -161,6 +161,23 @@ const API_BASE = ENV_CONFIG.apiBase;
 const WEBSOCKET_API_URL = ENV_CONFIG.websocketUrl;
 
 // ============================================
+// AUTHENTICATED API HELPERS
+// ============================================
+
+/**
+ * Returns standard headers for API requests, including session token if available.
+ * Use this for all fetch() calls to the API to ensure authenticated requests.
+ */
+function getAuthHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    const token = localStorage.getItem('sessionToken');
+    if (token) {
+        headers['X-Session-Token'] = token;
+    }
+    return headers;
+}
+
+// ============================================
 // DEFERRED EMAIL VALIDATION
 // ============================================
 // If true, show Get Started first and validate email when user selects an action
@@ -379,7 +396,7 @@ window.testingUtils = {
         try {
             const response = await fetch(`${API_BASE}/validate`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({
                     action: 'clearUserHistoryForTesting',
                     email: userEmail

@@ -52,7 +52,7 @@ window.useMatchingConfig = async function(configKey, sourceSession) {
         
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'copyConfig',
                 email: globalState.email,
@@ -96,7 +96,7 @@ async function useRecentConfig(cardId, configKey, sourceSession) {
         
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'copyConfig',
                 email: globalState.email,
@@ -142,7 +142,7 @@ async function useConfigById(cardId, configId) {
         
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'useConfigById',
                 email: globalState.email,
@@ -411,7 +411,7 @@ async function validateRecentConfig(cardId) {
         // Config validation using current session and stored config
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'validateConfig',
                 email: globalState.email,
@@ -569,7 +569,7 @@ async function submitConfigRepairWithError(cardId, errorMessage, userGuidance) {
         
         const response = await fetch(`${API_BASE}/validate?async=true`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'repairConfig',
                 email: globalState.email,
@@ -691,7 +691,7 @@ async function handleConfigUpload(event, cardId) {
         // Config validation only - Excel file already uploaded and session established
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'validateConfig',
                 config: config,
@@ -1241,7 +1241,7 @@ async function startConfigGenerationWithContext(cardId, userAnswers) {
         // Now request config generation (no need to re-upload Excel)
         const response = await fetch(`${API_BASE}/validate?async=true`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'generateConfig',
                 email: globalState.email,
@@ -1669,9 +1669,7 @@ async function fetchClarifyingQuestionsFromBackend(email, sessionId, configId = 
 
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: getAuthHeaders(),
             body: JSON.stringify(payload)
         });
 
@@ -1922,7 +1920,7 @@ async function submitConfigRefinement(cardId, refinementText) {
     try {
         const response = await fetch(`${API_BASE}/validate?async=true`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'modifyConfig',
                 email: globalState.email,
@@ -1984,7 +1982,7 @@ async function submitConfigRefinementFromPreview(cardId, refinementText) {
     try {
         const response = await fetch(`${API_BASE}/validate?async=true`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'modifyConfig',
                 email: globalState.email,
@@ -2041,7 +2039,7 @@ async function submitConfigRefinementWithAutoPreview(cardId, refinementText) {
     try {
         const response = await fetch(`${API_BASE}/validate?async=true`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'modifyConfig',
                 email: globalState.email,

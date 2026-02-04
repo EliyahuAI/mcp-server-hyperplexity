@@ -32,7 +32,7 @@ try {
     // Step 1: Request presigned URL from backend
     const presignedResponse = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'requestPresignedUrl',
             file_type: 'pdf',
@@ -92,7 +92,7 @@ try {
     // Step 3: Confirm upload complete and trigger processing
     const confirmResponse = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'confirmUploadComplete',
             upload_id: uploadId,
@@ -217,7 +217,7 @@ registerCardHandler(cardId, ['reference_check_progress', 'reference_check_comple
 try {
     const response = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'startReferenceCheck',
             email: globalState.email,
@@ -618,9 +618,7 @@ const sessionId = conversationId.replace('upload_interview_', '');
 try {
     const response = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: isStart ? 'startUploadInterview' : 'continueUploadInterview',
             session_id: sessionId,
@@ -697,7 +695,7 @@ registerCardHandler(cardId, ['preview_progress', 'progress_update'], (wsData, ha
 // This will use the uploaded Excel file and trigger validation
 fetch(`${API_BASE}/validate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
         action: 'processExcel',
         email: globalState.email,

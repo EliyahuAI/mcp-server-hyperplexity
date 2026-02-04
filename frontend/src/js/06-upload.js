@@ -161,8 +161,13 @@ function proceedWithUpload(cardId) {
                         formData.append('action', 'processExcel');
                         // New file upload should NEVER reuse existing session - always generate new session ID
 
+                        const uploadHeaders = {};
+                        const uploadToken = localStorage.getItem('sessionToken');
+                        if (uploadToken) uploadHeaders['X-Session-Token'] = uploadToken;
+
                         const uploadResponse = await fetch(`${API_BASE}/upload`, {
                             method: 'POST',
+                            headers: uploadHeaders,
                             body: formData
                         });
 
@@ -412,7 +417,7 @@ async function uploadExcelFile(cardId, file) {
         // Step 1: Request presigned URL from backend
         const presignedResponse = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'requestPresignedUrl',
                 file_type: 'excel',
@@ -471,7 +476,7 @@ async function uploadExcelFile(cardId, file) {
         // Step 3: Confirm upload complete (no processing yet - just confirmation)
         const confirmResponse = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'confirmUploadComplete',
                 upload_id: uploadId,
@@ -599,7 +604,7 @@ async function handleConfigUpload(event, cardId) {
         // Config validation only - Excel file already uploaded and session established
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'validateConfig',
                 config: config,
@@ -691,7 +696,7 @@ async function loadAvailableDemos(cardId) {
     try {
 const response = await fetch(`${API_BASE}/validate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
         action: 'listDemos'
     })
@@ -786,7 +791,7 @@ if (globalState.sessionId) {
 
 const response = await fetch(`${API_BASE}/validate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(requestBody)
 });
 
@@ -863,7 +868,7 @@ async function selectRecentConfig(cardId, button) {
 // Search for matching configs
 const response = await fetch(`${API_BASE}/validate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
         action: 'findMatchingConfig',
         email: globalState.email,

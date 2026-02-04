@@ -199,7 +199,7 @@ if (storedEmail && storedEmail.includes('@')) {
                     console.log('[AUTH] Requesting new token for validated email...');
                     const response = await fetch(`${API_BASE}/validate`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: getAuthHeaders(),
                         body: JSON.stringify({
                             action: 'checkOrSendValidation',
                             email: storedEmail
@@ -1315,7 +1315,7 @@ try {
                 try {
                     const balanceResponse = await fetch(`${API_BASE}/validate`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: getAuthHeaders(),
                         body: JSON.stringify({
                             email: globalState.email,
                             action: 'getAccountBalance'
@@ -1392,7 +1392,7 @@ try {
             try {
                 const orderResponse = await fetch(`${API_BASE}/validate`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({
                         email: globalState.email,
                         action: 'checkSquarespaceOrders'

@@ -534,28 +534,15 @@ async function fetchAndRenderValidationTable(cardId, sessionId) {
     container.innerHTML = '<p style="color: #999; font-style: italic; text-align: center; padding: 1rem;">Loading interactive table...</p>';
 
     try {
-        // SECURITY: Prepare headers with session token
-        const requestHeaders = { 'Content-Type': 'application/json' };
         const requestBody = {
             action: 'getViewerData',
             session_id: sessionId,
             is_preview: false  // Request full validation data, not preview
         };
 
-        // SECURITY: Prefer session token in header, fallback to email in body
-        const sessionToken = localStorage.getItem('sessionToken');
-        if (sessionToken) {
-            requestHeaders['X-Session-Token'] = sessionToken;
-            console.log('[VALIDATION] Using session token for authentication');
-        } else {
-            // Legacy: include email in body if no token available
-            requestBody.email = globalState.email;
-            console.log('[VALIDATION] Using legacy email authentication (no token found)');
-        }
-
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: requestHeaders,
+            headers: getAuthHeaders(),
             body: JSON.stringify(requestBody)
         });
 

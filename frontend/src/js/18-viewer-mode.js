@@ -77,11 +77,6 @@ async function loadAndDisplayResults(params) {
                 table_name: params.path.split('/').pop().replace('.json', '')
             };
         } else {
-            // SECURITY: Get session token from localStorage (30-day expiration)
-            const sessionToken = localStorage.getItem('sessionToken');
-
-            // Fetch metadata from API
-            const requestHeaders = { 'Content-Type': 'application/json' };
             const requestBody = {
                 action: 'getViewerData',
                 session_id: params.session,
@@ -89,17 +84,9 @@ async function loadAndDisplayResults(params) {
                 path: params.path
             };
 
-            // SECURITY: Prefer session token in header, fallback to email in body for backward compatibility
-            if (sessionToken) {
-                requestHeaders['X-Session-Token'] = sessionToken;
-            } else {
-                // Legacy: include email in body if no token available
-                requestBody.email = globalState.email;
-            }
-
             const response = await fetch(`${API_BASE}/validate`, {
                 method: 'POST',
-                headers: requestHeaders,
+                headers: getAuthHeaders(),
                 body: JSON.stringify(requestBody)
             });
 
@@ -399,7 +386,7 @@ async function downloadResultsViaApi(cardId, button, fileType = 'excel') {
 
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'getViewerData',
                 email: globalState.email,
@@ -525,7 +512,7 @@ async function loadAndDisplayDemo(tableName) {
         // Call backend to get demo data (no email required)
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'getDemoData',
                 table_name: tableName
@@ -645,7 +632,7 @@ async function handleUpdateTable(cardId, button, data) {
         // Call backend to create update session
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'createUpdateSession',
                 email: globalState.email,

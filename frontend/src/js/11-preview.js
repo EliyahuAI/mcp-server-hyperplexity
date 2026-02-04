@@ -104,8 +104,13 @@ async function startPreview(cardId) {
 
         const url = `${API_BASE}/validate?async=true&preview_first_row=true&preview_max_rows=3`;
 
+        const fetchHeaders = {};
+        const token = localStorage.getItem('sessionToken');
+        if (token) fetchHeaders['X-Session-Token'] = token;
+
         const response = await fetch(url, {
             method: 'POST',
+            headers: fetchHeaders,
             body: formData
         });
 
@@ -425,8 +430,13 @@ async function startFullProcessing(cardId) {
 
         const url = `${API_BASE}/validate?async=true`;
 
+        const fetchHeaders = {};
+        const token = localStorage.getItem('sessionToken');
+        if (token) fetchHeaders['X-Session-Token'] = token;
+
         const response = await fetch(url, {
             method: 'POST',
+            headers: fetchHeaders,
             body: formData
         });
 

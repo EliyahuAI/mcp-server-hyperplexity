@@ -328,28 +328,15 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
         console.log(`[PREVIEW] Fetching table metadata via API for session: ${sessionId} (attempt ${retryCount + 1}/${maxRetries + 1})`);
         console.log('[PREVIEW] Session ID format check:', /^session_(demo_)?\d{8}_\d{6}_[a-f0-9]{8}$/.test(sessionId));
 
-        // SECURITY: Prepare headers with session token
-        const requestHeaders = { 'Content-Type': 'application/json' };
         const requestBody = {
             action: 'getViewerData',
             session_id: sessionId,
             is_preview: true  // Request preview data (3 rows)
         };
 
-        // SECURITY: Prefer session token in header, fallback to email in body
-        const sessionToken = localStorage.getItem('sessionToken');
-        if (sessionToken) {
-            requestHeaders['X-Session-Token'] = sessionToken;
-            console.log('[PREVIEW] Using session token for authentication');
-        } else {
-            // Legacy: include email in body if no token available
-            requestBody.email = globalState.email;
-            console.log('[PREVIEW] Using legacy email authentication (no token found)');
-        }
-
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: requestHeaders,
+            headers: getAuthHeaders(),
             body: JSON.stringify(requestBody)
         });
 

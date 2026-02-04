@@ -114,7 +114,7 @@ async function sendEmailCode(cardId, button) {
 
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'checkOrSendValidation',
                 email: email,
@@ -213,7 +213,7 @@ async function verifyCode(cardId, button) {
     try {
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'validateEmailCode',
                 email: globalState.email,
@@ -430,10 +430,7 @@ async function handleLogout() {
     try {
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Session-Token': localStorage.getItem('sessionToken') || ''
-            },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'logout',
                 email: email

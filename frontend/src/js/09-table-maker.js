@@ -47,7 +47,7 @@ async function preInitializeTableMaker() {
     // Some browsers have timing issues with the first network request after navigation.
     const warmupPromise = new Promise(resolve => setTimeout(resolve, 100)).then(() => fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'initTableMakerSession',
             email: globalState.email || ''
@@ -1023,7 +1023,7 @@ try {
     // Send request - backend will generate session_id if not provided
     const response = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'startTableConversation',
             email: globalState.email,
@@ -1584,7 +1584,7 @@ console.log('[TABLE_MAKER] Continuing conversation:', {
 try {
     const response = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'continueTableConversation',
             email: globalState.email,
@@ -1646,7 +1646,7 @@ showThinkingInCard(cardId, 'Generating columns and rows...', true);
 try {
     const response = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'continueTableConversation',
             email: globalState.email,
@@ -1733,7 +1733,7 @@ registerCardHandler(configCardId, ['table_finalization_progress'], (wsData, hand
 try {
     const response = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'acceptTableAndValidate',
             email: globalState.email,
@@ -1800,7 +1800,7 @@ async function downloadUnvalidatedTable() {
         // Request presigned URL for the generated table
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'getTableDownloadUrl',
                 email: globalState.email,

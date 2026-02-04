@@ -81,7 +81,7 @@ async function checkValidationStatus(sessionId, isPreview = false, source = 'api
 
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'checkStatus',
                 session_id: sessionId,

@@ -4231,6 +4231,23 @@ const API_BASE = ENV_CONFIG.apiBase;
 const WEBSOCKET_API_URL = ENV_CONFIG.websocketUrl;
 
 // ============================================
+// AUTHENTICATED API HELPERS
+// ============================================
+
+/**
+ * Returns standard headers for API requests, including session token if available.
+ * Use this for all fetch() calls to the API to ensure authenticated requests.
+ */
+function getAuthHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    const token = localStorage.getItem('sessionToken');
+    if (token) {
+        headers['X-Session-Token'] = token;
+    }
+    return headers;
+}
+
+// ============================================
 // DEFERRED EMAIL VALIDATION
 // ============================================
 // If true, show Get Started first and validate email when user selects an action
@@ -4449,7 +4466,7 @@ window.testingUtils = {
         try {
             const response = await fetch(`${API_BASE}/validate`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({
                     action: 'clearUserHistoryForTesting',
                     email: userEmail
@@ -4935,7 +4952,7 @@ async function checkValidationStatus(sessionId, isPreview = false, source = 'api
 
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'checkStatus',
                 session_id: sessionId,
@@ -6209,7 +6226,7 @@ async function fetchMissedMessages(cardId, sinceSeq, toSeq) {
     try {
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'getMessagesForCard',
                 session_id: globalState.sessionId,
@@ -6324,7 +6341,7 @@ async function getAllMessagesSince(sessionId, sinceSeq = 0) {
     try {
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'getMessagesSince',
                 session_id: sessionId,
@@ -7953,8 +7970,13 @@ function proceedWithUpload(cardId) {
                         formData.append('action', 'processExcel');
                         // New file upload should NEVER reuse existing session - always generate new session ID
 
+                        const uploadHeaders = {};
+                        const uploadToken = localStorage.getItem('sessionToken');
+                        if (uploadToken) uploadHeaders['X-Session-Token'] = uploadToken;
+
                         const uploadResponse = await fetch(`${API_BASE}/upload`, {
                             method: 'POST',
+                            headers: uploadHeaders,
                             body: formData
                         });
 
@@ -8204,7 +8226,7 @@ async function uploadExcelFile(cardId, file) {
         // Step 1: Request presigned URL from backend
         const presignedResponse = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'requestPresignedUrl',
                 file_type: 'excel',
@@ -8263,7 +8285,7 @@ async function uploadExcelFile(cardId, file) {
         // Step 3: Confirm upload complete (no processing yet - just confirmation)
         const confirmResponse = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'confirmUploadComplete',
                 upload_id: uploadId,
@@ -8391,7 +8413,7 @@ async function handleConfigUpload(event, cardId) {
         // Config validation only - Excel file already uploaded and session established
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'validateConfig',
                 config: config,
@@ -8483,7 +8505,7 @@ async function loadAvailableDemos(cardId) {
     try {
 const response = await fetch(`${API_BASE}/validate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
         action: 'listDemos'
     })
@@ -8578,7 +8600,7 @@ if (globalState.sessionId) {
 
 const response = await fetch(`${API_BASE}/validate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(requestBody)
 });
 
@@ -8655,7 +8677,7 @@ async function selectRecentConfig(cardId, button) {
 // Search for matching configs
 const response = await fetch(`${API_BASE}/validate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
         action: 'findMatchingConfig',
         email: globalState.email,
@@ -8842,7 +8864,7 @@ async function sendEmailCode(cardId, button) {
 
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'checkOrSendValidation',
                 email: email,
@@ -8941,7 +8963,7 @@ async function verifyCode(cardId, button) {
     try {
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'validateEmailCode',
                 email: globalState.email,
@@ -9158,10 +9180,7 @@ async function handleLogout() {
     try {
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Session-Token': localStorage.getItem('sessionToken') || ''
-            },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'logout',
                 email: email
@@ -9272,7 +9291,7 @@ window.useMatchingConfig = async function(configKey, sourceSession) {
         
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'copyConfig',
                 email: globalState.email,
@@ -9316,7 +9335,7 @@ async function useRecentConfig(cardId, configKey, sourceSession) {
         
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'copyConfig',
                 email: globalState.email,
@@ -9362,7 +9381,7 @@ async function useConfigById(cardId, configId) {
         
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'useConfigById',
                 email: globalState.email,
@@ -9631,7 +9650,7 @@ async function validateRecentConfig(cardId) {
         // Config validation using current session and stored config
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'validateConfig',
                 email: globalState.email,
@@ -9789,7 +9808,7 @@ async function submitConfigRepairWithError(cardId, errorMessage, userGuidance) {
         
         const response = await fetch(`${API_BASE}/validate?async=true`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'repairConfig',
                 email: globalState.email,
@@ -9911,7 +9930,7 @@ async function handleConfigUpload(event, cardId) {
         // Config validation only - Excel file already uploaded and session established
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'validateConfig',
                 config: config,
@@ -10461,7 +10480,7 @@ async function startConfigGenerationWithContext(cardId, userAnswers) {
         // Now request config generation (no need to re-upload Excel)
         const response = await fetch(`${API_BASE}/validate?async=true`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'generateConfig',
                 email: globalState.email,
@@ -10889,9 +10908,7 @@ async function fetchClarifyingQuestionsFromBackend(email, sessionId, configId = 
 
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: getAuthHeaders(),
             body: JSON.stringify(payload)
         });
 
@@ -11142,7 +11159,7 @@ async function submitConfigRefinement(cardId, refinementText) {
     try {
         const response = await fetch(`${API_BASE}/validate?async=true`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'modifyConfig',
                 email: globalState.email,
@@ -11204,7 +11221,7 @@ async function submitConfigRefinementFromPreview(cardId, refinementText) {
     try {
         const response = await fetch(`${API_BASE}/validate?async=true`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'modifyConfig',
                 email: globalState.email,
@@ -11261,7 +11278,7 @@ async function submitConfigRefinementWithAutoPreview(cardId, refinementText) {
     try {
         const response = await fetch(`${API_BASE}/validate?async=true`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'modifyConfig',
                 email: globalState.email,
@@ -11487,7 +11504,7 @@ async function preInitializeTableMaker() {
     // Some browsers have timing issues with the first network request after navigation.
     const warmupPromise = new Promise(resolve => setTimeout(resolve, 100)).then(() => fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'initTableMakerSession',
             email: globalState.email || ''
@@ -12463,7 +12480,7 @@ try {
     // Send request - backend will generate session_id if not provided
     const response = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'startTableConversation',
             email: globalState.email,
@@ -13024,7 +13041,7 @@ console.log('[TABLE_MAKER] Continuing conversation:', {
 try {
     const response = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'continueTableConversation',
             email: globalState.email,
@@ -13086,7 +13103,7 @@ showThinkingInCard(cardId, 'Generating columns and rows...', true);
 try {
     const response = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'continueTableConversation',
             email: globalState.email,
@@ -13173,7 +13190,7 @@ registerCardHandler(configCardId, ['table_finalization_progress'], (wsData, hand
 try {
     const response = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'acceptTableAndValidate',
             email: globalState.email,
@@ -13240,7 +13257,7 @@ async function downloadUnvalidatedTable() {
         // Request presigned URL for the generated table
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'getTableDownloadUrl',
                 email: globalState.email,
@@ -13304,7 +13321,7 @@ try {
     // Step 1: Request presigned URL from backend
     const presignedResponse = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'requestPresignedUrl',
             file_type: 'pdf',
@@ -13364,7 +13381,7 @@ try {
     // Step 3: Confirm upload complete and trigger processing
     const confirmResponse = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'confirmUploadComplete',
             upload_id: uploadId,
@@ -13489,7 +13506,7 @@ registerCardHandler(cardId, ['reference_check_progress', 'reference_check_comple
 try {
     const response = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: 'startReferenceCheck',
             email: globalState.email,
@@ -13890,9 +13907,7 @@ const sessionId = conversationId.replace('upload_interview_', '');
 try {
     const response = await fetch(`${API_BASE}/validate`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             action: isStart ? 'startUploadInterview' : 'continueUploadInterview',
             session_id: sessionId,
@@ -13969,7 +13984,7 @@ registerCardHandler(cardId, ['preview_progress', 'progress_update'], (wsData, ha
 // This will use the uploaded Excel file and trigger validation
 fetch(`${API_BASE}/validate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
         action: 'processExcel',
         email: globalState.email,
@@ -14103,8 +14118,13 @@ async function startPreview(cardId) {
 
         const url = `${API_BASE}/validate?async=true&preview_first_row=true&preview_max_rows=3`;
 
+        const fetchHeaders = {};
+        const token = localStorage.getItem('sessionToken');
+        if (token) fetchHeaders['X-Session-Token'] = token;
+
         const response = await fetch(url, {
             method: 'POST',
+            headers: fetchHeaders,
             body: formData
         });
 
@@ -14424,8 +14444,13 @@ async function startFullProcessing(cardId) {
 
         const url = `${API_BASE}/validate?async=true`;
 
+        const fetchHeaders = {};
+        const token = localStorage.getItem('sessionToken');
+        if (token) fetchHeaders['X-Session-Token'] = token;
+
         const response = await fetch(url, {
             method: 'POST',
+            headers: fetchHeaders,
             body: formData
         });
 
@@ -15001,28 +15026,15 @@ async function fetchAndRenderValidationTable(cardId, sessionId) {
     container.innerHTML = '<p style="color: #999; font-style: italic; text-align: center; padding: 1rem;">Loading interactive table...</p>';
 
     try {
-        // SECURITY: Prepare headers with session token
-        const requestHeaders = { 'Content-Type': 'application/json' };
         const requestBody = {
             action: 'getViewerData',
             session_id: sessionId,
             is_preview: false  // Request full validation data, not preview
         };
 
-        // SECURITY: Prefer session token in header, fallback to email in body
-        const sessionToken = localStorage.getItem('sessionToken');
-        if (sessionToken) {
-            requestHeaders['X-Session-Token'] = sessionToken;
-            console.log('[VALIDATION] Using session token for authentication');
-        } else {
-            // Legacy: include email in body if no token available
-            requestBody.email = globalState.email;
-            console.log('[VALIDATION] Using legacy email authentication (no token found)');
-        }
-
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: requestHeaders,
+            headers: getAuthHeaders(),
             body: JSON.stringify(requestBody)
         });
 
@@ -15392,28 +15404,15 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
         console.log(`[PREVIEW] Fetching table metadata via API for session: ${sessionId} (attempt ${retryCount + 1}/${maxRetries + 1})`);
         console.log('[PREVIEW] Session ID format check:', /^session_(demo_)?\d{8}_\d{6}_[a-f0-9]{8}$/.test(sessionId));
 
-        // SECURITY: Prepare headers with session token
-        const requestHeaders = { 'Content-Type': 'application/json' };
         const requestBody = {
             action: 'getViewerData',
             session_id: sessionId,
             is_preview: true  // Request preview data (3 rows)
         };
 
-        // SECURITY: Prefer session token in header, fallback to email in body
-        const sessionToken = localStorage.getItem('sessionToken');
-        if (sessionToken) {
-            requestHeaders['X-Session-Token'] = sessionToken;
-            console.log('[PREVIEW] Using session token for authentication');
-        } else {
-            // Legacy: include email in body if no token available
-            requestBody.email = globalState.email;
-            console.log('[PREVIEW] Using legacy email authentication (no token found)');
-        }
-
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: requestHeaders,
+            headers: getAuthHeaders(),
             body: JSON.stringify(requestBody)
         });
 
@@ -16160,7 +16159,7 @@ window.checkForNewOrders = async function checkForNewOrders(messageContainer = '
 
         const orderCheckResponse = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'checkSquarespaceOrders',
                 email: currentEmail
@@ -16355,7 +16354,7 @@ window.refreshCurrentBalance = async function refreshCurrentBalance() {
         // Now get the updated balance
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'getAccountBalance',
                 email: currentEmail
@@ -17129,7 +17128,7 @@ async function handlePdfUpload(cardId, file) {
         // Step 1: Request presigned URL from backend
         const presignedResponse = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'requestPresignedUrl',
                 file_type: 'pdf',
@@ -17189,7 +17188,7 @@ async function handlePdfUpload(cardId, file) {
         // Step 3: Confirm upload complete and trigger processing
         const confirmResponse = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'confirmUploadComplete',
                 upload_id: uploadId,
@@ -17324,7 +17323,7 @@ async function startReferenceCheck(cardId) {
     try {
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'startReferenceCheck',
                 email: globalState.email,
@@ -18652,11 +18651,6 @@ async function loadAndDisplayResults(params) {
                 table_name: params.path.split('/').pop().replace('.json', '')
             };
         } else {
-            // SECURITY: Get session token from localStorage (30-day expiration)
-            const sessionToken = localStorage.getItem('sessionToken');
-
-            // Fetch metadata from API
-            const requestHeaders = { 'Content-Type': 'application/json' };
             const requestBody = {
                 action: 'getViewerData',
                 session_id: params.session,
@@ -18664,17 +18658,9 @@ async function loadAndDisplayResults(params) {
                 path: params.path
             };
 
-            // SECURITY: Prefer session token in header, fallback to email in body for backward compatibility
-            if (sessionToken) {
-                requestHeaders['X-Session-Token'] = sessionToken;
-            } else {
-                // Legacy: include email in body if no token available
-                requestBody.email = globalState.email;
-            }
-
             const response = await fetch(`${API_BASE}/validate`, {
                 method: 'POST',
-                headers: requestHeaders,
+                headers: getAuthHeaders(),
                 body: JSON.stringify(requestBody)
             });
 
@@ -18974,7 +18960,7 @@ async function downloadResultsViaApi(cardId, button, fileType = 'excel') {
 
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'getViewerData',
                 email: globalState.email,
@@ -19100,7 +19086,7 @@ async function loadAndDisplayDemo(tableName) {
         // Call backend to get demo data (no email required)
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'getDemoData',
                 table_name: tableName
@@ -19220,7 +19206,7 @@ async function handleUpdateTable(cardId, button, data) {
         // Call backend to create update session
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'createUpdateSession',
                 email: globalState.email,
@@ -19480,7 +19466,7 @@ if (storedEmail && storedEmail.includes('@')) {
                     console.log('[AUTH] Requesting new token for validated email...');
                     const response = await fetch(`${API_BASE}/validate`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: getAuthHeaders(),
                         body: JSON.stringify({
                             action: 'checkOrSendValidation',
                             email: storedEmail
@@ -20596,7 +20582,7 @@ try {
                 try {
                     const balanceResponse = await fetch(`${API_BASE}/validate`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: getAuthHeaders(),
                         body: JSON.stringify({
                             email: globalState.email,
                             action: 'getAccountBalance'
@@ -20673,7 +20659,7 @@ try {
             try {
                 const orderResponse = await fetch(`${API_BASE}/validate`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({
                         email: globalState.email,
                         action: 'checkSquarespaceOrders'

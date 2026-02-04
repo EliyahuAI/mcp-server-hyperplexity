@@ -99,7 +99,7 @@ async function fetchMissedMessages(cardId, sinceSeq, toSeq) {
     try {
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'getMessagesForCard',
                 session_id: globalState.sessionId,
@@ -214,7 +214,7 @@ async function getAllMessagesSince(sessionId, sinceSeq = 0) {
     try {
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'getMessagesSince',
                 session_id: sessionId,

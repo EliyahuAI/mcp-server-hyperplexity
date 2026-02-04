@@ -168,7 +168,7 @@ async function handlePdfUpload(cardId, file) {
         // Step 1: Request presigned URL from backend
         const presignedResponse = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'requestPresignedUrl',
                 file_type: 'pdf',
@@ -228,7 +228,7 @@ async function handlePdfUpload(cardId, file) {
         // Step 3: Confirm upload complete and trigger processing
         const confirmResponse = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'confirmUploadComplete',
                 upload_id: uploadId,
@@ -363,7 +363,7 @@ async function startReferenceCheck(cardId) {
     try {
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'startReferenceCheck',
                 email: globalState.email,

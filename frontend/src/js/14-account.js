@@ -601,7 +601,7 @@ window.checkForNewOrders = async function checkForNewOrders(messageContainer = '
 
         const orderCheckResponse = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'checkSquarespaceOrders',
                 email: currentEmail
@@ -796,7 +796,7 @@ window.refreshCurrentBalance = async function refreshCurrentBalance() {
         // Now get the updated balance
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
                 action: 'getAccountBalance',
                 email: currentEmail
