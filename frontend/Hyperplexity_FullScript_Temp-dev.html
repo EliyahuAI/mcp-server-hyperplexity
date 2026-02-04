@@ -19191,13 +19191,18 @@ function displayDemoResultsInCard(cardId, data, tableName) {
         // Still show "Create Your Own" button even if no table data
     }
 
+    // Detect reference check table by checking first 2 column names
+    const columns = data.table_metadata?.columns || [];
+    const colNames = columns.slice(0, 2).map(c => (c.name || '').toLowerCase().trim());
+    const isReferenceCheckDemo = colNames.includes('claim id') && colNames.includes('claim order');
+
     // Build buttons - Create Your Own requires email
     const excelUrl = data.enhanced_download_url || data.download_url;
     const buttons = [];
 
     if (excelUrl) {
         buttons.push({
-            text: 'Download Excel',
+            text: 'Download Excel (for Humans)',
             icon: '📥',
             variant: 'secondary',
             callback: (e) => {
@@ -19210,7 +19215,7 @@ function displayDemoResultsInCard(cardId, data, tableName) {
     }
 
     buttons.push({
-        text: 'Download JSON',
+        text: 'Download JSON (for AI)',
         icon: '📋',
         variant: 'secondary',
         callback: (e) => {
@@ -19220,12 +19225,16 @@ function displayDemoResultsInCard(cardId, data, tableName) {
     });
 
     buttons.push({
-            text: 'Create Your Own Table',
-            icon: '✨',
+            text: isReferenceCheckDemo ? 'Validate New Text' : 'Create Your Own Table',
+            icon: isReferenceCheckDemo ? '🔍' : '✨',
             variant: 'primary',
             callback: () => {
-                // Show Get Started card (handles email validation itself)
-                if (typeof createUploadOrDemoCard === 'function') {
+                if (isReferenceCheckDemo && typeof createReferenceCheckCard === 'function') {
+                    // Kick into reference check mode
+                    requireEmailThen(() => {
+                        createReferenceCheckCard();
+                    }, 'validate text');
+                } else if (typeof createUploadOrDemoCard === 'function') {
                     createUploadOrDemoCard();
                 } else {
                     // Fallback: redirect to main app
