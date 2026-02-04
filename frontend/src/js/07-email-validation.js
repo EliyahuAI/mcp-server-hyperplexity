@@ -308,44 +308,53 @@ function handleEmailValidated(cardId) {
 }
 
 /* ========================================
- * Signed-In Badge (Top Left)
- * Shows user email with logout option
+ * Signed-In Indicator (Top-Right of First Card)
+ * Shows user email with logout button
  * ======================================== */
 
 function showSignedInBadge(email) {
-    // Remove existing badge if any
-    const existingBadge = document.querySelector('.signed-in-badge');
-    if (existingBadge) {
-        existingBadge.remove();
+    // Find the first card
+    const firstCard = document.querySelector('.card');
+    if (!firstCard) {
+        // Card doesn't exist yet, retry after a short delay
+        console.log('[AUTH] Waiting for first card to appear...');
+        setTimeout(() => showSignedInBadge(email), 200);
+        return;
     }
 
-    // Create badge
-    const badge = document.createElement('div');
-    badge.className = 'signed-in-badge';
-    badge.title = 'Click to logout';
-    badge.innerHTML = `
+    // Remove existing indicator if any
+    const existingIndicator = document.querySelector('.card-signed-in-indicator');
+    if (existingIndicator) {
+        existingIndicator.remove();
+    }
+
+    // Create indicator
+    const indicator = document.createElement('div');
+    indicator.className = 'card-signed-in-indicator';
+    indicator.innerHTML = `
         <span class="email">${email}</span>
-        <span class="logout-icon">⎋</span>
+        <button class="logout-btn" title="Logout">⎋ Logout</button>
     `;
 
-    // Add click handler for logout
-    badge.addEventListener('click', handleLogout);
+    // Add logout handler to button
+    const logoutBtn = indicator.querySelector('.logout-btn');
+    logoutBtn.addEventListener('click', handleLogout);
 
-    // Add to body
-    document.body.appendChild(badge);
+    // Add to card-header (same flex row as icon and title)
+    const cardHeader = firstCard.querySelector('.card-header');
+    if (cardHeader) {
+        cardHeader.appendChild(indicator);
+    } else {
+        firstCard.appendChild(indicator);
+    }
 
-    // Show with animation
-    setTimeout(() => {
-        badge.style.display = 'flex';
-        badge.style.alignItems = 'center';
-    }, 100);
+    console.log('[AUTH] Signed-in indicator attached to first card');
 }
 
 function hideSignedInBadge() {
-    const badge = document.querySelector('.signed-in-badge');
-    if (badge) {
-        badge.style.display = 'none';
-        setTimeout(() => badge.remove(), 300);
+    const indicator = document.querySelector('.card-signed-in-indicator');
+    if (indicator) {
+        indicator.remove();
     }
 }
 

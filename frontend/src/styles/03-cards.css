@@ -869,49 +869,69 @@
     background: rgba(3, 169, 244, 0.9);
 }
 
-/* Signed-in indicator (top right, subtle styling) */
-.signed-in-badge {
-    position: fixed;
-    top: 12px;
-    right: 12px;
-    background: rgba(0, 0, 0, 0.05);
-    color: #666;
-    padding: 4px 10px;
-    border-radius: 12px;
-    font-size: 11px;
+/* Signed-in indicator (inside card-header, aligned with icon) */
+.card-signed-in-indicator {
+    margin-left: auto; /* Push to right side of card-header flex row */
+    margin-top: -7px; /* Match card-icon shift */
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 46px; /* Match card icon height */
+    background: linear-gradient(180deg, rgba(40, 255, 58, 0.12), rgba(40, 255, 58, 0.04));
+    color: rgba(0, 0, 0, 0.75);
+    padding: 0 14px;
+    border-radius: 12px; /* Match card icon border-radius */
+    font-size: 13px;
     font-weight: 500;
-    z-index: 1000;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(40, 255, 58, 0.25);
+    flex-shrink: 0;
+    transition: border-color 0.18s ease;
+}
+
+.card-signed-in-indicator:hover {
+    border-color: rgba(40, 255, 58, 0.45);
+}
+
+.card-signed-in-indicator .email {
+    opacity: 0.85;
+    white-space: nowrap;
+}
+
+.card-signed-in-indicator .logout-btn {
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    color: rgba(0, 0, 0, 0.65);
     cursor: pointer;
-    display: none; /* Hidden by default */
-    transition: all 0.2s ease;
-    user-select: none;
-    border: 1px solid #4CAF50;
-}
-
-.signed-in-badge:hover {
-    background: rgba(76, 175, 80, 0.1);
-    color: #333;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(76, 175, 80, 0.2);
-    border-color: #4CAF50;
-}
-
-.signed-in-badge:active {
-    transform: translateY(0);
-}
-
-.signed-in-badge .email {
-    margin-right: 6px;
-}
-
-.signed-in-badge .logout-icon {
-    opacity: 0.6;
+    padding: 6px 10px;
+    border-radius: 6px;
     font-size: 12px;
+    font-weight: 500;
+    transition: all 0.18s ease;
+    white-space: nowrap;
 }
 
-.signed-in-badge:hover .logout-icon {
-    opacity: 0.9;
+.card-signed-in-indicator .logout-btn:hover {
+    background: rgba(0, 0, 0, 0.08);
+    border-color: rgba(0, 0, 0, 0.15);
+    color: rgba(0, 0, 0, 0.85);
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+    .card-signed-in-indicator {
+        top: 13px; /* Adjust for mobile icon position */
+        right: 20px;
+        height: 38px; /* Match mobile icon height */
+        font-size: 11px;
+        padding: 0 10px;
+        gap: 6px;
+        border-radius: 10px;
+    }
+
+    .card-signed-in-indicator .logout-btn {
+        padding: 4px 8px;
+        font-size: 10px;
+    }
 }
 
 /* Media Queries for Balance Notifications */
