@@ -1517,7 +1517,7 @@ def create_email_validation_request(email: str) -> Dict[str, Any]:
         }
 
 
-def validate_email_code(email: str, code: str, ip_address: str = None) -> Dict[str, Any]:
+def validate_email_code(email: str, code: str, ip_address: str = None, terms_version: str = None) -> Dict[str, Any]:
     """
     Validate email with provided code.
 
@@ -1691,7 +1691,7 @@ def validate_email_code(email: str, code: str, ip_address: str = None) -> Dict[s
         )
         
         # Initialize/update user tracking record with validation date
-        initialize_user_tracking(email, validated_at)
+        initialize_user_tracking(email, validated_at, terms_version=terms_version)
         
         return {
             'success': True,
@@ -1743,7 +1743,7 @@ def is_email_validated(email: str) -> bool:
         return False
 
 
-def initialize_user_tracking(email: str, validated_at: str = None) -> bool:
+def initialize_user_tracking(email: str, validated_at: str = None, terms_version: str = None) -> bool:
     """Initialize user tracking record for a newly validated email."""
     try:
         # Normalize email to lowercase
@@ -1774,13 +1774,19 @@ def initialize_user_tracking(email: str, validated_at: str = None) -> bool:
                     update_expr += ", most_recent_email_validation = :validation_date"
                     expr_values[':validation_date'] = validated_at
             
+            # Store terms acceptance if provided
+            if terms_version:
+                update_expr += ", terms_accepted_version = :terms_ver, terms_accepted_at = :terms_at"
+                expr_values[':terms_ver'] = terms_version
+                expr_values[':terms_at'] = current_time
+
             table.update_item(
                 Key={'email': email},
                 UpdateExpression=update_expr,
                 ExpressionAttributeValues=expr_values
             )
             return True
-        
+
         # Create new user tracking record with consolidated field structure
         user_record = {
             'email': email,
@@ -1832,7 +1838,12 @@ def initialize_user_tracking(email: str, validated_at: str = None) -> bool:
         if validated_at:
             user_record['first_email_validation'] = validated_at
             user_record['most_recent_email_validation'] = validated_at
-        
+
+        # Store terms acceptance if provided
+        if terms_version:
+            user_record['terms_accepted_version'] = terms_version
+            user_record['terms_accepted_at'] = current_time
+
         table.put_item(Item=user_record)
         logger.info(f"Initialized user tracking for {email}")
         return True
@@ -2039,10 +2050,20 @@ def check_or_send_validation(email: str, force_reverify: bool = False) -> Dict[s
 
         # Check if email is already validated (skip if force_reverify)
         if not force_reverify and is_email_validated(email):
+            terms_accepted_version = None
+            try:
+                tracking_table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.USER_TRACKING_TABLE)
+                resp = tracking_table.get_item(Key={'email': email}, ProjectionExpression='terms_accepted_version')
+                if 'Item' in resp:
+                    terms_accepted_version = resp['Item'].get('terms_accepted_version')
+            except Exception as e:
+                logger.warning(f"Error fetching terms for {email}: {e}")
+
             return {
                 'success': True,
                 'validated': True,
-                'message': 'Email is already validated'
+                'message': 'Email is already validated',
+                'terms_accepted_version': terms_accepted_version
             }
 
         # Email not validated OR force_reverify requested, send validation code

@@ -4321,7 +4321,7 @@ function ensureProcessingState() {
  */
 function requireEmailThen(action, description = 'continue') {
     // If email already validated, execute immediately
-    const storedEmail = localStorage.getItem('validatedEmail');
+    const storedEmail = sessionStorage.getItem('validatedEmail');
     if (globalState.email || (storedEmail && storedEmail.includes('@'))) {
         if (!globalState.email && storedEmail) {
             globalState.email = storedEmail;
@@ -4794,7 +4794,10 @@ function removeSessionId() {
 
 function saveValidatedEmail(email) {
     try {
-        localStorage.setItem('validatedEmail', email);
+        // SECURITY: Store in sessionStorage (not localStorage) to prevent attacks
+        // sessionStorage clears on browser close = natural logout
+        // localStorage persists forever = attacker can modify email and get victim's token
+        sessionStorage.setItem('validatedEmail', email);
         globalState.email = email;
     } catch (e) {
         console.error('[STORAGE] Error saving email:', e);
@@ -4803,7 +4806,7 @@ function saveValidatedEmail(email) {
 
 function getValidatedEmail() {
     try {
-        return localStorage.getItem('validatedEmail');
+        return sessionStorage.getItem('validatedEmail');
     } catch (e) {
         console.error('[STORAGE] Error getting email:', e);
         return null;
@@ -4812,7 +4815,7 @@ function getValidatedEmail() {
 
 function removeValidatedEmail() {
     try {
-        localStorage.removeItem('validatedEmail');
+        sessionStorage.removeItem('validatedEmail');
         globalState.email = '';
     } catch (e) {
         console.error('[STORAGE] Error removing email:', e);
@@ -8552,8 +8555,8 @@ async function selectDemo(cardId, demoName, buttonElement) {
     try {
 // Make sure we have email (sessionId will be created/updated by backend)
 if (!globalState.email) {
-    // Try to get email from localStorage if not in globalState
-    const storedEmail = localStorage.getItem('validatedEmail');
+    // Try to get email from sessionStorage if not in globalState
+    const storedEmail = sessionStorage.getItem('validatedEmail');
     if (storedEmail && storedEmail.includes('@')) {
         globalState.email = storedEmail;
     } else {
@@ -8589,7 +8592,7 @@ if (!result.success) {
     if (errorMsg.toLowerCase().includes('session') && (errorMsg.toLowerCase().includes('expired') || errorMsg.toLowerCase().includes('invalid'))) {
         // Clear stale session data
         localStorage.removeItem('sessionId');
-        localStorage.removeItem('validatedEmail');
+        sessionStorage.removeItem('validatedEmail');
         globalState.sessionId = null;
         globalState.email = '';
         throw new Error('Session expired - please refresh the page');
@@ -8854,9 +8857,14 @@ async function sendEmailCode(cardId, button) {
                 // Email already validated, backend issued token without sending code
                 console.log('[EMAIL] Email already validated, token issued');
 
-                // Store session token
-                sessionStorage.setItem('sessionToken', data.session_token);
+                // Store session token (30-day expiration, persists across browser restarts)
+                localStorage.setItem('sessionToken', data.session_token);
                 globalState.sessionToken = data.session_token;
+
+                // Sync terms acceptance from server
+                if (data.terms_accepted_version === TERMS_VERSION) {
+                    localStorage.setItem('termsAcceptedVersion', data.terms_accepted_version);
+                }
 
                 // Show message that email is already validated
                 showMessage(`${cardId}-messages`, 'Welcome back! Your email is already verified.', 'success');
@@ -8937,16 +8945,17 @@ async function verifyCode(cardId, button) {
             body: JSON.stringify({
                 action: 'validateEmailCode',
                 email: globalState.email,
-                code: code
+                code: code,
+                terms_version: TERMS_VERSION
             })
         });
 
         const data = await response.json();
 
         if (response.ok && data.success) {
-            // SECURITY: Store session token from backend
+            // SECURITY: Store session token from backend (30-day expiration)
             if (data.session_token) {
-                sessionStorage.setItem('sessionToken', data.session_token);
+                localStorage.setItem('sessionToken', data.session_token);
                 globalState.sessionToken = data.session_token;
             }
             // Persist terms acceptance so checkboxes won't show next time
@@ -9019,7 +9028,9 @@ function setupCodeDigitInputs(cardId) {
 }
 
 function handleEmailValidated(cardId) {
-    localStorage.setItem('validatedEmail', globalState.email);
+    // SECURITY: Store in sessionStorage (not localStorage) to prevent email spoofing
+    // sessionStorage clears on browser close, providing natural logout behavior
+    sessionStorage.setItem('validatedEmail', globalState.email);
 
     // Track email validation conversion
     trackEmailValidationConversion(globalState.email);
@@ -9133,7 +9144,7 @@ function hideSignedInBadge() {
 
 async function handleLogout() {
     // Confirm logout
-    if (!confirm('Are you sure you want to logout?\n\nThis will log you out on all devices.')) {
+    if (!confirm('Are you sure you want to logout?\n\nYou will need to verify your email with a new code to log back in.')) {
         return;
     }
 
@@ -9142,13 +9153,14 @@ async function handleLogout() {
 
     const email = globalState.email;
 
-    // SECURITY: Notify backend to revoke all tokens (logout all devices)
+    // SECURITY: Notify backend of logout (for analytics/logging)
+    // Note: Token revocation will be handled separately in the future
     try {
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Session-Token': sessionStorage.getItem('sessionToken') || ''
+                'X-Session-Token': localStorage.getItem('sessionToken') || ''
             },
             body: JSON.stringify({
                 action: 'logout',
@@ -9157,7 +9169,7 @@ async function handleLogout() {
         });
 
         if (response.ok) {
-            console.log('[AUTH] Server-side logout successful');
+            console.log('[AUTH] Server notified of logout');
         }
     } catch (error) {
         console.warn('[AUTH] Could not notify server of logout:', error);
@@ -9180,8 +9192,10 @@ async function handleLogout() {
         sessionWebSockets.clear();
     }
 
-    // Clear all auth data
-    localStorage.removeItem('validatedEmail');
+    // Clear all auth data from this device
+    localStorage.removeItem('sessionToken');
+    localStorage.removeItem('termsAcceptedVersion');
+    sessionStorage.removeItem('validatedEmail');
 
     // Clear all session storage (including saved state)
     sessionStorage.clear();
@@ -9193,7 +9207,7 @@ async function handleLogout() {
     globalState.sessionToken = null;
     globalState.sessionId = null;
 
-    console.log('[AUTH] User logged out from all devices, cleared all session state');
+    console.log('[AUTH] User logged out from this device, token cleared');
 
     // Hard refresh without reload warning
     window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now();
@@ -14997,7 +15011,7 @@ async function fetchAndRenderValidationTable(cardId, sessionId) {
         };
 
         // SECURITY: Prefer session token in header, fallback to email in body
-        const sessionToken = sessionStorage.getItem('sessionToken');
+        const sessionToken = localStorage.getItem('sessionToken');
         if (sessionToken) {
             requestHeaders['X-Session-Token'] = sessionToken;
             console.log('[VALIDATION] Using session token for authentication');
@@ -15388,7 +15402,7 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
         };
 
         // SECURITY: Prefer session token in header, fallback to email in body
-        const sessionToken = sessionStorage.getItem('sessionToken');
+        const sessionToken = localStorage.getItem('sessionToken');
         if (sessionToken) {
             requestHeaders['X-Session-Token'] = sessionToken;
             console.log('[PREVIEW] Using session token for authentication');
@@ -15411,8 +15425,8 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
             console.error('[SECURITY] Token revoked by server - clearing session');
 
             // Clear session data
-            sessionStorage.removeItem('sessionToken');
-            localStorage.removeItem('validatedEmail');
+            localStorage.removeItem('sessionToken');
+            sessionStorage.removeItem('validatedEmail');
             if (typeof globalState !== 'undefined') {
                 globalState.sessionToken = null;
                 globalState.email = null;
@@ -16395,7 +16409,7 @@ function getCurrentUserEmail() {
     }
 
     // Try stored email
-    const storedEmail = localStorage.getItem('validatedEmail');
+    const storedEmail = sessionStorage.getItem('validatedEmail');
     if (storedEmail && storedEmail.includes('@')) {
         return storedEmail;
     }
@@ -17084,7 +17098,7 @@ function createReferenceCheckCard() {
 async function handlePdfUpload(cardId, file) {
     // Check if email is validated (for deferred validation mode)
     if (DEFER_EMAIL_VALIDATION && !globalState.email) {
-        const storedEmail = localStorage.getItem('validatedEmail');
+        const storedEmail = sessionStorage.getItem('validatedEmail');
         if (!storedEmail || !storedEmail.includes('@')) {
             requireEmailThen(() => handlePdfUpload(cardId, file), 'upload your PDF');
             return;
@@ -17279,7 +17293,7 @@ function handlePdfConversionMessage(cardId, message, filename) {
 async function startReferenceCheck(cardId) {
     // Check if email is validated (for deferred validation mode)
     if (DEFER_EMAIL_VALIDATION && !globalState.email) {
-        const storedEmail = localStorage.getItem('validatedEmail');
+        const storedEmail = sessionStorage.getItem('validatedEmail');
         if (!storedEmail || !storedEmail.includes('@')) {
             requireEmailThen(() => startReferenceCheck(cardId), 'check your references');
             return;
@@ -18639,8 +18653,8 @@ async function loadAndDisplayResults(params) {
                 table_name: params.path.split('/').pop().replace('.json', '')
             };
         } else {
-            // SECURITY: Get session token from sessionStorage
-            const sessionToken = sessionStorage.getItem('sessionToken');
+            // SECURITY: Get session token from localStorage (30-day expiration)
+            const sessionToken = localStorage.getItem('sessionToken');
 
             // Fetch metadata from API
             const requestHeaders = { 'Content-Type': 'application/json' };
@@ -18672,8 +18686,8 @@ async function loadAndDisplayResults(params) {
                 console.error('[SECURITY] Token revoked by server - clearing session');
 
                 // Clear session data
-                sessionStorage.removeItem('sessionToken');
-                localStorage.removeItem('validatedEmail');
+                localStorage.removeItem('sessionToken');
+                sessionStorage.removeItem('validatedEmail');
                 globalState.sessionToken = null;
                 globalState.email = null;
 
@@ -19413,9 +19427,11 @@ if (IS_PAGE_RELOAD) {
 // Fresh session - don't restore sessionId as backend will create new ones
 // sessionId gets created when user uploads file or selects demo
 
-// Restore email from localStorage if available
-const storedEmail = localStorage.getItem('validatedEmail');
-const storedToken = sessionStorage.getItem('sessionToken');
+// SECURITY: Restore auth state
+// Email in sessionStorage (cleared on tab close)
+// Token in localStorage (persists 30 days, cleared on logout)
+const storedEmail = sessionStorage.getItem('validatedEmail');
+const storedToken = localStorage.getItem('sessionToken');
 
 console.log('[AUTH] Checking for existing session...', {
     storedEmail: storedEmail ? storedEmail : 'none',
@@ -19448,7 +19464,7 @@ if (storedEmail && storedEmail.includes('@')) {
         if (forceReverify) {
             console.log('[AUTH] Logout detected (forceReverify flag) - skipping auto-reauth, user must re-validate');
             // Clear the stored email to force fresh validation
-            localStorage.removeItem('validatedEmail');
+            sessionStorage.removeItem('validatedEmail');
             globalState.email = null;
         } else {
             console.warn('[AUTH] Email found but no token - attempting auto-reauth');
@@ -19475,9 +19491,14 @@ if (storedEmail && storedEmail.includes('@')) {
                     const data = await response.json();
 
                     if (data.success && data.validated && data.session_token) {
-                        // Got new token!
-                        sessionStorage.setItem('sessionToken', data.session_token);
+                        // Got new token! (30-day expiration)
+                        localStorage.setItem('sessionToken', data.session_token);
                         globalState.sessionToken = data.session_token;
+
+                        // Sync terms acceptance from server
+                        if (data.terms_accepted_version === TERMS_VERSION) {
+                            localStorage.setItem('termsAcceptedVersion', data.terms_accepted_version);
+                        }
 
                         // Show badge
                         if (typeof showSignedInBadge === 'function') {

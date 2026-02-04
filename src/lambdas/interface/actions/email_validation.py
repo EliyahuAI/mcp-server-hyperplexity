@@ -40,13 +40,17 @@ def handle(request_data, context):
             if not code:
                 return create_response(400, {'success': False, 'error': 'missing_code'})
 
+            # Extract terms_version for server-side tracking
+            terms_version = request_data.get('terms_version')
+
             # SECURITY: Pass IP address for rate limiting
-            result = validate_email_code(email, code, ip_address=ip_address)
+            result = validate_email_code(email, code, ip_address=ip_address, terms_version=terms_version)
 
             # SECURITY: Issue session token after successful validation
             if result.get('success') and result.get('validated'):
                 session_token = create_session_token(email)
                 result['session_token'] = session_token
+                result['terms_accepted_version'] = terms_version
                 logger.info(f"[EMAIL_VALIDATION] Issued session token for {email}")
 
         elif action == 'checkEmailValidation':

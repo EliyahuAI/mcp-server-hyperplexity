@@ -129,9 +129,14 @@ async function sendEmailCode(cardId, button) {
                 // Email already validated, backend issued token without sending code
                 console.log('[EMAIL] Email already validated, token issued');
 
-                // Store session token
-                sessionStorage.setItem('sessionToken', data.session_token);
+                // Store session token (30-day expiration, persists across browser restarts)
+                localStorage.setItem('sessionToken', data.session_token);
                 globalState.sessionToken = data.session_token;
+
+                // Sync terms acceptance from server
+                if (data.terms_accepted_version === TERMS_VERSION) {
+                    localStorage.setItem('termsAcceptedVersion', data.terms_accepted_version);
+                }
 
                 // Show message that email is already validated
                 showMessage(`${cardId}-messages`, 'Welcome back! Your email is already verified.', 'success');
@@ -212,16 +217,17 @@ async function verifyCode(cardId, button) {
             body: JSON.stringify({
                 action: 'validateEmailCode',
                 email: globalState.email,
-                code: code
+                code: code,
+                terms_version: TERMS_VERSION
             })
         });
 
         const data = await response.json();
 
         if (response.ok && data.success) {
-            // SECURITY: Store session token from backend
+            // SECURITY: Store session token from backend (30-day expiration)
             if (data.session_token) {
-                sessionStorage.setItem('sessionToken', data.session_token);
+                localStorage.setItem('sessionToken', data.session_token);
                 globalState.sessionToken = data.session_token;
             }
             // Persist terms acceptance so checkboxes won't show next time
@@ -294,7 +300,9 @@ function setupCodeDigitInputs(cardId) {
 }
 
 function handleEmailValidated(cardId) {
-    localStorage.setItem('validatedEmail', globalState.email);
+    // SECURITY: Store in sessionStorage (not localStorage) to prevent email spoofing
+    // sessionStorage clears on browser close, providing natural logout behavior
+    sessionStorage.setItem('validatedEmail', globalState.email);
 
     // Track email validation conversion
     trackEmailValidationConversion(globalState.email);
@@ -408,7 +416,7 @@ function hideSignedInBadge() {
 
 async function handleLogout() {
     // Confirm logout
-    if (!confirm('Are you sure you want to logout?\n\nThis will log you out on all devices.')) {
+    if (!confirm('Are you sure you want to logout?\n\nYou will need to verify your email with a new code to log back in.')) {
         return;
     }
 
@@ -417,13 +425,14 @@ async function handleLogout() {
 
     const email = globalState.email;
 
-    // SECURITY: Notify backend to revoke all tokens (logout all devices)
+    // SECURITY: Notify backend of logout (for analytics/logging)
+    // Note: Token revocation will be handled separately in the future
     try {
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Session-Token': sessionStorage.getItem('sessionToken') || ''
+                'X-Session-Token': localStorage.getItem('sessionToken') || ''
             },
             body: JSON.stringify({
                 action: 'logout',
@@ -432,7 +441,7 @@ async function handleLogout() {
         });
 
         if (response.ok) {
-            console.log('[AUTH] Server-side logout successful');
+            console.log('[AUTH] Server notified of logout');
         }
     } catch (error) {
         console.warn('[AUTH] Could not notify server of logout:', error);
@@ -455,8 +464,10 @@ async function handleLogout() {
         sessionWebSockets.clear();
     }
 
-    // Clear all auth data
-    localStorage.removeItem('validatedEmail');
+    // Clear all auth data from this device
+    localStorage.removeItem('sessionToken');
+    localStorage.removeItem('termsAcceptedVersion');
+    sessionStorage.removeItem('validatedEmail');
 
     // Clear all session storage (including saved state)
     sessionStorage.clear();
@@ -468,7 +479,7 @@ async function handleLogout() {
     globalState.sessionToken = null;
     globalState.sessionId = null;
 
-    console.log('[AUTH] User logged out from all devices, cleared all session state');
+    console.log('[AUTH] User logged out from this device, token cleared');
 
     // Hard refresh without reload warning
     window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now();

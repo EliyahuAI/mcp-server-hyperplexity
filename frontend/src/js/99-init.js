@@ -145,9 +145,11 @@ if (IS_PAGE_RELOAD) {
 // Fresh session - don't restore sessionId as backend will create new ones
 // sessionId gets created when user uploads file or selects demo
 
-// Restore email from localStorage if available
-const storedEmail = localStorage.getItem('validatedEmail');
-const storedToken = sessionStorage.getItem('sessionToken');
+// SECURITY: Restore auth state
+// Email in sessionStorage (cleared on tab close)
+// Token in localStorage (persists 30 days, cleared on logout)
+const storedEmail = sessionStorage.getItem('validatedEmail');
+const storedToken = localStorage.getItem('sessionToken');
 
 console.log('[AUTH] Checking for existing session...', {
     storedEmail: storedEmail ? storedEmail : 'none',
@@ -180,7 +182,7 @@ if (storedEmail && storedEmail.includes('@')) {
         if (forceReverify) {
             console.log('[AUTH] Logout detected (forceReverify flag) - skipping auto-reauth, user must re-validate');
             // Clear the stored email to force fresh validation
-            localStorage.removeItem('validatedEmail');
+            sessionStorage.removeItem('validatedEmail');
             globalState.email = null;
         } else {
             console.warn('[AUTH] Email found but no token - attempting auto-reauth');
@@ -207,9 +209,14 @@ if (storedEmail && storedEmail.includes('@')) {
                     const data = await response.json();
 
                     if (data.success && data.validated && data.session_token) {
-                        // Got new token!
-                        sessionStorage.setItem('sessionToken', data.session_token);
+                        // Got new token! (30-day expiration)
+                        localStorage.setItem('sessionToken', data.session_token);
                         globalState.sessionToken = data.session_token;
+
+                        // Sync terms acceptance from server
+                        if (data.terms_accepted_version === TERMS_VERSION) {
+                            localStorage.setItem('termsAcceptedVersion', data.terms_accepted_version);
+                        }
 
                         // Show badge
                         if (typeof showSignedInBadge === 'function') {

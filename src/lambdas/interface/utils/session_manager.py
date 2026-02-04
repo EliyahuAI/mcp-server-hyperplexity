@@ -230,7 +230,15 @@ def revoke_all_user_tokens(email: str, reason: str = "user_request") -> int:
             'ttl': int(logout_expiry.timestamp())
         })
 
-        logger.info(f"[SECURITY] Created logout marker for {email} - Reason: {reason}")
+        # Reset validated flag — user must re-verify with email code
+        validation_table = boto3.resource('dynamodb', region_name='us-east-1').Table('perplexity-validator-user-validation')
+        validation_table.update_item(
+            Key={'email': email.lower().strip()},
+            UpdateExpression="SET validated = :val",
+            ExpressionAttributeValues={':val': False}
+        )
+
+        logger.info(f"[SECURITY] Created logout marker for {email} and reset validated flag - Reason: {reason}")
         return 1  # Return count of 1 for consistency
 
     except Exception as e:
