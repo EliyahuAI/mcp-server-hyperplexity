@@ -19192,17 +19192,34 @@ function displayDemoResultsInCard(cardId, data, tableName) {
     }
 
     // Build buttons - Create Your Own requires email
-    const buttons = [
-        {
-            text: 'Download JSON',
-            icon: '📋',
+    const excelUrl = data.enhanced_download_url || data.download_url;
+    const buttons = [];
+
+    if (excelUrl) {
+        buttons.push({
+            text: 'Download Excel',
+            icon: '📥',
             variant: 'secondary',
             callback: (e) => {
                 const button = e.target.closest('button');
-                downloadJsonMetadata(data.table_metadata, button);
+                markButtonSelected(button, '📥 Downloading...');
+                window.location.href = excelUrl;
+                setTimeout(() => markButtonUnselected(button), 2000);
             }
-        },
-        {
+        });
+    }
+
+    buttons.push({
+        text: 'Download JSON',
+        icon: '📋',
+        variant: 'secondary',
+        callback: (e) => {
+            const button = e.target.closest('button');
+            downloadJsonMetadata(data.table_metadata, button);
+        }
+    });
+
+    buttons.push({
             text: 'Create Your Own Table',
             icon: '✨',
             variant: 'primary',

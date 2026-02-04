@@ -192,6 +192,9 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
                 'already_shared': True
             })
 
+        # Update table_name in metadata to use the clean display name
+        table_metadata['table_name'] = display_name
+
         # Copy table_metadata.json to demo folder
         logger.info(f"[SHARE] Copying metadata to s3://{demo_bucket}/{demo_path}table_metadata.json")
         s3_client.put_object(

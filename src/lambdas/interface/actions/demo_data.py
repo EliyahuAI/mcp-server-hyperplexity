@@ -83,7 +83,7 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
                 logger.warning(f"[DEMO_DATA] Demo table not found: {safe_table_name}")
                 return create_response(404, {
                     'success': False,
-                    'error': f'Demo table "{table_name}" not found'
+                    'error': 'Whoops - this table might never have existed, or it was deleted! Either way, it\'s not here.'
                 })
             raise
 
@@ -103,6 +103,30 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
             # Info file is optional - ignore errors
             pass
 
+        # Find Excel file in demo folder and generate presigned download URL
+        excel_download_url = None
+        try:
+            list_resp = s3_client.list_objects_v2(
+                Bucket=bucket,
+                Prefix=demo_path
+            )
+            for obj in list_resp.get('Contents', []):
+                if obj['Key'].endswith('.xlsx'):
+                    excel_filename = obj['Key'].split('/')[-1]
+                    excel_download_url = s3_client.generate_presigned_url(
+                        'get_object',
+                        Params={
+                            'Bucket': bucket,
+                            'Key': obj['Key'],
+                            'ResponseContentDisposition': f'attachment; filename="{excel_filename}"'
+                        },
+                        ExpiresIn=3600
+                    )
+                    logger.info(f"[DEMO_DATA] Found Excel file: {excel_filename}")
+                    break
+        except Exception as e:
+            logger.debug(f"[DEMO_DATA] No Excel file found: {e}")
+
         logger.info(f"[DEMO_DATA] Successfully loaded demo: {safe_table_name} ({clean_name})")
 
         return create_response(200, {
@@ -110,7 +134,8 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
             'table_metadata': table_metadata,
             'table_name': safe_table_name,
             'clean_table_name': clean_name,
-            'is_demo': True
+            'is_demo': True,
+            'enhanced_download_url': excel_download_url
         })
 
     except Exception as e:
