@@ -543,7 +543,7 @@ async function fetchAndRenderValidationTable(cardId, sessionId) {
         };
 
         // SECURITY: Prefer session token in header, fallback to email in body
-        const sessionToken = sessionStorage.getItem('sessionToken');
+        const sessionToken = localStorage.getItem('sessionToken');
         if (sessionToken) {
             requestHeaders['X-Session-Token'] = sessionToken;
             console.log('[VALIDATION] Using session token for authentication');

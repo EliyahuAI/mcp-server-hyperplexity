@@ -62,11 +62,28 @@ def handle(event, context):
 
         # Multipart form data for file uploads (heavyweight)
         if 'multipart/form-data' in content_type:
+            # SECURITY: Verify session token for file uploads (all require authentication)
+            session_manager = lazy_import('interface_lambda.utils', 'session_manager')
+            verified_email = session_manager.extract_email_from_request({}, headers)
+
+            if not verified_email:
+                logger.warning(f"[SECURITY] Unauthorized file upload attempt")
+                return create_response(401, {
+                    'success': False,
+                    'error': 'Authentication required. Please log in.',
+                    'token_revoked': True
+                })
+
+            logger.info(f"[SECURITY] Token verified for file upload: {verified_email}")
+
             # Check if this is a config generation request based on form fields
             try:
                 files, form_data = parse_multipart_form_data(
                     event.get('body', ''), content_type, event.get('isBase64Encoded', False)
                 )
+
+                # Add verified email to form_data for action handlers
+                form_data['_verified_email'] = verified_email
 
                 # Check for PDF conversion action
                 if form_data.get('action') == 'convertPdfToMarkdown':
@@ -101,14 +118,38 @@ def handle(event, context):
 
             # Route to action based on 'action' field in JSON body
             action = request_data.get('action')
-            
-            email_actions = [
+
+            # SECURITY: Define public endpoints that don't require authentication
+            public_actions = [
                 'requestEmailValidation',
                 'validateEmailCode',
                 'checkEmailValidation',
                 'checkOrSendValidation',
-                'logout'  # User-initiated logout (revokes all tokens)
+                'logout',  # User-initiated logout
+                'getDemoData',  # Public demo data
+                'getPublicDemoList',  # Public demo list
+                'checkStatus'  # Status checks can be unauthenticated
             ]
+
+            # SECURITY: Verify session token for protected endpoints
+            if action not in public_actions:
+                session_manager = lazy_import('interface_lambda.utils', 'session_manager')
+                verified_email = session_manager.extract_email_from_request(request_data, headers)
+
+                if not verified_email:
+                    logger.warning(f"[SECURITY] Unauthorized request to action: {action}")
+                    return create_response(401, {
+                        'success': False,
+                        'error': 'Authentication required. Please log in.',
+                        'token_revoked': True
+                    })
+
+                # Store verified email in request_data for action handlers to use
+                request_data['_verified_email'] = verified_email
+                logger.info(f"[SECURITY] Token verified for action '{action}': {verified_email}")
+
+            # Legacy email_actions list (kept for compatibility)
+            email_actions = public_actions[:5]  # First 5 are email-related
 
             if action == 'processExcel':
                 process_excel_unified = lazy_import('interface_lambda.actions', 'process_excel_unified')

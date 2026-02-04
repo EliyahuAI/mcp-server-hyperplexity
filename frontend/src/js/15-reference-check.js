@@ -136,7 +136,7 @@ function createReferenceCheckCard() {
 async function handlePdfUpload(cardId, file) {
     // Check if email is validated (for deferred validation mode)
     if (DEFER_EMAIL_VALIDATION && !globalState.email) {
-        const storedEmail = localStorage.getItem('validatedEmail');
+        const storedEmail = sessionStorage.getItem('validatedEmail');
         if (!storedEmail || !storedEmail.includes('@')) {
             requireEmailThen(() => handlePdfUpload(cardId, file), 'upload your PDF');
             return;
@@ -331,7 +331,7 @@ function handlePdfConversionMessage(cardId, message, filename) {
 async function startReferenceCheck(cardId) {
     // Check if email is validated (for deferred validation mode)
     if (DEFER_EMAIL_VALIDATION && !globalState.email) {
-        const storedEmail = localStorage.getItem('validatedEmail');
+        const storedEmail = sessionStorage.getItem('validatedEmail');
         if (!storedEmail || !storedEmail.includes('@')) {
             requireEmailThen(() => startReferenceCheck(cardId), 'check your references');
             return;

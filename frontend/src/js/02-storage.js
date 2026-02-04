@@ -42,7 +42,10 @@ function removeSessionId() {
 
 function saveValidatedEmail(email) {
     try {
-        localStorage.setItem('validatedEmail', email);
+        // SECURITY: Store in sessionStorage (not localStorage) to prevent attacks
+        // sessionStorage clears on browser close = natural logout
+        // localStorage persists forever = attacker can modify email and get victim's token
+        sessionStorage.setItem('validatedEmail', email);
         globalState.email = email;
     } catch (e) {
         console.error('[STORAGE] Error saving email:', e);
@@ -51,7 +54,7 @@ function saveValidatedEmail(email) {
 
 function getValidatedEmail() {
     try {
-        return localStorage.getItem('validatedEmail');
+        return sessionStorage.getItem('validatedEmail');
     } catch (e) {
         console.error('[STORAGE] Error getting email:', e);
         return null;
@@ -60,7 +63,7 @@ function getValidatedEmail() {
 
 function removeValidatedEmail() {
     try {
-        localStorage.removeItem('validatedEmail');
+        sessionStorage.removeItem('validatedEmail');
         globalState.email = '';
     } catch (e) {
         console.error('[STORAGE] Error removing email:', e);

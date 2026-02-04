@@ -849,7 +849,7 @@ function getCurrentUserEmail() {
     }
 
     // Try stored email
-    const storedEmail = localStorage.getItem('validatedEmail');
+    const storedEmail = sessionStorage.getItem('validatedEmail');
     if (storedEmail && storedEmail.includes('@')) {
         return storedEmail;
     }

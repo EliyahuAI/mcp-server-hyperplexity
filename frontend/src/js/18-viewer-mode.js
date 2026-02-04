@@ -77,8 +77,8 @@ async function loadAndDisplayResults(params) {
                 table_name: params.path.split('/').pop().replace('.json', '')
             };
         } else {
-            // SECURITY: Get session token from sessionStorage
-            const sessionToken = sessionStorage.getItem('sessionToken');
+            // SECURITY: Get session token from localStorage (30-day expiration)
+            const sessionToken = localStorage.getItem('sessionToken');
 
             // Fetch metadata from API
             const requestHeaders = { 'Content-Type': 'application/json' };
@@ -110,8 +110,8 @@ async function loadAndDisplayResults(params) {
                 console.error('[SECURITY] Token revoked by server - clearing session');
 
                 // Clear session data
-                sessionStorage.removeItem('sessionToken');
-                localStorage.removeItem('validatedEmail');
+                localStorage.removeItem('sessionToken');
+                sessionStorage.removeItem('validatedEmail');
                 globalState.sessionToken = null;
                 globalState.email = null;
 

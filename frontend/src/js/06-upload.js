@@ -763,8 +763,8 @@ async function selectDemo(cardId, demoName, buttonElement) {
     try {
 // Make sure we have email (sessionId will be created/updated by backend)
 if (!globalState.email) {
-    // Try to get email from localStorage if not in globalState
-    const storedEmail = localStorage.getItem('validatedEmail');
+    // Try to get email from sessionStorage if not in globalState
+    const storedEmail = sessionStorage.getItem('validatedEmail');
     if (storedEmail && storedEmail.includes('@')) {
         globalState.email = storedEmail;
     } else {
@@ -800,7 +800,7 @@ if (!result.success) {
     if (errorMsg.toLowerCase().includes('session') && (errorMsg.toLowerCase().includes('expired') || errorMsg.toLowerCase().includes('invalid'))) {
         // Clear stale session data
         localStorage.removeItem('sessionId');
-        localStorage.removeItem('validatedEmail');
+        sessionStorage.removeItem('validatedEmail');
         globalState.sessionId = null;
         globalState.email = '';
         throw new Error('Session expired - please refresh the page');

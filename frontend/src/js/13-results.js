@@ -337,7 +337,7 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
         };
 
         // SECURITY: Prefer session token in header, fallback to email in body
-        const sessionToken = sessionStorage.getItem('sessionToken');
+        const sessionToken = localStorage.getItem('sessionToken');
         if (sessionToken) {
             requestHeaders['X-Session-Token'] = sessionToken;
             console.log('[PREVIEW] Using session token for authentication');
@@ -360,8 +360,8 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
             console.error('[SECURITY] Token revoked by server - clearing session');
 
             // Clear session data
-            sessionStorage.removeItem('sessionToken');
-            localStorage.removeItem('validatedEmail');
+            localStorage.removeItem('sessionToken');
+            sessionStorage.removeItem('validatedEmail');
             if (typeof globalState !== 'undefined') {
                 globalState.sessionToken = null;
                 globalState.email = null;

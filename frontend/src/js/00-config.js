@@ -251,7 +251,7 @@ function ensureProcessingState() {
  */
 function requireEmailThen(action, description = 'continue') {
     // If email already validated, execute immediately
-    const storedEmail = localStorage.getItem('validatedEmail');
+    const storedEmail = sessionStorage.getItem('validatedEmail');
     if (globalState.email || (storedEmail && storedEmail.includes('@'))) {
         if (!globalState.email && storedEmail) {
             globalState.email = storedEmail;
