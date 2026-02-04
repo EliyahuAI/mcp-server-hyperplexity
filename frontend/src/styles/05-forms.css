@@ -67,6 +67,32 @@
         text-decoration: underline;
     }
 
+    /* Code Digit Inputs */
+    .code-inputs {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: center;
+        margin: 0.5rem 0 1rem;
+    }
+
+    .code-digit {
+        width: 3rem;
+        height: 3.5rem;
+        text-align: center;
+        font-size: 1.5rem;
+        font-weight: 600;
+        border: 2px solid #bbb;
+        border-radius: var(--border-radius);
+        font-family: var(--font-family);
+        transition: var(--transition);
+    }
+
+    .code-digit:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+    }
+
     /* File Upload */
     .drop-zone {
         border: 2px dashed #ddd;

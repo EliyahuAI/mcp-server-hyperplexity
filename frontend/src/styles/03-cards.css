@@ -888,6 +888,19 @@
     transition: border-color 0.18s ease;
 }
 
+.card-signed-in-indicator.flash-in {
+    animation: badge-flash 1.5s ease;
+}
+
+@keyframes badge-flash {
+    0%   { background: linear-gradient(180deg, rgba(40, 255, 58, 0.5), rgba(40, 255, 58, 0.25));
+           border-color: rgba(40, 255, 58, 0.6);
+           box-shadow: 0 0 12px rgba(40, 255, 58, 0.35); }
+    100% { background: linear-gradient(180deg, rgba(40, 255, 58, 0.12), rgba(40, 255, 58, 0.04));
+           border-color: rgba(40, 255, 58, 0.25);
+           box-shadow: none; }
+}
+
 .card-signed-in-indicator:hover {
     border-color: rgba(40, 255, 58, 0.45);
 }

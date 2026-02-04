@@ -692,6 +692,8 @@ try {
             type: card.dataset.cardType || 'unknown',
             title: title,
             content: content,
+            iconHtml: card.querySelector('.card-icon')?.innerHTML || '',
+            subtitle: card.querySelector('.card-subtitle')?.textContent || '',
             isCompleted: card.classList.contains('completed'),
             isProcessing: card.querySelector('.thinking-indicator') !== null
         };
@@ -785,10 +787,16 @@ try {
                     cardElement.classList.add('completed');
                 }
 
-                // Set card content
+                // Set card content (including icon and subtitle if saved)
+                const iconDiv = cardData.iconHtml ? `<div class="card-icon">${cardData.iconHtml}</div>` : '';
+                const subtitleP = cardData.subtitle ? `<p class="card-subtitle">${cardData.subtitle}</p>` : '';
                 cardElement.innerHTML = `
                     <div class="card-header">
-                        <h3 class="card-title">${cardData.title || 'Untitled'}</h3>
+                        ${iconDiv}
+                        <div>
+                            <h2 class="card-title">${cardData.title || 'Untitled'}</h2>
+                            ${subtitleP}
+                        </div>
                     </div>
                     <div class="card-content">${cardData.content || ''}</div>
                 `;
@@ -1665,7 +1673,10 @@ if (!document.hidden) {
         // - Initial restore decision was already made (page just loaded)
         // - Already have valuable data displayed
         // - User is in the middle of resetting
-        if (IS_PAGE_RELOAD || window.initialRestoreDecisionMade || hasValuableData() || window.isResetting) {
+        // - Cards are already present in the DOM (user just alt-tabbed, not navigated away)
+        const existingCards = document.querySelectorAll('[id^="card-"]');
+        const hasVisibleCards = Array.from(existingCards).some(c => /^card-\d+$/.test(c.id));
+        if (IS_PAGE_RELOAD || window.initialRestoreDecisionMade || hasValuableData() || window.isResetting || hasVisibleCards) {
             // Clear the flag after first visibility change to allow future back/forward restoration
             window.initialRestoreDecisionMade = false;
             if (IS_PAGE_RELOAD) {

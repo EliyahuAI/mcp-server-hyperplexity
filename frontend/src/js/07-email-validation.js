@@ -9,6 +9,9 @@
  *               03-utility.js, 04-cards.js
  * ======================================== */
 
+// Bump this to require users to re-accept updated terms
+const TERMS_VERSION = "1";
+
 /**
  * Creates an email validation card
  * @param {Object} options - Card options
@@ -24,16 +27,9 @@ function createEmailValidationCard(options = {}) {
     const subtitle = options.subtitle || "Verify your email to continue";
     const infoHeaderText = options.infoHeaderText || 'Enter your email address to access this feature. We\'ll send you a verification code.';
 
-    const cardHTML = `
-        <div id="${cardId}-form">
-            <div class="form-row">
-                <div class="form-group">
-                    <label class="form-label" for="${cardId}-email">Email Address</label>
-                    <input type="email" id="${cardId}-email" class="form-input"
-                        placeholder="your.email@example.com" required>
-                </div>
-            </div>
-            <div id="${cardId}-code-section" style="display: none;">
+    const termsAlreadyAccepted = localStorage.getItem('termsAcceptedVersion') === TERMS_VERSION;
+
+    const termsHTML = termsAlreadyAccepted ? '' : `
                 <div class="privacy-checkbox">
                     <input type="checkbox" id="${cardId}-terms" required>
                     <label for="${cardId}-terms">
@@ -45,12 +41,28 @@ function createEmailValidationCard(options = {}) {
                     <label for="${cardId}-privacy">
                         I accept the <a href="https://eliyahu.ai/privacy" target="_blank" style="color: var(--primary-color); text-decoration: underline;">Privacy Notice</a>
                     </label>
+                </div>`;
+
+    const cardHTML = `
+        <div id="${cardId}-form">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="${cardId}-email">Email Address</label>
+                    <input type="email" id="${cardId}-email" class="form-input"
+                        placeholder="your.email@example.com" required>
                 </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label" for="${cardId}-code">Verification Code</label>
-                        <input type="text" id="${cardId}-code" class="form-input"
-                            placeholder="Enter 6-digit code" maxlength="6">
+            </div>
+            <div id="${cardId}-code-section" style="display: none;">
+                ${termsHTML}
+                <div class="form-group">
+                    <label class="form-label">Verification Code</label>
+                    <div class="code-inputs" id="${cardId}-code-inputs">
+                        <input type="text" class="code-digit" data-index="0" maxlength="1" inputmode="numeric" autocomplete="one-time-code">
+                        <input type="text" class="code-digit" data-index="1" maxlength="1" inputmode="numeric">
+                        <input type="text" class="code-digit" data-index="2" maxlength="1" inputmode="numeric">
+                        <input type="text" class="code-digit" data-index="3" maxlength="1" inputmode="numeric">
+                        <input type="text" class="code-digit" data-index="4" maxlength="1" inputmode="numeric">
+                        <input type="text" class="code-digit" data-index="5" maxlength="1" inputmode="numeric">
                     </div>
                 </div>
             </div>
@@ -135,7 +147,9 @@ async function sendEmailCode(cardId, button) {
                 // Code was sent, show verification form
                 document.getElementById(`${cardId}-code-section`).style.display = 'block';
                 showMessage(`${cardId}-messages`, 'Validation code sent to your email!', 'success');
-                document.getElementById(`${cardId}-code`).focus();
+                setupCodeDigitInputs(cardId);
+                const firstDigit = document.querySelector(`#${cardId}-code-inputs .code-digit[data-index="0"]`);
+                if (firstDigit) firstDigit.focus();
 
                 // Update button to verify code
                 markButtonSelected(button, '✓ Code Sent');
@@ -164,25 +178,31 @@ async function sendEmailCode(cardId, button) {
 }
 
 async function verifyCode(cardId, button) {
-    const code = document.getElementById(`${cardId}-code`).value.trim();
-    const termsCheckbox = document.getElementById(`${cardId}-terms`);
-    const privacyCheckbox = document.getElementById(`${cardId}-privacy`);
+    // Collect code from 6 individual digit boxes
+    const digits = document.querySelectorAll(`#${cardId}-code-inputs .code-digit`);
+    const code = Array.from(digits).map(d => d.value.trim()).join('');
 
     // Validate code first
     if (code.length !== 6) {
         showMessage(`${cardId}-messages`, 'Please enter a 6-digit code', 'error');
-        throw new Error('Invalid code');
+        return;
     }
 
-    // Validate checkboxes
-    if (!termsCheckbox.checked) {
-        showMessage(`${cardId}-messages`, 'Please agree to the Terms and Conditions to continue', 'error');
-        throw new Error('Terms not accepted');
-    }
+    // Validate checkboxes only if they are present (not already accepted)
+    const termsAlreadyAccepted = localStorage.getItem('termsAcceptedVersion') === TERMS_VERSION;
+    if (!termsAlreadyAccepted) {
+        const termsCheckbox = document.getElementById(`${cardId}-terms`);
+        const privacyCheckbox = document.getElementById(`${cardId}-privacy`);
 
-    if (!privacyCheckbox.checked) {
-        showMessage(`${cardId}-messages`, 'Please accept the Privacy Notice to continue', 'error');
-        throw new Error('Privacy not accepted');
+        if (!termsCheckbox.checked) {
+            showMessage(`${cardId}-messages`, 'Please agree to the Terms and Conditions to continue', 'error');
+            return;
+        }
+
+        if (!privacyCheckbox.checked) {
+            showMessage(`${cardId}-messages`, 'Please accept the Privacy Notice to continue', 'error');
+            return;
+        }
     }
 
     try {
@@ -204,18 +224,73 @@ async function verifyCode(cardId, button) {
                 sessionStorage.setItem('sessionToken', data.session_token);
                 globalState.sessionToken = data.session_token;
             }
+            // Persist terms acceptance so checkboxes won't show next time
+            localStorage.setItem('termsAcceptedVersion', TERMS_VERSION);
             markButtonSelected(button, '✓ Verified');
             // ALWAYS TREAT AS NEW USER FOR NOW
             globalState.isNewUser = true; // Override - show demo to everyone
             handleEmailValidated(cardId);
         } else {
-            showMessage(`${cardId}-messages`, data.message || 'Invalid code', 'error');
-            throw new Error('Invalid code');
+            showMessage(`${cardId}-messages`, data.message || 'Invalid code. Please try again.', 'error');
+            clearCodeDigits(cardId);
         }
     } catch (error) {
         console.error('Code verification error:', error);
-        throw error;
+        showMessage(`${cardId}-messages`, 'Network error. Please try again.', 'error');
+        clearCodeDigits(cardId);
     }
+}
+
+function clearCodeDigits(cardId) {
+    const digits = document.querySelectorAll(`#${cardId}-code-inputs .code-digit`);
+    digits.forEach(d => d.value = '');
+    if (digits.length > 0) digits[0].focus();
+}
+
+function setupCodeDigitInputs(cardId) {
+    const container = document.getElementById(`${cardId}-code-inputs`);
+    if (!container) return;
+    const digits = container.querySelectorAll('.code-digit');
+
+    digits.forEach((input, idx) => {
+        // Auto-advance on digit entry
+        input.addEventListener('input', (e) => {
+            const val = e.target.value;
+            // Allow only single digit
+            if (val && !/^\d$/.test(val)) {
+                e.target.value = '';
+                return;
+            }
+            if (val && idx < 5) {
+                digits[idx + 1].focus();
+            }
+        });
+
+        // Backspace navigates to previous box; Enter submits
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Backspace' && !input.value && idx > 0) {
+                digits[idx - 1].focus();
+                digits[idx - 1].value = '';
+            }
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const verifyBtn = document.querySelector(`#${cardId}-buttons .std-button.primary`);
+                if (verifyBtn && !verifyBtn.disabled) verifyBtn.click();
+            }
+        });
+
+        // Paste handler: distribute digits across all boxes
+        input.addEventListener('paste', (e) => {
+            e.preventDefault();
+            const pasted = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, 6);
+            for (let i = 0; i < 6; i++) {
+                digits[i].value = pasted[i] || '';
+            }
+            // Focus last filled box or the next empty one
+            const focusIdx = Math.min(pasted.length, 5);
+            digits[focusIdx].focus();
+        });
+    });
 }
 
 function handleEmailValidated(cardId) {
@@ -238,22 +313,9 @@ function handleEmailValidated(cardId) {
 
         console.log(`[EMAIL] Email validated, executing pending action: ${description}`);
 
-        // Hide email form (showFinalCardState doesn't hide ${cardId}-form)
-        const formEl = document.getElementById(`${cardId}-form`);
-        if (formEl) formEl.style.display = 'none';
-
-        // Update status badge to show validated
+        // Hide the entire email verification card
         const card = document.getElementById(cardId);
-        if (card) {
-            const statusBadge = card.querySelector('.status-badge');
-            if (statusBadge) {
-                statusBadge.className = 'status-badge completed';
-                statusBadge.innerHTML = '<span>Validated</span>';
-            }
-        }
-
-        // Show success message briefly
-        showFinalCardState(cardId, `Email verified! Now ${description}...`, 'success');
+        if (card) card.style.display = 'none';
 
         // Execute pending action after brief delay
         setTimeout(() => {
@@ -263,32 +325,9 @@ function handleEmailValidated(cardId) {
         return;
     }
 
-    // Hide email form
-    const formElement = document.getElementById(`${cardId}-form`);
-    if (formElement) {
-        formElement.style.display = 'none';
-    }
-
-    // Show completion message
-    showFinalCardState(cardId, 'Email validated! ✓', 'success');
-
-    // Update status badge
+    // Hide the entire email verification card
     const card = document.getElementById(cardId);
-    if (card) {
-        const statusBadge = card.querySelector('.status-badge');
-        if (statusBadge) {
-            statusBadge.className = 'status-badge completed';
-            statusBadge.innerHTML = '<span>Validated</span>';
-        }
-    } else {
-        console.error(`Card element ${cardId} not found`);
-    }
-
-    // Hide the validate email button
-    const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-    if (buttonsContainer) {
-        buttonsContainer.style.display = 'none';
-    }
+    if (card) card.style.display = 'none';
 
     // Check page type to determine next card
     const pageType = detectPageType();
@@ -347,6 +386,10 @@ function showSignedInBadge(email) {
     } else {
         firstCard.appendChild(indicator);
     }
+
+    // Brief flash to draw attention
+    indicator.classList.add('flash-in');
+    indicator.addEventListener('animationend', () => indicator.classList.remove('flash-in'), { once: true });
 
     console.log('[AUTH] Signed-in indicator attached to first card');
 }
