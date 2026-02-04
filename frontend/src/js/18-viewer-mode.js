@@ -610,7 +610,7 @@ function displayDemoResultsInCard(cardId, data, tableName) {
             variant: 'secondary',
             callback: (e) => {
                 const button = e.target.closest('button');
-                markButtonSelected(button, '📥 Downloading...');
+                markButtonSelected(button, '📥 Downloaded!');
                 window.location.href = excelUrl;
                 setTimeout(() => markButtonUnselected(button), 2000);
             }
@@ -620,7 +620,7 @@ function displayDemoResultsInCard(cardId, data, tableName) {
     buttons.push({
         text: 'Download JSON (for AI)',
         icon: '📋',
-        variant: 'secondary',
+        variant: 'quaternary',
         callback: (e) => {
             const button = e.target.closest('button');
             downloadJsonMetadata(data.table_metadata, button);
