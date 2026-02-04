@@ -19225,24 +19225,23 @@ function displayDemoResultsInCard(cardId, data, tableName) {
     });
 
     buttons.push({
-            text: isReferenceCheckDemo ? 'Validate New Text' : 'Create Your Own Table',
-            icon: isReferenceCheckDemo ? '🔍' : '✨',
-            variant: 'primary',
-            callback: () => {
-                if (isReferenceCheckDemo && typeof createReferenceCheckCard === 'function') {
-                    // Kick into reference check mode
-                    requireEmailThen(() => {
-                        createReferenceCheckCard();
-                    }, 'validate text');
-                } else if (typeof createUploadOrDemoCard === 'function') {
-                    createUploadOrDemoCard();
-                } else {
-                    // Fallback: redirect to main app
-                    window.location.href = window.location.pathname;
-                }
+        text: isReferenceCheckDemo ? 'Validate New Text' : 'Create Your Own Table',
+        icon: isReferenceCheckDemo ? '🔍' : '✨',
+        variant: 'primary',
+        callback: () => {
+            if (isReferenceCheckDemo && typeof createReferenceCheckCard === 'function') {
+                // Kick into reference check mode
+                requireEmailThen(() => {
+                    createReferenceCheckCard();
+                }, 'validate text');
+            } else if (typeof createUploadOrDemoCard === 'function') {
+                createUploadOrDemoCard();
+            } else {
+                // Fallback: redirect to main app
+                window.location.href = window.location.pathname;
             }
         }
-    ];
+    });
 
     createButtonRow(`${cardId}-buttons`, buttons);
 }
