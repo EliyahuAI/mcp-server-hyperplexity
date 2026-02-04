@@ -320,6 +320,8 @@ function handleEmailValidated(cardId) {
         // Execute pending action after brief delay
         setTimeout(() => {
             pendingAction();
+            // Re-attach badge to the new visible card
+            showSignedInBadge(globalState.email);
         }, 500);
 
         return;
@@ -343,6 +345,8 @@ function handleEmailValidated(cardId) {
             // Default mode - show upload card for returning users
             createUploadCard();
         }
+        // Re-attach badge to the new visible card
+        showSignedInBadge(globalState.email);
     }, 500);
 }
 
@@ -352,11 +356,12 @@ function handleEmailValidated(cardId) {
  * ======================================== */
 
 function showSignedInBadge(email) {
-    // Find the first card
-    const firstCard = document.querySelector('.card');
+    // Find the first visible card
+    const allCards = document.querySelectorAll('.card');
+    const firstCard = Array.from(allCards).find(c => c.style.display !== 'none');
     if (!firstCard) {
-        // Card doesn't exist yet, retry after a short delay
-        console.log('[AUTH] Waiting for first card to appear...');
+        // No visible card yet, retry after a short delay
+        console.log('[AUTH] Waiting for visible card to appear...');
         setTimeout(() => showSignedInBadge(email), 200);
         return;
     }

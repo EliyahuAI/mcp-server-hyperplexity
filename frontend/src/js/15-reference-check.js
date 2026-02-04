@@ -134,6 +134,16 @@ function createReferenceCheckCard() {
 
 // Handle PDF upload (async with WebSocket)
 async function handlePdfUpload(cardId, file) {
+    // Check if email is validated (for deferred validation mode)
+    if (DEFER_EMAIL_VALIDATION && !globalState.email) {
+        const storedEmail = localStorage.getItem('validatedEmail');
+        if (!storedEmail || !storedEmail.includes('@')) {
+            requireEmailThen(() => handlePdfUpload(cardId, file), 'upload your PDF');
+            return;
+        }
+        globalState.email = storedEmail;
+    }
+
     const messagesDiv = document.getElementById(`${cardId}-messages`);
 
     try {
