@@ -466,7 +466,6 @@ async function handleLogout() {
 
     // Clear all auth data from this device
     localStorage.removeItem('sessionToken');
-    localStorage.removeItem('termsAcceptedVersion');
     sessionStorage.removeItem('validatedEmail');
 
     // Clear all session storage (including saved state)
