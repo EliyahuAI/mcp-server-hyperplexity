@@ -1,0 +1,18 @@
+{
+  "CORSRules": [
+    {
+      "AllowedHeaders": ["*"],
+      "AllowedMethods": ["GET", "HEAD", "PUT", "POST"],
+      "AllowedOrigins": [
+        "https://hyperplexity.ai",
+        "https://www.hyperplexity.ai",
+        "https://eliyahu.ai",
+        "https://www.eliyahu.ai",
+        "http://localhost:8000",
+        "http://localhost:3000"
+      ],
+      "ExposeHeaders": ["ETag", "x-amz-request-id", "x-amz-id-2"],
+      "MaxAgeSeconds": 3000
+    }
+  ]
+}

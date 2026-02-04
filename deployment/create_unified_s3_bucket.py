@@ -262,7 +262,7 @@ def create_unified_s3_bucket(bucket_name='hyperplexity-storage'):
         print("Enabled bucket versioning")
         
         # SECURITY: Configure CORS with specific allowed origins (no wildcard)
-        # Replace these with your actual production domains
+        # Supports both downloads and presigned URL uploads (e.g., PDF uploads)
         cors_config = {
             'CORSRules': [
                 {
@@ -270,6 +270,8 @@ def create_unified_s3_bucket(bucket_name='hyperplexity-storage'):
                     'AllowedHeaders': ['Content-Type', 'Authorization', 'X-Session-Token'],
                     'AllowedMethods': ['GET', 'HEAD'],  # Only read operations for downloads
                     'AllowedOrigins': [
+                        'https://hyperplexity.ai',  # Production domain
+                        'https://www.hyperplexity.ai',
                         'https://eliyahu.ai',  # Production domain
                         'https://www.eliyahu.ai',
                         'http://localhost:8000',  # Local development only
@@ -280,14 +282,17 @@ def create_unified_s3_bucket(bucket_name='hyperplexity-storage'):
                 },
                 {
                     'ID': 'UploadRule',
-                    'AllowedHeaders': ['Content-Type', 'Authorization', 'X-Session-Token'],
+                    'AllowedHeaders': ['*'],  # Allow all headers for presigned URL uploads (includes x-amz-meta-*, x-amz-security-token, etc.)
                     'AllowedMethods': ['PUT', 'POST'],  # Write operations
                     'AllowedOrigins': [
+                        'https://hyperplexity.ai',
+                        'https://www.hyperplexity.ai',
                         'https://eliyahu.ai',
                         'https://www.eliyahu.ai',
                         'http://localhost:8000',
                         'http://localhost:3000'
                     ],
+                    'ExposeHeaders': ['ETag'],  # Expose ETag for upload confirmation
                     'MaxAgeSeconds': 600
                 }
             ]
