@@ -15,8 +15,8 @@ This document contains shared guidelines used by both new config creation and re
 - **Recommended QC Approach**: `deepseek-v3.2` is ultra-low cost with excellent quality. Use `the-clone` for QC only when you need additional web research capability (not as first approach).
 
 ## Importance Level Guidelines
-- **ID**: These define the rows - at least one column must be assigned 'ID', usually it is one or more columns to the left of the table.  Getting these right is critical as these define the row information and the stability of the analysis.  An Index is not enough.
-- **RESEARCH**: ANy column requiring research that we can help with
+- **ID**: These define the rows - **AT LEAST ONE COLUMN MUST BE ASSIGNED 'ID'** (MANDATORY), usually the first/primary identifier column(s) to the left of the table. Getting these right is critical as these define the row information and the stability of the analysis. An Index alone is not enough - use meaningful identifiers. **⚠️ NEVER convert ALL ID columns to RESEARCH - at least one must remain ID.**
+- **RESEARCH**: Any column requiring research that we can help with
 - **IGNORED**: Indices, metadata, internal fields, timestamps, calculated/formula columns that are dependent on other columns and need calculation not AI approximation. 
 
 ## Search Group Strategy
@@ -149,7 +149,7 @@ Search groups are **REQUIRED** for every configuration - they are essential for 
 **MANDATORY REQUIREMENTS:**
 - **You MUST define at least two search groups** in the `search_groups` array (Group 0/ID Group and another)
 - **Every validation target MUST be assigned to a search group** via the `search_group` field (except those with IGNORED importance)
-- **Group 0**: Always ID/identifier fields (not validated, used for context), you must provide an ID group and assign at least one validation target to this. Note - these usually come from the left-most column(s). No validated columns in this group!
+- **Group 0**: Always ID/identifier fields (not validated, used for context). **⚠️ MANDATORY: You MUST assign at least one column with `importance: "ID"` to Group 0** - this is required for row identification during validation. Note - these usually come from the left-most column(s). No validated columns in this group!
 - **Group 1+**: Columns whose information appears together in typical sources
 - **Target Number of Groups**: Shoot for number of validation columns ceil((non-ID or IGNORED)/2)
 - **Upper limit**: Maximum 10

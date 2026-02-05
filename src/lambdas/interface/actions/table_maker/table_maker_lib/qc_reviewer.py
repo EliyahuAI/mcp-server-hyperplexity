@@ -410,17 +410,51 @@ class QCReviewer:
                 minimum_guarantee_applied = True
                 logger.info(f"[MIN_GUARANTEE] Promoted {promoted_count} rejected rows to meet minimum of {min_row_count}")
 
-            # Sort approved rows by priority tier, then by qc_score within each tier
-            # Priority order: promote > none > demote
-            priority_order = {'promote': 0, 'none': 1, 'demote': 2}
+            # Check if QC provided explicit keep list with ordering
+            keep_row_ids_in_order = ai_response.get('keep_row_ids_in_order', None)
 
-            approved_rows_sorted = sorted(
-                approved_rows,
-                key=lambda x: (
-                    priority_order.get(x.get('priority_adjustment', 'none'), 1),
-                    -x.get('qc_score', 0)  # Negative for descending
-                ),
-            )
+            if keep_row_ids_in_order and isinstance(keep_row_ids_in_order, list) and len(keep_row_ids_in_order) > 0:
+                # Use QC's explicit keep list - this handles BOTH filtering AND ordering
+                logger.info(f"[QC_ORDER] Using QC's keep_row_ids_in_order ({len(keep_row_ids_in_order)} rows to keep)")
+
+                # Create a mapping of row_id to row for fast lookup
+                all_rows_by_id = {}
+                for row in merged_rows:
+                    row_id = row.get('row_id', '')
+                    all_rows_by_id[row_id] = row
+                    # Also map by just the entity name part (after the number prefix)
+                    if '-' in row_id:
+                        entity_name = row_id.split('-', 1)[1]
+                        all_rows_by_id[entity_name] = row
+
+                # Build ordered list of rows to keep
+                approved_rows_sorted = []
+                seen_ids = set()
+                for keep_id in keep_row_ids_in_order:
+                    if keep_id in all_rows_by_id and keep_id not in seen_ids:
+                        row = all_rows_by_id[keep_id]
+                        row['keep'] = True  # Mark as kept
+                        approved_rows_sorted.append(row)
+                        seen_ids.add(keep_id)
+                        # Also mark the full row_id as seen if we matched by entity name
+                        seen_ids.add(row.get('row_id', ''))
+                    else:
+                        if keep_id not in seen_ids:
+                            logger.warning(f"[QC_ORDER] Row '{keep_id}' in keep list but not found in merged rows")
+
+                # Log removal reasons if provided
+                removal_reasons = ai_response.get('removal_reasons', {})
+                if removal_reasons:
+                    for row_id, reason in removal_reasons.items():
+                        logger.info(f"[QC_REMOVED] {row_id}: {reason}")
+
+                # Update approved_rows to only include kept rows
+                approved_rows = approved_rows_sorted
+
+            else:
+                # No explicit keep list - keep all approved rows in original order
+                logger.info(f"[QC_ORDER] No keep_row_ids_in_order, keeping all {len(approved_rows)} approved rows in original order")
+                approved_rows_sorted = approved_rows  # Keep original order
 
             # Apply max_rows limit
             final_approved = approved_rows_sorted[:max_rows]
@@ -624,8 +658,9 @@ class QCReviewer:
         elif action == 'filter':
             if response.get('overall_score') is None:
                 raise ValueError("overall_score required for filter action")
-            if not response.get('remove_row_ids'):
-                raise ValueError("remove_row_ids required for filter action (must specify rows to remove)")
+            # New format uses keep_row_ids_in_order, old format used remove_row_ids
+            if not response.get('keep_row_ids_in_order') and not response.get('remove_row_ids'):
+                raise ValueError("keep_row_ids_in_order required for filter action (must specify rows to keep in order)")
 
         elif action == 'retrigger_discovery':
             if response.get('overall_score') is None:
@@ -1112,47 +1147,89 @@ class QCReviewer:
             # Also store by just the first_id_value for flexible matching
             row_id_to_row[first_id_value] = row
 
-        # Get removed row_ids (new format)
+        # Check for new format (keep_row_ids_in_order) vs old format (remove_row_ids)
+        keep_row_ids_in_order = simplified.get('keep_row_ids_in_order', None)
         remove_row_ids = simplified.get('remove_row_ids', []) or []
+        removal_reasons = simplified.get('removal_reasons', {}) or {}
 
-        # Build set of row_ids to remove
-        removed_row_ids = set()
-        rejected_rows = []
-        for item in remove_row_ids:
-            row_id = item.get('row_id', '') if isinstance(item, dict) else str(item)
-            reason = item.get('reason', 'No reason provided') if isinstance(item, dict) else 'Removed by QC'
-            removed_row_ids.add(row_id)
-            rejected_rows.append({
-                'row_id': row_id,
-                'rejection_reason': reason
-            })
-
-        # All discovered rows are KEPT BY DEFAULT, except those in remove_row_ids
-        reviewed_rows = []
+        # Build row_id mapping for discovered rows
+        row_id_map = {}
         for idx, row in enumerate(discovered_rows, 1):
             id_vals = row.get('id_values', {})
-            # Fix: Check for non-empty dict to avoid IndexError on empty {}
             first_id_value = list(id_vals.values())[0] if id_vals and len(id_vals) > 0 else 'Unknown'
             row_id = f"{idx}-{first_id_value}"
+            row_id_map[row_id] = (idx, row, first_id_value)
+            row_id_map[first_id_value] = (idx, row, first_id_value)
+            row_id_map[str(idx)] = (idx, row, first_id_value)
 
-            # Check if this row should be removed
-            should_remove = (
-                row_id in removed_row_ids or
-                first_id_value in removed_row_ids or
-                str(idx) in removed_row_ids
-            )
+        reviewed_rows = []
+        rejected_rows = []
 
-            if not should_remove:
-                row_score = row.get('match_score', 0.7)
-                reviewed_rows.append({
+        if keep_row_ids_in_order and isinstance(keep_row_ids_in_order, list):
+            # NEW FORMAT: keep_row_ids_in_order specifies which rows to keep AND their order
+            kept_ids = set()
+            for keep_id in keep_row_ids_in_order:
+                if keep_id in row_id_map:
+                    idx, row, first_id_value = row_id_map[keep_id]
+                    row_id = f"{idx}-{first_id_value}"
+                    if row_id not in kept_ids:
+                        row_score = row.get('match_score', 0.7)
+                        reviewed_rows.append({
+                            'row_id': row_id,
+                            'row_score': row_score,
+                            'qc_score': overall_score if overall_score is not None else row_score,
+                            'qc_rationale': '',
+                            'keep': True,
+                            'priority_adjustment': 'none'
+                        })
+                        kept_ids.add(row_id)
+
+            # Build rejected rows from those not in keep list
+            for idx, row in enumerate(discovered_rows, 1):
+                id_vals = row.get('id_values', {})
+                first_id_value = list(id_vals.values())[0] if id_vals and len(id_vals) > 0 else 'Unknown'
+                row_id = f"{idx}-{first_id_value}"
+                if row_id not in kept_ids:
+                    reason = removal_reasons.get(row_id, removal_reasons.get(first_id_value, 'Removed by QC'))
+                    rejected_rows.append({
+                        'row_id': row_id,
+                        'rejection_reason': reason
+                    })
+
+        else:
+            # OLD FORMAT: remove_row_ids specifies rows to remove (kept for backward compatibility)
+            removed_row_ids = set()
+            for item in remove_row_ids:
+                row_id = item.get('row_id', '') if isinstance(item, dict) else str(item)
+                reason = item.get('reason', 'No reason provided') if isinstance(item, dict) else 'Removed by QC'
+                removed_row_ids.add(row_id)
+                rejected_rows.append({
                     'row_id': row_id,
-                    'row_score': row_score,
-                    # Fix: Use 'is not None' to handle 0.0 as valid score
-                    'qc_score': overall_score if overall_score is not None else row_score,
-                    'qc_rationale': '',  # Default kept - no explanation needed
-                    'keep': True,
-                    'priority_adjustment': 'none'
+                    'rejection_reason': reason
                 })
+
+            # All rows kept except those in remove_row_ids
+            for idx, row in enumerate(discovered_rows, 1):
+                id_vals = row.get('id_values', {})
+                first_id_value = list(id_vals.values())[0] if id_vals and len(id_vals) > 0 else 'Unknown'
+                row_id = f"{idx}-{first_id_value}"
+
+                should_remove = (
+                    row_id in removed_row_ids or
+                    first_id_value in removed_row_ids or
+                    str(idx) in removed_row_ids
+                )
+
+                if not should_remove:
+                    row_score = row.get('match_score', 0.7)
+                    reviewed_rows.append({
+                        'row_id': row_id,
+                        'row_score': row_score,
+                        'qc_score': overall_score if overall_score is not None else row_score,
+                        'qc_rationale': '',
+                        'keep': True,
+                        'priority_adjustment': 'none'
+                    })
 
         # Build qc_summary
         kept_count = len(reviewed_rows)
@@ -1176,10 +1253,18 @@ class QCReviewer:
             'qc_summary': qc_summary
         }
 
+        # Preserve keep_row_ids_in_order if provided (for explicit row filtering and ordering)
+        if keep_row_ids_in_order and isinstance(keep_row_ids_in_order, list):
+            old_format['keep_row_ids_in_order'] = keep_row_ids_in_order
+            logger.info(f"[QC] Preserving keep_row_ids_in_order with {len(keep_row_ids_in_order)} entries")
+
         # Preserve action-specific fields required by _validate_qc_response
         if action == 'filter':
-            # filter action requires remove_row_ids
-            old_format['remove_row_ids'] = remove_row_ids
+            # filter action uses keep_row_ids_in_order (new) or remove_row_ids (legacy)
+            if keep_row_ids_in_order:
+                old_format['keep_row_ids_in_order'] = keep_row_ids_in_order
+            else:
+                old_format['remove_row_ids'] = remove_row_ids
 
         # Handle retrigger_discovery action
         if action == 'retrigger_discovery':

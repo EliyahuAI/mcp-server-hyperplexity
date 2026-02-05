@@ -7,21 +7,27 @@
       "enum": ["pass", "filter", "retrigger_discovery", "restructure"],
       "description": "QC decision: pass=approve all as-is, filter=remove some rows, retrigger_discovery=need more rows, restructure=0 rows need table redesign"
     },
-    "remove_row_ids": {
+    "keep_row_ids_in_order": {
       "oneOf": [
         {
           "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "row_id": { "type": "string" },
-              "reason": { "type": "string", "description": "1 sentence why removed" }
-            }
-          }
+          "items": { "type": "string" },
+          "description": "Ordered list of row_ids to KEEP. First = first row in output. Rows NOT in this list are removed."
         },
         { "type": "null" }
       ],
-      "description": "Rows to remove with explanations. Required for filter action, null/empty otherwise. All rows NOT in this list are kept by default."
+      "description": "Which rows to keep AND their order. If provided, only these rows are kept in this exact order. If null, all rows kept in original order. Use for filtering AND/OR reordering."
+    },
+    "removal_reasons": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Map of row_id -> reason for removal. Only for rows NOT in keep_row_ids_in_order."
+        },
+        { "type": "null" }
+      ],
+      "description": "Optional: brief reasons why specific rows were removed (for logging). Example: {\"3-FakeCompany\": \"Not a real company\"}"
     },
     "overall_score": {
       "oneOf": [

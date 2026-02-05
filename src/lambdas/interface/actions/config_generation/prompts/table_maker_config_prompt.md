@@ -72,13 +72,19 @@ Columns marked with `is_identification: true` in the column definitions are ID c
 1. **Group 0 with importance: "ID"** - If the ID column is simple and doesn't need web research (e.g., dates, indices, simple labels)
 2. **Validation group with importance: "RESEARCH"** - If the ID column is RESEARCHABLE on the web (e.g., company names, person names, URLs, institutions, products)
 
-**Researchable ID columns** should be validated because:
+**⚠️ CRITICAL RULE**: At least ONE ID column (preferably the FIRST/primary identifier) MUST remain with `importance: "ID"` in Group 0. This is required because:
+- Validation operates row-by-row and needs a stable identifier
+- Without an ID column, rows cannot be uniquely identified
+- This prevents duplication and tracking issues during validation
+
+**Researchable ID columns** CAN be validated, but ONLY if at least one other ID column remains in Group 0:
 - They can be verified for accuracy (e.g., "Is this the correct company name?")
 - They can be enriched with additional context
 - They serve as quality control for row generation
 
 **Examples**:
-- ✅ Validate: "Company Name", "Researcher Name", "Institution", "Job Title", "Product Name", "URL"
+- ✅ Keep as ID: The FIRST/primary identifier column (e.g., "Company Name" if it's the main row identifier)
+- ✅ Validate (if another ID exists): Secondary identifiers like "Website URL", "Researcher Name"
 - ❌ Don't validate: "Index", "Row Number", "Date Created", "Internal ID"
 
 ---
@@ -163,12 +169,14 @@ Write comprehensive `general_notes` that:
 
 Create search groups based on where information appears together:
 
-**Group 0 (Required)**:
-- Simple ID columns that don't need web research (dates, indices, internal IDs)
+**Group 0 (Required - MUST have at least one ID column)**:
+- **⚠️ MANDATORY**: At least one column with `importance: "ID"` must be in Group 0
+- The FIRST/primary identifier column should always be in Group 0 as ID (e.g., "Company Name", "Person Name")
+- Additional simple ID columns (dates, indices, internal IDs) also go here
 - These provide context but don't need validation
 
 **Groups 1+**:
-- Researchable ID columns (company names, person names, URLs, institutions)
+- SECONDARY researchable ID columns (only if a primary ID already exists in Group 0)
 - Research columns from column definitions
 - Organize by information sources - columns whose data appears together should share a group
 - Consider the validation strategies from column definitions when grouping
@@ -177,19 +185,25 @@ Create search groups based on where information appears together:
 
 For EACH column (no exceptions):
 
-**Simple ID Columns** (is_identification: true, not researchable):
+**Primary ID Column** (FIRST/main identifier - MUST remain as ID):
+- **⚠️ MANDATORY**: The first/primary identifier MUST be in Group 0 with `importance: "ID"`
+- This is the main column that uniquely identifies each row (e.g., "Company Name", "Person Name", "Product Name")
+- Minimal notes (used for context only)
+- **Never convert this to RESEARCH** - validation needs at least one stable ID
+
+**Simple ID Columns** (secondary identifiers, not researchable):
 - Place in Group 0
 - Set importance: "ID"
 - Minimal notes (used for context only)
 - Examples: "Index", "Date Created", "Row Number"
 
-**Researchable ID Columns** (is_identification: true, CAN be researched on web):
+**Researchable Secondary ID Columns** (ONLY if a primary ID already exists in Group 0):
 - Place in appropriate validation group (1+)
 - Set importance: "RESEARCH"
 - **Notes field**: Use column `description` and `validation_strategy` EXACTLY (copy verbatim, don't paraphrase)
 - **If column-specific context exists**: Append any relevant context from tablewide_research or other sources that applies ONLY to this column
 - **Generate realistic examples** since no actual data rows exist yet - use 2-3 plausible examples that match the column description and format
-- Examples of researchable ID types: "Company Name", "Researcher Name", "Institution", "Job Title", "URL"
+- Examples: "Website URL" (secondary to "Company Name"), "Institution" (secondary to "Researcher Name")
 
 **Research Columns** (is_identification: false):
 - Place in appropriate search group (1+)
@@ -235,9 +249,10 @@ Follow the guidance from Common Configuration Guidance above:
      - Multi-column or table-wide context → `general_notes`
      - Single-column specific context → That column's `notes` field
 
-3. ✅ **RESEARCHABLE ID COLUMNS**: Upgrade to CRITICAL if they can be verified on web
-   - Names, companies, URLs, institutions → Validate these
-   - Dates, indices, internal IDs → Keep as ID in Group 0
+3. ✅ **AT LEAST ONE ID COLUMN REQUIRED**: The FIRST/primary ID column MUST remain `importance: "ID"` in Group 0
+   - This is MANDATORY - validation needs a stable row identifier
+   - Secondary researchable IDs (names, URLs, institutions) → Can be validated in Groups 1+
+   - Simple IDs (dates, indices, internal IDs) → Keep as ID in Group 0
 
 4. ✅ **USE COLUMN DEFINITIONS EXACTLY**:
    - Copy description and validation_strategy verbatim into column `notes`
