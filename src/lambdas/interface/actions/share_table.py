@@ -159,12 +159,11 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         # Get table name from metadata - this is the primary source
         table_name = table_metadata.get('table_name', '')
         logger.info(f"[SHARE] table_name from metadata: '{table_name}'")
-        logger.info(f"[SHARE] table_metadata keys: {list(table_metadata.keys())}")
 
-        # Debug: check if columns exist and what the first one is
-        if table_metadata.get('columns'):
-            first_cols = [c.get('name', '') for c in table_metadata.get('columns', [])[:3]]
-            logger.info(f"[SHARE] First 3 column names: {first_cols}")
+        # FIX: If table_name is missing/invalid in metadata, derive it and add to metadata
+        # This fixes old sessions that were created before table_name was stored in metadata
+        if not table_name or table_name in ['None', 'null', 'undefined', '']:
+            logger.warning(f"[SHARE] table_name missing or invalid in metadata, will derive and fix")
 
         # Try session_info for clean_table_name, original_filename, and analysis date
         session_info_key = f"{session_path}session_info.json"
@@ -223,6 +222,29 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
                         break
             except Exception as e:
                 logger.warning(f"[SHARE] Could not scan S3 for input file: {e}")
+
+        # FIX METADATA: If table_name was missing/invalid, derive it now and update metadata
+        if not table_name or table_name in ['None', 'null', 'undefined', '']:
+            derived_name = None
+
+            # Try clean_table_name from session_info first
+            if clean_table_name and clean_table_name not in ['None', 'null', 'undefined', 'Validation Results', '']:
+                derived_name = clean_table_name
+                logger.info(f"[SHARE] Fixing metadata: using clean_table_name='{derived_name}'")
+
+            # Otherwise derive from original_filename
+            elif original_filename and original_filename not in ['None', 'null', 'undefined', '']:
+                from interface_lambda.utils.helpers import clean_table_name as derive_clean_name
+                derived_name = derive_clean_name(original_filename, for_display=True)
+                logger.info(f"[SHARE] Fixing metadata: derived from filename='{derived_name}'")
+
+            # Update table_metadata with the derived name
+            if derived_name:
+                table_metadata['table_name'] = derived_name
+                table_name = derived_name
+                logger.info(f"[SHARE] ✓ Fixed metadata table_name: '{table_name}'")
+            else:
+                logger.warning(f"[SHARE] Could not derive table_name, metadata will remain without it")
 
         # Helper function to check if a name is valid and meaningful
         def is_valid_name(name):
