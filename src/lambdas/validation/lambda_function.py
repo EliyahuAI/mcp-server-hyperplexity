@@ -4772,6 +4772,28 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             logger.info(f"✅ Processed {processed_count}/{len(validation_targets)} columns successfully")
 
+            # Store Perplexity citations to memory for future recall
+            if citations and session_id and email and s3_manager:
+                try:
+                    from shared.ai_client.memory_helpers import store_perplexity_citations_to_memory
+                    # Build response data dict from validated fields (column: value)
+                    response_data = {
+                        target.column: row_results.get(target.column, {}).get('value', '')
+                        for target in validation_targets
+                        if target.column in row_results
+                    }
+                    store_perplexity_citations_to_memory(
+                        session_id=session_id,
+                        email=email,
+                        s3_manager=s3_manager,
+                        ai_client=ai_client,
+                        citations=citations,
+                        response_data=response_data,
+                        source_type="validation"
+                    )
+                except Exception as mem_err:
+                    logger.debug(f"[MEMORY] Citation storage skipped: {mem_err}")
+
             # Return missing column info for tracker update (or None if all successful)
             return missing_column_info if missing_column_info else None
 
