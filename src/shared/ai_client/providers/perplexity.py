@@ -190,9 +190,15 @@ class PerplexityProvider:
                     
                     if response.status == 200:
                         response_json = await response.json()
-                        
-                        if soft_schema:
-                            response_json = await self._clean_soft_schema_response(response_json, actual_schema)
+
+                        # PROVIDER-LEVEL VALIDATION IS NOW DEPRECATED
+                        # Universal validation in core AI client handles all cases
+                        # Kept here for backwards compatibility but can be removed
+                        # TODO: Remove after confirming universal validation works
+                        # if soft_schema:
+                        #     response_json = await self._clean_soft_schema_response(response_json, actual_schema)
+                        # else:
+                        #     response_json = await self._validate_and_repair_hard_schema(response_json, actual_schema, model)
 
                         await self.cache_handler.save_debug_data('perplexity', model, debug_request, response_json, context="structured_call_success", debug_name=debug_name)
                         token_usage = self.usage_handler.extract_token_usage(response_json, model, "low")
@@ -200,15 +206,8 @@ class PerplexityProvider:
                         # Generate enhanced metrics BEFORE caching (needed for time_estimated preservation)
                         enhanced_data = self.usage_handler.get_enhanced_call_metrics(response_json, model, processing_time, is_cached=False)
 
-                        # Merge repair costs if present
-                        if '_repair_meta' in response_json:
-                            repair_meta = response_json['_repair_meta']
-                            repair_cost = repair_meta.get('cost', 0.0)
-
-                            if 'costs' in enhanced_data and 'actual' in enhanced_data['costs']:
-                                enhanced_data['costs']['actual']['total_cost'] += repair_cost
-                                enhanced_data['repair_info'] = repair_meta
-                                logger.info(f"[COST_UPDATE] Added repair cost ${repair_cost:.4f} to total. New total: ${enhanced_data['costs']['actual']['total_cost']:.4f}")
+                        # Repair cost merging moved to universal validation in core AI client
+                        # (No longer needed here since provider validation is disabled)
 
                         if use_cache and cache_key:
                             await self.cache_handler.save_to_cache(cache_key, response_json, token_usage, processing_time, model, 'perplexity', enhanced_data)
@@ -337,3 +336,106 @@ class PerplexityProvider:
                 raise
             logger.error(f"Perplexity soft schema cleaning error: {e}")
             return response_json
+
+    async def _validate_and_repair_hard_schema(self, response_json: dict, schema: dict, model: str) -> dict:
+        """
+        Validate hard schema response and attempt repair if validation fails.
+        For hard schema, Perplexity should return valid JSON, but sometimes doesn't.
+        """
+        try:
+            # Extract content from response
+            if 'choices' in response_json and len(response_json['choices']) > 0:
+                message = response_json['choices'][0].get('message', {})
+                content = message.get('content', '')
+
+                if isinstance(content, str) and content.strip():
+                    # Try to parse JSON
+                    parsed = extract_json_from_text(content)
+
+                    if not parsed:
+                        # Extraction failed - attempt repair
+                        logger.warning(f"[PERPLEXITY_HARD] JSON extraction failed for hard schema, attempting repair")
+                        parsed, repair_result, repair_explanation = await repair_json_with_haiku(content, schema, self.ai_client)
+
+                        if repair_result and parsed:
+                            repair_cost = repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                            logger.info(f"[HAIKU_REPAIR] Provider: perplexity (hard schema), Model: {model}")
+                            logger.info(f"[HAIKU_REPAIR] Explanation: {repair_explanation}")
+                            logger.info(f"[HAIKU_REPAIR] Cost: ${repair_cost:.6f}")
+
+                            response_json['_repair_meta'] = {
+                                'repaired': True,
+                                'cost': repair_cost,
+                                'model': 'gemini-2.5-flash-lite',
+                                'provider': 'gemini',
+                                'explanation': repair_explanation,
+                                'schema_mode': 'hard'
+                            }
+
+                            # Save repair data
+                            await self.cache_handler.save_haiku_repair_data(
+                                original_provider='perplexity',
+                                original_model=model,
+                                malformed_input=content,
+                                repaired_output=parsed,
+                                repair_explanation=repair_explanation or 'No explanation provided',
+                                repair_cost=repair_cost
+                            )
+
+                    # Validate required fields
+                    if parsed:
+                        required = schema.get('required', [])
+                        missing = [f for f in required if f not in parsed]
+
+                        if missing:
+                            # Missing fields - attempt repair
+                            logger.warning(f"[PERPLEXITY_HARD] Missing required fields {missing} in hard schema, attempting repair")
+                            parsed, repair_result, repair_explanation = await repair_json_with_haiku(content, schema, self.ai_client)
+
+                            if repair_result and parsed:
+                                repair_cost = repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                                logger.info(f"[HAIKU_REPAIR] Provider: perplexity (hard schema), Model: {model}")
+                                logger.info(f"[HAIKU_REPAIR] Explanation: {repair_explanation}")
+                                logger.info(f"[HAIKU_REPAIR] Cost: ${repair_cost:.6f}")
+
+                                response_json['_repair_meta'] = {
+                                    'repaired': True,
+                                    'cost': repair_cost,
+                                    'model': 'gemini-2.5-flash-lite',
+                                    'provider': 'gemini',
+                                    'explanation': repair_explanation,
+                                    'schema_mode': 'hard'
+                                }
+
+                                await self.cache_handler.save_haiku_repair_data(
+                                    original_provider='perplexity',
+                                    original_model=model,
+                                    malformed_input=content,
+                                    repaired_output=parsed,
+                                    repair_explanation=repair_explanation or 'No explanation provided',
+                                    repair_cost=repair_cost
+                                )
+
+                                # Re-validate
+                                missing = [f for f in required if f not in parsed]
+
+                        # If still missing, raise error to trigger backup models
+                        if missing:
+                            logger.error(f"[PERPLEXITY_HARD] Missing required fields after repair: {missing}")
+                            raise Exception(f"[SCHEMA_ERROR] Missing required fields: {missing}")
+
+                        # Update response with parsed/repaired JSON
+                        response_json['choices'][0]['message']['content'] = json.dumps(parsed)
+                    else:
+                        logger.error(f"[PERPLEXITY_HARD] Could not extract or repair JSON from hard schema response")
+                        raise Exception("[REPAIR_FAILED] Failed to extract valid JSON from hard schema response")
+
+            return response_json
+
+        except Exception as e:
+            # Re-raise critical errors to trigger backup model retry
+            if "[SCHEMA_ERROR]" in str(e) or "[REPAIR_FAILED]" in str(e):
+                logger.error(f"[PERPLEXITY_HARD] Critical hard schema error: {e}")
+                raise
+            logger.error(f"[PERPLEXITY_HARD] Validation error: {e}")
+            raise  # Raise all errors to trigger backup models

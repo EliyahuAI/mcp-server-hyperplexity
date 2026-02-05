@@ -321,7 +321,7 @@ class AIAPIClient:
                     attempted_models.append({'model': current_model, 'success': True})
                     result['attempted_models'] = attempted_models
 
-                    # Normalize response format for compatibility
+                    # Normalize response format for compatibility FIRST
                     if api_provider in ['anthropic', 'gemini', 'baseten', 'vertex']:
                         # Convert to unified format
                         import json
@@ -334,19 +334,28 @@ class AIAPIClient:
                         if api_provider == 'anthropic':
                             result['citations'] = extract_citations_from_response(api_response)
 
-                        # Cache the NORMALIZED response (not the provider-specific format)
+                    # UNIVERSAL SCHEMA VALIDATION & REPAIR
+                    # Run AFTER normalization so all providers have unified format
+                    # Run BEFORE caching so we cache validated/repaired responses
+                    result = await self._validate_and_repair_structured_response(
+                        result, schema, current_model, api_provider, soft_schema
+                    )
+
+                    # Cache the VALIDATED response (after normalization and validation)
+                    # This ensures cache hits don't need re-validation/repair
+                    if api_provider in ['anthropic', 'gemini', 'baseten', 'vertex']:
                         if use_cache and cache_key and not result.get('is_cached', False):
                             processing_time = result.get('processing_time', 0)
                             token_usage = result.get('token_usage', {})
                             await self.cache_handler.save_to_cache(
                                 cache_key,
-                                result['response'],  # Save normalized response with 'choices' key
+                                result['response'],  # Save validated response
                                 token_usage,
                                 processing_time,
                                 current_model,
                                 api_provider
                             )
-                            logger.debug(f"[CACHE_SAVE] Saved normalized response for {api_provider}/{current_model}")
+                            logger.debug(f"[CACHE_SAVE] Saved validated response for {api_provider}/{current_model}")
 
                     # URL validation
                     try:
@@ -376,6 +385,175 @@ class AIAPIClient:
                 continue
         
         raise last_error or Exception("All models failed")
+
+    async def _validate_and_repair_structured_response(self, result: Dict, schema: Dict,
+                                                        model: str, provider: str,
+                                                        soft_schema: bool) -> Dict:
+        """
+        Universal schema validation and repair for ALL providers and schema modes.
+
+        Args:
+            result: Provider response dict with 'response' key
+            schema: Expected JSON schema
+            model: Model name
+            provider: Provider name (perplexity, anthropic, etc.)
+            soft_schema: Whether soft schema mode was used
+
+        Returns:
+            result dict, potentially with repaired response and _repair_meta
+
+        Raises:
+            Exception with [SCHEMA_ERROR] or [REPAIR_FAILED] prefix to trigger backup models
+        """
+        from .utils import extract_json_from_text, repair_json_with_haiku
+        import json
+
+        try:
+            # Skip validation if no schema provided
+            if not schema or not isinstance(schema, dict):
+                return result
+
+            # Extract response content
+            response = result.get('response', {})
+            if not response:
+                return result
+
+            # Get content from unified format
+            if 'choices' in response and len(response['choices']) > 0:
+                message = response['choices'][0].get('message', {})
+                content = message.get('content', '')
+
+                if not isinstance(content, str) or not content.strip():
+                    return result
+
+                # Try to parse JSON
+                parsed = None
+                try:
+                    parsed = json.loads(content)
+                except json.JSONDecodeError:
+                    # Not valid JSON, try extraction
+                    parsed = extract_json_from_text(content)
+
+                # Check if we have valid parsed JSON
+                if not parsed or not isinstance(parsed, dict):
+                    logger.warning(f"[UNIVERSAL_VALIDATION] {provider}/{model}: JSON extraction failed")
+
+                    # Attempt repair
+                    parsed, repair_result, repair_explanation = await repair_json_with_haiku(
+                        content, schema, self
+                    )
+
+                    if repair_result and parsed:
+                        repair_cost = repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                        logger.info(f"[HAIKU_REPAIR] Provider: {provider}, Model: {model}, Schema: {'soft' if soft_schema else 'hard'}")
+                        logger.info(f"[HAIKU_REPAIR] Explanation: {repair_explanation}")
+                        logger.info(f"[HAIKU_REPAIR] Cost: ${repair_cost:.6f}")
+
+                        result['_repair_meta'] = {
+                            'repaired': True,
+                            'cost': repair_cost,
+                            'model': 'gemini-2.5-flash-lite',
+                            'provider': 'gemini',
+                            'explanation': repair_explanation,
+                            'original_provider': provider,
+                            'original_model': model,
+                            'schema_mode': 'soft' if soft_schema else 'hard'
+                        }
+
+                        # Merge repair cost into enhanced_data
+                        if 'enhanced_data' in result and repair_cost > 0:
+                            enhanced_data = result['enhanced_data']
+                            if 'costs' in enhanced_data and 'actual' in enhanced_data['costs']:
+                                enhanced_data['costs']['actual']['total_cost'] = enhanced_data['costs']['actual'].get('total_cost', 0.0) + repair_cost
+                                enhanced_data['repair_info'] = result['_repair_meta']
+                                logger.info(f"[COST_UPDATE] Added repair cost ${repair_cost:.4f}. New total: ${enhanced_data['costs']['actual']['total_cost']:.4f}")
+
+                        # Save repair data
+                        await self.cache_handler.save_haiku_repair_data(
+                            original_provider=provider,
+                            original_model=model,
+                            malformed_input=content,
+                            repaired_output=parsed,
+                            repair_explanation=repair_explanation or 'No explanation provided',
+                            repair_cost=repair_cost
+                        )
+
+                        # Update response content
+                        result['response']['choices'][0]['message']['content'] = json.dumps(parsed)
+                    else:
+                        logger.error(f"[UNIVERSAL_VALIDATION] {provider}/{model}: Repair failed")
+                        raise Exception("[REPAIR_FAILED] Could not extract or repair JSON")
+
+                # Validate required fields
+                if parsed and schema:
+                    required = schema.get('required', [])
+                    missing = [f for f in required if f not in parsed]
+
+                    if missing:
+                        logger.warning(f"[UNIVERSAL_VALIDATION] {provider}/{model}: Missing required fields {missing}")
+
+                        # Attempt repair
+                        parsed_repaired, repair_result, repair_explanation = await repair_json_with_haiku(
+                            content, schema, self
+                        )
+
+                        if repair_result and parsed_repaired:
+                            repair_cost = repair_result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                            logger.info(f"[HAIKU_REPAIR] Provider: {provider}, Model: {model}, Schema: {'soft' if soft_schema else 'hard'}")
+                            logger.info(f"[HAIKU_REPAIR] Explanation: {repair_explanation}")
+                            logger.info(f"[HAIKU_REPAIR] Cost: ${repair_cost:.6f}")
+
+                            result['_repair_meta'] = {
+                                'repaired': True,
+                                'cost': repair_cost,
+                                'model': 'gemini-2.5-flash-lite',
+                                'provider': 'gemini',
+                                'explanation': repair_explanation,
+                                'original_provider': provider,
+                                'original_model': model,
+                                'schema_mode': 'soft' if soft_schema else 'hard',
+                                'reason': 'missing_required_fields'
+                            }
+
+                            # Merge repair cost into enhanced_data
+                            if 'enhanced_data' in result and repair_cost > 0:
+                                enhanced_data = result['enhanced_data']
+                                if 'costs' in enhanced_data and 'actual' in enhanced_data['costs']:
+                                    enhanced_data['costs']['actual']['total_cost'] = enhanced_data['costs']['actual'].get('total_cost', 0.0) + repair_cost
+                                    enhanced_data['repair_info'] = result['_repair_meta']
+                                    logger.info(f"[COST_UPDATE] Added repair cost ${repair_cost:.4f}. New total: ${enhanced_data['costs']['actual']['total_cost']:.4f}")
+
+                            await self.cache_handler.save_haiku_repair_data(
+                                original_provider=provider,
+                                original_model=model,
+                                malformed_input=content,
+                                repaired_output=parsed_repaired,
+                                repair_explanation=repair_explanation or 'No explanation provided',
+                                repair_cost=repair_cost
+                            )
+
+                            # Re-validate
+                            missing_after = [f for f in required if f not in parsed_repaired]
+                            if not missing_after:
+                                parsed = parsed_repaired
+                                result['response']['choices'][0]['message']['content'] = json.dumps(parsed)
+                            else:
+                                logger.error(f"[UNIVERSAL_VALIDATION] {provider}/{model}: Still missing {missing_after} after repair")
+                                raise Exception(f"[SCHEMA_ERROR] Missing required fields after repair: {missing_after}")
+                        else:
+                            logger.error(f"[UNIVERSAL_VALIDATION] {provider}/{model}: Repair failed for missing fields")
+                            raise Exception(f"[SCHEMA_ERROR] Missing required fields: {missing}")
+
+            return result
+
+        except Exception as e:
+            # Re-raise critical errors to trigger backup model retry
+            if "[SCHEMA_ERROR]" in str(e) or "[REPAIR_FAILED]" in str(e):
+                logger.error(f"[UNIVERSAL_VALIDATION] Critical error for {provider}/{model}: {e}")
+                raise
+            # Log but don't fail for other errors
+            logger.warning(f"[UNIVERSAL_VALIDATION] Validation error (non-critical): {e}")
+            return result
 
     def _build_anthropic_data(self, model, prompt, schema, tool_name, max_tokens, max_web_searches, soft_schema):
         max_t = self.usage_handler.enforce_provider_token_limit(model, max_tokens or 64000)
