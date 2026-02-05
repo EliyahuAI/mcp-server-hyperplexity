@@ -1013,7 +1013,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
 
                                 # If no QC key_citation, use first validation citation
                                 if not key_citation:
-                                    citations = field_data.get('citations', [])
+                                    citations = field_data.get('citations', []) if field_data else []
                                     if citations and len(citations) > 0:
                                         first_citation = citations[0]
                                         cite_text = first_citation.get('title', 'Source')
@@ -1035,7 +1035,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                     comment_parts.append(f'Key Citation: {clean_citation}')
 
                                 # Add Sources section (validation citations as [n], QC sources as [QCn])
-                                citations = field_data.get('citations', [])
+                                citations = field_data.get('citations', []) if field_data else []
                                 citation_texts = []
 
                                 # Add validation citations as [1], [2], etc.
@@ -1187,10 +1187,10 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             # Keep validated_value for legacy code that might use it
                             validated_value = actual_updated_value
 
-                            reasoning = field_data.get('reasoning', '')
+                            reasoning = field_data.get('reasoning', '') if field_data else ''
 
                             # DEBUG: Log the validated_value we just extracted
-                            if col_name == 'Start Date':
+                            if col_name == 'Start Date' and field_data:
                                 logger.debug(f"[ORIG_SHEET_DEBUG] Row {row_idx} {col_name}: validated_value='{validated_value}', original_value='{original_value}', qc_applied={field_data.get('qc_applied', False)}")
 
                             # Check for QC original confidence override
@@ -1238,7 +1238,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                     logger.info(f"[COMMENT_BUILD_DEBUG] Row {row_idx} {col_name}: About to build comment with validated_value='{validated_value}'")
                                 # ALWAYS show what appears in Updated Values sheet (not just when different)
                                 # Get updated confidence (use QC-adjusted if available)
-                                updated_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
+                                updated_confidence = field_data.get('confidence_level', field_data.get('confidence', '')) if field_data else ''
                                 row_qc_data = get_qc_data_for_row(row_key, row_idx)
                                 if row_qc_data and col_name in row_qc_data:
                                     field_qc_data = row_qc_data.get(col_name)
@@ -1254,7 +1254,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                     comment_parts.append(f'Updated Value: {validated_value}')
 
                                 # Add Validator Explanation
-                                explanation = field_data.get('explanation', '')
+                                explanation = field_data.get('explanation', '') if field_data else ''
                                 if explanation and str(explanation).strip():
                                     comment_parts.append(f'Validator Explanation: {explanation}')
 
@@ -1284,7 +1284,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
 
                                 # If no QC key_citation, use first validation citation
                                 if not key_citation:
-                                    citations = field_data.get('citations', [])
+                                    citations = field_data.get('citations', []) if field_data else []
                                     if citations and len(citations) > 0:
                                         first_citation = citations[0]
                                         cite_text = first_citation.get('title', 'Source')
@@ -1306,7 +1306,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                     comment_parts.append(f'Key Citation: {clean_citation}')
 
                                 # Add Sources section (validation citations as [n], QC sources as [QCn])
-                                citations = field_data.get('citations', [])
+                                citations = field_data.get('citations', []) if field_data else []
                                 citation_texts = []
 
                                 # Add validation citations as [1], [2], etc.
