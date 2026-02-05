@@ -148,7 +148,7 @@
     }
 
     .table-maker-message.user .table-maker-message-content {
-        background-color: var(--primary-color);
+        background-color: #388E3C;
         color: white;
     }
 
