@@ -571,7 +571,24 @@ async function fetchAndRenderValidationTable(cardId, sessionId) {
 
         const data = await response.json();
 
-        if (data.success && data.table_metadata) {
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to load viewer data');
+        }
+
+        // If metadata was too large to include inline, fetch it from S3
+        if (data.metadata_too_large && data.json_download_url && !data.table_metadata) {
+            console.log('[VALIDATION] Metadata too large, fetching from:', data.json_download_url);
+            container.innerHTML = '<p style="color: #999; font-style: italic; text-align: center; padding: 1rem;">Loading large table data from S3...</p>';
+
+            const metadataResponse = await fetch(data.json_download_url);
+            if (!metadataResponse.ok) {
+                throw new Error(`Failed to fetch metadata from S3: ${metadataResponse.status}`);
+            }
+            data.table_metadata = await metadataResponse.json();
+            console.log('[VALIDATION] Successfully fetched large metadata from S3');
+        }
+
+        if (data.table_metadata) {
             // Store for JSON download
             globalState.validationTableMetadata = data.table_metadata;
             globalState.validationJsonUrl = data.json_download_url;

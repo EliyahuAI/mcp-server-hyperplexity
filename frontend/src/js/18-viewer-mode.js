@@ -190,7 +190,7 @@ async function loadAndDisplayResults(params) {
         }
 
         // Display results in the card
-        displayResultsInCard(cardId, data);
+        await displayResultsInCard(cardId, data);
 
     } catch (error) {
         console.error('[VIEWER] Error loading results:', error);
@@ -250,11 +250,12 @@ function createResultsViewerCard(options = {}) {
  * @param {string} cardId - Card ID to update
  * @param {Object} data - Results data from API
  * @param {Object} data.table_metadata - Table metadata for InteractiveTable
+ * @param {boolean} data.metadata_too_large - If true, metadata needs to be fetched separately
  * @param {string} data.download_url - URL to download Excel file
  * @param {string} data.enhanced_download_url - Alternative download URL
  * @param {string} data.json_download_url - URL to download JSON metadata
  */
-function displayResultsInCard(cardId, data) {
+async function displayResultsInCard(cardId, data) {
     const container = document.getElementById(`${cardId}-table-container`);
     if (!container) {
         console.error(`[VIEWER] Container ${cardId}-table-container not found`);
@@ -272,6 +273,27 @@ function displayResultsInCard(cardId, data) {
         infoText.innerHTML = `<strong>${validationType} completed ${formattedDate}</strong>. Click cells for details, or download the results.`;
     }
 
+    // If metadata was too large to include inline, fetch it from S3
+    if (data.metadata_too_large && data.json_download_url && !data.table_metadata) {
+        console.log('[VIEWER] Metadata too large, fetching from:', data.json_download_url);
+        container.innerHTML = '<p class="table-loading-message">Loading table data...</p>';
+
+        try {
+            const response = await fetch(data.json_download_url);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch metadata: ${response.status}`);
+            }
+            data.table_metadata = await response.json();
+            console.log('[VIEWER] Successfully fetched large metadata from S3');
+        } catch (error) {
+            console.error('[VIEWER] Error fetching metadata:', error);
+            container.innerHTML = `<p class="table-empty-message">Error loading table data: ${error.message}</p>`;
+            // Still show download buttons even if table fails to load
+            _renderViewerButtons(cardId, data);
+            return;
+        }
+    }
+
     // Render table if metadata available
     if (data.table_metadata && typeof InteractiveTable !== 'undefined') {
         const tableHtml = InteractiveTable.render(data.table_metadata, {
@@ -287,6 +309,15 @@ function displayResultsInCard(cardId, data) {
         container.innerHTML = '<p class="table-empty-message">No table data available.</p>';
     }
 
+    // Render download and action buttons
+    _renderViewerButtons(cardId, data);
+}
+
+/**
+ * Helper function to render viewer buttons
+ * Extracted to allow reuse in error scenarios
+ */
+function _renderViewerButtons(cardId, data) {
     // Determine download URLs
     const excelUrl = data.enhanced_download_url || data.download_url;
     const jsonUrl = data.json_download_url;

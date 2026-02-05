@@ -484,9 +484,25 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
                 clean_table_name = f"Table {session_id.split('_')[-1][:8]}"
             logger.info(f"[VIEWER_DATA] Derived clean_table_name: '{clean_table_name}'")
 
+        # Check table_metadata size to prevent 413 error (Lambda response limit: 6MB)
+        # For large datasets, omit metadata from response and let frontend fetch via json_download_url
+        metadata_size_mb = len(json.dumps(table_metadata, default=str)) / 1024 / 1024
+        logger.info(f"[VIEWER_DATA] table_metadata size: {metadata_size_mb:.2f} MB")
+
+        metadata_too_large = metadata_size_mb > 4.0  # Use 4MB threshold (留余量 for other response fields)
+        if metadata_too_large:
+            logger.warning(f"[VIEWER_DATA] table_metadata ({metadata_size_mb:.2f} MB) exceeds 4MB threshold. Omitting from response to prevent 413 error.")
+            logger.info(f"[VIEWER_DATA] Frontend will fetch metadata from json_download_url instead")
+
+            # Return minimal metadata info for frontend to know what to expect
+            response_metadata = None
+        else:
+            response_metadata = table_metadata
+
         return create_response(200, {
             'success': True,
-            'table_metadata': table_metadata,
+            'table_metadata': response_metadata,
+            'metadata_too_large': metadata_too_large,
             'table_name': table_name,
             'clean_table_name': clean_table_name,
             'original_filename': original_filename,
