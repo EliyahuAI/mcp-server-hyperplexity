@@ -269,11 +269,35 @@ function ensureProcessingState() {
 function requireEmailThen(action, description = 'continue') {
     // If email already validated, execute immediately
     const storedEmail = sessionStorage.getItem('validatedEmail');
-    if (globalState.email || (storedEmail && storedEmail.includes('@'))) {
+    const storedToken = localStorage.getItem('sessionToken');
+
+    // Check if we have either email in sessionStorage OR a valid token in localStorage
+    // Token persists 30 days, email is cleared on tab close
+    if (globalState.email || (storedEmail && storedEmail.includes('@')) || (storedToken && globalState.sessionToken)) {
         if (!globalState.email && storedEmail) {
             globalState.email = storedEmail;
         }
         action();
+        return;
+    }
+
+    // If we have a token but no email, wait briefly for auto-reauth to complete
+    // Auto-reauth runs at 500ms delay in 99-init.js
+    if (storedToken && !storedEmail) {
+        console.log('[EMAIL] Token found but email missing, waiting for auto-reauth...');
+        setTimeout(() => {
+            // Check again after auto-reauth had time to run
+            if (globalState.email || sessionStorage.getItem('validatedEmail')) {
+                console.log('[EMAIL] Auto-reauth completed, proceeding with action');
+                action();
+            } else {
+                // Auto-reauth failed, show email validation card
+                console.log('[EMAIL] Auto-reauth failed, showing validation card');
+                globalState.pendingActionAfterEmail = action;
+                globalState.pendingActionDescription = description;
+                createEmailValidationCard();
+            }
+        }, 700); // Wait 700ms (200ms after auto-reauth 500ms delay)
         return;
     }
 
