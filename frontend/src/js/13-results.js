@@ -348,6 +348,7 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
 
             // Clear session data
             localStorage.removeItem('sessionToken');
+            localStorage.removeItem('validatedEmail');
             sessionStorage.removeItem('validatedEmail');
             if (typeof globalState !== 'undefined') {
                 globalState.sessionToken = null;

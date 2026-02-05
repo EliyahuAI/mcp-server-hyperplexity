@@ -101,6 +101,7 @@ async function loadAndDisplayResults(params) {
 
                 // Clear session data
                 localStorage.removeItem('sessionToken');
+                localStorage.removeItem('validatedEmail');
                 sessionStorage.removeItem('validatedEmail');
                 globalState.sessionToken = null;
                 globalState.email = null;

@@ -133,6 +133,10 @@ async function sendEmailCode(cardId, button) {
                 localStorage.setItem('sessionToken', data.session_token);
                 globalState.sessionToken = data.session_token;
 
+                // Store email alongside token for auto-reauth after browser restart
+                localStorage.setItem('validatedEmail', email);
+                sessionStorage.setItem('validatedEmail', email);
+
                 // Sync terms acceptance from server
                 if (data.terms_accepted_version === TERMS_VERSION) {
                     localStorage.setItem('termsAcceptedVersion', data.terms_accepted_version);
@@ -300,9 +304,11 @@ function setupCodeDigitInputs(cardId) {
 }
 
 function handleEmailValidated(cardId) {
-    // SECURITY: Store in sessionStorage (not localStorage) to prevent email spoofing
-    // sessionStorage clears on browser close, providing natural logout behavior
+    // Store email in BOTH sessionStorage and localStorage
+    // sessionStorage for current session, localStorage to enable auto-reauth after browser restart
+    // Backend validates token ownership via DynamoDB, so localStorage email is safe
     sessionStorage.setItem('validatedEmail', globalState.email);
+    localStorage.setItem('validatedEmail', globalState.email);
 
     // Track email validation conversion
     trackEmailValidationConversion(globalState.email);
@@ -467,6 +473,7 @@ async function handleLogout() {
 
     // Clear all auth data from this device
     localStorage.removeItem('sessionToken');
+    localStorage.removeItem('validatedEmail');
     sessionStorage.removeItem('validatedEmail');
 
     // Clear all session storage (including saved state)

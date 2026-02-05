@@ -156,18 +156,24 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
                 'error': 'Only fully validated tables can be shared. Please run a full validation first.'
             })
 
-        # Get table name for the slug
+        # Get table name from metadata - this is the primary source
         table_name = table_metadata.get('table_name', '')
+        logger.info(f"[SHARE] table_name from metadata: '{table_name}'")
 
-        # Try session_info for a better name and analysis date
+        # Try session_info for clean_table_name, original_filename, and analysis date
         session_info_key = f"{session_path}session_info.json"
         session_info = _load_json_from_s3(active_bucket, session_info_key)
         clean_table_name = None
         original_filename = None
         analysis_date = None
+
+        logger.info(f"[SHARE] session_info loaded: {session_info is not None}")
+
         if session_info:
             clean_table_name = session_info.get('clean_table_name')
             original_filename = session_info.get('original_filename')
+
+            logger.info(f"[SHARE] From session_info: clean_table_name='{clean_table_name}', original_filename='{original_filename}'")
 
             # Get analysis date from version info
             versions_info = session_info.get('versions', {})
@@ -180,18 +186,62 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         if not analysis_date and table_metadata:
             analysis_date = table_metadata.get('generated_at') or table_metadata.get('created_at')
 
-        # Fallback: derive clean_table_name from original_filename if not in session_info
-        # (matches logic in viewer_data.py)
-        if not clean_table_name or clean_table_name == "Validation Results":
-            # Try original_filename from session_info or table_metadata
-            if not original_filename:
-                original_filename = table_metadata.get('original_filename')
-            if original_filename:
-                from interface_lambda.utils.helpers import clean_table_name as derive_clean_name
-                clean_table_name = derive_clean_name(original_filename, for_display=True)
-                logger.info(f"[SHARE] Derived clean_table_name from filename: '{clean_table_name}'")
+        # Get original_filename if not already set
+        if not original_filename:
+            original_filename = table_metadata.get('original_filename')
 
-        display_name = clean_table_name or table_name or 'Shared Table'
+        # Helper function to check if a name is valid and meaningful
+        def is_valid_name(name):
+            if not name or not isinstance(name, str):
+                return False
+            name = name.strip()
+            # Filter out empty, generic, or placeholder names
+            if not name or name in ['Validation Results', 'Shared Table', 'Table', '']:
+                return False
+            # Filter out names that look like session IDs
+            if name.startswith('Table ') and len(name) <= 15:
+                return False
+            return True
+
+        # Determine display name with comprehensive fallback chain
+        # Priority: clean_table_name > table_name > derived from filename > session ID
+        display_name = None
+
+        # 1. Try clean_table_name from session_info (best - human-readable)
+        if is_valid_name(clean_table_name):
+            display_name = clean_table_name.strip()
+            logger.info(f"[SHARE] Using clean_table_name: '{display_name}'")
+
+        # 2. Try table_name from metadata
+        if not display_name and is_valid_name(table_name):
+            display_name = table_name.strip()
+            logger.info(f"[SHARE] Using table_name: '{display_name}'")
+
+        # 3. Try deriving from original_filename
+        if not display_name and original_filename:
+            from interface_lambda.utils.helpers import clean_table_name as derive_clean_name
+            derived_name = derive_clean_name(original_filename, for_display=True)
+            if is_valid_name(derived_name):
+                display_name = derived_name
+                logger.info(f"[SHARE] Derived from filename: '{display_name}'")
+
+        # 4. Last resort: extract from table_metadata structure or use session ID
+        if not display_name:
+            logger.warning(f"[SHARE] No valid display name found in standard locations")
+            # Try to get a hint from first column name
+            if table_metadata.get('columns') and len(table_metadata.get('columns', [])) > 0:
+                first_col = table_metadata['columns'][0].get('name', '')
+                if first_col and first_col not in ['Column', 'Row', 'ID', 'Index']:
+                    display_name = f"Table - {first_col}"
+                    logger.info(f"[SHARE] Using column hint: '{display_name}'")
+
+            # Final fallback: session ID
+            if not display_name:
+                session_suffix = session_id.split('_')[-1][:8] if '_' in session_id else session_id[:8]
+                display_name = f"Shared Table {session_suffix}"
+                logger.warning(f"[SHARE] Using session ID fallback: '{display_name}'")
+
+        logger.info(f"[SHARE] Final display_name: '{display_name}'")
         demo_name = _generate_demo_name(display_name, session_id)
 
         # Determine demo bucket (demos go to the same env bucket)
@@ -215,15 +265,20 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
                 'already_shared': True
             })
 
-        # Update table_name in metadata to use the clean display name
-        table_metadata['table_name'] = display_name
+        # Create a deep copy of metadata to avoid any potential reference issues
+        # This ensures the original session metadata is never modified
+        import copy
+        demo_metadata = copy.deepcopy(table_metadata)
 
-        # Copy table_metadata.json to demo folder
+        # Update table_name in the COPY to use the clean display name
+        demo_metadata['table_name'] = display_name
+
+        # Copy table_metadata.json to demo folder using the modified copy
         logger.info(f"[SHARE] Copying metadata to s3://{demo_bucket}/{demo_path}table_metadata.json")
         s3_client.put_object(
             Bucket=demo_bucket,
             Key=f"{demo_path}table_metadata.json",
-            Body=json.dumps(table_metadata).encode('utf-8'),
+            Body=json.dumps(demo_metadata).encode('utf-8'),
             ContentType='application/json'
         )
 

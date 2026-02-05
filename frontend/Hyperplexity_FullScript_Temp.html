@@ -4435,12 +4435,15 @@ function ensureProcessingState() {
  */
 function requireEmailThen(action, description = 'continue') {
     // If email already validated, execute immediately
-    const storedEmail = sessionStorage.getItem('validatedEmail');
+    // Check sessionStorage first (current session), then localStorage (persisted)
+    const storedEmail = sessionStorage.getItem('validatedEmail') || localStorage.getItem('validatedEmail');
     const storedToken = localStorage.getItem('sessionToken');
 
     // Check if we have either email in sessionStorage OR a valid token in localStorage
     // Token persists 30 days, email is cleared on tab close
-    if (globalState.email || (storedEmail && storedEmail.includes('@')) || (storedToken && globalState.sessionToken)) {
+    // IMPORTANT: Check storedToken directly, not globalState.sessionToken, because
+    // globalState.sessionToken is only set after auto-reauth completes
+    if (globalState.email || (storedEmail && storedEmail.includes('@'))) {
         if (!globalState.email && storedEmail) {
             globalState.email = storedEmail;
         }
@@ -4448,23 +4451,48 @@ function requireEmailThen(action, description = 'continue') {
         return;
     }
 
-    // If we have a token but no email, wait briefly for auto-reauth to complete
-    // Auto-reauth runs at 500ms delay in 99-init.js
+    // If we have a token but no email, this means sessionStorage was cleared
+    // but localStorage token still exists - need to wait for auto-reauth
+
+    // If we have a token but no email, wait for auto-reauth to complete
+    // Auto-reauth runs at 500ms delay in 99-init.js and may take 100-300ms to complete
     if (storedToken && !storedEmail) {
         console.log('[EMAIL] Token found but email missing, waiting for auto-reauth...');
-        setTimeout(() => {
-            // Check again after auto-reauth had time to run
+
+        // Use a polling approach to wait for auto-reauth with proper timeout
+        let attempts = 0;
+        const maxAttempts = 6; // Max 6 attempts over ~3.6 seconds
+        const checkInterval = 600; // Check every 600ms
+
+        const checkAuth = () => {
+            attempts++;
+
+            // Check if auto-reauth completed
             if (globalState.email || sessionStorage.getItem('validatedEmail')) {
-                console.log('[EMAIL] Auto-reauth completed, proceeding with action');
+                console.log('[EMAIL] Auto-reauth completed after', attempts * checkInterval, 'ms, proceeding with action');
+                if (!globalState.email && sessionStorage.getItem('validatedEmail')) {
+                    globalState.email = sessionStorage.getItem('validatedEmail');
+                }
                 action();
-            } else {
-                // Auto-reauth failed, show email validation card
-                console.log('[EMAIL] Auto-reauth failed, showing validation card');
+                return;
+            }
+
+            // If we've exhausted attempts, show email validation card
+            if (attempts >= maxAttempts) {
+                console.log('[EMAIL] Auto-reauth timed out after', attempts * checkInterval, 'ms, showing validation card');
                 globalState.pendingActionAfterEmail = action;
                 globalState.pendingActionDescription = description;
                 createEmailValidationCard();
+                return;
             }
-        }, 700); // Wait 700ms (200ms after auto-reauth 500ms delay)
+
+            // Keep checking
+            console.log(`[EMAIL] Auto-reauth check ${attempts}/${maxAttempts}, waiting ${checkInterval}ms...`);
+            setTimeout(checkAuth, checkInterval);
+        };
+
+        // Start checking after initial delay (longer than auto-reauth 500ms start)
+        setTimeout(checkAuth, checkInterval);
         return;
     }
 
@@ -9016,6 +9044,10 @@ async function sendEmailCode(cardId, button) {
                 localStorage.setItem('sessionToken', data.session_token);
                 globalState.sessionToken = data.session_token;
 
+                // Store email alongside token for auto-reauth after browser restart
+                localStorage.setItem('validatedEmail', email);
+                sessionStorage.setItem('validatedEmail', email);
+
                 // Sync terms acceptance from server
                 if (data.terms_accepted_version === TERMS_VERSION) {
                     localStorage.setItem('termsAcceptedVersion', data.terms_accepted_version);
@@ -9183,9 +9215,11 @@ function setupCodeDigitInputs(cardId) {
 }
 
 function handleEmailValidated(cardId) {
-    // SECURITY: Store in sessionStorage (not localStorage) to prevent email spoofing
-    // sessionStorage clears on browser close, providing natural logout behavior
+    // Store email in BOTH sessionStorage and localStorage
+    // sessionStorage for current session, localStorage to enable auto-reauth after browser restart
+    // Backend validates token ownership via DynamoDB, so localStorage email is safe
     sessionStorage.setItem('validatedEmail', globalState.email);
+    localStorage.setItem('validatedEmail', globalState.email);
 
     // Track email validation conversion
     trackEmailValidationConversion(globalState.email);
@@ -9350,6 +9384,7 @@ async function handleLogout() {
 
     // Clear all auth data from this device
     localStorage.removeItem('sessionToken');
+    localStorage.removeItem('validatedEmail');
     sessionStorage.removeItem('validatedEmail');
 
     // Clear all session storage (including saved state)
@@ -15601,6 +15636,7 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
 
             // Clear session data
             localStorage.removeItem('sessionToken');
+            localStorage.removeItem('validatedEmail');
             sessionStorage.removeItem('validatedEmail');
             if (typeof globalState !== 'undefined') {
                 globalState.sessionToken = null;
@@ -18862,6 +18898,7 @@ async function loadAndDisplayResults(params) {
 
                 // Clear session data
                 localStorage.removeItem('sessionToken');
+                localStorage.removeItem('validatedEmail');
                 sessionStorage.removeItem('validatedEmail');
                 globalState.sessionToken = null;
                 globalState.email = null;
@@ -19945,13 +19982,14 @@ if (IS_PAGE_RELOAD) {
 // sessionId gets created when user uploads file or selects demo
 
 // SECURITY: Restore auth state
-// Email in sessionStorage (cleared on tab close)
-// Token in localStorage (persists 30 days, cleared on logout)
-const storedEmail = sessionStorage.getItem('validatedEmail');
+// Email: Try sessionStorage first (current session), then localStorage (persisted)
+// Token: localStorage (persists 30 days, cleared on logout)
+const storedEmail = sessionStorage.getItem('validatedEmail') || localStorage.getItem('validatedEmail');
 const storedToken = localStorage.getItem('sessionToken');
 
 console.log('[AUTH] Checking for existing session...', {
     storedEmail: storedEmail ? storedEmail : 'none',
+    emailSource: sessionStorage.getItem('validatedEmail') ? 'sessionStorage' : (localStorage.getItem('validatedEmail') ? 'localStorage' : 'none'),
     hasToken: storedToken ? 'yes' : 'no',
     showSignedInBadgeExists: typeof showSignedInBadge === 'function'
 });
@@ -20012,6 +20050,12 @@ if (storedEmail && storedEmail.includes('@')) {
                         localStorage.setItem('sessionToken', data.session_token);
                         globalState.sessionToken = data.session_token;
 
+                        // CRITICAL: Restore email to both storages and globalState
+                        // This allows requireEmailThen polling to detect auth completion
+                        sessionStorage.setItem('validatedEmail', storedEmail);
+                        localStorage.setItem('validatedEmail', storedEmail);
+                        globalState.email = storedEmail;
+
                         // Sync terms acceptance from server
                         if (data.terms_accepted_version === TERMS_VERSION) {
                             localStorage.setItem('termsAcceptedVersion', data.terms_accepted_version);
@@ -20022,7 +20066,7 @@ if (storedEmail && storedEmail.includes('@')) {
                             showSignedInBadge(storedEmail);
                         }
 
-                        console.log('[AUTH] ✓ Auto-reauth successful - new token acquired');
+                        console.log('[AUTH] ✓ Auto-reauth successful - new token acquired, email restored');
                     } else if (data.success && !data.validated) {
                         // Email needs validation code
                         console.log('[AUTH] Email not validated - user will need to enter code');

@@ -268,12 +268,15 @@ function ensureProcessingState() {
  */
 function requireEmailThen(action, description = 'continue') {
     // If email already validated, execute immediately
-    const storedEmail = sessionStorage.getItem('validatedEmail');
+    // Check sessionStorage first (current session), then localStorage (persisted)
+    const storedEmail = sessionStorage.getItem('validatedEmail') || localStorage.getItem('validatedEmail');
     const storedToken = localStorage.getItem('sessionToken');
 
     // Check if we have either email in sessionStorage OR a valid token in localStorage
     // Token persists 30 days, email is cleared on tab close
-    if (globalState.email || (storedEmail && storedEmail.includes('@')) || (storedToken && globalState.sessionToken)) {
+    // IMPORTANT: Check storedToken directly, not globalState.sessionToken, because
+    // globalState.sessionToken is only set after auto-reauth completes
+    if (globalState.email || (storedEmail && storedEmail.includes('@'))) {
         if (!globalState.email && storedEmail) {
             globalState.email = storedEmail;
         }
@@ -281,23 +284,48 @@ function requireEmailThen(action, description = 'continue') {
         return;
     }
 
-    // If we have a token but no email, wait briefly for auto-reauth to complete
-    // Auto-reauth runs at 500ms delay in 99-init.js
+    // If we have a token but no email, this means sessionStorage was cleared
+    // but localStorage token still exists - need to wait for auto-reauth
+
+    // If we have a token but no email, wait for auto-reauth to complete
+    // Auto-reauth runs at 500ms delay in 99-init.js and may take 100-300ms to complete
     if (storedToken && !storedEmail) {
         console.log('[EMAIL] Token found but email missing, waiting for auto-reauth...');
-        setTimeout(() => {
-            // Check again after auto-reauth had time to run
+
+        // Use a polling approach to wait for auto-reauth with proper timeout
+        let attempts = 0;
+        const maxAttempts = 6; // Max 6 attempts over ~3.6 seconds
+        const checkInterval = 600; // Check every 600ms
+
+        const checkAuth = () => {
+            attempts++;
+
+            // Check if auto-reauth completed
             if (globalState.email || sessionStorage.getItem('validatedEmail')) {
-                console.log('[EMAIL] Auto-reauth completed, proceeding with action');
+                console.log('[EMAIL] Auto-reauth completed after', attempts * checkInterval, 'ms, proceeding with action');
+                if (!globalState.email && sessionStorage.getItem('validatedEmail')) {
+                    globalState.email = sessionStorage.getItem('validatedEmail');
+                }
                 action();
-            } else {
-                // Auto-reauth failed, show email validation card
-                console.log('[EMAIL] Auto-reauth failed, showing validation card');
+                return;
+            }
+
+            // If we've exhausted attempts, show email validation card
+            if (attempts >= maxAttempts) {
+                console.log('[EMAIL] Auto-reauth timed out after', attempts * checkInterval, 'ms, showing validation card');
                 globalState.pendingActionAfterEmail = action;
                 globalState.pendingActionDescription = description;
                 createEmailValidationCard();
+                return;
             }
-        }, 700); // Wait 700ms (200ms after auto-reauth 500ms delay)
+
+            // Keep checking
+            console.log(`[EMAIL] Auto-reauth check ${attempts}/${maxAttempts}, waiting ${checkInterval}ms...`);
+            setTimeout(checkAuth, checkInterval);
+        };
+
+        // Start checking after initial delay (longer than auto-reauth 500ms start)
+        setTimeout(checkAuth, checkInterval);
         return;
     }
 

@@ -146,13 +146,14 @@ if (IS_PAGE_RELOAD) {
 // sessionId gets created when user uploads file or selects demo
 
 // SECURITY: Restore auth state
-// Email in sessionStorage (cleared on tab close)
-// Token in localStorage (persists 30 days, cleared on logout)
-const storedEmail = sessionStorage.getItem('validatedEmail');
+// Email: Try sessionStorage first (current session), then localStorage (persisted)
+// Token: localStorage (persists 30 days, cleared on logout)
+const storedEmail = sessionStorage.getItem('validatedEmail') || localStorage.getItem('validatedEmail');
 const storedToken = localStorage.getItem('sessionToken');
 
 console.log('[AUTH] Checking for existing session...', {
     storedEmail: storedEmail ? storedEmail : 'none',
+    emailSource: sessionStorage.getItem('validatedEmail') ? 'sessionStorage' : (localStorage.getItem('validatedEmail') ? 'localStorage' : 'none'),
     hasToken: storedToken ? 'yes' : 'no',
     showSignedInBadgeExists: typeof showSignedInBadge === 'function'
 });
@@ -213,6 +214,12 @@ if (storedEmail && storedEmail.includes('@')) {
                         localStorage.setItem('sessionToken', data.session_token);
                         globalState.sessionToken = data.session_token;
 
+                        // CRITICAL: Restore email to both storages and globalState
+                        // This allows requireEmailThen polling to detect auth completion
+                        sessionStorage.setItem('validatedEmail', storedEmail);
+                        localStorage.setItem('validatedEmail', storedEmail);
+                        globalState.email = storedEmail;
+
                         // Sync terms acceptance from server
                         if (data.terms_accepted_version === TERMS_VERSION) {
                             localStorage.setItem('termsAcceptedVersion', data.terms_accepted_version);
@@ -223,7 +230,7 @@ if (storedEmail && storedEmail.includes('@')) {
                             showSignedInBadge(storedEmail);
                         }
 
-                        console.log('[AUTH] ✓ Auto-reauth successful - new token acquired');
+                        console.log('[AUTH] ✓ Auto-reauth successful - new token acquired, email restored');
                     } else if (data.success && !data.validated) {
                         // Email needs validation code
                         console.log('[AUTH] Email not validated - user will need to enter code');
