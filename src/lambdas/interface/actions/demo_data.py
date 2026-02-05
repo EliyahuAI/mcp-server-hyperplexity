@@ -130,10 +130,38 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
 
         logger.info(f"[DEMO_DATA] Successfully loaded demo: {safe_table_name} ({clean_name})")
 
+        # Check table_metadata size to prevent 413 error (Lambda response limit: 6MB)
+        # For large datasets, omit metadata from response and let frontend fetch via presigned URL
+        metadata_size_mb = len(json.dumps(table_metadata, default=str)) / 1024 / 1024
+        logger.info(f"[DEMO_DATA] table_metadata size: {metadata_size_mb:.2f} MB")
+
+        metadata_too_large = metadata_size_mb > 4.0  # Use 4MB threshold (留余量 for other response fields)
+        if metadata_too_large:
+            logger.warning(f"[DEMO_DATA] Metadata too large ({metadata_size_mb:.2f} MB), will generate presigned URL for frontend to fetch")
+
+        # Generate presigned URL for JSON metadata if too large
+        json_download_url = None
+        if metadata_too_large:
+            try:
+                json_download_url = s3_client.generate_presigned_url(
+                    'get_object',
+                    Params={
+                        'Bucket': bucket,
+                        'Key': metadata_key,
+                        'ResponseContentDisposition': 'attachment; filename="table_metadata.json"'
+                    },
+                    ExpiresIn=3600
+                )
+                logger.info(f"[DEMO_DATA] Generated presigned URL for large metadata")
+            except Exception as e:
+                logger.error(f"[DEMO_DATA] Failed to generate presigned URL: {e}")
+
         # Build response with metadata dates
         response_data = {
             'success': True,
-            'table_metadata': table_metadata,
+            'table_metadata': None if metadata_too_large else table_metadata,
+            'metadata_too_large': metadata_too_large,
+            'json_download_url': json_download_url,
             'table_name': safe_table_name,
             'clean_table_name': clean_name,
             'is_demo': True,

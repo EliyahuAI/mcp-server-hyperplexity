@@ -602,7 +602,7 @@ async function loadAndDisplayDemo(tableName) {
         }
 
         // Display demo results with special button handling
-        displayDemoResultsInCard(cardId, data, tableName);
+        await displayDemoResultsInCard(cardId, data, tableName);
 
     } catch (error) {
         console.error('[DEMO] Error loading demo:', error);
@@ -619,11 +619,30 @@ async function loadAndDisplayDemo(tableName) {
  * @param {Object} data - Demo data from API
  * @param {string} tableName - Original table name for downloads
  */
-function displayDemoResultsInCard(cardId, data, tableName) {
+async function displayDemoResultsInCard(cardId, data, tableName) {
     const container = document.getElementById(`${cardId}-table-container`);
     if (!container) {
         console.error(`[DEMO] Container ${cardId}-table-container not found`);
         return;
+    }
+
+    // If metadata was too large to include inline, fetch it from S3
+    if (data.metadata_too_large && data.json_download_url && !data.table_metadata) {
+        console.log('[DEMO] Metadata too large, fetching from:', data.json_download_url);
+        container.innerHTML = '<p class="table-loading-message">Loading table data...</p>';
+
+        try {
+            const response = await fetch(data.json_download_url);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch metadata: ${response.status}`);
+            }
+            data.table_metadata = await response.json();
+            console.log('[DEMO] Successfully fetched large metadata from S3');
+        } catch (error) {
+            console.error('[DEMO] Error fetching metadata:', error);
+            container.innerHTML = `<p class="table-empty-message">Error loading table data: ${error.message}</p>`;
+            // Continue to show download buttons even if table fails to load
+        }
     }
 
     // Update the info header with table name and date
