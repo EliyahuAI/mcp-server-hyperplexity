@@ -91,6 +91,7 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         clean_name = safe_table_name.replace('-', ' ').replace('_', ' ').title()
 
         # Check for optional info.json with additional metadata
+        info = None
         try:
             info_key = f"{demo_path}info.json"
             info_response = s3_client.get_object(Bucket=bucket, Key=info_key)
@@ -129,14 +130,33 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
 
         logger.info(f"[DEMO_DATA] Successfully loaded demo: {safe_table_name} ({clean_name})")
 
-        return create_response(200, {
+        # Build response with metadata dates
+        response_data = {
             'success': True,
             'table_metadata': table_metadata,
             'table_name': safe_table_name,
             'clean_table_name': clean_name,
             'is_demo': True,
             'enhanced_download_url': excel_download_url
-        })
+        }
+
+        # Include shared_at date from info.json if available
+        if info and info.get('shared_at'):
+            response_data['shared_at'] = info.get('shared_at')
+
+        # Include analysis_date - check info.json first, then table_metadata
+        analysis_date = None
+        if info and info.get('analysis_date'):
+            analysis_date = info.get('analysis_date')
+        elif table_metadata.get('analysis_date'):
+            analysis_date = table_metadata.get('analysis_date')
+        elif table_metadata.get('generated_at'):
+            analysis_date = table_metadata.get('generated_at')
+
+        if analysis_date:
+            response_data['analysis_date'] = analysis_date
+
+        return create_response(200, response_data)
 
     except Exception as e:
         logger.error(f"[DEMO_DATA] Error: {e}")

@@ -19134,16 +19134,29 @@ async function loadAndDisplayDemo(tableName) {
         // Hide loading indicator
         completeThinkingInCard(cardId, 'Demo loaded');
 
-        // Update card title with clean name
+        // Update card title and subtitle with actual data
         const card = document.getElementById(cardId);
         if (card) {
             const titleEl = card.querySelector('.card-title');
             if (titleEl) {
                 titleEl.textContent = data.clean_table_name || tableName;
             }
+
+            // Build subtitle with date info
             const subtitleEl = card.querySelector('.card-subtitle');
             if (subtitleEl) {
-                subtitleEl.textContent = 'Public Demo Table';
+                let subtitleParts = [];
+                // Use analysis_date if available, otherwise shared_at
+                const dateStr = data.analysis_date || data.shared_at;
+                if (dateStr) {
+                    const dateObj = new Date(dateStr);
+                    const formattedDate = dateObj.toLocaleDateString('en-US', {
+                        year: 'numeric', month: 'short', day: 'numeric'
+                    });
+                    subtitleParts.push(data.analysis_date ? `Analyzed: ${formattedDate}` : `Shared: ${formattedDate}`);
+                }
+                subtitleParts.push('Shared Table');
+                subtitleEl.textContent = subtitleParts.join(' • ');
             }
         }
 
@@ -19172,10 +19185,24 @@ function displayDemoResultsInCard(cardId, data, tableName) {
         return;
     }
 
-    // Update the info header
+    // Update the info header with table name and date
     const infoText = document.getElementById(`${cardId}-info-text`);
     if (infoText) {
-        infoText.innerHTML = '<strong>Demo Table</strong> - Click cells for details, or create your own validated table.';
+        const displayName = data.clean_table_name || tableName || 'Shared Table';
+        let infoHtml = `<strong>${displayName}</strong>`;
+
+        // Add date context if available
+        const dateStr = data.analysis_date || data.shared_at;
+        if (dateStr) {
+            const dateObj = new Date(dateStr);
+            const formattedDate = dateObj.toLocaleDateString('en-US', {
+                weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+            });
+            infoHtml += ` - ${data.analysis_date ? 'Validated' : 'Shared'} ${formattedDate}`;
+        }
+
+        infoHtml += '. Click cells for details, or download Excel/JSON.';
+        infoText.innerHTML = infoHtml;
     }
 
     // Render table if metadata available
@@ -19364,7 +19391,7 @@ async function handleShareTable(cardId, button, data) {
 
     if (action === 'copy') {
         // Copy existing link
-        const shareUrl = `${window.location.origin}${window.location.pathname}?demo=${existingDemoName}`;
+        const shareUrl = `https://eliyahu.ai/viewer?demo=${existingDemoName}`;
         try {
             await navigator.clipboard.writeText(shareUrl);
             if (messagesId) showMessage(messagesId,
@@ -19430,7 +19457,7 @@ async function handleShareTable(cardId, button, data) {
         }
 
         // Build the share URL
-        const shareUrl = `${window.location.origin}${window.location.pathname}?demo=${result.table_name}`;
+        const shareUrl = `https://eliyahu.ai/viewer?demo=${result.table_name}`;
 
         // Copy to clipboard
         try {
@@ -19476,7 +19503,7 @@ function showShareConfirmationDialog(isCurrentlyShared, existingDemoName) {
         let bodyHtml, buttonsHtml;
 
         if (isCurrentlyShared) {
-            const shareUrl = `${window.location.origin}${window.location.pathname}?demo=${existingDemoName}`;
+            const shareUrl = `https://eliyahu.ai/viewer?demo=${existingDemoName}`;
             bodyHtml = `
                 <div class="table-maker-modal-header">
                     <h2 class="table-maker-modal-title">Table Already Shared</h2>

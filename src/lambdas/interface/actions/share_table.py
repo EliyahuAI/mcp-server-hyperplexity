@@ -159,14 +159,26 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         # Get table name for the slug
         table_name = table_metadata.get('table_name', '')
 
-        # Try session_info for a better name
+        # Try session_info for a better name and analysis date
         session_info_key = f"{session_path}session_info.json"
         session_info = _load_json_from_s3(active_bucket, session_info_key)
         clean_table_name = None
         original_filename = None
+        analysis_date = None
         if session_info:
             clean_table_name = session_info.get('clean_table_name')
             original_filename = session_info.get('original_filename')
+
+            # Get analysis date from version info
+            versions_info = session_info.get('versions', {})
+            version_key = f"v{config_version}"
+            if version_key in versions_info:
+                version_info = versions_info[version_key]
+                analysis_date = version_info.get('validation_completed_at') or version_info.get('created_at')
+
+        # Fallback: use table_metadata timestamp if available
+        if not analysis_date and table_metadata:
+            analysis_date = table_metadata.get('generated_at') or table_metadata.get('created_at')
 
         display_name = clean_table_name or table_name or 'Shared Table'
         demo_name = _generate_demo_name(display_name, session_id)
@@ -229,7 +241,8 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
             'source_email_hash': email_hash,
             'source_version': config_version,
             'shared_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-            'original_filename': original_filename
+            'original_filename': original_filename,
+            'analysis_date': analysis_date
         }
 
         s3_client.put_object(
