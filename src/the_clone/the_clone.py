@@ -342,7 +342,15 @@ class TheClone2Refined:
 
             # Call synthesis with URL snippets (or empty if no URLs found)
             synthesis_tier = initial_result.get('synthesis_tier', 'tier2')
-            models = get_model_config(provider, model_override, synthesis_tier)
+            if model_override:
+                models = {
+                    'initial_decision': model_override if 'claude' in model_override else 'claude-sonnet-4-5',
+                    'triage': model_override,
+                    'extraction': model_override,
+                    'synthesis': model_override
+                }
+            else:
+                models = get_models_for_tier(provider, synthesis_tier)
 
             step_start_phase = time.time()
             synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
