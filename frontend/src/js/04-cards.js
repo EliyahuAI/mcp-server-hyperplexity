@@ -588,8 +588,20 @@
                 // Use provided ID or generate new one
                 const cardId = id || generateCardId();
                 
+                // Color sequence for card attention animation
+                const attentionColors = ['green', 'purple', 'cyan', 'orange', 'pink'];
+
+                // Remove active-attention from any existing cards
+                document.querySelectorAll('.card[class*="active-attention-"]').forEach(c => {
+                    attentionColors.forEach(color => c.classList.remove(`active-attention-${color}`));
+                });
+
+                // Get next color in sequence (based on card counter)
+                const colorIndex = (globalState.cardCounter - 1) % attentionColors.length;
+                const attentionColor = attentionColors[colorIndex];
+
                 const card = document.createElement('div');
-                card.className = 'card';
+                card.className = `card active-attention-${attentionColor}`;
                 card.id = cardId;
                 
                 // Build card HTML - ALWAYS include buttons container

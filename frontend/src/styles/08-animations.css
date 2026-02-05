@@ -1025,3 +1025,82 @@
             border-radius: 10%;
         }
     }
+
+    /* Active card attention - each card gets next color in sequence */
+
+    /* Soft ramp-in for glow */
+    @keyframes cardGlowRampGreen {
+        0% { box-shadow: var(--box-shadow), 0 0 0 0 rgba(40, 255, 58, 0); }
+        100% { box-shadow: var(--box-shadow), 0 0 10px 2px rgba(40, 255, 58, 0.25); }
+    }
+    @keyframes cardGlowRampPurple {
+        0% { box-shadow: var(--box-shadow), 0 0 0 0 rgba(176, 27, 193, 0); }
+        100% { box-shadow: var(--box-shadow), 0 0 10px 2px rgba(176, 27, 193, 0.25); }
+    }
+    @keyframes cardGlowRampCyan {
+        0% { box-shadow: var(--box-shadow), 0 0 0 0 rgba(0, 188, 212, 0); }
+        100% { box-shadow: var(--box-shadow), 0 0 10px 2px rgba(0, 188, 212, 0.25); }
+    }
+    @keyframes cardGlowRampOrange {
+        0% { box-shadow: var(--box-shadow), 0 0 0 0 rgba(255, 152, 0, 0); }
+        100% { box-shadow: var(--box-shadow), 0 0 10px 2px rgba(255, 152, 0, 0.25); }
+    }
+    @keyframes cardGlowRampPink {
+        0% { box-shadow: var(--box-shadow), 0 0 0 0 rgba(233, 30, 99, 0); }
+        100% { box-shadow: var(--box-shadow), 0 0 10px 2px rgba(233, 30, 99, 0.25); }
+    }
+
+    /* Very subtle pulse keyframes for each color */
+    @keyframes cardPulseGreen {
+        0%, 100% { box-shadow: var(--box-shadow), 0 0 10px 2px rgba(40, 255, 58, 0.25); }
+        50% { box-shadow: var(--box-shadow), 0 0 11px 2px rgba(40, 255, 58, 0.3); }
+    }
+    @keyframes cardPulsePurple {
+        0%, 100% { box-shadow: var(--box-shadow), 0 0 10px 2px rgba(176, 27, 193, 0.25); }
+        50% { box-shadow: var(--box-shadow), 0 0 11px 2px rgba(176, 27, 193, 0.3); }
+    }
+    @keyframes cardPulseCyan {
+        0%, 100% { box-shadow: var(--box-shadow), 0 0 10px 2px rgba(0, 188, 212, 0.25); }
+        50% { box-shadow: var(--box-shadow), 0 0 11px 2px rgba(0, 188, 212, 0.3); }
+    }
+    @keyframes cardPulseOrange {
+        0%, 100% { box-shadow: var(--box-shadow), 0 0 10px 2px rgba(255, 152, 0, 0.25); }
+        50% { box-shadow: var(--box-shadow), 0 0 11px 2px rgba(255, 152, 0, 0.3); }
+    }
+    @keyframes cardPulsePink {
+        0%, 100% { box-shadow: var(--box-shadow), 0 0 10px 2px rgba(233, 30, 99, 0.25); }
+        50% { box-shadow: var(--box-shadow), 0 0 11px 2px rgba(233, 30, 99, 0.3); }
+    }
+
+    .card.active-attention-green {
+        animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+                   cardGlowRampGreen 1.2s ease-out 0.4s forwards,
+                   cardPulseGreen 5s ease-in-out 1.6s infinite;
+    }
+    .card.active-attention-purple {
+        animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+                   cardGlowRampPurple 1.2s ease-out 0.4s forwards,
+                   cardPulsePurple 5s ease-in-out 1.6s infinite;
+    }
+    .card.active-attention-cyan {
+        animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+                   cardGlowRampCyan 1.2s ease-out 0.4s forwards,
+                   cardPulseCyan 5s ease-in-out 1.6s infinite;
+    }
+    .card.active-attention-orange {
+        animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+                   cardGlowRampOrange 1.2s ease-out 0.4s forwards,
+                   cardPulseOrange 5s ease-in-out 1.6s infinite;
+    }
+    .card.active-attention-pink {
+        animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+                   cardGlowRampPink 1.2s ease-out 0.4s forwards,
+                   cardPulsePink 5s ease-in-out 1.6s infinite;
+    }
+
+    /* Reduced motion preference */
+    @media (prefers-reduced-motion: reduce) {
+        .card[class*="active-attention-"] {
+            animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+    }
