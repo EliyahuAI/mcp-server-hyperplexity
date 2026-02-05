@@ -407,12 +407,18 @@ class QCModule:
                             cited_text = citation.get('cited_text', '')
                             p_score = citation.get('p', '')  # Reliability score
 
-                            # Format with [V*] prefix and p score when available: [V1] Title (p85): "quote" (URL)
-                            p_part = f" ({p_score})" if p_score else ""
+                            # Format with [V*] prefix and p score when available: [V1] Title: "quote" (URL, Conf=0.85)
                             if cited_text:
-                                citation_text = f"[V{i}] {title}{p_part}: \"{cited_text}\" ({url})"
+                                snippet = cited_text[:150] + "..." if len(cited_text) > 150 else cited_text
+                                if p_score:
+                                    citation_text = f'[V{i}] {title}: "{snippet}" ({url}, Conf={p_score})'
+                                else:
+                                    citation_text = f'[V{i}] {title}: "{snippet}" ({url})'
                             else:
-                                citation_text = f"[V{i}] {title}{p_part} ({url})"
+                                if p_score:
+                                    citation_text = f"[V{i}] {title} ({url}, Conf={p_score})"
+                                else:
+                                    citation_text = f"[V{i}] {title} ({url})"
                             field_output.append(f"  - {citation_text}")
                         else:
                             # Plain string citation (fallback)
@@ -732,11 +738,17 @@ class QCModule:
                             url = first_citation.get('url', '')
                             cited_text = first_citation.get('cited_text', '')
                             p_score = first_citation.get('p', '')
-                            p_part = f" ({p_score})" if p_score else ""
+                            # Format: [V1] Title: "snippet" (URL, Conf=0.85)
+                            citation_text = f'[V1] {title}'
                             if cited_text:
-                                first_citations_lookup[col] = f'[V1] {title}{p_part}: "{cited_text}" ({url})'
-                            else:
-                                first_citations_lookup[col] = f'[V1] {title}{p_part} ({url})'
+                                snippet = cited_text[:150] + "..." if len(cited_text) > 150 else cited_text
+                                citation_text += f': "{snippet}"'
+                            if url:
+                                if p_score:
+                                    citation_text += f' ({url}, Conf={p_score})'
+                                else:
+                                    citation_text += f' ({url})'
+                            first_citations_lookup[col] = citation_text
                         else:
                             first_citations_lookup[col] = f'[V1] {first_citation}'
 
@@ -899,9 +911,42 @@ class QCModule:
                             qc_result['key_citation'] = first_citations_lookup[column]
                             equals_expanded_citation += 1
                         else:
-                            # Fallback to just [V1] reference if no citation available
-                            qc_result['key_citation'] = '[V1]'
-                            equals_expanded_citation += 1
+                            # Fallback to constructing from citations if lookup failed
+                            # Get first citation from the group results
+                            first_citation_text = ''
+                            for group_results in all_group_results.values():
+                                for result in group_results:
+                                    if result.get('column') == column:
+                                        citations = result.get('citations', [])
+                                        if citations and len(citations) > 0:
+                                            first_citation = citations[0]
+                                            if isinstance(first_citation, dict):
+                                                title = first_citation.get('title', 'Source')
+                                                url = first_citation.get('url', '')
+                                                cited_text = first_citation.get('cited_text', '')
+                                                p_score = first_citation.get('p', '')
+                                                # Format: [V1] Title: "snippet" (URL, Conf=0.85)
+                                                first_citation_text = f'[V1] {title}'
+                                                if cited_text:
+                                                    snippet = cited_text[:150] + "..." if len(cited_text) > 150 else cited_text
+                                                    first_citation_text += f': "{snippet}"'
+                                                if url:
+                                                    if p_score:
+                                                        first_citation_text += f' ({url}, Conf={p_score})'
+                                                    else:
+                                                        first_citation_text += f' ({url})'
+                                            else:
+                                                first_citation_text = f'[V1] {first_citation}'
+                                            break
+                                        break
+
+                            if first_citation_text:
+                                qc_result['key_citation'] = first_citation_text
+                                equals_expanded_citation += 1
+                            else:
+                                # No citation available at all - leave empty
+                                qc_result['key_citation'] = ''
+                                logger.warning(f"[QC_CODEWORD_EXPAND] {column}: Cannot expand key_citation '=' - no citations available")
                     # Clear "=" in qc_reasoning (means validator's explanation is adequate, no QC reasoning needed)
                     if qc_result.get('qc_reasoning') == '=':
                         qc_result['qc_reasoning'] = ''

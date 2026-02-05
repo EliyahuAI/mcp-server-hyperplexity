@@ -1574,7 +1574,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
 
                                             # Extract key_citation from QC data
                                             raw_key_citation = field_qc_data.get('key_citation') or ''
-                                            key_citation = safe_for_excel(str(raw_key_citation))
+                                            # Normalize citation references: [n] → [QCn], then [Vn] → [n]
+                                            normalized_citation = normalize_citation_references(str(raw_key_citation)) if raw_key_citation else ''
+                                            key_citation = safe_for_excel(normalized_citation)
 
                                             qc_original_confidence = str(field_qc_data.get('qc_original_confidence') or '')
                                             qc_updated_confidence = str(field_qc_data.get('qc_updated_confidence') or '')
@@ -2241,7 +2243,9 @@ def _build_preview_cell_comment(col_name: str, field_data: dict, field_qc_data: 
                 key_citation += f" ({cite_url})"
 
     if key_citation:
-        comment['key_citation'] = str(key_citation)
+        # Normalize citation references: [n] → [QCn], then [Vn] → [n]
+        normalized_citation = normalize_citation_references(str(key_citation))
+        comment['key_citation'] = normalized_citation
 
     # Sources list
     sources = []
