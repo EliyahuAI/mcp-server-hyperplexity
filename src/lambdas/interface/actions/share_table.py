@@ -159,6 +159,12 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         # Get table name from metadata - this is the primary source
         table_name = table_metadata.get('table_name', '')
         logger.info(f"[SHARE] table_name from metadata: '{table_name}'")
+        logger.info(f"[SHARE] table_metadata keys: {list(table_metadata.keys())}")
+
+        # Debug: check if columns exist and what the first one is
+        if table_metadata.get('columns'):
+            first_cols = [c.get('name', '') for c in table_metadata.get('columns', [])[:3]]
+            logger.info(f"[SHARE] First 3 column names: {first_cols}")
 
         # Try session_info for clean_table_name, original_filename, and analysis date
         session_info_key = f"{session_path}session_info.json"
@@ -170,8 +176,16 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         logger.info(f"[SHARE] session_info loaded: {session_info is not None}")
 
         if session_info:
+            # Log all keys to find where the real table name is hiding
+            logger.info(f"[SHARE] session_info keys: {list(session_info.keys())}")
+
             clean_table_name = session_info.get('clean_table_name')
             original_filename = session_info.get('original_filename')
+
+            # Check other potential name fields
+            for key in ['table_name', 'name', 'title', 'display_name']:
+                if key in session_info:
+                    logger.info(f"[SHARE] session_info['{key}']: '{session_info.get(key)}'")
 
             logger.info(f"[SHARE] From session_info: clean_table_name='{clean_table_name}', original_filename='{original_filename}'")
 
@@ -186,17 +200,41 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         if not analysis_date and table_metadata:
             analysis_date = table_metadata.get('generated_at') or table_metadata.get('created_at')
 
-        # Get original_filename if not already set
-        if not original_filename:
+        # Get original_filename if not already set (matching viewer_data.py logic)
+        if not original_filename or original_filename == 'None':
             original_filename = table_metadata.get('original_filename')
+
+        # If still no original_filename, scan S3 for input xlsx files (matching viewer_data.py)
+        if not original_filename or original_filename == 'None':
+            try:
+                logger.info(f"[SHARE] Scanning S3 for input files in {session_path}")
+                response = s3_client.list_objects_v2(
+                    Bucket=active_bucket,
+                    Prefix=session_path,
+                    MaxKeys=50
+                )
+                for obj in response.get('Contents', []):
+                    key = obj['Key']
+                    filename = key.split('/')[-1]
+                    # Look for input xlsx files (not in results folders)
+                    if filename.endswith('.xlsx') and '_results' not in key and 'v1_' not in key and 'v2_' not in key:
+                        original_filename = filename
+                        logger.info(f"[SHARE] Found input file in S3: {original_filename}")
+                        break
+            except Exception as e:
+                logger.warning(f"[SHARE] Could not scan S3 for input file: {e}")
 
         # Helper function to check if a name is valid and meaningful
         def is_valid_name(name):
             if not name or not isinstance(name, str):
                 return False
             name = name.strip()
-            # Filter out empty, generic, or placeholder names
-            if not name or name in ['Validation Results', 'Shared Table', 'Table', '']:
+            # Filter out empty, generic, placeholder, or null-like names
+            invalid_names = [
+                'Validation Results', 'Shared Table', 'Table', '',
+                'None', 'null', 'undefined', 'N/A', 'NA'
+            ]
+            if not name or name in invalid_names:
                 return False
             # Filter out names that look like session IDs
             if name.startswith('Table ') and len(name) <= 15:
