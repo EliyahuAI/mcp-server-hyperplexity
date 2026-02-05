@@ -180,6 +180,17 @@ def handle(request_data: Dict[str, Any], context) -> Dict:
         if not analysis_date and table_metadata:
             analysis_date = table_metadata.get('generated_at') or table_metadata.get('created_at')
 
+        # Fallback: derive clean_table_name from original_filename if not in session_info
+        # (matches logic in viewer_data.py)
+        if not clean_table_name or clean_table_name == "Validation Results":
+            # Try original_filename from session_info or table_metadata
+            if not original_filename:
+                original_filename = table_metadata.get('original_filename')
+            if original_filename:
+                from interface_lambda.utils.helpers import clean_table_name as derive_clean_name
+                clean_table_name = derive_clean_name(original_filename, for_display=True)
+                logger.info(f"[SHARE] Derived clean_table_name from filename: '{clean_table_name}'")
+
         display_name = clean_table_name or table_name or 'Shared Table'
         demo_name = _generate_demo_name(display_name, session_id)
 

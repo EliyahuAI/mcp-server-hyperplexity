@@ -589,7 +589,7 @@ async function loadAndDisplayDemo(tableName) {
                     });
                     subtitleParts.push(data.analysis_date ? `Analyzed: ${formattedDate}` : `Shared: ${formattedDate}`);
                 }
-                subtitleParts.push('Shared Table');
+                subtitleParts.push('Publicly Shared');
                 subtitleEl.textContent = subtitleParts.join(' • ');
             }
         }
