@@ -15,6 +15,9 @@
  * Requires email validation, then loads and displays the results
  */
 function initViewerMode() {
+    // Add viewer-mode class for wider container
+    document.body.classList.add('viewer-mode');
+
     const params = getViewerParams();
 
     // Validate we have required parameters
@@ -506,6 +509,9 @@ function showFullValidationResults(validationData) {
  * No email required - loads public demo table directly
  */
 function initDemoMode() {
+    // Add viewer-mode class for wider container
+    document.body.classList.add('viewer-mode');
+
     const params = getDemoParams();
 
     if (!params.tableName) {

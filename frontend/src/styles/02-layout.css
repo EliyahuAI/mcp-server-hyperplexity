@@ -12,6 +12,11 @@
     padding: 0 1rem;
 }
 
+/* Wider container in viewer mode */
+body.viewer-mode .validator-container {
+    max-width: 1600px;
+}
+
 /* Mobile-specific responsive styles */
 @media (max-width: 768px) {
     .validator-container {

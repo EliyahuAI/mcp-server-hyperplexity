@@ -244,9 +244,6 @@ const InteractiveTable = (function() {
                     onmouseleave="InteractiveTable.hideTooltip(); InteractiveTable.clearColumnHighlight()"
                 >`;
                 html += `<span class="cell-value">${escapeHtml(displayValue)}</span>`;
-                if (fullValue.length > displayValue.length) {
-                    html += '<span class="truncated-indicator">...</span>';
-                }
                 html += '</td>';
             });
 
@@ -297,7 +294,7 @@ const InteractiveTable = (function() {
                         const colName = col.name || (typeof col === 'string' ? col : String(col));
                         const value = String(row[colName] ?? '');
                         return [colName, {
-                            display_value: value.slice(0, 30) + (value.length > 30 ? '...' : ''),
+                            display_value: value,  // Let CSS handle truncation
                             full_value: value,
                             confidence: (col.importance || '').toUpperCase() === 'ID' ? 'ID' : 'MEDIUM',
                             comment: {}

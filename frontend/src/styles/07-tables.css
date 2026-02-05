@@ -153,11 +153,14 @@
     border-bottom: 1px solid #c0c0c0;
     border-right: 1px solid #c0c0c0;
     text-align: left;
-    vertical-align: top;
-    min-width: 200px;
-    max-width: 300px;
+    vertical-align: middle;
+    min-width: 140px;
+    max-width: 180px;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+    height: 2.5em;
+    max-height: 2.5em;
 }
 
 /* Add top border to first row */
@@ -191,6 +194,14 @@
     max-width: 180px;
     box-shadow: 2px 0 4px rgba(0,0,0,0.06);
     border-right: 2px solid #e0e0e0;
+}
+
+/* Desktop: wider sticky column (50% larger to prevent wrapping) */
+@media (min-width: 768px) {
+    .interactive-table .sticky-column {
+        min-width: 210px;
+        max-width: 270px;
+    }
 }
 
 .interactive-table th.sticky-column {
@@ -359,6 +370,8 @@
     overflow: hidden;
     max-height: 1.5em;
     line-height: 1.5;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 .truncated-indicator {

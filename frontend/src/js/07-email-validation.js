@@ -343,18 +343,22 @@ function handleEmailValidated(cardId) {
     const pageType = detectPageType();
 
     setTimeout(() => {
-        if (pageType === 'reference-check') {
+        if (pageType === 'viewer' || pageType === 'demo') {
+            // Viewer/demo mode - card is created by initViewerMode/initDemoMode, just show badge
+            showSignedInBadge(globalState.email);
+        } else if (pageType === 'reference-check') {
             // Reference check mode - go straight to reference check card
             proceedWithReferenceCheck(cardId);
+            showSignedInBadge(globalState.email);
         } else if (globalState.isNewUser) {
             // Default mode - show demo option for new users
             createUploadOrDemoCard();
+            showSignedInBadge(globalState.email);
         } else {
             // Default mode - show upload card for returning users
             createUploadCard();
+            showSignedInBadge(globalState.email);
         }
-        // Re-attach badge to the new visible card
-        showSignedInBadge(globalState.email);
     }, 500);
 }
 
