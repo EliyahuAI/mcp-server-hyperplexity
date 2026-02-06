@@ -2333,8 +2333,19 @@ def handle_main_processing(event, context):
                                     all_fields.add(field_name)
 
                                     # Count updated confidence levels (null/blank counts as NULL)
+                                    # Special rule: blank-like values with LOW confidence are forced to NULL
+                                    updated_value = field_data.get('value', '')
                                     conf_level = field_data.get('confidence_level', 'UNKNOWN')
+
+                                    # Check if updated value looks blank-like (-, —, empty, n/a, etc)
+                                    blank_like_values = ('', '-', '—', '–', 'n/a', 'na', 'null', 'none')
+                                    is_updated_blank_like = (updated_value is None or
+                                                            str(updated_value).strip().lower() in blank_like_values)
+
                                     if conf_level is None or str(conf_level).strip().lower() in ('', 'null', 'none', 'unknown'):
+                                        confidence_counts['NULL'] += 1
+                                    elif is_updated_blank_like and str(conf_level).strip().upper() == 'LOW':
+                                        # Blank-like updated value with LOW confidence → force to NULL
                                         confidence_counts['NULL'] += 1
                                     elif conf_level in confidence_counts:
                                         confidence_counts[conf_level] += 1
@@ -2344,15 +2355,14 @@ def handle_main_processing(event, context):
                                     original_value = field_data.get('original_value', '')
                                     original_conf = field_data.get('original_confidence')
 
-                                    # Check if value looks blank-like (-, —, empty, n/a, etc)
-                                    blank_like_values = ('', '-', '—', '–', 'n/a', 'na', 'null', 'none')
-                                    is_blank_like = (original_value is None or
-                                                    str(original_value).strip().lower() in blank_like_values)
+                                    # Check if original value looks blank-like (-, —, empty, n/a, etc)
+                                    is_original_blank_like = (original_value is None or
+                                                             str(original_value).strip().lower() in blank_like_values)
 
                                     if original_conf is None or str(original_conf).strip().lower() in ('', 'null', 'none'):
                                         # Truly null confidence
                                         original_confidence_counts['NULL'] += 1
-                                    elif is_blank_like and str(original_conf).strip().upper() == 'LOW':
+                                    elif is_original_blank_like and str(original_conf).strip().upper() == 'LOW':
                                         # Blank-like value with LOW confidence → force to NULL
                                         # (not confident enough to assert it's intentionally N/A)
                                         original_confidence_counts['NULL'] += 1
@@ -4807,9 +4817,20 @@ def handle_main_processing(event, context):
                                     validated_fields.add(field_name)
 
                                 # Count updated confidence levels (only for validated fields, null/blank counts as NULL)
+                                # Special rule: blank-like values with LOW confidence are forced to NULL
                                 if field_name not in id_fields:
+                                    updated_value = field_data.get('value', '')
                                     conf_level = field_data.get('confidence_level')
+
+                                    # Check if updated value looks blank-like (-, —, empty, n/a, etc)
+                                    blank_like_values = ('', '-', '—', '–', 'n/a', 'na', 'null', 'none')
+                                    is_updated_blank_like = (updated_value is None or
+                                                            str(updated_value).strip().lower() in blank_like_values)
+
                                     if conf_level is None or str(conf_level).strip().lower() in ('', 'null', 'none'):
+                                        confidence_counts['NULL'] += 1
+                                    elif is_updated_blank_like and str(conf_level).strip().upper() == 'LOW':
+                                        # Blank-like updated value with LOW confidence → force to NULL
                                         confidence_counts['NULL'] += 1
                                     elif conf_level in confidence_counts:
                                         confidence_counts[conf_level] += 1
@@ -4820,15 +4841,14 @@ def handle_main_processing(event, context):
                                     original_value = field_data.get('original_value', '')
                                     original_conf = field_data.get('original_confidence')
 
-                                    # Check if value looks blank-like (-, —, empty, n/a, etc)
-                                    blank_like_values = ('', '-', '—', '–', 'n/a', 'na', 'null', 'none')
-                                    is_blank_like = (original_value is None or
-                                                    str(original_value).strip().lower() in blank_like_values)
+                                    # Check if original value looks blank-like (-, —, empty, n/a, etc)
+                                    is_original_blank_like = (original_value is None or
+                                                             str(original_value).strip().lower() in blank_like_values)
 
                                     if original_conf is None or str(original_conf).strip().lower() in ('', 'null', 'none'):
                                         # Truly null confidence
                                         original_confidence_counts['NULL'] += 1
-                                    elif is_blank_like and str(original_conf).strip().upper() == 'LOW':
+                                    elif is_original_blank_like and str(original_conf).strip().upper() == 'LOW':
                                         # Blank-like value with LOW confidence → force to NULL
                                         # (not confident enough to assert it's intentionally N/A)
                                         original_confidence_counts['NULL'] += 1
