@@ -78,8 +78,8 @@ class SimplifiedSchemaValidator:
         # Auto-generate primary_key from ID importance fields
         self.primary_key = self._generate_primary_key()
         
-        # Hardcoded cache TTL to 30 days
-        self.cache_ttl_days = 30
+        # Cache TTL: read from config with 1 day default
+        self.cache_ttl_days = config.get('cache_ttl_days', 1)
         
         # Model configuration
         self.default_model = config.get('default_model', 'sonar-pro')
@@ -854,7 +854,7 @@ class SimplifiedSchemaValidator:
         reasons = []
         base_date = datetime.now()
         
-        # Default to cache TTL (30 days)
+        # Default to cache TTL (configured via cache_ttl_days, defaults to 1 day)
         next_check_days = self.cache_ttl_days
         
         # Check for low confidence results

@@ -183,7 +183,8 @@ class AIAPIClient:
                                  search_context_size: str = "low", debug_name: str = None, soft_schema: bool = False,
                                  include_domains: Optional[List[str]] = None, exclude_domains: Optional[List[str]] = None,
                                  use_code_extraction: bool = None, findall: bool = False, extraction: bool = False,
-                                 findall_iterations: int = 1, timeout: Optional[int] = None) -> Dict:
+                                 findall_iterations: int = 1, timeout: Optional[int] = None,
+                                 cache_ttl_days: int = 1) -> Dict:
 
         call_start_time = datetime.now()
 
@@ -236,82 +237,92 @@ class AIAPIClient:
                 # The original call_structured_api checked cache itself.
 
                 cached_data = None  # Initialize to prevent UnboundLocalError
+                expired_cache_context = ""  # Context from expired cache to inject into prompt
                 if use_cache and cache_key:
-                    cached_data = await self.cache_handler.check_cache(cache_key, api_provider)
+                    cached_data = await self.cache_handler.check_cache(cache_key, api_provider, cache_ttl_days)
                     if cached_data:
-                         # ... (metrics logic similar to original) ...
-                         # Return cached response logic
-                         # I'll rely on what check_cache returns and normalize it
-                         token_usage = cached_data.get('token_usage', {})
-                         cached_response = cached_data['api_response']
+                        # Check if cache is expired - if so, inject context into prompt
+                        if cached_data.get('expired'):
+                            logger.info(f"[CACHE_EXPIRED] Using expired cache as context for fresh call")
+                            expired_cache_context = self.cache_handler.format_expired_cache_context(cached_data)
+                            cached_data = None  # Treat as cache miss, will make fresh call
+                        else:
+                            # ... (metrics logic similar to original) ...
+                            # Return cached response logic
+                            # I'll rely on what check_cache returns and normalize it
+                            token_usage = cached_data.get('token_usage', {})
+                            cached_response = cached_data['api_response']
 
-                         # [FIX] Validate cached response format - must have 'choices' key for compatibility
-                         # If it's in old/raw Anthropic format, invalidate and rebuild cache
-                         if not isinstance(cached_response, dict) or 'choices' not in cached_response:
-                             logger.warning(f"[CACHE_FORMAT] Cached response missing 'choices' key for {api_provider}. Keys: {list(cached_response.keys()) if isinstance(cached_response, dict) else 'N/A'}")
-                             logger.warning(f"[CACHE_FORMAT] Invalidating bad cache entry and making fresh call")
+                            # [FIX] Validate cached response format - must have 'choices' key for compatibility
+                            # If it's in old/raw Anthropic format, invalidate and rebuild cache
+                            if not isinstance(cached_response, dict) or 'choices' not in cached_response:
+                                logger.warning(f"[CACHE_FORMAT] Cached response missing 'choices' key for {api_provider}. Keys: {list(cached_response.keys()) if isinstance(cached_response, dict) else 'N/A'}")
+                                logger.warning(f"[CACHE_FORMAT] Invalidating bad cache entry and making fresh call")
 
-                             # Move bad cache to debug
-                             await self.cache_handler.move_bad_cache_to_debug(
-                                 cache_key,
-                                 api_provider,
-                                 "Missing 'choices' key in cached response (likely old format)",
-                                 cached_response=cached_data
-                             )
+                                # Move bad cache to debug
+                                await self.cache_handler.move_bad_cache_to_debug(
+                                    cache_key,
+                                    api_provider,
+                                    "Missing 'choices' key in cached response (likely old format)",
+                                    cached_response=cached_data
+                                )
 
-                             # Don't return cached data - fall through to make fresh API call
-                             cached_data = None
-                         else:
-                             # Cached response is valid - return it with preserved time_estimated
-                             cached_time_estimated = cached_data.get('time_estimated')  # Get original estimated time
-                             enhanced_data = self.usage_handler.get_enhanced_call_metrics(
-                                 cached_response, current_model, 0.001,
-                                 pre_extracted_token_usage=token_usage, is_cached=True,
-                                 cached_time_estimated=cached_time_estimated  # Pass original time for aggregation
-                             )
+                                # Don't return cached data - fall through to make fresh API call
+                                cached_data = None
+                            else:
+                                # Cached response is valid - return it with preserved time_estimated
+                                cached_time_estimated = cached_data.get('time_estimated')  # Get original estimated time
+                                enhanced_data = self.usage_handler.get_enhanced_call_metrics(
+                                    cached_response, current_model, 0.001,
+                                    pre_extracted_token_usage=token_usage, is_cached=True,
+                                    cached_time_estimated=cached_time_estimated  # Pass original time for aggregation
+                                )
 
-                             # Use stored citations if available (clone provider), otherwise extract from response
-                             cached_citations = cached_data.get('citations', [])
-                             if not cached_citations:
-                                 cached_citations = extract_citations_from_response(cached_response) if api_provider=='anthropic' else extract_citations_from_perplexity_response(cached_response)
+                                # Use stored citations if available (clone provider), otherwise extract from response
+                                cached_citations = cached_data.get('citations', [])
+                                if not cached_citations:
+                                    cached_citations = extract_citations_from_response(cached_response) if api_provider=='anthropic' else extract_citations_from_perplexity_response(cached_response)
 
-                             return {
-                                 'response': cached_response,
-                                 'token_usage': token_usage,
-                                 'processing_time': cached_data.get('processing_time', 0),
-                                 'is_cached': True,
-                                 'model_used': current_model,
-                                 'citations': cached_citations,
-                                 'enhanced_data': enhanced_data
-                             }
+                                return {
+                                    'response': cached_response,
+                                    'token_usage': token_usage,
+                                    'processing_time': cached_data.get('processing_time', 0),
+                                    'is_cached': True,
+                                    'model_used': current_model,
+                                    'citations': cached_citations,
+                                    'enhanced_data': enhanced_data
+                                }
+
+                # If we have expired cache context, augment the prompt
+                effective_prompt = prompt + expired_cache_context if expired_cache_context else prompt
 
                 if not cached_data and use_cache and cache_key:
                     logger.debug(f"No valid cache found for {api_provider}, making fresh API call")
 
-                # Make Call
+                # Make Call (use effective_prompt which includes expired cache context if any)
                 if api_provider == 'anthropic':
                     result = await self.anthropic.make_single_call("https://api.anthropic.com/v1/messages",
                          {'Content-Type': 'application/json', 'X-API-Key': self.anthropic.api_key, 'anthropic-version': '2023-06-01'},
-                         self._build_anthropic_data(current_model_normalized, prompt, schema, tool_name, max_tokens, max_web_searches, soft_schema),
+                         self._build_anthropic_data(current_model_normalized, effective_prompt, schema, tool_name, max_tokens, max_web_searches, soft_schema),
                          current_model_normalized, use_cache, cache_key, call_start_time, max_web_searches, soft_schema, schema, timeout)
                 elif api_provider == 'perplexity':
-                    result = await self.perplexity.make_single_structured_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, search_context_size, debug_name, max_tokens or 64000, soft_schema, include_domains, exclude_domains)
+                    result = await self.perplexity.make_single_structured_call(effective_prompt, schema, current_model, use_cache, cache_key, call_start_time, search_context_size, debug_name, max_tokens or 64000, soft_schema, include_domains, exclude_domains)
                 elif api_provider == 'gemini':
                     if not self.gemini.project_id: continue
                     # Gemini has native JSON mode support, use soft_schema parameter as-is
-                    result = await self.gemini.make_single_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 64000, soft_schema, timeout)
+                    result = await self.gemini.make_single_call(effective_prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 64000, soft_schema, timeout)
                 elif api_provider == 'vertex':
                     if not self.vertex.project_id: continue
                     # Force soft_schema for all Vertex models (DeepSeek) as hard schema support is experimental/flaky
                     use_soft_schema_for_vertex = True
-                    result = await self.vertex.make_single_call(prompt, schema, current_model_normalized, use_cache, cache_key, call_start_time, max_tokens or 64000, use_soft_schema_for_vertex, timeout)
+                    result = await self.vertex.make_single_call(effective_prompt, schema, current_model_normalized, use_cache, cache_key, call_start_time, max_tokens or 64000, use_soft_schema_for_vertex, timeout)
                 elif api_provider == 'baseten':
                     if not self.baseten: continue
                     # Force soft_schema for Baseten DeepSeek V3.2 due to potential native JSON issues or consistency
                     use_soft_schema_for_baseten = True
-                    result = await self.baseten.make_single_call(prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 64000, use_soft_schema_for_baseten, timeout)
+                    result = await self.baseten.make_single_call(effective_prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 64000, use_soft_schema_for_baseten, timeout)
                 elif api_provider == 'clone':
-                    result = await self.clone.make_structured_call(prompt, current_model, use_cache, cache_key, call_start_time, schema, soft_schema, debug_name, include_domains, exclude_domains, use_code_extraction, findall, extraction, findall_iterations)
+                    result = await self.clone.make_structured_call(effective_prompt, current_model, use_cache, cache_key, call_start_time, schema, soft_schema, debug_name, include_domains, exclude_domains, use_code_extraction, findall, extraction, findall_iterations)
                 else:
                     continue
 

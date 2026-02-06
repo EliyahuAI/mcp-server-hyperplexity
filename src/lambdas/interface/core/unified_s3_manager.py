@@ -7,7 +7,7 @@ import os
 import json
 import boto3
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Tuple, Optional, Any
 import logging
 from urllib.parse import quote
@@ -22,7 +22,7 @@ class UnifiedS3Manager:
     bucket/
     ├── results/{domain}/{email_prefix}/{yyyymmdd_hhmmss_sessionId}/  (1 year retention)
     ├── downloads/{uuid}/                                              (7 days, public)
-    └── cache/{service}/{hash}/                                        (30 days)
+    └── cache/{service}/{hash}/                                        (configurable TTL, default 1 day)
     """
     
     def __init__(self):
@@ -835,23 +835,33 @@ class UnifiedS3Manager:
                 'error': str(e)
             }
     
-    def get_cached_response(self, service: str, request_hash: str) -> Optional[Dict]:
-        """Get cached API response"""
+    def get_cached_response(self, service: str, request_hash: str, cache_ttl_days: int = 1) -> Optional[Dict]:
+        """Get cached API response. Returns full cache_data dict with 'expired' flag."""
         try:
             cache_key = f"cache/{service}/{request_hash}/response.json"
-            
+
             response = self.s3_client.get_object(Bucket=self.bucket_name, Key=cache_key)
             cache_data = json.loads(response['Body'].read().decode('utf-8'))
-            
-            # Check if cache is still valid (within 30 days)
-            cached_at = datetime.fromisoformat(cache_data['cached_at'])
-            if datetime.now() - cached_at > timedelta(days=30):
-                logger.info(f"Cache expired for {service}/{request_hash}")
-                return None
-            
+
+            # Check if cache is still valid
+            cached_at_str = cache_data['cached_at']
+            # Handle timezone formats: 'Z' suffix or '+00:00'
+            if cached_at_str.endswith('Z'):
+                cached_at_str = cached_at_str.replace('Z', '+00:00')
+            cached_at = datetime.fromisoformat(cached_at_str)
+            # Ensure timezone-aware comparison
+            if cached_at.tzinfo is None:
+                cached_at = cached_at.replace(tzinfo=timezone.utc)
+            age = datetime.now(timezone.utc) - cached_at
+            if age > timedelta(days=cache_ttl_days):
+                logger.info(f"Cache expired for {service}/{request_hash} (age: {age.days}d, TTL: {cache_ttl_days} days)")
+                cache_data['expired'] = True
+            else:
+                cache_data['expired'] = False
+
             logger.info(f"Retrieved cached {service} response: {cache_key}")
-            return cache_data['response']
-            
+            return cache_data
+
         except Exception as e:
             logger.debug(f"Cache miss for {service}/{request_hash}: {e}")
             return None

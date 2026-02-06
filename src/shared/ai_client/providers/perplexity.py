@@ -26,28 +26,38 @@ class PerplexityProvider:
 
     async def validate_with_smart_cache(self, prompt: str, row_data: Dict, targets: List,
                                         model: str, search_context_size: str,
-                                        use_cache: bool, config_hash: str) -> Dict:
+                                        use_cache: bool, config_hash: str,
+                                        cache_ttl_days: int = 1) -> Dict:
         """Validate with Perplexity using smart caching."""
         cache_key = self.cache_handler.get_validation_cache_key(row_data, targets, model, search_context_size, config_hash) if use_cache else None
-        
-        if use_cache and cache_key:
-            cached_data = await self.cache_handler.check_cache(cache_key, 'perplexity')
-            if cached_data:
-                token_usage = cached_data.get('token_usage', {})
-                enhanced_data = self.usage_handler.get_enhanced_call_metrics(
-                    cached_data['api_response'], model, 0.001,
-                    pre_extracted_token_usage=token_usage, is_cached=True
-                )
-                return {
-                    'response': cached_data['api_response'],
-                    'token_usage': token_usage,
-                    'processing_time': cached_data.get('processing_time', 0),
-                    'is_cached': True,
-                    'citations': extract_citations_from_perplexity_response(cached_data['api_response']),
-                    'enhanced_data': enhanced_data
-                }
 
-        result = await self.validate(prompt, model, search_context_size, use_cache=False, context="")
+        expired_cache_context = ""
+        if use_cache and cache_key:
+            cached_data = await self.cache_handler.check_cache(cache_key, 'perplexity', cache_ttl_days)
+            if cached_data:
+                # Check if cache is expired - if so, inject context into prompt
+                if cached_data.get('expired'):
+                    logger.info(f"[CACHE_EXPIRED] Using expired cache as context for fresh validation call")
+                    expired_cache_context = self.cache_handler.format_expired_cache_context(cached_data)
+                else:
+                    # Valid cache - return it
+                    token_usage = cached_data.get('token_usage', {})
+                    enhanced_data = self.usage_handler.get_enhanced_call_metrics(
+                        cached_data['api_response'], model, 0.001,
+                        pre_extracted_token_usage=token_usage, is_cached=True
+                    )
+                    return {
+                        'response': cached_data['api_response'],
+                        'token_usage': token_usage,
+                        'processing_time': cached_data.get('processing_time', 0),
+                        'is_cached': True,
+                        'citations': extract_citations_from_perplexity_response(cached_data['api_response']),
+                        'enhanced_data': enhanced_data
+                    }
+
+        # Use augmented prompt if we have expired cache context
+        effective_prompt = prompt + expired_cache_context if expired_cache_context else prompt
+        result = await self.validate(effective_prompt, model, search_context_size, use_cache=False, context="")
 
         if use_cache and cache_key and not result.get('is_cached'):
             # Pass enhanced_data for timing preservation
@@ -58,34 +68,45 @@ class PerplexityProvider:
 
     async def validate(self, prompt: str, model: str, search_context_size: str, use_cache: bool,
                        context: str, include_domains: Optional[List[str]] = None,
-                       exclude_domains: Optional[List[str]] = None) -> Dict:
+                       exclude_domains: Optional[List[str]] = None,
+                       cache_ttl_days: int = 1) -> Dict:
         """Validate a prompt using Perplexity API."""
-        cache_key = self.cache_handler.get_cache_key(prompt, model, None, f"{context}:{search_context_size}", 
+        cache_key = self.cache_handler.get_cache_key(prompt, model, None, f"{context}:{search_context_size}",
                                                      0, False, include_domains, exclude_domains) if use_cache else None
 
+        expired_cache_context = ""
         if use_cache and cache_key:
-            cached_data = await self.cache_handler.check_cache(cache_key, 'perplexity')
+            cached_data = await self.cache_handler.check_cache(cache_key, 'perplexity', cache_ttl_days)
             if cached_data:
-                token_usage = cached_data.get('token_usage', {})
-                enhanced_data = self.usage_handler.get_enhanced_call_metrics(
-                    cached_data['api_response'], model, 0.001,
-                    pre_extracted_token_usage=token_usage, is_cached=True
-                )
-                return {
-                    'response': cached_data['api_response'],
-                    'token_usage': token_usage,
-                    'processing_time': cached_data.get('processing_time', 0),
-                    'is_cached': True,
-                    'citations': extract_citations_from_perplexity_response(cached_data['api_response']),
-                    'enhanced_data': enhanced_data
-                }
+                # Check if cache is expired - if so, inject context into prompt
+                if cached_data.get('expired'):
+                    logger.info(f"[CACHE_EXPIRED] Using expired cache as context for fresh call")
+                    expired_cache_context = self.cache_handler.format_expired_cache_context(cached_data)
+                else:
+                    # Valid cache - return it
+                    token_usage = cached_data.get('token_usage', {})
+                    enhanced_data = self.usage_handler.get_enhanced_call_metrics(
+                        cached_data['api_response'], model, 0.001,
+                        pre_extracted_token_usage=token_usage, is_cached=True
+                    )
+                    return {
+                        'response': cached_data['api_response'],
+                        'token_usage': token_usage,
+                        'processing_time': cached_data.get('processing_time', 0),
+                        'is_cached': True,
+                        'citations': extract_citations_from_perplexity_response(cached_data['api_response']),
+                        'enhanced_data': enhanced_data
+                    }
+
+        # Use augmented prompt if we have expired cache context
+        effective_prompt = prompt + expired_cache_context if expired_cache_context else prompt
 
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         data = {
             "model": model,
             "messages": [
                 {"role": "system", "content": "You are a data validation expert. Return raw JSON only (first char {, last char }, parseable by json.loads() as-is)."},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": effective_prompt}
             ],
             "temperature": 0.1,
             "max_tokens": 3000,

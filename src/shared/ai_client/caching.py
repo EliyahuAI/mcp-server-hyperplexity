@@ -6,7 +6,7 @@ import re
 import os
 import asyncio
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Any
 
 from .utils import extract_content_description
@@ -61,8 +61,8 @@ class CacheHandler:
             cache_prefix = 'claude_cache' if api_provider == 'anthropic' else 'validation_cache'
             return f"{cache_prefix}/{cache_key}.json"
 
-    async def check_cache(self, cache_key: str, api_provider: str = 'claude') -> Optional[Dict]:
-        """Check if response is cached."""
+    async def check_cache(self, cache_key: str, api_provider: str = 'claude', cache_ttl_days: int = 1) -> Optional[Dict]:
+        """Check if response is cached. Returns cached data with 'expired' flag if found."""
         try:
             s3_key = self._get_cache_s3_key(cache_key, api_provider)
             logger.debug(f"Checking S3 cache: {s3_key}")
@@ -79,11 +79,11 @@ class CacheHandler:
 
             if not cache_body:
                 return None
-            
+
             cached_data = json.loads(cache_body)
             if not isinstance(cached_data, dict) or 'api_response' not in cached_data:
                 return None
-            
+
             # Fix legacy token usage
             if 'token_usage' in cached_data:
                 usage = cached_data['token_usage']
@@ -93,12 +93,92 @@ class CacheHandler:
                         usage['input_tokens'] = usage['prompt_tokens']
                     if 'output_tokens' not in usage and 'completion_tokens' in usage:
                         usage['output_tokens'] = usage['completion_tokens']
-            
+
+            # Check cache TTL expiration
+            cached_at_str = cached_data.get('cached_at')
+            if cached_at_str:
+                try:
+                    # Handle both formats: with and without timezone
+                    if cached_at_str.endswith('Z'):
+                        cached_at_str = cached_at_str.replace('Z', '+00:00')
+                    cached_at = datetime.fromisoformat(cached_at_str)
+                    # Ensure timezone-aware comparison
+                    if cached_at.tzinfo is None:
+                        cached_at = cached_at.replace(tzinfo=timezone.utc)
+                    age = datetime.now(timezone.utc) - cached_at
+                    if age > timedelta(days=cache_ttl_days):
+                        logger.info(f"Cache expired: {cache_key[:16]}... (age: {age.days}d {age.seconds//3600}h, TTL: {cache_ttl_days} days)")
+                        cached_data['expired'] = True
+                        # Store age info for format_expired_cache_context
+                        cached_data['_cache_age_seconds'] = age.total_seconds()
+                        cached_data['_cached_at_parsed'] = cached_at.isoformat()
+                    else:
+                        cached_data['expired'] = False
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Could not parse cached_at timestamp: {cached_at_str}, treating as valid: {e}")
+                    cached_data['expired'] = False
+            else:
+                # No timestamp - treat as valid (legacy cache entries)
+                cached_data['expired'] = False
+
             return cached_data
 
         except Exception as e:
             logger.error(f"Cache check failed: {e}")
             return None
+
+    def format_expired_cache_context(self, cached_data: Dict) -> str:
+        """Format expired cache result and citations for prompt injection."""
+        result = cached_data.get('api_response', {})
+        citations = cached_data.get('citations', [])
+
+        # Format cache age (absolute and relative time)
+        age_str = ""
+        cached_at_str = cached_data.get('_cached_at_parsed') or cached_data.get('cached_at', '')
+        age_seconds = cached_data.get('_cache_age_seconds')
+
+        if age_seconds is not None:
+            # Calculate relative time
+            age_days = age_seconds / 86400  # seconds per day
+            if age_days >= 1:
+                age_str = f"{age_days:.1f} days ago"
+            else:
+                age_hours = age_seconds / 3600
+                age_str = f"{age_hours:.1f} hours ago"
+
+        # Build the timestamp line
+        if cached_at_str and age_str:
+            timestamp_line = f"Cached at: {cached_at_str} ({age_str})\n"
+        elif cached_at_str:
+            timestamp_line = f"Cached at: {cached_at_str}\n"
+        elif age_str:
+            timestamp_line = f"Cache age: {age_str}\n"
+        else:
+            timestamp_line = ""
+
+        context = "\n\n--- Expired cache result (check for newer information): ---\n"
+        context += timestamp_line
+
+        # Format the result - handle different response structures
+        if isinstance(result, dict):
+            # Try to extract the actual content
+            if 'choices' in result and result['choices']:
+                choice = result['choices'][0]
+                if 'message' in choice and 'content' in choice['message']:
+                    content = choice['message'].get('content', '')
+                    context += f"Previous result: {content}\n"
+                else:
+                    context += f"Previous result: {json.dumps(result, indent=2)}\n"
+            else:
+                context += f"Previous result: {json.dumps(result, indent=2)}\n"
+        else:
+            context += f"Previous result: {result}\n"
+
+        if citations:
+            context += f"Previous citations: {', '.join(str(c) for c in citations)}\n"
+
+        context += "--- End expired cache ---\n"
+        return context
 
     async def save_to_cache(self, cache_key: str, response: Dict, token_usage: Dict, processing_time: float, model: str, api_provider: str = 'anthropic', enhanced_metrics: Dict = None, citations: List = None):
         """Save response to cache."""

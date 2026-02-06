@@ -25,29 +25,40 @@ class AnthropicProvider:
         self.usage_handler = usage_handler
         self.ai_client = ai_client  # For Haiku JSON repair
 
-    async def call_text_api(self, prompt: str, model: str, use_cache: bool, context: str, max_web_searches: int):
+    async def call_text_api(self, prompt: str, model: str, use_cache: bool, context: str, max_web_searches: int,
+                           cache_ttl_days: int = 1):
         normalized_model = normalize_anthropic_model(model)
         cache_key = self.cache_handler.get_cache_key(prompt, normalized_model, None, context, max_web_searches) if use_cache else None
 
+        expired_cache_context = ""
         if use_cache and cache_key:
-            cached_data = await self.cache_handler.check_cache(cache_key, 'anthropic')
+            cached_data = await self.cache_handler.check_cache(cache_key, 'anthropic', cache_ttl_days)
             if cached_data:
-                token_usage = cached_data.get('token_usage', {})
-                # Generate enhanced metrics for cached response
-                enhanced_data = self.usage_handler.get_enhanced_call_metrics(
-                    cached_data['api_response'], normalized_model, 0.001,
-                    pre_extracted_token_usage=token_usage, is_cached=True
-                )
-                
-                return {
-                    'response': cached_data['api_response'],
-                    'token_usage': token_usage,
-                    'processing_time': cached_data.get('processing_time', 0),
-                    'is_cached': True,
-                    'citations': extract_citations_from_response(cached_data['api_response']),
-                    'enhanced_data': enhanced_data,
-                    'cache_key': cache_key
-                }
+                # Check if cache is expired - if so, inject context into prompt
+                if cached_data.get('expired'):
+                    logger.info(f"[CACHE_EXPIRED] Using expired cache as context for fresh Anthropic call")
+                    expired_cache_context = self.cache_handler.format_expired_cache_context(cached_data)
+                else:
+                    # Valid cache - return it
+                    token_usage = cached_data.get('token_usage', {})
+                    # Generate enhanced metrics for cached response
+                    enhanced_data = self.usage_handler.get_enhanced_call_metrics(
+                        cached_data['api_response'], normalized_model, 0.001,
+                        pre_extracted_token_usage=token_usage, is_cached=True
+                    )
+
+                    return {
+                        'response': cached_data['api_response'],
+                        'token_usage': token_usage,
+                        'processing_time': cached_data.get('processing_time', 0),
+                        'is_cached': True,
+                        'citations': extract_citations_from_response(cached_data['api_response']),
+                        'enhanced_data': enhanced_data,
+                        'cache_key': cache_key
+                    }
+
+        # Use augmented prompt if we have expired cache context
+        effective_prompt = prompt + expired_cache_context if expired_cache_context else prompt
 
         headers = {
             'Content-Type': 'application/json',
@@ -67,7 +78,7 @@ class AnthropicProvider:
             "model": normalized_model,
             "max_tokens": 4000,
             "temperature": 0.1,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [{"role": "user", "content": effective_prompt}],
             "tools": tools
         }
         
