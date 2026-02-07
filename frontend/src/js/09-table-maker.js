@@ -493,6 +493,10 @@ function showGetStartedCard() {
     }
 
     console.log('[GET_STARTED] Showing new "Get Started" card (same as after email validation)');
+    // Reset the flag since this is an intentional new card after workflow completion
+    if (typeof resetGetStartedCardFlag === 'function') {
+        resetGetStartedCardFlag();
+    }
     // Reuse the same Get Started card shown after email validation
     createUploadOrDemoCard();
 }

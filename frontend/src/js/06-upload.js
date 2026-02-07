@@ -15,8 +15,43 @@ function formatFileSize(bytes) {
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 }
 
+// Track Get Started card creation to prevent duplicates
+let _getStartedCardCreated = false;
+let _getStartedCardId = null;
+
+function resetGetStartedCardFlag() {
+    _getStartedCardCreated = false;
+    _getStartedCardId = null;
+}
+
 function createUploadOrDemoCard() {
+    // Guard 1: Check flag to prevent duplicate creation
+    if (_getStartedCardCreated && _getStartedCardId) {
+        const existingCard = document.getElementById(_getStartedCardId);
+        if (existingCard && existingCard.style.display !== 'none') {
+            console.log('[GET_STARTED] Skipping - flag indicates card already created:', _getStartedCardId);
+            return null;
+        }
+    }
+
+    // Guard 2: Check DOM for any visible Get Started card (backup)
+    const existingGetStartedCard = Array.from(document.querySelectorAll('.card-title')).find(
+        title => title.textContent.trim() === 'Get Started'
+    );
+    if (existingGetStartedCard) {
+        const card = existingGetStartedCard.closest('.card');
+        if (card && card.style.display !== 'none') {
+            console.log('[GET_STARTED] Skipping createUploadOrDemoCard - Get Started card already visible in DOM');
+            _getStartedCardCreated = true;
+            _getStartedCardId = card.id;
+            return null;
+        }
+    }
+
     const cardId = generateCardId();
+    _getStartedCardCreated = true;
+    _getStartedCardId = cardId;
+    console.log('[GET_STARTED] Creating Get Started card:', cardId);
     const content = `
         <div id="${cardId}-options" style="text-align: center;">
         </div>
