@@ -1406,6 +1406,136 @@ def _merge_rows_with_preference(
     return merged
 
 
+def _filter_prepopulated_rows(
+    initial_rows: list,
+    remove_prepopulated_row_ids: list,
+    id_column_names: list
+) -> list:
+    """
+    Filter out initial (prepopulated) rows that QC flagged for removal.
+
+    Args:
+        initial_rows: Rows from column definition
+        remove_prepopulated_row_ids: List of P-prefixed row_ids to remove (e.g., ["P3-Anthropic"])
+        id_column_names: Names of ID columns for matching
+
+    Returns:
+        Filtered list with flagged rows removed
+    """
+    if not remove_prepopulated_row_ids or not initial_rows:
+        return initial_rows
+
+    # Build set of indices to remove (extract from P-prefixed row_ids)
+    # Only match by index to avoid removing wrong rows when multiple rows share the same name
+    remove_indices = set()
+    for row_id in remove_prepopulated_row_ids:
+        if row_id.startswith('P') and '-' in row_id:
+            # Extract index: "P3-Anthropic" -> index=3
+            parts = row_id.split('-', 1)
+            try:
+                idx = int(parts[0][1:])  # Remove 'P' prefix
+                remove_indices.add(idx)
+            except ValueError:
+                logger.warning(f"[PREPOPULATED_FILTER] Could not parse index from row_id: {row_id}")
+
+    filtered = []
+    removed_count = 0
+    for idx, row in enumerate(initial_rows, 1):
+        if idx in remove_indices:
+            id_vals = row.get('id_values', {})
+            first_val = list(id_vals.values())[0] if id_vals else 'Unknown'
+            logger.info(f"[PREPOPULATED_FILTER] Removing P{idx}-{first_val} (matched by index)")
+            removed_count += 1
+            continue
+
+        filtered.append(row)
+
+    if removed_count > 0:
+        logger.info(f"[PREPOPULATED_FILTER] Removed {removed_count} of {len(initial_rows)} prepopulated rows")
+
+    return filtered
+
+
+def _filter_rows_with_missing_ids(
+    rows: list,
+    id_column_names: list
+) -> list:
+    """
+    Remove rows where any ID column is missing, empty, or has a placeholder value.
+
+    Args:
+        rows: List of row dicts with id_values
+        id_column_names: Names of ID columns that must all be populated
+
+    Returns:
+        Filtered list with incomplete rows removed
+    """
+    PLACEHOLDER_VALUES = {'', 'unknown', 'n/a', 'na', 'tbd', '-', 'none', '?', 'null'}
+
+    filtered = []
+    removed_count = 0
+    for row in rows:
+        id_values = row.get('id_values', {})
+        has_all_ids = True
+        for col_name in id_column_names:
+            val = str(id_values.get(col_name, '')).strip().lower()
+            if val in PLACEHOLDER_VALUES:
+                has_all_ids = False
+                row_id = row.get('row_id', 'unknown')
+                logger.info(f"[MISSING_ID_FILTER] Removing row '{row_id}': ID column '{col_name}' has placeholder value '{val}'")
+                break
+
+        if has_all_ids:
+            filtered.append(row)
+        else:
+            removed_count += 1
+
+    if removed_count > 0:
+        logger.info(f"[MISSING_ID_FILTER] Removed {removed_count} rows with missing/placeholder ID values")
+
+    return filtered
+
+
+def _sort_rows_by_id_columns(
+    rows: list,
+    id_column_names: list
+) -> list:
+    """
+    Sort rows alphabetically (A-Z) by ID columns, right to left.
+
+    For columns [Company, Category, Subcategory]:
+      Primary sort: Subcategory (A-Z)
+      Secondary sort: Category (A-Z)
+      Tertiary sort: Company (A-Z)
+
+    This is equivalent to: ORDER BY Subcategory ASC, Category ASC, Company ASC
+
+    Args:
+        rows: List of row dicts with id_values
+        id_column_names: Names of ID columns in original order (left to right)
+
+    Returns:
+        Sorted list of rows
+    """
+    if not rows or not id_column_names:
+        return rows
+
+    # Reverse the ID columns so rightmost is primary sort key
+    id_cols_reversed = list(reversed(id_column_names))
+
+    def sort_key(row):
+        id_values = row.get('id_values', {})
+        return tuple(
+            str(id_values.get(col, '')).lower().strip()
+            for col in id_cols_reversed
+        )
+
+    sorted_rows = sorted(rows, key=sort_key)
+    logger.info(f"[SORT] Sorted {len(sorted_rows)} rows by ID columns (A-Z, right-to-left): {' -> '.join(id_cols_reversed)}")
+
+    return sorted_rows
+
+
 async def execute_full_table_generation(
     email: str,
     session_id: str,
@@ -2070,7 +2200,9 @@ async def execute_full_table_generation(
             logger.info(f"[EXECUTION] {rows_with_research}/{len(initial_rows)} rows have research columns populated")
 
             # Use initial_rows as final_rows
-            final_rows = initial_rows
+            id_col_names = [col['name'] for col in columns if col.get('importance') == 'ID']
+            final_rows = _filter_rows_with_missing_ids(initial_rows, id_col_names)
+            final_rows = _sort_rows_by_id_columns(final_rows, id_col_names)
 
             # Add model_used field if not present
             for row in final_rows:
@@ -2525,20 +2657,36 @@ async def execute_full_table_generation(
                         # QC approved rows are from discovery only
                         # Combine prepopulated rows (initial_rows) with QC-approved discovered rows
                         qc_approved_discovered = qc_result.get('approved_rows', [])
+                        id_col_names = [col['name'] for col in columns if col.get('importance') == 'ID']
 
                         if initial_rows:
-                            # Merge: prepopulated rows + QC-approved discovered rows
-                            approved_rows = _merge_rows_with_preference(
+                            # Filter prepopulated rows that QC flagged for removal
+                            remove_prepopulated = qc_result.get('remove_prepopulated_row_ids', None)
+                            filtered_initial = _filter_prepopulated_rows(
                                 initial_rows=initial_rows,
+                                remove_prepopulated_row_ids=remove_prepopulated,
+                                id_column_names=id_col_names
+                            )
+
+                            # Merge: filtered prepopulated rows + QC-approved discovered rows
+                            approved_rows = _merge_rows_with_preference(
+                                initial_rows=filtered_initial,
                                 discovered_rows=qc_approved_discovered,
-                                id_column_names=[col['name'] for col in columns if col.get('importance') == 'ID']
+                                id_column_names=id_col_names
                             )
                             logger.info(
-                                f"[QC_MERGE] Combined {len(initial_rows)} prepopulated + "
+                                f"[QC_MERGE] Combined {len(filtered_initial)} prepopulated "
+                                f"({len(initial_rows) - len(filtered_initial)} removed by QC) + "
                                 f"{len(qc_approved_discovered)} QC-approved = {len(approved_rows)} total rows"
                             )
                         else:
                             approved_rows = qc_approved_discovered
+
+                        # Filter rows with missing/placeholder ID values
+                        approved_rows = _filter_rows_with_missing_ids(approved_rows, id_col_names)
+
+                        # Sort all rows by ID columns A-Z, right to left
+                        approved_rows = _sort_rows_by_id_columns(approved_rows, id_col_names)
 
                         # Track API call
                         _add_api_call_to_runs(

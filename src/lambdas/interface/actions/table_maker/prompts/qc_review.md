@@ -2,7 +2,7 @@
 
 ## Your Task
 
-Review discovered rows and choose ONE action:
+Review ALL rows (both pre-existing and discovered) and choose ONE action:
 1. **pass** - Approve all rows as-is
 2. **filter** - Remove some rows (provide reasons)
 3. **retrigger_discovery** - Need MORE ENTITIES (not to fill columns - validator does that)
@@ -28,7 +28,9 @@ Review discovered rows and choose ONE action:
 
 ## Pre-existing Rows (from Column Definition)
 
-**Note: We already have {{PRE_ROW_COUNT}} rows from extracted tables. These are PRE-APPROVED - do NOT include them in your output (they will be automatically added).**
+**{{PRE_ROW_COUNT}} rows from extracted tables/sources (row_ids prefixed with P-).**
+
+**You CAN remove pre-existing rows.** Flag any that are duplicates, irrelevant, don't meet requirements, or have missing/placeholder ID values. Use `remove_prepopulated_row_ids` to list their P-prefixed row_ids.
 
 {{PREPOPULATED_ROWS_MARKDOWN}}
 
@@ -43,34 +45,51 @@ Review discovered rows and choose ONE action:
 
 {{DISCOVERED_ROWS}}
 
-**IMPORTANT: Your output should reference ONLY the discovered rows above, NOT the pre-existing rows.**
+---
+
+## STRICT DEDUPLICATION - Require Evident Uniqueness
+
+**Every row must be EVIDENTLY UNIQUE.** If two rows MIGHT be the same entity, remove the less complete one. The burden of proof is on uniqueness, not on duplication.
+
+**Remove duplicates aggressively across BOTH pre-existing and discovered rows:**
+
+- **Same entity, different names:** "EarPopper" vs "EarPopper(R)" vs "Ear Popper" = SAME (keep ONE)
+- **Same entity, different verbosity:** "Anthropic" vs "Anthropic AI Safety Company" = SAME
+- **Same product, different context:** If SAME product/entity appears in both pre-existing and discovered rows, keep the MORE COMPLETE version (more columns filled, better sources) regardless of which set it came from
+- **Trademark/symbol variations:** (R), (TM), (C) symbols don't make entries unique
+- **Abbreviations:** "AERA" vs "Acclarent AERA" vs "ACCLARENT AERA(TM)" = SAME
+- **Subsidiaries vs parents:** If both parent and subsidiary are listed and they represent the same core entity, keep ONE
+- **Slight spelling differences:** "Grey" vs "Gray", "Center" vs "Centre" = likely SAME
+
+**When in doubt, REMOVE.** It is better to have fewer high-quality unique rows than many near-duplicates.
+
+---
+
+## MISSING ID COLUMNS - Reject Incomplete Rows
+
+**Every row MUST have ALL ID columns populated with real values.**
+
+- Remove rows where ANY ID column is empty, "Unknown", "N/A", "TBD", "-", or any other placeholder
+- ID columns: {{ID_COLUMNS}}
+- If a row has a placeholder in any ID column, it is NOT a valid row - remove it
 
 ---
 
 ## Decision Guide
 
 **IMPORTANT:**
-- Pre-existing rows ({{PRE_ROW_COUNT}}) are automatically included
-- Use `keep_row_ids_in_order` to specify which rows to keep AND their order
-- If `keep_row_ids_in_order` is null, ALL rows are kept in original order
-- Your decision is about the {{ROW_COUNT}} DISCOVERED rows
+- Use `keep_row_ids_in_order` to specify which DISCOVERED rows to keep AND their order
+- Use `remove_prepopulated_row_ids` to flag pre-existing rows for removal
+- If `keep_row_ids_in_order` is null, ALL discovered rows are kept in original order
+- If `remove_prepopulated_row_ids` is null, ALL pre-existing rows are kept
 
 ### Action: "pass"
-**When:** All discovered rows look good, OR discovery found 0 rows but pre-existing rows are sufficient
-**Output:** `keep_row_ids_in_order: null` (keeps all in original order), `overall_score`
+**When:** All rows (both pre-existing and discovered) look good - no duplicates, no missing IDs, no quality issues
+**Output:** `keep_row_ids_in_order: null`, `remove_prepopulated_row_ids: null`, `overall_score`
 
 ### Action: "filter"
-**When:** Need to remove some rows OR reorder rows
-**Output:** `keep_row_ids_in_order` (list rows to KEEP in order), `overall_score`, optionally `removal_reasons`
-
-**🔍 DUPLICATE DETECTION - Check carefully for:**
-- **Same entity, different names:** "EarPopper" vs "EarPopper®" vs "Ear Popper" (keep ONE)
-- **Same entity, different verbosity:** "Anthropic" vs "Anthropic AI Safety Company" (same entity)
-- **Same product, different manufacturers/distributors:** If it's the SAME product sold by multiple companies, keep ONE authoritative entry
-- **Trademark variations:** ®, ™ symbols don't make entries unique
-- **Abbreviations:** "AERA" vs "Acclarent AERA" vs "ACCLARENT AERA™" (same product)
-
-**When you find duplicates:** Keep the row with the MOST COMPLETE information (more columns filled, better sources).
+**When:** Need to remove some rows (from either set) OR reorder discovered rows
+**Output:** `keep_row_ids_in_order` (discovered rows to KEEP in order), `remove_prepopulated_row_ids` (pre-existing rows to remove), `overall_score`, optionally `removal_reasons`
 
 ### Action: "retrigger_discovery"
 **When:** Need MORE ENTITIES beyond pre-existing rows
@@ -80,7 +99,7 @@ Review discovered rows and choose ONE action:
 
 **Example discovery_guidance:**
 - Good: "Have 3 pre-existing + 2 discovered = 5 total. Need 15 more to reach 20."
-- Bad: "Need to populate tax rate columns" ← NO, validator does this
+- Bad: "Need to populate tax rate columns" <- NO, validator does this
 
 ### Action: "restructure"
 **When:** ONLY if table structure is fundamentally flawed AND pre-existing rows don't help
@@ -91,10 +110,7 @@ Review discovered rows and choose ONE action:
 
 ## Output Format
 
-**Use `keep_row_ids_in_order` to specify which rows to keep AND their order.**
-
-- If provided: only these rows are kept, in this exact order
-- If null: all rows kept in original discovery order
+**Use `keep_row_ids_in_order` for discovered rows and `remove_prepopulated_row_ids` for pre-existing rows.**
 
 **All fields must be present. Use null for fields not applicable to your action.**
 
@@ -102,6 +118,7 @@ Review discovered rows and choose ONE action:
 {
   "action": "pass",
   "keep_row_ids_in_order": null,
+  "remove_prepopulated_row_ids": null,
   "removal_reasons": null,
   "overall_score": 0.85,
   "discovery_guidance": null,
@@ -111,11 +128,11 @@ Review discovered rows and choose ONE action:
 }
 ```
 
-### How `keep_row_ids_in_order` Works
+### How `keep_row_ids_in_order` Works (Discovered Rows)
 
-This single field handles BOTH filtering AND ordering:
+This field handles BOTH filtering AND ordering of discovered rows:
 
-**To keep all rows in original order (pass action):**
+**To keep all discovered rows in original order (pass action):**
 ```json
 "keep_row_ids_in_order": null
 ```
@@ -124,10 +141,19 @@ This single field handles BOTH filtering AND ordering:
 ```json
 "keep_row_ids_in_order": ["1-Anthropic", "2-OpenAI", "4-Google", "6-Meta"]
 ```
-This keeps only these 4 rows, in this exact order. Rows 3 and 5 are removed.
+This keeps only these 4 discovered rows, in this exact order. Rows 3 and 5 are removed.
 
-**To reorder without filtering:**
-List ALL row_ids in the desired order.
+### How `remove_prepopulated_row_ids` Works (Pre-existing Rows)
+
+**To keep all pre-existing rows:**
+```json
+"remove_prepopulated_row_ids": null
+```
+
+**To remove some pre-existing rows:**
+```json
+"remove_prepopulated_row_ids": ["P3-FakeCompany", "P7-DuplicateEntity"]
+```
 
 ### When to Specify Ordering
 
@@ -141,12 +167,13 @@ List ALL row_ids in the desired order.
 - Discovery order is already correct
 - No particular ordering makes sense
 
-### Example: Filter Action
+### Example: Filter Action (removing from both sets)
 ```json
 {
   "action": "filter",
-  "keep_row_ids_in_order": ["1-Anthropic", "2-OpenAI", "4-Google", "6-Meta"],
-  "removal_reasons": {"3-FakeCompany": "Not a real company", "5-Duplicate": "Duplicate of row 2"},
+  "keep_row_ids_in_order": ["1-Anthropic", "2-OpenAI", "4-Google"],
+  "remove_prepopulated_row_ids": ["P5-OldCompany"],
+  "removal_reasons": {"3-FakeCompany": "Not a real company", "5-Duplicate": "Duplicate of row 2", "P5-OldCompany": "Duplicate of discovered row 4-Google"},
   "overall_score": 0.85,
   "discovery_guidance": null,
   "new_subdomains": null,
@@ -160,6 +187,7 @@ List ALL row_ids in the desired order.
 {
   "action": "retrigger_discovery",
   "keep_row_ids_in_order": null,
+  "remove_prepopulated_row_ids": null,
   "removal_reasons": null,
   "overall_score": 0.6,
   "discovery_guidance": "Have 3 pre-existing + 2 discovered = 5 total. Need 15 more tech companies.",
@@ -181,6 +209,7 @@ List ALL row_ids in the desired order.
 {
   "action": "restructure",
   "keep_row_ids_in_order": null,
+  "remove_prepopulated_row_ids": null,
   "removal_reasons": null,
   "overall_score": null,
   "discovery_guidance": null,
@@ -196,11 +225,11 @@ List ALL row_ids in the desired order.
 
 ### Field Requirements by Action:
 
-| Action | keep_row_ids_in_order | removal_reasons | overall_score | discovery_guidance | new_subdomains | restructuring_guidance | user_message |
-|--------|----------------------|-----------------|---------------|-------------------|----------------|----------------------|--------------|
-| pass | null (keep all) | null | ✅ number | null | null | null | null |
-| filter | ✅ array (rows to keep, in order) | optional object | ✅ number | null | null | null | null |
-| retrigger_discovery | null | null | ✅ number | ✅ string | ✅ array | null | null |
-| restructure | null | null | null | null | null | ✅ object | ✅ string |
+| Action | keep_row_ids_in_order | remove_prepopulated_row_ids | removal_reasons | overall_score | discovery_guidance | new_subdomains | restructuring_guidance | user_message |
+|--------|----------------------|---------------------------|-----------------|---------------|-------------------|----------------|----------------------|--------------|
+| pass | null (keep all) | null (keep all) | null | number | null | null | null | null |
+| filter | array OR null | array OR null | optional object | number | null | null | null | null |
+| retrigger_discovery | null | null | null | number | string | array | null | null |
+| restructure | null | null | null | null | null | null | object | string |
 
 **Keep it concise - avoid verbose explanations.**

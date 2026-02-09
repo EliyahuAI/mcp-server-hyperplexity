@@ -1,7 +1,7 @@
 # Table Maker - Independent Row Discovery System
 
-**Version:** 2.8.1 (Lambda Timeout Protection + Model Updates)
-**Last Updated:** January 29, 2026
+**Version:** 2.8.2 (Strict Dedup + Prepopulated Row QC + ID Sorting)
+**Last Updated:** February 9, 2026
 **Status:** Production Ready (Lambda Integrated)
 
 ---
@@ -54,6 +54,61 @@ python test_local_e2e_sequential.py
 - Duration: 1-3 minutes
 - Cost: $0.05-0.15
 - Output: 8-15 validated companies in `output/local_tests/`
+
+---
+
+## What's New in Version 2.8.2
+
+### Strict Deduplication - Evident Uniqueness Required (QUALITY ENHANCEMENT)
+**Problem:** Near-duplicate rows were passing QC review, resulting in redundant entries (e.g., "EarPopper" and "Ear Popper" both appearing).
+
+**Solution:** QC now requires **evident uniqueness** for every row. The burden of proof is on uniqueness, not on duplication.
+
+**Key Changes:**
+- **Aggressive cross-set dedup** - QC checks for duplicates across BOTH pre-existing and discovered rows
+- **When in doubt, REMOVE** - Better to have fewer unique rows than near-duplicates
+- **Expanded duplicate detection** - Covers name variants, trademark symbols, abbreviations, subsidiaries, spelling differences
+
+### QC Can Now Remove Pre-existing Rows (BREAKING CHANGE)
+**Problem:** Pre-existing rows from column definition were "PRE-APPROVED" and could never be removed, even when duplicated by discovered rows or irrelevant.
+
+**Solution:** QC now reviews ALL rows (both pre-existing and discovered) and can flag pre-existing rows for removal.
+
+**Key Changes:**
+- **`remove_prepopulated_row_ids`** - New QC output field listing P-prefixed row_ids to remove from pre-existing rows
+- **P-prefixed row_ids** - Pre-existing rows now have row_ids like `P1-Anthropic`, `P2-OpenAI` in the QC prompt
+- **Cross-set dedup** - If same entity appears in both pre-existing and discovered, the more complete version is kept
+- **Execution filtering** - `_filter_prepopulated_rows()` removes flagged rows before merge
+
+### A-Z ID Column Sorting (OUTPUT ENHANCEMENT)
+**Problem:** Final rows had no consistent ordering, making tables harder to read.
+
+**Solution:** All final rows are sorted alphabetically (A-Z) by ID columns, right to left.
+
+**Sort Order:** For columns `[Company, Category, Subcategory]`:
+- Primary sort: Subcategory (A-Z)
+- Secondary sort: Category (A-Z)
+- Tertiary sort: Company (A-Z)
+
+Applies to both skip mode (no discovery) and normal mode (after QC merge).
+
+### Missing ID Column Rejection (QUALITY ENHANCEMENT)
+**Problem:** Rows with placeholder ID values ("Unknown", "N/A", "-") were passing through.
+
+**Solution:** Rows with ANY missing or placeholder ID column value are automatically removed.
+
+**Rejected values:** empty, "Unknown", "N/A", "TBD", "-", "None", "?", "null"
+
+**New QC Output Format (v2.8.2):**
+```json
+{
+  "action": "filter",
+  "keep_row_ids_in_order": ["1-Anthropic", "2-OpenAI"],
+  "remove_prepopulated_row_ids": ["P5-OldCompany"],
+  "removal_reasons": {"3-FakeCompany": "Duplicate of row 1", "P5-OldCompany": "Duplicate of discovered 2-OpenAI"},
+  "overall_score": 0.85
+}
+```
 
 ---
 
@@ -464,6 +519,10 @@ For obvious, exhaustive, well-defined lists that don't require web research.
 15. **Unified Output Format** (v2.8): Row discovery outputs same columns as column_definition
 16. **Citation Tracking** (v2.8): Global citation counter prevents collisions across subdomains
 17. **QC Simplification** (v2.8): Rows kept by default, only specify removals
+18. **Strict Deduplication** (v2.8.2): Every row must be evidently unique, when in doubt remove
+19. **QC Reviews All Rows** (v2.8.2): QC can remove pre-existing rows via `remove_prepopulated_row_ids`
+20. **A-Z ID Column Sorting** (v2.8.2): Final output sorted alphabetically by ID columns, right to left
+21. **No Placeholder IDs** (v2.8.2): Rows with missing/placeholder ID values are automatically rejected
 
 ### Complete Data Flow Algorithm (v2.8)
 
@@ -555,17 +614,20 @@ This section details the exact data transformations at each step:
 │   | 1-Anthropic | Anthropic[1] | Dario Amodei[11] | $7.3B[12] |             │
 │   | 2-OpenAI | OpenAI[2] | Sam Altman[13] | $10B[14] |                      │
 │                                                                             │
-│ QC Output (simplified - rows KEPT by default):                              │
+│ QC Output (v2.8.2 - rows KEPT by default, cross-set dedup):                 │
 │   {                                                                         │
 │     "action": "filter",                                                     │
-│     "remove_row_ids": [                                                     │
-│       {"row_id": "5-FakeCompany", "reason": "Not a real company"}           │
-│     ],                                                                      │
+│     "keep_row_ids_in_order": ["1-Anthropic", "2-OpenAI"],                   │
+│     "remove_prepopulated_row_ids": ["P5-OldCompany"],                       │
+│     "removal_reasons": {"5-Fake": "Not real", "P5-OldCompany": "Dup"},     │
 │     "overall_score": 0.85                                                   │
 │   }                                                                         │
 │                                                                             │
 │ Post-processing:                                                            │
-│   - Keep all rows NOT in remove_row_ids                                     │
+│   - Keep discovered rows in keep_row_ids_in_order (or all if null)          │
+│   - Remove prepopulated rows in remove_prepopulated_row_ids                 │
+│   - Filter rows with missing/placeholder ID values                          │
+│   - Sort all rows A-Z by ID columns (right to left: ID3→ID2→ID1)           │
 │   - Prune citations no longer referenced in kept rows                       │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       ↓
@@ -941,6 +1003,9 @@ Round 2 discovers: "Date ranges improve relevance"
 - **NEW (v2.8):** Simplified output - rows kept by default
 - **NEW (v2.8):** Only specifies `remove_row_ids` (not full table rewrite)
 - **NEW (v2.8):** Prunes unused citations from final output
+- **NEW (v2.8.2):** Can remove pre-existing rows via `remove_prepopulated_row_ids`
+- **NEW (v2.8.2):** Strict deduplication - every row must be evidently unique
+- **NEW (v2.8.2):** Rejects rows with missing/placeholder ID values
 
 **QC Actions (v2.8):**
 | Action | Output | Description |

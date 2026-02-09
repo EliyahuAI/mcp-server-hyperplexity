@@ -18,16 +18,27 @@
       ],
       "description": "Which rows to keep AND their order. If provided, only these rows are kept in this exact order. If null, all rows kept in original order. Use for filtering AND/OR reordering."
     },
+    "remove_prepopulated_row_ids": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of P-prefixed row_ids to remove from pre-existing rows. Example: [\"P3-FakeCompany\", \"P7-DuplicateEntity\"]"
+        },
+        { "type": "null" }
+      ],
+      "description": "Pre-existing rows to remove. If null, all pre-existing rows are kept. Use P-prefixed row_ids."
+    },
     "removal_reasons": {
       "oneOf": [
         {
           "type": "object",
           "additionalProperties": { "type": "string" },
-          "description": "Map of row_id -> reason for removal. Only for rows NOT in keep_row_ids_in_order."
+          "description": "Map of row_id -> reason for removal. Covers both discovered and pre-existing rows."
         },
         { "type": "null" }
       ],
-      "description": "Optional: brief reasons why specific rows were removed (for logging). Example: {\"3-FakeCompany\": \"Not a real company\"}"
+      "description": "Optional: brief reasons why specific rows were removed (for logging). Example: {\"3-FakeCompany\": \"Not a real company\", \"P5-OldCo\": \"Duplicate\"}"
     },
     "overall_score": {
       "oneOf": [

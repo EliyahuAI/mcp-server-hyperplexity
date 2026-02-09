@@ -141,6 +141,10 @@ class QCReviewer:
                     logger.info(f"[QC_PREPOPULATED] Markdown length: {len(prepopulated_markdown)}, table rows: {len(table_rows)}, data rows (pre_row_count): {pre_row_count}")
                     logger.info(f"[QC_PREPOPULATED] First 500 chars: {prepopulated_markdown[:500]}")
 
+            # Add P-prefixed row_ids to prepopulated markdown for QC to reference
+            if prepopulated_markdown:
+                prepopulated_markdown = self._add_row_ids_to_prepopulated_markdown(prepopulated_markdown, columns)
+
             if not prepopulated_markdown:
                 prepopulated_markdown = "(No pre-existing rows from column_definition)"
 
@@ -160,6 +164,7 @@ class QCReviewer:
                 'PREPOPULATED_ROWS_MARKDOWN': prepopulated_markdown,
                 'PREPOPULATED_CITATIONS': json.dumps(prepopulated_citations, indent=2) if prepopulated_citations else '(None)',
                 # New variables for requirements and retrigger context
+                'ID_COLUMNS': self._format_id_columns(columns),
                 'HARD_REQUIREMENTS': self._format_requirements_for_prompt(search_strategy, 'hard'),
                 'SOFT_REQUIREMENTS': self._format_requirements_for_prompt(search_strategy, 'soft'),
                 'SUBDOMAIN_RESULTS_SUMMARY': self._format_subdomain_results(discovery_result),
@@ -456,6 +461,16 @@ class QCReviewer:
                 logger.info(f"[QC_ORDER] No keep_row_ids_in_order, keeping all {len(approved_rows)} approved rows in original order")
                 approved_rows_sorted = approved_rows  # Keep original order
 
+            # Extract remove_prepopulated_row_ids from QC response
+            remove_prepopulated_row_ids = ai_response.get('remove_prepopulated_row_ids', None)
+            if remove_prepopulated_row_ids and isinstance(remove_prepopulated_row_ids, list):
+                logger.info(f"[QC_PREPOPULATED_REMOVAL] QC flagged {len(remove_prepopulated_row_ids)} pre-existing rows for removal: {remove_prepopulated_row_ids}")
+                # Log removal reasons for prepopulated rows
+                removal_reasons = ai_response.get('removal_reasons', {}) or {}
+                for row_id in remove_prepopulated_row_ids:
+                    reason = removal_reasons.get(row_id, 'Removed by QC')
+                    logger.info(f"[QC_PREPOPULATED_REMOVED] {row_id}: {reason}")
+
             # Apply max_rows limit
             final_approved = approved_rows_sorted[:max_rows]
 
@@ -500,6 +515,7 @@ class QCReviewer:
             result['qc_summary'] = qc_summary
             result['reviewed_rows'] = reviewed_rows
             result['prepopulated_row_count'] = pre_row_count  # For execution to know total
+            result['remove_prepopulated_row_ids'] = remove_prepopulated_row_ids  # For execution to filter initial_rows
 
             # Add insufficient rows details if applicable
             if insufficient_rows:
@@ -658,9 +674,14 @@ class QCReviewer:
         elif action == 'filter':
             if response.get('overall_score') is None:
                 raise ValueError("overall_score required for filter action")
-            # New format uses keep_row_ids_in_order, old format used remove_row_ids
-            if not response.get('keep_row_ids_in_order') and not response.get('remove_row_ids'):
-                raise ValueError("keep_row_ids_in_order required for filter action (must specify rows to keep in order)")
+            # Filter action needs at least one filtering mechanism:
+            # - keep_row_ids_in_order (filter/reorder discovered rows)
+            # - remove_row_ids (legacy format)
+            # - remove_prepopulated_row_ids (filter pre-existing rows)
+            has_discovered_filter = bool(response.get('keep_row_ids_in_order')) or bool(response.get('remove_row_ids'))
+            has_prepopulated_filter = bool(response.get('remove_prepopulated_row_ids'))
+            if not has_discovered_filter and not has_prepopulated_filter:
+                raise ValueError("filter action requires at least one of: keep_row_ids_in_order, remove_row_ids, or remove_prepopulated_row_ids")
 
         elif action == 'retrigger_discovery':
             if response.get('overall_score') is None:
@@ -1004,6 +1025,90 @@ class QCReviewer:
 
         return '\n'.join(lines)
 
+    def _add_row_ids_to_prepopulated_markdown(self, markdown: str, columns: List[Dict]) -> str:
+        """
+        Add P-prefixed row_ids to prepopulated markdown table for QC to reference.
+
+        Transforms:
+            | Company | Funding |
+            |---------|---------|
+            | Anthropic[1] | $7.3B[2] |
+
+        Into:
+            | row_id | Company | Funding |
+            |--------|---------|---------|
+            | P1-Anthropic | Anthropic[1] | $7.3B[2] |
+
+        Args:
+            markdown: Prepopulated rows markdown table
+            columns: Column definitions (to identify first ID column)
+
+        Returns:
+            Modified markdown with row_id column prepended
+        """
+        import re
+
+        if not markdown or not markdown.strip():
+            return markdown
+
+        lines = markdown.strip().split('\n')
+        if len(lines) < 3:
+            return markdown
+
+        # Get first ID column name for row_id generation
+        id_column_names = [
+            c.get('name', '') for c in columns
+            if c.get('importance', '').upper() == 'ID' or c.get('is_identification')
+        ]
+        first_id_col = id_column_names[0] if id_column_names else None
+
+        # Parse header to find column positions
+        header_line = lines[0].strip()
+        headers = [h.strip() for h in header_line.split('|')[1:-1]]
+
+        # Find the index of the first ID column in the headers
+        first_id_col_idx = None
+        if first_id_col:
+            for idx, h in enumerate(headers):
+                if h == first_id_col:
+                    first_id_col_idx = idx
+                    break
+
+        new_lines = []
+        data_row_counter = 0  # Track data rows independently of line index
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped.startswith('|'):
+                new_lines.append(line)
+                continue
+
+            parts = stripped.split('|')
+            # parts[0] is empty (before first |), parts[-1] is empty (after last |)
+
+            if i == 0:
+                # Header row - prepend row_id column
+                new_lines.append('| row_id ' + stripped)
+            elif '---' in stripped:
+                # Separator row - prepend separator
+                new_lines.append('|---' + stripped)
+            else:
+                # Data row - generate P-prefixed row_id
+                data_row_counter += 1
+                cells = [c.strip() for c in stripped.split('|')[1:-1]]
+
+                # Get first ID column value for row_id
+                entity_name = 'Unknown'
+                if first_id_col_idx is not None and first_id_col_idx < len(cells):
+                    # Remove citations from the value for row_id
+                    raw_val = cells[first_id_col_idx]
+                    entity_name = re.sub(r'\[\d+\]', '', raw_val).strip() or 'Unknown'
+
+                row_id = f"P{data_row_counter}-{entity_name}"
+                new_lines.append(f'| {row_id} ' + stripped)
+
+        return '\n'.join(new_lines)
+
     def _filter_markdown_by_row_ids(
         self,
         markdown: str,
@@ -1257,6 +1362,12 @@ class QCReviewer:
         if keep_row_ids_in_order and isinstance(keep_row_ids_in_order, list):
             old_format['keep_row_ids_in_order'] = keep_row_ids_in_order
             logger.info(f"[QC] Preserving keep_row_ids_in_order with {len(keep_row_ids_in_order)} entries")
+
+        # Preserve remove_prepopulated_row_ids for filtering pre-existing rows
+        remove_prepopulated = simplified.get('remove_prepopulated_row_ids', None)
+        if remove_prepopulated and isinstance(remove_prepopulated, list):
+            old_format['remove_prepopulated_row_ids'] = remove_prepopulated
+            logger.info(f"[QC] Preserving remove_prepopulated_row_ids with {len(remove_prepopulated)} entries")
 
         # Preserve action-specific fields required by _validate_qc_response
         if action == 'filter':
