@@ -18,6 +18,18 @@ from typing import Dict, Any, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _is_separator_line(line: str) -> bool:
+    """
+    Check if a markdown table line is a separator (e.g., |---|---|---|).
+    Only returns True if the line contains ONLY pipes, dashes, colons, and whitespace.
+    Prevents data rows containing '---' (e.g., 'Phase III---Approved') from
+    being misidentified as separators.
+    """
+    import re
+    cleaned = re.sub(r'[\|\-\:\s]', '', line)
+    return len(cleaned) == 0 and '---' in line
+
+
 def _filter_numeric_citations(citations: Dict[str, str]) -> Dict[str, str]:
     """
     Filter citations to only include numeric keys.
@@ -141,7 +153,7 @@ def parse_candidates_markdown(
     row_num = 0
     for line in lines[header_idx + 1:]:
         stripped = line.strip()
-        if not stripped or '---' in stripped or not stripped.startswith('|'):
+        if not stripped or not stripped.startswith('|') or _is_separator_line(stripped):
             continue
 
         row_num += 1
@@ -362,7 +374,7 @@ def parse_candidates_markdown_legacy(markdown_str: str, id_column_names: List[st
 
     for line in lines[header_idx + 1:]:
         stripped = line.strip()
-        if not stripped or '---' in stripped or not stripped.startswith('|'):
+        if not stripped or not stripped.startswith('|') or _is_separator_line(stripped):
             continue
 
         raw_parts = stripped.split('|')

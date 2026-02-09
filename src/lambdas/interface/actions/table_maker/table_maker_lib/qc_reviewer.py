@@ -51,7 +51,8 @@ class QCReviewer:
         search_strategy: Dict = None,
         discovery_result: Dict = None,
         retrigger_allowed: bool = True,
-        column_result: Dict = None
+        column_result: Dict = None,
+        target_row_count: int = 0
     ) -> Dict[str, Any]:
         """
         Review and filter discovered rows using QC criteria.
@@ -173,7 +174,8 @@ class QCReviewer:
                 'CURRENT_INCLUDED_DOMAINS': self._format_domain_list(search_strategy, 'included'),
                 'CURRENT_EXCLUDED_DOMAINS': self._format_domain_list(search_strategy, 'excluded'),
                 'RETRIGGER_ALLOWED': 'true' if retrigger_allowed else 'false',
-                'MIN_ROW_COUNT': str(min_row_count)  # Configurable threshold from config
+                'MIN_ROW_COUNT': str(min_row_count),  # Configurable threshold from config
+                'TARGET_ROW_COUNT': str(target_row_count) if target_row_count > 0 else 'not specified'
             }
 
             logger.debug(f"Loading QC review prompt with {len(variables)} variables")
@@ -481,15 +483,19 @@ class QCReviewer:
 
             # Check for insufficient rows scenario
             # IMPORTANT: Consider BOTH prepopulated rows AND discovered rows (after QC approval)
-            # Prepopulated rows (from column_definition) are pre-approved
-            total_rows = pre_row_count + len(final_approved)
+            # Adjust pre_row_count for QC-requested removals
+            adjusted_pre_count = pre_row_count
+            if remove_prepopulated_row_ids and isinstance(remove_prepopulated_row_ids, list):
+                adjusted_pre_count = max(0, pre_row_count - len(remove_prepopulated_row_ids))
+            total_rows = adjusted_pre_count + len(final_approved)
             insufficient_rows = total_rows < min_row_count
             insufficient_rows_statement = ai_response.get('insufficient_rows_statement', '')
             insufficient_rows_recommendations = ai_response.get('insufficient_rows_recommendations', [])
 
             logger.info(
-                f"[INSUFFICIENT_CHECK] Prepopulated: {pre_row_count}, QC approved: {len(final_approved)}, "
-                f"Total: {total_rows}, Min required: {min_row_count}, Insufficient: {insufficient_rows}"
+                f"[INSUFFICIENT_CHECK] Prepopulated: {pre_row_count} (adjusted: {adjusted_pre_count}), "
+                f"QC approved: {len(final_approved)}, Total: {total_rows}, "
+                f"Min required: {min_row_count}, Insufficient: {insufficient_rows}"
             )
 
             # Update qc_summary with new fields
@@ -1077,25 +1083,38 @@ class QCReviewer:
         new_lines = []
         data_row_counter = 0  # Track data rows independently of line index
 
+        # Count expected columns from header for cell-count validation
+        header_cells = [h.strip() for h in lines[0].strip().split('|')[1:-1]]
+        expected_cols = len(header_cells)
+
         for i, line in enumerate(lines):
             stripped = line.strip()
             if not stripped.startswith('|'):
                 new_lines.append(line)
                 continue
 
-            parts = stripped.split('|')
-            # parts[0] is empty (before first |), parts[-1] is empty (after last |)
-
             if i == 0:
                 # Header row - prepend row_id column
                 new_lines.append('| row_id ' + stripped)
-            elif '---' in stripped:
+            elif self._is_separator_line(stripped):
                 # Separator row - prepend separator
                 new_lines.append('|---' + stripped)
             else:
-                # Data row - generate P-prefixed row_id
-                data_row_counter += 1
+                # Potential data row - validate cell count matches header
+                # This MUST match _parse_markdown_table_with_citations behavior
                 cells = [c.strip() for c in stripped.split('|')[1:-1]]
+
+                if len(cells) != expected_cols:
+                    # Malformed row - skip (don't increment counter)
+                    # _parse_markdown_table_with_citations also skips these
+                    logger.warning(
+                        f"[ROW_ID] Skipping malformed row (line {i}): "
+                        f"{len(cells)} cells vs {expected_cols} expected"
+                    )
+                    new_lines.append(stripped)
+                    continue
+
+                data_row_counter += 1
 
                 # Get first ID column value for row_id
                 entity_name = 'Unknown'
@@ -1108,6 +1127,19 @@ class QCReviewer:
                 new_lines.append(f'| {row_id} ' + stripped)
 
         return '\n'.join(new_lines)
+
+    @staticmethod
+    def _is_separator_line(line: str) -> bool:
+        """
+        Check if a markdown table line is a separator (e.g., |---|---|---|).
+        Only returns True if the line contains ONLY pipes, dashes, colons, and whitespace.
+        This prevents data rows containing '---' (e.g., 'Phase III---Approved') from
+        being misidentified as separators.
+        """
+        # Remove all valid separator characters - if anything remains, it's not a separator
+        import re
+        cleaned = re.sub(r'[\|\-\:\s]', '', line)
+        return len(cleaned) == 0 and '---' in line
 
     def _filter_markdown_by_row_ids(
         self,
@@ -1143,7 +1175,7 @@ class QCReviewer:
             stripped = line.strip()
 
             # Keep header and separator lines
-            if '---' in stripped or not stripped.startswith('|'):
+            if not stripped.startswith('|') or self._is_separator_line(stripped):
                 kept_lines.append(line)
                 continue
 

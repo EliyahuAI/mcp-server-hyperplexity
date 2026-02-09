@@ -16,6 +16,8 @@ Review ALL rows (both pre-existing and discovered) and choose ONE action:
 
 **Table Name:** {{TABLE_NAME}}
 
+**Target Row Count:** {{TARGET_ROW_COUNT}} rows requested.
+
 **Requirements:**
 
 **Hard (must meet):**
@@ -92,10 +94,15 @@ Review ALL rows (both pre-existing and discovered) and choose ONE action:
 **Output:** `keep_row_ids_in_order` (discovered rows to KEEP in order), `remove_prepopulated_row_ids` (pre-existing rows to remove), `overall_score`, optionally `removal_reasons`
 
 ### Action: "retrigger_discovery"
-**When:** Need MORE ENTITIES beyond pre-existing rows
+**When:** BOTH conditions must be true:
+1. After filtering, total approved rows (pre-existing kept + discovered kept) is below {{TARGET_ROW_COUNT}}
+2. You believe at least 10% more rows (relative to {{TARGET_ROW_COUNT}}) can be found — i.e., the domain is NOT exhausted
+
+**Do the math:** Count surviving pre-existing + kept discovered = total. If total < {{TARGET_ROW_COUNT}} AND you can name or describe at least `ceil({{TARGET_ROW_COUNT}} * 0.10)` additional entities that likely exist, retrigger. If the domain seems exhausted (you can't think of more entities), use `filter` instead — getting fewer rows is acceptable when the space is genuinely small.
+
 **NOT for:** Filling empty columns (validator handles that downstream)
-**Output:** `discovery_guidance`, `new_subdomains`, `overall_score`
-**Important:** Focus on finding MORE entities, NOT populating columns
+**Output:** `discovery_guidance`, `new_subdomains`, `overall_score`, optionally `remove_prepopulated_row_ids`
+**Important:** Focus on finding MORE entities, NOT populating columns. All discovered rows are kept during retrigger (dedup happens at merge).
 
 **USE YOUR KNOWLEDGE:** If you know of specific entities that SHOULD be in this table but are missing, LIST THEM in `discovery_guidance`. The next discovery round will use your guidance to find them.
 
@@ -103,6 +110,7 @@ Review ALL rows (both pre-existing and discovered) and choose ONE action:
 - Good: "Have 5 total but need 20. Missing known entries: Medtronic, Boston Scientific, Abbott Laboratories, Stryker, Zimmer Biomet. Also search for smaller companies in orthopedics and cardiovascular devices."
 - Good: "Only 3 Fortune 500 tech companies found. Missing: Apple, Microsoft, Google, Amazon, Meta, NVIDIA, Salesforce, Oracle, Intel, IBM. Search for complete Fortune 500 technology sector."
 - Bad: "Need to populate tax rate columns" <- NO, validator does this
+- Bad: "Only found 95 out of 100 but domain seems exhausted" <- Use filter, don't waste a retrigger
 
 ### Action: "restructure"
 **When:** ONLY if table structure is fundamentally flawed AND pre-existing rows don't help
@@ -190,7 +198,7 @@ This keeps only these 4 discovered rows, in this exact order. Rows 3 and 5 are r
 {
   "action": "retrigger_discovery",
   "keep_row_ids_in_order": null,
-  "remove_prepopulated_row_ids": null,
+  "remove_prepopulated_row_ids": ["P1-RatioTherapeutics", "P2-RatioTherapeutics"],
   "removal_reasons": null,
   "overall_score": 0.6,
   "discovery_guidance": "Have 3 pre-existing + 2 discovered = 5 total. Need 15 more. Missing known entities: Salesforce, Oracle, SAP, ServiceNow, Workday, Atlassian, Datadog, Snowflake. Also search for mid-cap enterprise SaaS companies.",
@@ -232,7 +240,7 @@ This keeps only these 4 discovered rows, in this exact order. Rows 3 and 5 are r
 |--------|----------------------|---------------------------|-----------------|---------------|-------------------|----------------|----------------------|--------------|
 | pass | null (keep all) | null (keep all) | null | number | null | null | null | null |
 | filter | array OR null | array OR null | optional object | number | null | null | null | null |
-| retrigger_discovery | null | null | null | number | string | array | null | null |
+| retrigger_discovery | null | array OR null | null | number | string | array | null | null |
 | restructure | null | null | null | null | null | null | object | string |
 
 **Keep it concise - avoid verbose explanations.**

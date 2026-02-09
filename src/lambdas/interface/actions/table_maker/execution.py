@@ -1425,26 +1425,36 @@ def _filter_prepopulated_rows(
     if not remove_prepopulated_row_ids or not initial_rows:
         return initial_rows
 
-    # Build set of indices to remove (extract from P-prefixed row_ids)
-    # Only match by index to avoid removing wrong rows when multiple rows share the same name
-    remove_indices = set()
+    # Build map of indices to QC-requested entity names (for alignment verification)
+    remove_map = {}  # idx -> qc_entity_name
     for row_id in remove_prepopulated_row_ids:
         if row_id.startswith('P') and '-' in row_id:
-            # Extract index: "P3-Anthropic" -> index=3
             parts = row_id.split('-', 1)
             try:
                 idx = int(parts[0][1:])  # Remove 'P' prefix
-                remove_indices.add(idx)
+                qc_entity = parts[1] if len(parts) > 1 else 'Unknown'
+                remove_map[idx] = qc_entity
             except ValueError:
                 logger.warning(f"[PREPOPULATED_FILTER] Could not parse index from row_id: {row_id}")
 
     filtered = []
     removed_count = 0
     for idx, row in enumerate(initial_rows, 1):
-        if idx in remove_indices:
+        if idx in remove_map:
             id_vals = row.get('id_values', {})
-            first_val = list(id_vals.values())[0] if id_vals else 'Unknown'
-            logger.info(f"[PREPOPULATED_FILTER] Removing P{idx}-{first_val} (matched by index)")
+            actual_entity = list(id_vals.values())[0] if id_vals else 'Unknown'
+            qc_entity = remove_map[idx]
+
+            # Alignment check: log both names so mismatches are visible in CloudWatch
+            if qc_entity.lower().strip() != str(actual_entity).lower().strip():
+                logger.warning(
+                    f"[PREPOPULATED_FILTER] INDEX MISMATCH at P{idx}: "
+                    f"QC requested '{qc_entity}' but initial_rows[{idx}] is '{actual_entity}'"
+                )
+            logger.info(
+                f"[PREPOPULATED_FILTER] Removing P{idx}: "
+                f"QC='{qc_entity}', actual='{actual_entity}'"
+            )
             removed_count += 1
             continue
 
@@ -2630,6 +2640,10 @@ async def execute_full_table_generation(
                     # Call QC reviewer
                     # IMPORTANT: Pass discovery_only_rows (not merged final_rows) to avoid
                     # duplicating prepopulated rows which are already shown in PREPOPULATED_ROWS_MARKDOWN
+                    # Get user's target row count for QC retrigger decision
+                    user_target = conversation_state.get('target_row_count', -1)
+                    qc_target = user_target if user_target > 0 else 100  # Default if unset
+
                     qc_result = await qc_reviewer.review_rows(
                         discovered_rows=discovery_only_rows,  # Only rows from discovery, not prepopulated
                         columns=columns,
@@ -2645,7 +2659,8 @@ async def execute_full_table_generation(
                         search_strategy=search_strategy,
                         discovery_result=discovery_result,
                         retrigger_allowed=retrigger_allowed,
-                        column_result=column_result  # Pass column_definition result for prepopulated rows
+                        column_result=column_result,  # Pass column_definition result for prepopulated rows
+                        target_row_count=qc_target
                     )
 
                     if not qc_result.get('success'):
@@ -2957,12 +2972,20 @@ async def execute_full_table_generation(
                         num_subdomains = len(search_strategy.get('subdomains', []))
                         max_parallel_streams_retrigger = min(num_subdomains, 5)
 
+                        # Calculate retrigger target_row_count (same logic as initial discovery)
+                        retrigger_user_target = conversation_state.get('target_row_count', -1)
+                        if retrigger_user_target == -1:
+                            retrigger_target = FIND_ALL_SAFETY_CAP
+                        else:
+                            retrigger_target = int(retrigger_user_target * DISCOVERY_AMPLIFICATION)
+                        logger.info(f"[RETRIGGER] target_row_count: user={retrigger_user_target}, amplified={retrigger_target}")
+
                         # TODO: Pass exclusion_list when row_discovery.py is updated to support it
                         # For now, the new subdomains and updated requirements will help avoid duplicates
                         retrigger_discovery_result = await row_discovery.discover_rows(
                             search_strategy=search_strategy,
                             columns=columns,
-                            target_row_count=conversation_state.get('target_row_count', 15),
+                            target_row_count=retrigger_target,
                             discovery_multiplier=1.5,
                             min_match_score=min_match_score,
                             max_parallel_streams=max_parallel_streams_retrigger,
