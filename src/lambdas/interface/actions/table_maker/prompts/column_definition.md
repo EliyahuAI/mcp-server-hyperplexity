@@ -353,7 +353,7 @@ Each subdomain MUST have:
   "name": "AI",
   "focus": "Find AI companies",
   "search_queries": ["AI company"],  // Too vague, only 1 query
-  "target_rows": 5  // Too few
+  "target_rows": 10  // Too few for most requests
 }
 ```
 
@@ -371,14 +371,23 @@ Each subdomain MUST have:
 
 ### Target Row Calculation
 
+**CRITICAL: Discovery finds raw candidates, but ~50% are lost to dedup + QC filtering + quality thresholds. You MUST overshoot aggressively.**
+
 ```
-overshoot_factor = 1.3 to 1.5
+overshoot_factor = 1.8 to 2.5 (use 2.5 for niche/strict topics, 1.8 for broad/easy topics)
 dedup_compensation = 1.0 + ((subdomain_count - 2) * 0.10)
+qc_compensation = 1.5 (QC rejects ~40% of discovered rows)
 total_target = user_requested * overshoot_factor * dedup_compensation
-target_per_subdomain = total_target / subdomain_count
+target_per_subdomain = ceil(total_target / subdomain_count)
 ```
 
-**Minimum target_rows per subdomain: 5**
+**Example: User wants 100 rows, 5 subdomains:**
+- total_target = 100 * 2.0 * 1.3 = 260
+- target_per_subdomain = ceil(260 / 5) = 52
+- Each subdomain targets ~52 rows
+
+**Minimum target_rows per subdomain: 10**
+**Minimum total_target across all subdomains: user_requested * 1.8**
 
 ═══════════════════════════════════════════════════════════════
 ## 📤 OUTPUT FORMAT

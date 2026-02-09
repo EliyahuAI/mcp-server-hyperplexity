@@ -160,7 +160,7 @@ logger.setLevel(logging.INFO)
 
 # Row discovery constants
 FIND_ALL_SAFETY_CAP = 200  # Maximum rows when user requests "find all"
-DISCOVERY_AMPLIFICATION = 1.5  # Amplify target for discovery, QC will trim back
+DISCOVERY_AMPLIFICATION = 2.0  # Amplify target for discovery (2x), QC filters ~40% + dedup ~15%
 
 # Timeout constants
 LAMBDA_MAX_SECONDS = 900  # Lambda 15-minute timeout

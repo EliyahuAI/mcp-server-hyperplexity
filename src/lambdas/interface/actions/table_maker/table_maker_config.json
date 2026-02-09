@@ -65,9 +65,9 @@
     "_note_subdomain_max": "Limited to 5 subdomains max to ensure completion within Lambda timeout",
     "default_target_rows_total": 30,
     "_subdomain_strategy": "Use more subdomains (6-10) for challenging/niche topics or complex requirements. More subdomains = better coverage but more overlap. If authoritative lists found, structure subdomains as SEGMENTS of those lists (e.g., 'Countries A-E', 'NIH Awardees A-D')",
-    "overshoot_factor_min": 1.3,
-    "overshoot_factor_max": 1.5,
-    "_overshoot_note": "Always target 30-50% more rows than user requested to ensure delivery after QC and deduplication"
+    "overshoot_factor_min": 1.8,
+    "overshoot_factor_max": 2.5,
+    "_overshoot_note": "Target 1.8-2.5x more rows than user requested. Raised from 1.3-1.5x to compensate for: dedup (~15% loss), QC filtering (~40% rejection), and min_match_score filtering (~8% loss). Net survival rate is ~50%, so 2x overshoot is the minimum."
   },
 
   "row_discovery": {
@@ -80,7 +80,7 @@
         "search_context_size": "high",
         "description": "Round 1: sonar with high context for fast initial discovery",
         "min_candidates_percentage": 50,
-        "_note": "First discovery round. Low threshold (50%) to continue to round 2 for more entities."
+        "_note": "First discovery round. Low threshold (50%) to get to QC fast. If subdomain has no fruit, QC retrigger with better guidance is more effective than brute-forcing more rounds."
       },
       {
         "model": "the-clone",
@@ -112,7 +112,7 @@
     "_global_counter_info": "Global counter tracks total discovered rows across ALL subdomains and stops early if threshold reached. Prevents wasting API calls when we already have enough candidates globally",
     "check_targets_between_subdomains": true,
     "early_stop_threshold_percentage": 100,
-    "_note_threshold": "100% means stop when total_discovered >= target_row_count. 120% would allow 20% overshooting",
+    "_note_threshold": "100% means stop when total_discovered >= target. Get to QC fast - retrigger with Opus guidance is more effective than brute-forcing more discovery rounds.",
 
     "_schema_validation_info": "soft_schema=true allows LLM to omit optional fields in JSON responses (more flexible). false enforces strict schema adherence",
     "soft_schema": false,
@@ -167,8 +167,8 @@
 
     "_retrigger_settings": "Retrigger allows QC to request additional discovery round with completely new subdomains if results insufficient",
     "allow_retrigger": true,
-    "max_retriggers": 1,
-    "_note_retrigger": "Typically 1 to prevent infinite loops. QC can analyze why results are poor and suggest new subdomains to try"
+    "max_retriggers": 2,
+    "_note_retrigger": "Increased to 2 to give the system more chances to find enough rows. QC with claude-opus-4-6 guides retrigger with specific missing entities."
   },
 
   "table_population": {
