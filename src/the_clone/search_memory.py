@@ -973,6 +973,27 @@ class SearchMemory:
             # Full searchable text for keyword matching
             searchable_text = f"{past_query} {search_term} {all_snippets}"
 
+            # STRICT ROW CONTEXT FILTER: Only allow general memories or exact row matches
+            # This prevents cross-row contamination (e.g., Bayer product A citing Bayer product B)
+            stored_context = query_data.get('row_context')
+            if stored_context and row_identifiers:
+                # This memory HAS row context AND we have current row context
+                # Only allow if row keys match exactly
+                stored_row_key = stored_context.get('row_key')
+                current_row_key = row_identifiers.get('row_key')
+
+                if stored_row_key and current_row_key:
+                    if stored_row_key != current_row_key:
+                        # Different row - SKIP this memory entirely
+                        logger.debug(
+                            f"[MEMORY] Skipping query '{query_data['search_term']}' - "
+                            f"different row context (stored: {stored_context.get('row_id_display', 'unknown')}, "
+                            f"current: {row_identifiers.get('row_id_display', 'unknown')})"
+                        )
+                        continue
+            # If no stored_context: General memory - always allowed
+            # If no row_identifiers: Backward compatibility - allow everything
+
             # REQUIRED KEYWORD CHECK: ALL keyword groups must match (AND logic)
             # Each group can have variants separated by | (OR within group)
             # Format: ["Apple|AAPL", "stock|shares"] = (Apple OR AAPL) AND (stock OR shares)
@@ -1055,17 +1076,22 @@ class SearchMemory:
         row_identifiers: Dict[str, Any]
     ) -> float:
         """
-        Calculate row context relevance score.
+        Calculate row context relevance score for ranking.
 
-        Rewards results from the same row, penalizes results from different rows.
-        Results without row context get neutral score (backward compatible).
+        NOTE: Strict row filtering now happens in _filter_queries_by_keywords(),
+        so this function primarily ranks memories that passed the filter:
+        - Same row memories (already filtered to only exact matches)
+        - General memories (no row context)
+
+        Rewards results from the same row over general memories.
+        Results without row context get neutral score (general knowledge).
 
         Args:
             query_data: Stored query data (may contain 'row_context')
             row_identifiers: Current row's identity {id_values, id_columns, row_key}
 
         Returns:
-            Score adjustment: +10 (same row), +5 (partial match), 0 (no context), -5 (different row)
+            Score adjustment: +10 (same row), +5 (partial match), 0 (no context/general), -5 (different row - should not reach here)
         """
         stored_context = query_data.get('row_context')
         if not stored_context or not row_identifiers:
