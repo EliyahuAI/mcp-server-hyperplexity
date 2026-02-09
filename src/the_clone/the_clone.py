@@ -83,7 +83,8 @@ class TheClone2Refined:
         session_id: Optional[str] = None,
         email: Optional[str] = None,
         s3_manager = None,
-        use_memory: bool = True
+        use_memory: bool = True,
+        row_context: dict = None
     ) -> Dict[str, Any]:
         """
         Execute query with strategy-based architecture.
@@ -649,7 +650,8 @@ class TheClone2Refined:
                     depth=depth,
                     url_sources=url_matched_sources,  # Pass URL sources for Gemini consideration
                     search_terms=search_terms,  # Pass for per-term confidence assessment
-                    skip_verification=True  # NEW: Extract first, then verify based on snippets
+                    skip_verification=True,  # NEW: Extract first, then verify based on snippets
+                    row_identifiers=row_context  # Filter by row to prevent cross-contamination
                 )
 
                 memory_sources = recall_result['memories']
@@ -1143,7 +1145,8 @@ class TheClone2Refined:
                                 search_term=term,
                                 results=result,
                                 parameters=search_settings,
-                                strategy=strategy['name']
+                                strategy=strategy['name'],
+                                row_context=row_context
                             )
                             stored_count += 1
                             total_urls_indexed += len(result.get('results', []))

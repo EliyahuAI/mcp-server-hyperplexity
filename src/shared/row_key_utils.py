@@ -146,5 +146,36 @@ def normalize_unicode_spaces(text: str) -> str:
     logger.warning("normalize_unicode_spaces is deprecated with hash-based row keys")
     return text
 
+def extract_id_column_values(row: Dict[str, Any], id_columns: List[str]) -> Dict[str, Any]:
+    """
+    Extract ID column values from a row for memory row context.
+
+    Args:
+        row: Dictionary containing row data
+        id_columns: List of column names that are identity columns
+
+    Returns:
+        Dict with id_columns, id_values, row_key (hash), and row_id_display
+    """
+    if not id_columns:
+        return {
+            'id_columns': [],
+            'id_values': [],
+            'row_key': generate_row_key(row),
+            'row_id_display': ''
+        }
+
+    id_values = []
+    for col in id_columns:
+        val = row.get(col, '')
+        id_values.append(str(val).strip() if val is not None else '')
+
+    return {
+        'id_columns': list(id_columns),
+        'id_values': id_values,
+        'row_key': generate_row_key(row, primary_keys=id_columns),
+        'row_id_display': ' | '.join(v for v in id_values if v)
+    }
+
 # Export the main functions
-__all__ = ['generate_row_key', 'validate_row_key', 'convert_legacy_row_key'] 
+__all__ = ['generate_row_key', 'validate_row_key', 'convert_legacy_row_key', 'extract_id_column_values']

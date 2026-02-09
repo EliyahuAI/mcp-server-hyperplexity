@@ -150,7 +150,8 @@ class MemoryCache:
         search_term: str,
         results: Dict[str, Any],
         parameters: Dict[str, Any],
-        strategy: str = "unknown"
+        strategy: str = "unknown",
+        row_context: dict = None
     ) -> str:
         """
         Store search in RAM cache. NO S3 WRITE.
@@ -175,7 +176,7 @@ class MemoryCache:
                 )
 
             memory = _MEMORY_CACHE[session_id]
-            query_id = memory._store_search_no_backup(search_term, results, parameters, strategy)
+            query_id = memory._store_search_no_backup(search_term, results, parameters, strategy, row_context=row_context)
             _DIRTY_SESSIONS.add(session_id)
 
             logger.debug(f"[MEMORY_CACHE] Stored search '{search_term[:50]}...' (RAM only, no S3)")

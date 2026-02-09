@@ -57,6 +57,12 @@ The system also supports **direct URL content storage** for Table Maker extracti
         "cost": 0.005,
         "num_results": 10,
         "strategy": "survey"
+      },
+      "row_context": {
+        "id_values": ["Bayer", "BAY"],
+        "id_columns": ["Company", "Ticker"],
+        "row_key": "abc123...",
+        "row_id_display": "Bayer | BAY"
       }
     }
   },
@@ -118,8 +124,13 @@ The recall process uses a **2-stage approach** with optional verification:
 ### Stage 1: Keyword Pre-Filter (Free, <50ms)
 
 - Matches keywords against **full text** (query + all snippets)
-- Scores queries by: query overlap + keyword matches
+- Scores queries by: query overlap + keyword matches + **row context score**
 - Filters to top 30 candidate queries
+- **Row context scoring** (cross-contamination prevention):
+  - `+10` same row (exact `row_key` match)
+  - `+5` partial match (overlapping ID values)
+  - `0` no context (backward compatible with pre-existing memory)
+  - `-5` different row (no ID value overlap — penalizes cross-contamination)
 - **Cost: $0**
 
 ### Stage 2: Gemini Source Selection (~$0.0002)
@@ -393,12 +404,19 @@ memory = MemoryCache.get(session_id, email, s3_manager, ai_client)
 recall_result = await memory.recall(query, keywords, ...)
 
 # Store search results (RAM only, no S3 write)
+# row_context tags results with row identity for cross-contamination prevention
 MemoryCache.store_search(
     session_id=session_id,
     search_term="AI safety research",
     results=search_result,
     parameters={'max_results': 10},
-    strategy="survey"
+    strategy="survey",
+    row_context={  # Optional - for multi-row table validation
+        'id_values': ['Bayer', 'BAY'],
+        'id_columns': ['Company', 'Ticker'],
+        'row_key': 'abc123...',
+        'row_id_display': 'Bayer | BAY'
+    }
 )
 
 # Store URL content (for table extractions)
@@ -433,7 +451,8 @@ result = await clone.query(
     session_id="session_123",      # Required for memory
     email="user@example.com",      # Required for memory
     s3_manager=s3_manager,         # Required for memory
-    use_memory=True                # Enable memory (default: True)
+    use_memory=True,               # Enable memory (default: True)
+    row_context=row_context        # Optional: row identity for cross-contamination prevention
 )
 
 # After batch: flush memory
@@ -469,14 +488,15 @@ await memory.store_search(
     strategy="survey"
 )
 
-# Recall memories
+# Recall memories (row_identifiers filters by row to prevent cross-contamination)
 recall_result = await memory.recall(
     query="What are AI alignment techniques?",
     keywords={'positive': ['alignment', 'safety'], 'negative': []},
     max_results=10,
     confidence_threshold=0.6,
     breadth="broad",
-    depth="shallow"
+    depth="shallow",
+    row_identifiers=row_context  # Optional: boosts same-row, penalizes different-row
 )
 
 # Check results
@@ -794,6 +814,8 @@ The memory copy is recorded in `session_info.json`:
 - **Recency priority scoring** (fresher memories get priority in recall)
 - **Relative time display** (verification shows "2 days ago" not timestamps)
 - **Jina-fetched URL storage** (live-fetched URLs stored to memory for future recall)
+- **Row context tagging** (`row_context` in stored queries for cross-contamination prevention)
+- **Row-aware recall scoring** (boosts same-row results, penalizes different-row results)
 
 ### 📊 Performance Metrics
 - Recall time: ~500-750ms
@@ -810,17 +832,84 @@ The memory copy is recorded in `session_info.json`:
 - `src/the_clone/prompts/memory_recall.md` - Source selection prompt template
 - `src/the_clone/tests/test_memory.py` - Unit tests
 - `src/the_clone/test_memory_integration.py` - Integration test
+- `src/validation/__init__.py` - Validation package init
+- `src/validation/context.py` - **Row identity dataclasses** (`RowIdentity`, `EnhancedValidationContext`)
+- `src/validation/similar_rows.py` - **Similar row detection** for cross-contamination warnings
 - `docs/SEARCH_MEMORY_SYSTEM.md` - This documentation
 - `docs/MEMORY_CACHE_INTEGRATION.md` - RAM cache integration guide
 - `docs/EXTRACT_THEN_VERIFY_REFACTOR.md` - Extract-then-verify architecture notes
 
 ### Modified Files
-- `src/the_clone/search_memory.py` - Added `skip_verification` parameter, URL extraction
-- `src/the_clone/the_clone.py` - Extract-then-verify flow, triage with `existing_snippets`, URL deduplication
+- `src/the_clone/search_memory.py` - Added `skip_verification` parameter, URL extraction, **`row_context` storage, `row_identifiers` recall scoring, `_calculate_row_context_score()`**
+- `src/the_clone/search_memory_cache.py` - **`row_context` parameter in `store_search()`**
+- `src/the_clone/the_clone.py` - Extract-then-verify flow, triage with `existing_snippets`, URL deduplication, **`row_context` threading through `query()`**
+- `src/the_clone/search_manager.py` - **`row_context` threading through `search_with_memory()`**
+- `src/shared/ai_client/memory_helpers.py` - **`row_context` in `store_perplexity_citations_to_memory()`**
+- `src/shared/ai_client/providers/clone.py` - **`row_context` threading through `CloneProvider.make_structured_call()`**
+- `src/shared/row_key_utils.py` - **Added `extract_id_column_values()`**
+- `src/lambdas/validation/lambda_function.py` - **Builds `row_context` in `process_row()`, threads through `process_multiplex_group()`**
 - `src/the_clone/prompts/initial_decision.md` - Proper nouns, sparse negative keywords
 - `src/the_clone/initial_decision_schemas.py` - Negative keywords optional
 - `src/lambdas/interface/actions/table_maker/execution.py` - Stores extracted tables to agent_memory
 - `src/lambdas/interface/actions/copy_config.py` - Copies agent_memory.json when copying config
+
+## Row Context: Cross-Contamination Prevention
+
+### The Problem
+
+When validating multi-row tables, the memory system stores search results and citations without row identity information. When validating Row B, memory recall can return results from Row A (e.g., Bayer results bleeding into Curium row), causing incorrect validation output.
+
+### The Solution
+
+Every memory entry is tagged with a `row_context` dict containing the row's identity:
+
+```python
+row_context = {
+    'id_values': ['Bayer', 'BAY'],      # Values from ID columns
+    'id_columns': ['Company', 'Ticker'], # Column names
+    'row_key': 'sha256_hash...',         # Unique row hash
+    'row_id_display': 'Bayer | BAY'      # Human-readable display
+}
+```
+
+### How It Works
+
+**Storage:** When search results or citations are stored to memory, `row_context` is included in the `query_data` dict. This tags every memory entry with which row it belongs to.
+
+**Recall:** When recalling memories, `row_identifiers` is passed to the keyword pre-filter. The `_calculate_row_context_score()` method adjusts relevance scores:
+
+| Scenario | Score | Effect |
+|----------|-------|--------|
+| Same row (exact `row_key` match) | +10 | Strong boost — prefer same-row data |
+| Partial match (overlapping ID values) | +5 | Moderate boost — related row |
+| No context (pre-existing memory) | 0 | Neutral — backward compatible |
+| Different row (no ID overlap) | -5 | Penalty — prevents cross-contamination |
+
+### Pipeline Threading
+
+```
+lambda process_row() → builds row_context from id_fields
+  ↓
+process_multiplex_group(row_context=...)
+  ↓
+store_perplexity_citations_to_memory(row_context=...)
+  ↓
+MemoryCache.store_search(row_context=...)
+  ↓
+SearchMemory._store_search_no_backup() → tags query_data['row_context']
+
+TheClone2Refined.query(row_context=...)
+  ↓
+memory.recall(row_identifiers=row_context)
+  ↓
+_filter_queries_by_keywords(row_identifiers=...)
+  ↓
+_calculate_row_context_score() → adjusts relevance_score
+```
+
+### Backward Compatibility
+
+All `row_context` parameters default to `None`. Pre-existing memory entries without `row_context` receive a neutral score (0), so existing behavior is unchanged.
 
 ## Future Enhancements
 
@@ -836,6 +925,7 @@ The memory copy is recorded in `session_info.json`:
 - Memory scope limited to single session
 - Verification runs on snippet previews (2000 chars), not full content
 - Self-assessment "B" triggers improvement searches (bypasses memory savings)
+- ~~Row cross-contamination: Memory from Row A could bleed into Row B recall~~ **FIXED** (row_context tagging)
 
 ### Known Issue: URL Memory Storage Gap
 

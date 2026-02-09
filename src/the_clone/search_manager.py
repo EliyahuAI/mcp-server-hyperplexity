@@ -57,7 +57,8 @@ class SearchManager:
         confidence_threshold: float = 0.75,
         include_domains: Optional[List[str]] = None,
         exclude_domains: Optional[List[str]] = None,
-        clone_logger: Any = None
+        clone_logger: Any = None,
+        row_context: dict = None
     ) -> Dict[str, Any]:
         """
         Integrated memory+search: Check memory per search term, fresh search if needed.
@@ -161,7 +162,8 @@ class SearchManager:
                         await memory.store_search(
                             search_term=term,
                             results=fresh_result,
-                            parameters=search_settings
+                            parameters=search_settings,
+                            row_context=row_context
                         )
                     except Exception as e:
                         logger.warning(f"[SEARCH_MANAGER] Failed to store search in memory: {e}")

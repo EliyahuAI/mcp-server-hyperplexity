@@ -3861,7 +3861,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Get ignored fields and ID fields - add them to results without processing
             ignored_fields = validator.get_ignored_fields()
             id_fields = validator.get_id_fields()
-            
+
+            # Build row context for memory cross-contamination prevention
+            row_context = None
+            if id_fields:
+                # Use (val if val is not None else '') to avoid str(None) → "None" false matches
+                id_values = []
+                for f in id_fields:
+                    val = row_data.get(f.column)
+                    id_values.append(str(val).strip() if val is not None else '')
+                row_context = {
+                    'id_values': id_values,
+                    'id_columns': [f.column for f in id_fields],
+                    'row_key': row_key,
+                    'row_id_display': ' | '.join(v for v in id_values if v)
+                }
+
             # Process IGNORED fields
             if ignored_fields:
                 logger.debug(f"Adding {len(ignored_fields)} IGNORED fields without processing")
@@ -3940,7 +3955,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     proactive_guidance = "\n\n**PROACTIVE GUIDANCE BASED ON RECENT ISSUES:**\n" + "\n".join(warnings)
 
                 # Always use multiplex validation regardless of number of fields
-                missing_column_info = await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used, group_id, row_api_providers, proactive_guidance)
+                missing_column_info = await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used, group_id, row_api_providers, proactive_guidance, row_context)
                 total_multiplex_validations += 1
 
                 # Update tracker immediately so later rows in batch can benefit (write lock, fast when no issues)
@@ -4234,7 +4249,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # CRITICAL: Return row_key (hash) instead of row_idx (integer) for QC matching
             return row_key, row_results, row_models_used, batch_number
         
-        async def process_multiplex_group(session, row, row_results, targets, previous_results=None, validation_history=None, is_isolated_validation=False, row_models_used=None, group_id=None, row_api_providers=None, proactive_guidance=""):
+        async def process_multiplex_group(session, row, row_results, targets, previous_results=None, validation_history=None, is_isolated_validation=False, row_models_used=None, group_id=None, row_api_providers=None, proactive_guidance="", row_context=None):
             """
             Process a group of columns with a single multiplex AI API call using ai_api_client.
 
@@ -4789,7 +4804,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         ai_client=ai_client,
                         citations=citations,
                         response_data=response_data,
-                        source_type="validation"
+                        source_type="validation",
+                        row_context=row_context
                     )
                 except Exception as mem_err:
                     logger.debug(f"[MEMORY] Citation storage skipped: {mem_err}")

@@ -56,7 +56,8 @@ def store_perplexity_citations_to_memory(
     citations: List[Dict],
     response_data: Dict = None,
     search_term: str = None,
-    source_type: str = "validation"
+    source_type: str = "validation",
+    row_context: dict = None
 ) -> bool:
     """
     Store Perplexity citations to memory for future recall.
@@ -116,7 +117,8 @@ def store_perplexity_citations_to_memory(
             search_term=search_term,
             results=results,
             parameters={"source": "perplexity_validation", "source_type": source_type},
-            strategy=source_type
+            strategy=source_type,
+            row_context=row_context
         )
 
         logger.debug(f"[MEMORY] Stored {len(results['results'])} citations for: {search_term[:50]}...")

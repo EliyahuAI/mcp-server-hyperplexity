@@ -315,7 +315,8 @@ class SearchMemory:
         search_term: str,
         results: Dict[str, Any],
         parameters: Dict[str, Any],
-        strategy: str = "unknown"
+        strategy: str = "unknown",
+        row_context: dict = None
     ) -> str:
         """
         Store search results in memory WITHOUT backup to S3.
@@ -367,6 +368,9 @@ class SearchMemory:
                 "strategy": strategy
             }
         }
+        # Tag with row context for cross-contamination prevention
+        if row_context:
+            query_data['row_context'] = row_context
 
         # Add to queries
         self._memory['queries'][query_id] = query_data
@@ -489,7 +493,8 @@ class SearchMemory:
         search_term: str,
         results: Dict[str, Any],
         parameters: Dict[str, Any],
-        strategy: str = "unknown"
+        strategy: str = "unknown",
+        row_context: dict = None
     ) -> str:
         """
         Store search results in memory and backup to S3.
@@ -548,6 +553,9 @@ class SearchMemory:
                 "strategy": strategy
             }
         }
+        # Tag with row context for cross-contamination prevention
+        if row_context:
+            query_data['row_context'] = row_context
 
         # Add to queries
         self._memory['queries'][query_id] = query_data
@@ -717,7 +725,8 @@ class SearchMemory:
         depth: str = "shallow",
         url_sources: Optional[List[Dict[str, Any]]] = None,
         search_terms: Optional[List[str]] = None,
-        skip_verification: bool = False
+        skip_verification: bool = False,
+        row_identifiers: dict = None
     ) -> Dict[str, Any]:
         """
         Recall relevant memories with per-search-term confidence assessment.
@@ -784,7 +793,8 @@ class SearchMemory:
             required_keywords=required_keywords,
             positive_keywords=positive_keywords,
             negative_keywords=negative_keywords,
-            search_terms=search_terms
+            search_terms=search_terms,
+            row_identifiers=row_identifiers
         )
 
         # Log URL sources if present
@@ -927,7 +937,8 @@ class SearchMemory:
         positive_keywords: List[str],
         negative_keywords: List[str],
         top_k: int = 30,
-        search_terms: Optional[List[str]] = None
+        search_terms: Optional[List[str]] = None,
+        row_identifiers: dict = None
     ) -> List[Dict[str, Any]]:
         """
         Filter queries by keyword match and query similarity.
@@ -1009,13 +1020,17 @@ class SearchMemory:
             query_time = query_data.get('query_time', '')
             recency_score = self._recency_score(query_time)
 
+            # Row context score - boost same row, penalize different row
+            row_context_score = self._calculate_row_context_score(query_data, row_identifiers)
+
             # Combined score with recency priority
             # Recency acts as a tiebreaker and slight boost for fresher data
             relevance_score = (
                 query_overlap * 10.0 +  # Query match most important
                 req_matches * 3.0 +     # Required keyword matches get strong boost
                 pos_matches * 1.0 +     # Positive keyword matches
-                recency_score * 0.5 -   # Recent memories get priority bonus (0-2.5 points)
+                recency_score * 0.5 +   # Recent memories get priority bonus (0-2.5 points)
+                row_context_score -      # Row context: +10 same, +5 partial, 0 none, -5 different
                 neg_matches * 5.0       # Strong penalty for negative keywords
             )
 
@@ -1033,6 +1048,56 @@ class SearchMemory:
         # Sort by score and return top k
         scored_queries.sort(key=lambda x: x['relevance_score'], reverse=True)
         return scored_queries[:top_k]
+
+    def _calculate_row_context_score(
+        self,
+        query_data: Dict[str, Any],
+        row_identifiers: Dict[str, Any]
+    ) -> float:
+        """
+        Calculate row context relevance score.
+
+        Rewards results from the same row, penalizes results from different rows.
+        Results without row context get neutral score (backward compatible).
+
+        Args:
+            query_data: Stored query data (may contain 'row_context')
+            row_identifiers: Current row's identity {id_values, id_columns, row_key}
+
+        Returns:
+            Score adjustment: +10 (same row), +5 (partial match), 0 (no context), -5 (different row)
+        """
+        stored_context = query_data.get('row_context')
+        if not stored_context or not row_identifiers:
+            return 0.0  # No context available - neutral
+
+        # Exact row key match = same row
+        if stored_context.get('row_key') and row_identifiers.get('row_key'):
+            if stored_context['row_key'] == row_identifiers['row_key']:
+                return 10.0  # Same row - strong boost
+
+        # Check ID value overlap
+        stored_values = set(
+            str(v).strip().lower()
+            for v in stored_context.get('id_values', [])
+            if v is not None and str(v).strip()
+        )
+        current_values = set(
+            str(v).strip().lower()
+            for v in row_identifiers.get('id_values', [])
+            if v is not None and str(v).strip()
+        )
+
+        if stored_values and current_values:
+            overlap = stored_values & current_values
+            if overlap:
+                # Partial match - some ID values overlap
+                return 5.0
+            else:
+                # Different row entirely - penalize
+                return -5.0
+
+        return 0.0  # Insufficient data - neutral
 
     def _filter_sources_by_required_keywords(
         self,

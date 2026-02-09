@@ -37,7 +37,7 @@ class CloneProvider:
 
         return self._clone_instance
 
-    async def make_structured_call(self, prompt: str, model: str, use_cache: bool, cache_key: str, start_time: datetime, schema: Dict = None, soft_schema: bool = False, debug_name: str = None, include_domains: List[str] = None, exclude_domains: List[str] = None, use_code_extraction: bool = False, findall: bool = False, extraction: bool = False, findall_iterations: int = 1) -> Dict:
+    async def make_structured_call(self, prompt: str, model: str, use_cache: bool, cache_key: str, start_time: datetime, schema: Dict = None, soft_schema: bool = False, debug_name: str = None, include_domains: List[str] = None, exclude_domains: List[str] = None, use_code_extraction: bool = False, findall: bool = False, extraction: bool = False, findall_iterations: int = 1, row_context: dict = None) -> Dict:
         """
         Execute a call to 'The Clone' agentic pipeline.
         
@@ -80,7 +80,8 @@ class CloneProvider:
                         extraction=extraction,  # Pass extraction parameter
                         session_id=self.ai_client.session_id,  # From ai_client instance
                         email=self.ai_client.email,  # From ai_client instance
-                        s3_manager=self.ai_client.s3_manager  # From ai_client instance
+                        s3_manager=self.ai_client.s3_manager,  # From ai_client instance
+                        row_context=row_context  # Row identity for memory cross-contamination prevention
                     ),
                     timeout=CLONE_TIMEOUT_SECONDS
                 )
