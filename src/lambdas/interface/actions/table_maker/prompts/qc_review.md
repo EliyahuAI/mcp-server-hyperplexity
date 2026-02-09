@@ -18,6 +18,8 @@ Review ALL rows (both pre-existing and discovered) and choose ONE action:
 
 **Target Row Count:** {{TARGET_ROW_COUNT}} rows requested.
 
+**Retrigger Allowed:** {{RETRIGGER_ALLOWED}}. If false, do NOT use `retrigger_discovery` — not enough time remains for another discovery cycle. Use `filter` instead.
+
 **Requirements:**
 
 **Hard (must meet):**

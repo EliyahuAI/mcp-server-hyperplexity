@@ -78,10 +78,12 @@
       {
         "model": "sonar",
         "search_context_size": "high",
-        "description": "Round 1: sonar with high context for fast initial discovery",
-        "min_candidates_percentage": 50,
-        "_note": "First discovery round. Low threshold (50%) to get to QC fast. If subdomain has no fruit, QC retrigger with better guidance is more effective than brute-forcing more rounds."
-      },
+        "description": "Single round: sonar with high context. Rely on QC retrigger for additional rows.",
+        "min_candidates_percentage": null,
+        "_note": "Single discovery round per subdomain. Fast to QC, then Opus-guided retrigger fills gaps."
+      }
+    ],
+    "_disabled_escalation_rounds": [
       {
         "model": "the-clone",
         "search_context_size": "high",
@@ -89,7 +91,7 @@
         "findall_iterations": 1,
         "description": "Round 2: the_clone findall - find MORE entities not in previous round",
         "min_candidates_percentage": 75,
-        "_note": "Second discovery round with accumulated context from round 1."
+        "_note": "Disabled: relying on QC retrigger instead of multi-round escalation"
       },
       {
         "model": "the-clone",
@@ -98,14 +100,14 @@
         "findall_iterations": 1,
         "description": "Round 3: the_clone findall - find remaining entities",
         "min_candidates_percentage": 90,
-        "_note": "Third discovery round. Higher threshold (90%) before escalating to other models."
+        "_note": "Disabled: relying on QC retrigger instead of multi-round escalation"
       },
       {
         "model": "claude-haiku-4-5",
         "max_web_searches": 10,
         "description": "Fallback: Claude haiku with web search for comprehensive coverage",
         "min_candidates_percentage": null,
-        "_note": "Final fallback - no early stop, always runs if previous insufficient"
+        "_note": "Disabled: relying on QC retrigger instead of multi-round escalation"
       }
     ],
 

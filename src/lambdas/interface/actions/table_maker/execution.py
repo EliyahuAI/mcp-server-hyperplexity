@@ -2614,12 +2614,20 @@ async def execute_full_table_generation(
 
             # Initialize retry tracking for QC retriggers
             retry_count = 0
-            max_retriggers = 1
-            # TODO: Pass retrigger_allowed to QC reviewer when parameter is supported
-            # This flag will be used to disable retrigger after first attempt (prevent loops)
-            retrigger_allowed = True
+            max_retriggers = config.get('qc_review', {}).get('max_retriggers', config.get('max_retriggers', 2))
 
-            # QC Review Loop (supports up to 1 retrigger)
+            # Check if we have enough time for a retrigger cycle BEFORE calling QC
+            # This way QC knows not to request retrigger if time is insufficient
+            if timeout_guard.can_do_discovery_qc_cycle():
+                retrigger_allowed = True
+            else:
+                retrigger_allowed = False
+                logger.warning(
+                    f"[BEFORE_QC] Retrigger NOT allowed on this run due to time! "
+                    f"Remaining: {timeout_guard.remaining():.0f}s, needed: {MIN_TIME_FOR_DISCOVERY_QC}s"
+                )
+
+            # QC Review Loop (supports up to max_retriggers retriggers)
             while True:
                 try:
                     # Get config for QC review
@@ -3098,11 +3106,19 @@ async def execute_full_table_generation(
                         # Update discovery_result to merged result for next QC iteration
                         discovery_result = merged_discovery_result
 
-                        # Disable retrigger for next QC iteration
-                        retrigger_allowed = False
+                        # Re-check time for next potential retrigger
+                        if retry_count >= max_retriggers:
+                            retrigger_allowed = False
+                            logger.info(f"[RETRIGGER] Max retriggers ({max_retriggers}) reached, disabling retrigger")
+                        elif not timeout_guard.can_do_discovery_qc_cycle():
+                            retrigger_allowed = False
+                            logger.warning(
+                                f"[RETRIGGER] Retrigger NOT allowed for next round due to time! "
+                                f"Remaining: {timeout_guard.remaining():.0f}s, needed: {MIN_TIME_FOR_DISCOVERY_QC}s"
+                            )
 
                         # Continue to re-run QC with merged results
-                        logger.info("[RETRIGGER] Re-running QC with merged results (retrigger disabled)")
+                        logger.info(f"[RETRIGGER] Re-running QC with merged results (retrigger_allowed={retrigger_allowed})")
                         continue
 
                     else:
