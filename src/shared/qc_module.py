@@ -848,9 +848,70 @@ class QCModule:
                     if exact_missing:
                         # Check if QC completely failed (returned 0 columns)
                         if not actual_columns:
-                            logger.error(f"[QC_COMPLETE_FAILURE] QC returned 0 columns (expected {len(expected_columns)}). This indicates a complete QC failure - not creating error placeholders, treating as no QC results.")
-                            qc_results = []
-                        else:
+                            logger.error(f"[QC_COMPLETE_FAILURE] QC returned 0 columns (expected {len(expected_columns)}). Retrying with cache bypass to avoid stale cached responses.")
+
+                            # Retry the QC call with cache disabled
+                            try:
+                                logger.info(f"[QC_RETRY] Retrying QC call with use_cache=False")
+                                qc_retry_response = await ai_client.call_structured_api(
+                                    prompt=qc_prompt,
+                                    model=self.qc_model,
+                                    schema=tool_schema,
+                                    max_tokens=token_limit,
+                                    max_web_searches=self.qc_max_web_searches,
+                                    tool_name="qc_validation",
+                                    use_cache=False  # Bypass cache on retry
+                                )
+
+                                # Try to extract results from retry
+                                retry_structured_data = ai_client.extract_structured_response(qc_retry_response['response'], "qc_validation")
+                                retry_qc_results = []
+
+                                if isinstance(retry_structured_data, list):
+                                    retry_qc_results = self.parse_compact_qc_response(retry_structured_data)
+                                elif isinstance(retry_structured_data, dict):
+                                    if 'items' in retry_structured_data and isinstance(retry_structured_data['items'], list):
+                                        retry_qc_results = self.parse_compact_qc_response(retry_structured_data['items'])
+                                    elif 'qc_results' in retry_structured_data:
+                                        raw_results = retry_structured_data.get('qc_results', [])
+                                        if raw_results and isinstance(raw_results[0], list):
+                                            retry_qc_results = self.parse_compact_qc_response(raw_results)
+                                        else:
+                                            retry_qc_results = raw_results
+
+                                # Check if retry was successful
+                                retry_actual_columns = [result.get('column', '') for result in retry_qc_results if result.get('column')]
+                                if retry_actual_columns:
+                                    logger.info(f"[QC_RETRY_SUCCESS] Retry returned {len(retry_qc_results)} columns. Using retry results.")
+                                    qc_results = retry_qc_results
+                                    actual_columns = retry_actual_columns
+
+                                    # Update metrics with retry response data
+                                    retry_enhanced_data = qc_retry_response.get('enhanced_data', {})
+                                    retry_timing_data = retry_enhanced_data.get('timing', {})
+                                    retry_costs_data = retry_enhanced_data.get('costs', {})
+                                    retry_token_usage = retry_enhanced_data.get('token_usage', {})
+
+                                    # Add retry cost to metrics
+                                    qc_metrics['qc_tokens_used'] += retry_token_usage.get('total_tokens', 0)
+                                    qc_metrics['qc_cost_actual'] += retry_costs_data.get('actual', {}).get('total_cost', 0.0)
+                                    qc_metrics['qc_cost'] += retry_costs_data.get('actual', {}).get('total_cost', 0.0)
+                                    qc_metrics['qc_calls'] += 1  # Increment call count
+
+                                    # Update qc_response and related variables for downstream processing
+                                    qc_response = qc_retry_response
+
+                                    # Recalculate exact_missing with retry results
+                                    exact_missing = set(expected_columns) - set(actual_columns)
+                                else:
+                                    logger.error(f"[QC_RETRY_FAILED] Retry also returned 0 columns. Gracefully falling back to validation results without QC.")
+                                    qc_results = []
+                            except Exception as retry_error:
+                                logger.error(f"[QC_RETRY_ERROR] Retry attempt failed: {str(retry_error)}. Gracefully falling back to validation results without QC.")
+                                qc_results = []
+
+                        # Recheck exact_missing after potential retry - only process if we still have results
+                        if exact_missing and actual_columns:
                             # Partial failure - some columns returned, some missing
                             logger.warning(f"[QC_COLUMN_CHECK] QC response missing columns: {list(exact_missing)}")
                             logger.info(f"[QC_COLUMN_CHECK] Attempting flexible column matching for QC results")
@@ -1174,9 +1235,70 @@ class QCModule:
                     if exact_missing:
                         # Check if QC completely failed (returned 0 columns)
                         if not actual_columns:
-                            logger.error(f"[QC_COMPLETE_FAILURE] QC returned 0 columns (expected {len(expected_columns)}). This indicates a complete QC failure - not creating error placeholders, treating as no QC results.")
-                            qc_results = []
-                        else:
+                            logger.error(f"[QC_COMPLETE_FAILURE] QC returned 0 columns (expected {len(expected_columns)}). Retrying with cache bypass to avoid stale cached responses.")
+
+                            # Retry the QC call with cache disabled
+                            try:
+                                logger.info(f"[QC_RETRY] Retrying QC call with use_cache=False")
+                                qc_retry_response = await ai_client.call_structured_api(
+                                    prompt=qc_prompt,
+                                    model=self.qc_model,
+                                    schema=tool_schema,
+                                    max_tokens=token_limit,
+                                    max_web_searches=self.qc_max_web_searches,
+                                    tool_name="qc_validation",
+                                    use_cache=False  # Bypass cache on retry
+                                )
+
+                                # Try to extract results from retry
+                                retry_structured_data = ai_client.extract_structured_response(qc_retry_response['response'], "qc_validation")
+                                retry_qc_results = []
+
+                                if isinstance(retry_structured_data, list):
+                                    retry_qc_results = self.parse_compact_qc_response(retry_structured_data)
+                                elif isinstance(retry_structured_data, dict):
+                                    if 'items' in retry_structured_data and isinstance(retry_structured_data['items'], list):
+                                        retry_qc_results = self.parse_compact_qc_response(retry_structured_data['items'])
+                                    elif 'qc_results' in retry_structured_data:
+                                        raw_results = retry_structured_data.get('qc_results', [])
+                                        if raw_results and isinstance(raw_results[0], list):
+                                            retry_qc_results = self.parse_compact_qc_response(raw_results)
+                                        else:
+                                            retry_qc_results = raw_results
+
+                                # Check if retry was successful
+                                retry_actual_columns = [result.get('column', '') for result in retry_qc_results if result.get('column')]
+                                if retry_actual_columns:
+                                    logger.info(f"[QC_RETRY_SUCCESS] Retry returned {len(retry_qc_results)} columns. Using retry results.")
+                                    qc_results = retry_qc_results
+                                    actual_columns = retry_actual_columns
+
+                                    # Update metrics with retry response data
+                                    retry_enhanced_data = qc_retry_response.get('enhanced_data', {})
+                                    retry_timing_data = retry_enhanced_data.get('timing', {})
+                                    retry_costs_data = retry_enhanced_data.get('costs', {})
+                                    retry_token_usage = retry_enhanced_data.get('token_usage', {})
+
+                                    # Add retry cost to metrics
+                                    qc_metrics['qc_tokens_used'] += retry_token_usage.get('total_tokens', 0)
+                                    qc_metrics['qc_cost_actual'] += retry_costs_data.get('actual', {}).get('total_cost', 0.0)
+                                    qc_metrics['qc_cost'] += retry_costs_data.get('actual', {}).get('total_cost', 0.0)
+                                    qc_metrics['qc_calls'] += 1  # Increment call count
+
+                                    # Update qc_response and related variables for downstream processing
+                                    qc_response = qc_retry_response
+
+                                    # Recalculate exact_missing with retry results
+                                    exact_missing = set(expected_columns) - set(actual_columns)
+                                else:
+                                    logger.error(f"[QC_RETRY_FAILED] Retry also returned 0 columns. Gracefully falling back to validation results without QC.")
+                                    qc_results = []
+                            except Exception as retry_error:
+                                logger.error(f"[QC_RETRY_ERROR] Retry attempt failed: {str(retry_error)}. Gracefully falling back to validation results without QC.")
+                                qc_results = []
+
+                        # Recheck exact_missing after potential retry - only process if we still have results
+                        if exact_missing and actual_columns:
                             # Partial failure - some columns returned, some missing
                             logger.warning(f"[QC_COLUMN_CHECK] QC response missing columns: {list(exact_missing)}")
                             logger.info(f"[QC_COLUMN_CHECK] Attempting flexible column matching for QC results")
