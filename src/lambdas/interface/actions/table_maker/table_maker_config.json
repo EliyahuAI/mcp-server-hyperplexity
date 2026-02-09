@@ -139,11 +139,11 @@
   },
 
   "qc_review": {
-    "_comment": "QC layer reviews discovered rows and decides which to keep, reject, or reprioritize. Uses DeepSeek V3.2 (ultra-low cost) with Claude Sonnet 4.5 as backup",
+    "_comment": "QC layer reviews discovered rows and decides which to keep, reject, or reprioritize. Uses Claude Opus 4.6 for strongest dedup and entity knowledge",
 
     "_basic_settings": "Core QC parameters",
-    "model": ["deepseek-v3.2", "claude-sonnet-4-5"],
-    "_note_model": "Primary: deepseek-v3.2 (97% cheaper), Backup: claude-sonnet-4-5 (highest quality)",
+    "model": "claude-opus-4-6",
+    "_note_model": "Claude Opus 4.6 - best model for strict dedup, entity knowledge, and guiding retrigger with known missing entities",
     "max_tokens": 8000,
     "min_qc_score": 0.3,
 

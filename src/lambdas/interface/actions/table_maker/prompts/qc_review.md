@@ -97,8 +97,11 @@ Review ALL rows (both pre-existing and discovered) and choose ONE action:
 **Output:** `discovery_guidance`, `new_subdomains`, `overall_score`
 **Important:** Focus on finding MORE entities, NOT populating columns
 
+**USE YOUR KNOWLEDGE:** If you know of specific entities that SHOULD be in this table but are missing, LIST THEM in `discovery_guidance`. The next discovery round will use your guidance to find them.
+
 **Example discovery_guidance:**
-- Good: "Have 3 pre-existing + 2 discovered = 5 total. Need 15 more to reach 20."
+- Good: "Have 5 total but need 20. Missing known entries: Medtronic, Boston Scientific, Abbott Laboratories, Stryker, Zimmer Biomet. Also search for smaller companies in orthopedics and cardiovascular devices."
+- Good: "Only 3 Fortune 500 tech companies found. Missing: Apple, Microsoft, Google, Amazon, Meta, NVIDIA, Salesforce, Oracle, Intel, IBM. Search for complete Fortune 500 technology sector."
 - Bad: "Need to populate tax rate columns" <- NO, validator does this
 
 ### Action: "restructure"
@@ -190,12 +193,12 @@ This keeps only these 4 discovered rows, in this exact order. Rows 3 and 5 are r
   "remove_prepopulated_row_ids": null,
   "removal_reasons": null,
   "overall_score": 0.6,
-  "discovery_guidance": "Have 3 pre-existing + 2 discovered = 5 total. Need 15 more tech companies.",
+  "discovery_guidance": "Have 3 pre-existing + 2 discovered = 5 total. Need 15 more. Missing known entities: Salesforce, Oracle, SAP, ServiceNow, Workday, Atlassian, Datadog, Snowflake. Also search for mid-cap enterprise SaaS companies.",
   "new_subdomains": [
     {
       "name": "Enterprise Software Companies",
-      "focus": "Large B2B software companies with $1B+ revenue",
-      "search_queries": ["enterprise software companies list 2024", "B2B software unicorns"],
+      "focus": "Large B2B software companies - specifically Salesforce, Oracle, SAP, ServiceNow, Workday, Atlassian",
+      "search_queries": ["enterprise software companies list 2024", "B2B software unicorns", "Salesforce Oracle SAP ServiceNow enterprise"],
       "target_rows": 10
     }
   ],
