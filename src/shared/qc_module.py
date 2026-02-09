@@ -566,22 +566,80 @@ class QCModule:
                     'qc_citations': ''  # Not in current format
                 })
             elif isinstance(item, list) and len(item) >= 7:
-                # Legacy 7-element format (no qc_reasoning)
-                parsed.append({
-                    'column': item[0],
-                    'answer': self._parse_nullable_string(item[1]),
-                    'confidence': self._expand_confidence(item[2]),
-                    'original_confidence': self._expand_confidence(item[3]),
-                    'updated_confidence': self._expand_confidence(item[4]),
-                    'key_citation': item[5] if item[5] != 'null' else '',
-                    'update_importance': self._parse_update_importance(item[6]),
-                    'qc_reasoning': '',  # Not in legacy 7-element format
-                    'qc_citations': ''
-                })
+                # Check for column shift: LLM may have dropped the answer field
+                if len(item) == 7 and self._detect_column_shift(item):
+                    # Fix: insert '=' as the missing answer, making it 8 elements
+                    logger.warning(
+                        f"[QC_COLUMN_SHIFT] Detected missing answer in 7-element array "
+                        f"for column '{item[0]}': item[1]='{item[1]}' looks like confidence, "
+                        f"not answer. Inserting '=' and re-parsing as 8-element format."
+                    )
+                    item = [item[0], '='] + item[1:]
+                    # Now parse as 8-element format
+                    parsed.append({
+                        'column': item[0],
+                        'answer': self._parse_nullable_string(item[1]),
+                        'confidence': self._expand_confidence(item[2]),
+                        'original_confidence': self._expand_confidence(item[3]),
+                        'updated_confidence': self._expand_confidence(item[4]),
+                        'key_citation': item[5] if item[5] != 'null' else '',
+                        'update_importance': self._parse_update_importance(item[6]),
+                        'qc_reasoning': item[7] if item[7] != 'null' else '',
+                        'qc_citations': ''
+                    })
+                else:
+                    # Genuine 7-element format (no qc_reasoning)
+                    parsed.append({
+                        'column': item[0],
+                        'answer': self._parse_nullable_string(item[1]),
+                        'confidence': self._expand_confidence(item[2]),
+                        'original_confidence': self._expand_confidence(item[3]),
+                        'updated_confidence': self._expand_confidence(item[4]),
+                        'key_citation': item[5] if item[5] != 'null' else '',
+                        'update_importance': self._parse_update_importance(item[6]),
+                        'qc_reasoning': '',  # Not in legacy 7-element format
+                        'qc_citations': ''
+                    })
             elif isinstance(item, dict):
                 # Already dict format (legacy)
                 parsed.append(item)
+
+        # Post-parse validation: detect any remaining column-shift artifacts
+        for parsed_item in parsed:
+            answer = parsed_item.get('answer', '')
+            key_citation = parsed_item.get('key_citation', '')
+            column = parsed_item.get('column', '')
+
+            if (isinstance(answer, str) and answer in ('H', 'M', 'L')
+                    and isinstance(key_citation, str) and key_citation.strip().isdigit()):
+                logger.error(
+                    f"[QC_COLUMN_SHIFT_DETECTED] Column '{column}': "
+                    f"answer='{answer}' looks like confidence, key_citation='{key_citation}' "
+                    f"looks like update_importance. Possible column shift not corrected. "
+                    f"Clearing answer to use fallback."
+                )
+                parsed_item['answer'] = '='
+
         return parsed
+
+    def _detect_column_shift(self, item: list) -> bool:
+        """Detect if a 7-element QC array has the answer field missing (column shift).
+
+        When the LLM drops the answer (e.g. to save tokens), positions shift:
+          Expected: [col, answer, conf, orig_conf, upd_conf, key_cit, upd_imp]
+          Actual:   [col, conf,   orig_conf, upd_conf, key_cit, upd_imp, qc_reasoning]
+
+        Detection: item[1] and item[2] both look like confidence abbreviations (H/M/L).
+        In correct format, item[1] is the answer (rarely a single H/M/L char)
+        and item[2] is confidence (always H/M/L). If both are H/M/L, it's shifted.
+        """
+        return (
+            len(item) == 7
+            and isinstance(item[1], str)
+            and item[1] in ('H', 'M', 'L')
+            and isinstance(item[2], str)
+            and item[2] in ('H', 'M', 'L', 'null')
+        )
 
     def _expand_confidence(self, val):
         """Expand H/M/L to HIGH/MEDIUM/LOW, handle 'null' string -> None"""
