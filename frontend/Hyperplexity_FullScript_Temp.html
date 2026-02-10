@@ -7536,6 +7536,7 @@ if (typeof window !== 'undefined') {
                 globalState.discount = discount;
                 globalState.effectiveCost = effectiveCost;
                 globalState.accountInfo = accountInfo;
+                globalState.accountBalance = currentBalance;
 
                 // Show cost estimates
                 if (previewData.cost_estimates && previewData.validation_metrics) {
@@ -16687,6 +16688,11 @@ function getCurrentUserEmail() {
     const storedEmail = sessionStorage.getItem('validatedEmail');
     if (storedEmail && storedEmail.includes('@')) {
         return storedEmail;
+    }
+
+    // Try globalState email
+    if (globalState.email && globalState.email.includes('@')) {
+        return globalState.email;
     }
 
     return null;

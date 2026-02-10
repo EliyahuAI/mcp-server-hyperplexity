@@ -854,5 +854,10 @@ function getCurrentUserEmail() {
         return storedEmail;
     }
 
+    // Try globalState email
+    if (globalState.email && globalState.email.includes('@')) {
+        return globalState.email;
+    }
+
     return null;
 }

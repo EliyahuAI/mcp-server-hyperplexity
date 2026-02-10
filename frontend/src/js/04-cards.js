@@ -945,6 +945,7 @@
                 globalState.discount = discount;
                 globalState.effectiveCost = effectiveCost;
                 globalState.accountInfo = accountInfo;
+                globalState.accountBalance = currentBalance;
 
                 // Show cost estimates
                 if (previewData.cost_estimates && previewData.validation_metrics) {
