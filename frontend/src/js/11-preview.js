@@ -80,39 +80,43 @@ async function startPreview(cardId) {
     // Progress routed to card level;
 
     try {
-        // Always use multipart form for preview since backend expects files
-
-        const formData = new FormData();
-
-        // Only append Excel file if not already uploaded
-        if (!globalState.excelFileUploaded) {
-            formData.append('excel_file', globalState.excelFile);
-        } else {
-            // Send a dummy file to satisfy backend file requirement
-            const dummyFile = new Blob([JSON.stringify({use_stored_files: true})], {
-                type: 'application/json'
-            });
-            formData.append('dummy_file', dummyFile, 'stored_files_marker.json');
-        }
-
-        formData.append('email', globalState.email);
-        if (globalState.sessionId) {
-            formData.append('session_id', globalState.sessionId);
-        } else {
+        if (!globalState.sessionId) {
             throw new Error('No session ID available. Please upload an Excel file first.');
         }
 
-        const url = `${API_BASE}/validate?async=true&preview_first_row=true&preview_max_rows=3`;
+        let response;
 
-        const fetchHeaders = {};
-        const token = localStorage.getItem('sessionToken');
-        if (token) fetchHeaders['X-Session-Token'] = token;
+        if (globalState.excelFileUploaded) {
+            // Lightweight JSON path - files already on S3, skip multipart parsing
+            response = await fetch(`${API_BASE}/validate`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({
+                    action: 'startPreview',
+                    email: globalState.email,
+                    session_id: globalState.sessionId,
+                    preview_max_rows: 3
+                })
+            });
+        } else {
+            // Multipart path - need to upload the Excel file
+            const formData = new FormData();
+            formData.append('excel_file', globalState.excelFile);
+            formData.append('email', globalState.email);
+            formData.append('session_id', globalState.sessionId);
 
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: fetchHeaders,
-            body: formData
-        });
+            const url = `${API_BASE}/validate?async=true&preview_first_row=true&preview_max_rows=3`;
+
+            const fetchHeaders = {};
+            const token = localStorage.getItem(SK_TOKEN);
+            if (token) fetchHeaders['X-Session-Token'] = token;
+
+            response = await fetch(url, {
+                method: 'POST',
+                headers: fetchHeaders,
+                body: formData
+            });
+        }
 
         const data = await response.json();
 
@@ -431,7 +435,7 @@ async function startFullProcessing(cardId) {
         const url = `${API_BASE}/validate?async=true`;
 
         const fetchHeaders = {};
-        const token = localStorage.getItem('sessionToken');
+        const token = localStorage.getItem(SK_TOKEN);
         if (token) fetchHeaders['X-Session-Token'] = token;
 
         const response = await fetch(url, {

@@ -100,8 +100,8 @@ async function loadAndDisplayResults(params) {
                 console.error('[SECURITY] Token revoked by server - clearing session');
 
                 // Clear session data
-                localStorage.removeItem('sessionToken');
-                localStorage.removeItem('validatedEmail');
+                localStorage.removeItem(SK_TOKEN);
+                localStorage.removeItem(SK_EMAIL);
                 sessionStorage.removeItem('validatedEmail');
                 globalState.sessionToken = null;
                 globalState.email = null;

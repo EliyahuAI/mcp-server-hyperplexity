@@ -197,7 +197,7 @@ function proceedWithUpload(cardId) {
                         // New file upload should NEVER reuse existing session - always generate new session ID
 
                         const uploadHeaders = {};
-                        const uploadToken = localStorage.getItem('sessionToken');
+                        const uploadToken = localStorage.getItem(SK_TOKEN);
                         if (uploadToken) uploadHeaders['X-Session-Token'] = uploadToken;
 
                         const uploadResponse = await fetch(`${API_BASE}/upload`, {

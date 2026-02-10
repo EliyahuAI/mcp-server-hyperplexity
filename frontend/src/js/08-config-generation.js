@@ -34,10 +34,10 @@ async function showRecentConfigOptions(cardId, matches, tableColumns) {
 }
 
 window.useMatchingConfig = async function(configKey, sourceSession) {
+    // Declare cardId outside try so it's accessible in catch
+    const uploadCard = document.querySelector('[data-card-id]');
+    const cardId = uploadCard ? uploadCard.getAttribute('data-card-id') : 'upload';
     try {
-        // Find the upload card ID dynamically
-        const uploadCard = document.querySelector('[data-card-id]');
-        const cardId = uploadCard ? uploadCard.getAttribute('data-card-id') : 'upload';
         
         // Clear the input field and buttons before proceeding
         const inputField = document.getElementById(`${cardId}-config-id-input`);

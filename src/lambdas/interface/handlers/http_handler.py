@@ -211,6 +211,9 @@ def handle(event, context):
             elif action == 'diagnostics':
                 diagnostics = lazy_import('interface_lambda.actions', 'diagnostics')
                 return diagnostics.handle(request_data, context)
+            elif action == 'startPreview':
+                start_preview = lazy_import('interface_lambda.actions', 'start_preview')
+                return start_preview.handle_start_preview(request_data, context)
             elif action == 'findMatchingConfig':
                 find_matching_config = lazy_import('interface_lambda.actions', 'find_matching_config')
                 return find_matching_config.handle_find_matching_config(request_data, context)

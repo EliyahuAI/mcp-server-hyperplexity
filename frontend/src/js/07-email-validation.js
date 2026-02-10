@@ -27,7 +27,7 @@ function createEmailValidationCard(options = {}) {
     const subtitle = options.subtitle || "Verify your email to continue";
     const infoHeaderText = options.infoHeaderText || 'Enter your email address to access this feature. We\'ll send you a verification code.';
 
-    const termsAlreadyAccepted = localStorage.getItem('termsAcceptedVersion') === TERMS_VERSION;
+    const termsAlreadyAccepted = localStorage.getItem(SK_TERMS) === TERMS_VERSION;
 
     const termsHTML = termsAlreadyAccepted ? '' : `
                 <div class="privacy-checkbox">
@@ -130,16 +130,16 @@ async function sendEmailCode(cardId, button) {
                 console.log('[EMAIL] Email already validated, token issued');
 
                 // Store session token (30-day expiration, persists across browser restarts)
-                localStorage.setItem('sessionToken', data.session_token);
+                localStorage.setItem(SK_TOKEN, data.session_token);
                 globalState.sessionToken = data.session_token;
 
                 // Store email alongside token for auto-reauth after browser restart
-                localStorage.setItem('validatedEmail', email);
+                localStorage.setItem(SK_EMAIL, email);
                 sessionStorage.setItem('validatedEmail', email);
 
                 // Sync terms acceptance from server
                 if (data.terms_accepted_version === TERMS_VERSION) {
-                    localStorage.setItem('termsAcceptedVersion', data.terms_accepted_version);
+                    localStorage.setItem(SK_TERMS, data.terms_accepted_version);
                 }
 
                 // Show message that email is already validated
@@ -198,7 +198,7 @@ async function verifyCode(cardId, button) {
     }
 
     // Validate checkboxes only if they are present (not already accepted)
-    const termsAlreadyAccepted = localStorage.getItem('termsAcceptedVersion') === TERMS_VERSION;
+    const termsAlreadyAccepted = localStorage.getItem(SK_TERMS) === TERMS_VERSION;
     if (!termsAlreadyAccepted) {
         const termsCheckbox = document.getElementById(`${cardId}-terms`);
         const privacyCheckbox = document.getElementById(`${cardId}-privacy`);
@@ -231,11 +231,11 @@ async function verifyCode(cardId, button) {
         if (response.ok && data.success) {
             // SECURITY: Store session token from backend (30-day expiration)
             if (data.session_token) {
-                localStorage.setItem('sessionToken', data.session_token);
+                localStorage.setItem(SK_TOKEN, data.session_token);
                 globalState.sessionToken = data.session_token;
             }
             // Persist terms acceptance so checkboxes won't show next time
-            localStorage.setItem('termsAcceptedVersion', TERMS_VERSION);
+            localStorage.setItem(SK_TERMS, TERMS_VERSION);
             markButtonSelected(button, '✓ Verified');
             // ALWAYS TREAT AS NEW USER FOR NOW
             globalState.isNewUser = true; // Override - show demo to everyone
@@ -308,7 +308,7 @@ function handleEmailValidated(cardId) {
     // sessionStorage for current session, localStorage to enable auto-reauth after browser restart
     // Backend validates token ownership via DynamoDB, so localStorage email is safe
     sessionStorage.setItem('validatedEmail', globalState.email);
-    localStorage.setItem('validatedEmail', globalState.email);
+    localStorage.setItem(SK_EMAIL, globalState.email);
 
     // Track email validation conversion
     trackEmailValidationConversion(globalState.email);
@@ -472,8 +472,8 @@ async function handleLogout() {
     }
 
     // Clear all auth data from this device
-    localStorage.removeItem('sessionToken');
-    localStorage.removeItem('validatedEmail');
+    localStorage.removeItem(SK_TOKEN);
+    localStorage.removeItem(SK_EMAIL);
     sessionStorage.removeItem('validatedEmail');
 
     // Clear all session storage (including saved state)

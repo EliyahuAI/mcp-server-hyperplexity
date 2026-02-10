@@ -148,12 +148,12 @@ if (IS_PAGE_RELOAD) {
 // SECURITY: Restore auth state
 // Email: Try sessionStorage first (current session), then localStorage (persisted)
 // Token: localStorage (persists 30 days, cleared on logout)
-const storedEmail = sessionStorage.getItem('validatedEmail') || localStorage.getItem('validatedEmail');
-const storedToken = localStorage.getItem('sessionToken');
+const storedEmail = sessionStorage.getItem('validatedEmail') || localStorage.getItem(SK_EMAIL);
+const storedToken = localStorage.getItem(SK_TOKEN);
 
 console.log('[AUTH] Checking for existing session...', {
     storedEmail: storedEmail ? storedEmail : 'none',
-    emailSource: sessionStorage.getItem('validatedEmail') ? 'sessionStorage' : (localStorage.getItem('validatedEmail') ? 'localStorage' : 'none'),
+    emailSource: sessionStorage.getItem('validatedEmail') ? 'sessionStorage' : (localStorage.getItem(SK_EMAIL) ? 'localStorage' : 'none'),
     hasToken: storedToken ? 'yes' : 'no',
     showSignedInBadgeExists: typeof showSignedInBadge === 'function'
 });
@@ -211,18 +211,18 @@ if (storedEmail && storedEmail.includes('@')) {
 
                     if (data.success && data.validated && data.session_token) {
                         // Got new token! (30-day expiration)
-                        localStorage.setItem('sessionToken', data.session_token);
+                        localStorage.setItem(SK_TOKEN, data.session_token);
                         globalState.sessionToken = data.session_token;
 
                         // CRITICAL: Restore email to both storages and globalState
                         // This allows requireEmailThen polling to detect auth completion
                         sessionStorage.setItem('validatedEmail', storedEmail);
-                        localStorage.setItem('validatedEmail', storedEmail);
+                        localStorage.setItem(SK_EMAIL, storedEmail);
                         globalState.email = storedEmail;
 
                         // Sync terms acceptance from server
                         if (data.terms_accepted_version === TERMS_VERSION) {
-                            localStorage.setItem('termsAcceptedVersion', data.terms_accepted_version);
+                            localStorage.setItem(SK_TERMS, data.terms_accepted_version);
                         }
 
                         // Show badge

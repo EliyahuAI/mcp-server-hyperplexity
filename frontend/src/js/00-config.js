@@ -160,6 +160,14 @@ window.hyperplexityEnv = {
 const API_BASE = ENV_CONFIG.apiBase;
 const WEBSOCKET_API_URL = ENV_CONFIG.websocketUrl;
 
+// Environment-namespaced localStorage keys.
+// Dev and prod pages share the same origin (eliyahu.ai) and thus share localStorage.
+// Without namespacing, a token issued by the dev backend gets used against the prod
+// backend (different JWT secrets), causing auth failures.
+const SK_TOKEN = `${CURRENT_ENV}_sessionToken`;
+const SK_EMAIL = `${CURRENT_ENV}_validatedEmail`;
+const SK_TERMS = `${CURRENT_ENV}_termsAcceptedVersion`;
+
 // ============================================
 // AUTHENTICATED API HELPERS
 // ============================================
@@ -170,7 +178,7 @@ const WEBSOCKET_API_URL = ENV_CONFIG.websocketUrl;
  */
 function getAuthHeaders() {
     const headers = { 'Content-Type': 'application/json' };
-    const token = localStorage.getItem('sessionToken');
+    const token = localStorage.getItem(SK_TOKEN);
     if (token) {
         headers['X-Session-Token'] = token;
     }
@@ -269,8 +277,8 @@ function ensureProcessingState() {
 function requireEmailThen(action, description = 'continue') {
     // If email already validated, execute immediately
     // Check sessionStorage first (current session), then localStorage (persisted)
-    const storedEmail = sessionStorage.getItem('validatedEmail') || localStorage.getItem('validatedEmail');
-    const storedToken = localStorage.getItem('sessionToken');
+    const storedEmail = sessionStorage.getItem('validatedEmail') || localStorage.getItem(SK_EMAIL);
+    const storedToken = localStorage.getItem(SK_TOKEN);
 
     // Check if we have either email in sessionStorage OR a valid token in localStorage
     // Token persists 30 days, email is cleared on tab close

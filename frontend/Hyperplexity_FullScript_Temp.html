@@ -4327,6 +4327,14 @@ window.hyperplexityEnv = {
 const API_BASE = ENV_CONFIG.apiBase;
 const WEBSOCKET_API_URL = ENV_CONFIG.websocketUrl;
 
+// Environment-namespaced localStorage keys.
+// Dev and prod pages share the same origin (eliyahu.ai) and thus share localStorage.
+// Without namespacing, a token issued by the dev backend gets used against the prod
+// backend (different JWT secrets), causing auth failures.
+const SK_TOKEN = `${CURRENT_ENV}_sessionToken`;
+const SK_EMAIL = `${CURRENT_ENV}_validatedEmail`;
+const SK_TERMS = `${CURRENT_ENV}_termsAcceptedVersion`;
+
 // ============================================
 // AUTHENTICATED API HELPERS
 // ============================================
@@ -4337,7 +4345,7 @@ const WEBSOCKET_API_URL = ENV_CONFIG.websocketUrl;
  */
 function getAuthHeaders() {
     const headers = { 'Content-Type': 'application/json' };
-    const token = localStorage.getItem('sessionToken');
+    const token = localStorage.getItem(SK_TOKEN);
     if (token) {
         headers['X-Session-Token'] = token;
     }
@@ -4436,8 +4444,8 @@ function ensureProcessingState() {
 function requireEmailThen(action, description = 'continue') {
     // If email already validated, execute immediately
     // Check sessionStorage first (current session), then localStorage (persisted)
-    const storedEmail = sessionStorage.getItem('validatedEmail') || localStorage.getItem('validatedEmail');
-    const storedToken = localStorage.getItem('sessionToken');
+    const storedEmail = sessionStorage.getItem('validatedEmail') || localStorage.getItem(SK_EMAIL);
+    const storedToken = localStorage.getItem(SK_TOKEN);
 
     // Check if we have either email in sessionStorage OR a valid token in localStorage
     // Token persists 30 days, email is cleared on tab close
@@ -8167,7 +8175,7 @@ function proceedWithUpload(cardId) {
                         // New file upload should NEVER reuse existing session - always generate new session ID
 
                         const uploadHeaders = {};
-                        const uploadToken = localStorage.getItem('sessionToken');
+                        const uploadToken = localStorage.getItem(SK_TOKEN);
                         if (uploadToken) uploadHeaders['X-Session-Token'] = uploadToken;
 
                         const uploadResponse = await fetch(`${API_BASE}/upload`, {
@@ -8973,7 +8981,7 @@ function createEmailValidationCard(options = {}) {
     const subtitle = options.subtitle || "Verify your email to continue";
     const infoHeaderText = options.infoHeaderText || 'Enter your email address to access this feature. We\'ll send you a verification code.';
 
-    const termsAlreadyAccepted = localStorage.getItem('termsAcceptedVersion') === TERMS_VERSION;
+    const termsAlreadyAccepted = localStorage.getItem(SK_TERMS) === TERMS_VERSION;
 
     const termsHTML = termsAlreadyAccepted ? '' : `
                 <div class="privacy-checkbox">
@@ -9076,16 +9084,16 @@ async function sendEmailCode(cardId, button) {
                 console.log('[EMAIL] Email already validated, token issued');
 
                 // Store session token (30-day expiration, persists across browser restarts)
-                localStorage.setItem('sessionToken', data.session_token);
+                localStorage.setItem(SK_TOKEN, data.session_token);
                 globalState.sessionToken = data.session_token;
 
                 // Store email alongside token for auto-reauth after browser restart
-                localStorage.setItem('validatedEmail', email);
+                localStorage.setItem(SK_EMAIL, email);
                 sessionStorage.setItem('validatedEmail', email);
 
                 // Sync terms acceptance from server
                 if (data.terms_accepted_version === TERMS_VERSION) {
-                    localStorage.setItem('termsAcceptedVersion', data.terms_accepted_version);
+                    localStorage.setItem(SK_TERMS, data.terms_accepted_version);
                 }
 
                 // Show message that email is already validated
@@ -9144,7 +9152,7 @@ async function verifyCode(cardId, button) {
     }
 
     // Validate checkboxes only if they are present (not already accepted)
-    const termsAlreadyAccepted = localStorage.getItem('termsAcceptedVersion') === TERMS_VERSION;
+    const termsAlreadyAccepted = localStorage.getItem(SK_TERMS) === TERMS_VERSION;
     if (!termsAlreadyAccepted) {
         const termsCheckbox = document.getElementById(`${cardId}-terms`);
         const privacyCheckbox = document.getElementById(`${cardId}-privacy`);
@@ -9177,11 +9185,11 @@ async function verifyCode(cardId, button) {
         if (response.ok && data.success) {
             // SECURITY: Store session token from backend (30-day expiration)
             if (data.session_token) {
-                localStorage.setItem('sessionToken', data.session_token);
+                localStorage.setItem(SK_TOKEN, data.session_token);
                 globalState.sessionToken = data.session_token;
             }
             // Persist terms acceptance so checkboxes won't show next time
-            localStorage.setItem('termsAcceptedVersion', TERMS_VERSION);
+            localStorage.setItem(SK_TERMS, TERMS_VERSION);
             markButtonSelected(button, '✓ Verified');
             // ALWAYS TREAT AS NEW USER FOR NOW
             globalState.isNewUser = true; // Override - show demo to everyone
@@ -9254,7 +9262,7 @@ function handleEmailValidated(cardId) {
     // sessionStorage for current session, localStorage to enable auto-reauth after browser restart
     // Backend validates token ownership via DynamoDB, so localStorage email is safe
     sessionStorage.setItem('validatedEmail', globalState.email);
-    localStorage.setItem('validatedEmail', globalState.email);
+    localStorage.setItem(SK_EMAIL, globalState.email);
 
     // Track email validation conversion
     trackEmailValidationConversion(globalState.email);
@@ -9418,8 +9426,8 @@ async function handleLogout() {
     }
 
     // Clear all auth data from this device
-    localStorage.removeItem('sessionToken');
-    localStorage.removeItem('validatedEmail');
+    localStorage.removeItem(SK_TOKEN);
+    localStorage.removeItem(SK_EMAIL);
     sessionStorage.removeItem('validatedEmail');
 
     // Clear all session storage (including saved state)
@@ -9480,10 +9488,10 @@ async function showRecentConfigOptions(cardId, matches, tableColumns) {
 }
 
 window.useMatchingConfig = async function(configKey, sourceSession) {
+    // Declare cardId outside try so it's accessible in catch
+    const uploadCard = document.querySelector('[data-card-id]');
+    const cardId = uploadCard ? uploadCard.getAttribute('data-card-id') : 'upload';
     try {
-        // Find the upload card ID dynamically
-        const uploadCard = document.querySelector('[data-card-id]');
-        const cardId = uploadCard ? uploadCard.getAttribute('data-card-id') : 'upload';
         
         // Clear the input field and buttons before proceeding
         const inputField = document.getElementById(`${cardId}-config-id-input`);
@@ -14305,39 +14313,43 @@ async function startPreview(cardId) {
     // Progress routed to card level;
 
     try {
-        // Always use multipart form for preview since backend expects files
-
-        const formData = new FormData();
-
-        // Only append Excel file if not already uploaded
-        if (!globalState.excelFileUploaded) {
-            formData.append('excel_file', globalState.excelFile);
-        } else {
-            // Send a dummy file to satisfy backend file requirement
-            const dummyFile = new Blob([JSON.stringify({use_stored_files: true})], {
-                type: 'application/json'
-            });
-            formData.append('dummy_file', dummyFile, 'stored_files_marker.json');
-        }
-
-        formData.append('email', globalState.email);
-        if (globalState.sessionId) {
-            formData.append('session_id', globalState.sessionId);
-        } else {
+        if (!globalState.sessionId) {
             throw new Error('No session ID available. Please upload an Excel file first.');
         }
 
-        const url = `${API_BASE}/validate?async=true&preview_first_row=true&preview_max_rows=3`;
+        let response;
 
-        const fetchHeaders = {};
-        const token = localStorage.getItem('sessionToken');
-        if (token) fetchHeaders['X-Session-Token'] = token;
+        if (globalState.excelFileUploaded) {
+            // Lightweight JSON path - files already on S3, skip multipart parsing
+            response = await fetch(`${API_BASE}/validate`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({
+                    action: 'startPreview',
+                    email: globalState.email,
+                    session_id: globalState.sessionId,
+                    preview_max_rows: 3
+                })
+            });
+        } else {
+            // Multipart path - need to upload the Excel file
+            const formData = new FormData();
+            formData.append('excel_file', globalState.excelFile);
+            formData.append('email', globalState.email);
+            formData.append('session_id', globalState.sessionId);
 
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: fetchHeaders,
-            body: formData
-        });
+            const url = `${API_BASE}/validate?async=true&preview_first_row=true&preview_max_rows=3`;
+
+            const fetchHeaders = {};
+            const token = localStorage.getItem(SK_TOKEN);
+            if (token) fetchHeaders['X-Session-Token'] = token;
+
+            response = await fetch(url, {
+                method: 'POST',
+                headers: fetchHeaders,
+                body: formData
+            });
+        }
 
         const data = await response.json();
 
@@ -14656,7 +14668,7 @@ async function startFullProcessing(cardId) {
         const url = `${API_BASE}/validate?async=true`;
 
         const fetchHeaders = {};
-        const token = localStorage.getItem('sessionToken');
+        const token = localStorage.getItem(SK_TOKEN);
         if (token) fetchHeaders['X-Session-Token'] = token;
 
         const response = await fetch(url, {
@@ -15674,8 +15686,8 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
             console.error('[SECURITY] Token revoked by server - clearing session');
 
             // Clear session data
-            localStorage.removeItem('sessionToken');
-            localStorage.removeItem('validatedEmail');
+            localStorage.removeItem(SK_TOKEN);
+            localStorage.removeItem(SK_EMAIL);
             sessionStorage.removeItem('validatedEmail');
             if (typeof globalState !== 'undefined') {
                 globalState.sessionToken = null;
@@ -18936,8 +18948,8 @@ async function loadAndDisplayResults(params) {
                 console.error('[SECURITY] Token revoked by server - clearing session');
 
                 // Clear session data
-                localStorage.removeItem('sessionToken');
-                localStorage.removeItem('validatedEmail');
+                localStorage.removeItem(SK_TOKEN);
+                localStorage.removeItem(SK_EMAIL);
                 sessionStorage.removeItem('validatedEmail');
                 globalState.sessionToken = null;
                 globalState.email = null;
@@ -20042,12 +20054,12 @@ if (IS_PAGE_RELOAD) {
 // SECURITY: Restore auth state
 // Email: Try sessionStorage first (current session), then localStorage (persisted)
 // Token: localStorage (persists 30 days, cleared on logout)
-const storedEmail = sessionStorage.getItem('validatedEmail') || localStorage.getItem('validatedEmail');
-const storedToken = localStorage.getItem('sessionToken');
+const storedEmail = sessionStorage.getItem('validatedEmail') || localStorage.getItem(SK_EMAIL);
+const storedToken = localStorage.getItem(SK_TOKEN);
 
 console.log('[AUTH] Checking for existing session...', {
     storedEmail: storedEmail ? storedEmail : 'none',
-    emailSource: sessionStorage.getItem('validatedEmail') ? 'sessionStorage' : (localStorage.getItem('validatedEmail') ? 'localStorage' : 'none'),
+    emailSource: sessionStorage.getItem('validatedEmail') ? 'sessionStorage' : (localStorage.getItem(SK_EMAIL) ? 'localStorage' : 'none'),
     hasToken: storedToken ? 'yes' : 'no',
     showSignedInBadgeExists: typeof showSignedInBadge === 'function'
 });
@@ -20105,18 +20117,18 @@ if (storedEmail && storedEmail.includes('@')) {
 
                     if (data.success && data.validated && data.session_token) {
                         // Got new token! (30-day expiration)
-                        localStorage.setItem('sessionToken', data.session_token);
+                        localStorage.setItem(SK_TOKEN, data.session_token);
                         globalState.sessionToken = data.session_token;
 
                         // CRITICAL: Restore email to both storages and globalState
                         // This allows requireEmailThen polling to detect auth completion
                         sessionStorage.setItem('validatedEmail', storedEmail);
-                        localStorage.setItem('validatedEmail', storedEmail);
+                        localStorage.setItem(SK_EMAIL, storedEmail);
                         globalState.email = storedEmail;
 
                         // Sync terms acceptance from server
                         if (data.terms_accepted_version === TERMS_VERSION) {
-                            localStorage.setItem('termsAcceptedVersion', data.terms_accepted_version);
+                            localStorage.setItem(SK_TERMS, data.terms_accepted_version);
                         }
 
                         // Show badge
