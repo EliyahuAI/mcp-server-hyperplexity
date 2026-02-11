@@ -781,10 +781,11 @@ async def repair_json_with_haiku(malformed_text: str, schema: Dict, ai_client) -
             'description': 'A concise 1-2 sentence explanation of why the schema failed and how you fixed it'
         }
 
-        # Add _repair_explanation to required fields
+        # Add _repair_explanation to required fields (deduplicate to prevent recursive accumulation)
         if 'required' not in enhanced_schema:
             enhanced_schema['required'] = []
-        enhanced_schema['required'].append('_repair_explanation')
+        if '_repair_explanation' not in enhanced_schema['required']:
+            enhanced_schema['required'].append('_repair_explanation')
 
         # Escape section symbols to prevent Gemini from misinterpreting them
         # Use double § as escape sequence during repair

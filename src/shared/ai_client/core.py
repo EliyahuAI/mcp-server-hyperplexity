@@ -424,6 +424,11 @@ class AIAPIClient:
             if not schema or not isinstance(schema, dict):
                 return result
 
+            # Skip repair if already inside a repair call (prevent recursive repair loop)
+            # repair_json_with_haiku adds _repair_explanation to the schema before calling call_structured_api
+            if '_repair_explanation' in schema.get('properties', {}):
+                return result
+
             # Extract response content
             response = result.get('response', {})
             if not response:
