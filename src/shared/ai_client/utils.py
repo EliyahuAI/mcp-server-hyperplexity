@@ -100,7 +100,9 @@ def extract_structured_response(response: Dict, tool_name: str = "structured_res
                         extracted = extract_json_from_text(text)
                         if extracted:
                             return extracted
-                        logger.warning(f"Failed to extract JSON from Vertex AI format")
+                        # Log preview of text to help debug extraction failures
+                        text_preview = text[:200].replace('\n', ' ')
+                        logger.warning(f"Failed to extract JSON from Vertex AI format. Text preview: {text_preview}...")
 
         # Original Claude tool use format
         for content_item in response.get('content', []):

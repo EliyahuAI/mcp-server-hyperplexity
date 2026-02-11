@@ -59,13 +59,18 @@ def get_vertex_semaphore(model: str) -> asyncio.Semaphore:
             logger.info(f"[VERTEX_RATE_LIMIT] Initialized semaphore for {model} with max_concurrent={max_concurrent}")
 
             # Clean up old loop semaphores (keep only last 2 loops to prevent memory leak)
+            # IMPORTANT: Don't delete the semaphore we just created
             loop_ids = set(k[0] for k in _vertex_semaphores.keys())
             if len(loop_ids) > 2:
                 oldest_loop = min(loop_ids)
-                keys_to_remove = [k for k in _vertex_semaphores.keys() if k[0] == oldest_loop]
-                for old_key in keys_to_remove:
-                    del _vertex_semaphores[old_key]
-                logger.debug(f"[VERTEX_SEMAPHORE] Cleaned up {len(keys_to_remove)} semaphores from old loop {oldest_loop}")
+                # Don't delete the current loop's semaphores (prevents KeyError on line 70)
+                if oldest_loop != loop_id:
+                    keys_to_remove = [k for k in _vertex_semaphores.keys() if k[0] == oldest_loop]
+                    for old_key in keys_to_remove:
+                        del _vertex_semaphores[old_key]
+                    logger.debug(f"[VERTEX_SEMAPHORE] Cleaned up {len(keys_to_remove)} semaphores from old loop {oldest_loop}")
+                else:
+                    logger.debug(f"[VERTEX_SEMAPHORE] Skipping cleanup of current loop {loop_id} (it's the oldest)")
 
         return _vertex_semaphores[key]
 

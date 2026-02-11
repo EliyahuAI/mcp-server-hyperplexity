@@ -273,7 +273,14 @@ class CloneLogger:
     def _format_content(self, content: Any) -> str:
         """Format content for Markdown."""
         if isinstance(content, (dict, list)):
-            return f"```json\n{json.dumps(content, indent=2, ensure_ascii=False)}\n```"
+            try:
+                return f"```json\n{json.dumps(content, indent=2, ensure_ascii=False)}\n```"
+            except (TypeError, ValueError) as e:
+                # Handle non-serializable objects (exceptions, semaphores, etc.)
+                import traceback
+                logger.warning(f"[CLONE_LOGGER] Failed to JSON serialize content: {e}")
+                # Convert to string representation instead
+                return f"```text\n{str(content)}\n\nNote: Content contained non-JSON-serializable objects\n```"
         elif isinstance(content, str):
             if content.strip().startswith("```"): return content
             return f"```text\n{content}\n```"
