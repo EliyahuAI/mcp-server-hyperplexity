@@ -476,12 +476,37 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
             else:
                 logger.info(f"  Using full-row hashing (no specific ID fields)")
 
-        # Use validation history passed by caller (already extracted by background_handler)
+        # Extract _history from rows and transform into validation_history structure
+        # The _history field is added by shared_table_parser when extract_history=True
         if validation_history is None:
             validation_history = {}
-            logger.info("No validation history provided by caller")
+            logger.info("Extracting validation history from parsed row data (_history fields)")
+
+            # Transform row-level _history into validation_history structure indexed by row_key
+            for row in rows_from_parser:
+                row_key = row.get('_row_key')
+                row_history = row.get('_history', {})
+
+                if row_key and row_history:
+                    validation_history[row_key] = row_history
+
+            if validation_history:
+                logger.info(f"[HISTORY_EXTRACTION] Successfully extracted validation history for {len(validation_history)} rows")
+                # Log sample of extracted history for debugging
+                sample_row_key = list(validation_history.keys())[0] if validation_history else None
+                if sample_row_key:
+                    sample_fields = list(validation_history[sample_row_key].keys())
+                    logger.info(f"[HISTORY_EXTRACTION] Sample row history contains {len(sample_fields)} fields: {sample_fields[:3]}")
+                    # Log a sample field's history structure
+                    if sample_fields:
+                        sample_field = sample_fields[0]
+                        sample_field_history = validation_history[sample_row_key][sample_field]
+                        history_keys = list(sample_field_history.keys()) if isinstance(sample_field_history, dict) else []
+                        logger.info(f"[HISTORY_EXTRACTION] Sample field '{sample_field}' history keys: {history_keys}")
+            else:
+                logger.info("[HISTORY_EXTRACTION] No validation history found in parsed data (no _history fields in rows)")
         else:
-            logger.info(f"Using validation history from caller: {len(validation_history)} row keys")
+            logger.info(f"[HISTORY_EXTRACTION] Using validation history from caller: {len(validation_history)} row keys")
 
         # Initialize aggregated metadata
         aggregated_metadata = {
