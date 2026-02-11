@@ -422,6 +422,9 @@ if (data.mode === 1) {
                 const userMessage = document.getElementById(`${cardId}-input`).value;
                 if (userMessage.trim()) {
                     markButtonSelected(button, 'Thinking...');
+                    // Hide input container while processing (consistent with table maker and refine config flows)
+                    const inputContainer = document.getElementById(`${cardId}-input-container`);
+                    if (inputContainer) inputContainer.style.display = 'none';
                     await addChatMessage(cardId, 'user', userMessage);
                     sendInterviewMessage(conversationId, userMessage);
                     document.getElementById(`${cardId}-input`).value = '';
@@ -455,6 +458,10 @@ if (data.mode === 1) {
             callback: async (e) => {
                 const button = e.target.closest('button');
                 const userMessage = document.getElementById(`${cardId}-input`).value.trim();
+
+                // Hide input container while processing (consistent with table maker and refine config flows)
+                const inputContainer = document.getElementById(`${cardId}-input-container`);
+                if (inputContainer) inputContainer.style.display = 'none';
 
                 // Check if this is a simple confirmation (blank, "yes", "looks good", etc.)
                 const isSimpleConfirmation = !userMessage ||
