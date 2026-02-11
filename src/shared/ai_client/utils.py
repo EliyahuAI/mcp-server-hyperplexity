@@ -787,6 +787,10 @@ async def repair_json_with_haiku(malformed_text: str, schema: Dict, ai_client) -
         if '_repair_explanation' not in enhanced_schema['required']:
             enhanced_schema['required'].append('_repair_explanation')
 
+        # Anthropic requires additionalProperties: false for JSON Schema 2020-12 compliance
+        if enhanced_schema.get('type') == 'object':
+            enhanced_schema['additionalProperties'] = False
+
         # Escape section symbols to prevent Gemini from misinterpreting them
         # Use double § as escape sequence during repair
         escaped_text = malformed_text.replace('§', '{{SECTION}}')

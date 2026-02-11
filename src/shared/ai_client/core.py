@@ -450,6 +450,17 @@ class AIAPIClient:
                     # Not valid JSON, try extraction
                     parsed = extract_json_from_text(content)
 
+                # If parsed is a list (e.g. Perplexity returns raw array), wrap in expected object
+                # Perplexity unwraps validation_results schema, so response is the inner array
+                if isinstance(parsed, list) and schema.get('type') == 'object' and 'properties' in schema:
+                    # Find the single array property to wrap the list into
+                    array_props = [k for k, v in schema['properties'].items()
+                                   if isinstance(v, dict) and v.get('type') == 'array']
+                    if len(array_props) == 1:
+                        parsed = {array_props[0]: parsed}
+                        result['response']['choices'][0]['message']['content'] = json.dumps(parsed)
+                        logger.debug(f"[UNIVERSAL_VALIDATION] Wrapped array response into '{array_props[0]}' property")
+
                 # Check if we have valid parsed JSON
                 if not parsed or not isinstance(parsed, dict):
                     logger.warning(f"[UNIVERSAL_VALIDATION] {provider}/{model}: JSON extraction failed")
