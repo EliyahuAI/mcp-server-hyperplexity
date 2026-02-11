@@ -776,8 +776,8 @@ function offerConfigRepair(cardId, errorMessage, config) {
         {
             text: 'Generate New',
             icon: '✨',
-            variant: 'secondary', 
-            callback: async () => createAIConfigCard(false)
+            variant: 'secondary',
+            callback: async () => createTableMakerCard()
         }
     ]);
 
@@ -837,15 +837,15 @@ async function createConfigCardWithId(configId) {
 }
 
 function createConfigurationCard() {
-    // Check if we have any good matches - if not, skip configuration card and go straight to AI
+    // Check if we have any good matches - if not, skip configuration card and go straight to table maker
     if (!globalState.matchingConfigs || !globalState.matchingConfigs.matches) {
-        createAIConfigCard(false);
+        createTableMakerCard();
         return;
     }
 
     const goodMatches = globalState.matchingConfigs.matches.filter(match => match.match_score >= 0.8);
     if (goodMatches.length === 0) {
-        createAIConfigCard(false);
+        createTableMakerCard();
         return;
     }
 
@@ -935,7 +935,7 @@ function createConfigurationCard() {
                                 <button class="std-button primary" onclick="useMatchingConfig('${perfectMatch.config_s3_key}', '${perfectMatch.source_session}')" style="flex: 1;">
                                     <span class="button-text">🔗 Use Match (100%)</span>
                                 </button>
-                                <button class="std-button secondary" onclick="createAIConfigCard(false)" style="flex: 1;">
+                                <button class="std-button secondary" onclick="createTableMakerCard()" style="flex: 1;">
                                     <span class="button-text">🤖 Create with AI</span>
                                 </button>
                             </div>
@@ -943,7 +943,7 @@ function createConfigurationCard() {
                     } else {
                         buttonContainer.innerHTML = `
                             <div style="margin: 20px 0; text-align: center;">
-                                <button class="std-button secondary" onclick="createAIConfigCard(false)">
+                                <button class="std-button secondary" onclick="createTableMakerCard()">
                                     <span class="button-text">🤖 Create with AI</span>
                                 </button>
                             </div>
@@ -952,7 +952,7 @@ function createConfigurationCard() {
                 } else {
                     buttonContainer.innerHTML = `
                         <div style="margin: 20px 0; text-align: center;">
-                            <button class="std-button secondary" onclick="createAIConfigCard(false)" style="background: #6b46c1; border-color: #6b46c1; color: white;">
+                            <button class="std-button secondary" onclick="createTableMakerCard()" style="background: #6b46c1; border-color: #6b46c1; color: white;">
                                 <span class="button-text">🤖 Create with AI</span>
                             </button>
                         </div>
@@ -961,7 +961,7 @@ function createConfigurationCard() {
             } else {
                 buttonContainer.innerHTML = `
                     <div style="margin: 20px 0; text-align: center;">
-                        <button class="std-button secondary" onclick="createAIConfigCard(false)" style="background: #6b46c1; border-color: #6b46c1; color: white;">
+                        <button class="std-button secondary" onclick="createTableMakerCard()" style="background: #6b46c1; border-color: #6b46c1; color: white;">
                             <span class="button-text">🤖 Create with AI</span>
                         </button>
                     </div>
@@ -974,14 +974,24 @@ function createConfigurationCard() {
 }
 // 4. AI Configuration Card
 window.createAIConfigCard = function(isRepair = false) {
+    // DEPRECATED: Non-repair mode (isRepair=false) is deprecated.
+    // Use createTableMakerCard() instead for de-novo table creation.
+    // Only repair mode (isRepair=true) should use this function.
+    if (!isRepair) {
+        console.warn('[DEPRECATED] createAIConfigCard(false) is deprecated. Use createTableMakerCard() instead.');
+        // Redirect to table maker for better UX
+        createTableMakerCard();
+        return;
+    }
+
     const cardId = generateCardId();
     const content = `
         <div id="${cardId}-progress"></div>
         <div id="${cardId}-chat" class="chat-container"></div>
         <div id="${cardId}-refinement" style="display: none;">
-            <textarea 
-                id="${cardId}-refinement-input" 
-                class="refinement-input" 
+            <textarea
+                id="${cardId}-refinement-input"
+                class="refinement-input"
                 placeholder="Describe how you'd like to refine the configuration..."
             ></textarea>
         </div>
@@ -991,17 +1001,13 @@ window.createAIConfigCard = function(isRepair = false) {
     const card = createCard({
         id: cardId,  // Pass explicit ID
         icon: '🤖',
-        title: isRepair ? 'Repair Configuration' : 'AI Configuration',
-        subtitle: isRepair ? 'Fixing configuration issues' : 'Creating optimal configuration',
+        title: 'Repair Configuration',
+        subtitle: 'Fixing configuration issues',
         content
     });
 
-    // Start config generation
-    if (isRepair) {
-        startConfigRepair(cardId);
-    } else {
-        startConfigGeneration(cardId);
-    }
+    // Start config repair (only repair mode supported now)
+    startConfigRepair(cardId);
 
     return card;
 }
@@ -1107,17 +1113,26 @@ window.createRefinementCard = async function() {
     return card;
 }
 
+// DEPRECATED: This flow is replaced by the interactive table maker conversation.
+// Use createTableMakerCard() instead for de-novo table creation.
+// Keeping these functions commented for reference, but they should not be called.
+/*
 async function startConfigGeneration(cardId) {
+    // DEPRECATED: Use createTableMakerCard() for new table creation
+    console.error('[DEPRECATED] startConfigGeneration is deprecated. Use createTableMakerCard() instead.');
     // First, show the initial table questions instead of immediately generating
     await showInitialTableQuestions(cardId);
 }
 
 async function showInitialTableQuestions(cardId) {
+    // DEPRECATED: Use createTableMakerCard() for new table creation
+    console.error('[DEPRECATED] showInitialTableQuestions is deprecated. Use createTableMakerCard() instead.');
+
     const chatContainer = document.getElementById(`${cardId}-chat`);
     if (chatContainer) {
         chatContainer.style.display = 'block';
     }
-    
+
     // Add initial AI message with generic table questions
     const initialQuestions = `Let's build an initial configuration together that clarifies what the table and columns are about and that specifies an optimized approach to validating this table.
 
@@ -1138,9 +1153,10 @@ async function showInitialTableQuestions(cardId) {
 Our initial configuration will balance cost and accuracy by using efficient models and targeted searching. After reviewing the preview results, you can use the "Refine Configuration" button to selectively apply more powerful models and deeper analysis to specific areas that need improvement. The goal is to arrive at an optimal configuration that we can use for tables with the same columns down the road.
 
 Please provide any additional context, or simply proceed to generate your initial configuration.`;
-    
+
     await addChatMessage(cardId, 'ai', initialQuestions);
-    
+
+
     // Show refinement input for answers
     const refinementContainer = document.getElementById(`${cardId}-refinement`);
     if (refinementContainer) {
@@ -1188,8 +1204,19 @@ Please provide any additional context, or simply proceed to generate your initia
         }
     ]);
 }
+*/
 
+// DEPRECATED: Use createTableMakerCard() for new table creation
+// This function is kept for legacy compatibility but should not be called for new table creation.
 async function startConfigGenerationWithContext(cardId, userAnswers) {
+    console.error('[DEPRECATED] startConfigGenerationWithContext is deprecated. Use createTableMakerCard() instead.');
+    console.warn('[DEPRECATED] Redirecting to table maker for better user experience...');
+
+    // Redirect to table maker for better UX
+    createTableMakerCard();
+    return;
+
+    // Legacy code below (unreachable, kept for reference)
     // Show thinking indicators
     showThinkingInCard(cardId, 'Starting configuration generation...', true);
     // Start config-specific dummy progress animation
