@@ -632,8 +632,14 @@ async def handle_generate_config_unified(event_data, websocket_callback=None, ta
                 print(f"🔍 INTERFACE_DEBUG: updated_config keys before: {list(updated_config.keys())}")
 
                 if 'config_change_log' not in updated_config:
-                    updated_config['config_change_log'] = []
-                    print(f"🔍 INTERFACE_DEBUG: Initialized new config_change_log")
+                    # CRITICAL FIX: Restore conversation history from the variable we built earlier
+                    # The AI doesn't include config_change_log in its output, so we must restore it
+                    if conversation_history:
+                        updated_config['config_change_log'] = conversation_history.copy()
+                        print(f"🔍 INTERFACE_DEBUG: Restored {len(conversation_history)} entries from conversation_history")
+                    else:
+                        updated_config['config_change_log'] = []
+                        print(f"🔍 INTERFACE_DEBUG: Initialized new config_change_log (no history available)")
                 else:
                     print(f"🔍 INTERFACE_DEBUG: Existing config_change_log has {len(updated_config['config_change_log'])} entries")
 
@@ -657,6 +663,15 @@ async def handle_generate_config_unified(event_data, websocket_callback=None, ta
                 updated_config['config_change_log'].append(conversation_entry)
                 print(f"🔍 INTERFACE_DEBUG: Successfully added conversation entry to config_change_log")
                 print(f"🔍 INTERFACE_DEBUG: Total entries now: {len(updated_config['config_change_log'])}")
+
+                # Debug: Show summary of conversation log to verify history is preserved
+                if len(updated_config['config_change_log']) > 1:
+                    print(f"🔍 INTERFACE_DEBUG: Conversation history preserved!")
+                    for i, entry in enumerate(updated_config['config_change_log'][-3:], start=max(1, len(updated_config['config_change_log'])-2)):
+                        entry_type = entry.get('entry_type', entry.get('action', 'unknown'))
+                        instructions_preview = entry.get('instructions', entry.get('user_instructions', 'N/A'))[:50]
+                        print(f"🔍   Entry {i}/{len(updated_config['config_change_log'])}: {entry_type} - {instructions_preview}...")
+
                 print(f"🔍 INTERFACE_DEBUG: updated_config keys after: {list(updated_config.keys())}")
             except Exception as e:
                 print(f"🔍 INTERFACE_DEBUG: ERROR adding conversation entry: {e}")
