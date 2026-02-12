@@ -52,7 +52,8 @@ function createTableViewCard(options = {}) {
         title: options.title || 'Table Results',
         subtitle: options.subtitle || '',
         content,
-        id: cardId
+        id: cardId,
+        excludeFromState: true  // Exclude from state saves (contains large table data)
     });
 
     return { cardId, element: card };

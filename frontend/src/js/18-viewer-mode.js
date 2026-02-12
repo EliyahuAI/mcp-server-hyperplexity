@@ -234,7 +234,8 @@ function createResultsViewerCard(options = {}) {
         title: options.title || 'Validation Results',
         subtitle: options.subtitle || '',
         content,
-        buttons: []  // Buttons added after data loads
+        buttons: [],  // Buttons added after data loads
+        excludeFromState: true  // Exclude from state saves (contains large table data)
     });
 
     // If pre-loaded metadata provided, display immediately

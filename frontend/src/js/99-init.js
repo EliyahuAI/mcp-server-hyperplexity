@@ -452,24 +452,38 @@ try {
     if (!globalState.sessionId) {
         throw new Error('No session ID available');
     }
-    
+
     // Get version info
     const version = globalState.currentConfig?.config_version || 1;
     const originalFileName = globalState.excelFile?.name || 'preview_results';
     const fileNameBase = originalFileName.replace(/\.[^/.]+$/, ''); // Remove extension
-    
+
     // Check if enhanced Excel download URL is available
     if (previewData.enhanced_download_url) {
-        // Use the enhanced Excel download URL from backend
+        // Fetch the file as a blob to avoid navigation issues
         const enhancedFileName = `${fileNameBase}_v${version}_preview_enhanced.xlsx`;
-        
-        const a = document.createElement('a');
-        a.href = previewData.enhanced_download_url;
-        a.download = enhancedFileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        return;
+
+        try {
+            const response = await fetch(previewData.enhanced_download_url);
+            if (!response.ok) {
+                throw new Error(`Download failed: ${response.statusText}`);
+            }
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = enhancedFileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            return;
+        } catch (fetchError) {
+            console.error('Error fetching Excel file:', fetchError);
+            // Fall through to CSV fallback
+        }
     }
     
     // Fallback to CSV if no enhanced Excel available
@@ -700,6 +714,11 @@ try {
     const cards = document.querySelectorAll('[id^="card-"]');
     const mainCards = Array.from(cards).filter(card => /^card-\d+$/.test(card.id));
     mainCards.forEach(card => {
+        // Skip cards marked to exclude from state (e.g., viewer cards with large table data)
+        if (card.dataset.excludeFromState === 'true') {
+            return;
+        }
+
         const title = card.querySelector('.card-title')?.textContent || '';
         const content = card.querySelector('.card-content')?.innerHTML || '';
 
@@ -760,7 +779,42 @@ try {
     });
     state.globalFormData = globalFormData;
 
-    sessionStorage.setItem(getStateKey(), JSON.stringify(state));
+    try {
+        sessionStorage.setItem(getStateKey(), JSON.stringify(state));
+    } catch (storageError) {
+        // Handle QuotaExceededError by cleaning up old state keys and retrying
+        if (storageError.name === 'QuotaExceededError' || storageError.code === 22) {
+            console.warn('[WARN] Storage quota exceeded, attempting cleanup...');
+
+            // Remove old state keys (keep only current tab's state)
+            const currentKey = getStateKey();
+            const keysToRemove = [];
+            for (let i = 0; i < sessionStorage.length; i++) {
+                const key = sessionStorage.key(i);
+                if (key && key.startsWith('hyperplexity_app_state_') && key !== currentKey) {
+                    keysToRemove.push(key);
+                }
+            }
+
+            // Remove old state keys
+            keysToRemove.forEach(key => {
+                try {
+                    sessionStorage.removeItem(key);
+                } catch (e) {
+                    // Ignore errors during cleanup
+                }
+            });
+
+            // Try saving again after cleanup
+            try {
+                sessionStorage.setItem(getStateKey(), JSON.stringify(state));
+            } catch (retryError) {
+                console.warn('[WARN] Still could not save state after cleanup:', retryError.message);
+            }
+        } else {
+            throw storageError;
+        }
+    }
 } catch (error) {
     console.warn('[WARN] Could not save application state:', error);
 }

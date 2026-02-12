@@ -582,12 +582,13 @@
                     content = '',
                     statusBadge = null,
                     buttons = [],
-                    id = null  // Allow explicit ID
+                    id = null,  // Allow explicit ID
+                    excludeFromState = false  // Flag to exclude from state saves
                 } = options;
 
                 // Use provided ID or generate new one
                 const cardId = id || generateCardId();
-                
+
                 // Color sequence for card attention animation
                 const attentionColors = ['green', 'purple', 'cyan', 'orange', 'pink'];
 
@@ -603,6 +604,11 @@
                 const card = document.createElement('div');
                 card.className = `card active-attention-${attentionColor}`;
                 card.id = cardId;
+
+                // Mark card to exclude from state saves if requested (for large data like interactive tables)
+                if (excludeFromState) {
+                    card.dataset.excludeFromState = 'true';
+                }
                 
                 // Build card HTML - ALWAYS include buttons container
                 let cardHtml = `
@@ -899,7 +905,8 @@
                 // Use session_version_count if available (accurate), otherwise fall back to config_version
                 const sessionVersionCount = previewData.session_version_count || 0;
                 const currentVersion = previewData.config_version || globalState.currentConfig?.config_version || 1;
-                const showRevertButton = sessionVersionCount >= 2;
+                // Show revert if we have multiple session versions OR if we're on version 2+ (indicating refinement occurred)
+                const showRevertButton = sessionVersionCount >= 2 || currentVersion > 1;
 
                 const revertButtonHtml = showRevertButton ?
                     `<button type="button" class="std-button quaternary" data-action="revert-config">

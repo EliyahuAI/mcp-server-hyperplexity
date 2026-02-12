@@ -46,7 +46,9 @@ function showPreviewResults(cardId, previewData) {
 
         // Check if revert button should be shown (only if this session has 2+ versions)
         const sessionVersionCount = previewData.session_version_count || 0;
-        const showRevertButton = sessionVersionCount >= 2;
+        const currentVersion = previewData.config_version || globalState.currentConfig?.config_version || 1;
+        // Show revert if we have multiple session versions OR if we're on version 2+ (indicating refinement occurred)
+        const showRevertButton = sessionVersionCount >= 2 || currentVersion > 1;
 
         const revertButtonHtml = showRevertButton ?
             `<button type="button" class="std-button quaternary" data-action="revert-config">

@@ -52,7 +52,8 @@ function createPreviewCard() {
         title: 'Preview Validation',
         subtitle: 'Testing validation with first 3 rows...',
         content,
-        id: cardId  // PASS THE ID EXPLICITLY
+        id: cardId,  // PASS THE ID EXPLICITLY
+        excludeFromState: true  // Exclude from state saves (will contain large table data)
     });
 
     // Auto-start preview with the SAME card ID
