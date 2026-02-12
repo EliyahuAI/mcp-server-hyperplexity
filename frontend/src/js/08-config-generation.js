@@ -2100,7 +2100,7 @@ async function submitConfigRefinementWithAutoPreview(cardId, refinementText) {
 async function handleConfigWebSocketMessageWithAutoPreview(data, cardId) {
     if (data.type === 'config_generation_complete') {
         completeThinkingInCard(cardId, 'Configuration refined!');
-        
+
         globalState.currentConfig = data;
         globalState.excelFileUploaded = true;
         globalState.workflowPhase = 'config';
@@ -2117,13 +2117,10 @@ async function handleConfigWebSocketMessageWithAutoPreview(data, cardId) {
         let aiMessage = data.ai_summary || data.ai_response || 'Configuration refined successfully!';
         await addChatMessage(cardId, 'ai', aiMessage);
 
-        // Auto-generate preview immediately after refinement
-        setTimeout(() => {
-            // Clear any existing preview card state to allow new preview
-            globalState.activePreviewCard = null;
-            createPreviewCard();
-        }, 1000);
-        
+        // Show refinement actions to allow further refinement or acceptance
+        // This ensures buttons are always shown after refinement, fixing the missing submit button issue
+        showRefinementActions(cardId);
+
     } else if (data.type === 'config_generation_failed' || data.error || data.type === 'error') {
         completeThinkingInCard(cardId, 'Refinement failed');
         const errorMessage = data.error || data.message || 'Configuration refinement failed';
