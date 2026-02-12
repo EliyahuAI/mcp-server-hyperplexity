@@ -125,17 +125,32 @@ Below are the multiplex validation outputs for ALL field groups for this complet
 ## ⭐ CONFIDENCE RUBRICS
 ═══════════════════════════════════════════════════════════════
 
-Assign confidence levels using this rubric:
+Confidence measures the likelihood that the facts stated in the cell are precisely accurate:
 
-- **HIGH**: Claim is a widely accepted fact, directly verified by authoritative source, or straightforward calculation that matches the guidance provided, without cause for pause. Claim matches the guidance provided.
+- **HIGH (H)**: 85%+ likelihood that the facts are precisely accurate
+  - Multiple facts: average likelihood ≥ 85%
+  - Source: Authoritative, directly verifiable, widely accepted
 
-- **MEDIUM**: Good estimates, confident projections, or respectable but not definitive sources that are consistent with the guidance .provided.
+- **MEDIUM (M)**: 65%-85% likelihood that the facts are precisely accurate
+  - Multiple facts: average likelihood 65%-85%
+  - Source: Respectable but not definitive, good estimates, confident projections
 
-- **LOW**: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value it is low confidence
-  - **Only LOW confidence answers may be blank.** If no data was found, use null for answer with LOW confidence.
-  - **Confident absence is NOT blank** — if you are confident something does not exist or is not applicable, say so explicitly with language appropriate to the measure (e.g., "N/A", "Not applicable", "No website", "Not publicly traded") and assign an appropriate confidence level. Do not leave it blank.
-  - **Blank originals**: Assign LOW for `original_confidence` when the original value was blank/empty (the system will reclassify LOW and null as equivalent).
-  - **Removing false data**: If original has LOW confidence false data, going to blank with LOW confidence is acceptable
+- **LOW (L)**: <65% likelihood that the facts are precisely accurate
+  - Weak/conflicting sources, uncertainty, no authoritative verification
+  - **Only LOW confidence answers may be blank (null)**
+  - **Blank originals**: Assign LOW for `original_confidence` when the original value was blank/empty
+  - **Removing false data**: If original has LOW confidence false data and no reliable replacement exists, you CAN go to blank with LOW confidence (removing bad data is acceptable)
+
+**SPECIAL CASE - Expressing Doubt:**
+When the value itself expresses uncertainty (e.g., "Rumors suggest...", "Unconfirmed reports say...", "Less reliable sources claim..."), confidence measures whether the SOURCES say it, NOT whether it's true.
+
+Example:
+- Value: "Rumors suggest launch in Q3 2025"
+- HIGH confidence: Multiple sources confirm rumors exist
+- The confidence is about the rumors existing, not about the launch happening
+
+**Confident Absence:**
+If you are confident something does not exist or is not applicable, say so explicitly with language appropriate to the measure (e.g., "N/A", "Not applicable", "No website", "Not publicly traded") and assign an appropriate confidence level (H/M). Do not leave it blank - blank means you have no information.
 
 ---
 

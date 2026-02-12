@@ -46,6 +46,21 @@ The sections below provide detailed context for **synthesizing your search resul
 
 {context}
 
+⚠️ **CRITICAL - ROW CONTEXT SCOPE CONSTRAINT:**
+All validation results must be about the SPECIFIC ENTITY identified by the context above.
+
+**Common scope errors to AVOID:**
+- Validating a different entity with a similar name
+- Using general information when specific information is required
+- Example: When validating news for "Product X by Company Y", reject news that only mentions "Company Y" without mentioning "Product X"
+- Example: When validating a company associated with a product, verify the company OWNS/DEVELOPS that specific product, not just that the company exists
+
+**Scope validation checklist:**
+1. Do sources explicitly mention ALL identifying information from context above?
+2. Is information contemporary with the entity (not before it existed)?
+3. Have you cross-referenced to confirm entity identity?
+4. When in doubt, mark confidence as MEDIUM or LOW
+
 **Other fields from this row (unvalidated - for reference only):**
 
 {original_row_context}
@@ -53,6 +68,28 @@ The sections below provide detailed context for **synthesizing your search resul
 **Previous validations for this row:**
 
 {previous_results}
+
+⚠️ **CRITICAL - INHERENT SUSPICION OF PREVIOUS RESULTS:**
+
+Previous values shown above may be INCORRECT. Do NOT assume they are correct.
+
+**Mandatory verification requirements:**
+- Treat previous values as HYPOTHESES to be tested, not FACTS
+- Every previous claim must be verified against current authoritative sources
+- Do NOT copy previous values without independent verification
+- Well-formatted previous answers with citations can still be wrong
+- High confidence scores from past validations don't guarantee truth
+
+**If current sources conflict with previous values:**
+1. Prioritize DIRECT QUOTES from HIGH-AUTHORITY sources (see confidence criteria)
+2. Check publication dates - newer authoritative sources may supersede old data
+3. If conflict unresolved, mark confidence as MEDIUM or LOW
+4. Document the conflict in your explanation
+
+**Truth Standard:** Direct quotes from authoritative sources determine truth,
+NOT how confident, well-cited, or professionally formatted previous results appear.
+
+Your task: Use previous results as a STARTING POINT, then independently verify/correct with current sources.
 
 ---
 
@@ -82,17 +119,32 @@ The sections below provide detailed context for **synthesizing your search resul
 ## ⭐ CONFIDENCE LEVELS
 ═══════════════════════════════════════════════════════════════
 
-Assign confidence levels to both original and updated values:
+Confidence measures the likelihood that the facts stated in the cell are precisely accurate:
 
-- **HIGH**: Claim is a widely accepted fact, directly verified by authoritative source, or straightforward calculation that matches the guidance provided, without cause for pause. Claim matches the guidance provided.
+- **HIGH (H)**: 85%+ likelihood that the facts are precisely accurate
+  - Multiple facts: average likelihood ≥ 85%
+  - Source: Authoritative, directly verifiable, widely accepted
 
-- **MEDIUM**: Good estimates, confident projections, or respectable but not definitive sources that are consistent with the guidance provided.
+- **MEDIUM (M)**: 65%-85% likelihood that the facts are precisely accurate
+  - Multiple facts: average likelihood 65%-85%
+  - Source: Respectable but not definitive, good estimates, confident projections
 
-- **LOW**: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value it is low confidence.
-  - **Only LOW confidence answers may be blank.** If no data was found, use null for answer with LOW confidence.
-  - **Confident absence is NOT blank** — if you are confident something does not exist or is not applicable, say so explicitly with language appropriate to the measure (e.g., "N/A", "Not applicable", "No website", "Not publicly traded") and assign an appropriate confidence level. Do not leave it blank.
-  - **Blank originals**: Assign LOW for `original_confidence` when the original value was blank/empty (the system will reclassify).
-  - **Removing false data**: If original has LOW confidence false data and no reliable replacement exists, you CAN go to blank with LOW confidence (removing bad data is acceptable).
+- **LOW (L)**: <65% likelihood that the facts are precisely accurate
+  - Weak/conflicting sources, uncertainty, no authoritative verification
+  - **Only LOW confidence answers may be blank (null)**
+  - **Blank originals**: Assign LOW for `original_confidence` when the original value was blank/empty
+  - **Removing false data**: If original has LOW confidence false data and no reliable replacement exists, you CAN go to blank with LOW confidence (removing bad data is acceptable)
+
+**SPECIAL CASE - Expressing Doubt:**
+When the value itself expresses uncertainty (e.g., "Rumors suggest...", "Unconfirmed reports say...", "Less reliable sources claim..."), confidence measures whether the SOURCES say it, NOT whether it's true.
+
+Example:
+- Value: "Rumors suggest launch in Q3 2025"
+- HIGH confidence: Multiple sources confirm rumors exist
+- The confidence is about the rumors existing, not about the launch happening
+
+**Confident Absence:**
+If you are confident something does not exist or is not applicable, say so explicitly with language appropriate to the measure (e.g., "N/A", "Not applicable", "No website", "Not publicly traded") and assign an appropriate confidence level (H/M). Do not leave it blank - blank means you have no information.
 
 ---
 

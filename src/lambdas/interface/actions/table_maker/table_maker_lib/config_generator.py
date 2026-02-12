@@ -168,9 +168,12 @@ class ConfigGenerator:
             logger.info(f"Added non-researchable ID column to validation_targets: {col['name']}")
 
         # Then add research columns for actual validation
+        # Pass ALL columns (ID + research) so we can build relationship context
+        all_columns = identification_columns + research_columns
         research_targets = self._create_validation_targets(
             research_columns,
-            search_groups
+            search_groups,
+            all_columns
         )
         validation_targets.extend(research_targets)
 
@@ -296,7 +299,8 @@ class ConfigGenerator:
     def _create_validation_targets(
         self,
         research_columns: List[Dict[str, Any]],
-        search_groups: List[Dict[str, Any]]
+        search_groups: List[Dict[str, Any]],
+        all_columns: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
         Create validation targets for research columns.
@@ -304,10 +308,14 @@ class ConfigGenerator:
         Args:
             research_columns: List of research column definitions
             search_groups: List of search groups
+            all_columns: All columns (ID + research) for relationship context
 
         Returns:
             List of validation target definitions
         """
+        # Extract ID columns for relationship context
+        id_columns = [col for col in all_columns if col.get('importance', '').upper() == 'ID']
+
         # Map importance to search group ID
         importance_to_group = {}
         for group in search_groups:
@@ -333,7 +341,7 @@ class ConfigGenerator:
                 'importance': importance,
                 'format': col.get('format', 'String'),
                 'search_group': search_group_id,
-                'notes': f"Validation for {col['name']}: {col.get('description', '')}",
+                'notes': self._generate_enhanced_notes(col, id_columns, all_columns),
                 'examples': self._extract_examples_from_description(col)
             }
 
@@ -376,6 +384,132 @@ class ConfigGenerator:
             return ['example@example.com']
         else:
             return ['Sample value']
+
+    def _generate_enhanced_notes(
+        self,
+        column: Dict[str, Any],
+        id_columns: List[Dict[str, Any]],
+        all_columns: List[Dict[str, Any]]
+    ) -> str:
+        """
+        Generate enhanced notes with explicit relationship context and scope warnings.
+
+        Args:
+            column: Column to generate notes for
+            id_columns: List of ID columns (provide entity context)
+            all_columns: All columns in the table
+
+        Returns:
+            Enhanced notes string with relationship context
+        """
+        col_name = column.get('name', '').lower()
+        col_desc = column.get('description', '').lower()
+        combined_text = f"{col_name} {col_desc}"
+
+        # Start with base description
+        base_notes = column.get('description', f"Validate {column['name']}")
+
+        # Build ID column context reference
+        id_context = ""
+        if id_columns:
+            id_names = [col['name'] for col in id_columns]
+            if len(id_names) == 1:
+                id_context = f"for THIS {id_names[0].upper()}"
+            elif len(id_names) == 2:
+                id_context = f"for THIS {id_names[0].upper()} and THIS {id_names[1].upper()}"
+            else:
+                id_context = f"for the SPECIFIC entity identified by {', '.join(id_names)}"
+
+        # Detect patterns and add specific scope warnings
+        scope_warnings = []
+
+        # Pattern: News/Updates columns
+        if any(pattern in combined_text for pattern in ['news', 'update', 'announcement', 'press release', 'article']):
+            # Check if there are company and product columns
+            company_cols = [col['name'] for col in all_columns if any(
+                p in col.get('name', '').lower() for p in ['company', 'organization', 'firm', 'developer']
+            )]
+            product_cols = [col['name'] for col in all_columns if any(
+                p in col.get('name', '').lower() for p in ['product', 'candidate', 'drug', 'therapy', 'project']
+            )]
+
+            if company_cols and product_cols:
+                scope_warnings.append(
+                    f"Find news specifically about THIS PRODUCT (as identified by {', '.join(product_cols)}), "
+                    f"not general company news. The news must explicitly mention the product by name, not just "
+                    f"the company ({', '.join(company_cols)})."
+                )
+            elif product_cols:
+                scope_warnings.append(
+                    f"Find news specifically about THIS PRODUCT ({', '.join(product_cols)}), not general information."
+                )
+            elif company_cols:
+                scope_warnings.append(
+                    f"Find news specifically about THIS COMPANY ({', '.join(company_cols)})."
+                )
+            else:
+                scope_warnings.append("Find news specifically about the entity identified by the row context.")
+
+        # Pattern: Company/Organization relationship validation
+        if any(pattern in combined_text for pattern in ['company', 'organization', 'developer', 'manufacturer']):
+            product_cols = [col['name'] for col in all_columns if any(
+                p in col.get('name', '').lower() for p in ['product', 'candidate', 'drug', 'therapy', 'project']
+            )]
+            if product_cols:
+                scope_warnings.append(
+                    f"Verify that this company OWNS/DEVELOPS the specific {', '.join(product_cols)} in this row, "
+                    f"not just that the company exists."
+                )
+
+        # Pattern: Clinical trial / Study data
+        if any(pattern in combined_text for pattern in ['trial', 'study', 'clinical', 'phase', 'enrollment']):
+            product_cols = [col['name'] for col in all_columns if any(
+                p in col.get('name', '').lower() for p in ['product', 'candidate', 'drug', 'therapy']
+            )]
+            if product_cols:
+                scope_warnings.append(
+                    f"Validate trial/study data specifically for THIS product ({', '.join(product_cols)}), "
+                    f"not other products from the same company."
+                )
+
+        # Pattern: Timeline/Date validation
+        if any(pattern in combined_text for pattern in ['date', 'timeline', 'launch', 'approval', 'filing']):
+            scope_warnings.append(
+                "Verify temporal alignment - the date must be contemporary with the entity's existence, "
+                "not before it was created/announced."
+            )
+
+        # Pattern: Status/Stage validation
+        if any(pattern in combined_text for pattern in ['status', 'stage', 'phase', 'progress']):
+            scope_warnings.append(
+                "Validate the CURRENT status/stage for this specific entity, not historical or projected status."
+            )
+
+        # Pattern: URL/Website validation
+        if any(pattern in combined_text for pattern in ['url', 'website', 'link', 'homepage']):
+            scope_warnings.append(
+                "Verify the URL is the OFFICIAL website for this specific entity, not a general company website "
+                "or third-party reference."
+            )
+
+        # Build final notes
+        notes_parts = [base_notes]
+
+        # Add scope constraint if we have ID context
+        if id_context:
+            notes_parts.append(f"Validate specifically {id_context}, not general information.")
+
+        # Add pattern-specific warnings
+        if scope_warnings:
+            notes_parts.extend(scope_warnings)
+
+        # Add general scope reminder
+        notes_parts.append(
+            "SCOPE: All validation results must explicitly mention the identifying information from the row context. "
+            "When in doubt about entity match, mark confidence as MEDIUM or LOW."
+        )
+
+        return " ".join(notes_parts)
 
     def _generate_general_notes(
         self,
