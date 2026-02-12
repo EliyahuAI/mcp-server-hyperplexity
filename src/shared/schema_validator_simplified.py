@@ -306,11 +306,15 @@ class SimplifiedSchemaValidator:
         """
         # Debug validation history
         if validation_history:
-            # Validation history available
-            pass
+            logger.info(f"[PROMPT_GEN] Validation history provided with {len(validation_history)} fields")
+            logger.info(f"[PROMPT_GEN] History fields: {list(validation_history.keys())}")
+            # Log sample history structure for first field
+            if validation_history:
+                sample_field = list(validation_history.keys())[0]
+                sample_history = validation_history[sample_field]
+                logger.info(f"[PROMPT_GEN] Sample field '{sample_field}' history keys: {list(sample_history.keys()) if isinstance(sample_history, dict) else type(sample_history)}")
         else:
-            # No validation history provided
-            pass
+            logger.info("[PROMPT_GEN] No validation history provided")
         
         # Load multiplex validation prompt from markdown file
         prompts_file = Path(__file__).parent / "prompts" / "multiplex_validation.md"
@@ -646,15 +650,16 @@ class SimplifiedSchemaValidator:
         
         # LOG IF HISTORY IS IN THE PROMPT
         if validation_history:
-            history_included = "Current Value validation context" in prompt or "Prior Value (from Original Values sheet)" in prompt
+            # Check for the actual strings used in prompt generation (lines 517, 543)
+            history_included = "**Previous Value**" in prompt
             logger.info(f"Validation history included in prompt: {history_included}")
             if history_included:
-                # Count how many fields have validation context
-                context_count = prompt.count("Current Value validation context")
-                prior_count = prompt.count("Prior Value (from Original Values sheet)")
-                logger.info(f"Fields with validation context: {context_count}, Fields with prior values: {prior_count}")
+                # Count how many fields have validation history
+                previous_value_count = prompt.count("**Previous Value**")
+                logger.info(f"Fields with previous values: {previous_value_count}")
             else:
                 logger.warning("Validation history was provided but NOT included in prompt!")
+                logger.warning(f"Validation history structure: {list(validation_history.keys())[:3] if validation_history else 'empty'}")
             
         return prompt
     
