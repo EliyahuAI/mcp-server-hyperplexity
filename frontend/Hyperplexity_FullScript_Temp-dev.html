@@ -20415,30 +20415,18 @@ try {
 
     // Check if enhanced Excel download URL is available
     if (previewData.enhanced_download_url) {
-        // Fetch the file as a blob to avoid navigation issues
-        const enhancedFileName = `${fileNameBase}_v${version}_preview_enhanced.xlsx`;
+        // Use hidden iframe to trigger download without leaving page
+        // The S3 Content-Disposition header forces download, iframe stays blank
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = previewData.enhanced_download_url;
+        document.body.appendChild(iframe);
 
-        try {
-            const response = await fetch(previewData.enhanced_download_url);
-            if (!response.ok) {
-                throw new Error(`Download failed: ${response.statusText}`);
-            }
-
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = enhancedFileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            return;
-        } catch (fetchError) {
-            console.error('Error fetching Excel file:', fetchError);
-            // Fall through to CSV fallback
-        }
+        // Clean up iframe after download starts (wait a bit for download to trigger)
+        setTimeout(() => {
+            document.body.removeChild(iframe);
+        }, 1000);
+        return;
     }
     
     // Fallback to CSV if no enhanced Excel available
