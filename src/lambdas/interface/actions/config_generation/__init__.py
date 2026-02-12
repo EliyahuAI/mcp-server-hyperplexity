@@ -843,7 +843,12 @@ def build_user_feedback_section(instructions: str, conversation_history: list) -
     user_messages = []
     if conversation_history:
         for entry in conversation_history:
-            if entry.get('entry_type') == 'user_input' or entry.get('action') == 'user_message':
+            # Include BOTH user_input entries AND ai_response entries with instructions
+            # This ensures all past refinement feedback is preserved
+            is_user_input = entry.get('entry_type') == 'user_input' or entry.get('action') == 'user_message'
+            is_ai_response_with_instructions = entry.get('entry_type') == 'ai_response' and entry.get('instructions')
+
+            if is_user_input or is_ai_response_with_instructions:
                 timestamp = entry.get('timestamp', 'Unknown time')
                 user_instruction = entry.get('user_instructions', entry.get('instructions', ''))
                 if user_instruction:
