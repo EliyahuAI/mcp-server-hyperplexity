@@ -475,7 +475,7 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         send_websocket_progress(session_id, "Smart refinement with cost optimization... (~40s)", 55)
 
         original_model = config_settings.get('model', 'claude-opus-4-1')
-        cheap_model = 'gemini-2.0-flash-exp'
+        cheap_model = 'gemini-2.5-flash-lite'
 
         logger.info(f"Models: Primary={original_model}, Cheap={cheap_model}")
 
