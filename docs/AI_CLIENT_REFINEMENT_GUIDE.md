@@ -11,11 +11,11 @@ The `ai_client.call_structured_api()` now includes **built-in 3-tier refinement 
 ```
 Add original_data parameter → Automatic 3-tier refinement
 
-TIER 1: Primary model → JSON Patches       (~$0.08, ~40s)
-   ↓ (patches fail?)
-TIER 2: Cheap model → Direct implementation (~$0.002, ~10s)
-   ↓ (validation fails?)
-TIER 3: Primary model → Full generation    (~$0.15, ~70s)
+TIER 1: Primary model → JSON Patches              (~$0.08, ~40s)
+   ↓ (patches fail automatic application?)
+TIER 2: Cheap model → Flexible patch interpreter  (~$0.002, ~10s)
+   ↓ (flags uncertainty or validation fails?)
+TIER 3: Primary model → Full generation           (~$0.15, ~70s)
 ```
 
 **Average cost: ~$0.088** (41% savings vs always using expensive model)
@@ -219,34 +219,39 @@ else:
 - Validation errors
 - AI generates bad patches
 
-### Tier 2: Cheap Model → Direct Implementation
+### Tier 2: Cheap Model → Flexible Patch Interpreter
 
 **What happens:**
-1. Cheap model sees: instruction + original JSON + failed patches (for context)
-2. AI implements changes directly, returns full updated JSON
-3. Result is validated with validator_fn
-4. If successful → Done! ✅
+1. Cheap model receives the patches that failed automatic application
+2. AI interprets the patch intent and applies changes flexibly
+3. Can flag uncertainty if patches are unclear → escalates to Tier 3
+4. Result is validated with validator_fn
+5. If successful → Done! ✅
 
 **Prompt to cheap model:**
 ```
-USER REQUEST: "Change X to Y"
+PATCHES TO APPLY: [{op: "replace", path: "/field", value: "X"}]
 
 CURRENT DATA: {...full JSON...}
 
-FAILED PATCHES (for reference): [{...}]
+TASK: These patches failed automatic application (strict path matching).
+Understand their intent and apply the changes flexibly.
 
-TASK: Implement the changes directly. Return complete updated data.
+OPTIONS:
+1. Apply confidently → return updated data with applied_successfully: true
+2. Uncertain/unclear → flag applied_successfully: false with reason
 ```
 
 **Benefits:**
 - Very cheap (~$0.002)
-- Often works when patches fail
+- Flexible patch application (handles path mismatches, type coercion)
+- Can recognize and flag uncertainty (prevents bad guesses)
 - Still validates output
 
 **When it fails:**
-- Cheap model hallucinates
+- Model flags uncertainty (escalates cleanly to Tier 3)
 - Validation errors
-- Missing required fields
+- Complex restructuring beyond patch scope
 
 ### Tier 3: Primary Model → Full Generation
 
@@ -699,13 +704,14 @@ def tier_aware_validator(data):
 
 ## Performance Characteristics
 
-| Metric | Tier 1 (Patches) | Tier 2 (Cheap) | Tier 3 (Full) |
-|--------|-----------------|----------------|---------------|
+| Metric | Tier 1 (Patches) | Tier 2 (Flexible Interpreter) | Tier 3 (Full) |
+|--------|-----------------|-------------------------------|---------------|
 | Cost | ~$0.08 | ~$0.002 | ~$0.15 |
 | Time | ~40s | ~10s | ~70s |
-| Accuracy | High | Medium | Highest |
+| Accuracy | High | Medium-High | Highest |
 | Data Safety | Excellent | Good | Excellent |
 | Success Rate | ~80% | ~15% | 100% |
+| Can Flag Uncertainty | No | Yes ✅ | N/A |
 
 ## FAQ
 

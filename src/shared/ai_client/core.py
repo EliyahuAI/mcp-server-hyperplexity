@@ -200,7 +200,7 @@ class AIAPIClient:
         # ═══════════════════════════════════════════════════════════
         # If original_data is provided, use 3-tier cost-optimized refinement:
         # Tier 1: Primary model generates patches
-        # Tier 2: Cheap model (model[1]) implements changes directly
+        # Tier 2: Cheap model interprets/applies patches flexibly (can flag uncertainty)
         # Tier 3: Primary model generates full output (fallback)
         # ═══════════════════════════════════════════════════════════
 
@@ -219,7 +219,7 @@ class AIAPIClient:
             cheap_model = models_list[1] if len(models_list) > 1 else primary_model
 
             logger.info(f"   Tier 1: {primary_model} (patches)")
-            logger.info(f"   Tier 2: {cheap_model} (direct implementation)")
+            logger.info(f"   Tier 2: {cheap_model} (flexible patch application)")
             logger.info(f"   Tier 3: {primary_model} (full generation)")
 
             tier_costs = []
@@ -253,9 +253,9 @@ class AIAPIClient:
 
                 logger.warning(f"⚠️ TIER 1 FAILED: {tier1_result.get('error', 'Unknown error')}")
 
-            # TIER 2: Cheap model direct implementation
+            # TIER 2: Cheap model flexible patch application
             if cheap_model != primary_model or not try_patches_first:
-                logger.info("📍 TIER 2: Trying cheap model direct implementation...")
+                logger.info("📍 TIER 2: Trying cheap model flexible patch application...")
 
                 tier2_result = await self._refinement_tier2_cheap(
                     prompt=prompt,
@@ -275,13 +275,17 @@ class AIAPIClient:
                 tier_costs.append(tier2_result.get('eliyahu_cost', 0.0))
 
                 if tier2_result.get('success'):
-                    logger.info(f"✅ TIER 2 SUCCESS: Cheap model implemented (${tier2_result.get('eliyahu_cost', 0):.6f})")
+                    logger.info(f"✅ TIER 2 SUCCESS: Patches applied flexibly (${tier2_result.get('eliyahu_cost', 0):.6f})")
                     tier2_result['refinement_tier'] = 2
                     tier2_result['tier_costs'] = tier_costs
                     tier2_result['total_refinement_cost'] = sum(tier_costs)
                     return tier2_result
 
-                logger.warning(f"⚠️ TIER 2 FAILED: {tier2_result.get('error', 'Unknown error')}")
+                # Log whether it was uncertainty flag or validation failure
+                if tier2_result.get('flagged_uncertainty'):
+                    logger.warning(f"⚠️ TIER 2 FLAGGED UNCERTAINTY: {tier2_result.get('error', 'Unknown')}")
+                else:
+                    logger.warning(f"⚠️ TIER 2 FAILED: {tier2_result.get('error', 'Unknown error')}")
 
             # TIER 3: Primary model full generation (fallback to normal execution)
             logger.info("📍 TIER 3: Falling back to primary model full generation...")
@@ -834,16 +838,21 @@ Generate JSON Patch operations (RFC 6902) to implement the requested changes.
         return prompt
 
     def _build_refinement_prompt_tier2(self, instruction: str, original_data: Dict, failed_patches: List = None, refinement_context: Dict = None) -> str:
-        """Build prompt for Tier 2 (direct implementation with cheap model)"""
+        """Build prompt for Tier 2 (flexible patch interpreter)"""
 
-        context_info = ""
+        patches_info = ""
         if failed_patches:
-            context_info = f"""
-# FAILED PATCHES (for reference)
-These patches didn't work - you don't need to use patches, just implement directly:
+            patches_info = f"""
+# PATCHES TO APPLY
+The following patches failed automatic application. Your job is to understand their intent and apply them:
+
 ```json
 {self._format_json_compact(failed_patches)}
 ```
+
+**Why they failed:** Automatic patch application is strict - paths must exist exactly, types must match perfectly, etc.
+
+**Your task:** You're more flexible. Understand what changes are intended and apply them correctly.
 """
 
         prompt = f"""# USER REQUEST
@@ -854,17 +863,29 @@ These patches didn't work - you don't need to use patches, just implement direct
 {self._format_json_compact(original_data)}
 ```
 
-{context_info}
+{patches_info}
 
 # TASK
-Implement the requested changes directly and return the complete updated data.
+Apply the intended changes from the patches above to the current data.
 
-**Requirements:**
-- Make ONLY the changes requested in the user request
+**You have two options:**
+
+1. **If the patches are clear and you can apply them confidently:**
+   - Return the complete updated data with changes applied
+   - Set `applied_successfully`: true
+
+2. **If the patches are unclear or you're uncertain:**
+   - Set `applied_successfully`: false
+   - Provide a brief `reason` explaining why (e.g., "Unclear which field to modify", "Ambiguous path reference")
+   - We'll escalate to a more capable model
+
+**Requirements when applying changes:**
+- Make ONLY the changes indicated by the patches
 - Keep everything else exactly as it is
-- Return the complete updated data structure
-- Ensure all required fields are present
 - Maintain the same structure and data types
+- Ensure all required fields are present
+
+**Be honest:** It's better to flag uncertainty than to guess incorrectly.
 """
 
         # Add context if provided
@@ -1033,23 +1054,55 @@ Generate the complete updated data with the requested changes.
     async def _refinement_tier2_cheap(self, prompt: str, original_data: Dict, schema: Dict, model: str,
                                      tool_name: str, validator_fn: callable = None, failed_patches: List = None,
                                      refinement_context: Dict = None, **kwargs) -> Dict:
-        """Tier 2: Direct implementation with cheap model"""
+        """Tier 2: Flexible patch interpreter with cheap model"""
         try:
             # Build tier 2 prompt
             tier2_prompt = self._build_refinement_prompt_tier2(prompt, original_data, failed_patches, refinement_context)
 
-            # Call API with full schema
+            # Wrap schema to allow uncertainty flag
+            tier2_schema = {
+                "type": "object",
+                "required": ["applied_successfully"],
+                "properties": {
+                    "applied_successfully": {
+                        "type": "boolean",
+                        "description": "True if patches applied confidently, false if unclear/uncertain"
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "If applied_successfully=false, brief explanation of why"
+                    },
+                    "data": schema  # The actual refined data structure
+                }
+            }
+
+            # Call API with wrapped schema
             result = await self.call_structured_api(
                 prompt=tier2_prompt,
-                schema=schema,
+                schema=tier2_schema,
                 model=model,
-                tool_name=f"{tool_name}_implementation",
+                tool_name=f"{tool_name}_flexible_apply",
                 original_data=None,  # Prevent recursive refinement mode
                 **kwargs
             )
 
+            # Extract response
+            response_data = self.extract_structured_response(result['response'], f"{tool_name}_flexible_apply")
+
+            # Check if model flagged uncertainty
+            applied_successfully = response_data.get('applied_successfully', False)
+            if not applied_successfully:
+                reason = response_data.get('reason', 'Model flagged uncertainty')
+                logger.warning(f"[TIER 2] Model flagged uncertainty: {reason}")
+                return {
+                    'success': False,
+                    'error': f'Uncertain application: {reason}',
+                    'flagged_uncertainty': True,
+                    'eliyahu_cost': result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                }
+
             # Extract refined data
-            refined_data = self.extract_structured_response(result['response'], f"{tool_name}_implementation")
+            refined_data = response_data.get('data', response_data)
 
             # Validate if validator provided
             if validator_fn:
@@ -1067,7 +1120,7 @@ Generate the complete updated data with the requested changes.
                 'success': True,
                 'response': result['response'],
                 'refined_data': refined_data,
-                'method': 'cheap_implementation',
+                'method': 'flexible_patch_application',
                 'model_used': model,
                 'eliyahu_cost': result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0),
                 'token_usage': result.get('token_usage', {}),

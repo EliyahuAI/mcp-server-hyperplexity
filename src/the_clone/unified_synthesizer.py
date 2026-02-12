@@ -120,6 +120,43 @@ class UnifiedSynthesizer:
             # Get model with backups to override ai_client defaults
             model_chain = get_model_with_backups(model)
 
+            # Detect if this is a refinement scenario (iteration > 1 with previous data)
+            is_refinement = previous_iteration_data is not None and previous_iteration_data.get('response')
+
+            # Prepare refinement mode parameters
+            refinement_kwargs = {}
+            if is_refinement:
+                # Extract previous answer as original_data to refine
+                previous_answer = previous_iteration_data.get('response', {})
+
+                # Build refinement context with iteration metadata
+                refinement_context = {}
+                prev_grade = previous_iteration_data.get('grade', 'Unknown')
+                prev_iteration = previous_iteration_data.get('iteration', 1)
+                prev_note = previous_iteration_data.get('note_to_self', '')
+                prev_search_terms = previous_iteration_data.get('search_terms', [])
+
+                refinement_context['Previous Iteration'] = f"Iteration {prev_iteration}, Grade: {prev_grade}"
+                if prev_note:
+                    refinement_context['Self-Assessment Note'] = prev_note
+                if prev_search_terms:
+                    refinement_context['Search Terms Used'] = ', '.join(f'"{t}"' for t in prev_search_terms)
+
+                # Set refinement parameters
+                refinement_kwargs['original_data'] = previous_answer
+                refinement_kwargs['refinement_context'] = refinement_context
+                refinement_kwargs['try_patches_first'] = True  # Enable Tier 1 patches
+
+                logger.debug(f"[UNIFIED] 🎯 REFINEMENT MODE: Iteration {iteration}, refining previous answer from iteration {prev_iteration}")
+                if clone_logger:
+                    clone_logger.log_section(f"Refinement Mode Activated (Iter {iteration})", {
+                        "Refining": f"Iteration {prev_iteration} answer (Grade: {prev_grade})",
+                        "Strategy": "3-tier cost-optimized refinement",
+                        "Tier 1": "Patches (fast, cheap)",
+                        "Tier 2": "Cheap model full implementation",
+                        "Tier 3": "Primary model full generation (fallback)"
+                    }, level=3, collapse=True)
+
             # Call model with 64K max_tokens for long synthesis outputs
             response = await self.ai_client.call_structured_api(
                 prompt=prompt,
@@ -129,16 +166,42 @@ class UnifiedSynthesizer:
                 max_web_searches=0,
                 context=f"unified_iter{iteration}",
                 soft_schema=soft_schema,
-                max_tokens=64000
+                max_tokens=64000,
+                **refinement_kwargs  # Add refinement params if iteration > 1
             )
+
+            # Log refinement results if applicable
+            if is_refinement and response.get('refinement_tier'):
+                tier = response.get('refinement_tier')
+                total_cost = response.get('total_refinement_cost', 0.0)
+                method = response.get('method', 'unknown')
+                tier_costs = response.get('tier_costs', [])
+
+                tier_names = {1: "Patches", 2: "Cheap Model", 3: "Full Generation"}
+                tier_name = tier_names.get(tier, f"Tier {tier}")
+
+                logger.info(f"[UNIFIED] ✅ Refinement Tier {tier} SUCCESS: {method} (${total_cost:.4f})")
+
+                if clone_logger:
+                    clone_logger.log_section(f"Refinement Success (Tier {tier})", {
+                        "Method": f"{tier_name} ({method})",
+                        "Cost": f"${total_cost:.4f}",
+                        "Tier Breakdown": {f"Tier {i+1}": f"${cost:.4f}" for i, cost in enumerate(tier_costs)},
+                        "Patches Applied": len(response.get('patches', [])) if tier == 1 else "N/A"
+                    }, level=3, collapse=False)
 
             # Log model attempts if backups were used
             if clone_logger and response.get('attempted_models'):
                 clone_logger.log_model_attempts(response['attempted_models'], f"Synthesis Iteration {iteration}")
 
             # Extract response using centralized parsing
-            actual_response = response.get('response', response)
-            data = extract_structured_response(actual_response)
+            # In refinement mode, use refined_data if available
+            if is_refinement and response.get('refined_data'):
+                data = response.get('refined_data')
+                logger.debug(f"[UNIFIED] Using refined_data from refinement mode")
+            else:
+                actual_response = response.get('response', response)
+                data = extract_structured_response(actual_response)
 
             if clone_logger:
                 clone_logger.log_section(f"Synthesis Result (Iter {iteration})", data, level=3, collapse=True)
