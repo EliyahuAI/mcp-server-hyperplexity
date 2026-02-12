@@ -169,12 +169,22 @@ This chronological presentation helps QC understand:
 ```
 
 **Default Settings**:
-- **Model**: `claude-sonnet-4-5` (same as validation)
+- **Model**: `["deepseek-v3.2", "claude-sonnet-4-5"]` (ultra-low cost with quality fallback)
 - **Tokens**: 8K baseline + 4K per field
-- **Web searches**: Disabled by default (cost efficiency)
-  - Enable for better QC citations when accuracy is critical
+- **Web searches**: Disabled by default (0) - **NOT a first-line approach**
+
+**Web Search Configuration (`anthropic_max_web_searches`)**:
+- **Default**: 0 (disabled) - cost efficiency
+- **Range**: 0-10 searches
+- **When to enable**:
+  - ✅ Explicitly requested by user
+  - ✅ Other approaches tried and accuracy still poor
+  - ✅ QC needs to verify with current web sources
+  - ❌ NEVER as default - adds significant cost and latency
+- **Benefits when enabled**:
   - QC can create new citations: `"[NEW] Source - [excerpt] (URL)"`
   - QC sources automatically extracted from web search metadata
+  - Better verification of time-sensitive information
 
 ## Excel Output
 

@@ -191,8 +191,8 @@ The config generation prompts use `column_config_schema.json` which has these re
 Optional top-level fields:
 - `general_notes` (string) - **✅ Covered** - explicitly instructed in all prompts
 - `default_model` (string) - **✅ Covered** in common_config_guidance.md MODEL SELECTION section
-- `default_search_context_size` (enum) - **✅ Covered** in common_config_guidance.md SEARCH CONTEXT section
-- `anthropic_max_web_searches_default` (integer) - **✅ Covered** in common_config_guidance.md ANTHROPIC WEB SEARCH section
+- `default_search_context_size` (enum) - **⚠️ Not documented** - may be legacy parameter
+- `anthropic_max_web_searches_default` (integer) - **✅ Covered** in common_config_guidance.md WEB SEARCH CONFIGURATION section
 - `qc_settings` (object) - **✅ Covered** in common_config_guidance.md QUALITY CONTROL section
 
 ### Search Group Schema Fields
@@ -204,8 +204,8 @@ Required fields for each search group:
 - `model` (string) - **✅ Covered** in instructions
 
 Optional fields:
-- `search_context` (enum: low/medium/high) - **✅ Covered** in common_config_guidance.md
-- `anthropic_max_web_searches` (integer 0-10) - **✅ Covered** in common_config_guidance.md
+- `search_context` (enum: low/medium/high) - **⚠️ Not documented** - may be legacy parameter
+- `anthropic_max_web_searches` (integer 0-10) - **✅ Covered** in common_config_guidance.md WEB SEARCH CONFIGURATION section
 
 ### Validation Target Schema Fields
 

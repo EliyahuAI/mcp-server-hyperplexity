@@ -12,6 +12,12 @@
       "type": "string",
       "description": "Default model to use for validation (e.g., 'the-clone', 'gemini-2.0-flash', 'claude-sonnet-4-5')"
     },
+    "anthropic_max_web_searches_default": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10,
+      "description": "Default maximum web searches for Claude models across all search groups. Default 0 (disabled). Only set when explicitly requested - adds cost and latency."
+    },
     "qc_settings": {
       "type": "object",
       "description": "Quality Control settings for automated review of validation outputs",
@@ -42,6 +48,13 @@
           ],
           "description": "QC model(s) to use. Can be string or array of models for fallback",
           "default": ["deepseek-v3.2", "claude-sonnet-4-5"]
+        },
+        "anthropic_max_web_searches": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Maximum web searches for QC when using Claude models. Default 0 (disabled). Only enable when other approaches fail or when explicitly requested - adds cost and latency.",
+          "default": 0
         }
       },
       "required": ["enable_qc"],
@@ -69,6 +82,12 @@
           "model": {
             "type": "string",
             "description": "Model to use for this search group. Optional - defaults to 'the-clone' if not specified. Only specify when using a different model like 'gemini-2.0-flash', 'claude-sonnet-4-5', or 'the-clone-claude'."
+          },
+          "anthropic_max_web_searches": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "description": "Maximum web searches for this search group when using Claude models. Overrides anthropic_max_web_searches_default. Only set when explicitly requested - adds cost and latency."
           }
         },
         "additionalProperties": false

@@ -10,7 +10,7 @@ This document contains shared guidelines used by both new config creation and re
 - **When to Override the Default**:
   - Calculation/light reasoning → `gemini-2.0-flash`
   - Advanced PhD level synthesis with web → `the-clone-claude` (forces Claude over Deepseek, with web search)
-  - Advanced PhD+ level synthesis (without web) → `claude-sonnet-4-5` or `claude-opus-4-5`
+  - Advanced PhD+ level synthesis (without web) → `claude-sonnet-4-5` or `claude-opus-4-6`
 
 - **Recommended QC Approach**: `deepseek-v3.2` is ultra-low cost with excellent quality. Use `the-clone` for QC only when you need additional web research capability (not as first approach).
 
@@ -139,9 +139,61 @@ QC provides automated review of validation outputs to improve accuracy and consi
 ### When to Configure QC
 - **Enable QC (Recommended)**: For most validation tasks where accuracy is important
 - **Default QC**: Uses `deepseek-v3.2` (97% cheaper than Claude, excellent quality)
-- **Give QC Search Access**: use `the-clone` when initial validation is not finding the right results - only when pushed. 
-- **Disable QC**: Only for simple fact-checking tasks or when speed is more important than accuracy or when psuhed to reduce costs. 
+- **Give QC Search Access**: use `the-clone` when initial validation is not finding the right results - only when pushed.
+- **Disable QC**: Only for simple fact-checking tasks or when speed is more important than accuracy or when psuhed to reduce costs.
 
+## Web Search Configuration (Claude Models Only)
+
+**IMPORTANT**: Web search access for Claude models is **NOT a first-line approach**. Only configure when:
+1. ✅ **Explicitly requested** by the user
+2. ✅ **Other approaches have failed** - tried different models/strategies and accuracy is still poor
+3. ❌ **NEVER as default** - adds significant cost and latency
+
+### Where Web Search Can Be Configured
+
+**QC Settings** (most common use case):
+```json
+{
+  "qc_settings": {
+    "enable_qc": true,
+    "model": ["claude-opus-4-6"],
+    "anthropic_max_web_searches": 3
+  }
+}
+```
+- Use when QC needs to verify information from current web sources
+- Default is 0 (disabled)
+- Range: 0-10 searches
+
+**Search Groups** (per-group override):
+```json
+{
+  "search_groups": [
+    {
+      "group_id": 1,
+      "model": "claude-sonnet-4-5",
+      "anthropic_max_web_searches": 3
+    }
+  ]
+}
+```
+- Only when a specific search group needs web access and user has requested it
+- Overrides `anthropic_max_web_searches_default` if both are set
+
+**Top-level Default** (applies to all Claude search groups):
+```json
+{
+  "anthropic_max_web_searches_default": 3
+}
+```
+- Rarely used - only when user explicitly wants all Claude groups to have web access
+- Does NOT affect QC (QC has its own setting)
+
+### Web Search Guidelines
+- **Cost Impact**: Each web search adds API cost and processing time
+- **When to Use**: Only after trying `the-clone` (which has built-in web via Perplexity) first
+- **Typical Values**: 3 searches is standard when enabled, 5+ for complex research
+- **QC vs Validation**: If validation already uses `the-clone`, enable web search on QC only when QC specifically needs to verify with current sources
 
 ## Search Group Requirements (MANDATORY)
 Search groups are **REQUIRED** for every configuration - they are essential for building an effective search strategy and cannot be omitted.
