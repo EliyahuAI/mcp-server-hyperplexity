@@ -184,9 +184,120 @@ class AIAPIClient:
                                  include_domains: Optional[List[str]] = None, exclude_domains: Optional[List[str]] = None,
                                  use_code_extraction: bool = None, findall: bool = False, extraction: bool = False,
                                  findall_iterations: int = 1, timeout: Optional[int] = None,
-                                 cache_ttl_days: int = 1) -> Dict:
+                                 cache_ttl_days: int = 1,
+
+                                 # NEW: 3-Tier Refinement Mode parameters
+                                 original_data: Optional[Dict] = None,  # If provided, enables refinement mode
+                                 validator_fn: Optional[callable] = None,  # Validates refined data (data) -> (is_valid, errors, warnings)
+                                 try_patches_first: bool = True,  # Tier 1: try patches before full output
+                                 refinement_context: Optional[Dict[str, str]] = None  # Additional context sections for refinement prompts
+                                 ) -> Dict:
 
         call_start_time = datetime.now()
+
+        # ═══════════════════════════════════════════════════════════
+        # 3-TIER REFINEMENT MODE
+        # ═══════════════════════════════════════════════════════════
+        # If original_data is provided, use 3-tier cost-optimized refinement:
+        # Tier 1: Primary model generates patches
+        # Tier 2: Cheap model (model[1]) implements changes directly
+        # Tier 3: Primary model generates full output (fallback)
+        # ═══════════════════════════════════════════════════════════
+
+        if original_data is not None:
+            logger.info(f"🎯 3-TIER REFINEMENT MODE activated for {debug_name or 'refinement'}")
+
+            # Normalize model list
+            if isinstance(model, str):
+                models_list = [model]
+                backups = self._get_backup_models(model, 2)
+                models_list.extend(backups)
+            else:
+                models_list = model
+
+            primary_model = models_list[0]
+            cheap_model = models_list[1] if len(models_list) > 1 else primary_model
+
+            logger.info(f"   Tier 1: {primary_model} (patches)")
+            logger.info(f"   Tier 2: {cheap_model} (direct implementation)")
+            logger.info(f"   Tier 3: {primary_model} (full generation)")
+
+            tier_costs = []
+
+            # TIER 1: Primary model generates patches
+            if try_patches_first:
+                logger.info("📍 TIER 1: Attempting patches...")
+
+                tier1_result = await self._refinement_tier1_patches(
+                    prompt=prompt,
+                    original_data=original_data,
+                    schema=schema,
+                    model=primary_model,
+                    tool_name=tool_name,
+                    validator_fn=validator_fn,
+                    refinement_context=refinement_context,
+                    max_tokens=max_tokens,
+                    use_cache=use_cache,
+                    debug_name=debug_name,
+                    cache_ttl_days=cache_ttl_days
+                )
+
+                tier_costs.append(tier1_result.get('eliyahu_cost', 0.0))
+
+                if tier1_result.get('success'):
+                    logger.info(f"✅ TIER 1 SUCCESS: Patches applied (${tier1_result.get('eliyahu_cost', 0):.6f})")
+                    tier1_result['refinement_tier'] = 1
+                    tier1_result['tier_costs'] = tier_costs
+                    tier1_result['total_refinement_cost'] = sum(tier_costs)
+                    return tier1_result
+
+                logger.warning(f"⚠️ TIER 1 FAILED: {tier1_result.get('error', 'Unknown error')}")
+
+            # TIER 2: Cheap model direct implementation
+            if cheap_model != primary_model or not try_patches_first:
+                logger.info("📍 TIER 2: Trying cheap model direct implementation...")
+
+                tier2_result = await self._refinement_tier2_cheap(
+                    prompt=prompt,
+                    original_data=original_data,
+                    schema=schema,
+                    model=cheap_model,
+                    tool_name=tool_name,
+                    validator_fn=validator_fn,
+                    failed_patches=tier1_result.get('patches') if 'tier1_result' in locals() else None,
+                    refinement_context=refinement_context,
+                    max_tokens=max_tokens,
+                    use_cache=use_cache,
+                    debug_name=debug_name,
+                    cache_ttl_days=cache_ttl_days
+                )
+
+                tier_costs.append(tier2_result.get('eliyahu_cost', 0.0))
+
+                if tier2_result.get('success'):
+                    logger.info(f"✅ TIER 2 SUCCESS: Cheap model implemented (${tier2_result.get('eliyahu_cost', 0):.6f})")
+                    tier2_result['refinement_tier'] = 2
+                    tier2_result['tier_costs'] = tier_costs
+                    tier2_result['total_refinement_cost'] = sum(tier_costs)
+                    return tier2_result
+
+                logger.warning(f"⚠️ TIER 2 FAILED: {tier2_result.get('error', 'Unknown error')}")
+
+            # TIER 3: Primary model full generation (fallback to normal execution)
+            logger.info("📍 TIER 3: Falling back to primary model full generation...")
+
+            # Build full generation prompt
+            prompt = self._build_refinement_prompt_tier3(prompt, original_data, refinement_context)
+
+            # Store tier info to add to result later
+            refinement_tier3_info = {
+                'tier': 3,
+                'tier_costs': tier_costs,
+                'method': 'full_generation'
+            }
+
+            # Continue to normal execution with modified prompt...
+            # Result will be augmented with tier info at the end
 
         # Check if schema has conditionals (if/then/else) that Gemini/non-Claude models can't handle
         schema_has_conditionals = _schema_has_conditionals(schema) if schema else False
@@ -377,6 +488,41 @@ class AIAPIClient:
                              result['response']['choices'][0]['message']['content'] = json.dumps(validated)
                     except Exception:
                          pass
+
+                    # Augment with Tier 3 refinement info if applicable
+                    if 'refinement_tier3_info' in locals():
+                        # Extract refined data
+                        try:
+                            import json
+                            content = result['response']['choices'][0]['message']['content']
+                            refined_data = json.loads(content)
+
+                            # Validate if validator provided
+                            if validator_fn:
+                                is_valid, errors, warnings = validator_fn(refined_data)
+                                if not is_valid:
+                                    logger.error(f"Tier 3 validation failed: {errors}")
+                                    # Even if validation fails, return result with error info
+                                    result['validation_errors'] = errors
+                                    result['validation_warnings'] = warnings
+                                else:
+                                    result['refined_data'] = refined_data
+
+                            else:
+                                result['refined_data'] = refined_data
+
+                            # Add tier 3 info
+                            tier_costs.append(result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0))
+                            result['refinement_tier'] = 3
+                            result['tier_costs'] = tier_costs
+                            result['total_refinement_cost'] = sum(tier_costs)
+                            result['method'] = 'full_generation'
+
+                            logger.info(f"✅ TIER 3 SUCCESS: Full generation (${result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0):.6f})")
+                            logger.info(f"💰 Total refinement cost: ${sum(tier_costs):.6f} across {len(tier_costs)} tiers")
+
+                        except Exception as e:
+                            logger.warning(f"Could not augment Tier 3 result: {e}")
 
                     return result
             
@@ -637,4 +783,300 @@ class AIAPIClient:
 
     async def _move_bad_cache_to_debug(self, *args, **kwargs):
         return await self.cache_handler.move_bad_cache_to_debug(*args, **kwargs)
+
+    # ═══════════════════════════════════════════════════════════
+    # 3-TIER REFINEMENT MODE HELPER METHODS
+    # ═══════════════════════════════════════════════════════════
+
+    def _build_refinement_prompt_tier1(self, instruction: str, original_data: Dict, refinement_context: Dict = None) -> str:
+        """Build prompt for Tier 1 (patches with primary model)"""
+        prompt = f"""# USER REQUEST
+{instruction}
+
+# CURRENT DATA
+```json
+{self._format_json_compact(original_data)}
+```
+
+# TASK
+Generate JSON Patch operations (RFC 6902) to implement the requested changes.
+
+**Requirements:**
+- Use minimal patches - only change what's requested
+- Use exact JSON Pointer paths (e.g., "/field/subfield" or "/array/0/field")
+- Include 'test' operations before critical changes for safety
+- Preserve all unchanged data
+
+**Available operations:**
+- replace: Change existing field value
+- add: Add new field or array element
+- remove: Delete field or array element
+- test: Verify expected value (safety check)
+
+**Example:**
+```json
+{{
+  "patch_operations": [
+    {{"op": "test", "path": "/field_name", "value": "expected_current_value"}},
+    {{"op": "replace", "path": "/field_name", "value": "new_value"}}
+  ],
+  "reasoning": "Changed field_name because..."
+}}
+```
+"""
+
+        # Add context if provided
+        if refinement_context:
+            prompt += "\n# ADDITIONAL CONTEXT\n"
+            for section_name, section_content in refinement_context.items():
+                prompt += f"\n## {section_name}\n{section_content}\n"
+
+        return prompt
+
+    def _build_refinement_prompt_tier2(self, instruction: str, original_data: Dict, failed_patches: List = None, refinement_context: Dict = None) -> str:
+        """Build prompt for Tier 2 (direct implementation with cheap model)"""
+
+        context_info = ""
+        if failed_patches:
+            context_info = f"""
+# FAILED PATCHES (for reference)
+These patches didn't work - you don't need to use patches, just implement directly:
+```json
+{self._format_json_compact(failed_patches)}
+```
+"""
+
+        prompt = f"""# USER REQUEST
+{instruction}
+
+# CURRENT DATA
+```json
+{self._format_json_compact(original_data)}
+```
+
+{context_info}
+
+# TASK
+Implement the requested changes directly and return the complete updated data.
+
+**Requirements:**
+- Make ONLY the changes requested in the user request
+- Keep everything else exactly as it is
+- Return the complete updated data structure
+- Ensure all required fields are present
+- Maintain the same structure and data types
+"""
+
+        # Add context if provided
+        if refinement_context:
+            prompt += "\n# ADDITIONAL CONTEXT\n"
+            for section_name, section_content in refinement_context.items():
+                prompt += f"\n## {section_name}\n{section_content}\n"
+
+        return prompt
+
+    def _build_refinement_prompt_tier3(self, instruction: str, original_data: Dict, refinement_context: Dict = None) -> str:
+        """Build prompt for Tier 3 (full generation with primary model)"""
+        prompt = f"""# USER REQUEST
+{instruction}
+
+# CURRENT DATA (for context)
+```json
+{self._format_json_compact(original_data)}
+```
+
+# TASK
+Generate the complete updated data with the requested changes.
+
+**Requirements:**
+- Implement the requested changes
+- Ensure all required fields are present and valid
+- Maintain consistent structure and data types
+- Include all necessary data for the complete object
+"""
+
+        # Add context if provided
+        if refinement_context:
+            prompt += "\n# ADDITIONAL CONTEXT\n"
+            for section_name, section_content in refinement_context.items():
+                prompt += f"\n## {section_name}\n{section_content}\n"
+
+        return prompt
+
+    def _format_json_compact(self, data) -> str:
+        """Format JSON in a compact but readable way for prompts"""
+        import json
+        # For large data, use compact format
+        if isinstance(data, (dict, list)) and len(str(data)) > 5000:
+            return json.dumps(data, separators=(',', ':'))
+        return json.dumps(data, indent=2)
+
+    def _create_patch_schema(self) -> Dict:
+        """Create JSON schema for patch responses (Tier 1)"""
+        return {
+            "type": "object",
+            "required": ["patch_operations", "reasoning"],
+            "properties": {
+                "patch_operations": {
+                    "type": "array",
+                    "description": "Array of RFC 6902 JSON Patch operations",
+                    "items": {
+                        "type": "object",
+                        "required": ["op", "path"],
+                        "properties": {
+                            "op": {
+                                "type": "string",
+                                "enum": ["add", "remove", "replace", "test", "move", "copy"],
+                                "description": "Operation type"
+                            },
+                            "path": {
+                                "type": "string",
+                                "description": "JSON Pointer path (e.g., '/field' or '/array/0/subfield')"
+                            },
+                            "value": {
+                                "description": "Value for add/replace operations"
+                            },
+                            "from": {
+                                "type": "string",
+                                "description": "Source path for move/copy operations"
+                            }
+                        }
+                    },
+                    "minItems": 1
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": "Clear explanation of why these changes address the request"
+                }
+            }
+        }
+
+    async def _refinement_tier1_patches(self, prompt: str, original_data: Dict, schema: Dict, model: str,
+                                       tool_name: str, validator_fn: callable = None,
+                                       refinement_context: Dict = None, **kwargs) -> Dict:
+        """Tier 1: Generate and apply patches with primary model"""
+        try:
+            # Build patch-specific prompt
+            tier1_prompt = self._build_refinement_prompt_tier1(prompt, original_data, refinement_context)
+
+            # Use patch schema
+            patch_schema = self._create_patch_schema()
+
+            # Call API for patches
+            result = await self.call_structured_api(
+                prompt=tier1_prompt,
+                schema=patch_schema,
+                model=model,
+                tool_name=f"{tool_name}_patches",
+                original_data=None,  # Prevent recursive refinement mode
+                **kwargs
+            )
+
+            # Extract patches
+            structured_data = self.extract_structured_response(result['response'], f"{tool_name}_patches")
+            patches = structured_data.get('patch_operations', [])
+            reasoning = structured_data.get('reasoning', '')
+
+            if not patches:
+                return {
+                    'success': False,
+                    'error': 'No patches generated',
+                    'eliyahu_cost': result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                }
+
+            # Apply patches
+            try:
+                import jsonpatch
+                patch = jsonpatch.JsonPatch(patches)
+                refined_data = patch.apply(original_data)
+            except Exception as e:
+                logger.error(f"Patch application failed: {e}")
+                return {
+                    'success': False,
+                    'error': f'Patch application failed: {str(e)}',
+                    'patches': patches,
+                    'eliyahu_cost': result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                }
+
+            # Validate if validator provided
+            if validator_fn:
+                is_valid, errors, warnings = validator_fn(refined_data)
+                if not is_valid:
+                    return {
+                        'success': False,
+                        'error': f'Validation failed: {errors[0] if errors else "Unknown"}',
+                        'validation_errors': errors,
+                        'patches': patches,
+                        'eliyahu_cost': result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                    }
+
+            # Success!
+            return {
+                'success': True,
+                'response': result['response'],
+                'refined_data': refined_data,
+                'patches': patches,
+                'reasoning': reasoning,
+                'method': 'patches',
+                'model_used': model,
+                'eliyahu_cost': result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0),
+                'token_usage': result.get('token_usage', {}),
+                'enhanced_data': result.get('enhanced_data', {}),
+                'processing_time': result.get('processing_time', 0.0),
+                'is_cached': result.get('is_cached', False)
+            }
+
+        except Exception as e:
+            logger.error(f"Tier 1 patches exception: {e}")
+            return {'success': False, 'error': str(e), 'eliyahu_cost': 0.0}
+
+    async def _refinement_tier2_cheap(self, prompt: str, original_data: Dict, schema: Dict, model: str,
+                                     tool_name: str, validator_fn: callable = None, failed_patches: List = None,
+                                     refinement_context: Dict = None, **kwargs) -> Dict:
+        """Tier 2: Direct implementation with cheap model"""
+        try:
+            # Build tier 2 prompt
+            tier2_prompt = self._build_refinement_prompt_tier2(prompt, original_data, failed_patches, refinement_context)
+
+            # Call API with full schema
+            result = await self.call_structured_api(
+                prompt=tier2_prompt,
+                schema=schema,
+                model=model,
+                tool_name=f"{tool_name}_implementation",
+                original_data=None,  # Prevent recursive refinement mode
+                **kwargs
+            )
+
+            # Extract refined data
+            refined_data = self.extract_structured_response(result['response'], f"{tool_name}_implementation")
+
+            # Validate if validator provided
+            if validator_fn:
+                is_valid, errors, warnings = validator_fn(refined_data)
+                if not is_valid:
+                    return {
+                        'success': False,
+                        'error': f'Validation failed: {errors[0] if errors else "Unknown"}',
+                        'validation_errors': errors,
+                        'eliyahu_cost': result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                    }
+
+            # Success!
+            return {
+                'success': True,
+                'response': result['response'],
+                'refined_data': refined_data,
+                'method': 'cheap_implementation',
+                'model_used': model,
+                'eliyahu_cost': result.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0),
+                'token_usage': result.get('token_usage', {}),
+                'enhanced_data': result.get('enhanced_data', {}),
+                'processing_time': result.get('processing_time', 0.0),
+                'is_cached': result.get('is_cached', False)
+            }
+
+        except Exception as e:
+            logger.error(f"Tier 2 cheap implementation exception: {e}")
+            return {'success': False, 'error': str(e), 'eliyahu_cost': 0.0}
 

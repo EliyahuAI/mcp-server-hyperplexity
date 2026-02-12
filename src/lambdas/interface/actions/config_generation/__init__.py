@@ -8,7 +8,7 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 from pathlib import Path
 
 from shared.ai_api_client import ai_client
@@ -193,10 +193,260 @@ async def generate_config(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
+async def try_cheap_model_implementation(
+    table_analysis: Dict,
+    existing_config: Dict,
+    instructions: str,
+    failed_patches: List[Dict],
+    session_id: str,
+    latest_validation_results: Dict = None,
+    conversation_history: list = None,
+    cheap_model: str = 'gemini-2.0-flash-exp'
+) -> Dict:
+    """
+    TIER 2: Use cheap model to directly implement changes after patches failed.
+
+    Shows the cheap model:
+    - The failed patches
+    - The original JSON
+    - The instruction
+
+    Asks it to just implement the changes and return full config.
+    """
+    logger.info(f"🔧 TIER 2: Using {cheap_model} for direct implementation")
+
+    # Build prompt showing failed patches and asking for direct implementation
+    prompt = f"""The user wants to refine this configuration, but the patch approach failed.
+
+# USER'S REQUEST
+"{instructions}"
+
+# CURRENT CONFIGURATION
+```json
+{json.dumps(existing_config, indent=2)}
+```
+
+# FAILED PATCHES (for context)
+These patches didn't work:
+```json
+{json.dumps(failed_patches, indent=2)}
+```
+
+# YOUR TASK
+Forget about patches. Just implement the user's requested changes directly and return the complete updated configuration.
+
+Make ONLY the changes requested. Keep everything else exactly as it is.
+
+Return the full updated configuration as valid JSON matching the original schema.
+"""
+
+    # Add context if available
+    if latest_validation_results:
+        validation_context = build_validation_context_section(latest_validation_results)
+        if validation_context:
+            prompt += f"\n\n{validation_context}"
+
+    try:
+        # Use unified schema (full config output)
+        schema = get_unified_generation_schema()
+
+        logger.info(f"📞 Calling {cheap_model} for direct implementation")
+
+        result = await ai_client.call_structured_api(
+            prompt=prompt,
+            schema=schema,
+            model=cheap_model,
+            tool_name="implement_config_changes",
+            max_tokens=16000,
+            max_web_searches=0,
+            debug_name=f"tier2_cheap_implementation_{session_id}"
+        )
+
+        # Extract response
+        response_data = ai_client.extract_structured_response(result['response'], "implement_config_changes")
+        updated_config = response_data.get('updated_config')
+
+        if not updated_config:
+            return {'success': False, 'error': 'No config returned from cheap model'}
+
+        # Validate
+        is_valid, errors, warnings = validate_config_complete(updated_config, table_analysis)
+
+        if not is_valid:
+            logger.error(f"❌ Cheap model config failed validation: {errors}")
+            return {'success': False, 'error': 'Validation failed', 'validation_errors': errors}
+
+        # Extract cost data
+        enhanced_data = result.get('enhanced_data', {})
+        token_usage = result.get('token_usage', {})
+        costs_data = enhanced_data.get('costs', {})
+        eliyahu_cost = costs_data.get('actual', {}).get('total_cost', 0.0)
+
+        logger.info(f"✅ TIER 2: Cheap model successfully implemented changes")
+        logger.info(f"💰 Tier 2 cost: ${eliyahu_cost:.6f}")
+
+        return {
+            'success': True,
+            'updated_config': updated_config,
+            'clarifying_questions': response_data.get('clarifying_questions', ''),
+            'clarification_urgency': response_data.get('clarification_urgency', 0.0),
+            'reasoning': f"Tier 2 (cheap model direct implementation): {response_data.get('reasoning', '')}",
+            'ai_summary': response_data.get('ai_summary', ''),
+            'session_id': session_id,
+            'refinement_method': 'cheap_model_full',
+            'model_used': cheap_model,
+            'eliyahu_cost': eliyahu_cost,
+            'token_usage': token_usage,
+            'enhanced_data': enhanced_data,
+            'processing_time': result.get('processing_time', 0.0),
+            'is_cached': False
+        }
+
+    except Exception as e:
+        logger.error(f"❌ TIER 2: Cheap model implementation failed: {e}")
+        return {'success': False, 'error': str(e)}
+
+
+async def generate_config_with_patches(
+    table_analysis: Dict,
+    existing_config: Dict,
+    instructions: str,
+    session_id: str,
+    latest_validation_results: Dict = None,
+    conversation_history: list = None,
+    use_model: str = None
+) -> Any:  # Returns RefinementResult from ai_patch_utils
+    """
+    Generate config refinement using JSON Patch operations.
+
+    This function uses the reusable PatchRefinementManager to apply
+    targeted changes to an existing config without regenerating everything.
+
+    Args:
+        table_analysis: Table structure analysis
+        existing_config: Current configuration to refine
+        instructions: User's refinement request
+        session_id: Session identifier
+        latest_validation_results: Optional validation context
+        conversation_history: Conversation history for context
+
+    Returns:
+        RefinementResult with success status and updated config or error
+    """
+    logger.info(f"🔧 Starting JSON Patch-based refinement for session {session_id}")
+
+    # Load config schema
+    from pathlib import Path
+    schema_path = Path(__file__).parent / 'schemas' / 'column_config_schema.json'
+    try:
+        with open(schema_path, 'r') as f:
+            config_schema = json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load config schema: {e}")
+        config_schema = None
+
+    # Create validator function wrapper
+    def validator_fn(config: Dict) -> Tuple[bool, List[str], List[str]]:
+        """Wrapper for validate_config_complete"""
+        return validate_config_complete(config, table_analysis)
+
+    # Build context sections for the prompt
+    context_sections = {}
+
+    if latest_validation_results:
+        validation_context = build_validation_context_section(latest_validation_results)
+        if validation_context:
+            context_sections["Validation Context"] = validation_context
+
+    if conversation_history:
+        user_feedback = build_user_feedback_section(instructions, conversation_history)
+        if user_feedback:
+            context_sections["User Feedback History"] = user_feedback
+
+    # Add table analysis summary
+    basic_info = table_analysis.get('basic_info', {})
+    column_count = len(basic_info.get('column_names', []))
+    context_sections["Table Summary"] = f"""
+This table has {column_count} columns: {', '.join(basic_info.get('column_names', [])[:10])}{'...' if column_count > 10 else ''}
+
+The configuration must include all {column_count} columns in validation_targets.
+"""
+
+    # Example patches specific to config refinement
+    examples = [
+        {
+            "op": "replace",
+            "path": "/validation_targets/3/importance",
+            "value": "RESEARCH",
+            "comment": "Change column importance level"
+        },
+        {
+            "op": "replace",
+            "path": "/qc_settings/model",
+            "value": ["claude-opus-4-6", "claude-sonnet-4-5"],
+            "comment": "Update QC model list"
+        },
+        {
+            "op": "replace",
+            "path": "/search_groups/1/model",
+            "value": "the-clone-claude",
+            "comment": "Change search group model"
+        },
+        {
+            "op": "add",
+            "path": "/validation_targets/5/notes",
+            "value": "Additional validation notes",
+            "comment": "Add notes to a column"
+        }
+    ]
+
+    # Constraints specific to config refinement
+    constraints = [
+        f"The config MUST have validation_targets for all {column_count} columns",
+        "All validation_targets must reference valid search_group IDs",
+        "importance must be one of: ID, RESEARCH, CRITICAL, IGNORED",
+        "Use 'test' operations before critical changes to verify expectations"
+    ]
+
+    # Get model to use (either specified or from config settings)
+    config_settings = load_config_settings()
+    model_to_use = use_model or config_settings.get('model', 'claude-opus-4-1')
+
+    logger.info(f"🎯 Using {model_to_use} for patch generation")
+
+    manager = PatchRefinementManager(
+        original_data=existing_config,
+        validator_fn=validator_fn,
+        schema=config_schema,
+        ai_client=ai_client,
+        tool_name="refine_config_with_patches",
+        model=model_to_use,
+        patch_model=model_to_use,  # Use same model for patches (Tier 1)
+        max_tokens=config_settings.get('max_tokens', 16000)
+    )
+
+    # Execute refinement with automatic fallback disabled (we handle fallback at higher level)
+    result = await manager.refine_with_patches(
+        instructions=instructions,
+        context=context_sections,
+        examples=examples,
+        constraints=constraints,
+        fallback_to_full=False,  # We handle fallback in generate_config_unified
+        debug_name=f"config_patch_refinement_{session_id}"
+    )
+
+    # Log patch summary if successful
+    if result.success and result.patch_operations:
+        patch_summary = generate_patch_diff_summary(existing_config, result.patch_operations)
+        logger.info(f"✅ Patch refinement summary:\n{patch_summary}")
+
+    return result
+
+
 async def generate_config_unified(table_analysis: Dict, existing_config: Dict = None,
                                  instructions: str = '', session_id: str = 'unknown',
                                  latest_validation_results: Dict = None, conversation_history: list = None, retry_count: int = 0) -> Dict:
-    """Unified config generation - always returns both updated config and clarifying questions."""
+    """Unified config generation - uses JSON Patch for refinements, full config for new generation."""
     MAX_RETRIES = 3
 
     logger.info(f"CONFIG GENERATION ENTRY - Session: {session_id}, Instructions: {instructions[:50]}..., Retry: {retry_count}")
@@ -212,7 +462,117 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             existing_config = None
 
     logger.info(f"Config generation started for session {session_id} (retry {retry_count}/{MAX_RETRIES})")
-    send_websocket_progress(session_id, "Generating new configuration... (~70s)", 55)
+
+    # Load config settings early (needed for both patch and full generation)
+    config_settings = load_config_settings()
+
+    # Determine if this is a refinement
+    is_refinement = existing_config is not None and existing_config.get('config_change_log', [])
+
+    # STRATEGY: Use ai_client's built-in 3-tier refinement mode
+    if is_refinement and retry_count == 0:
+        logger.info("🎯 Using ai_client 3-tier refinement mode...")
+        send_websocket_progress(session_id, "Smart refinement with cost optimization... (~40s)", 55)
+
+        original_model = config_settings.get('model', 'claude-opus-4-1')
+        cheap_model = 'gemini-2.0-flash-exp'
+
+        logger.info(f"Models: Primary={original_model}, Cheap={cheap_model}")
+
+        # Create validator wrapper
+        def validator_fn(config: Dict) -> Tuple[bool, List[str], List[str]]:
+            return validate_config_complete(config, table_analysis)
+
+        # Build refinement context
+        refinement_context = {}
+        if latest_validation_results:
+            validation_context = build_validation_context_section(latest_validation_results)
+            if validation_context:
+                refinement_context["Validation Results"] = validation_context
+
+        if conversation_history:
+            user_feedback = build_user_feedback_section(instructions, conversation_history)
+            if user_feedback:
+                refinement_context["User Feedback"] = user_feedback
+
+        # Add table summary
+        basic_info = table_analysis.get('basic_info', {})
+        column_count = len(basic_info.get('column_names', []))
+        refinement_context["Table Info"] = f"Table has {column_count} columns. Config must include all columns."
+
+        try:
+            # Call ai_client with 3-tier refinement mode
+            result = await ai_client.call_structured_api(
+                prompt=instructions,
+                schema=get_unified_generation_schema(),
+                model=[original_model, cheap_model],  # [expensive, cheap]
+
+                # Refinement mode (NEW)
+                original_data=existing_config,
+                validator_fn=validator_fn,
+                try_patches_first=True,
+                refinement_context=refinement_context,
+
+                tool_name="refine_config",
+                max_tokens=config_settings.get('max_tokens', 16000),
+                max_web_searches=0,
+                debug_name=f"config_refinement_{session_id}"
+            )
+
+            # Check if refinement succeeded
+            if result.get('refined_data'):
+                tier = result.get('refinement_tier', 'unknown')
+                method = result.get('method', 'unknown')
+                total_cost = result.get('total_refinement_cost', 0.0)
+
+                logger.info(f"✅ 3-TIER REFINEMENT SUCCESS: Tier {tier} ({method})")
+                logger.info(f"💰 Total cost: ${total_cost:.6f}")
+
+                updated_config = result['refined_data']
+
+                # Add metadata
+                updated_config['generation_metadata'] = updated_config.get('generation_metadata', {})
+                updated_config['generation_metadata']['refinement_method'] = method
+                updated_config['generation_metadata']['tier'] = tier
+
+                # Extract fields from the refined data (ai_client might put them there)
+                clarifying_questions = result.get('clarifying_questions', '')
+                clarification_urgency = result.get('clarification_urgency', 0.0)
+                reasoning = result.get('reasoning', '')
+                ai_summary = result.get('ai_summary', '')
+
+                return {
+                    'success': True,
+                    'updated_config': updated_config,
+                    'clarifying_questions': clarifying_questions,
+                    'clarification_urgency': clarification_urgency,
+                    'reasoning': reasoning,
+                    'ai_summary': ai_summary,
+                    'session_id': session_id,
+                    'refinement_method': method,
+                    'tier': tier,
+                    'patch_operations': result.get('patches'),
+                    'eliyahu_cost': total_cost,
+                    'token_usage': result.get('token_usage', {}),
+                    'enhanced_data': result.get('enhanced_data', {}),
+                    'processing_time': result.get('processing_time', 0.0),
+                    'model_used': result.get('model_used', original_model),
+                    'is_cached': result.get('is_cached', False)
+                }
+
+            # If refinement returned but no refined_data, something went wrong
+            logger.warning("⚠️ ai_client refinement returned but no refined_data")
+            logger.info("📍 Falling back to full config generation...")
+
+        except Exception as e:
+            logger.warning(f"⚠️ ai_client refinement exception: {e}")
+            logger.info("📍 Falling back to full config generation...")
+
+    # FALLBACK: Full config generation (for new configs or failed patches)
+    refinement_label = "refinement (full regeneration)" if is_refinement else "new configuration"
+    expensive_model = config_settings.get('model', 'claude-opus-4-1')
+    logger.info(f"💎 Using full config generation with {expensive_model} for {refinement_label}")
+    send_websocket_progress(session_id, f"Generating {refinement_label}... (~70s)", 55)
 
     # Debug logging for existing config and conversation history
     if existing_config:
@@ -238,19 +598,22 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         # Build the unified generation prompt
         prompt = build_unified_generation_prompt(table_analysis, existing_config, instructions, latest_validation_results, conversation_history, session_id)
 
-        # Call Claude using shared client with unified schema
+        # Call using shared client with unified schema
         schema = get_unified_generation_schema()
 
-        config_settings = load_config_settings()
+        # Use the original expensive model for full generation (already loaded at function start)
+        original_model = config_settings.get('model', 'claude-opus-4-1')
 
         # Determine debug name based on whether this is generation or refinement
-        is_refinement = existing_config is not None and existing_config.get('config_change_log', [])
-        debug_name = "config_refinement" if is_refinement else "config_generation"
+        is_refinement_check = existing_config is not None and existing_config.get('config_change_log', [])
+        debug_name = "config_refinement_full" if is_refinement_check else "config_generation"
+
+        logger.info(f"📞 Calling {original_model} for full config generation")
 
         result = await ai_client.call_structured_api(
             prompt=prompt,
             schema=schema,
-            model=config_settings.get('model', 'claude-opus-4-1'),
+            model=original_model,  # Use original expensive model
             tool_name="generate_config_and_questions",
             max_tokens=config_settings.get('max_tokens', 16000),
             max_web_searches=0,
