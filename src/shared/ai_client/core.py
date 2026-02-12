@@ -254,7 +254,15 @@ class AIAPIClient:
                 logger.warning(f"⚠️ TIER 1 FAILED: {tier1_result.get('error', 'Unknown error')}")
 
             # TIER 2: Cheap model flexible patch application
-            if cheap_model != primary_model or not try_patches_first:
+            # Run Tier 2 if: patches were tried and failed, OR cheap model is different from primary
+            # If primary IS cheap and we skipped Tier 1, still try Tier 2 as flexible interpreter
+            should_try_tier2 = (
+                ('tier1_result' in locals() and not tier1_result.get('success')) or  # Tier 1 failed
+                cheap_model != primary_model or  # Different model available
+                not try_patches_first  # Patches were skipped
+            )
+
+            if should_try_tier2:
                 logger.info("📍 TIER 2: Trying cheap model flexible patch application...")
 
                 tier2_result = await self._refinement_tier2_cheap(
@@ -297,7 +305,8 @@ class AIAPIClient:
             refinement_tier3_info = {
                 'tier': 3,
                 'tier_costs': tier_costs,
-                'method': 'full_generation'
+                'method': 'full_generation',
+                'validator_fn': validator_fn  # Preserve validator for Tier 3 validation
             }
 
             # Continue to normal execution with modified prompt...
@@ -501,9 +510,10 @@ class AIAPIClient:
                             content = result['response']['choices'][0]['message']['content']
                             refined_data = json.loads(content)
 
-                            # Validate if validator provided
-                            if validator_fn:
-                                is_valid, errors, warnings = validator_fn(refined_data)
+                            # Validate if validator provided (from tier3 info)
+                            tier3_validator = refinement_tier3_info.get('validator_fn')
+                            if tier3_validator:
+                                is_valid, errors, warnings = tier3_validator(refined_data)
                                 if not is_valid:
                                     logger.error(f"Tier 3 validation failed: {errors}")
                                     # Even if validation fails, return result with error info
@@ -1060,6 +1070,20 @@ Generate the complete updated data with the requested changes.
             tier2_prompt = self._build_refinement_prompt_tier2(prompt, original_data, failed_patches, refinement_context)
 
             # Wrap schema to allow uncertainty flag
+            # Preserve original schema metadata by properly nesting it
+            if isinstance(schema, dict) and schema.get('type') == 'object':
+                # Schema is already an object - wrap it properly
+                data_schema = {
+                    "type": "object",
+                    "description": schema.get('description', 'The refined data matching the original schema'),
+                    "properties": schema.get('properties', {}),
+                    "required": schema.get('required', []),
+                    "additionalProperties": schema.get('additionalProperties', True)
+                }
+            else:
+                # Schema might be a reference or other type - use as-is
+                data_schema = schema
+
             tier2_schema = {
                 "type": "object",
                 "required": ["applied_successfully"],
@@ -1072,18 +1096,22 @@ Generate the complete updated data with the requested changes.
                         "type": "string",
                         "description": "If applied_successfully=false, brief explanation of why"
                     },
-                    "data": schema  # The actual refined data structure
+                    "data": data_schema  # Properly nested schema
                 }
             }
 
             # Call API with wrapped schema
+            # Force hard schema for Tier 2 - we need the uncertainty flag structure
+            tier2_kwargs = {k: v for k, v in kwargs.items() if k != 'soft_schema'}
+            tier2_kwargs['soft_schema'] = False  # Override - Tier 2 needs strict schema
+
             result = await self.call_structured_api(
                 prompt=tier2_prompt,
                 schema=tier2_schema,
                 model=model,
                 tool_name=f"{tool_name}_flexible_apply",
                 original_data=None,  # Prevent recursive refinement mode
-                **kwargs
+                **tier2_kwargs
             )
 
             # Extract response

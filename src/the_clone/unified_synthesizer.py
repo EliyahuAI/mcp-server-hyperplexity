@@ -127,7 +127,20 @@ class UnifiedSynthesizer:
             refinement_kwargs = {}
             if is_refinement:
                 # Extract previous answer as original_data to refine
-                previous_answer = previous_iteration_data.get('response', {})
+                previous_response = previous_iteration_data.get('response', {})
+
+                # Unwrap the schema wrapper to get the actual data
+                # Previous iterations may have used different wrappers (answer_raw, comparison)
+                # We need the core data that matches the custom schema
+                if 'answer_raw' in previous_response:
+                    # From evaluation mode (iteration 1)
+                    previous_answer = previous_response['answer_raw']
+                elif 'comparison' in previous_response:
+                    # From synthesis mode (iteration 2+)
+                    previous_answer = previous_response['comparison']
+                else:
+                    # Direct data or unknown structure - use as-is
+                    previous_answer = previous_response
 
                 # Build refinement context with iteration metadata
                 refinement_context = {}
@@ -196,8 +209,10 @@ class UnifiedSynthesizer:
 
             # Extract response using centralized parsing
             # In refinement mode, use refined_data if available
+            used_refinement_data = False
             if is_refinement and response.get('refined_data'):
                 data = response.get('refined_data')
+                used_refinement_data = True
                 logger.debug(f"[UNIFIED] Using refined_data from refinement mode")
             else:
                 actual_response = response.get('response', response)
@@ -253,20 +268,39 @@ class UnifiedSynthesizer:
                     pass
 
             # Convert snippet IDs to citations if answer provided
+            # Skip conversion if using refinement mode - citations already numeric from previous iteration
             if can_answer and answer_raw:
-                answer_final, citations, snippets_used = await self._convert_snippet_ids_to_citations(
-                    answer=answer_raw,
-                    snippets=snippets,
-                    schema=schema
-                )
+                if used_refinement_data:
+                    # Refinement mode - citations already converted in previous iteration
+                    answer_final = answer_raw
+                    citations = []  # Citations are embedded in answer, not separate
+                    snippets_used = []
+                    logger.debug(f"[UNIFIED] Skipping citation conversion for refinement mode data")
+                else:
+                    # Normal mode - convert snippet IDs to numeric citations
+                    answer_final, citations, snippets_used = await self._convert_snippet_ids_to_citations(
+                        answer=answer_raw,
+                        snippets=snippets,
+                        schema=schema
+                    )
 
-                # Post-process for validation format if custom schema is validation_results
-                if schema and self._is_validation_schema(schema):
-                    answer_final = self._transform_to_validation_format(answer_final, citations, schema)
+                    # Post-process for validation format if custom schema is validation_results
+                    if schema and self._is_validation_schema(schema):
+                        answer_final = self._transform_to_validation_format(answer_final, citations, schema)
             else:
                 answer_final = {}
                 citations = []
                 snippets_used = []
+
+            # Extract refinement info if available
+            refinement_info = {}
+            if is_refinement and response.get('refinement_tier'):
+                refinement_info = {
+                    "refinement_tier": response.get('refinement_tier'),
+                    "refinement_method": response.get('method'),
+                    "refinement_cost": response.get('total_refinement_cost', 0.0),
+                    "tier_costs": response.get('tier_costs', [])
+                }
 
             return {
                 "can_answer": can_answer,
@@ -279,8 +313,10 @@ class UnifiedSynthesizer:
                 "request_capability_upgrade": request_upgrade,
                 "note_to_self": new_note,
                 "self_assessment": self_assessment,  # Preserve for iteration logic
+                "iteration": iteration,  # Track iteration number for next refinement
                 "synthesis_prompt": prompt,  # Return actual prompt sent to model
-                "model_response": response
+                "model_response": response,
+                **refinement_info  # Include refinement metrics at top level for tracking
             }
 
         except Exception as e:
