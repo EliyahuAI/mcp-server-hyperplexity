@@ -14275,19 +14275,31 @@ window.startUploadInterviewFromConfig = async function() {
         return;
     }
 
+    // Find the current configuration card
+    const configCard = document.querySelector('[data-card-id]');
+    const cardId = configCard ? configCard.getAttribute('data-card-id') : null;
+
+    // Collapse the configuration card to green success box
+    if (cardId) {
+        showFinalCardState(cardId, 'Creating configuration with AI...', 'success');
+    }
+
     // Generate conversation ID
     const conversationId = `upload_interview_${globalState.sessionId}`;
 
     // Store conversation info
     globalState.uploadInterviewConversationId = conversationId;
 
-    // Create the upload interview card
+    // Create the upload interview card after brief delay
+    // Pass null as previousCardId since we already collapsed the card above
     const uploadData = {
         conversation_id: conversationId,
         table_analysis: globalState.tableAnalysis || null
     };
 
-    await createUploadInterviewCard(null, uploadData);
+    setTimeout(async () => {
+        await createUploadInterviewCard(null, uploadData);
+    }, 500);
 }
 
 
