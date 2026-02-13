@@ -68,7 +68,7 @@ def get_initial_decision_schema(answer_schema: dict = None) -> dict:
             "synthesis_tier": {
                 "type": "string",
                 "enum": ["tier1", "tier2", "tier3", "tier4"],
-                "description": "Synthesis complexity tier: tier1 (fast/simple), tier2 (balanced), tier3 (strong reasoning), tier4 (deepest analysis, hardest problems only)"
+                "description": "Synthesis complexity tier: tier1 (high school - simple facts), tier2 (bachelor's - standard synthesis, DEFAULT), tier3 (master's - complex technical synthesis), tier4 (PhD - expert reasoning, hardest problems)"
             },
             "academic": {
                 "type": "boolean",

@@ -37,7 +37,7 @@ MODEL_TIMEOUTS: Dict[str, int] = {
     'deepseek-v3.2-baseten': TIMEOUT_SLOW,
     'claude-sonnet-4-5': TIMEOUT_SLOW,
     'claude-3-5-sonnet-20241022': TIMEOUT_SLOW,
-    'claude-opus-4-5': TIMEOUT_SLOW,
+    'claude-opus-4-6': TIMEOUT_SLOW,
     'gemini-2.5-flash': TIMEOUT_SLOW,
     'gemini-1.5-pro': TIMEOUT_SLOW,
 }
@@ -102,7 +102,7 @@ def get_timeout_tier(model: str) -> str:
 
 # Model hierarchy from best to most basic
 MODEL_HIERARCHY = [
-    "claude-opus-4-5",
+    "claude-opus-4-6",
     "claude-sonnet-4-5",
     "the-clone-baseten", # hybrid perplexity/deepseek/claude via baseten
     "the-clone-claude", # hybrid perplexity/claude

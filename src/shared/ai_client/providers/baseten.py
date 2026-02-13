@@ -188,8 +188,12 @@ class BasetenProvider:
             if soft_schema:
                 final_prompt = f"""{prompt}
 
-Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
-{json.dumps(schema)}"""
+CRITICAL: You MUST respond with ONLY valid JSON matching this schema. Do NOT include any explanatory text, analysis, or preamble. Start your response with {{ and end with }}.
+
+Schema:
+{json.dumps(schema, indent=2)}
+
+Response format: Return ONLY the JSON object, nothing else."""
         
         debug_request = {'model_id': model, 'prompt': final_prompt, 'max_tokens': enforced_max_tokens}
         

@@ -31,7 +31,7 @@ The `initial_decision` model automatically selects a synthesis tier (tier1-4) ba
 | **tier1** (Simple facts) | deepseek-v3.2 | haiku-4-5 | deepseek-v3.2-baseten |
 | **tier2** (Master's-level) | deepseek-v3.2 | sonnet-4-5 | deepseek-v3.2-baseten |
 | **tier3** (PhD-level) | sonnet-4-5 | sonnet-4-5 | sonnet-4-5 |
-| **tier4** (PhD + Grant) | opus-4-5 | opus-4-5 | opus-4-5 |
+| **tier4** (PhD + Grant) | opus-4-6 | opus-4-6 | opus-4-6 |
 
 ## Tier Selection (Automatic)
 

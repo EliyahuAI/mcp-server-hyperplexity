@@ -55,15 +55,15 @@ When true, search prioritizes academic databases over general web.
 
 ## Decision 3: Synthesis Model Tier
 
-Choose based on synthesis complexity only:
+Choose based on synthesis complexity and reasoning level required:
 
-**tier1** - Simple facts (direct lookup, no synthesis needed)
+**tier1** - High school grad level (simple facts, basic lookups, minimal synthesis)
 
-**tier2** - Master's-level (standard synthesis, organizing multiple aspects) - DEFAULT
+**tier2** - Smart bachelor's degree level (standard synthesis, organizing multiple aspects, analytical thinking) - DEFAULT
 
-**tier3** - PhD-level (complex technical synthesis, conflicting sources, deep reasoning)
+**tier3** - Master's degree level (complex technical synthesis, conflicting sources, deep domain expertise)
 
-**tier4** - PhD + Grant (maximum complexity, multi-layered cross-domain synthesis)
+**tier4** - PhD level (maximum complexity, multi-layered cross-domain synthesis, expert-level reasoning)
 
 ---
 
@@ -161,22 +161,25 @@ Choose based on synthesis complexity only:
 ## Examples
 
 **Targeted (narrow + shallow):**
-- "What is DeepSeek V3's parameter count?" → breadth=narrow, depth=shallow, 1 term, tier1
+- "What is DeepSeek V3's parameter count?" → breadth=narrow, depth=shallow, 1 term, tier1 (high school)
 
 **Focused Deep (narrow + deep):**
-- "How does attention mechanism work?" → breadth=narrow, depth=deep, 1 term, tier2
+- "How does attention mechanism work?" → breadth=narrow, depth=deep, 1 term, tier2 (bachelor's)
 
 **Survey (broad + shallow):**
-- "List Gemini 2.0 features" → breadth=broad, depth=shallow, 1 term, tier2
+- "List Gemini 2.0 features" → breadth=broad, depth=shallow, 1 term, tier2 (bachelor's)
 
 **Comprehensive (broad + deep):**
-- "Comprehensive analysis of transformer architecture" → breadth=broad, depth=deep, 1 term, tier2 (most can handle)
+- "Comprehensive analysis of transformer architecture" → breadth=broad, depth=deep, 1 term, tier2 (bachelor's handles most cases)
 
 **Multi-domain:**
-- "Compare GPT-4 vs Claude Opus" → breadth=broad, depth=shallow, 2 terms (different systems), tier2
+- "Compare GPT-4 vs Claude Opus" → breadth=broad, depth=shallow, 2 terms (different systems), tier2 (bachelor's)
 
-**Complex synthesis (rare):**
-- "Synthesize conflicting evidence about X's effectiveness across domains" → tier3 or tier4 (expensive!)
+**Complex technical synthesis:**
+- "Synthesize conflicting evidence about X's effectiveness across domains" → tier3 (master's - conflicting sources, domain expertise)
+
+**Maximum complexity (rare):**
+- "Multi-layered cross-domain synthesis requiring expert-level reasoning" → tier4 (PhD - hardest problems only)
 
 **Academic queries:**
 - "What does research show about climate change impact on crop yields?" → academic=true, depth=deep

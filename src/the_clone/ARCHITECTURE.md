@@ -152,7 +152,7 @@ Configuration uses abstract tier names, not model names:
   "model_tiers": {
     "fast": "claude-haiku-4-5",
     "strong": "claude-sonnet-4-5",
-    "deep_thinking": "claude-opus-4-5"
+    "deep_thinking": "claude-opus-4-6"
   }
 }
 ```

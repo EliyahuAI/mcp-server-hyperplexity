@@ -225,8 +225,13 @@ class AIAPIClient:
             tier_costs = []
 
             # TIER 1: Primary model generates patches
+            # Skip Tier 1 if original_data is a list (JSON Patch doesn't work well with top-level arrays)
             if try_patches_first:
-                logger.info("📍 TIER 1: Attempting patches...")
+                if isinstance(original_data, list):
+                    logger.info("⏭️  TIER 1: Skipped (original_data is array, patches require dict structure)")
+                    try_patches_first = False  # Disable for subsequent logic
+                elif isinstance(original_data, dict):
+                    logger.info("📍 TIER 1: Attempting patches...")
 
                 tier1_result = await self._refinement_tier1_patches(
                     prompt=prompt,
@@ -1101,9 +1106,9 @@ Generate the complete updated data with the requested changes.
             }
 
             # Call API with wrapped schema
-            # Force hard schema for Tier 2 - we need the uncertainty flag structure
+            # Note: Providers (vertex, baseten) already force soft_schema=True for DeepSeek models
             tier2_kwargs = {k: v for k, v in kwargs.items() if k != 'soft_schema'}
-            tier2_kwargs['soft_schema'] = False  # Override - Tier 2 needs strict schema
+            tier2_kwargs['soft_schema'] = False  # Tier 2 needs the uncertainty flag structure
 
             result = await self.call_structured_api(
                 prompt=tier2_prompt,

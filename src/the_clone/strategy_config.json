@@ -91,28 +91,28 @@
 
   "providers": {
     "deepseek": {
-      "description": "Default provider using Gemini 2.0 Flash for extraction, DeepSeek for synthesis",
+      "description": "Default provider using Gemini 2.5 Flash Lite for extraction, DeepSeek for synthesis",
       "default_extraction_model": "gemini-2.5-flash-lite",
       "tiers": {
         "tier1": {
-          "synthesis": "deepseek-v3.2",
+          "synthesis": "gemini-2.5-flash-lite",
           "label": "Fast",
           "description": "Fast, cost-effective synthesis for simple queries"
         },
         "tier2": {
-          "synthesis": "claude-haiku-4-5",
+          "synthesis": "deepseek-v3.2",
           "label": "Balanced",
-          "description": "Fast synthesis for findall mode (was deepseek-v3.2)"
+          "description": "Balanced synthesis with DeepSeek → Sonnet → Opus fallback chain"
         },
         "tier3": {
           "synthesis": "claude-sonnet-4-5",
           "label": "Strong",
-          "description": "Strong reasoning for complex queries"
+          "description": "Explicit upgrade to Claude Sonnet for complex reasoning"
         },
         "tier4": {
-          "synthesis": "claude-opus-4-5",
+          "synthesis": "claude-opus-4-6",
           "label": "Deepest",
-          "description": "Deepest analysis for hardest problems"
+          "description": "Maximum capability - Opus for hardest problems (auto-upgrade tier)"
         }
       }
     },
@@ -136,7 +136,7 @@
           "description": "Strong reasoning for complex queries"
         },
         "tier4": {
-          "synthesis": "claude-opus-4-5",
+          "synthesis": "claude-opus-4-6",
           "label": "Deepest",
           "description": "Deepest analysis for hardest problems"
         }
@@ -162,7 +162,7 @@
           "description": "Strong reasoning for complex queries"
         },
         "tier4": {
-          "synthesis": "claude-opus-4-5",
+          "synthesis": "claude-opus-4-6",
           "label": "Deepest",
           "description": "Deepest analysis for hardest problems"
         }
