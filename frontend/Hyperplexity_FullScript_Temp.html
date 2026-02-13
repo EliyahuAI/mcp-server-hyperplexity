@@ -18467,9 +18467,14 @@ const InteractiveTable = (function() {
                             const isLongSnippet = s.snippet && s.snippet.length > 150;
                             const shortSnippet = isLongSnippet ? s.snippet.substring(0, 150) + '...' : s.snippet;
 
+                            // Check if this source is the key citation
+                            const cleanKeyCitation = comment.key_citation ? comment.key_citation.replace(/^\[\d+\]\s*/, '').trim() : '';
+                            const isKeyCitation = cleanKeyCitation && s.snippet && s.snippet.includes(cleanKeyCitation);
+
                             return `
                             <li>
                                 <span class="source-id">[${s.id}]</span>
+                                ${isKeyCitation ? '<span class="key-citation-badge">KEY CITATION</span> ' : ''}
                                 ${s.url ? `<a href="${escapeHtml(s.url)}" target="_blank" class="source-link">${escapeHtml(s.title)}</a>` : `<span class="source-title">${escapeHtml(s.title)}</span>`}
                                 ${s.snippet ? `
                                     <small class="source-snippet ${isLongSnippet ? 'expandable collapsed' : ''}" id="${snippetId}" ${isLongSnippet ? `onclick="InteractiveTable.toggleSnippet('${snippetId}')" title="Click to show more"` : ''}>
