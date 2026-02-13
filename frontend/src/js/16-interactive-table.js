@@ -68,20 +68,6 @@ const InteractiveTable = (function() {
             parts.push(`<b>Reason:</b> ${escapeHtml(explanation)}`);
         }
 
-        if (comment.key_citation) {
-            // Only strip [digit] reference if that's ALL there is, otherwise keep it
-            let citation = comment.key_citation;
-            const refMatch = citation.match(/^\[\d+\]\s*/);
-            if (refMatch && citation.replace(/^\[\d+\]\s*/, '').trim() === '') {
-                // If ONLY a reference number, strip it
-                citation = citation.replace(/^\[\d+\]\s*/, '');
-            }
-            citation = citation.length > 100
-                ? citation.substring(0, 100) + '...'
-                : citation;
-            parts.push(`<b><span class="key-citation-badge">KEY CITATION</span></b> ${escapeHtml(citation)}`);
-        }
-
         if (parts.length > 0) {
             parts.push('<span class="tooltip-hint">Click for more</span>');
         }
@@ -546,20 +532,6 @@ const InteractiveTable = (function() {
                 </div>
                 ` : ''}
 
-                ${comment.key_citation ? `
-                <div class="detail-section">
-                    <label>Key Citation:</label>
-                    <p class="detail-value">${(() => {
-                        let citation = comment.key_citation;
-                        const refMatch = citation.match(/^\[\d+\]\s*/);
-                        if (refMatch && citation.replace(/^\[\d+\]\s*/, '').trim() === '') {
-                            citation = citation.replace(/^\[\d+\]\s*/, '');
-                        }
-                        return escapeHtml(citation);
-                    })()}</p>
-                </div>
-                ` : ''}
-
                 ${comment.sources && comment.sources.length > 0 ? `
                 <div class="detail-section">
                     <label>📚 Sources</label>
@@ -570,8 +542,24 @@ const InteractiveTable = (function() {
                             const shortSnippet = isLongSnippet ? s.snippet.substring(0, 150) + '...' : s.snippet;
 
                             // Check if this source is the key citation
-                            const cleanKeyCitation = comment.key_citation ? comment.key_citation.replace(/^\[\d+\]\s*/, '').trim() : '';
-                            const isKeyCitation = cleanKeyCitation && s.snippet && s.snippet.includes(cleanKeyCitation);
+                            // Match by: [1] reference, title, or URL
+                            let isKeyCitation = false;
+                            if (comment.key_citation) {
+                                const keyCite = comment.key_citation.trim();
+                                // Check if it's a reference like "[1]"
+                                const refMatch = keyCite.match(/^\[(\d+)\]$/);
+                                if (refMatch && s.id == refMatch[1]) {
+                                    isKeyCitation = true;
+                                }
+                                // Check if title is in key citation
+                                else if (s.title && keyCite.includes(s.title)) {
+                                    isKeyCitation = true;
+                                }
+                                // Check if URL is in key citation
+                                else if (s.url && keyCite.includes(s.url)) {
+                                    isKeyCitation = true;
+                                }
+                            }
 
                             return `
                             <li>
