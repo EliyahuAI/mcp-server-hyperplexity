@@ -29,6 +29,7 @@ import logging
 from typing import Dict, Any, Optional, Callable, List, Tuple
 from dataclasses import dataclass
 from datetime import datetime
+import copy
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,30 @@ try:
 except ImportError:
     JSONPATCH_AVAILABLE = False
     logger.warning("jsonpatch library not available. Install with: pip install jsonpatch")
+
+# Import text operations extension
+try:
+    from shared.text_ops import apply_text_operations, get_text_ops_schema_extension
+    TEXT_OPS_AVAILABLE = True
+except ImportError:
+    TEXT_OPS_AVAILABLE = False
+    logger.debug("text_ops module not available (optional extension)")
+
+# Import JSON compatibility layer
+try:
+    from shared.json_compat import ensure_json_compatible, restore_from_json_compatible
+    JSON_COMPAT_AVAILABLE = True
+except ImportError:
+    JSON_COMPAT_AVAILABLE = False
+    logger.debug("json_compat module not available (optional extension)")
+
+# Import patch validator
+try:
+    from shared.patch_validator import validate_patches, filter_invalid_patches, get_structure_summary, PatchValidationError
+    PATCH_VALIDATOR_AVAILABLE = True
+except ImportError:
+    PATCH_VALIDATOR_AVAILABLE = False
+    logger.debug("patch_validator module not available (optional extension)")
 
 
 @dataclass
@@ -75,12 +100,53 @@ class RefinementResult:
     error_type: Optional[str] = None
 
 
+def _has_long_text_fields(data: Dict[str, Any], min_words: int = 30, max_depth: int = 3) -> bool:
+    """
+    Check if data contains string fields with substantial text content.
+
+    Args:
+        data: Dict to analyze
+        min_words: Minimum word count to consider a field "long text"
+        max_depth: Maximum nesting depth to search
+
+    Returns:
+        True if any string field has >= min_words words
+    """
+    if max_depth <= 0:
+        return False
+
+    for key, value in data.items():
+        if isinstance(value, str):
+            # Count words (simple split on whitespace)
+            word_count = len(value.split())
+            if word_count >= min_words:
+                return True
+        elif isinstance(value, dict):
+            # Recurse into nested dicts
+            if _has_long_text_fields(value, min_words, max_depth - 1):
+                return True
+        elif isinstance(value, list):
+            # Check list elements
+            for item in value:
+                if isinstance(item, dict):
+                    if _has_long_text_fields(item, min_words, max_depth - 1):
+                        return True
+                elif isinstance(item, str):
+                    word_count = len(item.split())
+                    if word_count >= min_words:
+                        return True
+
+    return False
+
+
 def create_patch_schema(
     base_schema: Dict[str, Any],
     description: str = "JSON Patch operations for refining the data",
     include_reasoning: bool = True,
     include_questions: bool = True,
-    additional_fields: Optional[Dict[str, Any]] = None
+    additional_fields: Optional[Dict[str, Any]] = None,
+    original_data: Optional[Dict[str, Any]] = None,
+    enable_text_ops: Optional[bool] = None
 ) -> Dict[str, Any]:
     """
     Create a JSON Patch refinement schema by wrapping a base schema.
@@ -93,6 +159,9 @@ def create_patch_schema(
         include_reasoning: Include reasoning field in response
         include_questions: Include clarifying_questions field
         additional_fields: Additional custom fields to add to the schema
+        original_data: Optional data being refined (used to detect if text ops are useful)
+        enable_text_ops: Explicitly enable/disable text operations. If None (default),
+                        auto-detect based on original_data having long text fields (30+ words)
 
     Returns:
         A complete schema for AI responses with patch operations
@@ -102,49 +171,79 @@ def create_patch_schema(
         >>> patch_schema = create_patch_schema(
         ...     base_schema=config_schema,
         ...     description="Patches to refine validation configuration",
-        ...     include_questions=True
+        ...     include_questions=True,
+        ...     original_data=my_config  # Auto-detect if text ops are useful
         ... )
     """
     required_fields = ["patch_operations"]
 
+    # Decide whether to include text operations
+    include_text_ops = False
+    if enable_text_ops is True:
+        # Explicitly enabled
+        include_text_ops = TEXT_OPS_AVAILABLE
+    elif enable_text_ops is False:
+        # Explicitly disabled
+        include_text_ops = False
+    elif enable_text_ops is None and original_data:
+        # Auto-detect: only include if there are long text fields
+        if TEXT_OPS_AVAILABLE:
+            include_text_ops = _has_long_text_fields(original_data, min_words=30)
+            if include_text_ops:
+                logger.debug("Text operations enabled (detected long text fields in data)")
+            else:
+                logger.debug("Text operations disabled (no long text fields detected)")
+    # else: enable_text_ops is None and no original_data -> default to False
+
+    # Get base operation properties
+    operation_props = {
+        "op": {
+            "type": "string",
+            "enum": ["add", "remove", "replace", "test", "move", "copy"],
+            "description": (
+                "Operation type:\n"
+                "- 'replace': Change existing field value\n"
+                "- 'add': Add new field or array element\n"
+                "- 'remove': Delete field or array element\n"
+                "- 'test': Verify expected value (safety check)\n"
+                "- 'move': Move value from one path to another\n"
+                "- 'copy': Copy value from one path to another"
+            )
+        },
+        "path": {
+            "type": "string",
+            "description": (
+                "JSON Pointer path (RFC 6901). Examples:\n"
+                "- '/field_name' for top-level field\n"
+                "- '/array/3/subfield' for nested array (0-indexed)\n"
+                "- '/object/nested/field' for nested object"
+            )
+        },
+        "value": {
+            "description": "Value to add/replace. Not needed for 'remove' or 'test' operations."
+        },
+        "from": {
+            "type": "string",
+            "description": "Source path for 'move' and 'copy' operations"
+        }
+    }
+
+    # Add text operations extension if enabled and available
+    schema_description = f"{description}. Use RFC 6902 JSON Patch format"
+    if include_text_ops:
+        text_ops_extension = get_text_ops_schema_extension()
+        operation_props.update(text_ops_extension)
+        schema_description += " with text operations for modifying portions of string fields"
+    schema_description += "."
+
     properties = {
         "patch_operations": {
             "type": "array",
-            "description": f"{description}. Use RFC 6902 JSON Patch format.",
+            "description": schema_description,
             "items": {
                 "type": "object",
                 "required": ["op", "path"],
-                "properties": {
-                    "op": {
-                        "type": "string",
-                        "enum": ["add", "remove", "replace", "test", "move", "copy"],
-                        "description": (
-                            "Operation type:\n"
-                            "- 'replace': Change existing field value\n"
-                            "- 'add': Add new field or array element\n"
-                            "- 'remove': Delete field or array element\n"
-                            "- 'test': Verify expected value (safety check)\n"
-                            "- 'move': Move value from one path to another\n"
-                            "- 'copy': Copy value from one path to another"
-                        )
-                    },
-                    "path": {
-                        "type": "string",
-                        "description": (
-                            "JSON Pointer path (RFC 6901). Examples:\n"
-                            "- '/field_name' for top-level field\n"
-                            "- '/array/3/subfield' for nested array (0-indexed)\n"
-                            "- '/object/nested/field' for nested object"
-                        )
-                    },
-                    "value": {
-                        "description": "Value to add/replace. Not needed for 'remove' or 'test' operations."
-                    },
-                    "from": {
-                        "type": "string",
-                        "description": "Source path for 'move' and 'copy' operations"
-                    }
-                },
+                "properties": operation_props,
                 "additionalProperties": False
             },
             "minItems": 1
@@ -203,9 +302,12 @@ def apply_patches_with_validation(
     """
     Safely apply JSON Patch operations with optional validation.
 
+    Supports extended text operations (text_replace, text_extend) which are
+    applied BEFORE standard JSON Patch operations.
+
     Args:
         original_data: The original object to patch
-        patch_operations: List of RFC 6902 patch operations
+        patch_operations: List of RFC 6902 patch operations (can include text ops)
         validator_fn: Optional validation function that returns (is_valid, errors, warnings)
         dry_run: If True, validate patches but don't apply them
 
@@ -243,41 +345,139 @@ def apply_patches_with_validation(
         )
 
     try:
-        # Create patch object
-        patch = jsonpatch.JsonPatch(patch_operations)
-        logger.info(f"Created patch with {len(patch_operations)} operations")
+        # Deep copy data to avoid modifying original
+        try:
+            working_data = copy.deepcopy(original_data)
+        except Exception as e:
+            logger.warning(f"Deep copy failed: {e}. Using shallow copy.")
+            working_data = original_data.copy() if isinstance(original_data, dict) else original_data
 
-        # Log operations for debugging
-        for i, op in enumerate(patch_operations):
-            logger.debug(f"  Op {i+1}: {op.get('op')} {op.get('path')}")
-
-        if dry_run:
-            logger.info("Dry run mode - validating patch without applying")
-            # Just validate the patch is well-formed
+        # Convert to JSON-compatible format if needed
+        json_converter = None
+        if JSON_COMPAT_AVAILABLE:
             try:
-                # Create a deep copy to test on
-                import copy
-                test_data = copy.deepcopy(original_data)
-                patch.apply(test_data)
-                logger.info("✅ Patch validation successful (dry run)")
-                return PatchResult(
-                    success=True,
-                    patched_data=None,
-                    patch_operations=patch_operations,
-                    method="dry_run"
-                )
+                working_data, json_converter = ensure_json_compatible(working_data)
+                if json_converter:
+                    logger.info("Data converted to JSON-compatible format for patching")
             except Exception as e:
-                logger.error(f"❌ Patch validation failed: {e}")
+                logger.warning(f"JSON compatibility conversion failed: {e}. Proceeding without conversion.")
+
+        # Validate patches against data structure (if validator available)
+        if PATCH_VALIDATOR_AVAILABLE:
+            try:
+                is_valid, validation_errors = validate_patches(
+                    working_data,
+                    patch_operations,
+                    raise_on_error=False  # Don't raise, collect errors
+                )
+
+                if not is_valid:
+                    logger.error(f"❌ Patch validation failed:")
+                    for error in validation_errors:
+                        logger.error(f"  - {error}")
+
+                    # Show actual data structure
+                    structure = get_structure_summary(working_data)
+                    logger.error(f"Actual data structure:\n{structure}")
+
+                    return PatchResult(
+                        success=False,
+                        error=f"Patch validation failed: {validation_errors[0]}",
+                        validation_errors=validation_errors,
+                        patch_operations=patch_operations,
+                        method="failed"
+                    )
+            except Exception as e:
+                logger.warning(f"Patch validation check failed: {e}. Proceeding without validation.")
+
+        # Separate text operations from standard JSON Patch operations
+        text_ops = []
+        json_patch_ops = []
+
+        for op in patch_operations:
+            op_type = op.get('op')
+            if op_type in ('text_replace', 'text_extend'):
+                text_ops.append(op)
+            else:
+                json_patch_ops.append(op)
+
+        # Apply text operations first (if any and if available)
+        if text_ops:
+            if not TEXT_OPS_AVAILABLE:
+                logger.warning("Text operations requested but text_ops module not available")
                 return PatchResult(
                     success=False,
-                    error=f"Patch validation failed: {str(e)}",
+                    error="Text operations not available (missing text_ops module)",
                     patch_operations=patch_operations,
-                    method="dry_run"
+                    method="failed"
                 )
 
-        # Apply patches
-        patched_data = patch.apply(original_data)
-        logger.info("✅ Patches applied successfully")
+            logger.info(f"Applying {len(text_ops)} text operations...")
+            text_result = apply_text_operations(working_data, text_ops)
+
+            if not text_result.success:
+                logger.error(f"❌ Text operations failed: {text_result.error}")
+                return PatchResult(
+                    success=False,
+                    error=f"Text operation failed: {text_result.error}",
+                    patch_operations=patch_operations,
+                    method="failed"
+                )
+
+            logger.info(f"✅ Applied {text_result.operations_applied} text operations")
+
+        # Apply standard JSON Patch operations (if any)
+        if json_patch_ops:
+            logger.info(f"Applying {len(json_patch_ops)} JSON Patch operations...")
+            patch = jsonpatch.JsonPatch(json_patch_ops)
+
+            # Log operations for debugging
+            for i, op in enumerate(json_patch_ops):
+                logger.debug(f"  Op {i+1}: {op.get('op')} {op.get('path')}")
+
+            if dry_run:
+                logger.info("Dry run mode - validating patch without applying")
+                try:
+                    test_data = copy.deepcopy(working_data)
+                    patch.apply(test_data)
+                    logger.info("✅ Patch validation successful (dry run)")
+                    return PatchResult(
+                        success=True,
+                        patched_data=None,
+                        patch_operations=patch_operations,
+                        method="dry_run"
+                    )
+                except Exception as e:
+                    logger.error(f"❌ Patch validation failed: {e}")
+                    return PatchResult(
+                        success=False,
+                        error=f"Patch validation failed: {str(e)}",
+                        patch_operations=patch_operations,
+                        method="dry_run"
+                    )
+
+            # Apply JSON Patch
+            working_data = patch.apply(working_data)
+            logger.info("✅ JSON Patch operations applied successfully")
+        elif dry_run:
+            # Dry run with only text ops
+            return PatchResult(
+                success=True,
+                patched_data=None,
+                patch_operations=patch_operations,
+                method="dry_run"
+            )
+
+        # Restore from JSON-compatible format if conversion was used
+        if JSON_COMPAT_AVAILABLE and json_converter:
+            try:
+                patched_data = restore_from_json_compatible(working_data, json_converter)
+                logger.info("Data restored from JSON-compatible format")
+            except Exception as e:
+                logger.warning(f"Failed to restore from JSON-compatible format: {e}. Using patched data as-is.")
+                patched_data = working_data
+        else:
+            patched_data = working_data
 
         # Validate the result if validator provided
         if validator_fn:
@@ -330,7 +530,8 @@ def build_patch_prompt_template(
     instructions: str,
     context_sections: Optional[Dict[str, str]] = None,
     examples: Optional[List[Dict[str, Any]]] = None,
-    constraints: Optional[List[str]] = None
+    constraints: Optional[List[str]] = None,
+    enable_text_ops: Optional[bool] = None
 ) -> str:
     """
     Build a generic prompt for patch-based refinement.
@@ -341,6 +542,7 @@ def build_patch_prompt_template(
         context_sections: Dict of section_name -> section_content for additional context
         examples: List of example patch operations to show the AI
         constraints: List of constraint strings to include
+        enable_text_ops: Enable text operations. If None, auto-detects based on long text fields
 
     Returns:
         Complete prompt string for AI refinement
@@ -358,6 +560,16 @@ def build_patch_prompt_template(
         ...     ]
         ... )
     """
+    # Decide whether to include text operations documentation
+    include_text_ops = False
+    if enable_text_ops is True:
+        include_text_ops = TEXT_OPS_AVAILABLE
+    elif enable_text_ops is False:
+        include_text_ops = False
+    elif enable_text_ops is None:
+        # Auto-detect based on data
+        if TEXT_OPS_AVAILABLE:
+            include_text_ops = _has_long_text_fields(original_data, min_words=30)
     prompt = f"""You are refining structured data using JSON Patch (RFC 6902).
 
 # USER'S REQUEST
@@ -390,13 +602,21 @@ Generate **ONLY the minimal changes** needed to address the user's request using
 ## JSON Patch Format (RFC 6902)
 
 Each operation must have:
-- `op`: Operation type ("replace", "add", "remove", "test", "move", "copy")
-- `path`: JSON Pointer like "/field_name" or "/array/3/subfield" (0-indexed)
+"""
+
+    if include_text_ops:
+        prompt += """- `op`: Operation type ("replace", "add", "remove", "test", "move", "copy", "text_replace", "text_extend")
+"""
+    else:
+        prompt += """- `op`: Operation type ("replace", "add", "remove", "test", "move", "copy")
+"""
+
+    prompt += """- `path`: JSON Pointer like "/field_name" or "/array/3/subfield" (0-indexed)
 - `value`: New value (not needed for "remove")
 
-## Common Operations
+## Standard Operations
 
-**Replace a field value:**
+**Replace entire field value:**
 ```json
 {"op": "replace", "path": "/field_name", "value": "new_value"}
 ```
@@ -426,6 +646,55 @@ Each operation must have:
 {"op": "test", "path": "/status", "value": "draft"},
 {"op": "replace", "path": "/status", "value": "published"}
 ```
+
+"""
+
+    # Add text operations documentation if enabled
+    if include_text_ops:
+        prompt += """
+## Text Operations (for modifying portions of string fields)
+
+**Replace text within a string field:**
+```json
+{"op": "text_replace", "path": "/report", "match": "| Alice | 30 |", "value": "| Alice | 31 |"}
+```
+
+**Delete text (replace with empty string):**
+```json
+{"op": "text_replace", "path": "/report", "match": "| Bob | 25 |\\n", "value": ""}
+```
+
+**Insert after existing text:**
+```json
+{"op": "text_replace", "path": "/report", "match": "| Bob | 25 |", "value": "| Bob | 25 |\\n| Charlie | 35 |"}
+```
+
+**Insert before existing text:**
+```json
+{"op": "text_replace", "path": "/report", "match": "## Conclusion", "value": "## New Section\\nContent\\n\\n## Conclusion"}
+```
+
+**Regex find/replace (use sparingly):**
+```json
+{"op": "text_replace", "path": "/report", "match": "\\\\d{4}-\\\\d{2}-\\\\d{2}", "value": "REDACTED", "regex": true, "count": -1}
+```
+
+**Append to end of string:**
+```json
+{"op": "text_extend", "path": "/report", "value": "\\n\\n## Additional Notes"}
+```
+
+**Prepend to beginning of string:**
+```json
+{"op": "text_extend", "path": "/notes", "value": "URGENT: ", "position": "start"}
+```
+
+**Text Operation Rules:**
+- Use `text_replace` for finding and replacing portions of text (NOT entire fields)
+- Use standard `replace` op to replace entire field values
+- When `regex: false` (default), match must be unique unless `count: -1`
+- Include surrounding whitespace/newlines explicitly in match and value
+- Regex mode allows backreferences like \\1, \\2 in value
 
 """
 
@@ -570,7 +839,8 @@ class PatchRefinementManager:
                 instructions=instructions,
                 context_sections=context,
                 examples=examples,
-                constraints=constraints
+                constraints=constraints,
+                enable_text_ops=None  # Auto-detect based on data
             )
 
             # Get patch schema
@@ -578,7 +848,9 @@ class PatchRefinementManager:
                 base_schema=self.schema or {},
                 description="Patches to refine the data",
                 include_reasoning=True,
-                include_questions=True
+                include_questions=True,
+                original_data=self.original_data,  # Pass data for auto-detection
+                enable_text_ops=None  # Auto-detect based on data
             )
 
             # Call AI with patch model (cheap/fast model)
