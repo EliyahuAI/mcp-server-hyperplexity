@@ -665,6 +665,18 @@
     color: #1565c0;
 }
 
+/* Key citation badge (purple highlight) */
+.key-citation-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(206, 147, 216, 0.25);
+    color: #7b1fa2;
+    letter-spacing: 0.5px;
+}
+
 .confidence-section {
     background: #f8f9fa;
     border-radius: 8px;

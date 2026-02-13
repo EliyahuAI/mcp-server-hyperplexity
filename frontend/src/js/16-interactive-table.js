@@ -69,10 +69,12 @@ const InteractiveTable = (function() {
         }
 
         if (comment.key_citation) {
-            const citation = comment.key_citation.length > 100
-                ? comment.key_citation.substring(0, 100) + '...'
-                : comment.key_citation;
-            parts.push(`<b>Key Citation:</b> ${escapeHtml(citation)}`);
+            // Strip leading [digit] reference if present
+            let citation = comment.key_citation.replace(/^\[\d+\]\s*/, '');
+            citation = citation.length > 100
+                ? citation.substring(0, 100) + '...'
+                : citation;
+            parts.push(`<b><span class="key-citation-badge">KEY CITATION</span></b> ${escapeHtml(citation)}`);
         }
 
         if (parts.length > 0) {
@@ -541,8 +543,8 @@ const InteractiveTable = (function() {
 
                 ${comment.key_citation ? `
                 <div class="detail-section">
-                    <label>🔗 Key Citation</label>
-                    <p class="detail-value">${escapeHtml(comment.key_citation)}</p>
+                    <label><span class="key-citation-badge">KEY CITATION</span></label>
+                    <p class="detail-value">${escapeHtml(comment.key_citation.replace(/^\[\d+\]\s*/, ''))}</p>
                 </div>
                 ` : ''}
 
