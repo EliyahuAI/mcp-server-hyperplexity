@@ -550,13 +550,24 @@ const InteractiveTable = (function() {
                 <div class="detail-section">
                     <label>📚 Sources</label>
                     <ul class="sources-list">
-                        ${comment.sources.map(s => `
+                        ${comment.sources.map((s, idx) => {
+                            const snippetId = `snippet-${Date.now()}-${idx}`;
+                            const isLongSnippet = s.snippet && s.snippet.length > 150;
+                            const shortSnippet = isLongSnippet ? s.snippet.substring(0, 150) + '...' : s.snippet;
+
+                            return `
                             <li>
                                 <span class="source-id">[${s.id}]</span>
-                                ${s.url ? `<a href="${escapeHtml(s.url)}" target="_blank">${escapeHtml(s.title)}</a>` : escapeHtml(s.title)}
-                                ${s.snippet ? `<br><small class="source-snippet">"${escapeHtml(s.snippet.substring(0, 150))}${s.snippet.length > 150 ? '...' : ''}"</small>` : ''}
+                                ${s.url ? `<a href="${escapeHtml(s.url)}" target="_blank" class="source-link">${escapeHtml(s.title)}</a>` : `<span class="source-title">${escapeHtml(s.title)}</span>`}
+                                ${s.snippet ? `
+                                    <small class="source-snippet ${isLongSnippet ? 'expandable collapsed' : ''}" id="${snippetId}" ${isLongSnippet ? `onclick="InteractiveTable.toggleSnippet('${snippetId}')" title="Click to show more"` : ''}>
+                                        ${isLongSnippet ? '<span class="snippet-arrow">▶</span>' : ''}
+                                        <span class="snippet-text">"${escapeHtml(isLongSnippet ? shortSnippet : s.snippet)}"</span>
+                                        ${isLongSnippet ? `<span class="snippet-full" style="display: none;">"${escapeHtml(s.snippet)}"</span>` : ''}
+                                    </small>
+                                ` : ''}
                             </li>
-                        `).join('')}
+                        `}).join('')}
                     </ul>
                 </div>
                 ` : ''}
@@ -759,6 +770,35 @@ const InteractiveTable = (function() {
         }
     }
 
+    /**
+     * Toggle source snippet expansion
+     */
+    function toggleSnippet(snippetId) {
+        const snippet = document.getElementById(snippetId);
+        if (!snippet) return;
+
+        const isCollapsed = snippet.classList.contains('collapsed');
+        snippet.classList.toggle('collapsed');
+
+        const shortText = snippet.querySelector('.snippet-text');
+        const fullText = snippet.querySelector('.snippet-full');
+        const arrow = snippet.querySelector('.snippet-arrow');
+
+        if (isCollapsed) {
+            // Expanding
+            if (shortText) shortText.style.display = 'none';
+            if (fullText) fullText.style.display = 'inline';
+            if (arrow) arrow.textContent = '▼';
+            snippet.title = 'Click to show less';
+        } else {
+            // Collapsing
+            if (shortText) shortText.style.display = 'inline';
+            if (fullText) fullText.style.display = 'none';
+            if (arrow) arrow.textContent = '▶';
+            snippet.title = 'Click to show more';
+        }
+    }
+
     /* ========================================
      * Initialization
      * ======================================== */
@@ -796,6 +836,7 @@ const InteractiveTable = (function() {
         navigateNext: navigateNext,
         // Notes handler
         toggleGeneralNotes: toggleGeneralNotes,
+        toggleSnippet: toggleSnippet,
         // Utility
         escapeHtml: escapeHtml
     };
