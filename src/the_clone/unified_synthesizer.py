@@ -289,21 +289,23 @@ class UnifiedSynthesizer:
                     pass
 
             # Convert snippet IDs to citations if answer provided
-            # Skip conversion if using refinement mode - citations already numeric from previous iteration
+            # Skip conversion for intermediate refinement iterations (preserves snippet IDs for AI context)
+            # Always convert on FINAL iteration to get numeric citations for user output
             if can_answer and answer_raw:
-                if used_refinement_data:
-                    # Refinement mode - citations already converted in previous iteration
+                if used_refinement_data and not is_last_iteration:
+                    # Intermediate refinement - keep snippet IDs so AI knows exact snippets for next iteration
                     answer_final = answer_raw
-                    citations = []  # Citations are embedded in answer, not separate
+                    citations = []  # Citations will be generated on final iteration
                     snippets_used = []
-                    logger.debug(f"[UNIFIED] Skipping citation conversion for refinement mode data")
+                    logger.debug(f"[UNIFIED] Preserving snippet IDs for intermediate refinement (iteration {iteration})")
                 else:
-                    # Normal mode - convert snippet IDs to numeric citations
+                    # Final iteration OR normal mode - convert snippet IDs to numeric citations
                     answer_final, citations, snippets_used = await self._convert_snippet_ids_to_citations(
                         answer=answer_raw,
                         snippets=snippets,
                         schema=schema
                     )
+                    logger.debug(f"[UNIFIED] Converting snippet IDs to citations (final={is_last_iteration})")
 
                     # Post-process for validation format if custom schema is validation_results
                     if schema and self._is_validation_schema(schema):
