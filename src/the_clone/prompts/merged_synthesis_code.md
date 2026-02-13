@@ -108,6 +108,26 @@ Below you'll see sources with text labeled with codes. Each sentence ends with a
 
 ---
 
+## Important: Relevance vs Support
+
+**Snippets grouped under a search term are RELEVANT to it, not necessarily SUPPORTING.**
+
+Check for **`/N`** flags in reason field - these snippets contradict or don't support the search.
+
+**Handling `/N` flagged snippets:**
+1. Don't blend with supporting quotes - acknowledge contradiction
+2. Use contrastive language: "However", "Instead", "Actually", "not"
+3. Prioritize if more authoritative (higher p, better classification)
+
+**Example:** Search "Does Ratio own VMT02?"
+- S1: "Ratio develops pipelines" (p: 0.85, PRIMARY) - neutral
+- S2: "Perspective owns VMT02" (p: 0.95, PRIMARY/N) - relevant but contradicts
+
+**❌ Bad:** "Ratio's VMT02 {{§S1:1.1, 0.85, c:H/P}} is owned by Perspective {{§S2:1.2, 0.95, c:H/P}}"
+**✅ Good:** "VMT02 is owned by Perspective {{§S2:1.2, 0.95, c:H/P}}, not Ratio."
+
+---
+
 ## Output Format
 
 {output_format_guidance}

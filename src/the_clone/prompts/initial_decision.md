@@ -123,6 +123,21 @@ Choose based on synthesis complexity and reasoning level required:
 
 ---
 
+## Search Term Neutrality
+
+**When searching associations, phrase as questions not statements:**
+
+User asks: "Does Ratio own VMT02?"
+- ✅ "Does Ratio own VMT02?" (question - no assertion)
+- ❌ "Ratio VMT02 ownership" (can read as "Ratio's VMT02 ownership" - asserts connection)
+
+**If user doesn't ask about a specific association:**
+- Search entities separately: "VMT02 ownership" + "Ratio pipeline"
+
+Questions avoid linguistic ambiguity that statements create.
+
+---
+
 ## Output Format
 
 **If answer_directly:**

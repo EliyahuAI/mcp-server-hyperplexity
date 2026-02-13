@@ -60,6 +60,26 @@ Return **codes with backtick prefix** (not full text) for essential quotes.
 
 ---
 
+## Non-Supporting Flag
+
+Add **`/N`** to reason if quote contradicts or doesn't support the search term.
+
+**Format:** `"PRIMARY/N"`, `"ATTRIBUTED/N"`, `"OK/N"`
+
+**Examples:**
+
+Search "Does Ratio own VMT02?"
+- "Perspective owns VMT02" → `{"r": "PRIMARY/N"}` (negative answer)
+- "No, Ratio does not own VMT02" → `{"r": "PRIMARY/N"}` (negative answer)
+- "Yes, Ratio owns VMT02" → `{"r": "PRIMARY"}` (positive answer)
+
+Search "Ratio VMT02 ownership" (statement form)
+- "Perspective owns VMT02" → `{"r": "PRIMARY/N"}` (contradicts association)
+
+**For question search terms:** Negative answers get `/N`. These are relevant but don't support.
+
+---
+
 ## Output
 
 ```json
