@@ -69,8 +69,13 @@ const InteractiveTable = (function() {
         }
 
         if (comment.key_citation) {
-            // Strip leading [digit] reference if present
-            let citation = comment.key_citation.replace(/^\[\d+\]\s*/, '');
+            // Only strip [digit] reference if that's ALL there is, otherwise keep it
+            let citation = comment.key_citation;
+            const refMatch = citation.match(/^\[\d+\]\s*/);
+            if (refMatch && citation.replace(/^\[\d+\]\s*/, '').trim() === '') {
+                // If ONLY a reference number, strip it
+                citation = citation.replace(/^\[\d+\]\s*/, '');
+            }
             citation = citation.length > 100
                 ? citation.substring(0, 100) + '...'
                 : citation;
@@ -543,8 +548,15 @@ const InteractiveTable = (function() {
 
                 ${comment.key_citation ? `
                 <div class="detail-section">
-                    <label><span class="key-citation-badge">KEY CITATION</span></label>
-                    <p class="detail-value">${escapeHtml(comment.key_citation.replace(/^\[\d+\]\s*/, ''))}</p>
+                    <label>Key Citation:</label>
+                    <p class="detail-value">${(() => {
+                        let citation = comment.key_citation;
+                        const refMatch = citation.match(/^\[\d+\]\s*/);
+                        if (refMatch && citation.replace(/^\[\d+\]\s*/, '').trim() === '') {
+                            citation = citation.replace(/^\[\d+\]\s*/, '');
+                        }
+                        return escapeHtml(citation);
+                    })()}</p>
                 </div>
                 ` : ''}
 
@@ -566,6 +578,7 @@ const InteractiveTable = (function() {
                                 <span class="source-id">[${s.id}]</span>
                                 ${isKeyCitation ? '<span class="key-citation-badge">KEY CITATION</span> ' : ''}
                                 ${s.url ? `<a href="${escapeHtml(s.url)}" target="_blank" class="source-link">${escapeHtml(s.title)}</a>` : `<span class="source-title">${escapeHtml(s.title)}</span>`}
+                                ${s.p !== undefined ? `<span class="source-confidence" style="color: #666; font-size: 0.9em;"> (Conf = ${s.p.toFixed(2)})</span>` : ''}
                                 ${s.snippet ? `
                                     <small class="source-snippet ${isLongSnippet ? 'expandable collapsed' : ''}" id="${snippetId}" ${isLongSnippet ? `onclick="InteractiveTable.toggleSnippet('${snippetId}')" title="Click to show more"` : ''}>
                                         ${isLongSnippet ? '<span class="snippet-arrow">▶</span>' : ''}
