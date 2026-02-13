@@ -581,7 +581,6 @@ class TheClone2Refined:
 
                 if request_upgrade and synthesis_tier != 'tier4':
                     logger.debug(f"[CLONE] Upgrading to tier4 (PhD+ capability) as requested")
-                    from the_clone.strategy_loader import get_strategy
                     tier4_models = get_models_for_tier(provider, 'tier4')
                     target_model = tier4_models['synthesis']
                     synthesis_tier = 'tier4'
