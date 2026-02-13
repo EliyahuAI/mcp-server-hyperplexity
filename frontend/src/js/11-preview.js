@@ -251,7 +251,7 @@ function handlePreviewWebSocketMessage(data, cardId) {
             updateThinkingInCard(cardId, message);
         }
         // Progress routed to card level;
-    } else if (data.status === 'COMPLETED') {
+    } else if (data.status === 'COMPLETED' || data.status === 'preview_completed') {
         // Stop fallback polling since we received completion via WebSocket
         if (typeof stopFallbackPolling === 'function') {
             stopFallbackPolling();
@@ -274,6 +274,12 @@ function handlePreviewWebSocketMessage(data, cardId) {
         if (globalState.activeCardId === cardId) {
             globalState.activeCardId = null;
         }
+
+        // Extract preview data - handle both formats:
+        // 1. COMPLETED status: data nested in preview_data field
+        // 2. preview_completed status: data at top level
+        const previewData = data.preview_data || data;
+
         // First update to 100% if we have a progress bar
         const indicator = document.getElementById(`${cardId}-thinking`);
         if (indicator && indicator.classList.contains('with-progress')) {
@@ -284,17 +290,13 @@ function handlePreviewWebSocketMessage(data, cardId) {
 
             // Wait for shrink animation to complete before showing results
             // 500ms + 300ms (move to 100%) + 600ms (completion) + 1000ms (shrink) = 2400ms
-            if (data.preview_data) {
-                setTimeout(() => {
-                    showPreviewResults(cardId, data.preview_data);
-                }, 2400);
-            }
+            setTimeout(() => {
+                showPreviewResults(cardId, previewData);
+            }, 2400);
         } else {
             completeThinkingInCard(cardId, 'Preview complete!');
             // No progress bar, show results immediately
-            if (data.preview_data) {
-                showPreviewResults(cardId, data.preview_data);
-            }
+            showPreviewResults(cardId, previewData);
         }
         // Progress routed to card level;
     } else if (data.status === 'FAILED' || data.status === 'ERROR') {

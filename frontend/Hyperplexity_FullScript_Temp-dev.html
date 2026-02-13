@@ -14647,7 +14647,7 @@ function handlePreviewWebSocketMessage(data, cardId) {
             updateThinkingInCard(cardId, message);
         }
         // Progress routed to card level;
-    } else if (data.status === 'COMPLETED') {
+    } else if (data.status === 'COMPLETED' || data.status === 'preview_completed') {
         // Stop fallback polling since we received completion via WebSocket
         if (typeof stopFallbackPolling === 'function') {
             stopFallbackPolling();
@@ -14670,6 +14670,12 @@ function handlePreviewWebSocketMessage(data, cardId) {
         if (globalState.activeCardId === cardId) {
             globalState.activeCardId = null;
         }
+
+        // Extract preview data - handle both formats:
+        // 1. COMPLETED status: data nested in preview_data field
+        // 2. preview_completed status: data at top level
+        const previewData = data.preview_data || data;
+
         // First update to 100% if we have a progress bar
         const indicator = document.getElementById(`${cardId}-thinking`);
         if (indicator && indicator.classList.contains('with-progress')) {
@@ -14680,17 +14686,13 @@ function handlePreviewWebSocketMessage(data, cardId) {
 
             // Wait for shrink animation to complete before showing results
             // 500ms + 300ms (move to 100%) + 600ms (completion) + 1000ms (shrink) = 2400ms
-            if (data.preview_data) {
-                setTimeout(() => {
-                    showPreviewResults(cardId, data.preview_data);
-                }, 2400);
-            }
+            setTimeout(() => {
+                showPreviewResults(cardId, previewData);
+            }, 2400);
         } else {
             completeThinkingInCard(cardId, 'Preview complete!');
             // No progress bar, show results immediately
-            if (data.preview_data) {
-                showPreviewResults(cardId, data.preview_data);
-            }
+            showPreviewResults(cardId, previewData);
         }
         // Progress routed to card level;
     } else if (data.status === 'FAILED' || data.status === 'ERROR') {
@@ -17992,8 +17994,13 @@ const InteractiveTable = (function() {
         }
 
         if (comment.key_citation) {
-            // Strip leading [digit] reference if present
-            let citation = comment.key_citation.replace(/^\[\d+\]\s*/, '');
+            // Only strip [digit] reference if that's ALL there is, otherwise keep it
+            let citation = comment.key_citation;
+            const refMatch = citation.match(/^\[\d+\]\s*/);
+            if (refMatch && citation.replace(/^\[\d+\]\s*/, '').trim() === '') {
+                // If ONLY a reference number, strip it
+                citation = citation.replace(/^\[\d+\]\s*/, '');
+            }
             citation = citation.length > 100
                 ? citation.substring(0, 100) + '...'
                 : citation;
@@ -18466,8 +18473,15 @@ const InteractiveTable = (function() {
 
                 ${comment.key_citation ? `
                 <div class="detail-section">
-                    <label><span class="key-citation-badge">KEY CITATION</span></label>
-                    <p class="detail-value">${escapeHtml(comment.key_citation.replace(/^\[\d+\]\s*/, ''))}</p>
+                    <label>Key Citation:</label>
+                    <p class="detail-value">${(() => {
+                        let citation = comment.key_citation;
+                        const refMatch = citation.match(/^\[\d+\]\s*/);
+                        if (refMatch && citation.replace(/^\[\d+\]\s*/, '').trim() === '') {
+                            citation = citation.replace(/^\[\d+\]\s*/, '');
+                        }
+                        return escapeHtml(citation);
+                    })()}</p>
                 </div>
                 ` : ''}
 
@@ -18489,6 +18503,7 @@ const InteractiveTable = (function() {
                                 <span class="source-id">[${s.id}]</span>
                                 ${isKeyCitation ? '<span class="key-citation-badge">KEY CITATION</span> ' : ''}
                                 ${s.url ? `<a href="${escapeHtml(s.url)}" target="_blank" class="source-link">${escapeHtml(s.title)}</a>` : `<span class="source-title">${escapeHtml(s.title)}</span>`}
+                                ${s.p !== undefined ? `<span class="source-confidence" style="color: #666; font-size: 0.9em;"> (Conf = ${s.p.toFixed(2)})</span>` : ''}
                                 ${s.snippet ? `
                                     <small class="source-snippet ${isLongSnippet ? 'expandable collapsed' : ''}" id="${snippetId}" ${isLongSnippet ? `onclick="InteractiveTable.toggleSnippet('${snippetId}')" title="Click to show more"` : ''}>
                                         ${isLongSnippet ? '<span class="snippet-arrow">▶</span>' : ''}
