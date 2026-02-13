@@ -11655,9 +11655,14 @@ async function handleConfigWebSocketMessageWithAutoPreview(data, cardId) {
         let aiMessage = data.ai_summary || data.ai_response || 'Configuration refined successfully!';
         await addChatMessage(cardId, 'ai', aiMessage);
 
-        // Show refinement actions to allow further refinement or acceptance
-        // This ensures buttons are always shown after refinement, fixing the missing submit button issue
-        showRefinementActions(cardId);
+        // Mark config as validated and stored
+        globalState.configValidated = true;
+        globalState.configStored = true;
+
+        // Auto-trigger preview after refinement (like matches and AI config completion)
+        setTimeout(() => {
+            createPreviewCard();
+        }, 1000);
 
     } else if (data.type === 'config_generation_failed' || data.error || data.type === 'error') {
         completeThinkingInCard(cardId, 'Refinement failed');
@@ -11677,9 +11682,9 @@ async function handleRefinementWebSocketMessage(data, cardId) {
         globalState.excelFileUploaded = true;
 
         let aiMessage = data.ai_summary || data.ai_response || 'Configuration refined successfully!';
-        
+
         await addChatMessage(cardId, 'ai', aiMessage, false, 'paragraphs');
-        
+
         // Add config ID display if available - place it at end of card, not in chat
         if (data.config_id || data.session_id) {
             const card = document.querySelector(`[data-card-id="${cardId}"]`);
@@ -11691,13 +11696,21 @@ async function handleRefinementWebSocketMessage(data, cardId) {
                 configIdDiv.innerHTML = `
                     <div class="message message-success" style="margin: 1rem; margin-top: 0;">
                         <span class="message-icon">✓</span>
-                        <span>Configuration generated, code for reuse: <strong>${configId}</strong>, running preview now</span>
+                        <span>Configuration refined, code for reuse: <strong>${configId}</strong>, generating preview now...</span>
                     </div>
                 `;
                 card.appendChild(configIdDiv);
             }
         }
-        showRefinementActions(cardId);
+
+        // Mark config as validated and stored
+        globalState.configValidated = true;
+        globalState.configStored = true;
+
+        // Auto-trigger preview after refinement (consistent with other flows)
+        setTimeout(() => {
+            createPreviewCard();
+        }, 1000);
 
     } else if (data.type === 'config_generation_failed') {
         completeThinkingInCard(cardId, 'Refinement failed');
