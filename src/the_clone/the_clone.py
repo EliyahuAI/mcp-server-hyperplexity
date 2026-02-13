@@ -264,6 +264,18 @@ class TheClone2Refined:
             # Get required_keywords for URL validation (from initial decision)
             skip_required_keywords = initial_result.get('required_keywords', [])
 
+            # Defensive: Flatten if nested (AI sometimes returns [[item]] instead of [item])
+            if skip_required_keywords and isinstance(skip_required_keywords[0], list):
+                flattened = []
+                for item in skip_required_keywords:
+                    if isinstance(item, list) and len(item) == 1:
+                        flattened.append(item[0])
+                    elif isinstance(item, list):
+                        flattened.append('|'.join(str(x) for x in item))
+                    else:
+                        flattened.append(item)
+                skip_required_keywords = flattened
+
             if query_urls and use_memory and session_id and email and s3_manager:
                 logger.debug(f"[CLONE] Skip-to-synthesis: Found {len(query_urls)} URLs in query")
 
@@ -700,6 +712,31 @@ class TheClone2Refined:
         required_keywords = initial_result.get('required_keywords', [])
         positive_keywords = initial_result.get('positive_keywords', [])
         negative_keywords = initial_result.get('negative_keywords', [])
+
+        # Defensive: Flatten keywords if they're nested lists (AI sometimes returns [[item]] instead of [item])
+        def flatten_if_nested(keywords):
+            """Flatten if list of single-item lists, otherwise return as-is."""
+            if not keywords:
+                return keywords
+            # Check if first item is a list
+            if keywords and isinstance(keywords[0], list):
+                flattened = []
+                for item in keywords:
+                    if isinstance(item, list):
+                        # If single item list, unwrap it
+                        if len(item) == 1:
+                            flattened.append(item[0])
+                        else:
+                            # Multi-item list shouldn't happen, but join with | to be safe
+                            flattened.append('|'.join(str(x) for x in item))
+                    else:
+                        flattened.append(item)
+                return flattened
+            return keywords
+
+        required_keywords = flatten_if_nested(required_keywords)
+        positive_keywords = flatten_if_nested(positive_keywords)
+        negative_keywords = flatten_if_nested(negative_keywords)
 
         # Extract significant words from search terms and add to positive keywords
         # This ensures memory recall matches on actual search content, not unrelated context

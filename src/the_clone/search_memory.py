@@ -1001,6 +1001,10 @@ class SearchMemory:
             if required_keywords:
                 all_groups_match = True
                 for keyword_group in required_keywords:
+                    # Normalize keyword (handles nested lists defensively)
+                    keyword_group = SearchMemory._normalize_keyword(keyword_group)
+                    if not keyword_group:
+                        continue
                     # Split by | for variants within this group
                     variants = [v.strip().lower() for v in keyword_group.split('|')]
                     # Check if ANY variant in this group matches (OR logic within group)
@@ -1032,6 +1036,9 @@ class SearchMemory:
             req_matches = 0
             if required_keywords:
                 for keyword_group in required_keywords:
+                    keyword_group = SearchMemory._normalize_keyword(keyword_group)
+                    if not keyword_group:
+                        continue
                     variants = [v.strip().lower() for v in keyword_group.split('|')]
                     if any(variant in searchable_text for variant in variants):
                         req_matches += 1
@@ -1155,6 +1162,9 @@ class SearchMemory:
             # Check all keyword groups (AND logic between groups)
             all_groups_match = True
             for keyword_group in required_keywords:
+                keyword_group = SearchMemory._normalize_keyword(keyword_group)
+                if not keyword_group:
+                    continue
                 # Split by | for variants (OR within group)
                 variants = [v.strip().lower() for v in keyword_group.split('|')]
                 if not any(variant in searchable for variant in variants):
@@ -2056,6 +2066,9 @@ Return JSON:
         searchable = (snippet + ' ' + title).lower()
 
         for keyword_group in required_keywords:
+            keyword_group = SearchMemory._normalize_keyword(keyword_group)
+            if not keyword_group:
+                continue
             # Split group into variants (OR logic within group)
             variants = [v.strip().lower() for v in keyword_group.split('|')]
 
@@ -2489,6 +2502,9 @@ Return JSON:
             # All required keyword groups must match (AND between groups, OR within)
             all_groups_match = True
             for keyword_group in required_keywords:
+                keyword_group = SearchMemory._normalize_keyword(keyword_group)
+                if not keyword_group:
+                    continue
                 # Split by | for OR variants within group
                 variants = [v.strip().lower() for v in keyword_group.split('|')]
 
@@ -2585,6 +2601,9 @@ Return JSON:
         # Check if all required keyword groups are covered by the aggregate
         all_groups_match = True
         for keyword_group in required_keywords:
+            keyword_group = SearchMemory._normalize_keyword(keyword_group)
+            if not keyword_group:
+                continue
             # Split by | for OR variants within group
             variants = [v.strip().lower() for v in keyword_group.split('|')]
 
@@ -2704,6 +2723,33 @@ Return JSON:
         return unique
 
     @staticmethod
+    def _normalize_keyword(kw: Any) -> str:
+        """
+        Normalize a keyword to string format.
+
+        Handles defensive case where AI returns nested lists [[item]] instead of [item].
+
+        Args:
+            kw: Keyword (expected string, but may be list due to AI response variation)
+
+        Returns:
+            Normalized keyword string
+        """
+        # Defensive: Handle case where kw is a list instead of string
+        if isinstance(kw, list):
+            # Flatten single-item list or join multi-item with |
+            if len(kw) == 1:
+                kw = kw[0]
+            elif len(kw) > 1:
+                kw = '|'.join(str(x) for x in kw)
+            else:
+                # Empty list - return empty string
+                kw = ''
+
+        # Convert to string if not already (safety)
+        return str(kw) if kw is not None else ''
+
+    @staticmethod
     def compute_hit_keywords(
         citation: Dict[str, Any],
         all_keywords: List[str]
@@ -2729,6 +2775,13 @@ Return JSON:
 
         hit = []
         for kw in all_keywords:
+            # Normalize keyword (handles nested lists defensively)
+            kw = SearchMemory._normalize_keyword(kw)
+
+            # Skip empty keywords
+            if not kw:
+                continue
+
             # Split by | for OR variants within keyword group
             variants = [v.strip().lower() for v in kw.split('|')]
             # Also add any additional variants (like state abbreviations)
