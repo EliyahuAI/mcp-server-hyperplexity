@@ -222,28 +222,49 @@ class UnifiedSynthesizer:
                 clone_logger.log_section(f"Synthesis Result (Iter {iteration})", data, level=3, collapse=True)
 
             # Parse response based on mode
-            logger.debug(f"[UNIFIED] data keys: {list(data.keys())}")
+            # Note: data can be a list (from array responses) or dict (from object responses)
+            if isinstance(data, dict):
+                logger.debug(f"[UNIFIED] data keys: {list(data.keys())}")
+            else:
+                logger.debug(f"[UNIFIED] data type: {type(data).__name__} (length: {len(data) if hasattr(data, '__len__') else 'N/A'})")
             if is_last_iteration:
                 # Synthesis mode - answer and potentially suggest new search
                 answer_raw = data
                 can_answer = True
                 confidence = "high"
                 missing = []
-                suggested = data.get('suggested_search_terms', [])
-                request_upgrade = data.get('request_capability_upgrade', False)
-                new_note = data.get('note_to_self')
-                self_assessment = data.get('self_assessment', 'A')  # Extract before transform loses it
+                # Handle both dict (normal synthesis) and list (refinement mode with array responses)
+                if isinstance(data, dict):
+                    suggested = data.get('suggested_search_terms', [])
+                    request_upgrade = data.get('request_capability_upgrade', False)
+                    new_note = data.get('note_to_self')
+                    self_assessment = data.get('self_assessment', 'A')  # Extract before transform loses it
+                else:
+                    # List response (from refinement mode) - no metadata fields
+                    suggested = []
+                    request_upgrade = False
+                    new_note = None
+                    self_assessment = 'A'
             else:
                 # Evaluation mode - may have answer
-                can_answer = data.get('can_answer', False)
-                confidence = data.get('confidence', 'low')
-                answer_raw = data.get('answer_raw', {})  # Extract from answer_raw field
-                # If answer is empty object, treat as no answer
-                if not answer_raw or answer_raw == {}:
-                    answer_raw = {}
-                    can_answer = False
-                missing = data.get('missing_aspects', [])
-                suggested = data.get('suggested_search_terms', [])
+                # Handle both dict (normal) and list (edge case)
+                if isinstance(data, dict):
+                    can_answer = data.get('can_answer', False)
+                    confidence = data.get('confidence', 'low')
+                    answer_raw = data.get('answer_raw', {})  # Extract from answer_raw field
+                    # If answer is empty object, treat as no answer
+                    if not answer_raw or answer_raw == {}:
+                        answer_raw = {}
+                        can_answer = False
+                    missing = data.get('missing_aspects', [])
+                    suggested = data.get('suggested_search_terms', [])
+                else:
+                    # List response (edge case) - treat as answer with no metadata
+                    can_answer = True
+                    confidence = 'medium'
+                    answer_raw = data
+                    missing = []
+                    suggested = []
                 request_upgrade = False
                 new_note = None
                 self_assessment = 'A'  # Evaluation mode doesn't use self-assessment
@@ -553,7 +574,7 @@ Imagine a client paid an expert researcher for this answer. Would they be satisf
 
 Return JSON with 'comparison', 'self_assessment', and optional 'suggested_search_terms', 'request_capability_upgrade', and 'note_to_self' fields.
 
-**⚠️ RESPONSE LENGTH LIMIT: Keep your total response under 24000 words. Be terse - validation will expand details later.**"""
+**⚠️ RESPONSE LENGTH LIMIT: Keep your total response under 24000 words.{' Be terse - validation will expand details later.' if context == 'findall' else ''}**"""
 
         else:
             # Evaluation + synthesis mode
@@ -608,7 +629,7 @@ Query: {query}
 - ✅ CORRECT: Copy exact IDs and handles from snippet listings
 - **REQUIRED:** Always include citations when providing answers
 
-**⚠️ RESPONSE LENGTH LIMIT: Keep your total response under 24000 words. Be terse - validation will expand details later.**
+**⚠️ RESPONSE LENGTH LIMIT: Keep your total response under 24000 words.{' Be terse - validation will expand details later.' if context == 'findall' else ''}**
 
 **Output Structure Example:**
 ```json

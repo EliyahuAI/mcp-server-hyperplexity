@@ -386,6 +386,262 @@ class TheClone2Refined:
                 )
                 clone_logger.end_step("Skip-to-Synthesis")
 
+            # Extract self-assessment for iteration logic
+            self_assessment = synthesis_result.get('self_assessment', 'A')
+            suggested_search_terms = synthesis_result.get('suggested_search_terms', [])
+            request_upgrade = synthesis_result.get('request_capability_upgrade', False)
+            note_to_self = synthesis_result.get('note_to_self')
+            original_note_to_self = note_to_self
+            previous_answer = synthesis_result.get('answer', {})
+            upgraded = False
+            iteration = 1
+
+            # Track search terms used
+            all_search_terms_used = set([prompt])
+
+            # Self-correction loop for skip-to-synthesis path
+            max_self_corrections = 1  # Same as normal path (non-findall)
+            self_correction_count = 0
+
+            while (self_assessment not in ['A+', 'A']
+                   and suggested_search_terms
+                   and self_correction_count < max_self_corrections):
+
+                self_correction_count += 1
+                logger.info(f"\n[CLONE] Skip-to-Synthesis Self-correction {self_correction_count}/{max_self_corrections}: Grade {self_assessment}")
+
+                # Filter out already-used search terms and limit to 2
+                suggested_search_terms = [t for t in suggested_search_terms if t not in all_search_terms_used][:2]
+                if not suggested_search_terms:
+                    logger.debug(f"[CLONE] No new search terms to try, stopping self-correction")
+                    break
+
+                all_search_terms_used.update(suggested_search_terms)
+                iteration += 1
+                logger.debug(f"[CLONE] Suggested search terms: {suggested_search_terms}")
+                if clone_logger:
+                    clone_logger.log_section("Skip-to-Synthesis Self-Correction", f"Iteration {self_correction_count}: Grade {self_assessment}. Executing: {suggested_search_terms}", level=2)
+
+                # Prepend system message to note_to_self
+                prefix = "Providing additional search results that you requested"
+                if note_to_self:
+                    note_to_self = f"{prefix}: {note_to_self}"
+                else:
+                    note_to_self = f"{prefix}."
+
+                # Search
+                search_settings = {
+                    'max_results_per_query': 10,
+                    'recency_days': None,
+                    'academic': academic
+                }
+                new_search_results = await self.search_manager.execute_searches(
+                    search_terms=suggested_search_terms,
+                    search_settings=search_settings,
+                    include_domains=include_domains,
+                    exclude_domains=exclude_domains,
+                    clone_logger=clone_logger
+                )
+                search_cost = len(suggested_search_terms) * 0.005
+                costs['search'] = costs.get('search', 0.0) + search_cost
+                costs_by_provider['perplexity'] = costs_by_provider.get('perplexity', 0.0) + search_cost
+                calls_by_provider['perplexity'] = calls_by_provider.get('perplexity', 0) + len(suggested_search_terms)
+
+                if clone_logger:
+                    clone_logger.record_step_metric(
+                        "Skip-to-Synthesis Search",
+                        "perplexity",
+                        "Search API",
+                        search_cost,
+                        0.0,
+                        f"{len(suggested_search_terms)} queries"
+                    )
+
+                # Triage
+                start_time_corr = time.time()
+                correction_triage_cost = 0.0
+
+                # Get required/positive/negative keywords from initial result
+                positive_keywords = initial_result.get('positive_keywords', [])
+                negative_keywords = initial_result.get('negative_keywords', [])
+
+                new_ranked_lists, new_triage_results = await self.source_triage.triage_all_searches(
+                    search_results=new_search_results,
+                    search_terms=suggested_search_terms,
+                    query=prompt,
+                    existing_snippets=url_snippets,
+                    positive_keywords=positive_keywords,
+                    negative_keywords=negative_keywords,
+                    model=models.get('triage', models['synthesis']),
+                    soft_schema=False,
+                    clone_logger=clone_logger,
+                    provider=provider
+                )
+                for result in new_triage_results:
+                    if not isinstance(result, Exception):
+                        triage_cost, triage_provider = self._extract_cost_and_provider(result.get('model_response', {}), clone_logger, stats)
+                        correction_triage_cost += triage_cost
+                        costs['triage'] = costs.get('triage', 0.0) + triage_cost
+                        costs_by_provider[triage_provider] = costs_by_provider.get(triage_provider, 0.0) + triage_cost
+                        calls_by_provider[triage_provider] = calls_by_provider.get(triage_provider, 0) + 1
+
+                if clone_logger:
+                    clone_logger.record_step_metric(
+                        "Skip-to-Synthesis Triage",
+                        provider,
+                        models.get('triage', models['synthesis']),
+                        correction_triage_cost,
+                        time.time() - start_time_corr,
+                        f"Ranked {len(new_ranked_lists)} groups"
+                    )
+
+                # Build ranked source pool
+                new_ranked_sources = []
+                for search_idx, search_term in enumerate(suggested_search_terms):
+                    ranked_urls = new_ranked_lists[search_idx] if search_idx < len(new_ranked_lists) else []
+                    for source_data in new_search_results[search_idx] if search_idx < len(new_search_results) else []:
+                        url = source_data.get('url', '')
+                        if url in ranked_urls:
+                            priority = ranked_urls.index(url) + 1
+                            source_data['_priority'] = priority
+                            source_data['_search_index'] = len(all_search_terms_used) - len(suggested_search_terms) + search_idx + 1
+                            new_ranked_sources.append(source_data)
+
+                # Extraction
+                if new_ranked_sources:
+                    logger.debug(f"[CLONE] Extracting from {len(new_ranked_sources)} new sources (Parallel)...")
+
+                    total_new_snippets = 0
+                    extraction_tasks = []
+
+                    # Prepare extraction tasks
+                    current_global_index = len(url_snippets) + 1
+
+                    for i, source in enumerate(new_ranked_sources):
+                        task = self.snippet_extractor.extract_from_sources_batch(
+                            sources=[source],
+                            query=prompt,
+                            snippet_id_prefix=f"S{iteration}",
+                            all_search_terms=list(all_search_terms_used),
+                            model=models.get('extraction', models['synthesis']),
+                            soft_schema=False,
+                            min_quality_threshold=0.5,
+                            extraction_mode='parallel',
+                            max_snippets_per_source=10,
+                            clone_logger=clone_logger,
+                            provider=provider,
+                            start_source_index=current_global_index + i,
+                            accept_all_quality_levels=False
+                        )
+                        extraction_tasks.append(task)
+
+                    # Execute all extraction tasks in parallel
+                    start_time_corr = time.time()
+                    correction_extraction_cost = 0.0
+                    batch_results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
+
+                    # Process results
+                    for i, batch_result in enumerate(batch_results):
+                        if isinstance(batch_result, Exception):
+                            logger.error(f"[CLONE] Extraction batch {i} failed: {batch_result}")
+                            continue
+
+                        # Collect snippets
+                        new_snippets = []
+                        for source_result in batch_result:
+                            new_snippets.extend(source_result.get('snippets', []))
+
+                        url_snippets.extend(new_snippets)
+                        total_new_snippets += len(new_snippets)
+
+                        # Extract cost
+                        if batch_result and len(batch_result) > 0:
+                            model_response = batch_result[0].get('model_response', {})
+                            extract_cost, extract_provider = self._extract_cost_and_provider(model_response, clone_logger, stats)
+                            correction_extraction_cost += extract_cost
+                            costs['extraction'] = costs.get('extraction', 0.0) + extract_cost
+                            costs_by_provider[extract_provider] = costs_by_provider.get(extract_provider, 0.0) + extract_cost
+                            calls_by_provider[extract_provider] = calls_by_provider.get(extract_provider, 0) + 1
+
+                    if clone_logger:
+                        clone_logger.record_step_metric(
+                            "Skip-to-Synthesis Extraction",
+                            provider,
+                            models.get('extraction', models['synthesis']),
+                            correction_extraction_cost,
+                            time.time() - start_time_corr,
+                            f"Extracted {total_new_snippets} new snippets (Parallel)"
+                        )
+
+                    logger.debug(f"[CLONE] Added {total_new_snippets} new snippets")
+
+                # Re-synthesis with new snippets
+                target_model = models['synthesis']
+                target_soft_schema = False
+
+                if request_upgrade and synthesis_tier != 'tier4':
+                    logger.debug(f"[CLONE] Upgrading to tier4 (PhD+ capability) as requested")
+                    from the_clone.strategy_loader import get_strategy
+                    tier4_models = get_models_for_tier(provider, 'tier4')
+                    target_model = tier4_models['synthesis']
+                    synthesis_tier = 'tier4'
+                    models['synthesis'] = target_model
+                    upgraded = True
+                    action_name = "Skip-to-Synthesis Tier 4 Upgrade"
+                else:
+                    logger.debug(f"[CLONE] Re-synthesizing with current model ({target_model})")
+                    action_name = "Skip-to-Synthesis Re-Synthesis"
+
+                step_start_phase = time.time()
+                if clone_logger:
+                    clone_logger.start_step(action_name)
+
+                # Build previous iteration data
+                previous_iteration_data = {
+                    'iteration': self_correction_count,
+                    'grade': self_assessment,
+                    'response': previous_answer,
+                    'note_to_self': original_note_to_self or '',
+                    'search_terms': list(all_search_terms_used)
+                }
+
+                synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
+                    query=prompt,
+                    snippets=url_snippets,
+                    context='medium',
+                    iteration=iteration,
+                    is_last_iteration=True,
+                    schema=schema,
+                    model=target_model,
+                    search_terms=list(all_search_terms_used),
+                    debug_dir=debug_dir,
+                    soft_schema=target_soft_schema,
+                    clone_logger=clone_logger,
+                    note_to_self=note_to_self,
+                    initial_decision=decision,
+                    sources_examined=[],
+                    previous_iteration_data=previous_iteration_data
+                )
+
+                tier4_cost, tier4_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}), clone_logger, stats)
+                costs['synthesis'] += tier4_cost
+                costs_by_provider[tier4_provider] = costs_by_provider.get(tier4_provider, 0.0) + tier4_cost
+                calls_by_provider[tier4_provider] = calls_by_provider.get(tier4_provider, 0) + 1
+
+                step_time_phase = time.time() - step_start_phase
+                if clone_logger:
+                    model_resp = synthesis_result.get('model_response', {})
+                    used_model = model_resp.get('model_used', target_model)
+                    if model_resp.get('used_backup_model'): used_model += " (Backup)"
+                    clone_logger.record_step_metric(action_name, tier4_provider, used_model, tier4_cost, step_time_phase, "Re-synthesized")
+                    clone_logger.end_step(action_name)
+
+                # Extract values for next iteration
+                self_assessment = synthesis_result.get('self_assessment', 'A')
+                suggested_search_terms = synthesis_result.get('suggested_search_terms', [])
+                previous_answer = synthesis_result.get('answer', {})
+                logger.debug(f"[CLONE] Skip-to-Synthesis self-correction {self_correction_count} complete: grade={self_assessment}, new_terms={len(suggested_search_terms)}")
+
             # Build final result
             total_time = time.time() - call_start_time
             total_cost = sum(costs.values())
@@ -399,7 +655,10 @@ class TheClone2Refined:
                 "breadth": initial_result.get('breadth', 'narrow'),
                 "depth": initial_result.get('depth', 'shallow'),
                 "synthesis_tier": synthesis_tier,
-                "iterations": 1,
+                "iterations": iteration,  # Track actual iteration count
+                "self_corrections": self_correction_count,  # Track self-correction iterations
+                "upgraded_to_tier4": upgraded,  # Track if upgraded
+                "final_grade": self_assessment,  # Track final self-assessment
                 "total_snippets": len(url_snippets),
                 "citations_count": len(final_citations),
                 "sources_pulled": len(url_snippets),
