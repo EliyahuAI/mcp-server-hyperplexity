@@ -10397,7 +10397,7 @@ function createConfigurationCard() {
                                 <button class="std-button primary" onclick="useMatchingConfig('${perfectMatch.config_s3_key}', '${perfectMatch.source_session}')" style="flex: 1;">
                                     <span class="button-text">🔗 Use Match (100%)</span>
                                 </button>
-                                <button class="std-button secondary" onclick="createTableMakerCard()" style="flex: 1;">
+                                <button class="std-button secondary" onclick="startUploadInterviewFromConfig()" style="flex: 1;">
                                     <span class="button-text">🤖 Create with AI</span>
                                 </button>
                             </div>
@@ -10405,7 +10405,7 @@ function createConfigurationCard() {
                     } else {
                         buttonContainer.innerHTML = `
                             <div style="margin: 20px 0; text-align: center;">
-                                <button class="std-button secondary" onclick="createTableMakerCard()">
+                                <button class="std-button secondary" onclick="startUploadInterviewFromConfig()">
                                     <span class="button-text">🤖 Create with AI</span>
                                 </button>
                             </div>
@@ -10414,7 +10414,7 @@ function createConfigurationCard() {
                 } else {
                     buttonContainer.innerHTML = `
                         <div style="margin: 20px 0; text-align: center;">
-                            <button class="std-button secondary" onclick="createTableMakerCard()" style="background: #6b46c1; border-color: #6b46c1; color: white;">
+                            <button class="std-button secondary" onclick="startUploadInterviewFromConfig()" style="background: #6b46c1; border-color: #6b46c1; color: white;">
                                 <span class="button-text">🤖 Create with AI</span>
                             </button>
                         </div>
@@ -10423,7 +10423,7 @@ function createConfigurationCard() {
             } else {
                 buttonContainer.innerHTML = `
                     <div style="margin: 20px 0; text-align: center;">
-                        <button class="std-button secondary" onclick="createTableMakerCard()" style="background: #6b46c1; border-color: #6b46c1; color: white;">
+                        <button class="std-button secondary" onclick="startUploadInterviewFromConfig()" style="background: #6b46c1; border-color: #6b46c1; color: white;">
                             <span class="button-text">🤖 Create with AI</span>
                         </button>
                     </div>
@@ -14266,6 +14266,29 @@ fetch(`${API_BASE}/validate`, {
       showMessage(`${cardId}-messages`, 'Failed to start validation. Please try again.', 'error');
   });
         }
+
+// Expose function globally to allow starting upload interview from config card
+window.startUploadInterviewFromConfig = async function() {
+    if (!globalState.sessionId) {
+        console.error('[UPLOAD_INTERVIEW] No session ID found');
+        alert('Please upload a table file first');
+        return;
+    }
+
+    // Generate conversation ID
+    const conversationId = `upload_interview_${globalState.sessionId}`;
+
+    // Store conversation info
+    globalState.uploadInterviewConversationId = conversationId;
+
+    // Create the upload interview card
+    const uploadData = {
+        conversation_id: conversationId,
+        table_analysis: globalState.tableAnalysis || null
+    };
+
+    await createUploadInterviewCard(null, uploadData);
+}
 
 
 /* ========== 11-preview.js ========== */

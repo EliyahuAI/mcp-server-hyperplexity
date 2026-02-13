@@ -935,7 +935,7 @@ function createConfigurationCard() {
                                 <button class="std-button primary" onclick="useMatchingConfig('${perfectMatch.config_s3_key}', '${perfectMatch.source_session}')" style="flex: 1;">
                                     <span class="button-text">🔗 Use Match (100%)</span>
                                 </button>
-                                <button class="std-button secondary" onclick="createTableMakerCard()" style="flex: 1;">
+                                <button class="std-button secondary" onclick="startUploadInterviewFromConfig()" style="flex: 1;">
                                     <span class="button-text">🤖 Create with AI</span>
                                 </button>
                             </div>
@@ -943,7 +943,7 @@ function createConfigurationCard() {
                     } else {
                         buttonContainer.innerHTML = `
                             <div style="margin: 20px 0; text-align: center;">
-                                <button class="std-button secondary" onclick="createTableMakerCard()">
+                                <button class="std-button secondary" onclick="startUploadInterviewFromConfig()">
                                     <span class="button-text">🤖 Create with AI</span>
                                 </button>
                             </div>
@@ -952,7 +952,7 @@ function createConfigurationCard() {
                 } else {
                     buttonContainer.innerHTML = `
                         <div style="margin: 20px 0; text-align: center;">
-                            <button class="std-button secondary" onclick="createTableMakerCard()" style="background: #6b46c1; border-color: #6b46c1; color: white;">
+                            <button class="std-button secondary" onclick="startUploadInterviewFromConfig()" style="background: #6b46c1; border-color: #6b46c1; color: white;">
                                 <span class="button-text">🤖 Create with AI</span>
                             </button>
                         </div>
@@ -961,7 +961,7 @@ function createConfigurationCard() {
             } else {
                 buttonContainer.innerHTML = `
                     <div style="margin: 20px 0; text-align: center;">
-                        <button class="std-button secondary" onclick="createTableMakerCard()" style="background: #6b46c1; border-color: #6b46c1; color: white;">
+                        <button class="std-button secondary" onclick="startUploadInterviewFromConfig()" style="background: #6b46c1; border-color: #6b46c1; color: white;">
                             <span class="button-text">🤖 Create with AI</span>
                         </button>
                     </div>

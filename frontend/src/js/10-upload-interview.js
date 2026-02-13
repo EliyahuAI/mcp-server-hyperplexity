@@ -726,3 +726,26 @@ fetch(`${API_BASE}/validate`, {
       showMessage(`${cardId}-messages`, 'Failed to start validation. Please try again.', 'error');
   });
         }
+
+// Expose function globally to allow starting upload interview from config card
+window.startUploadInterviewFromConfig = async function() {
+    if (!globalState.sessionId) {
+        console.error('[UPLOAD_INTERVIEW] No session ID found');
+        alert('Please upload a table file first');
+        return;
+    }
+
+    // Generate conversation ID
+    const conversationId = `upload_interview_${globalState.sessionId}`;
+
+    // Store conversation info
+    globalState.uploadInterviewConversationId = conversationId;
+
+    // Create the upload interview card
+    const uploadData = {
+        conversation_id: conversationId,
+        table_analysis: globalState.tableAnalysis || null
+    };
+
+    await createUploadInterviewCard(null, uploadData);
+}
