@@ -62,6 +62,7 @@
       "stop_condition": null,
       "max_tokens_per_page": 512,
       "batch_extraction": true,
+      "synthesis_model": "gemini-2.5-flash",
       "max_results_per_search": 15,
       "bypass_global_source_limit": true
     },
