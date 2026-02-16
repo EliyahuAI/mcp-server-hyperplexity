@@ -2375,7 +2375,7 @@ _continuation_triggered = False
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for validation requests and config generation."""
-    global _continuation_triggered
+    global _continuation_triggered  # Declare global FIRST, before any assignments
     _continuation_triggered = False  # Reset for this invocation
 
     # Log the start of every invocation to detect concurrent runs
@@ -6108,7 +6108,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return response
     except ContinuationTriggered as ct:
         # Continuation was triggered - exit Lambda immediately with success response
-        global _continuation_triggered
         _continuation_triggered = True  # Mark that continuation was triggered (skip cleanup)
         logger.debug(f"[LAMBDA_EXIT] Exiting due to continuation trigger")
         return ct.response_data
