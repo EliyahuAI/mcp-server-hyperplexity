@@ -3,6 +3,20 @@
 ## Problem
 When refining or copying configurations, the `config_change_log` entries were being lost. Original configs with 3+ entries would end up with only 1 entry after refinement.
 
+## ACTUAL Root Cause (Found!)
+
+**The background handler was NOT retrieving existing_config** before calling config generation!
+
+Line 6162 in `background_handler.py`:
+```python
+'existing_config': event.get('existing_config'),  # Always returned None!
+```
+
+The SQS event doesn't include `existing_config`, so it was always None. This caused:
+- ✅ No patching (treated as new config)
+- ✅ Lost logs (no conversation history)
+- ✅ Version 9 treated as version 1
+
 ## Root Cause Analysis
 
 ### Schema Issue
@@ -28,6 +42,36 @@ The `column_config_schema.json` has `"additionalProperties": false` and does **N
 5. ⚠️ **Issue**: If `conversation_history` is empty, restoration fails silently
 
 ## Fixes Applied
+
+### Fix 0: **THE CRITICAL FIX** - Auto-Retrieve Existing Config
+**File**: `src/lambdas/interface/handlers/background_handler.py`
+**Lines**: 6154-6182
+
+The background handler now auto-retrieves the existing config from S3 if it's not provided in the event:
+
+```python
+# CRITICAL: Auto-retrieve existing config if not provided in event (for refinements)
+existing_config = event.get('existing_config')
+if not existing_config and session_id and config_email:
+    try:
+        logger.info(f"🔍 EXISTING_CONFIG: Not in event, attempting auto-retrieval for session {session_id}")
+        from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+        from interface_lambda.actions.generate_config_unified import find_latest_config_in_session
+
+        storage_manager = UnifiedS3Manager()
+        session_path = storage_manager.get_session_path(config_email, session_id)
+        existing_config = find_latest_config_in_session(
+            storage_manager.s3_client,
+            storage_manager.bucket_name,
+            session_path
+        )
+
+        if existing_config:
+            logger.info(f"✅ EXISTING_CONFIG: Retrieved existing config version {existing_config.get('storage_metadata', {}).get('version', 'unknown')}")
+            logger.info(f"✅ EXISTING_CONFIG: Has config_change_log: {bool(existing_config.get('config_change_log'))}")
+```
+
+**This is the main fix** - without this, all other fixes are ineffective!
 
 ### Fix 1: Restore History in 3-Tier Success Path
 **File**: `src/lambdas/interface/actions/config_generation/__init__.py`
