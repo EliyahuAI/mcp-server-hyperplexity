@@ -476,9 +476,22 @@ async def handle_generate_config_unified(event_data, websocket_callback=None, ta
             # Prepare payload for config generation
             # Ensure conversation history is preserved by including current conversation log
             conversation_history = []
+
+            # CRITICAL LOGGING: Diagnose why conversation history might be lost
+            logger.info(f"🔍 CONV_HISTORY_DEBUG: existing_config exists: {bool(existing_config)}")
+            if existing_config:
+                logger.info(f"🔍 CONV_HISTORY_DEBUG: existing_config is dict: {isinstance(existing_config, dict)}")
+                logger.info(f"🔍 CONV_HISTORY_DEBUG: existing_config keys: {list(existing_config.keys()) if isinstance(existing_config, dict) else 'N/A'}")
+                has_log = 'config_change_log' in existing_config if isinstance(existing_config, dict) else False
+                logger.info(f"🔍 CONV_HISTORY_DEBUG: has config_change_log: {has_log}")
+                if has_log:
+                    log_content = existing_config.get('config_change_log')
+                    logger.info(f"🔍 CONV_HISTORY_DEBUG: config_change_log type: {type(log_content)}")
+                    logger.info(f"🔍 CONV_HISTORY_DEBUG: config_change_log length: {len(log_content) if log_content else 0}")
+
             if existing_config and existing_config.get('config_change_log'):
                 conversation_history = existing_config['config_change_log'].copy()
-                logger.info(f"Preserving {len(conversation_history)} existing conversation entries")
+                logger.info(f"✅ Preserving {len(conversation_history)} existing conversation entries")
 
                 # For refinements with user instructions, add the user message to conversation history
                 if instructions and instructions.strip():
@@ -490,20 +503,22 @@ async def handle_generate_config_unified(event_data, websocket_callback=None, ta
                         'entry_type': 'user_input'
                     }
                     conversation_history.append(user_entry)
-                    logger.info(f"Added user message to conversation history for refinement")
-                
+                    logger.info(f"✅ Added user message to conversation history for refinement (now {len(conversation_history)} entries)")
+
                 # Debug: log current version info being passed
                 generation_metadata = existing_config.get('generation_metadata', {})
                 current_version = generation_metadata.get('version', 'unknown')
                 logger.info(f"Passing existing config to lambda - Version: {current_version}")
-                
+
                 # Log recent entries for debugging
                 if conversation_history:
                     logger.info("Recent conversation entries being passed:")
                     for i, entry in enumerate(conversation_history[-2:], 1):
-                        logger.info(f"  Entry {len(conversation_history)-2+i}: v{entry.get('version', 'unknown')} - {entry.get('instructions', 'No instructions')[:30]}...")
+                        entry_type = entry.get('entry_type', entry.get('action', 'unknown'))
+                        entry_instructions = entry.get('instructions', entry.get('user_instructions', 'No instructions'))[:30]
+                        logger.info(f"  Entry {len(conversation_history)-2+i}/{len(conversation_history)}: {entry_type} - {entry_instructions}...")
             else:
-                logger.info("No existing conversation history found to preserve")
+                logger.warning(f"⚠️ No existing conversation history found to preserve (existing_config: {bool(existing_config)}, has_log: {bool(existing_config.get('config_change_log')) if existing_config else False})")
             
             # Get latest validation or preview results for context
             # This helps determine if we should treat this as a refinement even without existing_config
@@ -634,14 +649,17 @@ async def handle_generate_config_unified(event_data, websocket_callback=None, ta
                 if 'config_change_log' not in updated_config:
                     # CRITICAL FIX: Restore conversation history from the variable we built earlier
                     # The AI doesn't include config_change_log in its output, so we must restore it
-                    if conversation_history:
+                    if conversation_history and len(conversation_history) > 0:
                         updated_config['config_change_log'] = conversation_history.copy()
-                        print(f"🔍 INTERFACE_DEBUG: Restored {len(conversation_history)} entries from conversation_history")
+                        print(f"✅ INTERFACE_DEBUG: Restored {len(conversation_history)} entries from conversation_history")
+                        logger.info(f"✅ Restored {len(conversation_history)} conversation entries from history variable")
                     else:
                         updated_config['config_change_log'] = []
-                        print(f"🔍 INTERFACE_DEBUG: Initialized new config_change_log (no history available)")
+                        print(f"⚠️ INTERFACE_DEBUG: Initialized new config_change_log (no history available - conversation_history length: {len(conversation_history) if conversation_history else 0})")
+                        logger.warning(f"⚠️ No conversation history to restore (conversation_history: {len(conversation_history) if conversation_history else 0} entries)")
                 else:
                     print(f"🔍 INTERFACE_DEBUG: Existing config_change_log has {len(updated_config['config_change_log'])} entries")
+                    logger.info(f"Config already has config_change_log with {len(updated_config['config_change_log'])} entries")
 
                 # Create conversation entry for this interaction
                 conversation_entry = {

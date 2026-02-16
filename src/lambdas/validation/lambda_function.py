@@ -2370,12 +2370,37 @@ class ContinuationTriggered(Exception):
         self.response_data = response_data
         super().__init__("Continuation triggered")
 
+# Track if continuation was triggered (to prevent premature S3 cleanup)
+_continuation_triggered = False
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for validation requests and config generation."""
+    global _continuation_triggered
+    _continuation_triggered = False  # Reset for this invocation
+
     # Log the start of every invocation to detect concurrent runs
     logger.warning(f"VALIDATOR_INVOKED: Starting new invocation for session_id={event.get('session_id')}. AWS_Request_ID={context.aws_request_id if context else 'N/A'}")
     logger.info(f"[EVENT_DEBUG] Event has email: {event.get('email')}, email_address: {event.get('email_address')}, is_SQS: {'Records' in event}")
+
+    # Define cleanup function at module scope (accessible in finally block)
+    def cleanup_s3_payload_if_needed():
+        """Clean up S3 payload if async request completed (no continuation triggered)."""
+        # Only cleanup if continuation was NOT triggered (continuations need the payload)
+        if _continuation_triggered:
+            logger.debug(f"[CLEANUP] Skipping cleanup - continuation triggered (payload needed for next invocation)")
+            return
+
+        complete_payload_s3_key = event.get('complete_payload_s3_key')
+        is_async = event.get('async_delegation_request', False)
+        if complete_payload_s3_key and is_async:
+            try:
+                import boto3
+                s3_client = boto3.client('s3')
+                s3_bucket = event.get('S3_UNIFIED_BUCKET', os.environ.get('S3_UNIFIED_BUCKET', 'perplexity-validator-unified'))
+                s3_client.delete_object(Bucket=s3_bucket, Key=complete_payload_s3_key)
+                logger.info(f"[CLEANUP] Deleted complete payload from S3: {complete_payload_s3_key}")
+            except Exception as cleanup_error:
+                logger.warning(f"[CLEANUP] Failed to delete payload {complete_payload_s3_key}: {cleanup_error}")
 
     progress_thread = None
     progress_queue = None
@@ -2891,20 +2916,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'statusCode': 500,
                     'body': json.dumps({'error': 'Async delegation request missing both complete_payload_s3_key and config_s3_key'})
                 }
-
-        # ========== S3 PAYLOAD CLEANUP HELPER FUNCTION ==========
-        def cleanup_s3_payload_if_needed():
-            """Clean up S3 payload if this is an async request with a complete payload."""
-            complete_payload_s3_key = event.get('complete_payload_s3_key')
-            if complete_payload_s3_key and is_async_request:
-                try:
-                    import boto3
-                    s3_client = boto3.client('s3')
-                    s3_bucket = event.get('S3_UNIFIED_BUCKET', os.environ.get('S3_UNIFIED_BUCKET', 'perplexity-validator-unified'))
-                    s3_client.delete_object(Bucket=s3_bucket, Key=complete_payload_s3_key)
-                    logger.debug(f"[CLEANUP] Deleted complete payload from S3: {complete_payload_s3_key}")
-                except Exception as cleanup_error:
-                    logger.warning(f"[CLEANUP] Failed to delete payload {complete_payload_s3_key}: {cleanup_error}")
 
         # Load config from S3 if config_s3_key is provided (for both sync and async)
         # This avoids 6MB payload limit by passing S3 key instead of full config
@@ -6097,18 +6108,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return response
     except ContinuationTriggered as ct:
         # Continuation was triggered - exit Lambda immediately with success response
+        global _continuation_triggered
+        _continuation_triggered = True  # Mark that continuation was triggered (skip cleanup)
         logger.debug(f"[LAMBDA_EXIT] Exiting due to continuation trigger")
         return ct.response_data
     except Exception as e:
         logger.error(f"Error in lambda_handler: {str(e)}")
         logger.error(traceback.format_exc())
 
-        # Clean up S3 payload on error if this is an async request
-        try:
-            cleanup_s3_payload_if_needed()
-        except Exception as cleanup_error:
-            logger.warning(f"[CLEANUP] Error during S3 cleanup in exception handler: {cleanup_error}")
-
+        # Cleanup handled in finally block
         return {
         'statusCode': 500,
         'body': {

@@ -530,6 +530,17 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
 
                 updated_config = result['refined_data']
 
+                # CRITICAL: Restore conversation history - AI doesn't include config_change_log in output
+                if 'config_change_log' not in updated_config:
+                    if conversation_history:
+                        updated_config['config_change_log'] = conversation_history.copy()
+                        logger.info(f"🔧 Restored {len(conversation_history)} conversation entries after 3-tier refinement")
+                    else:
+                        updated_config['config_change_log'] = []
+                        logger.info(f"🔧 Initialized empty config_change_log (no history available)")
+                else:
+                    logger.info(f"🔧 config_change_log already present with {len(updated_config.get('config_change_log', []))} entries")
+
                 # Add metadata
                 updated_config['generation_metadata'] = updated_config.get('generation_metadata', {})
                 updated_config['generation_metadata']['refinement_method'] = method
@@ -711,6 +722,7 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
                         logger.error(f"Failed to fix config validation errors on retry {retry_count + 1}")
 
         # Config generation returns clean structured response - interface lambda handles metadata and conversation tracking
+        # NOTE: For 3-tier refinements, conversation history is already restored above. For full generation, it's restored in interface lambda.
         logger.info("Config generation complete - returning clean config to interface lambda")
 
         return {
