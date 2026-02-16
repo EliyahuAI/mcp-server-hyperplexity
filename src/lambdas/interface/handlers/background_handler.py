@@ -3623,7 +3623,13 @@ def handle_main_processing(event, context):
                             logger.debug(f"[DELEGATION] Pre-generated payload contains {len(payload_rows)} rows with pre-computed keys")
 
                             # Extract config version for S3 path construction
-                            config_version = config_data.get('storage_metadata', {}).get('version', 1) if config_data else 1
+                            # config_data should be loaded earlier, but handle case where it's not
+                            try:
+                                config_version = config_data.get('storage_metadata', {}).get('version', 1) if config_data else 1
+                            except NameError:
+                                # config_data not in scope - load from S3 or use default
+                                logger.warning(f"[DELEGATION] config_data not available, using default version 1")
+                                config_version = 1
 
                             # Construct results path for continuation chain
                             domain = email.split('@')[-1].lower().strip() if email and '@' in email else 'unknown'
