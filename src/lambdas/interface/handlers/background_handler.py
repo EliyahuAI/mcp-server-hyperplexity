@@ -1636,9 +1636,14 @@ def handle_main_processing(event, context):
                 try:
                     config_version = 1
                     config_id = None
-                    if config_data and isinstance(config_data, dict):
-                        config_version = config_data.get('storage_metadata', {}).get('version', 1)
-                        config_id = config_data.get('storage_metadata', {}).get('config_id')
+                    # Check if config_data exists in scope before accessing it
+                    try:
+                        if config_data and isinstance(config_data, dict):
+                            config_version = config_data.get('storage_metadata', {}).get('version', 1)
+                            config_id = config_data.get('storage_metadata', {}).get('config_id')
+                    except NameError:
+                        # config_data not loaded yet (error happened before config was read)
+                        logger.debug("[SESSION_TRACKING] config_data not available for failure tracking")
 
                     storage_manager.update_session_results(
                         email=email,

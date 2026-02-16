@@ -2900,6 +2900,27 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 except Exception as cleanup_error:
                     logger.warning(f"[CLEANUP] Failed to delete payload {complete_payload_s3_key}: {cleanup_error}")
 
+        # Load config from S3 if config_s3_key is provided (for both sync and async)
+        # This avoids 6MB payload limit by passing S3 key instead of full config
+        if 'config' not in event and 'config_s3_key' in event:
+            config_s3_key = event.get('config_s3_key')
+            config_s3_bucket = event.get('config_s3_bucket', event.get('S3_UNIFIED_BUCKET', os.environ.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage')))
+            try:
+                import boto3
+                s3_client = boto3.client('s3')
+                logger.info(f"[CONFIG_LOAD] Loading config from S3: {config_s3_bucket}/{config_s3_key}")
+                response = s3_client.get_object(Bucket=config_s3_bucket, Key=config_s3_key)
+                config_content = response['Body'].read().decode('utf-8')
+                config = json.loads(config_content)
+                event['config'] = config
+                logger.info(f"[CONFIG_LOAD] Successfully loaded config from S3 ({len(config_content)} bytes)")
+            except Exception as e:
+                logger.error(f"[CONFIG_LOAD] Failed to load config from S3: {e}")
+                return {
+                    'statusCode': 500,
+                    'body': json.dumps({'error': f'Failed to load configuration from S3: {str(e)}'})
+                }
+
         # Initialize validator with config (now loaded from S3 if async, or embedded if sync)
         config = event.get('config', {})
         

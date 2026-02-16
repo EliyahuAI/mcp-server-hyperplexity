@@ -524,12 +524,14 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
         if preview_first_row:
             total_rows_to_send = min(sequential_call, preview_max_rows, len(rows)) if sequential_call else min(preview_max_rows, len(rows))
             logger.info(f"Preview mode: sending {total_rows_to_send} rows to validator")
-            
+
             preview_rows = rows[:total_rows_to_send]
-            
+
+            # Use S3 key instead of full config to avoid 6MB payload limit
             payload = {
                 "test_mode": True,
-                "config": config_data,
+                "config_s3_key": config_s3_key,  # Pass S3 key instead of full config
+                "config_s3_bucket": S3_CACHE_BUCKET,  # Validator needs bucket name too
                 "validation_data": {
                     "rows": preview_rows,
                     "batch_info": {
@@ -626,9 +628,11 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 update_callback(session_id, "PROCESSING", 0, f"Starting enhanced batch processing of {len(rows)} rows.", 0, None, 0, 1)
 
             # Send full dataset to validation lambda - let enhanced batch manager determine optimal batching
+            # Use S3 key instead of full config to avoid 6MB payload limit
             payload = {
                 "test_mode": False,
-                "config": config_data,
+                "config_s3_key": config_s3_key,  # Pass S3 key instead of full config
+                "config_s3_bucket": S3_CACHE_BUCKET,  # Validator needs bucket name too
                 "validation_data": {
                     "rows": rows,  # Send ALL rows at once
                     "max_rows": max_rows,
