@@ -237,17 +237,22 @@ def find_latest_config_in_session(s3_client, bucket_name, session_path):
         config_files = []
         for obj in response['Contents']:
             filename = obj['Key'].split('/')[-1]
-            if filename.startswith('config_v') and filename.endswith('.json'):
+            # Match both patterns: config_v*.json AND *_config_v*.json (for copied configs with session prefix)
+            if ('config_v' in filename) and filename.endswith('.json'):
                 try:
-                    # Extract version: config_v1.json -> 1, config_v01_source.json -> 1
-                    version_part = filename[8:].split('.')[0].split('_')[0]
-                    version = int(version_part.lstrip('0') or '1')
-                    config_files.append({
-                        'key': obj['Key'],
-                        'version': version,
-                        'last_modified': obj['LastModified']
-                    })
-                    logger.debug(f"Found config file: {filename} -> version {version}")
+                    # Extract version from pattern: config_vN or _config_vN
+                    import re
+                    version_match = re.search(r'config_v(\d+)', filename)
+                    if version_match:
+                        version = int(version_match.group(1))
+                        config_files.append({
+                            'key': obj['Key'],
+                            'version': version,
+                            'last_modified': obj['LastModified']
+                        })
+                        logger.debug(f"Found config file: {filename} -> version {version}")
+                    else:
+                        logger.debug(f"Filename contains 'config_v' but couldn't extract version: {filename}")
                 except (ValueError, IndexError) as e:
                     logger.debug(f"Could not parse version from {filename}: {e}")
                     continue

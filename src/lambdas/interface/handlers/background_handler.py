@@ -6154,12 +6154,39 @@ async def handle_config_generation_async(event, context):
         # Call merged config generation module directly (no Lambda invoke)
         from interface_lambda.actions.config_generation import generate_config
 
+        # CRITICAL: Auto-retrieve existing config if not provided in event (for refinements)
+        existing_config = event.get('existing_config')
+        if not existing_config and session_id and config_email:
+            try:
+                logger.info(f"🔍 EXISTING_CONFIG: Not in event, attempting auto-retrieval for session {session_id}")
+                from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+                from interface_lambda.actions.generate_config_unified import find_latest_config_in_session
+
+                storage_manager = UnifiedS3Manager()
+                session_path = storage_manager.get_session_path(config_email, session_id)
+                existing_config = find_latest_config_in_session(
+                    storage_manager.s3_client,
+                    storage_manager.bucket_name,
+                    session_path
+                )
+
+                if existing_config:
+                    logger.info(f"✅ EXISTING_CONFIG: Retrieved existing config version {existing_config.get('storage_metadata', {}).get('version', 'unknown')}")
+                    logger.info(f"✅ EXISTING_CONFIG: Has config_change_log: {bool(existing_config.get('config_change_log'))}")
+                    if existing_config.get('config_change_log'):
+                        logger.info(f"✅ EXISTING_CONFIG: config_change_log has {len(existing_config['config_change_log'])} entries")
+                else:
+                    logger.info(f"ℹ️ EXISTING_CONFIG: No existing config found in session (new config generation)")
+            except Exception as e:
+                logger.warning(f"⚠️ EXISTING_CONFIG: Failed to auto-retrieve existing config: {e}")
+                existing_config = None
+
         # Build payload for config generation
         payload = {
             'table_analysis': event.get('table_analysis'),
             'excel_s3_key': event.get('excel_s3_key'),  # Pass excel_s3_key for table analysis generation if needed
             'csv_s3_key': event.get('csv_s3_key'),  # Also support CSV
-            'existing_config': event.get('existing_config'),
+            'existing_config': existing_config,  # Use auto-retrieved config if event didn't provide it
             'instructions': event.get('instructions', ''),
             'session_id': session_id,
             'email': config_email,
