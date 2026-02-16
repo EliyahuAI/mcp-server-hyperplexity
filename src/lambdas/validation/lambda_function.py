@@ -2797,7 +2797,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                 logger.debug(f"[ASYNC_PAYLOAD] Successfully loaded complete payload from S3")
                 logger.debug(f"[ASYNC_PAYLOAD] Payload contains {len(complete_payload.get('validation_data', {}).get('rows', []))} rows")
-                logger.debug(f"[ASYNC_PAYLOAD] Config has {len(complete_payload.get('config', {}).get('validation_targets', []))} targets")
+                # Config is now loaded via config_s3_key, not embedded in payload
+                if 'config' in complete_payload:
+                    logger.debug(f"[ASYNC_PAYLOAD] Config embedded: {len(complete_payload.get('config', {}).get('validation_targets', []))} targets")
+                elif 'config_s3_key' in complete_payload:
+                    logger.debug(f"[ASYNC_PAYLOAD] Config via S3 key: {complete_payload.get('config_s3_key')}")
+                else:
+                    logger.warning(f"[ASYNC_PAYLOAD] No config or config_s3_key found in payload!")
 
                 # Preserve critical fields from Lambda invocation event before replacing
                 preserved_fields = {
@@ -6110,6 +6116,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
         }
     finally:
+        # Clean up S3 payload for async requests (both success and error)
+        try:
+            cleanup_s3_payload_if_needed()
+        except Exception as cleanup_error:
+            logger.warning(f"[CLEANUP] Error during S3 cleanup in finally block: {cleanup_error}")
+
         # Flush memory cache to S3 at end of validation batch
         # This persists any searches done during validation for future use
         try:

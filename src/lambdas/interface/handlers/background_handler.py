@@ -3816,8 +3816,10 @@ def handle_main_processing(event, context):
 
                     # Store the payload in the event for invoke_validator_lambda to use
                     # The function expects these fields in the event
+                    # NOTE: config is now passed via config_s3_key, not embedded
                     event['validation_data'] = sync_payload.get('validation_data', {})
-                    event['config'] = sync_payload.get('config', {})
+                    event['config_s3_key'] = sync_payload.get('config_s3_key', actual_config_s3_key)
+                    event['config_s3_bucket'] = sync_payload.get('config_s3_bucket', S3_UNIFIED_BUCKET)
                     event['validation_history'] = sync_payload.get('validation_history', {})
                     event['run_key'] = run_key
                     event['async_delegation_request'] = False
