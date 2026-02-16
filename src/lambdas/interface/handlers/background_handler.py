@@ -6430,7 +6430,26 @@ async def handle_config_generation_async(event, context):
             if response.get('updated_config'):
                 config_version = response['updated_config'].get('generation_metadata', {}).get('version', 1)
                 logger.info(f"Extracted config version {config_version} from generation_metadata")
-            
+
+            # Count how many versions exist in THIS session (for accurate revert button logic)
+            session_version_count = 1
+            try:
+                from ..core.unified_s3_manager import UnifiedS3Manager
+                session_storage_manager = UnifiedS3Manager()
+                email = event.get('email', '').lower().strip() if event.get('email') else ''
+                original_session_id = event.get('original_session_id') or session_id
+                if email and original_session_id:
+                    session_info = session_storage_manager.load_session_info(email, original_session_id)
+                    if session_info and session_info.get('versions'):
+                        session_version_count = len(session_info['versions'])
+                        logger.info(f"[CONFIG_VERSION] Session has {session_version_count} versions total (config completion)")
+                    else:
+                        session_version_count = 1
+                        logger.debug(f"[CONFIG_VERSION] No session info found, assuming 1 version (config completion)")
+            except Exception as e:
+                logger.warning(f"[CONFIG_VERSION] Failed to count session versions: {e}")
+                session_version_count = 1
+
             # Send success message via WebSocket
             websocket_message = {
                 'type': 'config_generation_complete',
@@ -6441,6 +6460,7 @@ async def handle_config_generation_async(event, context):
                 'ai_response': ai_summary,  # For backward compatibility
                 'config_s3_key': config_s3_key,
                 'config_version': config_version,  # Explicit version from config
+                'session_version_count': session_version_count,  # Total versions in this session (for revert button)
                 'clarifying_questions': response.get('clarifying_questions', ''),
                 'clarification_urgency': response.get('clarification_urgency', 0.0)
             }
