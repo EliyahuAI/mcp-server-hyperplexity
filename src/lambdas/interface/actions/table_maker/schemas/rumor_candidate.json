@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["candidates_markdown"],
+  "properties": {
+    "candidates_markdown": {
+      "type": "string",
+      "description": "Markdown table with ID columns + Realness Score column. Each row represents a plausible entity that might exist, with a realness score (0-1) indicating confidence the entity is real."
+    }
+  },
+  "additionalProperties": false
+}

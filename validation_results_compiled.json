@@ -1,0 +1,363 @@
+{
+  "validation_summary": {
+    "total_entries_validated": 24,
+    "validation_date": "2026-02-13",
+    "source_file": "theranostic_CI_metadata_take6.json",
+    "unique_products_validated": 15,
+    "scoring_rubric": "0-100 scale (100=Perfect, 90-99=Excellent, 80-89=Good, 70-79=Acceptable, 60-69=Marginal, <60=Poor)"
+  },
+  "validated_entries": [
+    {
+      "entry_id": 1,
+      "product": "TheraSphere (Y-90 glass microspheres)",
+      "column": "Drug Type",
+      "claim": "Radiopharmaceutical (Y-90 glass microsphere)",
+      "confidence": "HIGH",
+      "accuracy_score": 75,
+      "citation_quality": "STRONG",
+      "issues": ["Primary Classification Error: FDA-regulated as medical device, not radiopharmaceutical"],
+      "recommended_confidence": "MEDIUM",
+      "validator_notes": "Physical description accurate but regulatory classification incorrect"
+    },
+    {
+      "entry_id": 2,
+      "product": "THG-001",
+      "column": "Target",
+      "claim": "Androgen receptor (AR), Progesterone receptor (PR), Glucocorticoid receptor (GR), Mineralocorticoid receptor (MR)",
+      "confidence": "HIGH",
+      "accuracy_score": 95,
+      "citation_quality": "EXCELLENT",
+      "issues": ["Missing binding affinity hierarchy", "Omits lack of ER activity"],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "All four receptors correctly identified with strong evidence"
+    },
+    {
+      "entry_id": 3,
+      "product": "225Ac-PSMA-R2 (AAA802)",
+      "column": "Target",
+      "claim": "Prostate-Specific Membrane Antigen (PSMA)",
+      "confidence": "HIGH",
+      "accuracy_score": 100,
+      "citation_quality": "EXCELLENT",
+      "issues": [],
+      "recommended_confidence": "VERY HIGH (95-100%)",
+      "validator_notes": "Perfect accuracy with clinical trial and peer-reviewed evidence"
+    },
+    {
+      "entry_id": 4,
+      "product": "Nivolumab (Opdivo)",
+      "column": "Target",
+      "claim": "PD-1 (Programmed Death-1 receptor)",
+      "confidence": "HIGH",
+      "accuracy_score": 100,
+      "citation_quality": "EXCELLENT",
+      "issues": [],
+      "recommended_confidence": "VERY HIGH",
+      "validator_notes": "FDA-approved with extensive documentation"
+    },
+    {
+      "entry_id": 5,
+      "product": "PSV359 (Pb-212)",
+      "column": "Active Organization",
+      "claim": "Perspective Therapeutics, Inc.",
+      "confidence": "HIGH",
+      "accuracy_score": 100,
+      "citation_quality": "EXCELLENT",
+      "issues": [],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "Verified via clinical trials, press releases, stock exchange records"
+    },
+    {
+      "entry_id": 6,
+      "product": "225Ac-PSMA-Trillium (BAY 3563254)",
+      "column": "Active Organization",
+      "claim": "Bayer",
+      "confidence": "HIGH",
+      "accuracy_score": 100,
+      "citation_quality": "EXCELLENT",
+      "issues": [],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "Confirmed via Bayer press releases, clinical trial registry, internal designation"
+    },
+    {
+      "entry_id": 7,
+      "product": "PSV359 (Pb-212)",
+      "column": "R&D Status",
+      "claim": "Phase I/IIa (dose-escalation/expansion trial ongoing, currently recruiting)",
+      "confidence": "HIGH",
+      "accuracy_score": 95,
+      "citation_quality": "EXCELLENT",
+      "issues": [],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "Current as of Feb 2026, actively recruiting"
+    },
+    {
+      "entry_id": 8,
+      "product": "225Ac-PSMA-Trillium (BAY 3563254)",
+      "column": "R&D Status",
+      "claim": "Phase I (first-in-human dose escalation and expansion study)",
+      "confidence": "HIGH",
+      "accuracy_score": 98,
+      "citation_quality": "EXCELLENT",
+      "issues": [],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "Confirmed via NCT06217822, actively recruiting"
+    },
+    {
+      "entry_id": 9,
+      "product": "RAD101",
+      "column": "R&D Status",
+      "claim": "Phase 2b",
+      "confidence": "HIGH",
+      "accuracy_score": 92,
+      "citation_quality": "EXCELLENT",
+      "issues": ["Claim slightly outdated - December 2025 interim analysis showed 92% primary endpoint success"],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "Accurate but could note remarkable interim results"
+    },
+    {
+      "entry_id": 10,
+      "product": "TheraSphere (Y-90 glass microspheres)",
+      "column": "Active Indication",
+      "claim": "Selective internal radiation therapy (SIRT) for local tumor control of solitary tumors (1-8 cm in diameter) in patients with unresectable hepatocellular carcinoma (HCC)...",
+      "confidence": "HIGH",
+      "accuracy_score": 75,
+      "citation_quality": "GOOD",
+      "issues": ["Conflates FDA-approved indication with off-label uses", "PVT presented misleadingly"],
+      "recommended_confidence": "MEDIUM",
+      "validator_notes": "Core FDA indication accurate but claim mixes approved and clinical uses"
+    },
+    {
+      "entry_id": 11,
+      "product": "AKY-1189",
+      "column": "Active Indication",
+      "claim": "Locally advanced or metastatic urothelial carcinoma (mUC); Triple negative breast cancer (TNBC); Other Nectin-4 expressing solid tumors",
+      "confidence": "HIGH",
+      "accuracy_score": 95,
+      "citation_quality": "EXCELLENT",
+      "issues": ["Doesn't clarify investigational status"],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "All indications actively pursued in NECTINIUM-2 trial"
+    },
+    {
+      "entry_id": 12,
+      "product": "225Ac-PSMA-R2 (AAA802)",
+      "column": "Active Indication",
+      "claim": "Metastatic Castration-Resistant Prostate Cancer (mCRPC); Metastatic Hormone-Sensitive Prostate Cancer (mHSPC); PSMA-positive High-Risk Localized Prostate Cancer (HRLPC)",
+      "confidence": "HIGH",
+      "accuracy_score": 88,
+      "citation_quality": "VERY GOOD",
+      "issues": ["Missing efficacy context (limited benefit in mCRPC/mHSPC)", "Doesn't clarify investigational status"],
+      "recommended_confidence": "MEDIUM-HIGH",
+      "validator_notes": "All indications accurate but efficacy context important"
+    },
+    {
+      "entry_id": 13,
+      "product": "TheraSphere (Y-90 glass microspheres)",
+      "column": "Mechanism",
+      "claim": "Millions of microscopic glass spheres (15-35 μm) containing radioactive Yttrium-90 are delivered via arterial catheter to liver tumors...",
+      "confidence": "HIGH",
+      "accuracy_score": 95,
+      "citation_quality": "EXCELLENT",
+      "issues": ["Minor: doesn't mention half-life or vascular lodging mechanism"],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "Scientifically accurate and well-described"
+    },
+    {
+      "entry_id": 14,
+      "product": "Detectnet (64Cu-DOTATATE)",
+      "column": "Mechanism",
+      "claim": "Copper Cu 64 dotatate binds to somatostatin receptors (especially SSTR2) on cells, including malignant neuroendocrine cells. The positron-emitting isotope Cu-64 allows detection via PET imaging",
+      "confidence": "HIGH",
+      "accuracy_score": 92,
+      "citation_quality": "EXCELLENT",
+      "issues": ["Incomplete decay description: Cu-64 only 17-19% positron emission"],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "Core mechanism correct but decay scheme simplified"
+    },
+    {
+      "entry_id": 15,
+      "product": "OncoFAP-23",
+      "column": "Mechanism",
+      "claim": "FAP-targeted radioligand therapeutic (RLT) delivering beta radiation from lutetium-177 to tumor stroma",
+      "confidence": "HIGH",
+      "accuracy_score": 88,
+      "citation_quality": "GOOD",
+      "issues": ["Severe oversimplification", "Missing multivalency, cross-fire effect, preclinical status"],
+      "recommended_confidence": "MEDIUM",
+      "validator_notes": "Accurate but very abbreviated - missing key details"
+    },
+    {
+      "entry_id": 16,
+      "product": "THG-001",
+      "column": "Action",
+      "claim": "Potent agonist of androgen and progesterone receptors; anabolic and androgenic",
+      "confidence": "HIGH",
+      "accuracy_score": 92,
+      "citation_quality": "EXCELLENT",
+      "issues": ["Specific 10x potency claim unverified", "Missing non-selective binding info"],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "Core mechanism well-documented, agonist classification correct"
+    },
+    {
+      "entry_id": 17,
+      "product": "225Ac-PSMA-R2 (AAA802)",
+      "column": "Action",
+      "claim": "PSMA-targeted alpha therapy / Radioligand therapy",
+      "confidence": "HIGH",
+      "accuracy_score": 95,
+      "citation_quality": "VERY GOOD",
+      "issues": ["Could specify DNA damage mechanism"],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "Target and therapy type accurate"
+    },
+    {
+      "entry_id": 18,
+      "product": "Detectnet (64Cu-DOTATATE)",
+      "column": "Action",
+      "claim": "Somatostatin receptor-targeting diagnostic agent for PET imaging",
+      "confidence": "HIGH",
+      "accuracy_score": 98,
+      "citation_quality": "EXCELLENT",
+      "issues": ["Could specify SSTR2 subtype"],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "FDA-approved, perfectly aligned with regulatory sources"
+    },
+    {
+      "entry_id": 19,
+      "product": "THG-001",
+      "column": "Drug Type",
+      "claim": "Synthetic anabolic-androgenic steroid (AAS) / designer drug",
+      "confidence": "HIGH",
+      "accuracy_score": 95,
+      "citation_quality": "EXCELLENT",
+      "issues": ["Could specify 'estrane-based AAS'"],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "DEA Schedule III classification confirms AAS designation"
+    },
+    {
+      "entry_id": 20,
+      "product": "Locametz (68Ga-PSMA-11)",
+      "column": "Drug Type",
+      "claim": "Radiopharmaceutical (radioactive diagnostic agent)",
+      "confidence": "HIGH",
+      "accuracy_score": 100,
+      "citation_quality": "EXCELLENT",
+      "issues": [],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "FDA and EMA labels explicitly confirm classification"
+    },
+    {
+      "entry_id": 21,
+      "product": "RAD101",
+      "column": "Drug Type",
+      "claim": "Diagnostic radiopharmaceutical / Small molecule-drug conjugate",
+      "confidence": "HIGH",
+      "accuracy_score": 75,
+      "citation_quality": "GOOD",
+      "issues": ["MAJOR: 'conjugate' is incorrect - should be 'radiotracer' or 'radiolabeled small molecule'"],
+      "recommended_confidence": "MEDIUM",
+      "validator_notes": "Diagnostic portion accurate but molecular classification chemically incorrect"
+    },
+    {
+      "entry_id": 22,
+      "product": "Posluma",
+      "column": "Therapeutic Areas",
+      "claim": "Oncology; Urology",
+      "confidence": "HIGH",
+      "accuracy_score": 85,
+      "citation_quality": "GOOD",
+      "issues": ["Missing: Nuclear Medicine/Diagnostic Imaging"],
+      "recommended_confidence": "MEDIUM-HIGH",
+      "validator_notes": "Accurate but incomplete - should include diagnostic imaging"
+    },
+    {
+      "entry_id": 23,
+      "product": "RAD101",
+      "column": "Therapeutic Areas",
+      "claim": "Oncology; Neurology",
+      "confidence": "HIGH",
+      "accuracy_score": 95,
+      "citation_quality": "EXCELLENT",
+      "issues": ["Could add 'Diagnostic Imaging'"],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "Excellent classification for neuro-oncology focus"
+    },
+    {
+      "entry_id": 24,
+      "product": "PentixaTher",
+      "column": "Therapeutic Areas",
+      "claim": "Oncology; Hematology",
+      "confidence": "HIGH",
+      "accuracy_score": 92,
+      "citation_quality": "EXCELLENT",
+      "issues": ["Should include 'Solid Tumors' given lung carcinoid and neuroendocrine trials"],
+      "recommended_confidence": "HIGH",
+      "validator_notes": "Accurate but could specify both hematologic and solid tumor coverage"
+    }
+  ],
+  "statistics": {
+    "mean_accuracy": 92.29,
+    "median_accuracy": 95,
+    "min_accuracy": 75,
+    "max_accuracy": 100,
+    "std_deviation": 7.98,
+    "score_distribution": {
+      "excellent_90_100": 17,
+      "good_80_89": 4,
+      "acceptable_70_79": 3,
+      "marginal_60_69": 0,
+      "poor_below_60": 0
+    },
+    "score_distribution_percentages": {
+      "excellent_90_100": 70.8,
+      "good_80_89": 16.7,
+      "acceptable_70_79": 12.5,
+      "marginal_60_69": 0,
+      "poor_below_60": 0
+    },
+    "error_rate_below_70": 0,
+    "entries_needing_correction": 3
+  },
+  "confidence_vs_accuracy": {
+    "HIGH": {
+      "count": 24,
+      "mean_accuracy": 92.29,
+      "min_accuracy": 75,
+      "max_accuracy": 100,
+      "below_70_count": 0,
+      "below_70_pct": 0
+    },
+    "MEDIUM": {
+      "count": 0,
+      "mean_accuracy": null,
+      "min_accuracy": null,
+      "max_accuracy": null
+    },
+    "LOW": {
+      "count": 0,
+      "mean_accuracy": null,
+      "min_accuracy": null,
+      "max_accuracy": null
+    }
+  },
+  "key_findings": {
+    "overall_quality": "HIGH - Mean accuracy 92.29% indicates strong data quality",
+    "confidence_accuracy_correlation": "All entries marked HIGH confidence; 70.8% scored 90-100, validating confidence levels",
+    "common_issues": [
+      "Regulatory vs functional classification confusion (e.g., TheraSphere)",
+      "Missing context for investigational vs approved status",
+      "Oversimplification of complex mechanisms",
+      "Incomplete therapeutic area coverage",
+      "Terminology precision issues (e.g., 'conjugate' vs 'radiotracer')"
+    ],
+    "entries_requiring_correction": [
+      "TheraSphere Drug Type (75) - should be 'Medical Device' not 'Radiopharmaceutical'",
+      "TheraSphere Active Indication (75) - separate FDA indication from off-label uses",
+      "RAD101 Drug Type (75) - change 'conjugate' to 'radiolabeled small molecule'"
+    ],
+    "perfect_scores": 4,
+    "excellent_scores": 17,
+    "citation_quality_assessment": "EXCELLENT overall - strong use of FDA, PubMed, clinical trial databases"
+  }
+}

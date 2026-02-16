@@ -1,0 +1,216 @@
+{
+  "general_notes": "This table tracks radiopharmaceutical pipeline candidates. Each row represents a single product candidate owned by a single organization. Prioritize information from clinical trial registries (ClinicalTrials.gov, EUCTR), company pipeline pages, and primary publications. For theranostic pairs, diagnostic and therapeutic agents are distinct molecular products and should be recorded separately. Avoid inferring undisclosed details (e.g., radionuclides, chelators, timelines); label uncertain information conservatively (e.g., 'preclinical', 'IND-enabling'). Ensure targets, indications, and trial identifiers map to the same specific molecule, as pipelines often have multiple programs with similar names but different biology or isotopes.",
+  "default_model": "the-clone",
+  "qc_settings": {
+    "enable_qc": true,
+    "max_tokens_default": 8000,
+    "tokens_per_validated_column_default": 4000,
+    "model": [
+      "deepseek-v3.2",
+      "claude-sonnet-4-5"
+    ]
+  },
+  "search_groups": [
+    {
+      "group_id": 0,
+      "group_name": "Product and Company ID",
+      "description": "Core identifiers for the product candidate and owning company. Used to anchor all subsequent searches to the correct row."
+    },
+    {
+      "group_id": 1,
+      "group_name": "Target, Indication, and Agent Details",
+      "description": "The biological target, intended medical indication, and the specific molecular constructs for therapy and diagnosis. Information for these is typically found together in pipeline disclosures and scientific publications.",
+      "model": "the-clone-claude"
+    },
+    {
+      "group_id": 2,
+      "group_name": "Development Status and Evidence",
+      "description": "Clinical development stage, trial identifiers, and recent news. This information is typically consolidated in clinical trial registries and company pipeline updates.",
+      "model": "the-clone-claude"
+    },
+    {
+      "group_id": 3,
+      "group_name": "Strategic Context",
+      "description": "Forward-looking milestones and partnership information. This context is often found in press releases, investor presentations, and business development announcements.",
+      "model": "the-clone-claude"
+    }
+  ],
+  "validation_targets": [
+    {
+      "column": "Product/Candidate",
+      "description": "The name of the specific radiopharmaceutical product or candidate.",
+      "importance": "ID",
+      "format": "String",
+      "notes": "Use the exact candidate name as publicly disclosed (e.g., '177Lu-FAP-2286'). This is the primary asset identifier.",
+      "examples": [
+        "177Lu-FAP-2286",
+        "177Lu-NeoB",
+        "225Ac-PSMA-R2 (AAA802)"
+      ],
+      "search_group": 0
+    },
+    {
+      "column": "Company Name",
+      "description": "The single organization that owns or is primarily developing this product candidate.",
+      "importance": "ID",
+      "format": "String",
+      "notes": "The primary developing/owning company. Distinguish from platform partners or collaborators.",
+      "examples": [
+        "Actithera",
+        "Advanced Accelerator Applications",
+        "Bayer"
+      ],
+      "search_group": 0
+    },
+    {
+      "column": "Target / Indication",
+      "description": "The biological target (e.g., receptor, antigen) and the intended disease or condition for treatment.",
+      "importance": "RESEARCH",
+      "format": "String",
+      "notes": "Record the specific molecular target and the precise medical indication as disclosed for this candidate. Ensure this maps to the same molecule as the trial ID.",
+      "examples": [
+        "FAP / oncology (lead program)",
+        "PSMA / metastatic castration-resistant prostate cancer (mCRPC)",
+        "Integrin \u03b1v\u03b26 / metastatic pancreatic cancer"
+      ],
+      "search_group": 1
+    },
+    {
+      "column": "Therapeutic Agent",
+      "description": "The exact radionuclide-ligand construct intended for therapeutic use.",
+      "importance": "RESEARCH",
+      "format": "String",
+      "notes": "Specify the isotope + targeting molecule construct (e.g., '177Lu-PSMA-617'). If the therapeutic agent is part of a theranostic pair, it is a distinct product from the diagnostic agent. Only include if publicly disclosed.",
+      "examples": [
+        "177Lu-PSMA-617",
+        "225Ac-J591",
+        "212Pb-DOTAM-GRPR1"
+      ],
+      "search_group": 1
+    },
+    {
+      "column": "Diagnostic Agent",
+      "description": "The imaging analog or companion diagnostic agent, if one exists for this candidate.",
+      "importance": "RESEARCH",
+      "format": "String",
+      "notes": "For theranostic pairs, this is the distinct imaging agent (e.g., '68Ga-PSMA-11'). If no separate diagnostic agent is disclosed for the candidate, leave blank. Do not infer or collapse with the therapeutic agent.",
+      "examples": [
+        "68Ga-PSMA-11",
+        "64Cu-SARTATE",
+        "18F-DCFPyL"
+      ],
+      "search_group": 1
+    },
+    {
+      "column": "Specific Biochemistry & Approach",
+      "description": "Detailed description of the biochemical mechanism, targeting technology, or platform approach.",
+      "importance": "RESEARCH",
+      "format": "String",
+      "notes": "Describe the specific biochemistry (e.g., peptide, antibody, small molecule), targeting approach, chelator, or platform technology. Be precise and avoid generic terms.",
+      "examples": [
+        "FAP-targeted radioligand therapy using a peptidic inhibitor",
+        "PSMA-targeting small molecule conjugated to DOTA chelator",
+        "MC1R-targeting peptide for melanoma imaging"
+      ],
+      "search_group": 1
+    },
+    {
+      "column": "Current/Last Trial ID",
+      "description": "Identifier(s) for the most recent or ongoing clinical trial(s) for this specific candidate.",
+      "importance": "RESEARCH",
+      "format": "String",
+      "notes": "Primary source is ClinicalTrials.gov NCT numbers or EUCTR identifiers. Ensure the trial is for the exact candidate in this row. If no trial is registered, state 'No clinical trial registered'.",
+      "examples": [
+        "NCT04665947",
+        "NCT05655312",
+        "No clinical trial registered"
+      ],
+      "search_group": 2
+    },
+    {
+      "column": "Development Stage",
+      "description": "The current phase of clinical development or preclinical status.",
+      "importance": "RESEARCH",
+      "format": "String",
+      "notes": "Use standard terms: Preclinical, IND-enabling, Phase 1, Phase 2, Phase 3, Approved. Be conservative; if status is uncertain, use the earlier stage (e.g., 'preclinical').",
+      "examples": [
+        "Phase 1",
+        "Preclinical",
+        "Phase 2"
+      ],
+      "search_group": 2
+    },
+    {
+      "column": "Latest News (Bulleted with Date)",
+      "description": "Recent, product-specific announcements with dates, in bulleted format.",
+      "importance": "RESEARCH",
+      "format": "String",
+      "notes": "Bullet points with dates for news specific to this product candidate (e.g., trial initiations, results, regulatory milestones). Exclude company-level financing or platform announcements unless they directly name this product.",
+      "examples": [
+        "\u2022 Feb 7, 2026: Actithera presented preclinical data on FAP-targeting candidate at WMIC.",
+        "\u2022 Sep 2024: FDA granted Fast Track designation for VMT02 in melanoma."
+      ],
+      "search_group": 2
+    },
+    {
+      "column": "Next Milestone Estimate & Abandonment Signs",
+      "description": "Publicly disclosed upcoming milestone and any signs of program delay or termination.",
+      "importance": "RESEARCH",
+      "format": "String",
+      "notes": "Focus on product-specific, disclosed next steps (e.g., 'IND submission expected H2 2025', 'Phase 2 readout expected Q1 2026'). Note any discontinuation announcements or lack of updates suggesting abandonment. Separate from company-level forecasts.",
+      "examples": [
+        "IND filing expected in 2025",
+        "Phase 1 dose escalation completion expected Q4 2024",
+        "No updates since 2022; potential abandonment"
+      ],
+      "search_group": 3
+    },
+    {
+      "column": "Key Partnerships/Collaborators For this Product",
+      "description": "Organizations specifically partnered on the development or commercialization of this product.",
+      "importance": "RESEARCH",
+      "format": "String",
+      "notes": "List entities with a disclosed, direct collaboration on this specific product (e.g., co-development, licensing). Exclude general platform partners or investors unless the agreement names this candidate.",
+      "examples": [
+        "University of California, San Francisco (research collaboration)",
+        "No product-specific partnerships disclosed",
+        "Ipsen (ex-US commercialization rights)"
+      ],
+      "search_group": 3
+    }
+  ],
+  "config_change_log": [
+    {
+      "timestamp": "2026-02-12T16:57:56.724133",
+      "action": "unified_generation",
+      "session_id": "session_20260212_165525_9dab41ac",
+      "instructions": "When building radiopharmaceutical pipeline tables, the most important principle is to **separate assets, roles, and ownership cleanly**. Each row should represent a **single product candidate owned by a single organization**, and diagnostic agents, therapeutic agents, and theranostic pairs should be clearly distinguished. In theranostics, the imaging agent and therapeutic agent are often related but still **distinct molecular products**, so avoid collapsing them into one entry unless the table explicitly represents a \u201cprogram\u201d rather than a \u201ccompound.\u201d Similarly, keep **company-level partnerships, financing, or platform announcements separate from product-specific milestones**, and rely on **clinical trial registries, company pipeline pages, and primary publications** as the highest-confidence sources for development stage and indication.\n\nA second best practice is to maintain **consistent column semantics and evidence confidence**. The \u201cTherapeutic Agent\u201d field should contain the exact radionuclide-ligand construct (for example, isotope + targeting molecule), while the \u201cDiagnostic Agent\u201d field should contain only the imaging analog if one exists. Avoid inferring details that have not been publicly disclosed \u2014 especially radionuclides, chelators, or clinical timelines \u2014 and label uncertain information conservatively (e.g., \u201cpreclinical,\u201d \u201cIND-enabling,\u201d or \u201cplatform designed to support multiple isotopes\u201d). Finally, ensure that **targets, indications, and trial identifiers map to the same molecule**, since radiopharmaceutical pipelines often include multiple programs with similar naming conventions but different biology, receptors, or isotopes.",
+      "clarifying_questions": "",
+      "clarification_urgency": 0.2,
+      "reasoning": "",
+      "ai_summary": "Refined configuration to align with radiopharmaceutical pipeline best practices. Enhanced column descriptions and notes to clearly separate diagnostic/therapeutic agents, prioritize clinical registry sources, and ensure product-specific focus for news and partnerships.",
+      "technical_ai_summary": "",
+      "version": 1,
+      "model_used": "deepseek-v3.2",
+      "config_filename": "",
+      "entry_type": "ai_response"
+    }
+  ],
+  "storage_metadata": {
+    "version": 2,
+    "source": "ai_generated",
+    "session_id": "session_20260212_165525_9dab41ac",
+    "email": "eliyahu@eliyahu.ai",
+    "stored_at": "2026-02-12T16:57:56.938900",
+    "created_at": "2026-02-12T16:57:56.938900",
+    "config_id": "session_20260212_165525_9dab41ac_config_v2_ai_generated",
+    "description": "This table tracks radiopharmaceutical pipeline candidates. Each row represents a single product candidate owned by a single organization. Prioritize information from clinical trial registries (ClinicalTrials.gov, EUCTR), company pipeline pages, and primary publications. For theranostic pairs, diagnostic and therapeutic agents are distinct molecular products and should be recorded separately. Avoid inferring undisclosed details (e.g., radionuclides, chelators, timelines); label uncertain information conservatively (e.g., 'preclinical', 'IND-enabling'). Ensure targets, indications, and trial identifiers map to the same specific molecule, as pipelines often have multiple programs with similar names but different biology or isotopes.",
+    "original_name": null,
+    "source_session": null,
+    "content_hash": "18f914d2c573a10bbcffd2c44ae6a71f",
+    "creation_method": "ai_generated",
+    "usage_count": 0,
+    "first_created": "2026-02-12T16:57:56.938900",
+    "metadata_version": "2.0"
+  }
+}

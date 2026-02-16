@@ -648,9 +648,9 @@ class UnifiedS3Manager:
                             obj['Key'].count('/') == session_path.count('/')):  # Ensure it's in main folder
                             config_files.append(obj)
             
-            # If still no configs found, search for ALL .json files in session (including copied configs with session prefix)
+            # If still no configs found, search for copied configs with session prefix (e.g., session_XXXX_config_v1.json)
             if not config_files:
-                logger.info("No standard config files found, searching for all JSON files in session")
+                logger.info("No standard config files found, searching for session-prefixed configs")
                 response = self.s3_client.list_objects_v2(
                     Bucket=self.bucket_name,
                     Prefix=session_path,
@@ -658,20 +658,46 @@ class UnifiedS3Manager:
                 )
                 if 'Contents' in response:
                     for obj in response['Contents']:
+                        filename = obj['Key'].split('/')[-1].lower()
+                        # Look for files containing 'config' in the name (fast filename check)
+                        if (filename.endswith('.json') and
+                            'config' in filename and
+                            not filename.startswith('session_info') and
+                            obj['Key'].count('/') == session_path.count('/')):  # Ensure it's in main folder
+                            config_files.append(obj)
+                            logger.info(f"Found session-prefixed config: {obj['Key'].split('/')[-1]}")
+
+            # Last resort: validate ALL .json files by reading them (SLOW - only if above methods fail)
+            if not config_files:
+                logger.info("No config files found by naming, validating all JSON files (slow)")
+                response = self.s3_client.list_objects_v2(
+                    Bucket=self.bucket_name,
+                    Prefix=session_path,
+                    Delimiter='/'
+                )
+                if 'Contents' in response:
+                    checked_count = 0
+                    for obj in response['Contents']:
                         filename = obj['Key'].split('/')[-1]
-                        # Include any .json file that might be a config, but exclude results files
-                        if (filename.endswith('.json') and 
+                        # Skip known non-config files
+                        if (filename.endswith('.json') and
                             obj['Key'].count('/') == session_path.count('/') and
                             not filename.startswith('session_info') and
                             'results' not in filename and
-                            'receipt' not in filename):
-                            # Validate it's actually a config by checking if it has storage_metadata
+                            'receipt' not in filename and
+                            'agent_memory' not in filename):
+                            # Validate by reading (expensive!)
                             try:
                                 config_response = self.s3_client.get_object(Bucket=self.bucket_name, Key=obj['Key'])
                                 config_data = json.loads(config_response['Body'].read().decode('utf-8'))
                                 if 'storage_metadata' in config_data:
                                     config_files.append(obj)
-                                    logger.info(f"Found config file: {filename}")
+                                    logger.info(f"Found config file via validation: {filename}")
+                                    break  # Stop after finding first valid config (optimization)
+                                checked_count += 1
+                                if checked_count >= 10:  # Prevent timeout: max 10 files checked
+                                    logger.warning(f"Checked {checked_count} files without finding config, stopping")
+                                    break
                             except Exception as e:
                                 logger.debug(f"Skipping non-config file {filename}: {e}")
                                 continue

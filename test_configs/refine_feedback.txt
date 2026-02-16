@@ -1,0 +1,10 @@
+(past feedback from source config copied in - use the-claude-clone, use opus 4.6 for QC, Company column must be research)
+
+1-2 feedback: When building radiopharmaceutical pipeline tables, the most important principle is to separate assets, roles, and ownership cleanly. Each row should represent a single product candidate owned by a single organization, and diagnostic agents, therapeutic agents, and theranostic pairs should be clearly distinguished. In theranostics, the imaging agent and therapeutic agent are often related but still distinct molecular products, so avoid collapsing them into one entry unless the table explicitly represents a “program” rather than a “compound.” Similarly, keep company-level partnerships, financing, or platform announcements separate from product-specific milestones, and rely on clinical trial registries, company pipeline pages, and primary publications as the highest-confidence sources for development stage and indication.
+
+A second best practice is to maintain consistent column semantics and evidence confidence. The “Therapeutic Agent” field should contain the exact radionuclide-ligand construct (for example, isotope + targeting molecule), while the “Diagnostic Agent” field should contain only the imaging analog if one exists. Avoid inferring details that have not been publicly disclosed — especially radionuclides, chelators, or clinical timelines — and label uncertain information conservatively (e.g., “preclinical,” “IND-enabling,” or “platform designed to support multiple isotopes”). Finally, ensure that targets, indications, and trial identifiers map to the same molecule, since radiopharmaceutical pipelines often include multiple programs with similar naming conventions but different biology, receptors, or isotopes.
+
+2-3: Feedback: Company name must be research not id.
+
+
+Looking at v3, we can see that it is the-clone and deepseek v3.2 for QC... 
