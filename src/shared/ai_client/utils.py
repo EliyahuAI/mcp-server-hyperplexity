@@ -37,9 +37,13 @@ def determine_api_provider(model: str) -> str:
 def normalize_anthropic_model(model: str) -> str:
     """Convert anthropic/ format to direct API format if needed."""
     if model.startswith('anthropic/'):
-        return model.replace('anthropic/', '')
+        model = model.replace('anthropic/', '')
     elif model.startswith('anthropic.'):
-        return model.replace('anthropic.', '').replace('-v1:0', '')
+        model = model.replace('anthropic.', '').replace('-v1:0', '')
+
+    # Normalize dots to hyphens for consistency (e.g., claude-opus-4.6 -> claude-opus-4-6)
+    model = model.replace('.', '-')
+
     return model
 
 def normalize_vertex_model(model: str) -> str:
