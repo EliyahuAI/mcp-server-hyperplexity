@@ -148,22 +148,6 @@ def handle_create_update_session(event_data: Dict[str, Any], context=None) -> Di
         logger.info(f"[CREATE_UPDATE_SESSION] New session ID: {new_session_id}")
 
         # Copy enhanced Excel as the input file for the new session
-        # Read the enhanced Excel from source
-        try:
-            response = storage_manager.s3_client.get_object(
-                Bucket=active_bucket,
-                Key=enhanced_excel_key
-            )
-            excel_content = response['Body'].read()
-            logger.info(f"[CREATE_UPDATE_SESSION] Read enhanced Excel ({len(excel_content)} bytes)")
-        except Exception as e:
-            logger.error(f"[CREATE_UPDATE_SESSION] Failed to read enhanced Excel: {e}")
-            return create_response(500, {
-                'success': False,
-                'error': f'Failed to read enhanced Excel: {str(e)}'
-            })
-
-        # Store as input file in new session
         # Clean the original filename and add _Update_YYYYMMDD suffix
         clean_base = clean_table_name(enhanced_filename, for_display=False)
         update_date = datetime.now(timezone.utc).strftime('%Y%m%d')
@@ -173,11 +157,12 @@ def handle_create_update_session(event_data: Dict[str, Any], context=None) -> Di
 
         input_key = f"{new_session_path}{input_filename}"
 
+        # Use S3 copy_object for server-side copy (much faster for large files)
         try:
-            storage_manager.s3_client.put_object(
+            storage_manager.s3_client.copy_object(
                 Bucket=storage_manager.bucket_name,  # Always store in primary bucket
                 Key=input_key,
-                Body=excel_content,
+                CopySource={'Bucket': active_bucket, 'Key': enhanced_excel_key},
                 ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 Metadata={
                     'session_id': new_session_id,
@@ -186,14 +171,15 @@ def handle_create_update_session(event_data: Dict[str, Any], context=None) -> Di
                     'source_session': source_session_id,
                     'source_version': str(config_version),
                     'copied_from': enhanced_excel_key
-                }
+                },
+                MetadataDirective='REPLACE'  # Required when setting new metadata
             )
-            logger.info(f"[CREATE_UPDATE_SESSION] Stored input Excel: {input_key}")
+            logger.info(f"[CREATE_UPDATE_SESSION] Copied input Excel using S3 copy_object: {input_key}")
         except Exception as e:
-            logger.error(f"[CREATE_UPDATE_SESSION] Failed to store input Excel: {e}")
+            logger.error(f"[CREATE_UPDATE_SESSION] Failed to copy input Excel: {e}")
             return create_response(500, {
                 'success': False,
-                'error': f'Failed to store input Excel: {str(e)}'
+                'error': f'Failed to copy input Excel: {str(e)}'
             })
 
         # Copy config from source session (this also copies agent_memory internally)
