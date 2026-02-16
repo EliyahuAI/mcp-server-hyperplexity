@@ -527,6 +527,13 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
 
             preview_rows = rows[:total_rows_to_send]
 
+            # Filter validation_history to only include preview rows (avoid massive payload)
+            preview_validation_history = {}
+            if validation_history:
+                preview_row_keys = {row.get('_row_key') for row in preview_rows if row.get('_row_key')}
+                preview_validation_history = {k: v for k, v in validation_history.items() if k in preview_row_keys}
+                logger.info(f"[PREVIEW_HISTORY] Filtered history from {len(validation_history)} to {len(preview_validation_history)} rows for preview")
+
             # Use S3 key instead of full config to avoid 6MB payload limit
             payload = {
                 "test_mode": True,
@@ -542,7 +549,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                         "total_dataset_size": total_rows  # Use actual total rows from Excel, not just preview rows
                     }
                 },
-                "validation_history": validation_history,  # Use extracted history instead of empty dict
+                "validation_history": preview_validation_history,  # Only history for preview rows!
                 "session_id": session_id,
                 "email": email,  # For memory system
                 "is_preview": True,

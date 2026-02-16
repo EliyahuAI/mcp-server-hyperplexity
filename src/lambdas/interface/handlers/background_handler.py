@@ -3393,9 +3393,11 @@ def handle_main_processing(event, context):
                     validation_history = {}
 
                 # Create the complete validation payload (used by both sync and async)
+                # Use S3 key instead of full config to avoid 6MB payload limit
                 complete_validation_payload = {
                     "test_mode": False,
-                    "config": config_data,  # Embedded config data
+                    "config_s3_key": actual_config_s3_key,  # Pass S3 key instead of full config
+                    "config_s3_bucket": S3_UNIFIED_BUCKET,  # Validator needs bucket name too
                     "validation_data": {
                         "rows": excel_rows,  # All Excel data with pre-computed row keys
                         "max_rows": max_rows,
@@ -3406,6 +3408,11 @@ def handle_main_processing(event, context):
                     "session_id": session_id,
                     "email": email  # Add email for memory system support
                 }
+
+                # Check payload size and trigger delegation if > 5MB (below AWS 6MB limit with safety margin)
+                payload_size_bytes = len(json.dumps(complete_validation_payload, default=str))
+                payload_size_mb = payload_size_bytes / (1024 * 1024)
+                logger.info(f"[PAYLOAD_SIZE] Complete validation payload size: {payload_size_mb:.2f} MB")
 
                 logger.debug(f"[PAYLOAD_GENERATION] Complete validation payload created with {len(excel_rows)} rows")
 
@@ -3492,19 +3499,25 @@ def handle_main_processing(event, context):
                     except Exception as size_check_error:
                         logger.warning(f"[DELEGATION_DECISION] Error checking response size estimate: {size_check_error}")
 
+                    # Check if payload size exceeds Lambda invocation limit (6MB, use 5MB safety margin)
+                    MAX_SYNC_PAYLOAD_SIZE_MB = 5.0
+                    payload_exceeds_limit = payload_size_mb > MAX_SYNC_PAYLOAD_SIZE_MB
+
                     if estimated_total_time_seconds and estimated_total_time_seconds > 0:
                         estimated_minutes = estimated_total_time_seconds / 60.0
 
-                        # Delegate if EITHER time > 15min OR response size > 5MB
+                        # Delegate if time > 15min OR response size > 5MB OR payload size > 5MB
                         time_exceeds_limit = estimated_minutes > MAX_SYNC_INVOCATION_TIME_MINUTES
                         size_exceeds_limit = estimated_response_size_mb > MAX_SYNC_RESPONSE_SIZE_MB
 
-                        should_delegate = time_exceeds_limit or size_exceeds_limit
+                        should_delegate = time_exceeds_limit or size_exceeds_limit or payload_exceeds_limit
 
                         logger.debug(f"[DELEGATION_DECISION] Estimated processing time: {estimated_minutes:.1f} minutes")
                         logger.debug(f"[DELEGATION_DECISION] Sync timeout limit: {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f} minutes")
+                        logger.debug(f"[DELEGATION_DECISION] Payload size: {payload_size_mb:.2f} MB")
                         logger.debug(f"[DELEGATION_DECISION] Time exceeds limit: {time_exceeds_limit}")
-                        logger.debug(f"[DELEGATION_DECISION] Size exceeds limit: {size_exceeds_limit}")
+                        logger.debug(f"[DELEGATION_DECISION] Response size exceeds limit: {size_exceeds_limit}")
+                        logger.debug(f"[DELEGATION_DECISION] Payload size exceeds limit: {payload_exceeds_limit}")
                         logger.debug(f"[DELEGATION_DECISION] Should delegate: {should_delegate}")
 
                         if should_delegate:
@@ -3513,16 +3526,23 @@ def handle_main_processing(event, context):
                                 delegation_reason.append(f"time_{estimated_minutes:.1f}min_exceeds_{MAX_SYNC_INVOCATION_TIME_MINUTES:.1f}min")
                             if size_exceeds_limit:
                                 delegation_reason.append(f"response_{estimated_response_size_mb:.2f}MB_exceeds_{MAX_SYNC_RESPONSE_SIZE_MB}MB")
+                            if payload_exceeds_limit:
+                                delegation_reason.append(f"payload_{payload_size_mb:.2f}MB_exceeds_{MAX_SYNC_PAYLOAD_SIZE_MB}MB")
                             logger.info(f"[DELEGATION_DECISION] Delegating to async: {', '.join(delegation_reason)}")
                     else:
-                        logger.warning(f"[DELEGATION_DECISION] No valid time estimate found in preview data, using sync processing")
-                        logger.debug(f"[DELEGATION_DECISION] Available preview data keys: {list(preview_data.keys()) if preview_data else 'None'}")
-                        if preview_data:
-                            # Log some field values to help debug
-                            debug_fields = ['estimated_validation_time', 'estimated_total_processing_time', 'estimated_validation_time_minutes']
-                            for field in debug_fields:
-                                if field in preview_data:
-                                    logger.debug(f"[DELEGATION_DECISION] {field}: {preview_data[field]}")
+                        # No time estimate, but check payload size
+                        if payload_exceeds_limit:
+                            should_delegate = True
+                            logger.info(f"[DELEGATION_DECISION] Delegating to async due to large payload: {payload_size_mb:.2f} MB > {MAX_SYNC_PAYLOAD_SIZE_MB} MB")
+                        else:
+                            logger.warning(f"[DELEGATION_DECISION] No valid time estimate found in preview data, using sync processing")
+                            logger.debug(f"[DELEGATION_DECISION] Available preview data keys: {list(preview_data.keys()) if preview_data else 'None'}")
+                            if preview_data:
+                                # Log some field values to help debug
+                                debug_fields = ['estimated_validation_time', 'estimated_total_processing_time', 'estimated_validation_time_minutes']
+                                for field in debug_fields:
+                                    if field in preview_data:
+                                        logger.debug(f"[DELEGATION_DECISION] {field}: {preview_data[field]}")
                 except Exception as e:
                     logger.error(f"[DELEGATION_DECISION] Error checking delegation criteria: {e}")
 
