@@ -943,7 +943,7 @@ def verify_webhook_signature(payload_body, signature_header, secret):
     ).hexdigest()
 
     # signature_header format: "sha256=abc123..."
-    provided_signature = signature_header.split('=')[1]
+    provided_signature = signature_header.split('=', 1)[1]
 
     return hmac.compare_digest(expected_signature, provided_signature)
 ```
@@ -1249,100 +1249,140 @@ All use existing JWT authentication (web UI users):
 ## Implementation Phases
 
 ### Phase 0: Branch & Infrastructure Setup
-**Timeline:** Day 1
+**Status:** ✅ COMPLETE (2026-02-18)
 **Branch:** `api`
 
-**Tasks:**
-1. Create `api` branch from `master`
-2. Document API specification (this document)
-3. Set up second API Gateway in AWS
-4. Store API key HMAC secret in SSM Parameter Store
-5. Create DynamoDB tables:
-   - `perplexity-validator-api-keys`
-   - `perplexity-validator-api-key-usage`
+**Completed:**
+1. ✅ `api` branch created from `master`
+2. ✅ API design document created (`docs/EXTERNAL_API_DESIGN.md`)
+3. ✅ DynamoDB table creation code added to `deployment/create_interface_package.py`
+4. ✅ SSM parameter auto-provisioning added to `deployment/create_interface_package.py`
 
-**Deliverables:**
-- API design document
-- Infrastructure provisioned
-- Branch ready for development
+**Deferred to Phase 2 (requires code before infra):**
+- Second API Gateway in AWS (needs `api_handler.py` deployed first)
 
 ---
 
 ### Phase 1: API Key Infrastructure
-**Timeline:** Days 2-4
-**Dependencies:** Phase 0
+**Status:** ✅ COMPLETE (2026-02-18)
+**Commit:** `2fa274b0`
 
-**Files to Create:**
-1. `/src/lambdas/interface/utils/api_key_manager.py`
-   - Key generation, hashing, authentication
-   - Rate limiting integration
-   - Audit logging
+**Files Created:**
+1. `src/lambdas/interface/utils/api_key_manager.py`
+   - `generate_api_key(tier)` — `hpx_{tier}_{40 url-safe chars}`
+   - `hash_api_key(raw_key)` — HMAC-SHA256 via SSM secret
+   - `authenticate_api_key(raw_key)` — DynamoDB lookup + active/expiry check
+   - `create_api_key_record(...)`, `list_api_keys(email)`, `revoke_api_key(...)`, `update_api_key(...)`, `get_api_key_usage(...)`
+   - SSM secret cached in-process; env var `API_KEY_HMAC_SECRET` overrides for local dev
 
-2. `/src/lambdas/interface/actions/api_key_management.py`
-   - Action handlers for key CRUD operations
-   - Usage statistics retrieval
+2. `src/lambdas/interface/actions/api_key_management.py`
+   - Dispatches: `createApiKey`, `listApiKeys`, `revokeApiKey`, `updateApiKey`, `getApiKeyUsage`
+   - Max 10 active keys per user enforced
+   - Scope validation on both create and update
+   - Revoked-key guard on update
 
-**Files to Modify:**
-1. `/src/shared/dynamodb_schemas.py`
-   - Add API key table schemas
-   - Add helper functions
+**Files Modified:**
+1. `src/shared/dynamodb_schemas.py`
+   - Added `create_api_keys_table()` — PAY_PER_REQUEST, `email-index` GSI
+   - Added `create_api_key_usage_table()` — PAY_PER_REQUEST, composite key `(api_key_hash, window)`, TTL on `ttl` attribute
 
-2. `/src/lambdas/interface/handlers/http_handler.py`
-   - Add 5 API key management actions to routing
+2. `src/lambdas/interface/handlers/http_handler.py`
+   - Added 5 API key actions to protected-action routing block (lazy-loaded)
 
-**Testing:**
-- Unit tests for key generation/hashing
-- Unit tests for authentication logic
-- Integration test: Create key via web UI → Use key for auth
+3. `deployment/create_interface_package.py`
+   - `setup_dynamodb_tables()` — creates both API key tables
+   - `setup_ssm_parameters()` — creates `/perplexity-validator/api-key-hmac-secret` if absent
+   - `LAMBDA_CONFIG` — adds `API_KEY_HMAC_SECRET_PARAM` env var
+
+**Implementation Notes (changes from original plan):**
+- Display prefix is 18 chars (`hpx_live_` + 9 random chars), not 16 as originally implied
+- `rate_limit_rpd: 0` means unlimited for `int`-tier keys — downstream rate-limit code must treat 0 as no cap
+- `last_used_at` updated synchronously on each auth call (small latency cost); refactor to async in Phase 6 if needed
+- 6 bugs fixed post-implementation (see commit `2fa274b0`): BillingMode in GSI spec, TTL-before-waiter, unused imports, implicit conditions import, missing scope validation on update, missing revoked-key guard on update
 
 **Deliverables:**
-- API key system functional
-- Keys can be created/revoked via web UI
-- Keys can authenticate requests
+- ✅ API key CRUD available via existing web UI (JWT auth)
+- ✅ Keys can authenticate future external API requests
+- ✅ DynamoDB + SSM provisioning integrated into deploy script
 
 ---
 
 ### Phase 2: RESTful API Handler
-**Timeline:** Days 5-7
-**Dependencies:** Phase 1
+**Status:** 🔲 NEXT
+**Dependencies:** Phase 1 ✅
+
+**Context — how the Lambda currently routes:**
+`interface_lambda_function.py` detects the event source by `'httpMethod' in event` (REST API v1 payload format). A second API Gateway can be distinguished by comparing `event['requestContext']['apiId']` to the env var `API_GATEWAY_EXTERNAL_API_ID`. HTTP API v2 events use `'version': '2.0'` instead of `'httpMethod'`.
 
 **Files to Create:**
-1. `/src/lambdas/interface/handlers/api_handler.py`
-   - RESTful path routing
-   - Request translation to actions
-   - Response wrapping
-   - API-specific error handling
+1. `src/lambdas/interface/handlers/api_handler.py`
+   - Authenticate via `api_key_manager.authenticate_api_key()` (Bearer token from `Authorization` header)
+   - Route RESTful paths → existing action handlers:
+
+     | Method | Path | → Action / Handler |
+     |--------|------|--------------------|
+     | POST | `/v1/uploads/presigned` | `presigned_upload.request_presigned_url()` |
+     | POST | `/v1/jobs` | `start_preview.handle_start_preview()` |
+     | GET | `/v1/jobs/{job_id}` | `status_check.handle_get_status()` |
+     | POST | `/v1/jobs/{job_id}/validate` | `start_preview.handle_approve_validation()` (new function) |
+     | GET | `/v1/jobs/{job_id}/results` | `status_check.handle_get_results()` (new function) |
+     | GET | `/v1/account/balance` | `account_balance.handle()` |
+     | GET | `/v1/account/usage` | `user_stats.handle()` |
+
+   - Wrap all responses in standard envelope `{success, data, error, meta}`
+   - Return proper HTTP status codes (202 for queued jobs, 402 for insufficient credits, etc.)
+   - Add `X-RateLimit-*` headers on every response
+   - Add `Retry-After` header when job is processing
+
+2. `src/lambdas/interface/utils/rate_limiter_api.py`
+   - Per-key rate limiting using `perplexity-validator-api-key-usage` table
+   - Sliding window: minute + day counters via atomic `ADD` on `request_count`
+   - Returns `(allowed: bool, remaining: int, reset_at: str)`
+   - `0` in `rate_limit_rpd` means unlimited (internal keys)
 
 **Files to Modify:**
-1. `/src/interface_lambda_function.py`
-   - Add API Gateway routing fork
-   - Detect API Gateway by `apiId`
+1. `src/interface_lambda_function.py`
+   - Add detection for external API Gateway: check `event.get('requestContext', {}).get('apiId') == os.environ.get('API_GATEWAY_EXTERNAL_API_ID')`
+   - Route matching events to `api_handler.handle(event, context)` instead of `http_handler.handle()`
 
-2. `/src/lambdas/interface/actions/presigned_upload.py`
-   - No changes needed (already compatible)
+2. `src/lambdas/interface/actions/start_preview.py`
+   - Add `handle_approve_validation(request_data, context)` — approves preview → queues full run
+   - Persist `webhook_url` + `webhook_secret` to DynamoDB run record (for Phase 3)
+   - Return standard API envelope from `handle_start_preview()` when called via API context
 
-3. `/src/lambdas/interface/actions/start_preview.py`
-   - Add webhook config persistence
-   - Enhance response with URLs
+3. `src/lambdas/interface/actions/status_check.py`
+   - Add `handle_get_results(request_data, context)` — returns presigned download URL if `status == completed`
+   - Enhance existing status response to include `progress_percent`, `estimated_completion`, `cost_estimate`
 
-**Endpoints Implemented:**
+4. `deployment/create_interface_package.py`
+   - Add `API_GATEWAY_EXTERNAL_API_ID` to `LAMBDA_CONFIG` env vars (resolved at deploy time, same pattern as `WEBSOCKET_API_URL`)
+   - Add `deploy_external_api_gateway()` function using the existing `setup_api_gateway()` as a template
+
+**New env vars needed in Lambda:**
+```
+API_GATEWAY_EXTERNAL_API_ID=<resolved at deploy time>
+```
+
+**Endpoints to implement:**
 - `POST /v1/uploads/presigned`
 - `POST /v1/jobs`
 - `GET /v1/jobs/{job_id}`
 - `POST /v1/jobs/{job_id}/validate`
 - `GET /v1/jobs/{job_id}/results`
 - `GET /v1/account/balance`
+- `GET /v1/account/usage`
 
 **Testing:**
-- Integration test: Full validation flow via API
-- Test rate limiting enforcement
-- Test insufficient balance handling
-- Test error responses (401, 402, 429, etc.)
+- Auth: valid key → 200; revoked key → 401; expired key → 401; wrong prefix → 401
+- Rate limit: exceed RPM → 429 with `Retry-After`
+- Insufficient balance: submit job with $0 balance → 402
+- Full flow: presigned → upload → POST /v1/jobs → poll → approve → poll → GET results
+- Error responses: missing fields → 400; unknown job_id → 404
 
 **Deliverables:**
-- Complete validation workflow via API
-- RESTful endpoints functional
-- Error handling robust
+- External API Gateway live at `api.hyperplexity.ai/v1`
+- Full validation workflow accessible via API key
+- Rate limiting enforced per-key
 
 ---
 
@@ -2011,7 +2051,7 @@ def handle_webhook():
         hashlib.sha256
     ).hexdigest()
 
-    provided_signature = signature_header.split('=')[1]
+    provided_signature = signature_header.split('=', 1)[1]
 
     if not hmac.compare_digest(expected_signature, provided_signature):
         return jsonify({"error": "Invalid signature"}), 401
@@ -2048,6 +2088,7 @@ if __name__ == '__main__':
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 1.0 | 2026-02-17 | Initial design document | System |
+| 1.1 | 2026-02-18 | Mark Phase 0 & Phase 1 complete; record implementation details and deviations; expand Phase 2 with exact routing table, gateway detection approach, new files (`api_handler.py`, `rate_limiter_api.py`), and new action functions needed; fix `.split('=')` → `.split('=', 1)` in webhook signature examples | System |
 
 ---
 
