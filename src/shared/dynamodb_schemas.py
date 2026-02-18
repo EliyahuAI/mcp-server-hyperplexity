@@ -4049,3 +4049,74 @@ def get_messages_since(session_id: str, since_seq: int = 0, limit: int = 100) ->
             'last_seq': since_seq,
             'has_more': False
         } 
+
+
+# --- API Key Tables ------------------------------------------------------------
+
+API_KEYS_TABLE_NAME = "perplexity-validator-api-keys"
+API_KEY_USAGE_TABLE_NAME = "perplexity-validator-api-key-usage"
+
+
+def create_api_keys_table():
+    """Create the DynamoDB table for storing hashed API keys."""
+    try:
+        dynamodb_client = boto3.client('dynamodb')
+        dynamodb_client.create_table(
+            TableName=API_KEYS_TABLE_NAME,
+            KeySchema=[
+                {'AttributeName': 'api_key_hash', 'KeyType': 'HASH'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'api_key_hash', 'AttributeType': 'S'},
+                {'AttributeName': 'email', 'AttributeType': 'S'},
+            ],
+            GlobalSecondaryIndexes=[
+                {
+                    'IndexName': 'email-index',
+                    'KeySchema': [
+                        {'AttributeName': 'email', 'KeyType': 'HASH'},
+                    ],
+                    'Projection': {'ProjectionType': 'ALL'},
+                }
+            ],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        waiter = dynamodb_client.get_waiter('table_exists')
+        waiter.wait(TableName=API_KEYS_TABLE_NAME)
+        logger.info(f"Table {API_KEYS_TABLE_NAME} created successfully.")
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceInUseException':
+            logger.info(f"Table {API_KEYS_TABLE_NAME} already exists.")
+        else:
+            raise
+
+
+def create_api_key_usage_table():
+    """Create the DynamoDB table for tracking per-key usage windows (rate limiting)."""
+    try:
+        dynamodb_client = boto3.client('dynamodb')
+        dynamodb_client.create_table(
+            TableName=API_KEY_USAGE_TABLE_NAME,
+            KeySchema=[
+                {'AttributeName': 'api_key_hash', 'KeyType': 'HASH'},
+                {'AttributeName': 'window', 'KeyType': 'RANGE'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'api_key_hash', 'AttributeType': 'S'},
+                {'AttributeName': 'window', 'AttributeType': 'S'},
+            ],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        waiter = dynamodb_client.get_waiter('table_exists')
+        waiter.wait(TableName=API_KEY_USAGE_TABLE_NAME)
+        # Enable TTL after table is ACTIVE
+        dynamodb_client.update_time_to_live(
+            TableName=API_KEY_USAGE_TABLE_NAME,
+            TimeToLiveSpecification={'Enabled': True, 'AttributeName': 'ttl'},
+        )
+        logger.info(f"Table {API_KEY_USAGE_TABLE_NAME} created successfully.")
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceInUseException':
+            logger.info(f"Table {API_KEY_USAGE_TABLE_NAME} already exists.")
+        else:
+            raise
