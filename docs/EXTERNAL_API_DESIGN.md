@@ -1308,7 +1308,7 @@ All use existing JWT authentication (web UI users):
 ---
 
 ### Phase 2: RESTful API Handler
-**Status:** 🔲 NEXT
+**Status:** ✅ COMPLETE (2026-02-18)
 **Dependencies:** Phase 1 ✅
 
 **Context — how the Lambda currently routes:**
@@ -1383,6 +1383,16 @@ API_GATEWAY_EXTERNAL_API_ID=<resolved at deploy time>
 - External API Gateway live at `api.hyperplexity.ai/v1`
 - Full validation workflow accessible via API key
 - Rate limiting enforced per-key
+
+---
+
+**Implementation Notes:**
+- `api_handler.py` normalises both REST API v1 (`httpMethod`/`path`) and HTTP API v2 (`version:2.0`/`rawPath`) events
+- External gateway detected by comparing `event['requestContext']['apiId']` to `API_GATEWAY_EXTERNAL_API_ID` env var; detection added in both lightweight and unified Lambda modes
+- `rate_limiter_api.py` uses atomic DynamoDB `ADD` with TTL; fails open on DynamoDB error so a table outage never blocks API traffic; RPD=0 treated as unlimited for `int`-tier keys
+- `handle_approve_validation()` added to `start_preview.py`; `handle_get_results()` added to `status_check.py`
+- `POST /v1/jobs` saves the inline `config` and `s3_key` to S3 via `UnifiedS3Manager` before delegating to `handle_start_preview()` — keeps 90% code reuse
+- `deploy_external_api_gateway()` function added to `deployment/create_interface_package.py`; creates HTTP API v2, 7 routes, Lambda integration, `$default` auto-deploy stage, and Lambda invoke permission
 
 ---
 
@@ -2089,6 +2099,7 @@ if __name__ == '__main__':
 |---------|------|---------|--------|
 | 1.0 | 2026-02-17 | Initial design document | System |
 | 1.1 | 2026-02-18 | Mark Phase 0 & Phase 1 complete; record implementation details and deviations; expand Phase 2 with exact routing table, gateway detection approach, new files (`api_handler.py`, `rate_limiter_api.py`), and new action functions needed; fix `.split('=')` → `.split('=', 1)` in webhook signature examples | System |
+| 1.2 | 2026-02-18 | Mark Phase 2 complete; record implementation notes: event normalisation, fail-open rate limiter, inline config saving pattern, new helper functions, deploy function added | System |
 
 ---
 

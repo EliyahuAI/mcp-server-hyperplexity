@@ -121,3 +121,139 @@ def handle_start_preview(request_data, context=None):
             'success': False,
             'error': f'Failed to start preview: {str(e)}'
         })
+
+
+def handle_approve_validation(request_data, context=None):
+    """
+    Approve full validation after preview is complete.
+
+    Called by api_handler for POST /v1/jobs/{job_id}/validate.
+
+    Expects:
+        request_data: {
+            '_api_email': 'user@example.com',
+            'job_id': 'session_xxx',
+            'approved_cost_usd': 12.00,   # must match estimate from preview
+            'webhook_url': '...',          # optional
+            'webhook_secret': '...',       # optional
+        }
+
+    Returns standard create_response dict.
+    """
+    email = request_data.get('_api_email') or request_data.get('_verified_email') or request_data.get('email')
+    job_id = request_data.get('job_id') or request_data.get('session_id')
+
+    if not email or not job_id:
+        return create_response(400, {
+            'success': False,
+            'error': 'missing_fields',
+            'message': 'job_id and authenticated email are required'
+        })
+
+    base_session_id = job_id
+    if base_session_id.endswith('_preview'):
+        base_session_id = base_session_id[:-8]
+    if not base_session_id.startswith('session_'):
+        base_session_id = f"session_{base_session_id}"
+
+    try:
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
+        from dynamodb_schemas import find_run_key_by_type, get_run_status, create_run_record, track_validation_call
+
+        # Idempotency guard: refuse if full validation is already queued or running
+        existing_val_key = find_run_key_by_type(base_session_id, "Validation")
+        if existing_val_key:
+            return create_response(409, {
+                'success': False,
+                'error': 'validation_already_queued',
+                'message': 'Full validation has already been queued for this job.'
+            })
+
+        # Verify preview is complete
+        preview_run_key = find_run_key_by_type(base_session_id, "Preview")
+        if not preview_run_key:
+            return create_response(404, {
+                'success': False,
+                'error': 'job_not_found',
+                'message': 'No preview run found for this job. Run a preview first.'
+            })
+
+        preview_record = get_run_status(base_session_id, preview_run_key)
+        if not preview_record:
+            return create_response(404, {
+                'success': False,
+                'error': 'job_not_found',
+                'message': 'Preview run record not found.'
+            })
+
+        preview_status = preview_record.get('status', '').upper()
+        if preview_status != 'COMPLETED':
+            return create_response(409, {
+                'success': False,
+                'error': 'preview_not_complete',
+                'message': f'Preview is not yet complete. Current status: {preview_status}'
+            })
+
+        # Look up files from session storage
+        from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+        storage_manager = UnifiedS3Manager()
+
+        session_info = storage_manager.load_session_info(email, base_session_id)
+        excel_s3_key = session_info.get('table_path')
+        if not excel_s3_key:
+            _, excel_s3_key = storage_manager.get_excel_file(email, base_session_id)
+
+        if not excel_s3_key:
+            return create_response(400, {
+                'success': False,
+                'error': 'file_not_found',
+                'message': 'Excel file not found for this session.'
+            })
+
+        existing_config, config_s3_key = storage_manager.get_latest_config(email, base_session_id)
+        if not config_s3_key:
+            return create_response(400, {
+                'success': False,
+                'error': 'config_not_found',
+                'message': 'Configuration not found for this session.'
+            })
+
+        reference_pin = base_session_id.split('_')[-1] if '_' in base_session_id else base_session_id[:6]
+
+        run_key = create_run_record(
+            session_id=base_session_id, email=email,
+            total_rows=-1, batch_size=None, run_type="Validation"
+        )
+        track_validation_call(
+            email=email, session_id=base_session_id,
+            reference_pin=reference_pin, request_type='full',
+            excel_s3_key=excel_s3_key, config_s3_key=config_s3_key
+        )
+
+        from interface_lambda.core.sqs_service import send_full_request
+        message_id = send_full_request(
+            session_id=base_session_id,
+            excel_s3_key=excel_s3_key,
+            config_s3_key=config_s3_key,
+            email=email,
+            reference_pin=reference_pin,
+            run_key=run_key
+        )
+
+        logger.info(f"[APPROVE_VALIDATION] Queued full validation for {base_session_id}, MessageId: {message_id}")
+
+        return create_response(202, {
+            'success': True,
+            'job_id': base_session_id,
+            'status': 'queued',
+            'run_type': 'validation',
+            'message': 'Full validation queued successfully.'
+        })
+
+    except Exception as e:
+        logger.error(f"[APPROVE_VALIDATION] Error: {e}")
+        return create_response(500, {
+            'success': False,
+            'error': 'server_error',
+            'message': f'Failed to approve validation: {str(e)}'
+        })

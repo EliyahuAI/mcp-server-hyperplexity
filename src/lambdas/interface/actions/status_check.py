@@ -84,3 +84,90 @@ def _check_status(session_id, is_preview, email_param):
     
     # For all other cases (e.g., still processing), return the raw status record
     return create_response(200, status_record) 
+
+def handle_get_results(request_data, context=None):
+    """
+    Get download URL for a completed validation job.
+
+    Called by api_handler for GET /v1/jobs/{job_id}/results.
+
+    Expects:
+        request_data: {
+            '_api_email': 'user@example.com',
+            'job_id': 'session_xxx',
+        }
+
+    Returns standard create_response dict.
+    Returns 404 if job is not yet complete.
+    """
+    job_id = request_data.get('job_id') or request_data.get('session_id')
+    email = request_data.get('_api_email') or request_data.get('_verified_email') or request_data.get('email', '')
+
+    if not job_id:
+        return create_response(400, {'success': False, 'error': 'job_id is required'})
+
+    base_session_id = job_id
+    if not base_session_id.startswith('session_'):
+        base_session_id = f"session_{base_session_id}"
+
+    try:
+        from dynamodb_schemas import find_run_key_by_type, get_run_status
+
+        run_key = find_run_key_by_type(base_session_id, "Validation")
+        if not run_key:
+            return create_response(404, {
+                'success': False,
+                'error': 'job_not_found',
+                'message': 'No full validation job found. Submit a preview and approve it first.'
+            })
+
+        status_record = get_run_status(base_session_id, run_key)
+        if not status_record:
+            return create_response(404, {
+                'success': False,
+                'error': 'job_not_found',
+                'message': 'Job status record not found.'
+            })
+
+        current_status = status_record.get('status', '').upper()
+
+        if current_status != 'COMPLETED':
+            return create_response(404, {
+                'success': False,
+                'error': 'results_not_ready',
+                'message': 'Validation results are not yet available.',
+                'details': {
+                    'current_status': current_status.lower(),
+                    'progress_percent': status_record.get('progress_percent', 0),
+                    'status_url': f'/v1/jobs/{job_id}'
+                }
+            })
+
+        results_s3_key = status_record.get('results_s3_key')
+        download_url = None
+        if results_s3_key:
+            download_url = generate_presigned_url(S3_RESULTS_BUCKET, results_s3_key)
+
+        return create_response(200, {
+            'success': True,
+            'job_id': job_id,
+            'status': 'completed',
+            'results': {
+                'download_url': download_url,
+                'download_expires_at': None,
+                'file_format': 'zip' if results_s3_key and results_s3_key.endswith('.zip') else 'unknown',
+            },
+            'summary': {
+                'rows_processed': status_record.get('total_rows', 0),
+                'run_time_seconds': status_record.get('run_time_seconds'),
+                'cost_usd': float(status_record.get('quoted_validation_cost', 0) or 0),
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"[GET_RESULTS] Error: {e}")
+        return create_response(500, {
+            'success': False,
+            'error': 'server_error',
+            'message': f'Failed to get results: {str(e)}'
+        })

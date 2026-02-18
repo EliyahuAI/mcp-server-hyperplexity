@@ -75,7 +75,11 @@ LAMBDA_CONFIG = {
             "SQS_ASYNC_QUEUE_NAME": "perplexity-validator-async-queue", # Environment-specific queue names will be applied
             "SQS_COMPLETION_QUEUE_NAME": "perplexity-validator-completion-queue", # Environment-specific queue names will be applied
             "MAX_SYNC_INVOCATION_TIME": "10.0",  # Jobs longer than 10 minutes use async delegation
-            "VALIDATOR_SAFETY_BUFFER": "3.0"
+            "VALIDATOR_SAFETY_BUFFER": "3.0",
+            # External API key authentication
+            "API_KEY_HMAC_SECRET_PARAM": "/perplexity-validator/api-key-hmac-secret",
+            # External API Gateway ID (populated at deploy time by deploy_external_api_gateway)
+            "API_GATEWAY_EXTERNAL_API_ID": ""
         }
     },
     "TracingConfig": {
@@ -1121,12 +1125,53 @@ def setup_dynamodb_tables(region="us-east-1"):
         except Exception as e:
             logger.error(f"Failed to create message log table: {e}")
 
+        # Create External API key tables
+        try:
+            dynamodb_schemas.create_api_keys_table()
+            logger.info("✅ API keys table created/verified")
+        except Exception as e:
+            logger.error(f"Failed to create API keys table: {e}")
+
+        try:
+            dynamodb_schemas.create_api_key_usage_table()
+            logger.info("✅ API key usage table created/verified (90-day TTL)")
+        except Exception as e:
+            logger.error(f"Failed to create API key usage table: {e}")
+
         logger.info("✅ All DynamoDB tables are ready!")
         return True
         
     except Exception as e:
         logger.error(f"Error setting up DynamoDB tables: {e}")
         return False
+
+def setup_ssm_parameters(region="us-east-1", environment="prod"):
+    """Ensure required SSM parameters exist. Creates them if missing."""
+    logger.info("Setting up SSM parameters for External API...")
+    ssm = boto3.client("ssm", region_name=region)
+
+    param_name = "/perplexity-validator/api-key-hmac-secret"
+
+    try:
+        ssm.get_parameter(Name=param_name, WithDecryption=True)
+        logger.info(f"✅ SSM parameter {param_name} already exists")
+    except ssm.exceptions.ParameterNotFound:
+        import secrets as _secrets
+        hmac_secret = _secrets.token_hex(64)  # 512-bit secret
+        ssm.put_parameter(
+            Name=param_name,
+            Description="HMAC-SHA256 secret for hashing external API keys",
+            Value=hmac_secret,
+            Type="SecureString",
+            Overwrite=False,
+        )
+        logger.info(f"✅ SSM parameter {param_name} created (new secret generated)")
+    except Exception as e:
+        logger.error(f"Failed to set up SSM parameter {param_name}: {e}")
+        return False
+
+    return True
+
 
 def setup_sqs_queues(region):
     """Create SQS queues if they don't exist, and ensure correct configuration."""
@@ -1833,6 +1878,12 @@ def main():
             if args.deploy:
                 logger.warning("Continuing with deployment despite DB setup failure...")
     
+    # Set up SSM parameters for External API (alongside DB setup)
+    if args.setup_db or (args.deploy and not args.skip_db_setup):
+        ssm_success = setup_ssm_parameters(args.region)
+        if not ssm_success:
+            logger.warning("SSM parameter setup failed — API key authentication may not work")
+
     # Set up unified S3 bucket if requested
     if args.setup_s3 or (args.deploy and not args.skip_s3_setup):
         s3_success = setup_unified_s3_bucket()
@@ -2019,3 +2070,153 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main()) 
+
+def deploy_external_api_gateway(lambda_arn: str, region: str = "us-east-1") -> str:
+    """
+    Create or update the external HTTP API Gateway (v2) for api.hyperplexity.ai/v1.
+
+    Creates routes for all external API endpoints and integrates them with the
+    Interface Lambda. Returns the API ID which must be set as
+    API_GATEWAY_EXTERNAL_API_ID in the Lambda environment.
+
+    Args:
+        lambda_arn: ARN of the Interface Lambda function.
+        region:     AWS region.
+
+    Returns:
+        The API Gateway ID (e.g. 'abc123xyz').
+    """
+    apigw = boto3.client('apigatewayv2', region_name=region)
+    lambda_client = boto3.client('lambda', region_name=region)
+
+    api_name = "hyperplexity-external-api"
+
+    # Check for existing API
+    existing_api_id = None
+    try:
+        apis = apigw.get_apis()
+        for api in apis.get('Items', []):
+            if api['Name'] == api_name:
+                existing_api_id = api['ApiId']
+                logger.info(f"[EXT_API_GW] Found existing API: {existing_api_id}")
+                break
+    except ClientError as e:
+        logger.warning(f"[EXT_API_GW] Could not list APIs: {e}")
+
+    cors_config = {
+        'AllowOrigins': ['*'],
+        'AllowMethods': ['GET', 'POST', 'OPTIONS'],
+        'AllowHeaders': ['Authorization', 'Content-Type'],
+        'MaxAge': 3600
+    }
+
+    if existing_api_id:
+        api_id = existing_api_id
+        apigw.update_api(ApiId=api_id, CorsConfiguration=cors_config)
+        logger.info(f"[EXT_API_GW] Updated existing API: {api_id}")
+    else:
+        response = apigw.create_api(
+            Name=api_name,
+            ProtocolType='HTTP',
+            CorsConfiguration=cors_config,
+            Description='Hyperplexity External API v1'
+        )
+        api_id = response['ApiId']
+        logger.info(f"[EXT_API_GW] Created new API: {api_id}")
+
+    # Build Lambda integration ARN
+    account_id = lambda_arn.split(':')[4]
+    integration_uri = (
+        f"arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{lambda_arn}/invocations"
+    )
+
+    # Create or reuse Lambda integration
+    integration_id = None
+    try:
+        integrations = apigw.get_integrations(ApiId=api_id)
+        for integ in integrations.get('Items', []):
+            if integ.get('IntegrationUri') == integration_uri:
+                integration_id = integ['IntegrationId']
+                break
+    except ClientError:
+        pass
+
+    if not integration_id:
+        integ_resp = apigw.create_integration(
+            ApiId=api_id,
+            IntegrationType='AWS_PROXY',
+            IntegrationUri=integration_uri,
+            IntegrationMethod='POST',
+            PayloadFormatVersion='2.0',
+            TimeoutInMillis=29000
+        )
+        integration_id = integ_resp['IntegrationId']
+        logger.info(f"[EXT_API_GW] Created integration: {integration_id}")
+
+    # Define all routes
+    routes = [
+        ('POST', '/v1/uploads/presigned'),
+        ('POST', '/v1/jobs'),
+        ('GET',  '/v1/jobs/{job_id}'),
+        ('POST', '/v1/jobs/{job_id}/validate'),
+        ('GET',  '/v1/jobs/{job_id}/results'),
+        ('GET',  '/v1/account/balance'),
+        ('GET',  '/v1/account/usage'),
+    ]
+
+    # Get existing routes
+    try:
+        existing_routes = {
+            r['RouteKey']: r['RouteId']
+            for r in apigw.get_routes(ApiId=api_id).get('Items', [])
+        }
+    except ClientError:
+        existing_routes = {}
+
+    for method, path in routes:
+        route_key = f"{method} {path}"
+        if route_key not in existing_routes:
+            apigw.create_route(
+                ApiId=api_id,
+                RouteKey=route_key,
+                Target=f"integrations/{integration_id}"
+            )
+            logger.info(f"[EXT_API_GW] Created route: {route_key}")
+
+    # Ensure Lambda has permission to be invoked by this API Gateway
+    source_arn = f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*/*"
+    try:
+        lambda_client.add_permission(
+            FunctionName=lambda_arn,
+            StatementId=f"ext-api-gateway-{api_id}",
+            Action='lambda:InvokeFunction',
+            Principal='apigateway.amazonaws.com',
+            SourceArn=source_arn
+        )
+        logger.info(f"[EXT_API_GW] Added Lambda invoke permission for API {api_id}")
+    except ClientError as e:
+        if 'ResourceConflictException' in str(e):
+            logger.info("[EXT_API_GW] Lambda permission already exists")
+        else:
+            logger.warning(f"[EXT_API_GW] Could not add Lambda permission: {e}")
+
+    # Create or update default stage with auto-deploy
+    try:
+        apigw.create_stage(
+            ApiId=api_id,
+            StageName='$default',
+            AutoDeploy=True,
+            Description='Default auto-deploy stage'
+        )
+        logger.info(f"[EXT_API_GW] Created $default stage")
+    except ClientError as e:
+        if 'ConflictException' in str(e):
+            logger.info("[EXT_API_GW] $default stage already exists")
+        else:
+            logger.warning(f"[EXT_API_GW] Could not create stage: {e}")
+
+    endpoint = f"https://{api_id}.execute-api.{region}.amazonaws.com"
+    logger.info(f"[EXT_API_GW] External API endpoint: {endpoint}")
+    logger.info(f"[EXT_API_GW] Set API_GATEWAY_EXTERNAL_API_ID={api_id} in Lambda env vars")
+
+    return api_id

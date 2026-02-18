@@ -53,13 +53,20 @@ def lambda_handler(event, context):
 
     # Lightweight mode: Only allow HTTP requests
     if IS_LIGHTWEIGHT_INTERFACE:
-        if 'httpMethod' not in event:
+        if 'httpMethod' not in event and event.get('version') != '2.0':
             error_msg = "Lightweight interface Lambda can only process HTTP requests. SQS/background events must go to background Lambda."
             logger.error(error_msg)
             return {
                 'statusCode': 403,
                 'body': json.dumps({'error': error_msg, 'mode': 'lightweight_interface'})
             }
+
+        # Route to external API handler if request comes from the external API Gateway
+        ext_api_id = os.environ.get('API_GATEWAY_EXTERNAL_API_ID')
+        if ext_api_id and event.get('requestContext', {}).get('apiId') == ext_api_id:
+            logger.info("Execution mode: EXTERNAL_API_GATEWAY (lightweight)")
+            from interface_lambda.handlers import api_handler
+            return api_handler.handle(event, context)
 
         logger.info("Execution mode: HTTP_API_GATEWAY (lightweight)")
         from interface_lambda.handlers import http_handler
@@ -76,7 +83,14 @@ def lambda_handler(event, context):
         from interface_lambda.handlers import background_handler
         return background_handler.handle(event, context)
 
-    elif 'httpMethod' in event:
+    elif 'httpMethod' in event or event.get('version') == '2.0':
+        # Route to external API handler if request comes from the external API Gateway
+        ext_api_id = os.environ.get('API_GATEWAY_EXTERNAL_API_ID')
+        if ext_api_id and event.get('requestContext', {}).get('apiId') == ext_api_id:
+            logger.info("Execution mode: EXTERNAL_API_GATEWAY")
+            from interface_lambda.handlers import api_handler
+            return api_handler.handle(event, context)
+
         logger.info("Execution mode: HTTP_API_GATEWAY")
         from interface_lambda.handlers import http_handler
         return http_handler.handle(event, context)
