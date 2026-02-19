@@ -323,32 +323,40 @@ def save_results(client: APIClient, job_id: str, environment: str) -> Path:
         json.dump(results, f, indent=2)
     print(f"[RESULTS] Saved summary → {summary_file}")
 
-    # Download results file if available
+    # Download results file if available.
+    # The backend sets results_s3_key in DynamoDB before the Excel is fully
+    # uploaded, so poll until the file appears (mirrors the frontend pause).
     if download_url:
-        print(f"[RESULTS] Downloading results file...")
+        print(f"[RESULTS] Waiting for results file to appear in S3 (up to 90s)...")
         zip_path = out_dir / "results.zip"
-        resp = requests.get(download_url, timeout=120)
-        if resp.status_code == 404:
-            print(f"[RESULTS] File not found at: {download_url.split('?')[0]}")
-            download_url = None
+        resp = None
+        for attempt in range(10):
+            resp = requests.get(download_url, timeout=120)
+            if resp.status_code != 404:
+                break
+            wait = 5 if attempt < 6 else 10
+            print(f"[RESULTS] Not ready yet (attempt {attempt + 1}), retrying in {wait}s...")
+            time.sleep(wait)
+
+        if resp is None or resp.status_code == 404:
+            print(f"[RESULTS] File still not available after 90s: {download_url.split('?')[0]}")
         else:
             resp.raise_for_status()
             with open(zip_path, "wb") as f:
                 f.write(resp.content)
-        print(f"[RESULTS] Saved zip → {zip_path}")
+            print(f"[RESULTS] Saved zip → {zip_path}")
 
-        # Extract zip
-        try:
-            with zipfile.ZipFile(zip_path) as zf:
-                zf.extractall(out_dir)
-            print(f"[RESULTS] Extracted to {out_dir}")
-            for item in out_dir.iterdir():
-                if item.is_file():
-                    print(f"          • {item.name}")
-        except zipfile.BadZipFile:
-            print(f"[RESULTS] (zip extraction skipped — file may not be a zip)")
+            try:
+                with zipfile.ZipFile(zip_path) as zf:
+                    zf.extractall(out_dir)
+                print(f"[RESULTS] Extracted to {out_dir}")
+                for item in out_dir.iterdir():
+                    if item.is_file():
+                        print(f"          • {item.name}")
+            except zipfile.BadZipFile:
+                print(f"[RESULTS] (not a zip — may be xlsx or other format)")
     else:
-        print(f"[RESULTS] No download URL returned (results may be in S3 directly)")
+        print(f"[RESULTS] No download URL returned")
 
     return out_dir
 
@@ -432,12 +440,6 @@ def main():
         label="FULL",
     )
     print(f"[FULL] Validation complete!")
-
-    # Brief pause to allow backend to finish uploading the enhanced Excel
-    # (results_s3_key is written to DynamoDB a few seconds before the file
-    # is actually available in S3 — same wait the frontend applies)
-    print(f"[WAIT] Allowing 10s for backend to finalise Excel upload...")
-    time.sleep(10)
 
     # 7. Download and save results
     out_dir = save_results(client, job_id, env)

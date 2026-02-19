@@ -159,7 +159,11 @@ def handle_get_results(request_data, context=None):
             },
             'summary': {
                 'rows_processed': int(status_record.get('total_rows') or 0),
-                'columns_validated': int(status_record.get('columns_validated') or 0),
+                'columns_validated': int(
+                    (status_record.get('preview_data') or {}).get('validation_metrics', {}).get('validated_columns_count')
+                    or status_record.get('columns_validated')
+                    or 0
+                ),
                 'valid_count': int(status_record.get('valid_count') or 0),
                 'invalid_count': int(status_record.get('invalid_count') or 0),
                 'run_time_seconds': float(status_record.get('run_time_s') or status_record.get('run_time_seconds') or 0),
