@@ -614,29 +614,43 @@ Retry-After: 10
     "job_id": "session_20260217_103045_abc123",
     "status": "completed",
     "results": {
-      "download_url": "https://s3.amazonaws.com/hyperplexity-storage/downloads/abc123/results.zip?X-Amz-Expires=3600&...",
-      "download_expires_at": "2026-02-17T11:46:23Z",
-      "file_format": "zip",
-      "file_size_bytes": 1048576,
-      "contents": [
-        "Companies_validated.xlsx",
-        "validation_report.json",
-        "summary.txt"
-      ]
+      "download_url": "https://s3.amazonaws.com/...?X-Amz-Expires=3600&...",
+      "download_expires_at": null,
+      "file_format": "xlsx",
+      "interactive_viewer_url": "https://eliyahu.ai/viewer?session=session_20260217_103045_abc123&version=1",
+      "metadata_url": "https://s3.amazonaws.com/.../table_metadata.json?...",
+      "receipt_url": "https://s3.amazonaws.com/.../receipt.pdf?..."
+    },
+    "job_info": {
+      "input_table_name": "InvestmentResearch.xlsx",
+      "configuration_id": "config_abc123",
+      "run_time_seconds": 214.3
     },
     "summary": {
       "rows_processed": 450,
       "columns_validated": 8,
-      "valid_count": 423,
-      "invalid_count": 27,
-      "average_confidence": 0.94,
-      "run_time_seconds": 863,
       "cost_usd": 11.73
     }
   },
   "meta": { ... }
 }
 ```
+
+**Results package** (files accessible via presigned URLs above):
+
+| File | Description |
+|------|-------------|
+| `{table}_enhanced.xlsx` | Validated data — enhanced Excel with all validation results and notes |
+| `table_metadata.json` | Table metadata — column types, search groups, validation configuration |
+| `receipt.pdf` | Billing receipt for this validation run |
+
+**Interactive Viewer:** `https://eliyahu.ai/viewer?session={job_id}&version={config_version}` — opens the Hyperplexity interactive results viewer directly.
+
+**Notes:**
+- `file_format` is `xlsx` for standard validation results; `zip` for legacy runs
+- `download_expires_at` is `null` (presigned URL lifetime is 1 hour from request time)
+- `metadata_url` and `receipt_url` are `null` if the files were not generated (e.g. very old runs, or zero-cost jobs where no receipt is produced)
+- `columns_validated` is sourced from `preview_data.validation_metrics.validated_columns_count` in DynamoDB
 
 **Error Responses:**
 
@@ -1501,9 +1515,61 @@ API_GATEWAY_EXTERNAL_API_ID=<resolved at deploy time>
 
 ---
 
-### Phase 5: Documentation & Polish
-**Timeline:** Days 15-16
-**Dependencies:** Phases 2-4
+### Phase 5: E2E Testing & Results Enrichment
+**Status:** ✅ COMPLETE (2026-02-19)
+**Dependencies:** Phases 2-4 ✅
+
+**Files Created:**
+1. `deployment/test_external_api.py`
+   - Full end-to-end test of the External API against a live `dev` environment
+   - Discovers External API Gateway URL from AWS (`apigatewayv2.get_apis`)
+   - Creates or reuses an API key for `eliyahu@eliyahu.ai` via DynamoDB
+   - Uploads `demos/01. Investment Research/InvestmentResearch.xlsx` via presigned S3 URL
+   - Submits preview job and polls until `preview_complete`
+   - Approves full validation and polls until `completed`
+   - Downloads all result files (xlsx, metadata.json, receipt) and writes a `README.txt` manifest
+
+**Files Modified:**
+1. `src/lambdas/interface/actions/status_check.py` — `handle_get_results()`
+   - Returns `job_info` block: `input_table_name`, `configuration_id`, `run_time_seconds`
+   - Returns `metadata_url` — presigned URL for `table_metadata.json` (derived from `results_s3_key` path)
+   - Returns `receipt_url` — presigned URL for `receipt_s3_key` stored in DynamoDB
+   - Fixed viewer URL base default: `https://eliyahu.ai/hyperplexity` → `https://eliyahu.ai/viewer`
+   - Fixed viewer URL format: no `?mode=viewer` parameter; `?session=...&version=...` only
+
+2. `src/lambdas/interface/handlers/background_handler.py`
+   - After successful validation, generates receipt PDF bytes via `generate_receipt_pdf_html()`
+   - Uploads receipt to S3 at `{session_path}v{config_version}_results/receipt.{pdf|txt}`
+   - Adds `receipt_s3_key` to `status_update_data` for DynamoDB persistence
+   - Entire block wrapped in try/except — receipt failure never blocks job completion
+
+3. `src/shared/dynamodb_schemas.py`
+   - Added `receipt_s3_key: str = None` parameter to `update_run_status()`
+   - Added corresponding DynamoDB `SET receipt_s3_key = :rsk` expression
+
+**Bugs Fixed During E2E Testing (5):**
+1. **`columns_validated` = 0** — Field is nested at `preview_data.validation_metrics.validated_columns_count` in DynamoDB, not top-level. Fixed with nested `.get()` chain with fallback.
+2. **Results file 404 (never appears)** — `results_s3_key` was computed as `validation_results_enhanced.xlsx` but `store_enhanced_files()` saves as `enhanced_validation.xlsx`. Fixed filename in `background_handler.py`.
+3. **xlsx saved as zip / XML extracted** — Test script treated all downloads as zip archives. Fixed by detecting `file_format == "xlsx"` and saving directly as `.xlsx`.
+4. **`listApiKeys` / `createApiKey` "Unknown action"** — API key routing existed only in the fallback (no Content-Type) branch of `http_handler.py`, not in the `application/json` branch. Frontend sends `Content-Type: application/json`, so the JSON branch was hit. Added routing there.
+5. **Viewer URL wrong base** — Default was `https://eliyahu.ai/hyperplexity`; email and correct standard is `https://eliyahu.ai/viewer`. Fixed default in `status_check.py`.
+
+**Implementation Notes:**
+- `receipt_s3_key` is `null` for zero-cost runs (test/preview jobs with no charge) since the receipt generation block checks `billing_info.get('amount_charged', 0)`; the receipt is still generated but may be a $0.00 receipt
+- `metadata_url` is derived from `results_s3_key` by replacing the filename with `table_metadata.json` — no separate DynamoDB field needed since it's always in the same S3 directory
+- Test script uses `_download_file()` helper with retry-on-404 logic (up to ~60s) for all file downloads to handle S3 upload latency
+
+**Deliverables:**
+- ✅ End-to-end test covering full API workflow (presign → upload → preview → approve → validate → download)
+- ✅ Results package includes xlsx, table_metadata.json, receipt PDF, and README.txt manifest
+- ✅ Interactive viewer URL correct and functional
+- ✅ All 5 bugs identified and fixed
+
+---
+
+### Phase 5b: Documentation
+**Status:** Pending
+**Dependencies:** Phase 5 ✅
 
 **Documentation to Create:**
 1. `docs/API.md` - External API documentation
@@ -2115,6 +2181,7 @@ if __name__ == '__main__':
 | 1.3 | 2026-02-18 | Mark Phase 3 complete; record implementation: webhook_client.py (SSRF protection, HMAC signing, retry), dynamodb webhook helpers, start_preview webhook persistence, background_handler delivery calls, sqs_handler webhook_retry routing, websocket API key auth; document 5 bugs fixed (wrong import path, unguarded payload construction, HTTP allowed, unreachable function, hardcoded API name); add environment-aware deploy_external_api_gateway() | System |
 | 1.4 | 2026-02-18 | Mark Phase 4 complete; record implementation: 14c-account-page.js (account dashboard, API key CRUD modals, raw-key one-time display, revoke modal with data-attribute key storage), 09-account.css (account page + modal styles, danger button variant), 00-config.js account page detection, 99-init.js account routing with requireEmailThen guard | System |
 | 1.5 | 2026-02-18 | Fix 3 bugs in 14c-account-page.js: (1) Critical — Revoke button onclick broke for key names containing single quotes because browser HTML-decodes attribute values before JS execution; fixed by using `data-key-prefix`/`data-key-name` attributes on the button and reading them with `this.dataset.*` in onclick; (2) High — showCreateApiKeyModal and showRevokeKeyModal had no duplicate guard, allowing stacked modals on rapid clicks; fixed with early-return `if (document.getElementById(overlayId)) return`; (3) Medium — `item.amount \|\| item.cost \|\| 0` treated zero-dollar amounts as falsy; fixed with nullish coalescing `item.amount ?? item.cost ?? 0`. Also updated build.py to output account.html and account-dev.html as copies of the main build. | System |
+| 1.6 | 2026-02-19 | Mark Phase 5 complete (renamed to "E2E Testing & Results Enrichment"); rename old Phase 5 to Phase 5b (Documentation, pending). Created `deployment/test_external_api.py` — full E2E test. Fixed 5 bugs discovered during testing: (1) `columns_validated` = 0 — nested in `preview_data.validation_metrics.validated_columns_count`; (2) results file 404 — wrong filename `validation_results_enhanced.xlsx` vs actual `enhanced_validation.xlsx`; (3) xlsx treated as zip in test script; (4) `listApiKeys`/`createApiKey` "Unknown action" — API key routing missing from `application/json` branch of `http_handler.py`; (5) viewer URL base was `https://eliyahu.ai/hyperplexity` → fixed to `https://eliyahu.ai/viewer`. Enriched results package: receipt PDF generated by background_handler and uploaded to S3 (`receipt_s3_key` stored in DynamoDB), `metadata_url` and `receipt_url` presigned URLs added to GET /v1/jobs/{id}/results response, `job_info` block added to response. Updated section 2.4 (Get Job Results) response schema to match implementation. | System |
 
 ---
 
