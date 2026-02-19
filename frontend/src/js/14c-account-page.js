@@ -19,7 +19,11 @@ async function initAccountPage() {
         return;
     }
 
-    const loadingHTML = '<p style="color:var(--text-secondary);font-size:0.85rem;">Loading account\u2026</p>';
+    // Messages div is always in the content so openAddCreditsPage can target it immediately
+    const loadingHTML = `
+        <p style="color:var(--text-secondary);font-size:0.85rem;">Loading account\u2026</p>
+        <div id="account-card-messages"></div>
+    `;
 
     createCard({
         id: 'account-card',
@@ -29,7 +33,7 @@ async function initAccountPage() {
         content: loadingHTML,
         buttons: [
             { text: 'API Keys',    icon: '🔑', variant: 'secondary', callback: showApiKeysCard },
-            { text: 'Add Credits', icon: '➕', variant: 'primary',   callback: () => openAddCreditsPage() },
+            { text: 'Add Credits', icon: '➕', variant: 'primary',   callback: () => openAddCreditsPage(null, 'account-card-messages') },
             { text: 'Sign Out',    icon: '⎋',  variant: 'quinary',   callback: () => handleLogout() }
         ]
     });
@@ -50,7 +54,10 @@ async function initAccountPage() {
         const data = await response.json();
 
         if (!data.success) {
-            contentEl.innerHTML = `<p style="color:#dc2626;font-size:0.85rem;">Failed to load account: ${escHtml(data.error || 'Unknown error')}</p>`;
+            contentEl.innerHTML = `
+                <p style="color:#dc2626;font-size:0.85rem;">Failed to load account: ${escHtml(data.error || 'Unknown error')}</p>
+                <div id="account-card-messages"></div>
+            `;
             return;
         }
 
@@ -64,9 +71,11 @@ async function initAccountPage() {
 
         const transactions = accountInfo.recent_transactions || data.transactions || data.history || [];
 
+        // data-balance attribute lets updateAllBalanceDisplays() auto-update this element
+        // after a Squarespace purchase is detected on focus return
         let html = `
             <div class="acct-balance-label">Current Balance</div>
-            <div class="acct-balance">$${balance.toFixed(2)}</div>
+            <div class="acct-balance" data-balance>$${balance.toFixed(2)}</div>
             <div class="acct-divider"></div>
         `;
 
@@ -80,11 +89,17 @@ async function initAccountPage() {
             html += '<p style="font-size:0.82rem;color:var(--text-secondary);">No recent transactions.</p>';
         }
 
+        // Preserve messages div so any in-flight openAddCreditsPage messages survive the content swap
+        html += '<div id="account-card-messages" style="margin-top:0.75rem;"></div>';
+
         contentEl.innerHTML = html;
     } catch (err) {
         console.error('[ACCOUNT] Error loading balance:', err);
         if (contentEl) {
-            contentEl.innerHTML = '<p style="color:#dc2626;font-size:0.85rem;">Error loading account. Please try again.</p>';
+            contentEl.innerHTML = `
+                <p style="color:#dc2626;font-size:0.85rem;">Error loading account. Please try again.</p>
+                <div id="account-card-messages"></div>
+            `;
         }
     }
 }
