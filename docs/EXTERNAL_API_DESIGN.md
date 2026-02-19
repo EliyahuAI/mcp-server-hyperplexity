@@ -1397,53 +1397,57 @@ API_GATEWAY_EXTERNAL_API_ID=<resolved at deploy time>
 ---
 
 ### Phase 3: Async Notifications
-**Timeline:** Days 8-10
-**Dependencies:** Phase 2
+**Status:** ✅ COMPLETE (2026-02-18)
+**Dependencies:** Phase 2 ✅
 
-**Files to Create:**
-1. `/src/shared/webhook_client.py`
-   - Webhook delivery with HMAC signing
-   - SSRF protection
-   - Retry logic
+**Files Created:**
+1. `src/shared/webhook_client.py`
+   - `deliver_webhook(url, secret, event_type, payload)` — HMAC-SHA256 signed POST
+   - SSRF protection: blocks loopback, private, link-local IPs via `socket.getaddrinfo`
+   - HTTPS-only enforcement (design spec requirement)
+   - Up to 3 delivery attempts with 1s/3s retry delays suitable for Lambda execution
 
-**Files to Modify:**
-1. `/src/shared/dynamodb_schemas.py`
-   - Add webhook fields to run records
-   - Add webhook helper functions
+**Files Modified:**
+1. `src/shared/dynamodb_schemas.py`
+   - `save_webhook_config(session_id, run_key, webhook_url, webhook_secret)` — stores config on run record via `update_item`
+   - `get_webhook_config(session_id, run_key)` — retrieves url+secret for notification delivery
 
-2. `/src/lambdas/interface/actions/status_check.py`
-   - Enhance response schema for API
-   - Add `Retry-After` headers
+2. `src/lambdas/interface/actions/start_preview.py`
+   - `handle_approve_validation()` now calls `save_webhook_config()` after creating run_key if `webhook_url` is provided
 
-3. `/src/lambdas/interface/handlers/background_handler.py`
-   - Add webhook delivery on completion
-   - Add `_deliver_webhook_notification()` helper
+3. `src/lambdas/interface/handlers/background_handler.py`
+   - Added `_deliver_webhook_notification(session_id, run_key, event_type, payload)` — fails silently, never blocks completion
+   - Called after successful full-validation email (event: `job.completed`)
+   - Called after failure email (event: `job.failed`)
+   - Both call sites wrapped in try-except to guard against unbound variable errors
 
-4. `/src/lambdas/interface/handlers/sqs_handler.py`
-   - Add webhook retry routing
+4. `src/lambdas/interface/handlers/sqs_handler.py`
+   - Added `webhook_retry` message type routing — delivers webhook directly in SQS handler, skips background_handler
 
-5. `/src/lambdas/websocket/websocket_handler.py`
-   - Add API key authentication for WebSocket
-   - Support `api_key` query parameter
+5. `src/lambdas/websocket/websocket_handler.py`
+   - `$connect` now validates `api_key` query parameter via `api_key_manager.authenticate_api_key()`
+   - Fails open (allows connection) if auth system is unavailable — preserves web UI sessions
+   - Returns HTTP 401 to reject unauthorized API clients
 
-**Features Implemented:**
-- Webhook notifications
-- Webhook signature verification
-- Webhook retry logic (3 attempts)
-- Enhanced polling responses
-- WebSocket support for API clients (optional)
+**Bugs Fixed (5):**
+1. `websocket_handler.py` — import path mismatch: `interface_lambda.utils.api_key_manager` → `utils.api_key_manager` (matches sys.path that was set)
+2. `background_handler.py` — webhook payload construction at call site not wrapped in try-except; added guard to prevent NameError crashing validation completion
+3. `webhook_client.py` — allowed `http://` URLs violating design spec; fixed to HTTPS-only
+4. `deploy_external_api_gateway()` — defined after `sys.exit(main())` making it unreachable from main; moved before `if __name__` block
+5. `deploy_external_api_gateway()` — hardcoded `"hyperplexity-external-api"` with no environment suffix; now accepts `environment` param and applies `resource_suffix` from `environments.json`
 
-**Testing:**
-- Test webhook delivery on completion
-- Test webhook signature generation
-- Test retry logic on failure
-- Test SSRF protection
-- Test WebSocket with API key auth
+**Implementation Notes:**
+- `deliver_webhook` uses stdlib `urllib.request` (no external deps) — safe for Lambda
+- `_RETRY_DELAYS = [1, 3]` — short delays appropriate for Lambda wall-clock limits vs design doc's 60s/300s/900s (those require SQS-based retry which is handled by `webhook_retry` message type)
+- `save_webhook_config` calls `update_item` on an existing run record — safe even if called concurrently (DynamoDB atomic update)
+- Environment-aware `deploy_external_api_gateway` loads `environments.json` at call time; falls back to `-{environment}` suffix if config unavailable
 
 **Deliverables:**
-- Multiple notification channels working
-- Webhooks with retry logic
-- WebSocket accessible via API key
+- ✅ Webhook notifications with HMAC-SHA256 signing
+- ✅ SSRF protection on webhook URLs
+- ✅ Retry logic (inline + SQS-based retry routing)
+- ✅ WebSocket accessible via API key for external clients
+- ✅ `deploy_external_api_gateway` environment-aware (dev/prod get separate gateways)
 
 ---
 
@@ -2100,6 +2104,7 @@ if __name__ == '__main__':
 | 1.0 | 2026-02-17 | Initial design document | System |
 | 1.1 | 2026-02-18 | Mark Phase 0 & Phase 1 complete; record implementation details and deviations; expand Phase 2 with exact routing table, gateway detection approach, new files (`api_handler.py`, `rate_limiter_api.py`), and new action functions needed; fix `.split('=')` → `.split('=', 1)` in webhook signature examples | System |
 | 1.2 | 2026-02-18 | Mark Phase 2 complete; record implementation notes: event normalisation, fail-open rate limiter, inline config saving pattern, new helper functions, deploy function added | System |
+| 1.3 | 2026-02-18 | Mark Phase 3 complete; record implementation: webhook_client.py (SSRF protection, HMAC signing, retry), dynamodb webhook helpers, start_preview webhook persistence, background_handler delivery calls, sqs_handler webhook_retry routing, websocket API key auth; document 5 bugs fixed (wrong import path, unguarded payload construction, HTTP allowed, unreachable function, hardcoded API name); add environment-aware deploy_external_api_gateway() | System |
 
 ---
 

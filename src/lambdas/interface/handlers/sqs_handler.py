@@ -106,6 +106,26 @@ def handle(event, context):
                     **message_body
                 }
 
+            elif request_type == 'webhook_retry':
+                logger.info(f"Processing webhook retry for session {message_body.get('session_id')}, attempt {message_body.get('attempt', 1)}")
+                try:
+                    import sys as _sys, os as _os
+                    _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', '..', '..', 'shared'))
+                    from webhook_client import deliver_webhook
+                    webhook_url = message_body.get('webhook_url', '')
+                    webhook_secret = message_body.get('webhook_secret')
+                    event_type = message_body.get('event_type', 'job.completed')
+                    payload = message_body.get('payload', {})
+                    if webhook_url:
+                        success = deliver_webhook(webhook_url, webhook_secret, event_type, payload)
+                        if success:
+                            logger.info(f"[WEBHOOK_RETRY] Delivered {event_type} to {webhook_url}")
+                        else:
+                            logger.warning(f"[WEBHOOK_RETRY] Delivery failed for {webhook_url} (session={message_body.get('session_id')})")
+                except Exception as wh_err:
+                    logger.error(f"[WEBHOOK_RETRY] Error processing webhook retry: {wh_err}")
+                continue  # Skip the background_handler.handle() call below
+
             else:
                 # Handle regular validation requests
                 background_event = {

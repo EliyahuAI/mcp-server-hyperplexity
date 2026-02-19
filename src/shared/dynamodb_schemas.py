@@ -4120,3 +4120,55 @@ def create_api_key_usage_table():
             logger.info(f"Table {API_KEY_USAGE_TABLE_NAME} already exists.")
         else:
             raise
+
+
+# ========== WEBHOOK CONFIG HELPERS (Phase 3: Async Notifications) ==========
+
+
+def save_webhook_config(session_id: str, run_key: str, webhook_url: str, webhook_secret: Optional[str] = None) -> None:
+    """
+    Persist webhook URL and optional secret onto an existing run record so the
+    background handler can deliver notifications after the job completes.
+    """
+    try:
+        table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
+        update_expr = "SET webhook_url = :url"
+        expr_values: Dict[str, Any] = {':url': webhook_url}
+
+        if webhook_secret:
+            update_expr += ", webhook_secret = :secret"
+            expr_values[':secret'] = webhook_secret
+
+        table.update_item(
+            Key={'session_id': session_id, 'run_key': run_key},
+            UpdateExpression=update_expr,
+            ExpressionAttributeValues=expr_values,
+        )
+        logger.debug(f"[WEBHOOK_CFG] Saved webhook config for {session_id}/{run_key}")
+    except Exception as e:
+        logger.warning(f"[WEBHOOK_CFG] Failed to save webhook config for {session_id}/{run_key}: {e}")
+
+
+def get_webhook_config(session_id: str, run_key: str) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve webhook configuration from a run record.
+
+    Returns a dict with 'webhook_url' and optionally 'webhook_secret', or None
+    if the run record has no webhook configured.
+    """
+    try:
+        table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
+        response = table.get_item(
+            Key={'session_id': session_id, 'run_key': run_key},
+            ProjectionExpression='webhook_url, webhook_secret',
+        )
+        item = response.get('Item')
+        if not item or not item.get('webhook_url'):
+            return None
+        return {
+            'webhook_url': item['webhook_url'],
+            'webhook_secret': item.get('webhook_secret'),
+        }
+    except Exception as e:
+        logger.warning(f"[WEBHOOK_CFG] Failed to get webhook config for {session_id}/{run_key}: {e}")
+        return None

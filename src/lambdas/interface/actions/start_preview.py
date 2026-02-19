@@ -158,7 +158,7 @@ def handle_approve_validation(request_data, context=None):
 
     try:
         sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
-        from dynamodb_schemas import find_run_key_by_type, get_run_status, create_run_record, track_validation_call
+        from dynamodb_schemas import find_run_key_by_type, get_run_status, create_run_record, track_validation_call, save_webhook_config
 
         # Idempotency guard: refuse if full validation is already queued or running
         existing_val_key = find_run_key_by_type(base_session_id, "Validation")
@@ -229,6 +229,15 @@ def handle_approve_validation(request_data, context=None):
             reference_pin=reference_pin, request_type='full',
             excel_s3_key=excel_s3_key, config_s3_key=config_s3_key
         )
+        # Persist webhook config so background handler can notify on completion
+        webhook_url = request_data.get('webhook_url')
+        webhook_secret = request_data.get('webhook_secret')
+        if webhook_url:
+            try:
+                save_webhook_config(base_session_id, run_key, webhook_url, webhook_secret)
+                logger.info(f"[APPROVE_VALIDATION] Saved webhook config for {base_session_id}")
+            except Exception as wh_err:
+                logger.warning(f"[APPROVE_VALIDATION] Could not save webhook config: {wh_err}")
 
         from interface_lambda.core.sqs_service import send_full_request
         message_id = send_full_request(

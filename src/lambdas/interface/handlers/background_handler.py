@@ -83,6 +83,34 @@ logger.debug(f"[DELEGATION_CONFIG] MAX_SYNC_INVOCATION_TIME: {MAX_SYNC_INVOCATIO
 logger.debug(f"[DELEGATION_CONFIG] ASYNC_VALIDATOR_QUEUE: {ASYNC_VALIDATOR_QUEUE}")
 logger.debug(f"[DELEGATION_CONFIG] INTERFACE_COMPLETION_QUEUE: {INTERFACE_COMPLETION_QUEUE}")
 
+def _deliver_webhook_notification(session_id, run_key, event_type, payload):
+    """
+    Deliver a webhook notification if a webhook_url is configured for this run.
+    Fails silently - webhook delivery must never block validation completion.
+    """
+    if not run_key:
+        return
+    try:
+        from dynamodb_schemas import get_webhook_config
+        webhook_cfg = get_webhook_config(session_id, run_key)
+        if not webhook_cfg:
+            return
+        webhook_url = webhook_cfg.get('webhook_url')
+        webhook_secret = webhook_cfg.get('webhook_secret')
+        if not webhook_url:
+            return
+        import sys as _sys, os as _os
+        _sys.path.append(_os.path.join(_os.path.dirname(__file__), '..', '..', '..', 'shared'))
+        from webhook_client import deliver_webhook
+        success = deliver_webhook(webhook_url, webhook_secret, event_type, payload)
+        if success:
+            logger.info(f"[WEBHOOK] Delivered {event_type} to {webhook_url} for {session_id}")
+        else:
+            logger.warning(f"[WEBHOOK] Failed to deliver {event_type} to {webhook_url} for {session_id}")
+    except Exception as _wh_err:
+        logger.warning(f"[WEBHOOK] Error in webhook notification for {session_id}: {_wh_err}")
+
+
 def send_validation_failure_alert(session_id, email, error_type, error_details, session_data=None):
     """
     Send high-priority alert emails for validation failures
@@ -5200,6 +5228,31 @@ def handle_main_processing(event, context):
                             config_id=config_id
                         )
 
+                        # Deliver webhook notification for full validation completion
+                        if not is_preview and run_key:
+                            try:
+                                _deliver_webhook_notification(
+                                    session_id=session_id,
+                                    run_key=run_key,
+                                    event_type='job.completed',
+                                    payload={
+                                        'event': 'job.completed',
+                                        'api_version': 'v1',
+                                        'job_id': session_id,
+                                        'status': 'completed',
+                                        'submitted_at': event.get('created_at', ''),
+                                        'completed_at': datetime.now(timezone.utc).isoformat(),
+                                        'results': {
+                                            'rows_processed': len(real_results) if real_results else 0,
+                                        },
+                                        'cost': {
+                                            'charged_usd': float(effective_cost) if effective_cost else 0,
+                                        }
+                                    }
+                                )
+                            except Exception as _whook_e:
+                                logger.warning(f"[WEBHOOK] Payload construction error for {session_id}: {_whook_e}")
+
                         # ========== BILLING AFTER SUCCESSFUL EMAIL DELIVERY ==========
                         # Only charge the user AFTER the email has been successfully sent
                         if email_result and email_result.get('success', False):
@@ -6075,6 +6128,25 @@ def handle_main_processing(event, context):
                             logger.warning(f"Cannot send email notification - no email address in event")
                     except Exception as email_error:
                         logger.error(f"Failed to send error notification via email: {email_error}")
+                # Deliver webhook failure notification
+                if not is_preview:
+                    _deliver_webhook_notification(
+                        session_id=session_id_for_error,
+                        run_key=event.get('run_key'),
+                        event_type='job.failed',
+                        payload={
+                            'event': 'job.failed',
+                            'api_version': 'v1',
+                            'job_id': session_id_for_error,
+                            'status': 'failed',
+                            'submitted_at': event.get('created_at', ''),
+                            'failed_at': datetime.now(timezone.utc).isoformat(),
+                            'error': {
+                                'code': 'validation_error',
+                                'message': str(e)[:500],
+                            }
+                        }
+                    )
         return {'statusCode': 500, 'body': json.dumps({'status': 'background_failed', 'error': str(e)})}
 
 async def handle_config_generation_async(event, context):

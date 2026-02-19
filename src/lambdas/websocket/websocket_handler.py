@@ -3,6 +3,7 @@ Handles WebSocket lifecycle events from API Gateway.
 """
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -10,6 +11,39 @@ from dynamodb_schemas import add_websocket_connection, remove_websocket_connecti
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# Path to interface_lambda utils (for api_key_manager)
+_INTERFACE_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), '..', 'interface')
+if _INTERFACE_LAMBDA_PATH not in sys.path:
+    sys.path.insert(0, _INTERFACE_LAMBDA_PATH)
+
+
+def _authenticate_api_key_connection(event) -> tuple:
+    """
+    Check for api_key query parameter and validate it.
+    
+    Returns:
+        (allowed: bool, email: str or None, error_msg: str or None)
+    """
+    query_params = event.get('queryStringParameters') or {}
+    api_key = query_params.get('api_key')
+    
+    if not api_key:
+        # No API key provided — allow (web UI uses session-based auth separately)
+        return True, None, None
+    
+    try:
+        from utils.api_key_manager import authenticate_api_key
+        auth_result = authenticate_api_key(api_key)
+        if not auth_result:
+            return False, None, "Invalid or revoked API key"
+        email = auth_result.get('email', '')
+        return True, email, None
+    except Exception as e:
+        logger.error(f"[WS_AUTH] Error authenticating API key: {e}")
+        # Fail open — allow connection if auth system is unavailable
+        return True, None, None
+
 
 def handle(event, context):
     """
@@ -23,9 +57,19 @@ def handle(event, context):
 
     if route_key == '$connect':
         logger.info(f"🟢 WebSocket connecting: {connection_id}")
+        
+        # Validate API key if provided
+        allowed, api_email, auth_error = _authenticate_api_key_connection(event)
+        if not allowed:
+            logger.warning(f"❌ WebSocket connection refused for {connection_id}: {auth_error}")
+            return {'statusCode': 401, 'body': 'Unauthorized: Invalid API key.'}
+        
         try:
             add_websocket_connection(connection_id)
-            logger.info(f"✅ WebSocket connection {connection_id} added to database")
+            if api_email:
+                logger.info(f"✅ WebSocket connection {connection_id} added (API key auth: {api_email})")
+            else:
+                logger.info(f"✅ WebSocket connection {connection_id} added to database")
             return {'statusCode': 200, 'body': 'Connected.'}
         except Exception as e:
             logger.error(f"❌ Failed to add WebSocket connection {connection_id}: {e}")
@@ -70,4 +114,4 @@ def handle(event, context):
     else:
         # Default route
         logger.warning(f"❓ Unhandled route key: {route_key} for connection {connection_id}")
-        return {'statusCode': 404, 'body': 'Not Found'} 
+        return {'statusCode': 404, 'body': 'Not Found'}

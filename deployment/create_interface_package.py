@@ -2068,10 +2068,8 @@ def main():
 
     return 0
 
-if __name__ == "__main__":
-    sys.exit(main()) 
 
-def deploy_external_api_gateway(lambda_arn: str, region: str = "us-east-1") -> str:
+def deploy_external_api_gateway(lambda_arn: str, region: str = "us-east-1", environment: str = "prod") -> str:
     """
     Create or update the external HTTP API Gateway (v2) for api.hyperplexity.ai/v1.
 
@@ -2080,8 +2078,11 @@ def deploy_external_api_gateway(lambda_arn: str, region: str = "us-east-1") -> s
     API_GATEWAY_EXTERNAL_API_ID in the Lambda environment.
 
     Args:
-        lambda_arn: ARN of the Interface Lambda function.
-        region:     AWS region.
+        lambda_arn:  ARN of the Interface Lambda function.
+        region:      AWS region.
+        environment: Deployment environment (dev, test, staging, prod).
+                     Controls the API Gateway name suffix so each environment
+                     gets its own distinct AWS API Gateway resource.
 
     Returns:
         The API Gateway ID (e.g. 'abc123xyz').
@@ -2089,7 +2090,22 @@ def deploy_external_api_gateway(lambda_arn: str, region: str = "us-east-1") -> s
     apigw = boto3.client('apigatewayv2', region_name=region)
     lambda_client = boto3.client('lambda', region_name=region)
 
-    api_name = "hyperplexity-external-api"
+    # Apply environment suffix — each environment must have its own API Gateway
+    try:
+        import os as _os
+        _dir = _os.path.dirname(__file__)
+        import sys as _sys
+        if _dir not in _sys.path:
+            _sys.path.insert(0, _dir)
+        from environment_config import load_environment_config
+        env_cfg = load_environment_config(environment)
+        resource_suffix = env_cfg.get('resource_suffix', '')
+    except Exception as _env_e:
+        logger.warning(f"[EXT_API_GW] Could not load env config for '{environment}': {_env_e}")
+        resource_suffix = f"-{environment}" if environment != 'prod' else ''
+
+    api_name = f"hyperplexity-external-api{resource_suffix}"
+    logger.info(f"[EXT_API_GW] Using API name: {api_name} (environment={environment})")
 
     # Check for existing API
     existing_api_id = None
@@ -2220,3 +2236,7 @@ def deploy_external_api_gateway(lambda_arn: str, region: str = "us-east-1") -> s
     logger.info(f"[EXT_API_GW] Set API_GATEWAY_EXTERNAL_API_ID={api_id} in Lambda env vars")
 
     return api_id
+
+if __name__ == "__main__":
+    sys.exit(main()) 
+
