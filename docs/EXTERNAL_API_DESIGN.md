@@ -1452,44 +1452,52 @@ API_GATEWAY_EXTERNAL_API_ID=<resolved at deploy time>
 ---
 
 ### Phase 4: Account Management UI
-**Timeline:** Days 11-14
-**Dependencies:** Phase 1
+**Status:** ✅ COMPLETE (2026-02-18)
+**Dependencies:** Phase 1 ✅
 
-**Files to Modify:**
-1. `/frontend/src/js/01-init.js`
-   - Add URL detection for `/account`
-   - Route to account page initialization
+**Files Created:**
+1. `frontend/src/js/14c-account-page.js`
+   - `initAccountPage()` — renders full account dashboard into `#cardContainer`
+   - `loadAccountOverview()` — fetches `getAccountBalance`, renders balance + recharge button
+   - `loadApiKeys()` — fetches `listApiKeys`, renders active/revoked key cards
+   - `loadUsageHistory()` — fetches `getUserStats`, renders stats grid + transaction table
+   - `showCreateApiKeyModal()` / `submitCreateApiKey()` — create key modal with name, tier, scopes
+   - `showRawKeyModal()` / `copyRawApiKey()` — one-time raw key display with clipboard copy
+   - `showRevokeKeyModal()` / `submitRevokeKey()` — revoke with optional reason; key_prefix stored in data attribute (safe, no onclick injection)
+   - `closeAccountModal(overlayId)` — generic overlay removal
+   - `accountEscapeHtml(str)` — XSS-safe escaping (distinct name avoids collision)
+   - `accountFormatRelativeTime(iso)` — human-readable relative timestamps
+   - All onclick-needed functions exposed via `window.*`
 
-2. `/frontend/src/js/14-account.js`
-   - Add API key management section
-   - Add key creation modal
-   - Add key revocation flow
-   - Add usage statistics display
+2. `frontend/src/styles/09-account.css`
+   - Full account page layout (`.account-page`, `.account-section`, `.account-header`)
+   - Account overview stats grid
+   - API key cards (active / revoked states, tier badges)
+   - Usage history table
+   - Modal styles (overlay, modal, form, raw key display, revoke warning)
+   - `.std-button.danger` variant for revoke action
+   - Responsive breakpoints for ≤600px screens
 
-3. `/frontend/src/html/index.html` (or template)
-   - Add account page structure
-   - Add account page styles
+**Files Modified:**
+1. `frontend/src/js/00-config.js`
+   - `detectPageType()` — added `/account` pathname and `#account` hash detection → returns `'account'`
 
-**Features Implemented:**
-- API key list display
-- Create new key modal
-- Show raw key once on creation
-- Revoke key with confirmation
-- View per-key usage statistics
-- General account info display
-- Transaction history
-- Usage charts
+2. `frontend/src/js/99-init.js`
+   - Added `account` branch in the DOMContentLoaded page-type switch: calls `requireEmailThen(() => initAccountPage(), 'manage your API keys')` — authentication required before rendering
 
-**Testing:**
-- UI tests for key creation flow
-- UI tests for key revocation
-- Test that raw key shown only once
-- Test usage statistics accuracy
+**Implementation Notes:**
+- All three sections (overview, API keys, usage) load in parallel via `Promise.all`
+- Revoke key modal stores `key_prefix` in `data-key-prefix` attribute on the modal element instead of encoding it in onclick strings, eliminating any HTML injection risk
+- `account:read` scope checkbox uses id `scope-account-read` (colon → hyphen) to be a valid CSS id
+- `accountEscapeHtml` is explicitly namespaced to prevent collision with any existing `escapeHtml` function in scope
+- Build verified: `initAccountPage`, `account-page`, `account-modal`, `account-key-card` all present in built output
 
 **Deliverables:**
-- Complete account management UI
-- Users can self-service API keys
-- Usage visibility for transparency
+- ✅ Account management UI at `/account` (or any path containing `/account`)
+- ✅ Users can self-service API keys (create / view / revoke)
+- ✅ Raw key shown exactly once after creation, with clipboard copy
+- ✅ Balance display with recharge button
+- ✅ Usage and transaction history
 
 ---
 
@@ -2105,6 +2113,8 @@ if __name__ == '__main__':
 | 1.1 | 2026-02-18 | Mark Phase 0 & Phase 1 complete; record implementation details and deviations; expand Phase 2 with exact routing table, gateway detection approach, new files (`api_handler.py`, `rate_limiter_api.py`), and new action functions needed; fix `.split('=')` → `.split('=', 1)` in webhook signature examples | System |
 | 1.2 | 2026-02-18 | Mark Phase 2 complete; record implementation notes: event normalisation, fail-open rate limiter, inline config saving pattern, new helper functions, deploy function added | System |
 | 1.3 | 2026-02-18 | Mark Phase 3 complete; record implementation: webhook_client.py (SSRF protection, HMAC signing, retry), dynamodb webhook helpers, start_preview webhook persistence, background_handler delivery calls, sqs_handler webhook_retry routing, websocket API key auth; document 5 bugs fixed (wrong import path, unguarded payload construction, HTTP allowed, unreachable function, hardcoded API name); add environment-aware deploy_external_api_gateway() | System |
+| 1.4 | 2026-02-18 | Mark Phase 4 complete; record implementation: 14c-account-page.js (account dashboard, API key CRUD modals, raw-key one-time display, revoke modal with data-attribute key storage), 09-account.css (account page + modal styles, danger button variant), 00-config.js account page detection, 99-init.js account routing with requireEmailThen guard | System |
+| 1.5 | 2026-02-18 | Fix 3 bugs in 14c-account-page.js: (1) Critical — Revoke button onclick broke for key names containing single quotes because browser HTML-decodes attribute values before JS execution; fixed by using `data-key-prefix`/`data-key-name` attributes on the button and reading them with `this.dataset.*` in onclick; (2) High — showCreateApiKeyModal and showRevokeKeyModal had no duplicate guard, allowing stacked modals on rapid clicks; fixed with early-return `if (document.getElementById(overlayId)) return`; (3) Medium — `item.amount \|\| item.cost \|\| 0` treated zero-dollar amounts as falsy; fixed with nullish coalescing `item.amount ?? item.cost ?? 0`. Also updated build.py to output account.html and account-dev.html as copies of the main build. | System |
 
 ---
 

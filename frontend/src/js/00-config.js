@@ -400,6 +400,11 @@ function detectPageType() {
         return 'reference-check';
     }
 
+    // Check for account management page
+    if (window.location.pathname.includes('/account') || window.location.hash === '#account') {
+        return 'account';
+    }
+
     // Default mode
     return 'default';
 }

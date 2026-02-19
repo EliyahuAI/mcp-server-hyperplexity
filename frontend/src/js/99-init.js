@@ -332,6 +332,9 @@ setTimeout(() => {
             // Reference check mode - go directly to reference check card
             // Email will be validated when user tries to submit
             createReferenceCheckCard();
+        } else if (pageType === 'account') {
+            // Account management page - requires authentication
+            requireEmailThen(() => initAccountPage(), 'manage your API keys');
         } else if (DEFER_EMAIL_VALIDATION) {
             // Show Get Started first, email will be requested on action
             createUploadOrDemoCard();

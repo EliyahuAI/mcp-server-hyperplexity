@@ -86,12 +86,19 @@ def build():
     PROD_OUTPUT_FILE = FRONTEND_DIR / 'Hyperplexity_FullScript_Temp.html'
     PROD_OUTPUT_FILE.write_text(output, encoding='utf-8')
 
+    # Write account page copies (same content, deployed at /account path)
+    ACCOUNT_DEV_FILE = FRONTEND_DIR / 'account-dev.html'
+    ACCOUNT_FILE = FRONTEND_DIR / 'account.html'
+    ACCOUNT_DEV_FILE.write_text(output, encoding='utf-8')
+    ACCOUNT_FILE.write_text(output, encoding='utf-8')
+
     elapsed = time.time() - start_time
     line_count = output.count('\n')
     byte_size = len(output.encode('utf-8'))
 
     print(f'[SUCCESS] Built {OUTPUT_FILE.name}')
     print(f'[SUCCESS] Also copied to {PROD_OUTPUT_FILE.name}')
+    print(f'[SUCCESS] Also copied to {ACCOUNT_DEV_FILE.name} and {ACCOUNT_FILE.name}')
     print(f'[SUCCESS] {line_count:,} lines, {byte_size:,} bytes in {elapsed:.2f}s')
 
 def watch():

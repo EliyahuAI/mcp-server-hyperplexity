@@ -295,6 +295,10 @@ def handle(event, context):
                 elif action == 'modifyConfig':
                     generate_config_unified = lazy_import('interface_lambda.actions', 'generate_config_unified')
                     return generate_config_unified.handle_modify_config(request_data, context)
+                elif action in ('createApiKey', 'listApiKeys', 'revokeApiKey', 'updateApiKey', 'getApiKeyUsage'):
+                    api_key_management = lazy_import('interface_lambda.actions', 'api_key_management')
+                    return api_key_management.handle(request_data, context)
+
                 else:
                     logger.warning(f"Unknown action in fallback: {action}")
                     return create_response(400, {'error': f'Unknown or unsupported action: {action}'})
