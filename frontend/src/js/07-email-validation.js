@@ -393,14 +393,13 @@ function showSignedInBadge(email) {
     // Create indicator
     const indicator = document.createElement('div');
     indicator.className = 'card-signed-in-indicator';
+    indicator.style.cursor = 'pointer';
     indicator.innerHTML = `
         <span class="email">${email}</span>
-        <button class="logout-btn" title="Logout">⎋ Logout</button>
     `;
 
-    // Add logout handler to button
-    const logoutBtn = indicator.querySelector('.logout-btn');
-    logoutBtn.addEventListener('click', handleLogout);
+    // Click badge → open account card
+    indicator.addEventListener('click', () => requireEmailThen(() => initAccountPage(), 'manage your account'));
 
     // Add to card-header (same flex row as icon and title)
     const cardHeader = firstCard.querySelector('.card-header');

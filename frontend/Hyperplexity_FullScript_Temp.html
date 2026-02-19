@@ -4231,535 +4231,183 @@ body.viewer-mode .validator-container {
 /* ========== 09-account.css ========== */
 
 /* ========================================
- * Account Page Module
- * Styles for the account management dashboard:
- * API keys, balance, usage, and modals.
+ * Account Card Module
+ * Minimal styles for the card-based account dashboard.
+ * All layout uses the standard .card / .card-content / .std-button
+ * design language. Only account-specific details are scoped here.
  *
- * Dependencies: 00-variables.css
+ * Dependencies: 00-variables.css, 03-cards.css
  * ======================================== */
 
 /* ============================================
-   PAGE LAYOUT
+   BALANCE DISPLAY
    ============================================ */
 
-.account-page {
-    max-width: 820px;
-    margin: 0 auto;
-    padding: 24px 16px 64px;
-}
-
-.account-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 28px;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.account-title {
-    font-size: 1.6rem;
+.acct-balance {
+    font-size: 2rem;
     font-weight: 700;
-    color: var(--text-color);
-    margin: 0;
+    color: var(--primary-dark, var(--primary-color));
 }
 
-.account-back-link {
-    color: var(--primary-color);
-    text-decoration: none;
-    font-size: var(--font-size-small);
-    font-weight: 500;
-}
-
-.account-back-link:hover {
-    text-decoration: underline;
-}
-
-/* ============================================
-   SECTIONS
-   ============================================ */
-
-.account-section {
-    background: white;
-    border: 1px solid #e2e8f0;
-    border-radius: var(--border-radius);
-    margin-bottom: 20px;
-    overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-}
-
-.account-section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 14px 20px;
-    background: #f8fafc;
-    border-bottom: 1px solid #e2e8f0;
-}
-
-.account-section-header h2 {
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: var(--text-color);
-    margin: 0;
+.acct-balance-label {
+    font-size: 0.75rem;
     text-transform: uppercase;
-    letter-spacing: 0.4px;
-}
-
-.account-section-body {
-    padding: 20px;
+    letter-spacing: 0.05em;
+    opacity: 0.6;
 }
 
 /* ============================================
-   ACCOUNT OVERVIEW
+   DIVIDER
    ============================================ */
 
-.account-overview-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-    gap: 14px;
-    margin-bottom: 18px;
-}
-
-.account-stat {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 14px 16px;
-}
-
-.account-stat-label {
-    font-size: 11px;
-    color: var(--text-secondary);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    margin-bottom: 6px;
-}
-
-.account-stat-value {
-    font-size: 1.2rem;
-    font-weight: 600;
-    color: var(--text-color);
-}
-
-.account-balance-display {
-    color: var(--primary-color);
-}
-
-.account-status-active {
-    color: #16a34a;
-}
-
-.account-recharge-area {
-    margin-top: 4px;
+.acct-divider {
+    height: 1px;
+    background: rgba(0, 0, 0, 0.08);
+    margin: 0.75rem 0;
 }
 
 /* ============================================
-   API KEY CARDS
+   TRANSACTION LIST
    ============================================ */
 
-.account-key-card {
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 14px 16px;
-    margin-bottom: 10px;
-    transition: box-shadow 0.15s ease;
-}
-
-.account-key-card:last-child {
-    margin-bottom: 0;
-}
-
-.account-key-card:hover {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
-}
-
-.account-key-revoked {
-    opacity: 0.55;
-    background: #fafafa;
-}
-
-.account-key-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
-}
-
-.account-key-status-indicator {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 10px;
-}
-
-.account-key-status-active {
-    background: #dcfce7;
-    color: #15803d;
-}
-
-.account-key-status-revoked {
-    background: #fee2e2;
-    color: #b91c1c;
-}
-
-.account-badge {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 10px;
-}
-
-.account-badge-live {
-    background: #dbeafe;
-    color: #1d4ed8;
-}
-
-.account-badge-test {
-    background: #fef9c3;
-    color: #854d0e;
-}
-
-.account-badge-int {
-    background: #e2e8f0;
-    color: #475569;
-}
-
-.account-key-name {
-    font-weight: 600;
-    color: var(--text-color);
-    font-size: var(--font-size-base);
-    margin-bottom: 4px;
-}
-
-.account-key-prefix-mono {
-    font-family: monospace;
-    font-size: 13px;
-    background: #f1f5f9;
-    padding: 4px 8px;
-    border-radius: 4px;
-    display: inline-block;
-    margin-bottom: 8px;
-    color: var(--text-secondary);
-}
-
-.account-key-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-bottom: 10px;
-}
-
-.account-key-actions {
-    display: flex;
-    gap: 8px;
-}
-
-.account-key-btn {
-    font-size: 12px;
-    padding: 4px 12px;
-}
-
-.account-create-key-btn {
-    font-size: 13px;
-    padding: 6px 14px;
-}
-
-.account-revoked-section {
-    margin-top: 20px;
-    padding-top: 16px;
-    border-top: 1px solid #e2e8f0;
-}
-
-.account-revoked-section h3 {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 10px;
-}
-
-/* ============================================
-   USAGE & BILLING
-   ============================================ */
-
-.account-history-table {
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    overflow: hidden;
-    font-size: var(--font-size-small);
-}
-
-.account-history-header {
-    display: grid;
-    grid-template-columns: 90px 1fr 90px 90px;
-    gap: 12px;
-    padding: 10px 16px;
-    background: #f8fafc;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.account-history-row {
-    display: grid;
-    grid-template-columns: 90px 1fr 90px 90px;
-    gap: 12px;
-    padding: 10px 16px;
-    color: var(--text-color);
-    border-top: 1px solid #e2e8f0;
-    align-items: center;
-}
-
-.account-history-row:hover {
-    background: #f8fafc;
-}
-
-.account-amount-debit {
-    color: #dc2626;
-    font-weight: 500;
-}
-
-.account-amount-credit {
-    color: #16a34a;
-    font-weight: 500;
-}
-
-/* ============================================
-   MODALS
-   ============================================ */
-
-.account-modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.45);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-    animation: fadeIn 0.2s ease forwards;
-}
-
-.account-modal {
-    background: white;
-    border-radius: var(--border-radius);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
-    max-width: 480px;
-    width: 90%;
-    max-height: 90vh;
-    overflow-y: auto;
-    animation: slideUp 0.2s ease forwards;
-}
-
-.account-modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 18px 22px 14px;
-    border-bottom: 1px solid #e2e8f0;
-}
-
-.account-modal-title {
-    font-size: 1.05rem;
-    font-weight: 600;
-    margin: 0;
-    color: var(--text-color);
-}
-
-.account-modal-close {
-    background: none;
-    border: none;
-    font-size: 22px;
-    cursor: pointer;
-    color: var(--text-secondary);
+.acct-tx-list {
+    list-style: none;
     padding: 0;
-    line-height: 1;
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 4px;
-    flex-shrink: 0;
+    margin: 0;
 }
 
-.account-modal-close:hover {
-    color: var(--text-color);
-    background: #f1f5f9;
+.acct-tx-row {
+    display: grid;
+    grid-template-columns: 6rem 1fr auto;
+    gap: 0.5rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    font-size: 0.85rem;
 }
 
-.account-modal-body {
-    padding: 18px 22px;
+.acct-tx-row:last-child {
+    border-bottom: none;
 }
 
-.account-modal-footer {
-    padding: 14px 22px;
-    border-top: 1px solid #e2e8f0;
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
+.acct-tx-date {
+    opacity: 0.5;
 }
 
-/* ============================================
-   FORMS (inside modals)
-   ============================================ */
-
-.account-form-group {
-    margin-bottom: 16px;
+.acct-tx-desc {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.account-form-label {
-    display: block;
-    font-size: var(--font-size-small);
-    font-weight: 500;
-    color: var(--text-color);
-    margin-bottom: 6px;
+.acct-tx-amount {
+    font-weight: 600;
+    white-space: nowrap;
 }
 
-.account-required {
+.acct-tx-debit {
     color: #dc2626;
 }
 
-.account-form-input {
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 4px;
-    font-size: var(--font-size-base);
-    font-family: var(--font-family);
-    color: var(--text-color);
-    box-sizing: border-box;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-    background: white;
+.acct-tx-credit {
+    color: #16a34a;
 }
 
-.account-form-input:focus {
+/* ============================================
+   API KEYS LIST
+   ============================================ */
+
+.acct-keys-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.acct-key-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.acct-key-row:last-child {
+    border-bottom: none;
+}
+
+.acct-key-name {
+    font-weight: 600;
+    min-width: 8rem;
+}
+
+.acct-key-prefix {
+    font-family: monospace;
+    font-size: 0.8rem;
+    opacity: 0.7;
+    flex: 1;
+}
+
+.acct-key-remove {
+    flex-shrink: 0;
+    font-size: 0.8rem;
+    padding: 0.25rem 0.6rem;
+}
+
+/* ============================================
+   INLINE ADD-KEY FORM
+   ============================================ */
+
+.acct-add-key-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.acct-add-key-input {
+    flex: 1;
+    min-width: 10rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 0.5rem;
+    font-size: 0.9rem;
+    font-family: var(--font-family, sans-serif);
+    color: var(--text-color);
+    background: white;
+    transition: border-color 0.15s ease;
+}
+
+.acct-add-key-input:focus {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.15);
 }
 
-.account-form-error {
-    color: #dc2626;
-    font-size: var(--font-size-small);
-    margin-top: 6px;
-}
-
-.account-scopes-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.account-scope-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    font-size: var(--font-size-small);
-    color: var(--text-color);
-    cursor: pointer;
-    line-height: 1.4;
-}
-
-.account-scope-item input[type="checkbox"] {
-    width: 15px;
-    height: 15px;
-    cursor: pointer;
-    margin-top: 2px;
-    flex-shrink: 0;
-}
-
 /* ============================================
-   RAW KEY DISPLAY
+   ONE-TIME RAW KEY DISPLAY
    ============================================ */
 
-.account-key-reveal-warning {
-    background: #fef9c3;
-    border: 1px solid #facc15;
-    border-radius: 6px;
-    padding: 12px 14px;
-    font-size: var(--font-size-small);
-    color: #713f12;
-    margin-bottom: 16px;
-    line-height: 1.5;
-}
-
-.account-raw-key-display {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+.acct-raw-key-box {
     background: #f1f5f9;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    padding: 12px 14px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    margin: 0.75rem 0;
 }
 
-.account-raw-key-code {
-    flex: 1;
+.acct-raw-key-code {
     font-family: monospace;
-    font-size: 13px;
+    font-size: 0.82rem;
     word-break: break-all;
+    display: block;
+    margin-bottom: 0.5rem;
     color: var(--text-color);
-    line-height: 1.4;
 }
 
-.account-copy-btn {
-    background: var(--primary-color);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 6px 14px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 500;
-    white-space: nowrap;
-    flex-shrink: 0;
-    transition: background 0.15s ease;
-}
-
-.account-copy-btn:hover {
-    background: var(--primary-dark, #388e3c);
-}
-
-.account-copy-feedback {
-    color: #16a34a;
-    font-size: var(--font-size-small);
-    margin-top: 8px;
-    font-weight: 500;
-}
-
-/* ============================================
-   REVOKE MODAL
-   ============================================ */
-
-.account-key-prefix-display {
-    font-family: monospace;
-    background: #f1f5f9;
-    padding: 6px 10px;
-    border-radius: 4px;
-    font-size: 13px;
-    color: var(--text-secondary);
-    display: inline-block;
-    margin-bottom: 12px;
-}
-
-.account-revoke-warning {
-    background: #fee2e2;
-    border: 1px solid #fca5a5;
-    border-radius: 6px;
-    padding: 12px 14px;
-    font-size: var(--font-size-small);
-    color: #7f1d1d;
-    line-height: 1.5;
+.acct-raw-key-warning {
+    font-size: 0.78rem;
+    color: #b45309;
+    margin-bottom: 0.5rem;
 }
 
 /* ============================================
@@ -4781,66 +4429,6 @@ body.viewer-mode .validator-container {
     background: #fca5a5;
     border-color: #fca5a5;
     cursor: not-allowed;
-}
-
-/* ============================================
-   STATE INDICATORS
-   ============================================ */
-
-.account-loading {
-    color: var(--text-secondary);
-    font-size: var(--font-size-small);
-    padding: 12px 0;
-}
-
-.account-error {
-    color: #dc2626;
-    font-size: var(--font-size-small);
-    padding: 8px 0;
-}
-
-.account-empty {
-    color: var(--text-secondary);
-    font-size: var(--font-size-small);
-    padding: 12px 0;
-}
-
-/* ============================================
-   RESPONSIVE
-   ============================================ */
-
-@media (max-width: 600px) {
-    .account-header {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .account-overview-grid {
-        grid-template-columns: 1fr 1fr;
-    }
-
-    .account-history-header,
-    .account-history-row {
-        grid-template-columns: 75px 1fr 75px;
-    }
-
-    /* Hide "Status" column on narrow screens */
-    .account-history-header span:last-child,
-    .account-history-row span:last-child {
-        display: none;
-    }
-
-    .account-modal {
-        width: 95%;
-        max-height: 95vh;
-    }
-
-    .account-modal-header,
-    .account-modal-body,
-    .account-modal-footer {
-        padding-left: 16px;
-        padding-right: 16px;
-    }
 }
 
     </style>
@@ -10052,14 +9640,13 @@ function showSignedInBadge(email) {
     // Create indicator
     const indicator = document.createElement('div');
     indicator.className = 'card-signed-in-indicator';
+    indicator.style.cursor = 'pointer';
     indicator.innerHTML = `
         <span class="email">${email}</span>
-        <button class="logout-btn" title="Logout">⎋ Logout</button>
     `;
 
-    // Add logout handler to button
-    const logoutBtn = indicator.querySelector('.logout-btn');
-    logoutBtn.addEventListener('click', handleLogout);
+    // Click badge → open account card
+    indicator.addEventListener('click', () => requireEmailThen(() => initAccountPage(), 'manage your account'));
 
     // Add to card-header (same flex row as icon and title)
     const cardHeader = firstCard.querySelector('.card-header');
@@ -18032,77 +17619,41 @@ window.extendPaymentIntent = extendPaymentIntent;
 /* ========================================
  * 14c-account-page.js - Account Management UI
  *
- * Full account management dashboard: API key CRUD,
- * balance display, and usage history.
- * Rendered when URL path contains /account.
+ * Card-based account dashboard: balance statement
+ * and API key management. Uses the standard card/button
+ * design language (createCard, createButtonRow, std-button).
  *
- * Dependencies: 00-config.js, 05-chat.js, 14-account.js
+ * Dependencies: 00-config.js, 04-cards.js, 14-account.js
  * ======================================== */
 
 /**
- * Initialize the account management page.
- * Replaces the card container with the account dashboard.
+ * Initialize the account card.
+ * Appends a standard card to #cardContainer showing balance + transactions.
+ * Guard: if card already exists, scroll to it and return.
  */
 async function initAccountPage() {
-    const cardContainer = document.getElementById('cardContainer');
-    if (!cardContainer) return;
+    if (document.getElementById('account-card')) {
+        document.getElementById('account-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
 
-    cardContainer.innerHTML = `
-        <div class="account-page" id="account-page">
-            <div class="account-header">
-                <h1 class="account-title">Account Management</h1>
-                <a href="/" class="account-back-link">&#8592; Back to Hyperplexity</a>
-            </div>
+    const loadingHTML = '<p style="color:var(--text-secondary);font-size:0.85rem;">Loading account\u2026</p>';
 
-            <!-- Account Overview -->
-            <div class="account-section" id="account-overview-section">
-                <div class="account-section-header">
-                    <h2>Account Overview</h2>
-                </div>
-                <div class="account-section-body" id="account-overview-body">
-                    <div class="account-loading">Loading account info...</div>
-                </div>
-            </div>
+    createCard({
+        id: 'account-card',
+        icon: '💳',
+        title: 'Account',
+        subtitle: escHtml(globalState.email || ''),
+        content: loadingHTML,
+        buttons: [
+            { text: 'API Keys',    icon: '🔑', variant: 'secondary', callback: showApiKeysCard },
+            { text: 'Add Credits', icon: '➕', variant: 'primary',   callback: () => openAddCreditsPage() },
+            { text: 'Sign Out',    icon: '⎋',  variant: 'quinary',   callback: () => handleLogout() }
+        ]
+    });
 
-            <!-- API Keys -->
-            <div class="account-section" id="account-keys-section">
-                <div class="account-section-header">
-                    <h2>API Keys</h2>
-                    <button class="std-button primary account-create-key-btn" onclick="showCreateApiKeyModal()">
-                        <span class="button-text">+ New API Key</span>
-                    </button>
-                </div>
-                <div class="account-section-body" id="account-keys-body">
-                    <div class="account-loading">Loading API keys...</div>
-                </div>
-            </div>
-
-            <!-- Usage & Billing -->
-            <div class="account-section" id="account-usage-section">
-                <div class="account-section-header">
-                    <h2>Usage &amp; Billing</h2>
-                </div>
-                <div class="account-section-body" id="account-usage-body">
-                    <div class="account-loading">Loading usage history...</div>
-                </div>
-            </div>
-        </div>
-    `;
-
-    // Load all sections in parallel
-    await Promise.all([
-        loadAccountOverview(),
-        loadApiKeys(),
-        loadUsageHistory()
-    ]);
-}
-
-/**
- * Load account balance and overview info.
- */
-async function loadAccountOverview() {
-    const body = document.getElementById('account-overview-body');
-    if (!body) return;
+    const contentEl = document.querySelector('#account-card .card-content');
+    if (!contentEl) return;
 
     try {
         const response = await fetch(`${API_BASE}/validate`, {
@@ -18117,51 +17668,107 @@ async function loadAccountOverview() {
         const data = await response.json();
 
         if (!data.success) {
-            body.innerHTML = `<div class="account-error">Failed to load account info: ${accountEscapeHtml(data.error || 'Unknown error')}</div>`;
+            contentEl.innerHTML = `<p style="color:#dc2626;font-size:0.85rem;">Failed to load account: ${escHtml(data.error || 'Unknown error')}</p>`;
             return;
         }
 
-        let balance = data.balance;
-        if (balance === undefined && data.account_info) {
-            balance = data.account_info.balance || data.account_info.current_balance || 0;
-        }
+        const accountInfo = data.account_info || {};
+        let balance = data.balance
+            ?? accountInfo.current_balance
+            ?? accountInfo.balance
+            ?? 0;
         balance = typeof balance === 'number' ? balance : parseFloat(balance) || 0;
         globalState.accountBalance = balance;
 
-        body.innerHTML = `
-            <div class="account-overview-grid">
-                <div class="account-stat">
-                    <div class="account-stat-label">Current Balance</div>
-                    <div class="account-stat-value account-balance-display">$${balance.toFixed(2)}</div>
-                </div>
-                <div class="account-stat">
-                    <div class="account-stat-label">Email</div>
-                    <div class="account-stat-value">${accountEscapeHtml(globalState.email)}</div>
-                </div>
-                <div class="account-stat">
-                    <div class="account-stat-label">Account Status</div>
-                    <div class="account-stat-value account-status-active">Active</div>
-                </div>
-            </div>
-            <div class="account-recharge-area">
-                <button class="std-button secondary" onclick="openAddCreditsPage(null, 'account-overview-messages')">
-                    <span class="button-text">Recharge Account</span>
-                </button>
-                <div id="account-overview-messages" style="margin-top: 8px;"></div>
-            </div>
+        const transactions = accountInfo.recent_transactions || data.transactions || data.history || [];
+
+        let html = `
+            <div class="acct-balance-label">Current Balance</div>
+            <div class="acct-balance">$${balance.toFixed(2)}</div>
+            <div class="acct-divider"></div>
         `;
-    } catch (error) {
-        console.error('[ACCOUNT] Error loading overview:', error);
-        body.innerHTML = `<div class="account-error">Error loading account info. Please refresh the page.</div>`;
+
+        if (transactions.length > 0) {
+            html += '<ul class="acct-tx-list">';
+            transactions.slice(0, 10).forEach(tx => {
+                html += renderTransactionRow(tx);
+            });
+            html += '</ul>';
+        } else {
+            html += '<p style="font-size:0.82rem;color:var(--text-secondary);">No recent transactions.</p>';
+        }
+
+        contentEl.innerHTML = html;
+    } catch (err) {
+        console.error('[ACCOUNT] Error loading balance:', err);
+        if (contentEl) {
+            contentEl.innerHTML = '<p style="color:#dc2626;font-size:0.85rem;">Error loading account. Please try again.</p>';
+        }
     }
 }
 
 /**
- * Load and render the API keys list.
+ * Render a single transaction as an HTML list-item string.
+ * Phase 2 note: description will eventually include API key last-4 or source tag.
+ * @param {Object} tx - Transaction object
+ * @returns {string} HTML string for <li class="acct-tx-row">
  */
-async function loadApiKeys() {
-    const body = document.getElementById('account-keys-body');
-    if (!body) return;
+function renderTransactionRow(tx) {
+    const rawDate = tx.timestamp || tx.created_at || tx.date || '';
+    const dateStr = rawDate
+        ? new Date(rawDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        : '\u2014';
+    const desc = escHtml(tx.description || tx.session_id || 'Transaction');
+    const amt = parseFloat(tx.amount ?? tx.cost ?? 0);
+    const txType = tx.transaction_type || tx.type || '';
+    const isDebit = amt < 0 || txType === 'debit' || txType === 'charge' || txType === 'validation';
+    const displayAmt = isDebit
+        ? `-$${Math.abs(amt).toFixed(2)}`
+        : `+$${Math.abs(amt).toFixed(2)}`;
+    const amtClass = isDebit ? 'acct-tx-debit' : 'acct-tx-credit';
+    return `<li class="acct-tx-row">
+        <span class="acct-tx-date">${dateStr}</span>
+        <span class="acct-tx-desc">${desc}</span>
+        <span class="acct-tx-amount ${amtClass}">${displayAmt}</span>
+    </li>`;
+}
+
+/**
+ * Show the API Keys card (secondary card appended below account card).
+ * Guard: if already open, scroll to it.
+ */
+async function showApiKeysCard() {
+    if (document.getElementById('api-keys-card')) {
+        document.getElementById('api-keys-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
+
+    const loadingHTML = '<p style="color:var(--text-secondary);font-size:0.85rem;">Loading keys\u2026</p>';
+
+    createCard({
+        id: 'api-keys-card',
+        icon: '🔑',
+        title: 'API Keys',
+        subtitle: 'Your API access keys',
+        content: loadingHTML,
+        buttons: [
+            { text: 'Add New Key', icon: '\uFF0B', variant: 'primary',   callback: showInlineAddKeyForm },
+            { text: 'Done',        icon: '\u2713',  variant: 'secondary', callback: () => {
+                const c = document.getElementById('api-keys-card');
+                if (c) c.remove();
+            }}
+        ]
+    });
+
+    await refreshApiKeysList();
+}
+
+/**
+ * Fetch and render the active API keys list into #api-keys-card .card-content.
+ */
+async function refreshApiKeysList() {
+    const contentEl = document.querySelector('#api-keys-card .card-content');
+    if (!contentEl) return;
 
     try {
         const response = await fetch(`${API_BASE}/validate`, {
@@ -18176,305 +17783,89 @@ async function loadApiKeys() {
         const data = await response.json();
 
         if (!data.success) {
-            body.innerHTML = `<div class="account-error">Failed to load API keys: ${accountEscapeHtml(data.error || 'Unknown error')}</div>`;
+            contentEl.innerHTML = `<p style="color:#dc2626;font-size:0.85rem;">Failed to load keys: ${escHtml(data.error || 'Unknown error')}</p>`;
             return;
         }
 
-        const keys = data.keys || [];
+        const activeKeys = (data.api_keys || data.keys || []).filter(k => k.is_active);
 
-        if (keys.length === 0) {
-            body.innerHTML = `
-                <div class="account-empty">
-                    <p>No API keys yet. Create your first key to access the Hyperplexity API programmatically.</p>
-                </div>
-            `;
+        if (activeKeys.length === 0) {
+            contentEl.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);">No API keys yet.</p>';
             return;
         }
 
-        const activeKeys = keys.filter(k => k.is_active);
-        const revokedKeys = keys.filter(k => !k.is_active);
-
-        let html = activeKeys.map(key => renderApiKeyCard(key, true)).join('');
-
-        if (revokedKeys.length > 0) {
-            html += `<div class="account-revoked-section"><h3>Revoked Keys</h3>`;
-            html += revokedKeys.map(key => renderApiKeyCard(key, false)).join('');
-            html += `</div>`;
-        }
-
-        body.innerHTML = html;
-    } catch (error) {
-        console.error('[ACCOUNT] Error loading API keys:', error);
-        body.innerHTML = `<div class="account-error">Error loading API keys. Please refresh the page.</div>`;
-    }
-}
-
-/**
- * Render a single API key card.
- */
-function renderApiKeyCard(key, isActive) {
-    const createdDate = key.created_at ? new Date(key.created_at).toLocaleDateString() : 'Unknown';
-    const lastUsed = key.last_used_at ? accountFormatRelativeTime(key.last_used_at) : 'Never';
-    const tierBadgeClass = key.tier === 'live' ? 'account-badge-live'
-        : key.tier === 'test' ? 'account-badge-test' : 'account-badge-int';
-    const scopes = (key.scopes || []).join(', ') || 'none';
-    const keyPrefix = accountEscapeHtml(key.key_prefix || 'hpx_???_...');
-    const keyName = accountEscapeHtml(key.key_name || 'Unnamed Key');
-
-    if (!isActive) {
-        const revokedDate = key.revoked_at ? new Date(key.revoked_at).toLocaleDateString() : 'Unknown';
-        return `
-            <div class="account-key-card account-key-revoked">
-                <div class="account-key-header">
-                    <div class="account-key-status-indicator account-key-status-revoked">Revoked</div>
-                </div>
-                <div class="account-key-name">${keyName}</div>
-                <div class="account-key-prefix account-key-prefix-mono">${keyPrefix}...</div>
-                <div class="account-key-meta">
-                    <span>Revoked: ${revokedDate}</span>
-                    ${key.revoked_reason ? `<span>Reason: ${accountEscapeHtml(key.revoked_reason)}</span>` : ''}
-                </div>
-            </div>
-        `;
-    }
-
-    return `
-        <div class="account-key-card">
-            <div class="account-key-header">
-                <div class="account-key-status-indicator account-key-status-active">Active</div>
-                <span class="account-badge ${tierBadgeClass}">${accountEscapeHtml(key.tier || 'live')}</span>
-            </div>
-            <div class="account-key-name">${keyName}</div>
-            <div class="account-key-prefix account-key-prefix-mono">${keyPrefix}...</div>
-            <div class="account-key-meta">
-                <span>Created: ${createdDate}</span>
-                <span>Last used: ${lastUsed}</span>
-                <span>Scopes: ${accountEscapeHtml(scopes)}</span>
-            </div>
-            <div class="account-key-actions">
-                <button class="std-button secondary account-key-btn"
-                        data-key-prefix="${keyPrefix}"
-                        data-key-name="${keyName}"
-                        onclick="showRevokeKeyModal(this.dataset.keyPrefix, this.dataset.keyName)">
-                    Revoke
+        let html = '<ul class="acct-keys-list">';
+        activeKeys.forEach(key => {
+            const name   = escHtml(key.key_name   || 'Unnamed Key');
+            const prefix = escHtml(key.key_prefix  || 'hpx_???_...');
+            html += `<li class="acct-key-row">
+                <span class="acct-key-name">${name}</span>
+                <span class="acct-key-prefix">${prefix}\u2026</span>
+                <button class="std-button danger acct-key-remove"
+                        data-prefix="${prefix}"
+                        onclick="revokeKeyAndRefresh(this.dataset.prefix)">
+                    Remove
                 </button>
-            </div>
-        </div>
-    `;
-}
-
-/**
- * Load and render usage and billing history.
- */
-async function loadUsageHistory() {
-    const body = document.getElementById('account-usage-body');
-    if (!body) return;
-
-    try {
-        const response = await fetch(`${API_BASE}/validate`, {
-            method: 'POST',
-            headers: getAuthHeaders(),
-            body: JSON.stringify({
-                action: 'getUserStats',
-                email: globalState.email
-            })
+            </li>`;
         });
+        html += '</ul>';
 
-        const data = await response.json();
-
-        if (!data.success) {
-            body.innerHTML = `<div class="account-error">Failed to load usage history.</div>`;
-            return;
+        contentEl.innerHTML = html;
+    } catch (err) {
+        console.error('[ACCOUNT] Error loading keys:', err);
+        if (contentEl) {
+            contentEl.innerHTML = '<p style="color:#dc2626;font-size:0.85rem;">Error loading keys. Please try again.</p>';
         }
-
-        const stats = data.stats || data.data || {};
-        const history = data.history || data.validations || data.transactions || [];
-
-        let statsHtml = '';
-        const hasStats = stats.total_validations !== undefined || stats.total_spent !== undefined;
-        if (hasStats) {
-            statsHtml = `<div class="account-overview-grid" style="margin-bottom: 20px;">`;
-            if (stats.total_validations !== undefined) {
-                statsHtml += `
-                    <div class="account-stat">
-                        <div class="account-stat-label">Total Validations</div>
-                        <div class="account-stat-value">${stats.total_validations || 0}</div>
-                    </div>`;
-            }
-            if (stats.total_spent !== undefined) {
-                statsHtml += `
-                    <div class="account-stat">
-                        <div class="account-stat-label">Total Spent</div>
-                        <div class="account-stat-value">$${(stats.total_spent || 0).toFixed(2)}</div>
-                    </div>`;
-            }
-            if (stats.total_rows_processed !== undefined) {
-                statsHtml += `
-                    <div class="account-stat">
-                        <div class="account-stat-label">Rows Processed</div>
-                        <div class="account-stat-value">${(stats.total_rows_processed || 0).toLocaleString()}</div>
-                    </div>`;
-            }
-            statsHtml += `</div>`;
-        }
-
-        let historyHtml = '';
-        if (history.length > 0) {
-            historyHtml = `
-                <h3 style="margin-bottom: 12px; font-size: 14px; font-weight: 600; color: #555;">Recent Activity</h3>
-                <div class="account-history-table">
-                    <div class="account-history-header">
-                        <span>Date</span>
-                        <span>Description</span>
-                        <span>Amount</span>
-                        <span>Status</span>
-                    </div>
-                    ${history.slice(0, 20).map(item => {
-                        const dateStr = (item.timestamp || item.created_at)
-                            ? new Date(item.timestamp || item.created_at).toLocaleDateString()
-                            : '-';
-                        const desc = accountEscapeHtml(item.description || item.session_id || 'Validation');
-                        const amt = parseFloat(item.amount ?? item.cost ?? 0);
-                        const status = accountEscapeHtml(item.status || 'completed');
-                        const amtClass = amt < 0 ? 'account-amount-debit' : 'account-amount-credit';
-                        const amtSign = amt < 0 ? '-' : '+';
-                        return `
-                            <div class="account-history-row">
-                                <span>${dateStr}</span>
-                                <span>${desc}</span>
-                                <span class="${amtClass}">${amtSign}$${Math.abs(amt).toFixed(2)}</span>
-                                <span>${status}</span>
-                            </div>`;
-                    }).join('')}
-                </div>
-            `;
-        } else {
-            historyHtml = `<p style="color: #666; font-size: 14px;">No recent activity found.</p>`;
-        }
-
-        body.innerHTML = statsHtml + historyHtml;
-    } catch (error) {
-        console.error('[ACCOUNT] Error loading usage history:', error);
-        body.innerHTML = `<div class="account-error">Error loading usage history. Please refresh the page.</div>`;
     }
 }
 
-// ============================================================
-// MODAL: Create API Key
-// ============================================================
-
 /**
- * Show the Create API Key modal.
+ * Append inline add-key form to the API keys card content.
+ * Called from the "Add New Key" button callback.
  */
-function showCreateApiKeyModal() {
-    if (document.getElementById('create-key-modal-overlay')) return;
-    const overlay = document.createElement('div');
-    overlay.className = 'account-modal-overlay';
-    overlay.id = 'create-key-modal-overlay';
+function showInlineAddKeyForm() {
+    const contentEl = document.querySelector('#api-keys-card .card-content');
+    if (!contentEl) return;
 
-    overlay.innerHTML = `
-        <div class="account-modal" role="dialog" aria-modal="true" aria-labelledby="create-key-modal-title">
-            <div class="account-modal-header">
-                <h2 class="account-modal-title" id="create-key-modal-title">Create API Key</h2>
-                <button class="account-modal-close" onclick="closeAccountModal('create-key-modal-overlay')" aria-label="Close">&#215;</button>
-            </div>
-            <div class="account-modal-body">
-                <div class="account-form-group">
-                    <label class="account-form-label" for="key-name-input">
-                        Key Name <span class="account-required">*</span>
-                    </label>
-                    <input type="text" id="key-name-input" class="account-form-input"
-                           placeholder="e.g. Production API Key" maxlength="100" autocomplete="off" />
-                </div>
-                <div class="account-form-group">
-                    <label class="account-form-label" for="key-tier-select">Tier</label>
-                    <select id="key-tier-select" class="account-form-input">
-                        <option value="live">Live (Production)</option>
-                        <option value="test">Test (Sandbox)</option>
-                    </select>
-                </div>
-                <div class="account-form-group">
-                    <label class="account-form-label">Scopes</label>
-                    <div class="account-scopes-grid">
-                        <label class="account-scope-item">
-                            <input type="checkbox" id="scope-validate" value="validate" checked />
-                            <span><strong>validate</strong> &mdash; Submit and manage validation jobs</span>
-                        </label>
-                        <label class="account-scope-item">
-                            <input type="checkbox" id="scope-account-read" value="account:read" />
-                            <span><strong>account:read</strong> &mdash; View balance and usage history</span>
-                        </label>
-                        <label class="account-scope-item">
-                            <input type="checkbox" id="scope-config" value="config" />
-                            <span><strong>config</strong> &mdash; Access validation configurations</span>
-                        </label>
-                    </div>
-                </div>
-                <div id="create-key-error" class="account-form-error" style="display:none;"></div>
-            </div>
-            <div class="account-modal-footer">
-                <button class="std-button secondary" onclick="closeAccountModal('create-key-modal-overlay')">
-                    <span class="button-text">Cancel</span>
-                </button>
-                <button class="std-button primary" id="create-key-submit-btn" onclick="submitCreateApiKey()">
-                    <span class="button-text">Create Key</span>
-                </button>
-            </div>
+    // Don't add a second form if one already exists
+    if (contentEl.querySelector('.acct-add-key-form')) return;
+
+    contentEl.insertAdjacentHTML('beforeend', `
+        <div class="acct-add-key-form" id="acct-add-key-form">
+            <input type="text" class="acct-add-key-input" id="acct-new-key-name"
+                   placeholder="Key name (e.g. My App)" maxlength="60" autocomplete="off" />
+            <button class="std-button primary" onclick="submitNewApiKey()">
+                <span class="button-text">Create</span>
+            </button>
         </div>
-    `;
+        <div id="acct-add-key-messages" style="font-size:0.82rem;margin-top:0.4rem;color:#dc2626;"></div>
+    `);
 
-    document.body.appendChild(overlay);
-
-    // Close on backdrop click
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) closeAccountModal('create-key-modal-overlay');
-    });
-
-    // Focus the name input
-    setTimeout(() => {
-        const input = document.getElementById('key-name-input');
-        if (input) input.focus();
-    }, 50);
+    const input = document.getElementById('acct-new-key-name');
+    if (input) input.focus();
 }
 
 /**
- * Submit the Create API Key form.
+ * Submit the inline create-key form.
+ * Called from inline onclick — reads #acct-new-key-name directly.
  */
-async function submitCreateApiKey() {
-    const nameInput = document.getElementById('key-name-input');
-    const tierSelect = document.getElementById('key-tier-select');
-    const errorEl = document.getElementById('create-key-error');
-    const submitBtn = document.getElementById('create-key-submit-btn');
-
-    const keyName = nameInput ? nameInput.value.trim() : '';
-    const tier = tierSelect ? tierSelect.value : 'live';
+async function submitNewApiKey() {
+    const nameInput = document.getElementById('acct-new-key-name');
+    const msgEl    = document.getElementById('acct-add-key-messages');
+    const keyName  = nameInput ? nameInput.value.trim() : '';
 
     if (!keyName) {
-        if (errorEl) { errorEl.textContent = 'Key name is required.'; errorEl.style.display = 'block'; }
+        if (msgEl) msgEl.textContent = 'Key name is required.';
         if (nameInput) nameInput.focus();
         return;
     }
 
-    const scopes = [];
-    [
-        { id: 'scope-validate', value: 'validate' },
-        { id: 'scope-account-read', value: 'account:read' },
-        { id: 'scope-config', value: 'config' }
-    ].forEach(({ id, value }) => {
-        const cb = document.getElementById(id);
-        if (cb && cb.checked) scopes.push(value);
-    });
-
-    if (scopes.length === 0) {
-        if (errorEl) { errorEl.textContent = 'Please select at least one scope.'; errorEl.style.display = 'block'; }
-        return;
+    const createBtn = document.querySelector('#acct-add-key-form .std-button');
+    if (createBtn) {
+        createBtn.disabled = true;
+        createBtn.querySelector('.button-text').textContent = 'Creating\u2026';
     }
-
-    if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.querySelector('.button-text').textContent = 'Creating...';
-    }
-    if (errorEl) errorEl.style.display = 'none';
+    if (msgEl) msgEl.textContent = '';
 
     try {
         const response = await fetch(`${API_BASE}/validate`, {
@@ -18484,99 +17875,66 @@ async function submitCreateApiKey() {
                 action: 'createApiKey',
                 email: globalState.email,
                 key_name: keyName,
-                tier: tier,
-                scopes: scopes
+                tier: 'live',
+                scopes: ['validate']
             })
         });
 
         const data = await response.json();
 
         if (!data.success) {
-            const errMsg = data.error || 'Failed to create API key.';
-            if (errorEl) { errorEl.textContent = errMsg; errorEl.style.display = 'block'; }
-            if (submitBtn) {
-                submitBtn.disabled = false;
-                submitBtn.querySelector('.button-text').textContent = 'Create Key';
+            if (msgEl) msgEl.textContent = data.error || 'Failed to create key.';
+            if (createBtn) {
+                createBtn.disabled = false;
+                createBtn.querySelector('.button-text').textContent = 'Create';
             }
             return;
         }
 
-        closeAccountModal('create-key-modal-overlay');
-
         const rawKey = data.api_key || data.raw_key || data.key || '';
-        showRawKeyModal(rawKey, keyName);
 
-        // Refresh the keys list
-        loadApiKeys();
-    } catch (error) {
-        console.error('[ACCOUNT] Error creating API key:', error);
-        if (errorEl) { errorEl.textContent = 'Network error. Please try again.'; errorEl.style.display = 'block'; }
-        if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.querySelector('.button-text').textContent = 'Create Key';
+        // Replace the form with the one-time raw key display
+        const formEl = document.getElementById('acct-add-key-form');
+        if (formEl) formEl.remove();
+        if (msgEl) msgEl.remove();
+
+        const contentEl = document.querySelector('#api-keys-card .card-content');
+        if (contentEl) {
+            contentEl.insertAdjacentHTML('beforeend', `
+                <div class="acct-raw-key-box" id="acct-raw-key-box">
+                    <code class="acct-raw-key-code" id="acct-raw-key-code">${escHtml(rawKey)}</code>
+                    <p class="acct-raw-key-warning">\u26A0 Store this key \u2014 it will not be shown again.</p>
+                    <button class="std-button secondary" style="margin-right:0.5rem;" onclick="copyNewApiKey()">
+                        <span class="button-text">Copy</span>
+                    </button>
+                    <button class="std-button primary" onclick="closeRawKeyDisplay()">
+                        <span class="button-text">Close</span>
+                    </button>
+                </div>
+            `);
+        }
+    } catch (err) {
+        console.error('[ACCOUNT] Error creating key:', err);
+        if (msgEl) msgEl.textContent = 'Network error. Please try again.';
+        if (createBtn) {
+            createBtn.disabled = false;
+            createBtn.querySelector('.button-text').textContent = 'Create';
         }
     }
 }
 
-// ============================================================
-// MODAL: Show Raw Key (one-time display)
-// ============================================================
-
 /**
- * Show the raw API key — displayed exactly once after creation.
+ * Copy the one-time raw API key text to clipboard.
+ * Called from inline onclick in the raw key display box.
  */
-function showRawKeyModal(rawKey, keyName) {
-    const overlay = document.createElement('div');
-    overlay.className = 'account-modal-overlay';
-    overlay.id = 'raw-key-modal-overlay';
-
-    overlay.innerHTML = `
-        <div class="account-modal" role="dialog" aria-modal="true" aria-labelledby="raw-key-modal-title">
-            <div class="account-modal-header">
-                <h2 class="account-modal-title" id="raw-key-modal-title">Your New API Key</h2>
-            </div>
-            <div class="account-modal-body">
-                <div class="account-key-reveal-warning">
-                    &#9888; This key will only be shown <strong>once</strong>. Copy it now and store it securely.
-                </div>
-                <div class="account-key-name-label" style="margin-bottom: 12px;">
-                    Key: <strong>${accountEscapeHtml(keyName)}</strong>
-                </div>
-                <div class="account-raw-key-display">
-                    <code class="account-raw-key-code" id="raw-key-code">${accountEscapeHtml(rawKey)}</code>
-                    <button class="account-copy-btn" onclick="copyRawApiKey()" id="copy-key-btn" title="Copy to clipboard">
-                        Copy
-                    </button>
-                </div>
-                <div id="copy-key-feedback" class="account-copy-feedback" style="display:none;">
-                    &#10003; Copied to clipboard!
-                </div>
-            </div>
-            <div class="account-modal-footer">
-                <button class="std-button primary" onclick="closeAccountModal('raw-key-modal-overlay')">
-                    <span class="button-text">I've saved my key</span>
-                </button>
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(overlay);
-}
-
-/**
- * Copy the raw API key text to clipboard.
- */
-async function copyRawApiKey() {
-    const codeEl = document.getElementById('raw-key-code');
-    const feedbackEl = document.getElementById('copy-key-feedback');
-    const copyBtn = document.getElementById('copy-key-btn');
+async function copyNewApiKey() {
+    const codeEl = document.getElementById('acct-raw-key-code');
     if (!codeEl) return;
 
     const text = codeEl.textContent || '';
     try {
         await navigator.clipboard.writeText(text);
     } catch (_) {
-        // Fallback for older browsers
         const range = document.createRange();
         range.selectNode(codeEl);
         window.getSelection().removeAllRanges();
@@ -18585,163 +17943,61 @@ async function copyRawApiKey() {
         window.getSelection().removeAllRanges();
     }
 
-    if (feedbackEl) feedbackEl.style.display = 'block';
-    if (copyBtn) copyBtn.textContent = 'Copied!';
-    setTimeout(() => {
-        if (feedbackEl) feedbackEl.style.display = 'none';
-        if (copyBtn) copyBtn.textContent = 'Copy';
-    }, 2500);
-}
-
-// ============================================================
-// MODAL: Revoke Key
-// ============================================================
-
-/**
- * Show the Revoke Key confirmation modal.
- */
-function showRevokeKeyModal(keyPrefix, keyName) {
-    if (document.getElementById('revoke-key-modal-overlay')) return;
-    const overlay = document.createElement('div');
-    overlay.className = 'account-modal-overlay';
-    overlay.id = 'revoke-key-modal-overlay';
-
-    // Embed key info as data attributes to avoid escaping issues in onclick
-    overlay.innerHTML = `
-        <div class="account-modal" role="dialog" aria-modal="true" aria-labelledby="revoke-key-modal-title"
-             data-key-prefix="${accountEscapeHtml(keyPrefix)}">
-            <div class="account-modal-header">
-                <h2 class="account-modal-title" id="revoke-key-modal-title">Revoke API Key</h2>
-                <button class="account-modal-close" onclick="closeAccountModal('revoke-key-modal-overlay')" aria-label="Close">&#215;</button>
-            </div>
-            <div class="account-modal-body">
-                <p>Are you sure you want to revoke <strong>${accountEscapeHtml(keyName)}</strong>?</p>
-                <p class="account-key-prefix-display">${accountEscapeHtml(keyPrefix)}...</p>
-                <div class="account-revoke-warning">
-                    This action cannot be undone. Any applications using this key will lose access immediately.
-                </div>
-                <div class="account-form-group" style="margin-top: 16px;">
-                    <label class="account-form-label" for="revoke-reason-input">Reason (optional)</label>
-                    <input type="text" id="revoke-reason-input" class="account-form-input"
-                           placeholder="e.g. Security rotation" maxlength="200" />
-                </div>
-                <div id="revoke-key-error" class="account-form-error" style="display:none;"></div>
-            </div>
-            <div class="account-modal-footer">
-                <button class="std-button secondary" onclick="closeAccountModal('revoke-key-modal-overlay')">
-                    <span class="button-text">Cancel</span>
-                </button>
-                <button class="std-button danger" id="revoke-key-submit-btn" onclick="submitRevokeKey()">
-                    <span class="button-text">Revoke Key</span>
-                </button>
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(overlay);
-
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) closeAccountModal('revoke-key-modal-overlay');
-    });
-}
-
-/**
- * Submit the revoke key request.
- * Reads key_prefix from the modal's data attribute.
- */
-async function submitRevokeKey() {
-    const overlay = document.getElementById('revoke-key-modal-overlay');
-    const modal = overlay ? overlay.querySelector('.account-modal') : null;
-    const keyPrefix = modal ? modal.dataset.keyPrefix : '';
-
-    const reasonInput = document.getElementById('revoke-reason-input');
-    const errorEl = document.getElementById('revoke-key-error');
-    const submitBtn = document.getElementById('revoke-key-submit-btn');
-
-    const reason = reasonInput ? reasonInput.value.trim() : '';
-
-    if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.querySelector('.button-text').textContent = 'Revoking...';
+    const box = document.getElementById('acct-raw-key-box');
+    const copyBtn = box ? box.querySelector('.std-button.secondary') : null;
+    if (copyBtn) {
+        copyBtn.querySelector('.button-text').textContent = 'Copied!';
+        setTimeout(() => { copyBtn.querySelector('.button-text').textContent = 'Copy'; }, 2000);
     }
-    if (errorEl) errorEl.style.display = 'none';
+}
+
+/**
+ * Close the one-time raw key display and refresh the keys list.
+ * Called from inline onclick.
+ */
+function closeRawKeyDisplay() {
+    const box = document.getElementById('acct-raw-key-box');
+    if (box) box.remove();
+    refreshApiKeysList();
+}
+
+/**
+ * Inline-confirm then revoke a key, then refresh the keys list.
+ * Called from inline onclick on Remove buttons.
+ * @param {string} keyPrefix
+ */
+async function revokeKeyAndRefresh(keyPrefix) {
+    if (!confirm(`Revoke key ${keyPrefix}?`)) return;
 
     try {
-        const payload = {
-            action: 'revokeApiKey',
-            email: globalState.email,
-            key_prefix: keyPrefix
-        };
-        if (reason) payload.reason = reason;
-
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
             headers: getAuthHeaders(),
-            body: JSON.stringify(payload)
+            body: JSON.stringify({
+                action: 'revokeApiKey',
+                email: globalState.email,
+                key_prefix: keyPrefix
+            })
         });
 
         const data = await response.json();
 
         if (!data.success) {
-            const errMsg = data.error || 'Failed to revoke API key.';
-            if (errorEl) { errorEl.textContent = errMsg; errorEl.style.display = 'block'; }
-            if (submitBtn) {
-                submitBtn.disabled = false;
-                submitBtn.querySelector('.button-text').textContent = 'Revoke Key';
-            }
+            alert(data.error || 'Failed to revoke key.');
             return;
         }
 
-        closeAccountModal('revoke-key-modal-overlay');
-        loadApiKeys();
-    } catch (error) {
-        console.error('[ACCOUNT] Error revoking key:', error);
-        if (errorEl) { errorEl.textContent = 'Network error. Please try again.'; errorEl.style.display = 'block'; }
-        if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.querySelector('.button-text').textContent = 'Revoke Key';
-        }
-    }
-}
-
-// ============================================================
-// UTILITIES
-// ============================================================
-
-/**
- * Close an account modal overlay by element ID.
- */
-function closeAccountModal(overlayId) {
-    const overlay = document.getElementById(overlayId);
-    if (overlay) overlay.remove();
-}
-
-/**
- * Format a UTC ISO timestamp as a human-readable relative time.
- */
-function accountFormatRelativeTime(isoString) {
-    try {
-        const date = new Date(isoString);
-        const diffMs = Date.now() - date.getTime();
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMins / 60);
-        const diffDays = Math.floor(diffHours / 24);
-
-        if (diffMins < 1) return 'just now';
-        if (diffMins < 60) return `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
-        if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
-        if (diffDays < 30) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
-        return date.toLocaleDateString();
-    } catch (_) {
-        return isoString || 'Unknown';
+        await refreshApiKeysList();
+    } catch (err) {
+        console.error('[ACCOUNT] Error revoking key:', err);
+        alert('Network error. Please try again.');
     }
 }
 
 /**
  * Escape HTML special characters to prevent XSS.
- * Uses a dedicated name to avoid collision with any other escapeHtml in scope.
  */
-function accountEscapeHtml(str) {
+function escHtml(str) {
     if (!str) return '';
     return String(str)
         .replace(/&/g, '&amp;')
@@ -18751,14 +18007,13 @@ function accountEscapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
-// Expose functions needed by inline onclick handlers
+// Expose for 99-init.js and badge click
 window.initAccountPage = initAccountPage;
-window.showCreateApiKeyModal = showCreateApiKeyModal;
-window.submitCreateApiKey = submitCreateApiKey;
-window.copyRawApiKey = copyRawApiKey;
-window.showRevokeKeyModal = showRevokeKeyModal;
-window.submitRevokeKey = submitRevokeKey;
-window.closeAccountModal = closeAccountModal;
+// Expose for inline onclick handlers
+window.submitNewApiKey    = submitNewApiKey;
+window.copyNewApiKey      = copyNewApiKey;
+window.closeRawKeyDisplay = closeRawKeyDisplay;
+window.revokeKeyAndRefresh = revokeKeyAndRefresh;
 
 
 /* ========== 15-reference-check.js ========== */
