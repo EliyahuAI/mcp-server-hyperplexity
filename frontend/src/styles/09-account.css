@@ -152,6 +152,53 @@
 }
 
 /* ============================================
+   ADD CREDITS AMOUNT PICKER
+   ============================================ */
+
+.acct-credits-prompt {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.acct-credits-label {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.acct-credits-presets {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.acct-credit-chip {
+    background: white;
+    border: 2px solid var(--primary-color);
+    color: var(--primary-color);
+    border-radius: 1rem;
+    padding: 0.25rem 0.85rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+    font-family: var(--font-family, sans-serif);
+}
+
+.acct-credit-chip:hover {
+    background: var(--primary-color);
+    color: white;
+}
+
+.acct-credits-currency {
+    font-weight: 600;
+    color: var(--text-color);
+    font-size: 0.9rem;
+}
+
+/* ============================================
    ONE-TIME RAW KEY DISPLAY
    ============================================ */
 

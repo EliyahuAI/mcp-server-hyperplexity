@@ -33,7 +33,7 @@ async function initAccountPage() {
         content: loadingHTML,
         buttons: [
             { text: 'API Keys',    icon: '🔑', variant: 'secondary', callback: showApiKeysCard },
-            { text: 'Add Credits', icon: '➕', variant: 'primary',   callback: () => openAddCreditsPage(null, 'account-card-messages') },
+            { text: 'Add Credits', icon: '➕', variant: 'primary',   callback: showAddCreditsPrompt },
             { text: 'Sign Out',    icon: '⎋',  variant: 'quinary',   callback: () => handleLogout() }
         ]
     });
@@ -391,6 +391,73 @@ async function revokeKeyAndRefresh(keyPrefix) {
     }
 }
 
+// ============================================================
+// ADD CREDITS — AMOUNT PICKER
+// ============================================================
+
+/**
+ * Show an inline amount picker in the account card messages area.
+ * Presents preset chips ($10 / $25 / $50 / $100) plus a custom
+ * numeric input. Selecting any amount hands off to openAddCreditsPage()
+ * which runs the full guided Squarespace purchase flow.
+ */
+function showAddCreditsPrompt() {
+    const msgEl = document.getElementById('account-card-messages');
+    if (!msgEl) return;
+
+    // Guard: don't render a second picker if one is already visible
+    if (msgEl.querySelector('.acct-credits-prompt')) return;
+
+    msgEl.innerHTML = `
+        <div class="acct-credits-prompt">
+            <p class="acct-credits-label">How many credits would you like to add?</p>
+            <div class="acct-credits-presets">
+                <button class="acct-credit-chip" onclick="selectCreditsAmount(10)">$10</button>
+                <button class="acct-credit-chip" onclick="selectCreditsAmount(25)">$25</button>
+                <button class="acct-credit-chip" onclick="selectCreditsAmount(50)">$50</button>
+                <button class="acct-credit-chip" onclick="selectCreditsAmount(100)">$100</button>
+            </div>
+            <div class="acct-add-key-form" style="margin-top:0.35rem;">
+                <span class="acct-credits-currency">$</span>
+                <input type="number" id="acct-credits-amount" class="acct-add-key-input"
+                       placeholder="Custom amount" min="1" max="1000" step="1"
+                       style="max-width:9rem;"
+                       onkeydown="if(event.key==='Enter') purchaseCreditsAmount()" />
+                <button class="std-button primary" onclick="purchaseCreditsAmount()">
+                    <span class="button-text">Buy</span>
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('acct-credits-amount')?.focus();
+}
+
+/**
+ * Called by preset chip onclick — immediately launches the purchase flow.
+ * @param {number} amount - Dollar amount of credits to add
+ */
+function selectCreditsAmount(amount) {
+    openAddCreditsPage(amount, 'account-card-messages');
+}
+
+/**
+ * Called by the custom-amount "Buy" button — validates the input then launches.
+ */
+function purchaseCreditsAmount() {
+    const input = document.getElementById('acct-credits-amount');
+    const amount = input ? parseInt(input.value, 10) : 0;
+    if (!amount || amount < 1) {
+        if (input) {
+            input.style.borderColor = '#dc2626';
+            input.focus();
+            setTimeout(() => { input.style.borderColor = ''; }, 1500);
+        }
+        return;
+    }
+    openAddCreditsPage(amount, 'account-card-messages');
+}
+
 /**
  * Escape HTML special characters to prevent XSS.
  */
@@ -407,7 +474,9 @@ function escHtml(str) {
 // Expose for 99-init.js and badge click
 window.initAccountPage = initAccountPage;
 // Expose for inline onclick handlers
-window.submitNewApiKey    = submitNewApiKey;
-window.copyNewApiKey      = copyNewApiKey;
-window.closeRawKeyDisplay = closeRawKeyDisplay;
-window.revokeKeyAndRefresh = revokeKeyAndRefresh;
+window.submitNewApiKey      = submitNewApiKey;
+window.copyNewApiKey        = copyNewApiKey;
+window.closeRawKeyDisplay   = closeRawKeyDisplay;
+window.revokeKeyAndRefresh  = revokeKeyAndRefresh;
+window.selectCreditsAmount  = selectCreditsAmount;
+window.purchaseCreditsAmount = purchaseCreditsAmount;
