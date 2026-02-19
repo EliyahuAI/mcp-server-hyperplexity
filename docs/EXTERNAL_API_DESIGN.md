@@ -1466,52 +1466,85 @@ API_GATEWAY_EXTERNAL_API_ID=<resolved at deploy time>
 ---
 
 ### Phase 4: Account Management UI
-**Status:** ✅ COMPLETE (2026-02-18)
+**Status:** ✅ COMPLETE — redesigned 2026-02-19 (commits `16602de1`, `2e641937`, `56c70906`)
 **Dependencies:** Phase 1 ✅
 
-**Files Created:**
+> **Note:** The original implementation (2026-02-18, commit recorded in v1.4/v1.5) used a custom full-page layout (`account-page`, `account-section`) with modal overlays for API key CRUD. This was fully replaced by a card design language redesign on 2026-02-19. The description below reflects the current implementation.
+
+**Files Rewritten:**
 1. `frontend/src/js/14c-account-page.js`
-   - `initAccountPage()` — renders full account dashboard into `#cardContainer`
-   - `loadAccountOverview()` — fetches `getAccountBalance`, renders balance + recharge button
-   - `loadApiKeys()` — fetches `listApiKeys`, renders active/revoked key cards
-   - `loadUsageHistory()` — fetches `getUserStats`, renders stats grid + transaction table
-   - `showCreateApiKeyModal()` / `submitCreateApiKey()` — create key modal with name, tier, scopes
-   - `showRawKeyModal()` / `copyRawApiKey()` — one-time raw key display with clipboard copy
-   - `showRevokeKeyModal()` / `submitRevokeKey()` — revoke with optional reason; key_prefix stored in data attribute (safe, no onclick injection)
-   - `closeAccountModal(overlayId)` — generic overlay removal
-   - `accountEscapeHtml(str)` — XSS-safe escaping (distinct name avoids collision)
-   - `accountFormatRelativeTime(iso)` — human-readable relative timestamps
-   - All onclick-needed functions exposed via `window.*`
+   - `initAccountPage()` — guard (scroll to existing card); calls `createCard({id:'account-card', ...})` using the standard card design language; fetches `getAccountBalance`; populates `.card-content` with large balance display + last-10 transaction list; exposes globally as `window.initAccountPage`
+   - `renderTransactionRow(tx)` — returns an `<li class="acct-tx-row">` HTML string; reads `transaction_type` field (values: `debit`/`charge`/`validation` = red, else green); Phase 2 note: will eventually include API key attribution
+   - `showApiKeysCard()` — guard; calls `createCard({id:'api-keys-card', ...})`; fetches `listApiKeys`; shows active keys only (revoked omitted); buttons: "Add New Key" / "Done" (removes card)
+   - `refreshApiKeysList()` — fetches `listApiKeys`, reads `data.api_keys`, renders `<ul class="acct-keys-list">` with per-row Remove button (inline confirm → `revokeKeyAndRefresh`)
+   - `showInlineAddKeyForm()` — appends `.acct-add-key-form` into `#api-keys-card .card-content`; name input (max 60 chars); Enter or Create button → `submitNewApiKey()`
+   - `submitNewApiKey()` — calls `createApiKey` (tier:`live`, scopes:`['validate']`); on success replaces form with one-time `#acct-raw-key-box`
+   - `copyNewApiKey()` / `closeRawKeyDisplay()` — clipboard copy; close → `refreshApiKeysList()`
+   - `revokeKeyAndRefresh(keyPrefix)` — `confirm()` → `revokeApiKey` → `refreshApiKeysList()`
+   - `showAddCreditsPrompt()` — renders into `#account-card-messages`: label + four preset chips ($10/$25/$50/$100) + custom numeric input + Buy button; Enter key on input submits; invalid input flashes red border; chips call `selectCreditsAmount(n)`, Buy calls `purchaseCreditsAmount()`
+   - `selectCreditsAmount(n)` / `purchaseCreditsAmount()` — hand off to `openAddCreditsPage(amount, 'account-card-messages')` which runs the full Squarespace guided purchase flow (product-component detection → cart auto-fill or store URL → `setupBalanceRefreshOnReturn` focus polling → `checkSquarespaceOrders` exponential backoff)
+   - `escHtml(str)` — local XSS utility (no naming collision with other modules)
+   - All inline-onclick functions exposed via `window.*`
 
 2. `frontend/src/styles/09-account.css`
-   - Full account page layout (`.account-page`, `.account-section`, `.account-header`)
-   - Account overview stats grid
-   - API key cards (active / revoked states, tier badges)
-   - Usage history table
-   - Modal styles (overlay, modal, form, raw key display, revoke warning)
-   - `.std-button.danger` variant for revoke action
-   - Responsive breakpoints for ≤600px screens
+   - All old layout/section/modal/form/key-card/history-table styles removed
+   - New minimal `acct-*` classes: `.acct-balance` / `.acct-balance-label` (large balance display); `.acct-divider`; `.acct-tx-list` / `.acct-tx-row` / `.acct-tx-date` / `.acct-tx-desc` / `.acct-tx-amount` / `.acct-tx-debit` / `.acct-tx-credit` (3-column grid transaction list); `.acct-keys-list` / `.acct-key-row` / `.acct-key-name` / `.acct-key-prefix` / `.acct-key-remove` (flex key rows); `.acct-add-key-form` / `.acct-add-key-input` (inline add-key form); `.acct-raw-key-box` / `.acct-raw-key-code` / `.acct-raw-key-warning` (one-time key display); `.acct-credits-prompt` / `.acct-credits-presets` / `.acct-credit-chip` / `.acct-credits-currency` / `.acct-credits-label` (amount picker)
+   - `.std-button.danger` retained for Remove buttons in API keys list
 
 **Files Modified:**
-1. `frontend/src/js/00-config.js`
-   - `detectPageType()` — added `/account` pathname and `#account` hash detection → returns `'account'`
+1. `frontend/src/js/07-email-validation.js` — `showSignedInBadge()`:
+   - Removed `⎋ Logout` button from indicator HTML
+   - Added `cursor: pointer` on the indicator element
+   - Badge click now calls `requireEmailThen(() => initAccountPage(), 'manage your account')`
+   - `handleLogout()` kept intact — now called from the account card's Sign Out button
 
-2. `frontend/src/js/99-init.js`
-   - Added `account` branch in the DOMContentLoaded page-type switch: calls `requireEmailThen(() => initAccountPage(), 'manage your API keys')` — authentication required before rendering
+2. `frontend/src/js/00-config.js` — `detectPageType()`: `/account` pathname + `#account` hash → `'account'` (unchanged from original)
+
+3. `frontend/src/js/99-init.js` — `account` page-type branch: `requireEmailThen(() => initAccountPage(), ...)` (unchanged from original)
+
+**Card Buttons (account-card):**
+| Button | Variant | Action |
+|--------|---------|--------|
+| API Keys 🔑 | `secondary` (purple) | `showApiKeysCard()` |
+| Add Credits ➕ | `primary` (green) | `showAddCreditsPrompt()` → amount picker → `openAddCreditsPage()` |
+| Sign Out ⎋ | `quinary` (magenta `#e91e63`, white bg) | `handleLogout()` |
+
+**API Response Field Mapping (bugs fixed during redesign):**
+| `getAccountBalance` response field | JS access |
+|------------------------------------|-----------|
+| `data.account_info.current_balance` | `accountInfo.current_balance` |
+| `data.account_info.recent_transactions` | `accountInfo.recent_transactions` |
+
+| `listApiKeys` response field | JS access |
+|------------------------------|-----------|
+| `data.api_keys` | `data.api_keys \|\| data.keys` |
+
+Transaction `transaction_type` values treated as debits: `'debit'`, `'charge'`, `'validation'`.
+
+**Add Credits Flow:**
+1. User clicks "Add Credits" → `showAddCreditsPrompt()` renders chip picker into `#account-card-messages`
+2. User clicks chip or enters custom amount → `openAddCreditsPage(amount, 'account-card-messages')`
+3. `openAddCreditsPage` checks `checkProductComponent()`:
+   - Product widget present → `needCredits(amount)` auto-fills cart, opens cart in new tab
+   - Not present → opens `ENV_CONFIG.storeUrl?amount=X&session=...&email=...&return_to=...` in new tab
+4. `setupBalanceRefreshOnReturn('account-card-messages')` attaches focus listener
+5. On tab-return: waits 2s → `refreshCurrentBalance()` → `checkForNewOrders()` with exponential backoff (2s→4s→8s→…→60s, 12 attempts, ~5 min total)
+6. `.acct-balance[data-balance]` is auto-updated by `updateAllBalanceDisplays()` when purchase is detected
 
 **Implementation Notes:**
-- All three sections (overview, API keys, usage) load in parallel via `Promise.all`
-- Revoke key modal stores `key_prefix` in `data-key-prefix` attribute on the modal element instead of encoding it in onclick strings, eliminating any HTML injection risk
-- `account:read` scope checkbox uses id `scope-account-read` (colon → hyphen) to be a valid CSS id
-- `accountEscapeHtml` is explicitly namespaced to prevent collision with any existing `escapeHtml` function in scope
-- Build verified: `initAccountPage`, `account-page`, `account-modal`, `account-key-card` all present in built output
+- `#account-card-messages` div present in loading state, error state, AND success state so `openAddCreditsPage` can always find its message container regardless of when the button is clicked
+- `data-balance` attribute on `.acct-balance` opts the element into `updateAllBalanceDisplays()` — no separate refresh logic needed in the account module
+- Guard pattern on both cards: if `document.getElementById('account-card')` / `'api-keys-card'` exists, scroll to it and return; prevents duplicate cards on repeated badge clicks
+- Revoked keys not shown in API Keys card (active only) — matches UX decision in original plan
+- `createApiKey` always creates `tier:'live'`, `scopes:['validate']` from the UI — tier/scope selection removed from the simplified card-based flow (was in the old modal)
 
 **Deliverables:**
-- ✅ Account management UI at `/account` (or any path containing `/account`)
-- ✅ Users can self-service API keys (create / view / revoke)
-- ✅ Raw key shown exactly once after creation, with clipboard copy
-- ✅ Balance display with recharge button
-- ✅ Usage and transaction history
+- ✅ Account card uses standard `.card` / `.card-buttons` / `.std-button` design language — no custom layout
+- ✅ Email badge opens account card (click anywhere on badge); logout moved into account card
+- ✅ Balance + last-10 transactions displayed on card load
+- ✅ API Keys secondary card: view active keys, add inline, revoke inline
+- ✅ Add Credits: guided Squarespace purchase flow with amount picker, balance auto-refresh on return
+- ✅ Sign Out: magenta-bordered white button (quinary variant) inside account card
 
 ---
 
@@ -2182,6 +2215,7 @@ if __name__ == '__main__':
 | 1.4 | 2026-02-18 | Mark Phase 4 complete; record implementation: 14c-account-page.js (account dashboard, API key CRUD modals, raw-key one-time display, revoke modal with data-attribute key storage), 09-account.css (account page + modal styles, danger button variant), 00-config.js account page detection, 99-init.js account routing with requireEmailThen guard | System |
 | 1.5 | 2026-02-18 | Fix 3 bugs in 14c-account-page.js: (1) Critical — Revoke button onclick broke for key names containing single quotes because browser HTML-decodes attribute values before JS execution; fixed by using `data-key-prefix`/`data-key-name` attributes on the button and reading them with `this.dataset.*` in onclick; (2) High — showCreateApiKeyModal and showRevokeKeyModal had no duplicate guard, allowing stacked modals on rapid clicks; fixed with early-return `if (document.getElementById(overlayId)) return`; (3) Medium — `item.amount \|\| item.cost \|\| 0` treated zero-dollar amounts as falsy; fixed with nullish coalescing `item.amount ?? item.cost ?? 0`. Also updated build.py to output account.html and account-dev.html as copies of the main build. | System |
 | 1.6 | 2026-02-19 | Mark Phase 5 complete (renamed to "E2E Testing & Results Enrichment"); rename old Phase 5 to Phase 5b (Documentation, pending). Created `deployment/test_external_api.py` — full E2E test. Fixed 5 bugs discovered during testing: (1) `columns_validated` = 0 — nested in `preview_data.validation_metrics.validated_columns_count`; (2) results file 404 — wrong filename `validation_results_enhanced.xlsx` vs actual `enhanced_validation.xlsx`; (3) xlsx treated as zip in test script; (4) `listApiKeys`/`createApiKey` "Unknown action" — API key routing missing from `application/json` branch of `http_handler.py`; (5) viewer URL base was `https://eliyahu.ai/hyperplexity` → fixed to `https://eliyahu.ai/viewer`. Enriched results package: receipt PDF generated by background_handler and uploaded to S3 (`receipt_s3_key` stored in DynamoDB), `metadata_url` and `receipt_url` presigned URLs added to GET /v1/jobs/{id}/results response, `job_info` block added to response. Updated section 2.4 (Get Job Results) response schema to match implementation. | System |
+| 1.7 | 2026-02-19 | **Phase 4 redesign** — full rewrite of account UI to standard card design language (commits `16602de1`, `2e641937`, `56c70906`). (1) `14c-account-page.js` rewritten: `createCard`-based account card and secondary API keys card replace custom `account-page` layout and modal overlays; `showApiKeysCard` / `refreshApiKeysList` / `showInlineAddKeyForm` / `submitNewApiKey` / `revokeKeyAndRefresh` replace old modal functions; `renderTransactionRow` shows last-10 transactions from `getAccountBalance` response; `showAddCreditsPrompt` / `selectCreditsAmount` / `purchaseCreditsAmount` add inline amount picker ($10/$25/$50/$100 chips + custom input) before delegating to `openAddCreditsPage(amount, 'account-card-messages')` for full guided Squarespace purchase flow; `.acct-balance[data-balance]` opts into `updateAllBalanceDisplays()` so displayed balance auto-refreshes after purchase detected. (2) `07-email-validation.js` `showSignedInBadge`: logout button removed from badge HTML; badge click → `requireEmailThen(() => initAccountPage(), ...)`. (3) `09-account.css` rewritten: old layout/modal/key-card styles removed; new `acct-*` utility classes added (balance display, divider, tx list, keys list, inline form, raw-key box, credit chip picker). (4) Fixed 2 frontend response field mapping bugs: `data.api_keys` (not `data.keys`) for `listApiKeys`; `data.account_info.current_balance` / `data.account_info.recent_transactions` (not top-level `data.balance` / `data.transactions`) for `getAccountBalance`; `transaction_type` field (not `type`) used for debit detection. (5) Sign Out button uses `quinary` variant (magenta `#e91e63` border, white background) matching app's standard card button style. Updated Phase 4 section to reflect current implementation. | System |
 
 ---
 
