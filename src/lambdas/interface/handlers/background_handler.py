@@ -5417,7 +5417,41 @@ def handle_main_processing(event, context):
                             status_update_data['enhanced_download_url'] = enhanced_download_url
                         if zip_download_url:
                             status_update_data['download_url'] = zip_download_url
-                    
+
+                        # Generate receipt PDF and upload to S3 so it's downloadable via API
+                        try:
+                            from email_sender import generate_receipt_pdf_html
+                            _receipt_tx = {
+                                'rows_processed': billing_info.get('rows_processed', 0) if billing_info else 0,
+                                'description': f"Full validation - {billing_info.get('rows_processed', 0) if billing_info else 0} rows processed",
+                                'session_id': session_id,
+                                'total_ai_calls': billing_info.get('total_ai_calls', 0) if billing_info else 0,
+                                'qc_api_calls': billing_info.get('qc_api_calls', 0) if billing_info else 0,
+                                'columns_validated_count': billing_info.get('columns_validated_count', 0) if billing_info else 0,
+                                'table_name': billing_info.get('table_name', 'N/A') if billing_info else 'N/A',
+                                'input_filename': billing_info.get('table_name', 'N/A') if billing_info else 'N/A',
+                                'config_id': billing_info.get('config_id', 'N/A') if billing_info else 'N/A',
+                            }
+                            _receipt_amount = billing_info.get('amount_charged', 0) if billing_info else 0
+                            _receipt_bytes = generate_receipt_pdf_html(
+                                session_id=session_id,
+                                email=email_address,
+                                amount=_receipt_amount,
+                                transaction_details=_receipt_tx
+                            )
+                            _receipt_ext = 'pdf' if _receipt_bytes.startswith(b'%PDF') else 'txt'
+                            _receipt_s3_key = f"{session_path}v{config_version}_results/receipt.{_receipt_ext}"
+                            s3_client.put_object(
+                                Bucket=S3_RESULTS_BUCKET,
+                                Key=_receipt_s3_key,
+                                Body=_receipt_bytes,
+                                ContentType='application/pdf' if _receipt_ext == 'pdf' else 'text/plain'
+                            )
+                            status_update_data['receipt_s3_key'] = _receipt_s3_key
+                            logger.info(f"[RECEIPT] Uploaded receipt to S3: {_receipt_s3_key}")
+                        except Exception as _receipt_e:
+                            logger.warning(f"[RECEIPT] Could not generate/upload receipt: {_receipt_e}")
+
                         # Get and add the actual batch size used during validation
                         per_model_batch_stats = metadata.get('per_model_batch_stats', {})
                         effective_batch_size = 3  # Small batch for testing continuations

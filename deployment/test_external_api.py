@@ -296,6 +296,30 @@ def approve_validation(client: APIClient, job_id: str, preview_data: dict) -> No
 # Step 7: Download and save results
 # ---------------------------------------------------------------------------
 
+def _download_file(url: str, dest: Path, label: str) -> bool:
+    """Download a file from a presigned URL, retrying on 404 up to ~60s. Returns True on success."""
+    resp = None
+    for attempt in range(10):
+        resp = requests.get(url, timeout=120)
+        if resp.status_code != 404:
+            break
+        wait = 5 if attempt < 6 else 10
+        print(f"[RESULTS] {label} not ready yet (attempt {attempt + 1}), retrying in {wait}s...")
+        time.sleep(wait)
+
+    if resp is None or resp.status_code == 404:
+        print(f"[RESULTS] {label} still not available after retries: {url.split('?')[0]}")
+        return False
+
+    resp.raise_for_status()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest, "wb") as f:
+        f.write(resp.content)
+    size_kb = len(resp.content) / 1024
+    print(f"[RESULTS] Saved {label:<18} → {dest}  ({size_kb:.1f} KB)")
+    return True
+
+
 def save_results(client: APIClient, job_id: str, environment: str) -> Path:
     """Fetch the results URL and download the results file."""
     print(f"[RESULTS] Fetching results for {job_id}...")
@@ -308,6 +332,8 @@ def save_results(client: APIClient, job_id: str, environment: str) -> Path:
     download_url  = result_info.get("download_url")
     file_format   = result_info.get("file_format", "unknown")
     viewer_url    = result_info.get("interactive_viewer_url")
+    metadata_url  = result_info.get("metadata_url")
+    receipt_url   = result_info.get("receipt_url")
 
     print(f"[RESULTS] Job info:")
     print(f"          table            = {job_info.get('input_table_name', 'N/A')}")
@@ -329,59 +355,92 @@ def save_results(client: APIClient, job_id: str, environment: str) -> Path:
     summary_file = out_dir / "summary.json"
     with open(summary_file, "w") as f:
         json.dump(results, f, indent=2)
-    print(f"[RESULTS] Saved summary → {summary_file}")
+    print(f"[RESULTS] Saved summary.json")
 
-    # Download results file if available.
-    # The backend sets results_s3_key in DynamoDB before the file is fully
-    # uploaded, so poll until it appears (mirrors the frontend pause).
+    # Track files saved for README manifest
+    manifest_entries = []
+
+    # Download main results file (Excel) — poll because S3 upload may lag slightly
+    xlsx_path = None
     if download_url:
         print(f"[RESULTS] Waiting for results file to appear in S3 (up to 90s)...")
-        resp = None
-        for attempt in range(10):
-            resp = requests.get(download_url, timeout=120)
-            if resp.status_code != 404:
-                break
-            wait = 5 if attempt < 6 else 10
-            print(f"[RESULTS] Not ready yet (attempt {attempt + 1}), retrying in {wait}s...")
-            time.sleep(wait)
+        table_name = job_info.get('input_table_name') or 'results'
+        safe_name  = "".join(c if c.isalnum() or c in "._- " else "_" for c in table_name)
 
-        if resp is None or resp.status_code == 404:
-            print(f"[RESULTS] File still not available after 90s: {download_url.split('?')[0]}")
-        else:
-            resp.raise_for_status()
-
-            if file_format == "xlsx":
-                # Save directly as xlsx — do NOT try to unzip (xlsx is internally
-                # a zip but extracting it gives raw XML parts, not the Excel file)
-                table_name = job_info.get('input_table_name') or 'results'
-                safe_name  = "".join(c if c.isalnum() or c in "._- " else "_" for c in table_name)
-                xlsx_path  = out_dir / f"{safe_name}_enhanced.xlsx"
-                with open(xlsx_path, "wb") as f:
-                    f.write(resp.content)
-                size_kb = len(resp.content) / 1024
-                print(f"[RESULTS] Saved Excel  → {xlsx_path}  ({size_kb:.1f} KB)")
-            elif file_format == "zip":
-                zip_path = out_dir / "results.zip"
-                with open(zip_path, "wb") as f:
-                    f.write(resp.content)
-                print(f"[RESULTS] Saved zip    → {zip_path}")
+        if file_format == "xlsx":
+            xlsx_path = out_dir / f"{safe_name}_enhanced.xlsx"
+            ok = _download_file(download_url, xlsx_path, "Excel results")
+            if ok:
+                manifest_entries.append((xlsx_path.name, "Validated data — enhanced Excel with all validation results and notes"))
+        elif file_format == "zip":
+            zip_path = out_dir / "results.zip"
+            ok = _download_file(download_url, zip_path, "results.zip")
+            if ok:
+                manifest_entries.append((zip_path.name, "Validation results archive"))
                 try:
                     with zipfile.ZipFile(zip_path) as zf:
                         zf.extractall(out_dir)
-                    print(f"[RESULTS] Extracted contents:")
                     for item in sorted(out_dir.iterdir()):
                         if item.is_file() and item.name != "results.zip":
-                            print(f"          • {item.name}")
+                            manifest_entries.append((item.name, "Extracted from results.zip"))
                 except zipfile.BadZipFile:
                     print(f"[RESULTS] (not a valid zip)")
-            else:
-                # Unknown format — save raw and let user inspect
-                raw_path = out_dir / "results.bin"
-                with open(raw_path, "wb") as f:
-                    f.write(resp.content)
-                print(f"[RESULTS] Saved raw    → {raw_path}  (format: {file_format})")
+        else:
+            raw_path = out_dir / "results.bin"
+            ok = _download_file(download_url, raw_path, "results")
+            if ok:
+                manifest_entries.append((raw_path.name, f"Raw results file (format: {file_format})"))
     else:
         print(f"[RESULTS] No download URL returned")
+
+    # Download table_metadata.json
+    if metadata_url:
+        meta_path = out_dir / "table_metadata.json"
+        ok = _download_file(metadata_url, meta_path, "table_metadata.json")
+        if ok:
+            manifest_entries.append((meta_path.name, "Table metadata — column types, search groups, and validation configuration"))
+
+    # Download receipt (PDF or TXT)
+    if receipt_url:
+        # Detect extension from URL path before query string
+        receipt_ext = receipt_url.split('?')[0].rsplit('.', 1)[-1] if '.' in receipt_url.split('?')[0] else 'pdf'
+        receipt_path = out_dir / f"receipt.{receipt_ext}"
+        ok = _download_file(receipt_url, receipt_path, f"receipt.{receipt_ext}")
+        if ok:
+            manifest_entries.append((receipt_path.name, "Billing receipt for this validation run"))
+
+    # Always include summary.json in manifest
+    manifest_entries.insert(0, ("summary.json", "Full API response — job info, summary metrics, and file URLs"))
+
+    # Write README.txt manifest
+    readme_lines = [
+        "Hyperplexity Validation Results",
+        "=" * 40,
+        f"Job ID  : {job_id}",
+        f"Table   : {job_info.get('input_table_name', 'N/A')}",
+        f"Config  : {job_info.get('configuration_id', 'N/A')}",
+        f"Runtime : {job_info.get('run_time_seconds', 0):.1f}s",
+        f"Rows    : {summary.get('rows_processed', 0)}",
+        f"Columns : {summary.get('columns_validated', 0)}",
+        f"Cost    : ${summary.get('cost_usd', 0):.4f}",
+        "",
+        "Interactive Viewer",
+        "-" * 40,
+        viewer_url or "(not available)",
+        "",
+        "Files in this Package",
+        "-" * 40,
+    ]
+    for fname, desc in manifest_entries:
+        readme_lines.append(f"  {fname}")
+        readme_lines.append(f"    {desc}")
+        readme_lines.append("")
+
+    readme_path = out_dir / "README.txt"
+    with open(readme_path, "w") as f:
+        f.write("\n".join(readme_lines))
+    print(f"[RESULTS] Saved README.txt")
+    print(f"[RESULTS] All results saved to: {out_dir}")
 
     return out_dir
 

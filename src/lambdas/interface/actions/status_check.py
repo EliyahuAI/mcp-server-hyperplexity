@@ -160,12 +160,22 @@ def handle_get_results(request_data, context=None):
         import re as _re
         import os as _os
         viewer_url = None
+        metadata_url = None
+        receipt_url = None
         if results_s3_key:
             m = _re.search(r'v(\d+)_results/', results_s3_key)
             if m:
                 config_version = m.group(1)
-                viewer_base = _os.environ.get('VIEWER_BASE_URL', 'https://eliyahu.ai/hyperplexity')
-                viewer_url = f"{viewer_base}?mode=viewer&session={base_session_id}&version={config_version}"
+                viewer_base = _os.environ.get('VIEWER_BASE_URL', 'https://eliyahu.ai/viewer')
+                viewer_url = f"{viewer_base}?session={base_session_id}&version={config_version}"
+                # Presigned URL for table_metadata.json (same results directory)
+                results_dir = results_s3_key.rsplit('/', 1)[0]
+                metadata_url = generate_presigned_url(S3_RESULTS_BUCKET, f"{results_dir}/table_metadata.json")
+
+        # Presigned URL for receipt (stored by background handler)
+        receipt_s3_key = status_record.get('receipt_s3_key')
+        if receipt_s3_key:
+            receipt_url = generate_presigned_url(S3_RESULTS_BUCKET, receipt_s3_key)
 
         return create_response(200, {
             'success': True,
@@ -176,6 +186,8 @@ def handle_get_results(request_data, context=None):
                 'download_expires_at': None,
                 'file_format': file_format,
                 'interactive_viewer_url': viewer_url,
+                'metadata_url': metadata_url,
+                'receipt_url': receipt_url,
             },
             'job_info': {
                 'input_table_name': status_record.get('input_table_name'),

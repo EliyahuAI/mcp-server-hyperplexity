@@ -3102,7 +3102,7 @@ def create_run_record(session_id: str, email: str, total_rows: int, batch_size: 
         else:
             raise
 
-def update_run_status(session_id: str, run_key: str, status: str, run_type: str = None, processed_rows: int = None, error_message: str = None, results_s3_key: str = None, verbose_status: str = None, percent_complete: int = None, email_status: str = None, preview_data: dict = None, batch_size: int = None, account_current_balance: float = None, account_sufficient_balance: str = None, account_credits_needed: str = None, account_domain_multiplier: float = None, models: str = None, input_table_name: str = None, configuration_id: str = None, total_rows: int = None, eliyahu_cost: float = None, quoted_validation_cost: float = None, discount: float = None, estimated_validation_eliyahu_cost: float = None, time_per_row_seconds: float = None, estimated_validation_time_minutes: float = None, run_time_s: float = None, provider_metrics: dict = None, qc_metrics: dict = None, total_provider_calls: int = None,
+def update_run_status(session_id: str, run_key: str, status: str, run_type: str = None, processed_rows: int = None, error_message: str = None, results_s3_key: str = None, receipt_s3_key: str = None, verbose_status: str = None, percent_complete: int = None, email_status: str = None, preview_data: dict = None, batch_size: int = None, account_current_balance: float = None, account_sufficient_balance: str = None, account_credits_needed: str = None, account_domain_multiplier: float = None, models: str = None, input_table_name: str = None, configuration_id: str = None, total_rows: int = None, eliyahu_cost: float = None, quoted_validation_cost: float = None, discount: float = None, estimated_validation_eliyahu_cost: float = None, time_per_row_seconds: float = None, estimated_validation_time_minutes: float = None, run_time_s: float = None, provider_metrics: dict = None, qc_metrics: dict = None, total_provider_calls: int = None,
                       # Table maker aggregation fields
                       call_metrics_list: list = None, enhanced_metrics_aggregated: dict = None, table_maker_breakdown: dict = None,
                       # Smart delegation system parameters
@@ -3136,6 +3136,9 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
     if results_s3_key:
         update_expression += ", results_s3_key = :s3"
         expression_attribute_values[':s3'] = results_s3_key
+    if receipt_s3_key:
+        update_expression += ", receipt_s3_key = :rsk"
+        expression_attribute_values[':rsk'] = receipt_s3_key
     if preview_data:
         update_expression += ", preview_data = :pd"
         expression_attribute_values[':pd'] = convert_floats_to_decimal(preview_data)
