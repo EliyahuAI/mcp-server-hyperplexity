@@ -1763,6 +1763,7 @@ def main():
     parser.add_argument('--setup-s3', action='store_true', help='Set up unified S3 bucket')
     parser.add_argument('--skip-s3-setup', action='store_true', help='Skip S3 bucket setup during deployment')
     parser.add_argument('--skip-ws-test', action='store_true', help='Skip WebSocket connection testing during deployment')
+    parser.add_argument('--deploy-external-api', action='store_true', help='Create/update the external HTTP API Gateway (api.hyperplexity.ai/v1) and link it to the Interface Lambda')
     parser.add_argument('--environment', '-e', default='prod', choices=['dev', 'test', 'staging', 'prod'], help='Deployment environment (default: prod)')
     parser.add_argument('--mode', choices=['lightweight', 'background', 'unified'],
                        default='unified',
@@ -2066,6 +2067,34 @@ def main():
             except Exception as e:
                 logger.warning(f"Could not test WebSocket: {e}")
 
+    # --- Deploy external API Gateway (standalone, no package rebuild needed) ---
+    if args.deploy_external_api:
+        logger.info("\n=== DEPLOYING EXTERNAL API GATEWAY ===")
+        try:
+            lambda_client = boto3.client('lambda', region_name=args.region)
+            fn_config = lambda_client.get_function_configuration(FunctionName=function_name)
+            lambda_arn = fn_config['FunctionArn']
+            logger.info(f"Using Lambda ARN: {lambda_arn}")
+
+            api_id = deploy_external_api_gateway(lambda_arn, args.region, args.environment)
+
+            endpoint = f"https://{api_id}.execute-api.{args.region}.amazonaws.com"
+            logger.info(f"External API endpoint: {endpoint}/v1/...")
+
+            # Persist the API Gateway ID into the Lambda's env vars
+            existing_config = lambda_client.get_function_configuration(FunctionName=function_name)
+            env_vars = existing_config.get('Environment', {}).get('Variables', {})
+            env_vars['API_GATEWAY_EXTERNAL_API_ID'] = api_id
+            lambda_client.update_function_configuration(
+                FunctionName=function_name,
+                Environment={'Variables': env_vars}
+            )
+            logger.info(f"Updated Lambda env: API_GATEWAY_EXTERNAL_API_ID={api_id}")
+            logger.info("✅ External API Gateway deployed and linked to Lambda.")
+        except Exception as e:
+            logger.error(f"Failed to deploy external API Gateway: {e}")
+            return 1
+
     return 0
 
 
@@ -2168,6 +2197,15 @@ def deploy_external_api_gateway(lambda_arn: str, region: str = "us-east-1", envi
         )
         integration_id = integ_resp['IntegrationId']
         logger.info(f"[EXT_API_GW] Created integration: {integration_id}")
+    else:
+        # Always enforce PayloadFormatVersion='2.0' on existing integrations
+        apigw.update_integration(
+            ApiId=api_id,
+            IntegrationId=integration_id,
+            PayloadFormatVersion='2.0',
+            TimeoutInMillis=29000
+        )
+        logger.info(f"[EXT_API_GW] Updated integration {integration_id} → PayloadFormatVersion=2.0")
 
     # Define all routes
     routes = [

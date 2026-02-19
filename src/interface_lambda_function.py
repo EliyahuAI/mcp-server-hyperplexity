@@ -51,11 +51,21 @@ def lambda_handler(event, context):
             })
         }
 
+    # Detect HTTP-like events regardless of payload format version.
+    # HTTP API v2 (PayloadFormatVersion 2.0): version='2.0', routeKey present, no httpMethod
+    # HTTP API v2 (PayloadFormatVersion 1.0): httpMethod present, version='1.0'
+    # REST API v1: httpMethod present, no version field
+    _is_http_event = (
+        'httpMethod' in event           # REST API v1 or HTTP API v1.0 payload format
+        or event.get('version') == '2.0'  # HTTP API v2.0 payload format
+        or 'routeKey' in event          # HTTP API v2 always includes routeKey
+    )
+
     # Lightweight mode: Only allow HTTP requests
     if IS_LIGHTWEIGHT_INTERFACE:
-        if 'httpMethod' not in event and event.get('version') != '2.0':
+        if not _is_http_event:
             error_msg = "Lightweight interface Lambda can only process HTTP requests. SQS/background events must go to background Lambda."
-            logger.error(error_msg)
+            logger.error(f"{error_msg} event_keys={list(event.keys())[:10]}")
             return {
                 'statusCode': 403,
                 'body': json.dumps({'error': error_msg, 'mode': 'lightweight_interface'})
@@ -83,7 +93,7 @@ def lambda_handler(event, context):
         from interface_lambda.handlers import background_handler
         return background_handler.handle(event, context)
 
-    elif 'httpMethod' in event or event.get('version') == '2.0':
+    elif _is_http_event:
         # Route to external API handler if request comes from the external API Gateway
         ext_api_id = os.environ.get('API_GATEWAY_EXTERNAL_API_ID')
         if ext_api_id and event.get('requestContext', {}).get('apiId') == ext_api_id:
