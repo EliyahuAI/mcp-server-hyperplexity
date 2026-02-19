@@ -256,6 +256,9 @@ def handle(event, context):
             elif action in ['getMessagesForCard', 'getMessagesSince']:
                 message_replay = lazy_import('interface_lambda.actions', 'message_replay')
                 return message_replay.handle(request_data, context)
+            elif action in ('createApiKey', 'listApiKeys', 'revokeApiKey', 'updateApiKey', 'getApiKeyUsage'):
+                api_key_management = lazy_import('interface_lambda.actions', 'api_key_management')
+                return api_key_management.handle(request_data, context)
             elif action == 'getViewerData':
                 viewer_data = lazy_import('interface_lambda.actions', 'viewer_data')
                 return viewer_data.handle(request_data, context)
