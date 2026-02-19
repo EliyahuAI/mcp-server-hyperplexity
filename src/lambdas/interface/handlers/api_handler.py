@@ -26,11 +26,12 @@ def handle(event, context):
     """Route external API Gateway events to action handlers."""
 
     http_method, path, headers, body, query_params = _normalize_event(event)
-    logger.info(f"[API_HANDLER] {http_method} {path}")
 
     request_id = f"req_{uuid.uuid4().hex[:12]}"
     timestamp = datetime.now(timezone.utc).isoformat()
     meta = {"request_id": request_id, "timestamp": timestamp, "api_version": "v1"}
+
+    _start_time = datetime.now(timezone.utc)
 
     # CORS preflight
     if http_method == "OPTIONS":
@@ -39,6 +40,11 @@ def handle(event, context):
     # --- Authentication ---
     raw_key = _extract_bearer_token(headers)
     if not raw_key:
+        logger.warning(json.dumps({
+            "event": "api_auth_failed",
+            "reason": "missing_key",
+            "request_id": request_id,
+        }))
         return _error_response(
             401, "missing_api_key",
             "Authorization header with Bearer token is required.", meta
@@ -47,12 +53,20 @@ def handle(event, context):
     from interface_lambda.utils.api_key_manager import authenticate_api_key, hash_api_key
     key_info = authenticate_api_key(raw_key)
     if not key_info:
+        api_key_prefix = raw_key[:8] if raw_key else "unknown"
+        logger.warning(json.dumps({
+            "event": "api_auth_failed",
+            "reason": "invalid_key",
+            "api_key_prefix": api_key_prefix,
+            "request_id": request_id,
+        }))
         return _error_response(
             401, "invalid_api_key",
             "API key is invalid, revoked, or expired.", meta
         )
 
     email = key_info["email"]
+    api_key_prefix = raw_key[:8]
 
     # --- Rate Limiting ---
     try:
@@ -72,6 +86,16 @@ def handle(event, context):
     }
 
     if not allowed:
+        _duration_ms = int((datetime.now(timezone.utc) - _start_time).total_seconds() * 1000)
+        logger.info(json.dumps({
+            "event": "api_request",
+            "method": http_method,
+            "path": path,
+            "api_key_prefix": api_key_prefix,
+            "request_id": request_id,
+            "status_code": 429,
+            "duration_ms": _duration_ms,
+        }))
         return _error_response(
             429, "rate_limit_exceeded",
             f"Too many requests. Rate limit: {key_info['rate_limit_rpm']}/min.",
@@ -80,11 +104,39 @@ def handle(event, context):
         )
 
     # --- Routing ---
+    result = None
     try:
         result = _route(http_method, path, headers, body, query_params, email, meta)
     except Exception as e:
         logger.error(f"[API_HANDLER] Unhandled error: {e}", exc_info=True)
         result = _error_response(500, "server_error", "An internal error occurred.", meta)
+    finally:
+        _duration_ms = int((datetime.now(timezone.utc) - _start_time).total_seconds() * 1000)
+        _status_code = (result or {}).get("statusCode", 500)
+        logger.info(json.dumps({
+            "event": "api_request",
+            "method": http_method,
+            "path": path,
+            "api_key_prefix": api_key_prefix,
+            "request_id": request_id,
+            "status_code": _status_code,
+            "duration_ms": _duration_ms,
+        }))
+        if _status_code >= 400:
+            _body = {}
+            try:
+                _body = json.loads((result or {}).get("body", "{}"))
+            except (json.JSONDecodeError, TypeError):
+                pass
+            _error_code = (_body.get("error") or {}).get("code", "unknown")
+            logger.error(json.dumps({
+                "event": "api_error",
+                "method": http_method,
+                "path": path,
+                "request_id": request_id,
+                "status_code": _status_code,
+                "error_code": _error_code,
+            }))
 
     # Attach rate-limit headers to every response
     result.setdefault("headers", {}).update(rate_limit_headers)

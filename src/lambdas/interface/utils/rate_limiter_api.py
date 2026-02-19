@@ -7,6 +7,7 @@ Returns (allowed, remaining, reset_at) so the caller can set X-RateLimit-* heade
 
 Rate limit of 0 for RPD means unlimited (used for internal 'int' tier keys).
 """
+import json
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Tuple
@@ -64,18 +65,24 @@ def check_rate_limit(api_key_hash: str, rpm: int, rpd: int) -> Tuple[bool, int, 
     # Check per-minute limit
     if minute_count > rpm:
         remaining = max(0, rpm - minute_count + 1)
-        logger.warning(
-            f"Rate limit (RPM) exceeded: hash={api_key_hash[:8]}... "
-            f"count={minute_count} limit={rpm}"
-        )
+        logger.warning(json.dumps({
+            "event": "rate_limit_exceeded",
+            "api_key_prefix": api_key_hash[:8],
+            "window": "minute",
+            "limit": rpm,
+            "count": minute_count,
+        }))
         return False, remaining, reset_at
 
     # Check per-day limit (0 = unlimited)
     if rpd > 0 and day_count > rpd:
-        logger.warning(
-            f"Rate limit (RPD) exceeded: hash={api_key_hash[:8]}... "
-            f"count={day_count} limit={rpd}"
-        )
+        logger.warning(json.dumps({
+            "event": "rate_limit_exceeded",
+            "api_key_prefix": api_key_hash[:8],
+            "window": "day",
+            "limit": rpd,
+            "count": day_count,
+        }))
         # Day resets at midnight UTC
         next_day = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         return False, 0, next_day.isoformat()
@@ -100,6 +107,9 @@ def _increment_window(table, api_key_hash: str, window: str, ttl: int) -> int:
         )
         return int(response["Attributes"].get("request_count", 1))
     except ClientError as e:
-        logger.error(f"DynamoDB error incrementing rate limit window {window}: {e}")
+        logger.warning(json.dumps({
+            "event": "rate_limiter_fail_open",
+            "error": str(e),
+        }))
         # Fail open: don't block the request if DynamoDB is unavailable
         return 0

@@ -77,6 +77,14 @@ def _sign_payload(payload_bytes: bytes, secret: str) -> str:
     return mac.hexdigest()
 
 
+def _url_domain(url: str) -> str:
+    """Return only the hostname of a URL (safe to log — avoids leaking query params/secrets)."""
+    try:
+        return urllib.parse.urlparse(url).hostname or "unknown"
+    except Exception:
+        return "unknown"
+
+
 def deliver_webhook(
     webhook_url: str,
     webhook_secret: Optional[str],
@@ -95,9 +103,15 @@ def deliver_webhook(
     Returns:
         True if delivery succeeded (2xx response), False otherwise.
     """
+    url_domain = _url_domain(webhook_url)
+
     # Validate URL
     url_error = _validate_webhook_url(webhook_url)
     if url_error:
+        logger.warning(json.dumps({
+            "event": "webhook_ssrf_blocked",
+            "url_domain": url_domain,
+        }))
         logger.error(f"[WEBHOOK] Invalid webhook URL: {url_error}")
         return False
 
@@ -138,19 +152,44 @@ def deliver_webhook(
                 headers=headers,
                 method='POST',
             )
+            _attempt_start = time.monotonic()
             with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT_SECONDS) as resp:
                 status_code = resp.status
+                _attempt_duration_ms = int((time.monotonic() - _attempt_start) * 1000)
+                logger.info(json.dumps({
+                    "event": "webhook_attempt",
+                    "url_domain": url_domain,
+                    "attempt": attempt,
+                    "status_code": status_code,
+                    "duration_ms": _attempt_duration_ms,
+                }))
                 if 200 <= status_code < 300:
-                    logger.info(f"[WEBHOOK] Delivered to {webhook_url} → HTTP {status_code} (attempt {attempt})")
+                    logger.info(json.dumps({
+                        "event": "webhook_delivered",
+                        "url_domain": url_domain,
+                        "attempts": attempt,
+                    }))
                     return True
                 else:
-                    logger.warning(f"[WEBHOOK] Non-2xx response {status_code} from {webhook_url} (attempt {attempt})")
+                    logger.warning(f"[WEBHOOK] Non-2xx response {status_code} from {url_domain} (attempt {attempt})")
         except urllib.error.HTTPError as e:
-            logger.warning(f"[WEBHOOK] HTTP error {e.code} from {webhook_url} (attempt {attempt}): {e.reason}")
+            _attempt_duration_ms = int((time.monotonic() - _attempt_start) * 1000)
+            logger.info(json.dumps({
+                "event": "webhook_attempt",
+                "url_domain": url_domain,
+                "attempt": attempt,
+                "status_code": e.code,
+                "duration_ms": _attempt_duration_ms,
+            }))
+            logger.warning(f"[WEBHOOK] HTTP error {e.code} from {url_domain} (attempt {attempt}): {e.reason}")
         except urllib.error.URLError as e:
-            logger.warning(f"[WEBHOOK] URL error delivering to {webhook_url} (attempt {attempt}): {e.reason}")
+            logger.warning(f"[WEBHOOK] URL error delivering to {url_domain} (attempt {attempt}): {e.reason}")
         except Exception as e:
-            logger.warning(f"[WEBHOOK] Unexpected error delivering to {webhook_url} (attempt {attempt}): {e}")
+            logger.warning(f"[WEBHOOK] Unexpected error delivering to {url_domain} (attempt {attempt}): {e}")
 
-    logger.error(f"[WEBHOOK] All 3 delivery attempts failed for {webhook_url}")
+    logger.error(json.dumps({
+        "event": "webhook_failed",
+        "url_domain": url_domain,
+        "attempts": 3,
+    }))
     return False
