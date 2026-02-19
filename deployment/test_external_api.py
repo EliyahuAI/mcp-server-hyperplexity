@@ -325,12 +325,16 @@ def save_results(client: APIClient, job_id: str, environment: str) -> Path:
 
     # Download results zip if available
     if download_url:
-        print(f"[RESULTS] Downloading results zip...")
+        print(f"[RESULTS] Downloading results file...")
         zip_path = out_dir / "results.zip"
         resp = requests.get(download_url, timeout=120)
-        resp.raise_for_status()
-        with open(zip_path, "wb") as f:
-            f.write(resp.content)
+        if resp.status_code == 404:
+            print(f"[RESULTS] Download URL returned 404 — file not yet at expected S3 path: {download_url.split('?')[0]}")
+            download_url = None  # fall through to "no download URL" path
+        else:
+            resp.raise_for_status()
+            with open(zip_path, "wb") as f:
+                f.write(resp.content)
         print(f"[RESULTS] Saved zip → {zip_path}")
 
         # Extract zip
