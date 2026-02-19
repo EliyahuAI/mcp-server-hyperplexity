@@ -261,9 +261,9 @@ def poll_until(client: APIClient, job_id: str, target_statuses: list[str],
         step = status_data.get("current_step", "")
         pct = status_data.get("progress_percent", 0)
 
-        if step != last_step:
-            print(f"[POLL:{label}] status={status} ({pct}%) — {step}")
-            last_step = step
+        print(f"[POLL:{label}] status={status} ({pct}%) — {step}")
+        if status_data != last_step:
+            last_step = status_data
 
         if status == "failed":
             err = status_data.get("error", {})

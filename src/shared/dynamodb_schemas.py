@@ -3686,15 +3686,21 @@ def get_run_status(session_id: str, run_key: str) -> Optional[Dict]:
         return None
 
 def find_run_key_by_type(session_id: str, run_type: str) -> Optional[str]:
-    """Find run_key for a session_id by run_type (e.g., 'Preview' or 'Validation')."""
+    """Find run_key for a session_id by run_type (e.g., 'Preview' or 'Validation').
+
+    run_key is the DynamoDB sort key so the prefix filter must go in
+    KeyConditionExpression (not FilterExpression — DynamoDB rejects FilterExpression
+    on primary-key attributes with a ValidationException).
+    """
     table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
     try:
         from boto3.dynamodb.conditions import Key
         response = table.query(
-            KeyConditionExpression=Key('session_id').eq(session_id),
-            FilterExpression='begins_with(run_key, :run_type)',
-            ExpressionAttributeValues={':run_type': f'{run_type}#'},
-            ScanIndexForward=False,  # Get most recent first
+            KeyConditionExpression=(
+                Key('session_id').eq(session_id) &
+                Key('run_key').begins_with(f'{run_type}#')
+            ),
+            ScanIndexForward=False,  # Most recent first
             Limit=1
         )
         items = response.get('Items', [])

@@ -326,38 +326,68 @@ def _handle_create_job(body, email, meta):
 
 
 def _handle_get_job_status(job_id, email, query_params, meta):
-    """GET /v1/jobs/{job_id}"""
-    request_data = {
-        "session_id": job_id,
-        "preview_mode": False,
-        "email": email,
-        "_api_email": email,
-    }
-    from interface_lambda.actions import status_check
-    resp = status_check.handle_post_status(request_data, None)
-    parsed = _parse_handler_response(resp)
-    body_data = parsed["body"]
+    """GET /v1/jobs/{job_id}
 
+    Reads DynamoDB directly to avoid Decimal serialisation issues that occur
+    when passing a raw DynamoDB item through create_response / json.dumps.
+    """
     _STATUS_MAP = {
         "COMPLETED": "completed",
         "PROCESSING": "processing",
+        "IN_PROGRESS": "processing",
+        "PENDING": "queued",
         "QUEUED": "queued",
         "FAILED": "failed",
         "ERROR": "failed",
-        "PREVIEW_COMPLETE": "preview_complete",
     }
-    internal = (body_data.get("status") or "PROCESSING").upper()
-    api_status = _STATUS_MAP.get(internal, internal.lower())
+
+    try:
+        from dynamodb_schemas import find_run_key_by_type, find_existing_run_key, get_run_status
+
+        # Prefer the Validation run if one exists; fall back to any run (Preview)
+        run_key = find_run_key_by_type(job_id, "Validation") or find_existing_run_key(job_id)
+
+        if not run_key:
+            logger.info(f"[JOB_STATUS] No run record found for job_id={job_id}")
+            return _success_response(200, {
+                "job_id": job_id, "status": "queued",
+                "progress_percent": 0, "current_step": "Job is queued.",
+            }, meta, extra_headers={"Retry-After": "10"})
+
+        record = get_run_status(job_id, run_key)
+        if not record:
+            return _success_response(200, {
+                "job_id": job_id, "status": "queued",
+                "progress_percent": 0, "current_step": "Job is processing.",
+            }, meta, extra_headers={"Retry-After": "10"})
+
+        # Safely extract fields — DynamoDB returns Decimal for numbers
+        db_status = str(record.get("status") or "PROCESSING").upper()
+        pct = int(record.get("percent_complete") or 0)
+        step = str(record.get("verbose_status") or record.get("message") or "")
+        submitted_at = record.get("start_time") or record.get("created_at")
+
+        logger.info(f"[JOB_STATUS] job_id={job_id} run_key={run_key!r} db_status={db_status} pct={pct}")
+
+        # A completed Preview run means "awaiting approval", not "completed"
+        is_preview_run = run_key.lower().startswith("preview#")
+        if db_status == "COMPLETED" and is_preview_run:
+            api_status = "preview_complete"
+        else:
+            api_status = _STATUS_MAP.get(db_status, db_status.lower())
+
+    except Exception as e:
+        logger.error(f"[JOB_STATUS] Error reading status for {job_id}: {e}", exc_info=True)
+        return _error_response(500, "server_error", "Failed to retrieve job status.", meta)
 
     data = {
         "job_id": job_id,
         "status": api_status,
-        "progress_percent": body_data.get("progress_percent", 0),
-        "current_step": body_data.get("message") or body_data.get("current_step"),
-        "submitted_at": body_data.get("created_at") or body_data.get("submitted_at"),
+        "progress_percent": pct,
+        "current_step": step or None,
+        "submitted_at": submitted_at,
     }
-
-    extra = {"Retry-After": "10"} if api_status == "processing" else None
+    extra = {"Retry-After": "10"} if api_status in ("processing", "queued") else None
     return _success_response(200, data, meta, extra_headers=extra)
 
 
@@ -393,7 +423,16 @@ def _handle_account_balance(email, meta):
     request_data = {"email": email, "_verified_email": email}
     from interface_lambda.actions import account_balance
     resp = account_balance.handle(request_data, None)
-    return _wrap_handler_response(resp, meta)
+    parsed = _parse_handler_response(resp)
+    if parsed["status_code"] >= 400 or parsed["body"].get("success") is False:
+        return _wrap_handler_response(resp, meta)
+    account_info = parsed["body"].get("account_info", {})
+    return _success_response(200, {
+        "email": account_info.get("email", email),
+        "balance_usd": account_info.get("current_balance", 0),
+        "domain": account_info.get("email_domain", ""),
+        "recent_transactions": account_info.get("recent_transactions", []),
+    }, meta)
 
 
 def _handle_account_usage(email, query_params, meta):
