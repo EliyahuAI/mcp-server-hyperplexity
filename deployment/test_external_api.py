@@ -323,23 +323,15 @@ def save_results(client: APIClient, job_id: str, environment: str) -> Path:
         json.dump(results, f, indent=2)
     print(f"[RESULTS] Saved summary → {summary_file}")
 
-    # Download results file if available (backend may take a few seconds to
-    # upload the enhanced Excel after setting status=COMPLETED)
+    # Download results file if available
     if download_url:
-        print(f"[RESULTS] Downloading results file (retrying up to 60s for backend upload)...")
+        print(f"[RESULTS] Downloading results file...")
         zip_path = out_dir / "results.zip"
-        resp = None
-        for attempt in range(7):  # ~60s total: 0,5,10,15,20,30,45
-            resp = requests.get(download_url, timeout=120)
-            if resp.status_code != 404:
-                break
-            wait = [0, 5, 10, 15, 20, 30, 45][attempt]
-            print(f"[RESULTS] 404 on attempt {attempt+1}, retrying in {wait}s...")
-            time.sleep(wait)
-        if resp is not None and resp.status_code == 404:
-            print(f"[RESULTS] File still not available after retries: {download_url.split('?')[0]}")
+        resp = requests.get(download_url, timeout=120)
+        if resp.status_code == 404:
+            print(f"[RESULTS] File not found at: {download_url.split('?')[0]}")
             download_url = None
-        elif resp is not None:
+        else:
             resp.raise_for_status()
             with open(zip_path, "wb") as f:
                 f.write(resp.content)
@@ -440,6 +432,12 @@ def main():
         label="FULL",
     )
     print(f"[FULL] Validation complete!")
+
+    # Brief pause to allow backend to finish uploading the enhanced Excel
+    # (results_s3_key is written to DynamoDB a few seconds before the file
+    # is actually available in S3 — same wait the frontend applies)
+    print(f"[WAIT] Allowing 10s for backend to finalise Excel upload...")
+    time.sleep(10)
 
     # 7. Download and save results
     out_dir = save_results(client, job_id, env)
