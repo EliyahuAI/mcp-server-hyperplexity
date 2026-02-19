@@ -148,6 +148,25 @@ def handle_get_results(request_data, context=None):
         if results_s3_key:
             download_url = generate_presigned_url(S3_RESULTS_BUCKET, results_s3_key)
 
+        # Derive file_format from key extension
+        if results_s3_key and results_s3_key.endswith('.zip'):
+            file_format = 'zip'
+        elif results_s3_key and results_s3_key.endswith('.xlsx'):
+            file_format = 'xlsx'
+        else:
+            file_format = 'unknown'
+
+        # Build interactive viewer URL from results_s3_key path segment v{N}_results
+        import re as _re
+        import os as _os
+        viewer_url = None
+        if results_s3_key:
+            m = _re.search(r'v(\d+)_results/', results_s3_key)
+            if m:
+                config_version = m.group(1)
+                viewer_base = _os.environ.get('VIEWER_BASE_URL', 'https://eliyahu.ai/hyperplexity')
+                viewer_url = f"{viewer_base}?mode=viewer&session={base_session_id}&version={config_version}"
+
         return create_response(200, {
             'success': True,
             'job_id': job_id,
@@ -155,7 +174,13 @@ def handle_get_results(request_data, context=None):
             'results': {
                 'download_url': download_url,
                 'download_expires_at': None,
-                'file_format': 'zip' if results_s3_key and results_s3_key.endswith('.zip') else 'unknown',
+                'file_format': file_format,
+                'interactive_viewer_url': viewer_url,
+            },
+            'job_info': {
+                'input_table_name': status_record.get('input_table_name'),
+                'configuration_id': status_record.get('configuration_id'),
+                'run_time_seconds': float(status_record.get('run_time_s') or status_record.get('run_time_seconds') or 0),
             },
             'summary': {
                 'rows_processed': int(status_record.get('total_rows') or 0),
@@ -164,9 +189,6 @@ def handle_get_results(request_data, context=None):
                     or status_record.get('columns_validated')
                     or 0
                 ),
-                'valid_count': int(status_record.get('valid_count') or 0),
-                'invalid_count': int(status_record.get('invalid_count') or 0),
-                'run_time_seconds': float(status_record.get('run_time_s') or status_record.get('run_time_seconds') or 0),
                 'cost_usd': float(status_record.get('quoted_validation_cost') or 0),
             }
         })

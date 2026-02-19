@@ -297,38 +297,45 @@ def approve_validation(client: APIClient, job_id: str, preview_data: dict) -> No
 # ---------------------------------------------------------------------------
 
 def save_results(client: APIClient, job_id: str, environment: str) -> Path:
-    """Fetch the results URL and download the results zip."""
+    """Fetch the results URL and download the results file."""
     print(f"[RESULTS] Fetching results for {job_id}...")
     data = client.get(f"/v1/jobs/{job_id}/results")
     results = data["data"]
 
-    download_url = (results.get("results") or {}).get("download_url")
-    summary = results.get("summary", {})
+    result_info   = results.get("results") or {}
+    job_info      = results.get("job_info") or {}
+    summary       = results.get("summary", {})
+    download_url  = result_info.get("download_url")
+    file_format   = result_info.get("file_format", "unknown")
+    viewer_url    = result_info.get("interactive_viewer_url")
 
+    print(f"[RESULTS] Job info:")
+    print(f"          table            = {job_info.get('input_table_name', 'N/A')}")
+    print(f"          configuration_id = {job_info.get('configuration_id', 'N/A')}")
+    print(f"          run_time_seconds = {job_info.get('run_time_seconds', 0):.1f}s")
     print(f"[RESULTS] Summary:")
     print(f"          rows_processed   = {summary.get('rows_processed')}")
     print(f"          columns_validated = {summary.get('columns_validated')}")
-    print(f"          valid_count      = {summary.get('valid_count')}")
-    print(f"          invalid_count    = {summary.get('invalid_count')}")
     print(f"          cost_usd         = {summary.get('cost_usd')}")
+    if viewer_url:
+        print(f"[RESULTS] Interactive viewer  → {viewer_url}")
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = RESULTS_DIR / f"{environment}_{ts}_{job_id[:20]}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save summary JSON
+    # Save full API response as summary JSON
     summary_file = out_dir / "summary.json"
     with open(summary_file, "w") as f:
         json.dump(results, f, indent=2)
     print(f"[RESULTS] Saved summary → {summary_file}")
 
     # Download results file if available.
-    # The backend sets results_s3_key in DynamoDB before the Excel is fully
-    # uploaded, so poll until the file appears (mirrors the frontend pause).
+    # The backend sets results_s3_key in DynamoDB before the file is fully
+    # uploaded, so poll until it appears (mirrors the frontend pause).
     if download_url:
         print(f"[RESULTS] Waiting for results file to appear in S3 (up to 90s)...")
-        zip_path = out_dir / "results.zip"
         resp = None
         for attempt in range(10):
             resp = requests.get(download_url, timeout=120)
@@ -342,19 +349,37 @@ def save_results(client: APIClient, job_id: str, environment: str) -> Path:
             print(f"[RESULTS] File still not available after 90s: {download_url.split('?')[0]}")
         else:
             resp.raise_for_status()
-            with open(zip_path, "wb") as f:
-                f.write(resp.content)
-            print(f"[RESULTS] Saved zip → {zip_path}")
 
-            try:
-                with zipfile.ZipFile(zip_path) as zf:
-                    zf.extractall(out_dir)
-                print(f"[RESULTS] Extracted to {out_dir}")
-                for item in out_dir.iterdir():
-                    if item.is_file():
-                        print(f"          • {item.name}")
-            except zipfile.BadZipFile:
-                print(f"[RESULTS] (not a zip — may be xlsx or other format)")
+            if file_format == "xlsx":
+                # Save directly as xlsx — do NOT try to unzip (xlsx is internally
+                # a zip but extracting it gives raw XML parts, not the Excel file)
+                table_name = job_info.get('input_table_name') or 'results'
+                safe_name  = "".join(c if c.isalnum() or c in "._- " else "_" for c in table_name)
+                xlsx_path  = out_dir / f"{safe_name}_enhanced.xlsx"
+                with open(xlsx_path, "wb") as f:
+                    f.write(resp.content)
+                size_kb = len(resp.content) / 1024
+                print(f"[RESULTS] Saved Excel  → {xlsx_path}  ({size_kb:.1f} KB)")
+            elif file_format == "zip":
+                zip_path = out_dir / "results.zip"
+                with open(zip_path, "wb") as f:
+                    f.write(resp.content)
+                print(f"[RESULTS] Saved zip    → {zip_path}")
+                try:
+                    with zipfile.ZipFile(zip_path) as zf:
+                        zf.extractall(out_dir)
+                    print(f"[RESULTS] Extracted contents:")
+                    for item in sorted(out_dir.iterdir()):
+                        if item.is_file() and item.name != "results.zip":
+                            print(f"          • {item.name}")
+                except zipfile.BadZipFile:
+                    print(f"[RESULTS] (not a valid zip)")
+            else:
+                # Unknown format — save raw and let user inspect
+                raw_path = out_dir / "results.bin"
+                with open(raw_path, "wb") as f:
+                    f.write(resp.content)
+                print(f"[RESULTS] Saved raw    → {raw_path}  (format: {file_format})")
     else:
         print(f"[RESULTS] No download URL returned")
 

@@ -5401,7 +5401,7 @@ def handle_main_processing(event, context):
                             # Try to get the enhanced results directory path instead of ZIP file
                             config_version = config_data.get('storage_metadata', {}).get('version', 1)
                             session_path = storage_manager.get_session_path(email, clean_session_id)
-                            enhanced_results_s3_key = f"{session_path}v{config_version}_results/validation_results_enhanced.xlsx"
+                            enhanced_results_s3_key = f"{session_path}v{config_version}_results/enhanced_validation.xlsx"
                             logger.info(f"Using enhanced results S3 key: {enhanced_results_s3_key}")
                         except Exception as e:
                             logger.warning(f"Could not determine enhanced results path, using ZIP path: {e}")
