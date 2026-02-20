@@ -44,24 +44,32 @@ def register(server):
         filename = os.path.basename(file_path)
         content_type = _CONTENT_TYPES[file_type]
 
-        # Step 1: get presigned upload URL
-        payload: dict = {"filename": filename, "file_type": file_type, "content_type": content_type}
+        # Step 1: read file to get size
+        with open(file_path, "rb") as fh:
+            file_bytes = fh.read()
+
+        # Step 2: get presigned upload URL
+        payload: dict = {
+            "filename": filename,
+            "file_size": len(file_bytes),
+            "file_type": file_type,
+            "content_type": content_type,
+        }
         if session_id:
             payload["session_id"] = session_id
 
         presign_data = client.post("/uploads/presigned", json=payload)
-        upload_url = presign_data["upload_url"]
+        upload_url = presign_data.get("presigned_url") or presign_data.get("upload_url", "")
         s3_key = presign_data["s3_key"]
         returned_session_id = presign_data.get("session_id", session_id or "")
+        upload_id = presign_data.get("upload_id", "")
 
-        # Step 2: PUT file bytes to S3 (bare requests, no auth header)
-        with open(file_path, "rb") as fh:
-            file_bytes = fh.read()
-
+        # Step 3: PUT file bytes to S3 (bare requests, no auth header)
         client.put_raw(upload_url, file_bytes, content_type)
 
         result = {
             "session_id": returned_session_id,
+            "upload_id": upload_id,
             "s3_key": s3_key,
             "filename": filename,
             "file_type": file_type,
