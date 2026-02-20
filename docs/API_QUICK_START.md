@@ -443,6 +443,69 @@ def poll_until(job_id, target_status, timeout=600, interval=10):
 
 ---
 
+## Polling Progress Notes
+
+`GET /v1/jobs/{job_id}` returns a **DynamoDB snapshot**, not a real-time stream.
+Progress is written at checkpoints (job start, each batch, job end), so:
+
+- `progress_percent` may stay at a low value (e.g. 2%) for many polls while
+  the batch-processing engine works through rows — this is **normal, not stuck**.
+- The percentage can jump from a low value directly to 100% in the final poll.
+- `current_step` similarly reflects the last checkpoint message, not every row.
+
+**Table-maker conversations** are multi-turn: after starting one, poll
+`GET /v1/conversations/{conv_id}?session_id=...` (not `/jobs`). The job status
+endpoint does not reflect conversational progress — use the conversation endpoint
+to read the AI's questions and send replies.
+
+### Real-time progress via message replay
+
+For richer progress visibility, use the **messages endpoint**:
+
+```
+GET /v1/jobs/{job_id}/messages?since_seq=0
+```
+
+Returns persisted WebSocket messages emitted during processing — the same
+real-time updates that a browser WebSocket client would receive.
+
+```json
+{
+  "messages": [
+    { "type": "progress_update", "data": { "progress_percent": 25, "message": "Processing row 25/100" }, "_seq": 5 },
+    { "type": "progress_update", "data": { "progress_percent": 50, "message": "Processing row 50/100" }, "_seq": 10 }
+  ],
+  "last_seq": 10,
+  "has_more": false,
+  "summary": {
+    "latest_progress_percent": 50,
+    "latest_step": "Processing row 50/100",
+    "message_count": 2
+  }
+}
+```
+
+Pass `since_seq=<last_seq>` on the next call to get only new messages:
+
+```python
+seq = 0
+while True:
+    r = requests.get(f"{BASE_URL}/jobs/{job_id}/messages",
+                     headers=HEADERS, params={"since_seq": seq}).json()
+    for msg in r["data"]["messages"]:
+        pct  = (msg.get("data") or {}).get("progress_percent", "?")
+        step = (msg.get("data") or {}).get("message", "")
+        print(f"  {pct}%  {step}")
+    seq = r["data"]["last_seq"]
+    if not r["data"]["has_more"]:
+        time.sleep(5)
+```
+
+> **Note:** Only messages from the validation/table-maker execution pipeline are
+> persisted. Reference-check progress messages are delivered only via WebSocket.
+
+---
+
 ## Common Errors
 
 | Error code | Meaning | Fix |

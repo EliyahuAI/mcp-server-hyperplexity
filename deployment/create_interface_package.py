@@ -2132,6 +2132,7 @@ def main():
                 ('POST', '/v1/jobs/{job_id}/validate'),
                 ('GET',  '/v1/jobs/{job_id}/results'),
                 ('GET',  '/v1/jobs/{job_id}/reference-results'),
+                ('GET',  '/v1/jobs/{job_id}/messages'),
                 ('GET',  '/v1/account/balance'),
                 ('GET',  '/v1/account/usage'),
                 ('POST', '/v1/conversations/table-maker'),

@@ -221,11 +221,17 @@ def _route(http_method, path, headers, body, query_params, email, meta):
         if len(parts) == 4 and parts[1] == "jobs":
             return _handle_get_reference_results(parts[2], email, meta)
 
-    # GET /jobs/{job_id}   (must not end in /validate, /results, /reference-results)
+    # GET /jobs/{job_id}/messages  — replay persisted WebSocket progress messages
+    if http_method == "GET" and clean.endswith("/messages"):
+        parts = clean.split("/")  # ['', 'jobs', '{job_id}', 'messages']
+        if len(parts) == 4 and parts[1] == "jobs":
+            return _handle_get_job_messages(parts[2], email, query_params, meta)
+
+    # GET /jobs/{job_id}   (must not end in /validate, /results, /reference-results, /messages)
     if (
         http_method == "GET"
         and clean.startswith("/jobs/")
-        and not clean.endswith(("/validate", "/results", "/reference-results"))
+        and not clean.endswith(("/validate", "/results", "/reference-results", "/messages"))
     ):
         job_id = clean[6:]
         if job_id and "/" not in job_id:
@@ -923,6 +929,52 @@ def _handle_reference_check(body, email, meta):
     }, meta)
 
 
+def _handle_get_job_messages(job_id, email, query_params, meta):
+    """GET /v1/jobs/{job_id}/messages?since_seq=0&limit=100
+
+    Returns persisted WebSocket progress messages for a job/session.
+    These are the same real-time updates that WebSocket clients receive,
+    stored to DynamoDB so REST polling clients can retrieve them.
+
+    Use since_seq to page through messages (start at 0, then pass the last
+    returned seq on the next call to get only new messages).
+    """
+    try:
+        since_seq = int(query_params.get("since_seq") or 0)
+        limit = min(int(query_params.get("limit") or 100), 200)
+    except (ValueError, TypeError):
+        since_seq, limit = 0, 100
+
+    try:
+        from dynamodb_schemas import get_messages_since
+        result = get_messages_since(job_id, since_seq, limit)
+
+        # Extract a simplified progress view from the messages
+        latest_pct = None
+        latest_step = None
+        for msg in result.get("messages", []):
+            data = msg.get("data") or msg
+            if "progress_percent" in data:
+                latest_pct = data["progress_percent"]
+            if "message" in data:
+                latest_step = data["message"]
+
+        return _success_response(200, {
+            "job_id": job_id,
+            "messages": result["messages"],
+            "last_seq": result["last_seq"],
+            "has_more": result["has_more"],
+            "summary": {
+                "latest_progress_percent": latest_pct,
+                "latest_step": latest_step,
+                "message_count": len(result["messages"]),
+            },
+        }, meta)
+    except Exception as e:
+        logger.error(f"[API_HANDLER] get_job_messages failed for {job_id}: {e}", exc_info=True)
+        return _error_response(500, "server_error", "Failed to retrieve job messages.", meta)
+
+
 def _handle_get_reference_results(job_id, email, meta):
     """GET /v1/jobs/{job_id}/reference-results"""
     request_data = {
@@ -1378,9 +1430,27 @@ def _handle_conversation_select(conv_id, body, email, meta):
 
     try:
         if selection == "use_match":
-            # Find the best matching config and apply it
+            # Find the best matching config and apply it.
+            # find_matching_configs can be slow (S3 + DynamoDB scan) so run it in
+            # a thread with a hard timeout to prevent a Lambda timeout → API GW 503.
+            import threading
             from interface_lambda.actions.find_matching_config import find_matching_configs
-            matches = find_matching_configs(email, session_id)
+            _result: list = [None]
+            _err: list = [None]
+
+            def _run_matching():
+                try:
+                    _result[0] = find_matching_configs(email, session_id)
+                except Exception as _e:
+                    _err[0] = _e
+
+            _t = threading.Thread(target=_run_matching, daemon=True)
+            _t.start()
+            _t.join(timeout=12)  # 12 s budget — leaves headroom before Lambda timeout
+
+            if _err[0]:
+                logger.warning(f"[API_HANDLER] find_matching_configs error: {_err[0]}")
+            matches = _result[0]
             if matches:
                 top = ((matches.get("matches") or [])[0:1] or [None])[0]
                 if top and top.get("config_id"):
