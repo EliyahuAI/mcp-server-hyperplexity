@@ -107,6 +107,7 @@ temp_*.py
 *_test.py
 test_*.py
 !excel_test.py
+!mcp/test_live.py
 
 # Temporary unnecessary files directory
 temp_unnecessary_files/

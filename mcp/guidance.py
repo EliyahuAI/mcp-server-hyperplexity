@@ -55,7 +55,8 @@ def _guidance_upload_file(data: dict) -> dict:
 
 def _guidance_confirm_upload(data: dict) -> dict:
     session_id = data.get("session_id", "")
-    matches = data.get("config_matches") or []
+    # External API returns "matches" (not "config_matches")
+    matches = data.get("matches") or data.get("config_matches") or []
     best_score = matches[0].get("match_score", 0) if matches else 0
 
     if best_score >= 0.85:
@@ -143,7 +144,12 @@ def _guidance_get_job_status(data: dict) -> dict:
         }
 
     if status == "preview_complete":
-        cost = data.get("estimated_cost_usd") or data.get("cost_usd") or 0
+        # External API: cost lives in cost_estimate.estimated_total_cost_usd
+        cost_est = data.get("cost_estimate") or {}
+        cost = (cost_est.get("estimated_total_cost_usd")
+                or data.get("estimated_cost_usd")
+                or data.get("cost_usd")
+                or 0)
         config_id = data.get("config_id", "")
         refine_session = data.get("refine_session_id") or data.get("conversation_id", "")
         session_id = data.get("session_id", "")
@@ -218,7 +224,11 @@ def _guidance_get_job_status(data: dict) -> dict:
 def _guidance_get_job_messages(data: dict) -> dict:
     job_id = data.get("job_id", "")
     messages = data.get("messages") or []
-    last_seq = messages[-1].get("seq") if messages else None
+    # External API returns last_seq at the top level of the messages response;
+    # individual messages use "_seq".  Prefer top-level last_seq.
+    last_seq = data.get("last_seq")
+    if last_seq is None and messages:
+        last_seq = messages[-1].get("_seq") or messages[-1].get("seq")
     params = {"job_id": job_id}
     if last_seq is not None:
         params["since_seq"] = last_seq

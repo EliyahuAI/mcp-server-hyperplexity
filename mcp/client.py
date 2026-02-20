@@ -1,10 +1,16 @@
 """
-HyperplexityClient — thin requests.Session wrapper for the Hyperplexity REST API.
+HyperplexityClient — thin requests.Session wrapper for the Hyperplexity external API.
+
+External API:  https://api.hyperplexity.ai/v1
+Auth:          Authorization: Bearer <hpx_live_...>
+Response:      {"success": true, "data": {...}}
+Error:         {"success": false, "error": {"code": "...", "message": "..."}}
 
 Usage:
     from client import get_client
     client = get_client()          # reads HYPERPLEXITY_API_KEY from env
     data = client.get("/account/balance")
+    # → {"balance_usd": 42.50, "email": "you@example.com"}   (data: envelope unwrapped)
 """
 
 from __future__ import annotations
@@ -12,7 +18,7 @@ from __future__ import annotations
 import os
 import requests
 
-BASE_URL = "https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod"
+BASE_URL = "https://api.hyperplexity.ai/v1"
 
 
 class HyperplexityClient:
@@ -20,7 +26,7 @@ class HyperplexityClient:
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
         self.session.headers.update({
-            "x-api-key": api_key,
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         })
 
@@ -29,11 +35,18 @@ class HyperplexityClient:
 
     def _check(self, resp: requests.Response) -> dict:
         resp.raise_for_status()
-        data = resp.json()
-        if isinstance(data, dict) and data.get("success") is False:
-            msg = data.get("error") or data.get("message") or "API returned success=false"
-            raise RuntimeError(f"Hyperplexity API error: {msg}")
-        return data
+        body = resp.json()
+        if isinstance(body, dict) and body.get("success") is False:
+            err = body.get("error") or body.get("message") or "API returned success=false"
+            if isinstance(err, dict):
+                code = err.get("code", "")
+                msg  = err.get("message", "unknown error")
+                raise RuntimeError(f"Hyperplexity API error [{code}]: {msg}")
+            raise RuntimeError(f"Hyperplexity API error: {err}")
+        # Unwrap the "data" envelope present on all external API responses.
+        if isinstance(body, dict) and "data" in body:
+            return body["data"]
+        return body
 
     def get(self, path: str, params: dict | None = None) -> dict:
         resp = self.session.get(self._url(path), params=params)
