@@ -237,6 +237,10 @@ def _route(http_method, path, headers, body, query_params, email, meta):
         if job_id and "/" not in job_id:
             return _handle_get_job_status(job_id, email, query_params, meta)
 
+    # POST /jobs/update-table  (before /jobs/{job_id}/validate to avoid mis-routing)
+    if http_method == "POST" and clean == "/jobs/update-table":
+        return _handle_update_table(body, email, meta)
+
     # POST /jobs/{job_id}/validate
     if http_method == "POST" and clean.endswith("/validate"):
         parts = clean.split("/")  # ['', 'jobs', '{job_id}', 'validate']
@@ -781,6 +785,9 @@ def _handle_get_job_status(job_id, email, query_params, meta):
 
     # Surface preview results when the preview run is complete
     if api_status == "preview_complete" and record:
+        config_id = record.get("configuration_id")
+        if config_id:
+            data["config_id"] = config_id
         pr_key = record.get("preview_results_s3_key")
         if pr_key:
             from interface_lambda.core.s3_manager import generate_presigned_url, S3_RESULTS_BUCKET
@@ -803,6 +810,87 @@ def _handle_get_job_status(job_id, email, query_params, meta):
 
     extra = {"Retry-After": "10"} if api_status in ("processing", "queued") else None
     return _success_response(200, data, meta, extra_headers=extra)
+
+
+def _handle_update_table(body, email, meta):
+    """POST /v1/jobs/update-table
+
+    Creates a new preview job whose input is the enhanced/validated Excel from a
+    completed source job.  The source job's config is automatically copied so
+    the same validation logic is applied to the updated data.
+
+    Request body:
+        source_job_id  (str, required)  — completed job to take output from
+        source_version (int, optional)  — which result version to use (default: latest)
+    """
+    source_job_id = body.get("source_job_id")
+    if not source_job_id:
+        return _error_response(400, "missing_fields", "source_job_id is required.", meta)
+
+    source_version = body.get("source_version")
+
+    # Build the new session (copy enhanced output + config) using existing backend
+    request_data = {"email": email, "source_session_id": source_job_id}
+    if source_version is not None:
+        request_data["source_version"] = source_version
+
+    from interface_lambda.actions.create_update_session import handle_create_update_session
+    resp = handle_create_update_session(request_data, None)
+    parsed = _parse_handler_response(resp)
+
+    if parsed["status_code"] >= 400 or parsed["body"].get("success") is False:
+        b = parsed["body"]
+        error_msg = b.get("error") or "Failed to create update session."
+        # Map backend errors to appropriate HTTP codes
+        if "not found" in error_msg.lower() or parsed["status_code"] == 404:
+            return _error_response(404, "source_not_found", error_msg, meta)
+        return _error_response(parsed["status_code"], "update_table_failed", error_msg, meta)
+
+    new_session_id = parsed["body"].get("new_session_id")
+    is_preview_data = bool(parsed["body"].get("used_preview_data", False))
+
+    if not new_session_id:
+        return _error_response(500, "server_error", "Failed to generate new session ID.", meta)
+
+    # Queue the preview on the new session
+    preview_request = {
+        "_verified_email": email,
+        "_api_email": email,
+        "session_id": new_session_id,
+        "preview_max_rows": 3,
+    }
+    from interface_lambda.actions import start_preview
+    preview_resp = start_preview.handle_start_preview(preview_request, None)
+    preview_parsed = _parse_handler_response(preview_resp)
+
+    if preview_parsed["status_code"] >= 400:
+        b = preview_parsed["body"]
+        return _error_response(
+            preview_parsed["status_code"],
+            b.get("error", "request_failed"),
+            b.get("message") or "Failed to queue preview for new session.",
+            meta,
+        )
+
+    response_data = {
+        "job_id": new_session_id,
+        "source_job_id": source_job_id,
+        "status": "queued",
+        "run_type": "preview",
+        "note": "Enhanced output from source job used as new input. Config automatically copied.",
+        "urls": {
+            "status": f"/v1/jobs/{new_session_id}",
+            "results": f"/v1/jobs/{new_session_id}/results",
+        },
+    }
+    if is_preview_data:
+        response_data["used_preview_data"] = True
+        response_data["warning"] = (
+            "Source job only had preview data available — full validation output was not found. "
+            "Run a full validation on the source job first for complete results."
+        )
+
+    return _success_response(202, response_data, meta)
 
 
 def _handle_approve_validation(job_id, body, email, meta):

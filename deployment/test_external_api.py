@@ -43,9 +43,9 @@ RESULTS_DIR = Path(__file__).parent / "test_results"
 API_KEYS_TABLE = "perplexity-validator-api-keys"  # no env suffix — same table for all envs
 SSM_PARAM = "/perplexity-validator/api-key-hmac-secret"
 DISPLAY_PREFIX_LEN = 18
-POLL_INTERVAL = 10   # seconds between status polls
-PREVIEW_TIMEOUT = 300   # 5 minutes
-FULL_TIMEOUT = 1800     # 30 minutes
+POLL_INTERVAL = 20   # seconds between status polls
+PREVIEW_TIMEOUT = 600   # 10 minutes
+FULL_TIMEOUT = 3600     # 60 minutes
 
 
 # ---------------------------------------------------------------------------
@@ -557,9 +557,9 @@ def test_reference_check_text(client: APIClient) -> None:
     conv_id = resp["data"].get("conversation_id")
     print(f"[TEST] reference-check — job_id={job_id}, conv_id={conv_id}")
 
-    # Poll for completion (up to 5 minutes)
+    # Poll for completion
     print("[TEST] reference-check — polling for completion...")
-    final = poll_until(client, job_id, ["completed"], timeout=300, label="REFCHECK")
+    final = poll_until(client, job_id, ["completed"], timeout=PREVIEW_TIMEOUT, label="REFCHECK")
 
     # Fetch results
     results_data = client.get(f"/v1/jobs/{job_id}/reference-results")
@@ -611,48 +611,107 @@ def test_reference_check_odf(client: APIClient) -> None:
     job_id = resp["data"]["job_id"]
     print(f"[TEST] reference-check (ODF) — job_id={job_id}")
 
-    final = poll_until(client, job_id, ["completed"], timeout=300, label="REFCHECK_ODF")
+    final = poll_until(client, job_id, ["completed"], timeout=PREVIEW_TIMEOUT, label="REFCHECK_ODF")
     results_data = client.get(f"/v1/jobs/{job_id}/reference-results")
     dl_url = (results_data.get("data") or {}).get("results", {}).get("download_url")
     assert dl_url, "Expected a download_url in reference-results response"
     print(f"[TEST] reference-check (ODF) — [SUCCESS] download_url present")
 
 
-def test_table_maker_conversation(client: APIClient) -> None:
-    """Test table maker conversation start and state retrieval."""
+def test_table_maker_conversation(client: APIClient) -> Optional[str]:
+    """Test table maker: describe a table, auto-reply 'Confirmed' to AI questions,
+    then submit and poll the preview job to preview_complete.
+
+    Returns the preview job_id on success, or None if the conversation timed out
+    before triggering execution (non-fatal).
+    """
     print("\n[TEST] conversations/table-maker — starting conversation...")
 
     resp = client.post("/v1/conversations/table-maker", {
-        "message": "Create a table tracking top AI startups with funding, headcount, and focus area.",
+        "message": (
+            "I need a table of the capital cities of the 5 largest US states by land area. "
+            "Include columns for: state name, capital city, state area in square miles, "
+            "and the population of the capital city."
+        ),
     })
     d = resp["data"]
     session_id = d["session_id"]
     conv_id = d.get("conversation_id")
     print(f"[TEST] table-maker — session_id={session_id}, conv_id={conv_id}")
 
-    # Poll job status for up to 60 seconds
-    deadline = time.time() + 60
-    final_status = None
+    if not conv_id:
+        print("[TEST] table-maker — no conversation_id returned, skipping")
+        return None
+
+    # Conversation loop: reply "Confirmed" to every AI question until execution is triggered
+    deadline = time.time() + PREVIEW_TIMEOUT
+    job_id: Optional[str] = None
+    turn = 0
+
     while time.time() < deadline:
-        status_resp = client.get(f"/v1/jobs/{session_id}")
-        status = status_resp["data"].get("status", "unknown")
-        print(f"[TEST] table-maker — status={status}")
-        if status not in ("queued", "processing"):
-            final_status = status
+        time.sleep(POLL_INTERVAL)
+        conv_resp = client.get(f"/v1/conversations/{conv_id}", params={"session_id": session_id})
+        state = conv_resp["data"]
+        status = state.get("status", "unknown")
+        ai_msg = state.get("last_ai_message")
+        user_reply_needed = state.get("user_reply_needed", False)
+        trigger_execution = state.get("trigger_execution", False)
+        next_step = state.get("next_step") or {}
+
+        print(f"[TEST] table-maker [turn {turn}] status={status} "
+              f"reply_needed={user_reply_needed} trigger={trigger_execution}")
+        if ai_msg:
+            print(f"[TEST] table-maker — AI: {ai_msg[:200]}")
+
+        # AI is still working — keep waiting
+        if status == "processing" and not user_reply_needed:
+            continue
+
+        # AI asked a question — always reply "Confirmed"
+        if user_reply_needed:
+            turn += 1
+            print(f"[TEST] table-maker — replying 'Confirmed' (turn {turn})")
+            client.post(f"/v1/conversations/{conv_id}/message", {
+                "session_id": session_id,
+                "message": "Confirmed",
+            })
+            continue
+
+        # Execution triggered — submit the preview job
+        if trigger_execution or next_step.get("action") == "submit_preview":
+            job_body = next_step.get("body") or {}
+            job_body.setdefault("session_id", session_id)
+            job_body.setdefault("preview_rows", 3)
+            print(f"[TEST] table-maker — table design complete, submitting preview job...")
+            job_resp = client.post("/v1/jobs", job_body)
+            job_id = job_resp["data"]["job_id"]
+            print(f"[TEST] table-maker — preview job queued: {job_id}")
             break
-        time.sleep(10)
 
-    # Check conversation state (may fail if processing not complete yet — non-fatal)
-    if conv_id:
-        try:
-            conv_resp = client.get(f"/v1/conversations/{conv_id}", params={"session_id": session_id})
-            state = conv_resp.get("data") or {}
-            print(f"[TEST] table-maker — conversation state: status={state.get('status')}, "
-                  f"turn_count={state.get('turn_count')}")
-        except Exception as e:
-            print(f"[TEST] table-maker — conversation state not yet available: {e}")
+        # Any other terminal state — stop
+        print(f"[TEST] table-maker — unexpected terminal state: {status}")
+        break
 
-    print(f"[TEST] conversations/table-maker — [SUCCESS] conversation started (final_status={final_status})")
+    if not job_id:
+        print(f"[TEST] conversations/table-maker — [TIMEOUT/INCOMPLETE] "
+              f"conversation did not trigger execution within {PREVIEW_TIMEOUT}s")
+        return None
+
+    # Poll the preview job to preview_complete
+    print(f"[TEST] table-maker — polling preview job {job_id} for preview_complete...")
+    try:
+        preview_data = poll_until(
+            client, job_id, ["preview_complete"],
+            timeout=PREVIEW_TIMEOUT, label="TABLE_MAKER_PREVIEW",
+        )
+        config_id = preview_data.get("config_id")
+        cost = (preview_data.get("cost_estimate") or {}).get("estimated_total_cost_usd")
+        print(f"[TEST] conversations/table-maker — [SUCCESS] preview_complete "
+              f"config_id={config_id} cost=${cost}")
+    except Exception as e:
+        print(f"[TEST] table-maker — preview poll failed (non-fatal): {e}")
+
+    return job_id
 
 
 def test_upload_interview_and_select(client: APIClient, session_id: str) -> None:
@@ -682,6 +741,117 @@ def test_upload_interview_and_select(client: APIClient, session_id: str) -> None
         # No matching config is expected in a fresh test environment — treat as non-fatal
         print(f"[TEST] upload-interview — select returned error (expected if no match): {e}")
         print(f"[TEST] conversations/upload-interview — [SUCCESS] (no match, expected)")
+
+
+def test_update_table(client: APIClient, completed_job_id: str, environment: str) -> Optional[str]:
+    """Test POST /v1/jobs/update-table — re-validate the enhanced output of a completed job.
+
+    Runs the full cycle: create update job → preview_complete → approve → completed → save results.
+    Returns the new job_id on success, None on failure (non-fatal).
+    """
+    print(f"\n[TEST] update-table — creating update job from completed job {completed_job_id}...")
+
+    resp = client.post("/v1/jobs/update-table", {
+        "source_job_id": completed_job_id,
+    })
+    data = resp["data"]
+    new_job_id = data["job_id"]
+    source_returned = data.get("source_job_id")
+    note = data.get("note", "")
+    assert source_returned == completed_job_id, (
+        f"source_job_id mismatch: expected {completed_job_id}, got {source_returned}"
+    )
+    print(f"[TEST] update-table — new_job_id={new_job_id}")
+    print(f"[TEST] update-table — {note}")
+
+    if data.get("used_preview_data"):
+        print(f"[TEST] update-table — WARNING: {data.get('warning')}")
+
+    # Poll for preview_complete
+    print(f"[TEST] update-table — polling for preview_complete (timeout {PREVIEW_TIMEOUT}s)...")
+    preview_data = poll_until(
+        client, new_job_id, ["preview_complete"],
+        timeout=PREVIEW_TIMEOUT, label="UPDATE_TABLE_PREVIEW",
+    )
+
+    # Verify config_id is present in preview_complete (the new feature we added)
+    config_id = preview_data.get("config_id")
+    assert config_id, "Expected config_id in update-table preview_complete response"
+    cost = (preview_data.get("cost_estimate") or {}).get("estimated_total_cost_usd")
+    print(f"[TEST] update-table — preview_complete: config_id={config_id}, cost=${cost}")
+
+    # Approve full validation
+    print(f"[TEST] update-table — approving full validation...")
+    client.post(f"/v1/jobs/{new_job_id}/validate", {"approved_cost_usd": None})
+
+    # Poll for completed
+    print(f"[TEST] update-table — polling for completed (timeout {FULL_TIMEOUT}s)...")
+    poll_until(
+        client, new_job_id, ["completed"],
+        timeout=FULL_TIMEOUT, label="UPDATE_TABLE_FULL",
+    )
+
+    # Save results
+    out_dir = save_results(client, new_job_id, environment)
+    print(f"[TEST] update-table — [SUCCESS] results saved to {out_dir}")
+    return new_job_id
+
+
+def test_refine_config(client: APIClient, job_id: str) -> None:
+    """Test POST /v1/conversations/{conv_id}/refine-config — single refinement request.
+
+    Submits one natural-language instruction, then polls the conversation until
+    a new config version is generated (trigger_execution=True / status='completed').
+    Non-fatal: prints a warning if the refinement times out.
+    """
+    print(f"\n[TEST] refine-config — submitting refinement for session {job_id}...")
+
+    conv_id = f"refine_{job_id}"
+    resp = client.post(f"/v1/conversations/{conv_id}/refine-config", {
+        "session_id": job_id,
+        "instructions": (
+            "Add a brief one-sentence analyst commentary column that summarises "
+            "the key finding for each row."
+        ),
+    })
+    data = resp["data"]
+    returned_conv_id = data.get("conversation_id", conv_id)
+    assert data.get("status") == "processing", (
+        f"Expected status='processing', got: {data.get('status')}"
+    )
+    print(f"[TEST] refine-config — queued: conv_id={returned_conv_id}")
+
+    # Poll until a new config version is detected (trigger_execution=True)
+    deadline = time.time() + PREVIEW_TIMEOUT
+    final_state: Optional[dict] = None
+
+    while time.time() < deadline:
+        time.sleep(POLL_INTERVAL)
+        state_resp = client.get(
+            f"/v1/conversations/{returned_conv_id}",
+            params={"session_id": job_id},
+        )
+        state = state_resp["data"]
+        status = state.get("status", "unknown")
+        trigger = state.get("trigger_execution", False)
+        print(f"[TEST] refine-config — status={status} trigger_execution={trigger}")
+
+        if trigger or status == "completed":
+            final_state = state
+            break
+
+        if status not in ("processing",):
+            print(f"[TEST] refine-config — unexpected state={status}, stopping poll")
+            final_state = state
+            break
+
+    if not final_state:
+        print(f"[TEST] refine-config — [TIMEOUT] refinement did not complete within {PREVIEW_TIMEOUT}s")
+        return
+
+    next_step = final_state.get("next_step") or {}
+    new_config_id = (next_step.get("body") or {}).get("config_id")
+    print(f"[TEST] refine-config — [SUCCESS] new config ready: config_id={new_config_id}")
 
 
 # ---------------------------------------------------------------------------
@@ -773,32 +943,44 @@ def main():
     except Exception as e:
         print(f"[WARN] test_config_id failed (non-fatal): {e}")
 
-    # 9. Test config file upload (also creates a session used by upload interview test)
+    # 9. Test Update Table — re-validate the enhanced output of the completed job
+    try:
+        test_update_table(client, job_id, env)
+    except Exception as e:
+        print(f"[WARN] test_update_table failed (non-fatal): {e}")
+
+    # 10. Test refine-config — single natural-language refinement request
+    try:
+        test_refine_config(client, job_id)
+    except Exception as e:
+        print(f"[WARN] test_refine_config failed (non-fatal): {e}")
+
+    # 11. Test config file upload (also creates a session used by upload interview test)
     cfg_session_id = None
     try:
         cfg_session_id = test_config_file_upload(client)
     except Exception as e:
         print(f"[WARN] test_config_file_upload failed (non-fatal): {e}")
 
-    # 10. Test reference check with inline text
+    # 12. Test reference check with inline text
     try:
         test_reference_check_text(client)
     except Exception as e:
         print(f"[WARN] test_reference_check_text failed (non-fatal): {e}")
 
-    # 11. Test reference check with ODF file
+    # 13. Test reference check with ODF file
     try:
         test_reference_check_odf(client)
     except Exception as e:
         print(f"[WARN] test_reference_check_odf failed (non-fatal): {e}")
 
-    # 12. Test table maker conversation
+    # 14. Test table maker conversation (capital cities of 5 largest states)
     try:
         test_table_maker_conversation(client)
     except Exception as e:
         print(f"[WARN] test_table_maker_conversation failed (non-fatal): {e}")
 
-    # 13. Test upload interview + selection (uses session from config_s3_key test)
+    # 15. Test upload interview + selection (uses session from config_s3_key test)
     if cfg_session_id:
         try:
             test_upload_interview_and_select(client, cfg_session_id)

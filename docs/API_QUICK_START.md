@@ -9,10 +9,14 @@
 ## Contents
 
 1. [Setup](#1-setup)
-2. [Rerun a Table You've Run Before](#2-rerun-a-table-youve-run-before)
-3. [Run a Chex (Reference Check)](#3-run-a-chex-reference-check)
-4. [New Table — Table Maker (AI builds the structure)](#4-new-table--table-maker-ai-builds-the-structure)
+2. [The Model — Table, Configuration, Preview, Full](#2-the-model)
+3. [Rerun with a Known Config](#3-rerun-with-a-known-config)
+4. [Update Table (iterate on validated output)](#4-update-table)
 5. [New Table — Upload First, Then Configure](#5-new-table--upload-first-then-configure)
+6. [New Table — Table Maker (AI builds the structure)](#6-new-table--table-maker-ai-builds-the-structure)
+7. [Chex (Reference Check)](#7-chex-reference-check)
+8. [Refinement — Adjust Config After Preview](#8-refinement--adjust-config-after-preview)
+9. [Status Reference, Errors & Polling](#9-status-reference-errors--polling)
 
 ---
 
@@ -32,31 +36,40 @@ print(resp.json())
 # → {"success": true, "data": {"balance_usd": 42.50, "email": "you@example.com"}}
 ```
 
-**Finding your config ID from a previous run:**
+---
 
-```python
-resp = requests.get(f"{BASE_URL}/account/usage", headers=HEADERS)
-jobs = resp.json()["data"]["jobs"]
-for job in jobs:
-    print(job["job_id"], job.get("configuration_id"), job.get("input_table_name"))
-# → session_abc123   cfg_xyz789   Clinical Trials Master List
-```
+## 2. The Model
 
-Save the `configuration_id` — that's the code you pass to reuse a config.
+Hyperplexity organises work around three concepts:
+
+**Table** — your data, one row per record. You provide it as an Excel file (upload)
+or have AI design a new schema from scratch (Table Maker). Each Table lives in a
+*session* identified by a `session_id`.
+
+**Configuration** — tells the system what each column means, what to look up, and
+which AI models to use. You get a config from one of three places:
+- **AI interview** — the system asks a few questions about your data and builds
+  the config for you.
+- **Past run** — when a preview completes, the `config_id` is returned in the
+  response so you can reuse it on a new table with the same structure.
+- **Direct `config_id`** — paste a `config_id` you saved earlier into `POST /v1/jobs`.
+
+**Preview → Full Validation** — every job starts with a free preview (default 3 rows)
+that costs nothing and returns a cost estimate for the full run. You review the preview
+Excel, approve the cost, and only then is a full validation charged. Nothing is billed
+until you call `POST /v1/jobs/{id}/validate`.
 
 ---
 
-## 2. Rerun a Table You've Run Before
+## 3. Rerun with a Known Config
 
-Use this when you have a new version of a table (more rows, updated data) and want to
-validate it with the same configuration as a previous run.
-
-**You need:** your Excel file + the `config_id` from a prior run.
+Use this when you have a new version of a table and already know the `config_id`
+(returned in `preview_complete` from any prior run).
 
 ```python
 import os
 
-CONFIG_ID = "cfg_xyz789"         # from GET /v1/account/usage
+CONFIG_ID = "cfg_xyz789"   # from a previous preview_complete or GET /v1/account/usage
 EXCEL_PATH = "my_table.xlsx"
 
 # ── Step 1: Get a presigned upload URL ──────────────────────────────────────
@@ -65,7 +78,7 @@ resp = requests.post(f"{BASE_URL}/uploads/presigned", headers=HEADERS, json={
     "filename": os.path.basename(EXCEL_PATH),
 })
 upload = resp.json()["data"]
-s3_key    = upload["s3_key"]
+s3_key     = upload["s3_key"]
 session_id = upload["session_id"]
 
 # ── Step 2: Upload the file directly to S3 ──────────────────────────────────
@@ -73,7 +86,7 @@ with open(EXCEL_PATH, "rb") as f:
     requests.put(upload["upload_url"], data=f,
                  headers={"Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
 
-# ── Step 3: Confirm the upload and name the table ───────────────────────────
+# ── Step 3: Confirm the upload ───────────────────────────────────────────────
 requests.post(f"{BASE_URL}/uploads/confirm", headers=HEADERS, json={
     "session_id": session_id,
     "s3_key": s3_key,
@@ -89,13 +102,14 @@ job_id = resp.json()["data"]["job_id"]
 print(f"Job started: {job_id}")
 
 # ── Step 5: Poll for preview completion ──────────────────────────────────────
-def poll_until(job_id, target_status, timeout=300, interval=10):
+def poll_until(job_id, target_status, timeout=600, interval=10):
     for _ in range(timeout // interval):
         r = requests.get(f"{BASE_URL}/jobs/{job_id}", headers=HEADERS).json()
-        status = r["data"]["status"]
-        print(f"  {status} ({r['data'].get('progress_percent', 0)}%)")
+        data = r["data"]
+        status = data["status"]
+        print(f"  {status} ({data.get('progress_percent', 0)}%)")
         if status == target_status:
-            return r["data"]
+            return data
         if status in ("failed", "error"):
             raise RuntimeError(f"Job failed: {r}")
         time.sleep(interval)
@@ -104,44 +118,14 @@ def poll_until(job_id, target_status, timeout=300, interval=10):
 data = poll_until(job_id, "preview_complete")
 
 # ── Step 6: Review the preview ────────────────────────────────────────────────
+config_id = data.get("config_id")          # ← save this for future reruns
 cost  = data["cost_estimate"]["estimated_total_cost_usd"]
 rows  = data["cost_estimate"]["estimated_rows"]
-prev  = data["preview_results"]["download_url"]       # presigned Excel URL
+prev  = data["preview_results"]["download_url"]   # presigned Excel URL
 print(f"Preview ready — {rows} rows, estimated cost: ${cost:.4f}")
 print(f"Preview Excel: {prev}")
+print(f"Config ID for future reruns: {config_id}")
 # Download and inspect `prev` to verify column mappings before spending credits.
-
-# ── Step 6a (optional): Refine the configuration ──────────────────────────────
-# If the preview shows the wrong columns, wrong logic, etc., refine the config
-# via natural language before approving.  A new config version is generated
-# asynchronously; poll GET /v1/conversations/{conv_id} until status=="completed".
-CONV_ID = f"refine_{job_id}"
-resp = requests.post(f"{BASE_URL}/conversations/{CONV_ID}/refine-config",
-                     headers=HEADERS, json={
-    "session_id": job_id,
-    "message": "Change 'Drug Name' column to also accept brand-name synonyms.",
-})
-conv_data = resp.json()["data"]
-print(f"Refine conversation: {conv_data['conversation_id']}")
-
-# Poll until the refined config is ready
-for _ in range(30):
-    time.sleep(10)
-    state = requests.get(f"{BASE_URL}/conversations/{conv_data['conversation_id']}",
-                         headers=HEADERS,
-                         params={"session_id": job_id}).json()["data"]
-    if state["status"] == "completed":
-        print(f"Refined config ready: {state['next_step']['request']['body']['config_id']}")
-        # Re-run the preview with the refined config
-        resp2 = requests.post(f"{BASE_URL}/jobs", headers=HEADERS,
-                              json={"session_id": job_id,
-                                    "config_id": state["next_step"]["request"]["body"]["config_id"],
-                                    "preview_rows": 5})
-        job_id = resp2.json()["data"]["job_id"]
-        data = poll_until(job_id, "preview_complete")
-        break
-    if state["status"] != "processing":
-        break
 
 # ── Step 7: Approve and run the full validation ───────────────────────────────
 requests.post(f"{BASE_URL}/jobs/{job_id}/validate", headers=HEADERS, json={})
@@ -154,12 +138,238 @@ print(f"Download: {results['download_url']}")
 print(f"Viewer:   {results['interactive_viewer_url']}")
 ```
 
+> **Finding a config ID from older runs:** `GET /v1/account/usage` returns a list of
+> past jobs each with `configuration_id`. But for any run done after this API version,
+> the `config_id` is returned directly in the `preview_complete` response (Step 6 above)
+> so you no longer need to call `account/usage` just to find it.
+
 ---
 
-## 3. Run a Chex (Reference Check)
+## 4. Update Table
 
-Chex extracts and validates claims in text or documents. Input can be plain text,
-a PDF, or an ODF/ODT file.
+Use **Update Table** when you've already completed a full validation and want to
+re-validate the *enhanced output* (the validated Excel the system produced) as your new
+input — for example, after an analyst has corrected some rows.
+
+The system automatically copies the config from the source job so you don't need to
+specify a `config_id`.
+
+```python
+COMPLETED_JOB_ID = "session_20260217_103045_abc123"
+
+# ── Step 1: Create the update job ────────────────────────────────────────────
+resp = requests.post(f"{BASE_URL}/jobs/update-table", headers=HEADERS, json={
+    "source_job_id": COMPLETED_JOB_ID,
+    # "source_version": 1  # optional; defaults to latest completed version
+})
+data = resp.json()["data"]
+new_job_id = data["job_id"]
+print(f"Update job queued: {new_job_id}")
+# data["note"] → "Enhanced output from source job used as new input. Config automatically copied."
+
+# ── Step 2: Poll → approve → results (same as Section 3, Steps 5–8) ──────────
+data = poll_until(new_job_id, "preview_complete")
+cost = data["cost_estimate"]["estimated_total_cost_usd"]
+print(f"Preview ready — estimated cost: ${cost:.4f}")
+
+requests.post(f"{BASE_URL}/jobs/{new_job_id}/validate", headers=HEADERS, json={})
+poll_until(new_job_id, "completed")
+
+resp = requests.get(f"{BASE_URL}/jobs/{new_job_id}/results", headers=HEADERS)
+print(resp.json()["data"]["results"]["download_url"])
+```
+
+**Error cases:**
+- `404 source_not_found` — source job doesn't exist or wasn't found in results storage
+- `used_preview_data: true` in the response — source job had only preview data; run a
+  full validation on it first for complete results
+
+---
+
+## 5. New Table — Upload First, Then Configure
+
+Use this when you already have an Excel file and want to either reuse a matching
+config or create a new one with AI help.
+
+```python
+EXCEL_PATH = "new_dataset.xlsx"
+
+# ── Step 1–2: Upload ──────────────────────────────────────────────────────────
+resp = requests.post(f"{BASE_URL}/uploads/presigned", headers=HEADERS, json={
+    "file_type": "excel",
+    "filename": os.path.basename(EXCEL_PATH),
+})
+upload = resp.json()["data"]
+s3_key     = upload["s3_key"]
+session_id = upload["session_id"]
+
+with open(EXCEL_PATH, "rb") as f:
+    requests.put(upload["upload_url"], data=f,
+                 headers={"Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
+
+# ── Step 3: Confirm and get config options ────────────────────────────────────
+resp = requests.post(f"{BASE_URL}/uploads/confirm", headers=HEADERS, json={
+    "session_id": session_id,
+    "s3_key": s3_key,
+    "filename": os.path.basename(EXCEL_PATH),
+})
+confirm = resp.json()["data"]
+matches     = confirm.get("matches", [])
+
+print(f"Matches found: {confirm['match_count']}")
+for m in matches:
+    print(f"  [{m['match_score']:.0%}] {m['name']}  →  config_id: {m['config_id']}")
+
+# ── Path A: A good match was found — use it ───────────────────────────────────
+if matches and matches[0]["match_score"] >= 0.85:
+    config_id = matches[0]["config_id"]
+    print(f"\nUsing match: {matches[0]['name']}")
+
+    resp = requests.post(f"{BASE_URL}/jobs", headers=HEADERS, json={
+        "session_id": session_id,
+        "config_id": config_id,
+    })
+    job_id = resp.json()["data"]["job_id"]
+
+# ── Path B: No match — let AI build one via upload interview ──────────────────
+else:
+    print("\nNo match found — starting AI interview...")
+
+    resp = requests.post(f"{BASE_URL}/conversations/upload-interview", headers=HEADERS, json={
+        "session_id": session_id,
+        "message": "Please help me configure validation for this table.",
+    })
+    data = resp.json()["data"]
+    conv_id = data["conversation_id"]
+
+    # Poll + reply until config generation is triggered
+    def conversation_loop(conv_id, session_id, max_turns=20):
+        for turn in range(max_turns):
+            time.sleep(8)
+            resp = requests.get(
+                f"{BASE_URL}/conversations/{conv_id}",
+                headers=HEADERS,
+                params={"session_id": session_id},
+            )
+            state = resp.json()["data"]
+            status = state.get("status")
+            ai_msg = state.get("last_ai_message")
+
+            if ai_msg:
+                print(f"\n[Turn {turn+1}] AI: {ai_msg}")
+
+            if status == "processing":
+                continue
+
+            if state.get("user_reply_needed"):
+                reply = input("Your reply: ").strip()
+                requests.post(f"{BASE_URL}/conversations/{conv_id}/message",
+                              headers=HEADERS,
+                              json={"session_id": session_id, "message": reply})
+                continue
+
+            next_step = state.get("next_step", {})
+            if next_step.get("action") == "submit_preview":
+                print("\nConfig ready — starting preview...")
+                resp = requests.post(f"{BASE_URL}/jobs", headers=HEADERS,
+                                     json={"session_id": session_id, "preview_rows": 3})
+                return resp.json()["data"]["job_id"]
+
+        raise RuntimeError("Conversation did not complete")
+
+    job_id = conversation_loop(conv_id, session_id)
+
+# ── Continue with standard preview → approve → results ───────────────────────
+data = poll_until(job_id, "preview_complete")
+print(f"\nPreview ready — cost: ${data['cost_estimate']['estimated_total_cost_usd']:.4f}")
+print(f"Config ID: {data.get('config_id')}")    # save this for future reruns
+
+confirm = input("\nApprove full validation? [y/N]: ").strip().lower()
+if confirm == "y":
+    requests.post(f"{BASE_URL}/jobs/{job_id}/validate", headers=HEADERS, json={})
+    poll_until(job_id, "completed")
+    resp = requests.get(f"{BASE_URL}/jobs/{job_id}/results", headers=HEADERS)
+    print(resp.json()["data"]["results"]["download_url"])
+```
+
+---
+
+## 6. New Table — Table Maker (AI builds the structure)
+
+Use this when you want AI to design a new table schema by describing what you need
+in natural language. At the end of the conversation the AI builds the table schema and
+kicks off a preview automatically.
+
+```python
+# ── Step 1: Start the conversation ──────────────────────────────────────────
+resp = requests.post(f"{BASE_URL}/conversations/table-maker", headers=HEADERS, json={
+    "message": "I need a table tracking clinical trials for oncology drugs. "
+               "Each row should be one trial, with columns for drug name, phase, "
+               "indication, sponsor, enrollment count, and primary endpoint.",
+})
+data = resp.json()["data"]
+conv_id    = data["conversation_id"]
+session_id = data["session_id"]
+print(f"Conversation: {conv_id}  Session: {session_id}")
+
+# ── Step 2: Poll + reply until done ─────────────────────────────────────────
+def conversation_loop(conv_id, session_id, max_turns=20):
+    for turn in range(max_turns):
+        time.sleep(8)
+        resp = requests.get(
+            f"{BASE_URL}/conversations/{conv_id}",
+            headers=HEADERS,
+            params={"session_id": session_id},
+        )
+        state = resp.json()["data"]
+        status = state.get("status")
+        ai_msg = state.get("last_ai_message")
+
+        print(f"\n[Turn {turn+1}] status={status}")
+        if ai_msg:
+            print(f"AI: {ai_msg}")
+
+        if status == "processing":
+            continue
+
+        if state.get("user_reply_needed"):
+            reply = input("Your reply: ").strip()
+            requests.post(f"{BASE_URL}/conversations/{conv_id}/message",
+                          headers=HEADERS,
+                          json={"session_id": session_id, "message": reply})
+            continue
+
+        next_step = state.get("next_step", {})
+        if next_step.get("action") == "submit_preview":
+            print("\nTable design complete — starting preview...")
+            resp = requests.post(f"{BASE_URL}/jobs", headers=HEADERS,
+                                 json={"session_id": session_id, "preview_rows": 3})
+            return resp.json()["data"]["job_id"]
+
+    raise RuntimeError("Conversation did not complete")
+
+job_id = conversation_loop(conv_id, session_id)
+print(f"\nPreview job: {job_id}")
+
+# ── Step 3: Standard poll → approve → results ────────────────────────────────
+data = poll_until(job_id, "preview_complete")
+print(f"Cost estimate: ${data['cost_estimate']['estimated_total_cost_usd']:.4f}")
+print(f"Config ID: {data.get('config_id')}")    # save this for future reruns
+
+requests.post(f"{BASE_URL}/jobs/{job_id}/validate", headers=HEADERS, json={})
+poll_until(job_id, "completed")
+resp = requests.get(f"{BASE_URL}/jobs/{job_id}/results", headers=HEADERS)
+print(resp.json()["data"]["results"]["download_url"])
+```
+
+---
+
+## 7. Chex (Reference Check)
+
+Chex is a separate product that extracts and validates factual claims in text or
+documents (papers, reports, slide decks). It has its own fixed internal logic — there
+is no preview step, no config management, and no cost approval. Input is plain text or
+a PDF/ODF file; output is a CSV of claims with validation status.
 
 ### Option A — Paste text directly
 
@@ -221,170 +431,70 @@ print(resp.json()["data"]["results"]["download_url"])
 
 ---
 
-## 4. New Table — Table Maker (AI builds the structure)
+## 8. Refinement — Adjust Config After Preview
 
-Use this when you want AI to design a new table schema by describing what you need
-in natural language. At the end of the conversation the AI will build the table and
-kick off a preview automatically.
+If the preview shows wrong column mappings or logic, refine the config via natural
+language before approving. A new config version is generated asynchronously; poll
+`GET /v1/conversations/{conv_id}` until `status == "completed"`.
+
+Refinement can be called after `preview_complete` **or** after full `completed` status —
+it always generates a new config version you can use on the next run.
 
 ```python
-# ── Step 1: Start the conversation ──────────────────────────────────────────
-resp = requests.post(f"{BASE_URL}/conversations/table-maker", headers=HEADERS, json={
-    "message": "I need a table tracking clinical trials for oncology drugs. "
-               "Each row should be one trial, with columns for drug name, phase, "
-               "indication, sponsor, enrollment count, and primary endpoint.",
+# After poll_until(job_id, "preview_complete") — job_id is also used as session_id
+CONV_ID = f"refine_{job_id}"
+resp = requests.post(f"{BASE_URL}/conversations/{CONV_ID}/refine-config",
+                     headers=HEADERS, json={
+    "session_id": job_id,
+    "instructions": "Change 'Drug Name' column to also accept brand-name synonyms.",
 })
-data = resp.json()["data"]
-conv_id    = data["conversation_id"]
-session_id = data["session_id"]
-print(f"Conversation: {conv_id}  Session: {session_id}")
+conv_data = resp.json()["data"]
+print(f"Refine queued: {conv_data['conversation_id']}")
 
-# ── Step 2: Poll + reply until done ─────────────────────────────────────────
-def conversation_loop(conv_id, session_id, max_turns=20):
-    for turn in range(max_turns):
-        time.sleep(8)
-        resp = requests.get(
-            f"{BASE_URL}/conversations/{conv_id}",
-            headers=HEADERS,
-            params={"session_id": session_id},
-        )
-        state = resp.json()["data"]
-        status = state.get("status")
-        ai_msg = state.get("last_ai_message")
-
-        print(f"\n[Turn {turn+1}] status={status}")
-        if ai_msg:
-            print(f"AI: {ai_msg}")
-
-        # Still processing — keep waiting
-        if status == "processing":
-            continue
-
-        # AI asked a question — reply
-        if state.get("user_reply_needed"):
-            reply = input("Your reply: ").strip()
-            requests.post(f"{BASE_URL}/conversations/{conv_id}/message",
-                          headers=HEADERS,
-                          json={"session_id": session_id, "message": reply})
-            continue
-
-        # AI finished building the table — trigger the job
-        next_step = state.get("next_step", {})
-        if next_step.get("action") == "submit_preview":
-            print("\nTable design complete — starting preview...")
-            job_body = next_step["request"]["body"]
-            job_body["session_id"] = session_id
-            resp = requests.post(f"{BASE_URL}/jobs", headers=HEADERS, json=job_body)
-            return resp.json()["data"]["job_id"]
-
-    raise RuntimeError("Conversation did not complete")
-
-job_id = conversation_loop(conv_id, session_id)
-print(f"\nPreview job: {job_id}")
-
-# ── Step 3: Standard poll → approve → results (same as Section 2, Steps 5–7) ──
-data = poll_until(job_id, "preview_complete")
-print(f"Cost estimate: ${data['cost_estimate']['estimated_total_cost_usd']:.4f}")
-requests.post(f"{BASE_URL}/jobs/{job_id}/validate", headers=HEADERS, json={})
-poll_until(job_id, "completed")
-resp = requests.get(f"{BASE_URL}/jobs/{job_id}/results", headers=HEADERS)
-print(resp.json()["data"]["results"]["download_url"])
+# Poll until the refined config is ready
+for _ in range(30):
+    time.sleep(10)
+    state = requests.get(
+        f"{BASE_URL}/conversations/{conv_data['conversation_id']}",
+        headers=HEADERS,
+        params={"session_id": job_id},
+    ).json()["data"]
+    if state["status"] == "completed":
+        new_config_id = state["next_step"]["body"].get("config_id")
+        print(f"Refined config ready: {new_config_id}")
+        # Re-run the preview with the refined config
+        resp2 = requests.post(f"{BASE_URL}/jobs", headers=HEADERS, json={
+            "session_id": job_id,
+            "config_id": new_config_id,
+            "preview_rows": 5,
+        })
+        job_id = resp2.json()["data"]["job_id"]
+        data = poll_until(job_id, "preview_complete")
+        break
+    if state["status"] != "processing":
+        break
 ```
 
 ---
 
-## 5. New Table — Upload First, Then Configure
+## 9. Status Reference, Errors & Polling
 
-Use this when you already have an Excel file and want to either reuse a matching
-config or create a new one with AI help.
+### Preview response shape
 
-```python
-EXCEL_PATH = "new_dataset.xlsx"
-
-# ── Step 1–2: Upload (same as Section 2) ─────────────────────────────────────
-resp = requests.post(f"{BASE_URL}/uploads/presigned", headers=HEADERS, json={
-    "file_type": "excel",
-    "filename": os.path.basename(EXCEL_PATH),
-})
-upload = resp.json()["data"]
-s3_key     = upload["s3_key"]
-session_id = upload["session_id"]
-
-with open(EXCEL_PATH, "rb") as f:
-    requests.put(upload["upload_url"], data=f,
-                 headers={"Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
-
-# ── Step 3: Confirm and get config options ────────────────────────────────────
-resp = requests.post(f"{BASE_URL}/uploads/confirm", headers=HEADERS, json={
-    "session_id": session_id,
-    "s3_key": s3_key,
-    "filename": os.path.basename(EXCEL_PATH),
-})
-confirm = resp.json()["data"]
-matches     = confirm.get("matches", [])
-next_steps  = confirm.get("next_steps", {})
-
-print(f"Matches found: {confirm['match_count']}")
-for m in matches:
-    print(f"  [{m['match_score']:.0%}] {m['name']}  →  config_id: {m['config_id']}")
-
-# ── Path A: A good match was found — use it ───────────────────────────────────
-if matches and matches[0]["match_score"] >= 0.85:
-    config_id = matches[0]["config_id"]
-    print(f"\nUsing match: {matches[0]['name']}")
-
-    resp = requests.post(f"{BASE_URL}/jobs", headers=HEADERS, json={
-        "session_id": session_id,
-        "config_id": config_id,
-    })
-    job_id = resp.json()["data"]["job_id"]
-
-# ── Path B: No match — let AI build one via upload interview ──────────────────
-else:
-    print("\nNo match found — starting AI interview...")
-
-    resp = requests.post(f"{BASE_URL}/conversations/upload-interview", headers=HEADERS, json={
-        "session_id": session_id,
-        "message": "Please help me configure validation for this table.",
-    })
-    data = resp.json()["data"]
-    conv_id = data["conversation_id"]
-
-    # Same conversation loop as Section 4
-    # When status="processing" and user_reply_needed=False → config generation is running
-    # When next_step.action="submit_preview" → config is ready; submit the job
-    job_id = conversation_loop(conv_id, session_id)
-
-# ── Continue with standard preview → approve → results ───────────────────────
-data = poll_until(job_id, "preview_complete")
-print(f"\nPreview ready — cost: ${data['cost_estimate']['estimated_total_cost_usd']:.4f}")
-print(f"Preview file:  {data['preview_results']['download_url']}")
-
-confirm = input("\nApprove full validation? [y/N]: ").strip().lower()
-if confirm == "y":
-    requests.post(f"{BASE_URL}/jobs/{job_id}/validate", headers=HEADERS, json={})
-    poll_until(job_id, "completed")
-    resp = requests.get(f"{BASE_URL}/jobs/{job_id}/results", headers=HEADERS)
-    print(resp.json()["data"]["results"]["download_url"])
-```
-
----
-
-## Preview Response Fields
-
-When `GET /v1/jobs/{job_id}` returns `status: "preview_complete"`, the response includes:
+When `GET /v1/jobs/{job_id}` returns `status: "preview_complete"`:
 
 ```json
 {
   "status": "preview_complete",
+  "config_id": "cfg_abc123",
   "progress_percent": 100,
   "preview_results": {
-    "download_url": "https://...",     // presigned Excel URL (expires in 1 hour)
+    "download_url": "https://...",
     "file_format": "xlsx",
-    "metadata_url": "https://..."      // presigned URL for table_metadata.json
+    "metadata_url": "https://..."
   },
   "cost_estimate": {
-    "estimated_total_cost_usd": 4.20,  // total cost for full run
+    "estimated_total_cost_usd": 4.20,
     "estimated_rows": 500
   },
   "next_steps": {
@@ -394,13 +504,15 @@ When `GET /v1/jobs/{job_id}` returns `status: "preview_complete"`, the response 
 }
 ```
 
-Download the `preview_results.download_url` Excel to inspect column mappings, sample outputs,
-and accuracy before committing credits. If the config needs changes, use
-`POST /v1/conversations/{conv_id}/refine-config` (see Section 2, Step 6a).
+`config_id` is present for all runs after API version 2.0. For older runs it may be
+absent — use `GET /v1/account/usage` as a fallback.
+
+Download the `preview_results.download_url` Excel to inspect column mappings and sample
+outputs before committing credits.
 
 ---
 
-## Status Reference
+### Job status values
 
 | Status | Meaning | What to do |
 |--------|---------|------------|
@@ -410,7 +522,7 @@ and accuracy before committing credits. If the config needs changes, use
 | `completed` | Full validation done | Call `GET /v1/jobs/{id}/results` |
 | `failed` | Something went wrong | Check `error_message` field |
 
-**Conversation status:**
+### Conversation status
 
 | `status` | `user_reply_needed` | Meaning |
 |----------|--------------------|----|
@@ -421,7 +533,7 @@ and accuracy before committing credits. If the config needs changes, use
 
 ---
 
-## Polling Helper (copy-paste ready)
+### Polling helper
 
 ```python
 def poll_until(job_id, target_status, timeout=600, interval=10):
@@ -443,7 +555,7 @@ def poll_until(job_id, target_status, timeout=600, interval=10):
 
 ---
 
-## Polling Progress Notes
+### Polling progress notes
 
 `GET /v1/jobs/{job_id}` returns a **DynamoDB snapshot**, not a real-time stream.
 Progress is written at checkpoints (job start, each batch, job end), so:
@@ -453,21 +565,17 @@ Progress is written at checkpoints (job start, each batch, job end), so:
 - The percentage can jump from a low value directly to 100% in the final poll.
 - `current_step` similarly reflects the last checkpoint message, not every row.
 
-**Table-maker conversations** are multi-turn: after starting one, poll
-`GET /v1/conversations/{conv_id}?session_id=...` (not `/jobs`). The job status
-endpoint does not reflect conversational progress — use the conversation endpoint
-to read the AI's questions and send replies.
+**Table-maker conversations** are multi-turn: poll
+`GET /v1/conversations/{conv_id}?session_id=...` (not `/jobs`) to read the AI's
+questions and send replies.
 
-### Real-time progress via message replay
-
-For richer progress visibility, use the **messages endpoint**:
+#### Real-time progress via message replay
 
 ```
 GET /v1/jobs/{job_id}/messages?since_seq=0
 ```
 
-Returns persisted WebSocket messages emitted during processing — the same
-real-time updates that a browser WebSocket client would receive.
+Returns persisted WebSocket messages emitted during processing:
 
 ```json
 {
@@ -476,12 +584,7 @@ real-time updates that a browser WebSocket client would receive.
     { "type": "progress_update", "data": { "progress_percent": 50, "message": "Processing row 50/100" }, "_seq": 10 }
   ],
   "last_seq": 10,
-  "has_more": false,
-  "summary": {
-    "latest_progress_percent": 50,
-    "latest_step": "Processing row 50/100",
-    "message_count": 2
-  }
+  "has_more": false
 }
 ```
 
@@ -506,7 +609,7 @@ while True:
 
 ---
 
-## Common Errors
+### Common errors
 
 | Error code | Meaning | Fix |
 |------------|---------|-----|
@@ -514,5 +617,6 @@ while True:
 | `402 Payment Required` | Insufficient credits | Top up at `/account` |
 | `400 missing_config` | No config provided in `POST /jobs` | Add `config_id`, `config_s3_key`, or `config` |
 | `400 missing_fields` | Required field absent | Check request body against docs |
+| `404 source_not_found` | Source job not found in `POST /jobs/update-table` | Confirm job completed successfully |
 | `404 results_not_ready` | Job not yet complete | Keep polling |
 | `429 Too Many Requests` | Rate limit hit | Back off and retry |

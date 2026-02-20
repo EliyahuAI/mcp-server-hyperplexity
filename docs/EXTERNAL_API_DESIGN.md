@@ -33,6 +33,7 @@ Enable external programmatic access to the Hyperplexity validation service while
 4. **Multiple Progress Channels**: HTTP polling, WebSockets, and Webhooks
 5. **Security**: API key authentication, rate limiting, CORS flexibility
 6. **Billing**: Reuse existing prepaid credits system
+7. **Preview-first**: All table validation operations run a free preview before charging. Full validation requires explicit cost approval via `POST /v1/jobs/{id}/validate`. Nothing is billed until the caller approves.
 
 ### Key Deliverables
 - RESTful API at `api.hyperplexity.ai/v1`
@@ -596,30 +597,18 @@ POST /v1/uploads/confirm    →  { matches[], next_steps }
   "data": {
     "job_id": "session_20260217_103045_abc123",
     "status": "preview_complete",
-    "run_type": "preview",
+    "config_id": "cfg_abc123",
     "progress_percent": 100,
     "current_step": "Preview validation complete",
     "submitted_at": "2026-02-17T10:30:45Z",
-    "started_at": "2026-02-17T10:30:52Z",
-    "completed_at": "2026-02-17T10:31:08Z",
-    "run_time_seconds": 16,
     "preview_results": {
-      "rows_analyzed": 3,
-      "total_rows_detected": 450,
-      "sample_results": {
-        "valid_count": 2,
-        "invalid_count": 1,
-        "confidence_score": 0.92
-      }
+      "download_url": "https://s3.amazonaws.com/...?X-Amz-Expires=3600&...",
+      "file_format": "xlsx",
+      "metadata_url": "https://s3.amazonaws.com/.../table_metadata.json?..."
     },
     "cost_estimate": {
       "estimated_total_cost_usd": 12.00,
-      "estimated_cost_per_row_usd": 0.027,
-      "estimated_time_minutes": 8.5,
-      "breakdown": {
-        "ai_calls": 450,
-        "cache_hit_rate": 0.15
-      }
+      "estimated_rows": 450
     },
     "next_steps": {
       "approve_url": "/v1/jobs/session_20260217_103045_abc123/validate",
@@ -629,6 +618,10 @@ POST /v1/uploads/confirm    →  { matches[], next_steps }
   "meta": { ... }
 }
 ```
+
+**`config_id`** is returned for all runs after API v2.0. Save it to reuse the same
+configuration on future tables without calling `GET /v1/account/usage`. If absent
+(old sessions), fall back to `job_info.configuration_id` from `GET /v1/jobs/{id}/results`.
 
 **Response (Full Validation Complete):** `200 OK`
 ```json
@@ -852,6 +845,85 @@ Retry-After: 10
 ```
 
 **Rate Limit:** 60 requests/minute
+
+---
+
+#### 2.5 Update Table (Re-validate Enhanced Output)
+
+**Endpoint:** `POST /v1/jobs/update-table`
+
+**Purpose:** Create a new preview job whose input is the *enhanced/validated Excel* from
+a completed source job, with the source job's configuration automatically copied. This
+is the API equivalent of the "Update Table" button in the interactive results viewer.
+
+Use this to iteratively refine already-validated data: an analyst corrects some rows in
+the enhanced output, then calls this endpoint to re-validate the updated table with the
+same column logic — no need to re-upload a file or specify a `config_id`.
+
+**Request:**
+```json
+{
+  "source_job_id": "session_20260217_103045_abc123",
+  "source_version": 1
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `source_job_id` | yes | `job_id` of the completed source job |
+| `source_version` | no | Which result version to use (integer). Defaults to the latest completed version. |
+
+**Response:** `202 Accepted`
+```json
+{
+  "success": true,
+  "data": {
+    "job_id": "session_20260220_143022_d4e5f6a7",
+    "source_job_id": "session_20260217_103045_abc123",
+    "status": "queued",
+    "run_type": "preview",
+    "note": "Enhanced output from source job used as new input. Config automatically copied.",
+    "urls": {
+      "status": "/v1/jobs/session_20260220_143022_d4e5f6a7",
+      "results": "/v1/jobs/session_20260220_143022_d4e5f6a7/results"
+    }
+  },
+  "meta": { ... }
+}
+```
+
+After receiving `202`, poll `GET /v1/jobs/{job_id}` as usual. The new job starts in
+`preview` mode; approve it with `POST /v1/jobs/{new_job_id}/validate` to run the full
+validation.
+
+**Warning response (preview data only):**
+
+If the source job has no full validation output (only preview data), the endpoint still
+succeeds but adds a warning in the response:
+
+```json
+{
+  "used_preview_data": true,
+  "warning": "Source job only had preview data available — full validation output was not found. Run a full validation on the source job first for complete results."
+}
+```
+
+**Error Responses:**
+
+**404 Not Found** — source job not found
+```json
+{
+  "success": false,
+  "error": {
+    "code": "source_not_found",
+    "message": "No validation results found for source session"
+  }
+}
+```
+
+**500 Internal Server Error** — copy failed (S3 permissions, etc.)
+
+**Rate Limit:** 20 requests/minute
 
 ---
 
@@ -1517,6 +1589,7 @@ All use existing JWT authentication (web UI users):
      |--------|------|--------------------|
      | POST | `/v1/uploads/presigned` | `presigned_upload.request_presigned_url()` |
      | POST | `/v1/jobs` | `start_preview.handle_start_preview()` |
+     | POST | `/v1/jobs/update-table` | `create_update_session.handle_create_update_session()` + `start_preview.handle_start_preview()` |
      | GET | `/v1/jobs/{job_id}` | `status_check.handle_get_status()` |
      | POST | `/v1/jobs/{job_id}/validate` | `start_preview.handle_approve_validation()` (new function) |
      | GET | `/v1/jobs/{job_id}/results` | `status_check.handle_get_results()` (new function) |
