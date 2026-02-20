@@ -2041,7 +2041,11 @@ def main():
         if not wait_for_all_deployments(args.region):
             logger.error("❌ Deployment verification failed!")
             return 1
-        
+
+        # --- Auto-sync external API Gateway routes after every Lambda deploy ---
+        # Non-fatal: skips silently if no external API exists yet for this environment.
+        logger.info("\n=== SYNCING EXTERNAL API GATEWAY ROUTES ===")
+        args.update_api_routes = True   # reuse the route-sync block below
 
     else:
         logger.info("\nTo deploy to AWS Lambda with API Gateway, use:")
@@ -2099,74 +2103,96 @@ def main():
     if args.update_api_routes:
         logger.info("\n=== UPDATING EXTERNAL API GATEWAY ROUTES ===")
         try:
-            resource_suffix = f"-{args.environment}" if args.environment != 'prod' else ''
-            api_name = f"hyperplexity-external-api{resource_suffix}"
-            apigw = boto3.client('apigatewayv2', region_name=args.region)
-
-            # Find the existing API
-            api_id = None
-            for api in apigw.get_apis().get('Items', []):
-                if api['Name'] == api_name:
-                    api_id = api['ApiId']
-                    break
-            if not api_id:
-                logger.error(f"API Gateway '{api_name}' not found. Run --deploy-external-api first.")
-                return 1
-            logger.info(f"Found API: {api_name} → {api_id}")
-
-            # Find the existing integration
-            integrations = apigw.get_integrations(ApiId=api_id).get('Items', [])
-            if not integrations:
-                logger.error("No integrations found. Run --deploy-external-api first.")
-                return 1
-            integration_id = integrations[0]['IntegrationId']
-            logger.info(f"Using integration: {integration_id}")
-
-            # Full desired route list (matches deploy_external_api_gateway)
-            all_routes = [
-                ('POST', '/v1/uploads/presigned'),
-                ('POST', '/v1/uploads/confirm'),
-                ('POST', '/v1/jobs'),
-                ('POST', '/v1/jobs/reference-check'),
-                ('POST', '/v1/jobs/update-table'),
-                ('GET',  '/v1/jobs/{job_id}'),
-                ('POST', '/v1/jobs/{job_id}/validate'),
-                ('GET',  '/v1/jobs/{job_id}/results'),
-                ('GET',  '/v1/jobs/{job_id}/reference-results'),
-                ('GET',  '/v1/jobs/{job_id}/messages'),
-                ('GET',  '/v1/account/balance'),
-                ('GET',  '/v1/account/usage'),
-                ('POST', '/v1/conversations/table-maker'),
-                ('POST', '/v1/conversations/upload-interview'),
-                ('GET',  '/v1/conversations/{conv_id}'),
-                ('POST', '/v1/conversations/{conv_id}/message'),
-                ('POST', '/v1/conversations/{conv_id}/select'),
-                ('POST', '/v1/conversations/{conv_id}/refine-config'),
-            ]
-
-            existing = {
-                r['RouteKey']: r['RouteId']
-                for r in apigw.get_routes(ApiId=api_id).get('Items', [])
-            }
-            logger.info(f"Existing routes: {len(existing)}")
-
-            added = 0
-            for method, path in all_routes:
-                route_key = f"{method} {path}"
-                if route_key in existing:
-                    logger.info(f"  [SKIP]  {route_key}")
-                else:
-                    apigw.create_route(ApiId=api_id, RouteKey=route_key,
-                                       Target=f"integrations/{integration_id}")
-                    logger.info(f"  [ADD]   {route_key}")
-                    added += 1
-
-            logger.info(f"✅ Done — {added} route(s) added.")
+            _sync_result = _sync_external_api_routes(args.environment, args.region)
+            if _sync_result is None:
+                logger.info("No external API Gateway found — skipping route sync.")
+            else:
+                logger.info(f"✅ Done — {_sync_result} route(s) added.")
         except Exception as e:
             logger.error(f"Failed to update API routes: {e}")
-            return 1
+            # Only hard-fail when the flag was explicitly passed (not auto-triggered from --deploy)
+            if not args.deploy:
+                return 1
 
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Route sync helper (shared between --deploy auto-sync and --update-api-routes)
+# ---------------------------------------------------------------------------
+
+_EXTERNAL_API_ROUTES = [
+    # Uploads
+    ('POST', '/v1/uploads/presigned'),
+    ('POST', '/v1/uploads/confirm'),
+    # Jobs
+    ('POST', '/v1/jobs'),
+    ('POST', '/v1/jobs/reference-check'),
+    ('POST', '/v1/jobs/update-table'),
+    ('GET',  '/v1/jobs/{job_id}'),
+    ('POST', '/v1/jobs/{job_id}/validate'),
+    ('GET',  '/v1/jobs/{job_id}/results'),
+    ('GET',  '/v1/jobs/{job_id}/reference-results'),
+    ('GET',  '/v1/jobs/{job_id}/messages'),
+    # Account
+    ('GET',  '/v1/account/balance'),
+    ('GET',  '/v1/account/usage'),
+    # Conversations
+    ('POST', '/v1/conversations/table-maker'),
+    ('POST', '/v1/conversations/upload-interview'),
+    ('GET',  '/v1/conversations/{conv_id}'),
+    ('POST', '/v1/conversations/{conv_id}/message'),
+    ('POST', '/v1/conversations/{conv_id}/select'),
+    ('POST', '/v1/conversations/{conv_id}/refine-config'),
+]
+
+
+def _sync_external_api_routes(environment: str, region: str = "us-east-1"):
+    """Add any missing routes to the external HTTP API Gateway.
+
+    Returns the number of routes added, or None if no external API was found.
+    Raises on AWS errors.
+    """
+    resource_suffix = f"-{environment}" if environment != 'prod' else ''
+    api_name = f"hyperplexity-external-api{resource_suffix}"
+    apigw = boto3.client('apigatewayv2', region_name=region)
+
+    api_id = None
+    for api in apigw.get_apis().get('Items', []):
+        if api['Name'] == api_name:
+            api_id = api['ApiId']
+            break
+
+    if not api_id:
+        return None
+
+    logger.info(f"[ROUTE_SYNC] Found API: {api_name} → {api_id}")
+
+    integrations = apigw.get_integrations(ApiId=api_id).get('Items', [])
+    if not integrations:
+        logger.warning(f"[ROUTE_SYNC] No integrations found for {api_name} — skipping.")
+        return 0
+    integration_id = integrations[0]['IntegrationId']
+    logger.info(f"[ROUTE_SYNC] Using integration: {integration_id}")
+
+    existing = {
+        r['RouteKey']: r['RouteId']
+        for r in apigw.get_routes(ApiId=api_id).get('Items', [])
+    }
+    logger.info(f"[ROUTE_SYNC] Existing routes: {len(existing)}")
+
+    added = 0
+    for method, path in _EXTERNAL_API_ROUTES:
+        route_key = f"{method} {path}"
+        if route_key in existing:
+            logger.info(f"  [SKIP]  {route_key}")
+        else:
+            apigw.create_route(ApiId=api_id, RouteKey=route_key,
+                               Target=f"integrations/{integration_id}")
+            logger.info(f"  [ADD]   {route_key}")
+            added += 1
+
+    return added
 
 
 def deploy_external_api_gateway(lambda_arn: str, region: str = "us-east-1", environment: str = "prod") -> str:
@@ -2278,33 +2304,7 @@ def deploy_external_api_gateway(lambda_arn: str, region: str = "us-east-1", envi
         )
         logger.info(f"[EXT_API_GW] Updated integration {integration_id} → PayloadFormatVersion=2.0")
 
-    # Define all routes
-    routes = [
-        # Uploads
-        ('POST', '/v1/uploads/presigned'),
-        ('POST', '/v1/uploads/confirm'),
-        # Jobs
-        ('POST', '/v1/jobs'),
-        ('POST', '/v1/jobs/reference-check'),
-        ('POST', '/v1/jobs/update-table'),
-        ('GET',  '/v1/jobs/{job_id}'),
-        ('POST', '/v1/jobs/{job_id}/validate'),
-        ('GET',  '/v1/jobs/{job_id}/results'),
-        ('GET',  '/v1/jobs/{job_id}/reference-results'),
-        ('GET',  '/v1/jobs/{job_id}/messages'),
-        # Account
-        ('GET',  '/v1/account/balance'),
-        ('GET',  '/v1/account/usage'),
-        # Conversations
-        ('POST', '/v1/conversations/table-maker'),
-        ('POST', '/v1/conversations/upload-interview'),
-        ('GET',  '/v1/conversations/{conv_id}'),
-        ('POST', '/v1/conversations/{conv_id}/message'),
-        ('POST', '/v1/conversations/{conv_id}/select'),
-        ('POST', '/v1/conversations/{conv_id}/refine-config'),
-    ]
-
-    # Get existing routes
+    # Sync all routes from the single canonical list
     try:
         existing_routes = {
             r['RouteKey']: r['RouteId']
@@ -2313,7 +2313,7 @@ def deploy_external_api_gateway(lambda_arn: str, region: str = "us-east-1", envi
     except ClientError:
         existing_routes = {}
 
-    for method, path in routes:
+    for method, path in _EXTERNAL_API_ROUTES:
         route_key = f"{method} {path}"
         if route_key not in existing_routes:
             apigw.create_route(

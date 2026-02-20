@@ -676,10 +676,28 @@ def _handle_create_job(body, email, meta):
         except Exception as e:
             logger.warning(f"[API_HANDLER] Could not save config to S3: {e}")
     else:
-        return _error_response(
-            400, "missing_config",
-            "One of config, config_id, or config_s3_key is required.", meta
-        )
+        # No config supplied via request — check if the session already has one.
+        # This is the normal path after a table-maker or upload-interview flow,
+        # where the background handler writes a config to the session before
+        # setting trigger_execution=True.
+        try:
+            from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+            from interface_lambda.actions.generate_config_unified import find_latest_config_in_session
+            _mgr = UnifiedS3Manager()
+            _existing = find_latest_config_in_session(
+                _mgr.s3_client, _mgr.bucket_name,
+                _mgr.get_session_path(email, base_session_id)
+            )
+        except Exception as _e:
+            logger.warning(f"[API_HANDLER] Could not check for existing session config: {_e}")
+            _existing = None
+
+        if not _existing:
+            return _error_response(
+                400, "missing_config",
+                "One of config, config_id, or config_s3_key is required.", meta
+            )
+        logger.info(f"[API_HANDLER] Using existing session config for {base_session_id}")
 
     request_data = {
         "_verified_email": email,
