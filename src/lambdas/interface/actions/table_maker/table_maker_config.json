@@ -190,6 +190,18 @@
     "_note_parallel": "When true, config generation runs in parallel with row discovery to save time"
   },
 
+  "rumor_generation": {
+    "_comment": "Rumor generation phase - LLM proposes plausible candidate entities, then validator confirms they exist. Runs alongside search-based row discovery.",
+    "enabled": false,
+    "_note_enabled": "Set to true to always run rumor generation. Also triggered automatically if 'rumor' (any case) appears in the table maker conversation.",
+    "model": "claude-opus-4-6",
+    "_note_model": "Single model for candidate generation. Opus chosen for broad entity knowledge.",
+    "per_model_count": 20,
+    "_note_count": "Number of candidate entities to generate",
+    "realness_threshold": 0.6,
+    "_note_threshold": "Minimum realness score for a candidate to proceed to validation"
+  },
+
   "validation": {
     "_comment": "Validation phase - Validates populated table data (legacy, not actively used in v2.2)",
     "model": "deepseek-v3.2",

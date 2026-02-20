@@ -75,13 +75,9 @@ class RumorGenerator:
         import time
         start_time = time.time()
 
-        # Default models (cost-optimized diversity)
+        # Default model (Opus for broad entity knowledge)
         if models is None:
-            models = [
-                "claude-haiku-4-5",
-                "gemini-2.5-flash-lite",
-                "deepseek-v3.2"
-            ]
+            models = ["claude-opus-4-6"]
 
         logger.info(f"[RUMOR] Starting rumor generation with {len(models)} models, {per_model_count} candidates each")
 

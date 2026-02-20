@@ -587,6 +587,21 @@ def _load_conversation_state(
         return None
 
 
+def _conversation_mentions_rumor(conversation_state: Dict) -> bool:
+    """Return True if the word 'rumor' (any case) appears in any conversation message."""
+    messages = conversation_state.get('messages', [])
+    for msg in messages:
+        content = msg.get('content', '')
+        if isinstance(content, str) and 'rumor' in content.lower():
+            return True
+        elif isinstance(content, list):
+            # Handle multi-part content blocks
+            for block in content:
+                if isinstance(block, dict) and 'rumor' in str(block.get('text', '')).lower():
+                    return True
+    return False
+
+
 def _save_to_s3(
     storage_manager: UnifiedS3Manager,
     email: str,
@@ -2452,6 +2467,62 @@ async def execute_full_table_generation(
                     stream_results = discovery_result.get('stream_results', [])
 
                     logger.info(f"[DISCOVERY] Row discovery found {len(discovery_only_rows)} new rows")
+
+                    # --- RUMOR GENERATION (optional) ---
+                    rumor_config = config.get('rumor_generation', {})
+                    rumor_enabled = rumor_config.get('enabled', False)
+                    rumor_triggered_by_keyword = _conversation_mentions_rumor(conversation_state)
+
+                    if rumor_enabled or rumor_triggered_by_keyword:
+                        trigger_reason = "config" if rumor_enabled else "keyword 'rumor' in conversation"
+                        logger.info(f"[RUMOR] Rumor generation triggered by {trigger_reason}")
+                        try:
+                            from .table_maker_lib.rumor_generator import RumorGenerator
+                            rumor_generator = RumorGenerator(
+                                ai_client=ai_client,
+                                prompt_loader=prompt_loader,
+                                schema_validator=schema_validator
+                            )
+                            rumor_result = await rumor_generator.generate_candidates(
+                                search_strategy=search_strategy,
+                                columns=columns,
+                                per_model_count=rumor_config.get('per_model_count', 20),
+                                models=[rumor_config.get('model', 'claude-opus-4-6')],
+                                realness_threshold=rumor_config.get('realness_threshold', 0.6)
+                            )
+                            rumor_candidates = rumor_result.get('candidates', [])
+                            logger.info(f"[RUMOR] Generated {len(rumor_candidates)} candidates after dedup/filter")
+
+                            # Validate rumor candidates via validator lambda
+                            if rumor_candidates:
+                                from .table_maker_lib.rumor_validator import RumorValidator
+                                rumor_validator = RumorValidator(
+                                    ai_client=ai_client,
+                                    session_id=session_id,
+                                    email=email,
+                                    s3_manager=storage_manager,
+                                    validation_model=rumor_config.get('validation_model', 'sonar'),
+                                    context_size=rumor_config.get('context_size', 'low'),
+                                    confidence_threshold=rumor_config.get('realness_threshold', 0.6)
+                                )
+                                validation_result = await rumor_validator.validate_candidates(
+                                    candidates=rumor_candidates,
+                                    columns=columns,
+                                    requirements=search_strategy.get('requirements', []),
+                                    table_context=conversation_state.get('user_request', '')
+                                )
+                                validated_rumor_rows = validation_result.get('filtered_rows', [])
+                                logger.info(
+                                    f"[RUMOR] Validator confirmed {len(validated_rumor_rows)}/{len(rumor_candidates)} candidates"
+                                )
+
+                                # Merge validated rumor rows into discovery rows
+                                if validated_rumor_rows:
+                                    discovery_only_rows = discovery_only_rows + validated_rumor_rows
+                                    logger.info(f"[RUMOR] Merged: {len(discovery_only_rows)} total rows (search + rumor)")
+                        except Exception as e:
+                            logger.error(f"[RUMOR] Rumor generation/validation failed (non-fatal): {e}")
+                            # Non-fatal: continue without rumor candidates
 
                     # Merge initial_rows from column definition with discovered rows for final output
                     if initial_rows:
