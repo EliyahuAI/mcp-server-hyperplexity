@@ -2084,6 +2084,23 @@ def preserve_citations_through_qc(validation_results, qc_results):
     return validation_results
 
 
+def _confidence_icon(confidence: str) -> str:
+    """Return the Unicode circle emoji for a confidence level.
+
+    🟢 HIGH   — verified with high confidence
+    🟡 MEDIUM — verified with moderate confidence
+    🔴 LOW    — could not be verified or may be incorrect
+    🔵 ID     — identity/ignored column, not validated by design
+    ⭕ blank  — validation was attempted but no helpful information found (UNKNOWN)
+    """
+    return {
+        'HIGH':    '🟢',
+        'MEDIUM':  '🟡',
+        'LOW':     '🔴',
+        'ID':      '🔵',
+    }.get((confidence or '').upper(), '⭕')  # ⭕ = hollow circle for blank/UNKNOWN
+
+
 def generate_table_preview_metadata(
     validation_results: dict,
     config_data: dict,
@@ -2166,9 +2183,10 @@ def generate_table_preview_metadata(
             field_data = row_validation_data.get(col_name, {})
 
             if not isinstance(field_data, dict):
+                raw = str(field_data) if field_data else ''
                 cells[col_name] = {
-                    'display_value': str(field_data) if field_data else '',
-                    'full_value': str(field_data) if field_data else '',
+                    'display_value': _confidence_icon('UNKNOWN') + ' ' + raw,
+                    'full_value': raw,
                     'confidence': 'UNKNOWN',
                     'comment': {}
                 }
@@ -2176,7 +2194,6 @@ def generate_table_preview_metadata(
 
             # Get the value (QC-merged value if available)
             full_value = str(field_data.get('value', ''))
-            display_value = full_value  # Let CSS handle truncation
 
             # Get confidence (may have been overridden by QC)
             confidence = field_data.get('confidence_level', 'UNKNOWN')
@@ -2186,6 +2203,9 @@ def generate_table_preview_metadata(
             importance = col_config.get('importance', '').upper()
             if importance in ('ID', 'IGNORED'):
                 confidence = 'ID'
+
+            # Prefix display_value with confidence icon for direct rendering
+            display_value = _confidence_icon(confidence) + ' ' + full_value
 
             # Build comment
             comment = _build_preview_cell_comment(
@@ -2204,7 +2224,64 @@ def generate_table_preview_metadata(
             'cells': cells
         })
 
+    # Build schema_markdown — a self-contained markdown document for LLM consumption.
+    # Includes title, subtitle, config notes, confidence key, and column schema table.
+    title = table_name or 'Validation Results'
+    total_rows = len(validation_results)
+    subtitle = f'AI-validated table · {total_rows} row{"s" if total_rows != 1 else ""} × {len(columns)} column{"s" if len(columns) != 1 else ""}'
+    general_notes = config_data.get('general_notes', '')
+
+    md_parts = [f'# {title}', '', subtitle]
+
+    if general_notes:
+        md_parts += ['', '## Configuration Notes', '', general_notes.strip()]
+
+    md_parts += [
+        '',
+        '## Confidence Key',
+        '',
+        '| Icon | Level | Meaning |',
+        '|------|-------|---------|',
+        '| 🟢 | HIGH | Verified with high confidence |',
+        '| 🟡 | MEDIUM | Verified with moderate confidence |',
+        '| 🔴 | LOW | Could not be verified or may be incorrect |',
+        '| 🔵 | ID / Ignored | Not validated — identity or pass-through column |',
+        '| ⭕ | Blank | Validation was attempted but no helpful information found |',
+        '',
+        '## Column Schema',
+        '',
+        '| Column | Importance | Description |',
+        '|--------|-----------|-------------|',
+        '| _row_key | ID | Stable SHA-256 row identifier. '
+        'Use this key to look up the full validation detail for this row in `rows[]`: '
+        'each entry in `rows[].cells` contains `original_value` (the input before validation), '
+        '`validator_explanation` (why the AI chose the validated value), '
+        '`qc_reasoning` (quality-control reasoning), '
+        '`key_citation` (primary citation), and '
+        '`sources[]` (list of {title, url, snippet} references). |',
+    ]
+    for col in columns:
+        desc = (col.get('description') or '').replace('|', '\\|').replace('\n', ' ')
+        md_parts.append(f"| {col['name']} | {col['importance']} | {desc} |")
+
+    schema_markdown = '\n'.join(md_parts)
+
+    llm_hint = (
+        'START HERE: read `schema_markdown` before processing this file. '
+        'It contains the table title, configuration notes, a confidence key, '
+        'and the complete column schema in one readable block. '
+        'Each entry in `rows[]` is identified by `row_key`. '
+        'For any row, look up `rows[].cells[column_name]` to find: '
+        '`original_value` (input before validation), '
+        '`validator_explanation` (why the AI chose the validated value), '
+        '`qc_reasoning` (quality-control reasoning), '
+        '`key_citation` (primary citation), and '
+        '`sources[]` — each with `title`, `url`, and `snippet`.'
+    )
+
     return {
+        '_llm_hint': llm_hint,
+        'schema_markdown': schema_markdown,
         'table_name': table_name,
         'columns': columns,
         'rows': rows,

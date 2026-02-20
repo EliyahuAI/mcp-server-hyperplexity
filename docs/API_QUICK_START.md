@@ -11,12 +11,13 @@
 1. [Setup](#1-setup)
 2. [The Model — Table, Configuration, Preview, Full](#2-the-model)
 3. [Rerun with a Known Config](#3-rerun-with-a-known-config)
-4. [Update Table (iterate on validated output)](#4-update-table)
-5. [New Table — Upload First, Then Configure](#5-new-table--upload-first-then-configure)
-6. [New Table — Table Maker (AI builds the structure)](#6-new-table--table-maker-ai-builds-the-structure)
+4. [Update Table (re-validate past output)](#4-update-table)
+5. [Upload a Table](#5-upload-a-table)
+6. [Table Maker (AI generates the table from a prompt)](#6-table-maker)
 7. [Chex (Reference Check)](#7-chex-reference-check)
 8. [Refinement — Adjust Config After Preview](#8-refinement--adjust-config-after-preview)
-9. [Status Reference, Errors & Polling](#9-status-reference-errors--polling)
+9. [Output Structure — Excel and Metadata JSON](#9-output-structure--excel-and-metadata-json)
+10. [Status Reference, Errors & Polling](#10-status-reference-errors--polling)
 
 ---
 
@@ -40,24 +41,39 @@ print(resp.json())
 
 ## 2. The Model
 
-Hyperplexity organises work around three concepts:
+Hyperplexity organises work around three concepts.
 
-**Table** — your data, one row per record. You provide it as an Excel file (upload)
-or have AI design a new schema from scratch (Table Maker). Each Table lives in a
-*session* identified by a `session_id`.
+---
 
-**Configuration** — tells the system what each column means, what to look up, and
-which AI models to use. You get a config from one of three places:
-- **AI interview** — the system asks a few questions about your data and builds
-  the config for you.
-- **Past run** — when a preview completes, the `config_id` is returned in the
-  response so you can reuse it on a new table with the same structure.
-- **Direct `config_id`** — paste a `config_id` you saved earlier into `POST /v1/jobs`.
+### Where does the table come from?
 
-**Preview → Full Validation** — every job starts with a free preview (default 3 rows)
-that costs nothing and returns a cost estimate for the full run. You review the preview
-Excel, approve the cost, and only then is a full validation charged. Nothing is billed
-until you call `POST /v1/jobs/{id}/validate`.
+| Source | When to use it |
+|--------|---------------|
+| **Table Maker** | Describe what you need in natural language — the AI generates the table schema and initial data for you. |
+| **Upload a Table** | You already have data in an Excel file. Includes uploading the *output* of a past validation if you want to manually edit it before re-running. |
+| **Update Table (API)** | You have a completed validation and want to re-run with its enhanced output as the new input, without any manual editing step. The API copies the validated Excel automatically. |
+
+---
+
+### Where does the configuration come from?
+
+The configuration tells the system what each column means, what to look up, and which AI models to use.
+
+| Source | How |
+|--------|-----|
+| **New — AI interview** | When you upload a table whose headers don't match any past run, the system starts an AI conversation to build the config from scratch. |
+| **New — Table Maker** | The Table Maker conversation produces a config automatically alongside the table. |
+| **Reused — header match** | When you upload a table, the system checks whether its column headers match a previous configuration. If there's a good match it offers to use that config or start a fresh AI interview — your choice. |
+| **Reused — `config_id`** | After any preview completes, the response includes a `config_id`. Pass it into `POST /v1/jobs` to skip the interview on a new upload. |
+
+A configuration defines column rules, not row counts. You can add new rows to your
+table and rerun with the same `config_id` — no interview or reconfiguration needed.
+
+---
+
+### Preview → Full Validation
+
+Every job — regardless of how the table or config was obtained — starts with a free **preview** (default 3 rows). The preview costs nothing and returns a cost estimate for the full run. Download the preview Excel to verify column mappings, then call `POST /v1/jobs/{id}/validate` to approve and charge for the full run. Nothing is billed until you explicitly approve.
 
 ---
 
@@ -69,7 +85,7 @@ Use this when you have a new version of a table and already know the `config_id`
 ```python
 import os
 
-CONFIG_ID = "cfg_xyz789"   # from a previous preview_complete or GET /v1/account/usage
+CONFIG_ID = "cfg_xyz789"   # from a previous preview_complete response
 EXCEL_PATH = "my_table.xlsx"
 
 # ── Step 1: Get a presigned upload URL ──────────────────────────────────────
@@ -139,20 +155,20 @@ print(f"Viewer:   {results['interactive_viewer_url']}")
 ```
 
 > **Finding a config ID from older runs:** `GET /v1/account/usage` returns a list of
-> past jobs each with `configuration_id`. But for any run done after this API version,
-> the `config_id` is returned directly in the `preview_complete` response (Step 6 above)
-> so you no longer need to call `account/usage` just to find it.
+> past jobs each with `configuration_id`. For any run done after API v2.0, the
+> `config_id` is returned directly in the `preview_complete` response (Step 6 above)
+> so you no longer need to call `account/usage` to find it.
 
 ---
 
 ## 4. Update Table
 
-Use **Update Table** when you've already completed a full validation and want to
-re-validate the *enhanced output* (the validated Excel the system produced) as your new
-input — for example, after an analyst has corrected some rows.
+Use **Update Table** when you have a completed validation and want to re-validate
+its enhanced output as the new input — for example, to keep enriching the same
+dataset over time without any manual editing step.
 
-The system automatically copies the config from the source job so you don't need to
-specify a `config_id`.
+The API automatically copies the enhanced Excel from the source job and the source
+config. No `config_id` or file upload is needed.
 
 ```python
 COMPLETED_JOB_ID = "session_20260217_103045_abc123"
@@ -170,7 +186,9 @@ print(f"Update job queued: {new_job_id}")
 # ── Step 2: Poll → approve → results (same as Section 3, Steps 5–8) ──────────
 data = poll_until(new_job_id, "preview_complete")
 cost = data["cost_estimate"]["estimated_total_cost_usd"]
+config_id = data.get("config_id")    # config was copied from the source job
 print(f"Preview ready — estimated cost: ${cost:.4f}")
+print(f"Config ID: {config_id}")
 
 requests.post(f"{BASE_URL}/jobs/{new_job_id}/validate", headers=HEADERS, json={})
 poll_until(new_job_id, "completed")
@@ -184,43 +202,62 @@ print(resp.json()["data"]["results"]["download_url"])
 - `used_preview_data: true` in the response — source job had only preview data; run a
   full validation on it first for complete results
 
+**Manual-editing variant:** If you want to edit the validated Excel before re-running
+(correct rows, add notes, etc.), download the results Excel, make your changes, and
+then upload it via the standard **Upload a Table** flow (Section 5). The system will
+recognise the matching column headers and offer the same config automatically.
+
 ---
 
-## 5. New Table — Upload First, Then Configure
+## 5. Upload a Table
 
-Use this when you already have an Excel file and want to either reuse a matching
-config or create a new one with AI help.
+Use this when you have a table to validate — whether it's a fresh dataset or the
+output of a past validation that you've manually edited.
+
+**Accepted formats:**
+- **Excel** (`.xlsx` or `.xls`) — data must be on the first worksheet (or a sheet
+  named "Updated Values", which is preferred automatically).
+- **CSV** (`.csv`) — comma-separated; other delimiters (`;`, `\t`, `|`) are
+  auto-detected.
+
+After confirming the upload the system checks whether the column headers match any
+previous configuration. If there's a good match it offers to use that config or start
+a fresh AI interview. If there's no match at all the system starts an AI interview to
+build a new config.
 
 ```python
-EXCEL_PATH = "new_dataset.xlsx"
+TABLE_PATH = "new_dataset.xlsx"   # or "new_dataset.csv"
 
 # ── Step 1–2: Upload ──────────────────────────────────────────────────────────
+# Use file_type="excel" for .xlsx/.xls, or file_type="csv" for .csv
+file_type = "csv" if TABLE_PATH.endswith(".csv") else "excel"
 resp = requests.post(f"{BASE_URL}/uploads/presigned", headers=HEADERS, json={
-    "file_type": "excel",
-    "filename": os.path.basename(EXCEL_PATH),
+    "file_type": file_type,
+    "filename": os.path.basename(TABLE_PATH),
 })
 upload = resp.json()["data"]
 s3_key     = upload["s3_key"]
 session_id = upload["session_id"]
 
-with open(EXCEL_PATH, "rb") as f:
-    requests.put(upload["upload_url"], data=f,
-                 headers={"Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
+content_type = "text/csv" if file_type == "csv" else \
+               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+with open(TABLE_PATH, "rb") as f:
+    requests.put(upload["upload_url"], data=f, headers={"Content-Type": content_type})
 
 # ── Step 3: Confirm and get config options ────────────────────────────────────
 resp = requests.post(f"{BASE_URL}/uploads/confirm", headers=HEADERS, json={
     "session_id": session_id,
     "s3_key": s3_key,
-    "filename": os.path.basename(EXCEL_PATH),
+    "filename": os.path.basename(TABLE_PATH),
 })
 confirm = resp.json()["data"]
-matches     = confirm.get("matches", [])
+matches  = confirm.get("matches", [])
 
 print(f"Matches found: {confirm['match_count']}")
 for m in matches:
     print(f"  [{m['match_score']:.0%}] {m['name']}  →  config_id: {m['config_id']}")
 
-# ── Path A: A good match was found — use it ───────────────────────────────────
+# ── Path A: Headers matched a past config — use it automatically ──────────────
 if matches and matches[0]["match_score"] >= 0.85:
     config_id = matches[0]["config_id"]
     print(f"\nUsing match: {matches[0]['name']}")
@@ -231,7 +268,7 @@ if matches and matches[0]["match_score"] >= 0.85:
     })
     job_id = resp.json()["data"]["job_id"]
 
-# ── Path B: No match — let AI build one via upload interview ──────────────────
+# ── Path B: No match — AI interview to build a new config ─────────────────────
 else:
     print("\nNo match found — starting AI interview...")
 
@@ -294,18 +331,18 @@ if confirm == "y":
 
 ---
 
-## 6. New Table — Table Maker (AI builds the structure)
+## 6. Table Maker
 
-Use this when you want AI to design a new table schema by describing what you need
-in natural language. At the end of the conversation the AI builds the table schema and
-kicks off a preview automatically.
+Use Table Maker when you want AI to generate a new table from a plain-language
+description — it designs the schema, populates the rows, and automatically starts
+a preview at the end of the conversation.
 
 ```python
 # ── Step 1: Start the conversation ──────────────────────────────────────────
 resp = requests.post(f"{BASE_URL}/conversations/table-maker", headers=HEADERS, json={
-    "message": "I need a table tracking clinical trials for oncology drugs. "
-               "Each row should be one trial, with columns for drug name, phase, "
-               "indication, sponsor, enrollment count, and primary endpoint.",
+    "message": "I need a table of the capital cities of the 5 largest US states "
+               "by land area. Include columns for state name, capital city, "
+               "state area in sq miles, and population of the capital.",
 })
 data = resp.json()["data"]
 conv_id    = data["conversation_id"]
@@ -366,10 +403,11 @@ print(resp.json()["data"]["results"]["download_url"])
 
 ## 7. Chex (Reference Check)
 
-Chex is a separate product that extracts and validates factual claims in text or
-documents (papers, reports, slide decks). It has its own fixed internal logic — there
-is no preview step, no config management, and no cost approval. Input is plain text or
-a PDF/ODF file; output is a CSV of claims with validation status.
+Chex is a separate product that extracts and validates factual claims from text or
+documents (papers, reports, slide decks). The table of claims is derived directly
+from the input text — you don't supply a table or configure columns. Chex uses a
+fixed internal validation logic; there is no preview step, no cost approval, and no
+refinement options. Output is a CSV of claims with validation status.
 
 ### Option A — Paste text directly
 
@@ -438,7 +476,7 @@ language before approving. A new config version is generated asynchronously; pol
 `GET /v1/conversations/{conv_id}` until `status == "completed"`.
 
 Refinement can be called after `preview_complete` **or** after full `completed` status —
-it always generates a new config version you can use on the next run.
+it always produces a new `config_id` you can use on the next run.
 
 ```python
 # After poll_until(job_id, "preview_complete") — job_id is also used as session_id
@@ -477,7 +515,147 @@ for _ in range(30):
 
 ---
 
-## 9. Status Reference, Errors & Polling
+## 9. Output Structure — Result Files
+
+### Files returned by `GET /v1/jobs/{id}/results`
+
+```json
+{
+  "results": {
+    "download_url":           "https://...",   // presigned — main Excel file
+    "file_format":            "xlsx",
+    "metadata_url":           "https://...",   // presigned — table_metadata.json
+    "receipt_url":            "https://...",   // presigned — receipt.pdf or receipt.txt
+    "interactive_viewer_url": "https://eliyahu.ai/viewer?session=...&version=1"
+  },
+  "job_info": {
+    "input_table_name":  "clinical_trials.xlsx",
+    "configuration_id":  "cfg_abc123",
+    "run_time_seconds":  142.3
+  },
+  "summary": {
+    "rows_processed":     500,
+    "columns_validated":  6,
+    "cost_usd":           4.20
+  }
+}
+```
+
+---
+
+### Excel file (`download_url`) — 4 sheets
+
+| Sheet | What it contains |
+|-------|-----------------|
+| **Updated Values** | Primary output. All original columns with AI-validated values, colour-coded by confidence: 🟢 HIGH · 🟡 MEDIUM · 🔴 LOW · 🔵 ID/Ignored · ⭕ Blank. Each row has a `_row_key` column for cross-referencing. |
+| **Original Values** | Your input data exactly as uploaded, for side-by-side comparison. |
+| **Validation Record** | Run audit trail — session ID, config ID, run number, timestamps, row/column counts, and aggregate confidence statistics for every run on this session. |
+| **Details** | Row-by-row breakdown: original value, validated value, confidence, validator explanation, QC reasoning, and numbered source citations. One row per validated field. |
+
+Presigned URLs expire after 1 hour. Download the file promptly or re-fetch the
+URL from the API.
+
+---
+
+### Metadata JSON (`metadata_url`)
+
+Powers the interactive viewer and is designed for direct LLM or programmatic
+consumption. The `schema_markdown` field at the top of the JSON gives a complete
+orientation to the table without parsing the nested structure.
+
+**Structure:**
+
+```json
+{
+  "_llm_hint": "START HERE: read `schema_markdown` before processing this file. It contains the table title, configuration notes, a confidence key, and the complete column schema in one readable block. Each entry in `rows[]` is identified by `row_key`. For any row, look up `rows[].cells[column_name]` to find: `original_value` (input before validation), `validator_explanation` (why the AI chose the validated value), `qc_reasoning` (quality-control reasoning), `key_citation` (primary citation), and `sources[]` — each with `title`, `url`, and `snippet`.",
+  "schema_markdown": "# Clinical Trials Analysis\n\nAI-validated table · 500 rows × 6 columns\n\n## Configuration Notes\n...\n\n## Confidence Key\n| Icon | Level | Meaning |\n...\n\n## Column Schema\n| Column | Importance | Description |\n...",
+  "table_name":    "Clinical Trials Analysis",
+  "general_notes": "Config-level notes from the configuration.",
+  "columns": [
+    { "name": "Drug Name", "importance": "HIGH",   "description": "...", "notes": "..." },
+    { "name": "Phase",     "importance": "MEDIUM", "description": "...", "notes": "..." }
+  ],
+  "rows": [
+    {
+      "row_key": "a3f9c2...",
+      "cells": {
+        "Drug Name": {
+          "display_value": "🟢 Pembrolizumab",
+          "full_value":    "Pembrolizumab",
+          "confidence":    "HIGH",
+          "comment": {
+            "original_value":        "Keytruda",
+            "validator_explanation": "Brand name resolved to INN.",
+            "qc_reasoning":          "Cross-checked against WHO INN list.",
+            "key_citation":          "WHO INN 2023",
+            "sources": [
+              { "id": 1, "title": "WHO INN list", "url": "https://...", "snippet": "..." }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "is_transposed": true
+}
+```
+
+**`_llm_hint`** — the first key in the file. Tells an LLM exactly where to start
+and what each key contains, so it can orient itself without reading the full
+nested structure first.
+
+**`schema_markdown`** — a self-contained markdown document at the top of the
+JSON. Contains:
+- **Title** (table name) and **subtitle** (row × column count)
+- **Configuration Notes** (`general_notes` from the config)
+- **Confidence Key** — icon legend
+- **Column Schema** — markdown table listing every column plus `_row_key`
+
+**`display_value`** — the validated cell value prefixed with a confidence icon
+for direct rendering. `full_value` always contains the raw text without the icon.
+
+**Confidence icons:**
+
+| Icon | Level | Meaning |
+|------|-------|---------|
+| 🟢 | HIGH | Verified with high confidence |
+| 🟡 | MEDIUM | Verified with moderate confidence |
+| 🔴 | LOW | Could not be verified or may be incorrect |
+| 🔵 | ID / Ignored | Not validated — identity or pass-through column |
+| ⭕ | Blank | Validation was attempted but no helpful information found |
+
+**`_row_key` / `row_key`** — 64-character hex SHA-256 hash uniquely identifying
+each row. Derived from the primary-key columns in the config, or the full row
+content if no primary keys are defined. The same key appears in the `_row_key`
+column of the Excel output.
+
+Use `row_key` to look up the full validation detail for a row in `rows[]`. Each
+entry in `rows[].cells[column_name]` exposes:
+- `original_value` — the input value before AI validation
+- `validator_explanation` — why the AI chose the validated value
+- `qc_reasoning` — quality-control reasoning applied after initial validation
+- `key_citation` — the single most relevant citation supporting the value
+- `sources[]` — list of `{id, title, url, snippet}` references used during validation
+
+---
+
+### Receipt (`receipt_url`)
+
+A PDF (or plain-text fallback) invoice showing the job ID, session, config used,
+row count, per-row cost, and total amount charged.
+
+---
+
+### Interactive viewer (`interactive_viewer_url`)
+
+A hosted web viewer at `eliyahu.ai/viewer` — the URL does not expire and can be
+shared with stakeholders. The viewer fetches fresh presigned URLs for the data
+on load, so recipients always see the latest results as long as the session
+exists in storage.
+
+---
+
+## 10. Status Reference, Errors & Polling
 
 ### Preview response shape
 
@@ -614,7 +792,7 @@ while True:
 | Error code | Meaning | Fix |
 |------------|---------|-----|
 | `401 Unauthorized` | Invalid or missing API key | Check `Authorization: Bearer hpx_...` header |
-| `402 Payment Required` | Insufficient credits | Top up at `/account` |
+| `402 Payment Required` | Insufficient credits | Top up at `eliyahu.ai/account` |
 | `400 missing_config` | No config provided in `POST /jobs` | Add `config_id`, `config_s3_key`, or `config` |
 | `400 missing_fields` | Required field absent | Check request body against docs |
 | `404 source_not_found` | Source job not found in `POST /jobs/update-table` | Confirm job completed successfully |

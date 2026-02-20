@@ -44,6 +44,11 @@ FILE_CONFIGS = {
         'allowed_extensions': ['.xlsx', '.xls'],
         'error_message': 'Invalid Excel file'
     },
+    'csv': {
+        'max_size': 50 * 1024 * 1024,  # 50 MB for CSV files
+        'allowed_extensions': ['.csv'],
+        'error_message': 'Invalid CSV file'
+    },
     'config': {
         'max_size': 10 * 1024 * 1024,  # 10 MB for config JSON files
         'allowed_extensions': ['.json'],
@@ -61,6 +66,7 @@ CONTENT_TYPE_MAP = {
     '.pdf': 'application/pdf',
     '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     '.xls': 'application/vnd.ms-excel',
+    '.csv':  'text/csv',
     '.json': 'application/json',
     '.odf': 'application/vnd.oasis.opendocument.formula',
     '.odt': 'application/vnd.oasis.opendocument.text',
