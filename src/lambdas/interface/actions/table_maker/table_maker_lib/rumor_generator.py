@@ -219,7 +219,8 @@ class RumorGenerator:
                 prompt=filled_prompt,
                 schema=schema,
                 model=model,
-                context="rumor_generation"
+                context="rumor_generation",
+                max_web_searches=0
             )
 
             if not response or 'structured_output' not in response:

@@ -193,7 +193,7 @@
   "rumor_generation": {
     "_comment": "Rumor generation phase - LLM proposes plausible candidate entities, then validator confirms they exist. Runs alongside search-based row discovery.",
     "enabled": false,
-    "_note_enabled": "Set to true to always run rumor generation. Also triggered automatically if 'rumor' (any case) appears in the table maker conversation.",
+    "_note_enabled": "Set to true to always run rumor generation. Also triggered automatically if '...' appears in the table maker conversation (code trigger, no web access).",
     "model": "claude-opus-4-6",
     "_note_model": "Single model for candidate generation. Opus chosen for broad entity knowledge.",
     "per_model_count": 20,

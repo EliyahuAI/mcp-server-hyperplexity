@@ -587,17 +587,17 @@ def _load_conversation_state(
         return None
 
 
-def _conversation_mentions_rumor(conversation_state: Dict) -> bool:
-    """Return True if the word 'rumor' (any case) appears in any conversation message."""
+def _conversation_has_generation_trigger(conversation_state: Dict) -> bool:
+    """Return True if '...' appears in any conversation message (code trigger for candidate generation)."""
     messages = conversation_state.get('messages', [])
     for msg in messages:
         content = msg.get('content', '')
-        if isinstance(content, str) and 'rumor' in content.lower():
+        if isinstance(content, str) and '...' in content:
             return True
         elif isinstance(content, list):
             # Handle multi-part content blocks
             for block in content:
-                if isinstance(block, dict) and 'rumor' in str(block.get('text', '')).lower():
+                if isinstance(block, dict) and '...' in str(block.get('text', '')):
                     return True
     return False
 
@@ -2471,10 +2471,10 @@ async def execute_full_table_generation(
                     # --- RUMOR GENERATION (optional) ---
                     rumor_config = config.get('rumor_generation', {})
                     rumor_enabled = rumor_config.get('enabled', False)
-                    rumor_triggered_by_keyword = _conversation_mentions_rumor(conversation_state)
+                    rumor_triggered_by_keyword = _conversation_has_generation_trigger(conversation_state)
 
                     if rumor_enabled or rumor_triggered_by_keyword:
-                        trigger_reason = "config" if rumor_enabled else "keyword 'rumor' in conversation"
+                        trigger_reason = "config" if rumor_enabled else "trigger '...' in conversation"
                         logger.info(f"[RUMOR] Rumor generation triggered by {trigger_reason}")
                         try:
                             from .table_maker_lib.rumor_generator import RumorGenerator
