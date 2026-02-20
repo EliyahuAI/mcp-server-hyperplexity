@@ -1,16 +1,24 @@
 """
 HyperplexityClient — thin requests.Session wrapper for the Hyperplexity external API.
 
-External API:  https://api.hyperplexity.ai/v1
-Auth:          Authorization: Bearer <hpx_live_...>
-Response:      {"success": true, "data": {...}}
-Error:         {"success": false, "error": {"code": "...", "message": "..."}}
+Auth:     Authorization: Bearer <hpx_live_...>
+Response: {"success": true, "data": {...}}  — _check() unwraps the envelope automatically.
+Error:    {"success": false, "error": {"code": "...", "message": "..."}}
+
+Base URL resolution order (first one set wins):
+  1. HYPERPLEXITY_API_URL env var  — set this to your dev/prod API Gateway invoke URL
+  2. Hard-coded fallback            — https://api.hyperplexity.ai/v1 (prod custom domain)
+
+For local dev, find your URL with:
+    aws apigatewayv2 get-apis --region us-east-1 \\
+        --query "Items[?contains(Name,'hyperplexity-external')].{Name:Name,URL:ApiEndpoint}"
+Then export HYPERPLEXITY_API_URL=https://<id>.execute-api.us-east-1.amazonaws.com/prod/v1
 
 Usage:
     from client import get_client
-    client = get_client()          # reads HYPERPLEXITY_API_KEY from env
+    client = get_client()
     data = client.get("/account/balance")
-    # → {"balance_usd": 42.50, "email": "you@example.com"}   (data: envelope unwrapped)
+    # → {"balance_usd": 42.50, ...}   (data: envelope already unwrapped)
 """
 
 from __future__ import annotations
@@ -18,12 +26,17 @@ from __future__ import annotations
 import os
 import requests
 
-BASE_URL = "https://api.hyperplexity.ai/v1"
+_DEFAULT_URL = "https://api.hyperplexity.ai/v1"
+
+
+def _resolve_base_url() -> str:
+    url = os.environ.get("HYPERPLEXITY_API_URL", "").rstrip("/")
+    return url if url else _DEFAULT_URL
 
 
 class HyperplexityClient:
-    def __init__(self, api_key: str, base_url: str = BASE_URL):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, api_key: str, base_url: str = ""):
+        self.base_url = (base_url or _resolve_base_url()).rstrip("/")
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {api_key}",
