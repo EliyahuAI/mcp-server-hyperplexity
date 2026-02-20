@@ -429,7 +429,10 @@ def test_job_workflow(client: HyperplexityClient, upload: dict, full: bool):
     if status == "preview_complete":
         # API: cost_estimate.estimated_total_cost_usd
         cost_est  = preview.get("cost_estimate") or {}
-        cost      = cost_est.get("estimated_total_cost_usd", 0)
+        cost      = (cost_est.get("estimated_total_cost_usd")
+                     or preview.get("estimated_cost_usd")
+                     or preview.get("cost_usd")
+                     or 0)
         rows      = cost_est.get("estimated_rows", "?")
         config_id = preview.get("config_id", "")
         prev_res  = preview.get("preview_results") or {}
@@ -543,7 +546,8 @@ def test_table_maker(client: HyperplexityClient) -> dict | None:
     status            = state.get("status", "")
     user_reply_needed = state.get("user_reply_needed", False)
     next_step         = (state.get("next_step") or {}).get("action", "")
-    ai_msg            = state.get("last_ai_message", "")[:120]
+    _raw_msg = state.get("last_ai_message") or ""
+    ai_msg   = str(_raw_msg.get("content", _raw_msg) if isinstance(_raw_msg, dict) else _raw_msg)[:120]
     info(f"status={status}  user_reply_needed={user_reply_needed}  next_step.action={next_step}")
     if ai_msg:
         info(f"Last AI message: {ai_msg}")
@@ -620,7 +624,8 @@ def test_upload_interview(client: HyperplexityClient, upload: dict | None):
     assert_guidance(state, "get_conversation (interview)")
 
     user_reply_needed = state.get("user_reply_needed", False)
-    ai_msg            = state.get("last_ai_message", "")[:140]
+    _raw_msg = state.get("last_ai_message") or ""
+    ai_msg   = str(_raw_msg.get("content", _raw_msg) if isinstance(_raw_msg, dict) else _raw_msg)[:140]
     info(f"status={state.get('status')}  user_reply_needed={user_reply_needed}")
     if ai_msg:
         info(f"AI question: {ai_msg}")
