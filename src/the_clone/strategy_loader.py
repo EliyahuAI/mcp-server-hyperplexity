@@ -157,34 +157,34 @@ def get_model_with_backups(model, provider: str = None) -> list:
     # NOTE: Removed Haiku from chain - too weak for synthesis, causes poor results
     if model == 'gemini-2.5-flash':
         if provider == 'baseten':
-            return ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'deepseek-v3.2-baseten', 'claude-sonnet-4-5']
+            return ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'deepseek-v3.2-baseten', 'claude-sonnet-4-6']
         else:
-            return ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'deepseek-v3.2', 'claude-sonnet-4-5']
+            return ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'deepseek-v3.2', 'claude-sonnet-4-6']
 
     # Other Gemini models → standard Gemini chain
     # NOTE: Use Sonnet instead of Haiku for better synthesis quality
     if model.startswith('gemini-'):
-        return [model, 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'claude-sonnet-4-5']
+        return [model, 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'claude-sonnet-4-6']
 
     # DeepSeek Baseten → DeepSeek → Claude Sonnet
     if model == 'deepseek-v3.2-baseten':
-        return ['deepseek-v3.2-baseten', 'deepseek-v3.2', 'claude-sonnet-4-5']
+        return ['deepseek-v3.2-baseten', 'deepseek-v3.2', 'claude-sonnet-4-6']
 
     # DeepSeek Vertex → Claude Sonnet
     if model == 'deepseek-v3.2':
-        return ['deepseek-v3.2', 'claude-sonnet-4-5']
+        return ['deepseek-v3.2', 'claude-sonnet-4-6']
 
     # DeepSeek Exp (same as v3.2) → DeepSeek → Claude Sonnet
     if model == 'deepseek-v3.2-exp':
-        return ['deepseek-v3.2-exp', 'deepseek-v3.2', 'claude-sonnet-4-5']
+        return ['deepseek-v3.2-exp', 'deepseek-v3.2', 'claude-sonnet-4-6']
 
     # Claude Opus → Sonnet → DeepSeek
     if model == 'claude-opus-4-6':
-        return ['claude-opus-4-6', 'claude-sonnet-4-5', 'deepseek-v3.2']
+        return ['claude-opus-4-6', 'claude-sonnet-4-6', 'deepseek-v3.2']
 
     # Claude Sonnet → Opus → DeepSeek
-    if model == 'claude-sonnet-4-5':
-        return ['claude-sonnet-4-5', 'claude-opus-4-6', 'deepseek-v3.2']
+    if model == 'claude-sonnet-4-6':
+        return ['claude-sonnet-4-6', 'claude-opus-4-6', 'deepseek-v3.2']
 
     # Claude Haiku → DeepSeek
     if model == 'claude-haiku-4-5':

@@ -41,7 +41,7 @@ class TableConversationHandler:
     async def start_conversation(
         self,
         user_message: str,
-        model: str = "claude-sonnet-4-5",
+        model: str = "claude-sonnet-4-6",
         conversation_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -178,7 +178,7 @@ class TableConversationHandler:
     async def continue_conversation(
         self,
         user_message: str,
-        model: str = "claude-sonnet-4-5"
+        model: str = "claude-sonnet-4-6"
     ) -> Dict[str, Any]:
         """
         Continue conversation with user feedback.

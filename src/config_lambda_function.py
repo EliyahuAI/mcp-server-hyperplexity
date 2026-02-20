@@ -38,7 +38,7 @@ def load_config_settings():
         # Fallback to defaults
         return {
             'max_tokens': 16000,
-            'model': ['claude-opus-4-1', 'claude-opus-4-20240229', 'claude-sonnet-4-5']
+            'model': ['claude-opus-4-1', 'claude-opus-4-20240229', 'claude-sonnet-4-6']
         }
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:

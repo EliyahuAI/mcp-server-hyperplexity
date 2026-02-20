@@ -77,7 +77,7 @@ def get_extraction_model(context: str) -> str:
 def get_synthesis_model(context: str) -> str:
     """Get synthesis model."""
     context_config = get_context_config(context)
-    return context_config.get('synthesis_model', 'claude-sonnet-4-5')
+    return context_config.get('synthesis_model', 'claude-sonnet-4-6')
 
 
 def should_skip_evaluation(context: str, current_iteration: int, max_iterations: int) -> bool:

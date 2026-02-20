@@ -30,7 +30,7 @@ class ConfigGenerator:
         self,
         table_structure: Dict[str, Any],
         conversation_history: List[Dict[str, Any]],
-        model: str = "claude-sonnet-4-5"
+        model: str = "claude-sonnet-4-6"
     ) -> Dict[str, Any]:
         """
         Generate AI validation config from final table structure.
@@ -193,7 +193,7 @@ class ConfigGenerator:
                 'search_group': critical_group_id,
                 'notes': f"Researchable ID column - verify accuracy: {col.get('description', col['name'])}",
                 'is_identification': True,  # Still mark as ID for row key generation
-                'preferred_model': 'claude-sonnet-4-5',
+                'preferred_model': 'claude-sonnet-4-6',
                 'search_context_size': 'high'
             })
             logger.info(f"Added researchable ID column as CRITICAL validation target: {col['name']}")
@@ -252,7 +252,7 @@ class ConfigGenerator:
                 'group_id': group_id,
                 'group_name': 'Critical Validation',
                 'description': 'Critical fields requiring highest accuracy',
-                'model': 'claude-sonnet-4-5',
+                'model': 'claude-sonnet-4-6',
                 'search_context': 'high',
                 'column_count': len(importance_groups['RESEARCH'])
             })
@@ -347,7 +347,7 @@ class ConfigGenerator:
 
             # Add specific model override for CRITICAL fields
             if importance == 'RESEARCH':
-                target['preferred_model'] = 'claude-sonnet-4-5'
+                target['preferred_model'] = 'claude-sonnet-4-6'
                 target['search_context_size'] = 'high'
 
             validation_targets.append(target)

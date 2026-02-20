@@ -259,7 +259,7 @@ async def handle_column_definition(event: Dict[str, Any], context: Any) -> Dict[
         # Load table maker config
         config = _load_table_maker_config()
         column_def_config = config.get('column_definition', {})
-        model = column_def_config.get('model', 'claude-sonnet-4-5')
+        model = column_def_config.get('model', 'claude-sonnet-4-6')
         max_tokens = column_def_config.get('max_tokens', 8000)
 
         # Initialize components
@@ -497,7 +497,7 @@ def _get_default_config() -> Dict[str, Any]:
     """
     return {
         'column_definition': {
-            'model': 'claude-sonnet-4-5',
+            'model': 'claude-sonnet-4-6',
             'max_tokens': 8000,
             'use_web_search': True,
             'web_searches': 3

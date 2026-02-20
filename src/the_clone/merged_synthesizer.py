@@ -48,7 +48,7 @@ class MergedSynthesizer:
         iteration: int,
         is_last_iteration: bool,
         schema: Dict = None,
-        model: str = "claude-sonnet-4-5",
+        model: str = "claude-sonnet-4-6",
         search_terms: List[str] = None,
         debug_dir: str = None,
         soft_schema: bool = False

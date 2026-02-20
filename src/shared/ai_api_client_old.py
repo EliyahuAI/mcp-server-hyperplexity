@@ -35,7 +35,7 @@ class AIAPIClient:
     MODEL_HIERARCHY = [
         "claude-opus-4-1",
         "claude-opus-4-0",
-        "claude-sonnet-4-5",
+        "claude-sonnet-4-6",
         "claude-sonnet-4-0",
         "deepseek-v3.2",         # Ultra-low cost, most capable DeepSeek
         "sonar-pro",
@@ -2127,7 +2127,7 @@ class AIAPIClient:
             return 'request'
     
     
-    async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-sonnet-4-5",
+    async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-sonnet-4-6",
                                  tool_name: str = "structured_response", use_cache: bool = True,
                                  context: str = "", max_tokens: int = None, max_web_searches: int = 3,
                                  search_context_size: str = "low", debug_name: str = None, soft_schema: bool = False,
@@ -2178,7 +2178,7 @@ class AIAPIClient:
 
                 # Monitor for legacy Sonnet 3.5 usage
                 if 'sonnet-3' in current_model.lower() or '3-5-sonnet' in current_model.lower() or '3.5-sonnet' in current_model.lower():
-                    logger.warning(f"[LEGACY_MODEL_WARNING] Using legacy Sonnet 3.5 model: {current_model}. Expected claude-sonnet-4-5 or newer.")
+                    logger.warning(f"[LEGACY_MODEL_WARNING] Using legacy Sonnet 3.5 model: {current_model}. Expected claude-sonnet-4-6 or newer.")
 
                 # Normalize model for current provider
                 api_provider = self._determine_api_provider(current_model)
@@ -2386,7 +2386,7 @@ class AIAPIClient:
                         logger.warning(
                             f"[DEEPSEEK_WEB_SEARCH_WARNING] DeepSeek model '{current_model}' called with "
                             f"max_web_searches={max_web_searches}. DeepSeek CANNOT access the web - this setting "
-                            f"will be ignored. Use claude-sonnet-4-5 or claude-opus-4-1 for web search capabilities."
+                            f"will be ignored. Use claude-sonnet-4-6 or claude-opus-4-1 for web search capabilities."
                         )
 
                     # Vertex AI supports hard schemas via OpenAI-compatible response_format parameter
@@ -2766,7 +2766,7 @@ Please reformat this answer to exactly match the schema. Preserve all informatio
         else:
             raise Exception("All models failed - no specific error captured")
     
-    async def call_text_api(self, prompt: str, model: Union[str, List[str]] = "claude-sonnet-4-5",
+    async def call_text_api(self, prompt: str, model: Union[str, List[str]] = "claude-sonnet-4-6",
                            use_cache: bool = True, context: str = "", max_web_searches: int = 3) -> Dict:
         """
         Call AI API for text response.
@@ -2782,7 +2782,7 @@ Please reformat this answer to exactly match the schema. Preserve all informatio
         """
         # Monitor for legacy Sonnet 3.5 usage
         if isinstance(model, str) and ('sonnet-3' in model.lower() or '3-5-sonnet' in model.lower() or '3.5-sonnet' in model.lower()):
-            logger.warning(f"[LEGACY_MODEL_WARNING] Using legacy Sonnet 3.5 model: {model}. Expected claude-sonnet-4-5 or newer.")
+            logger.warning(f"[LEGACY_MODEL_WARNING] Using legacy Sonnet 3.5 model: {model}. Expected claude-sonnet-4-6 or newer.")
 
         normalized_model = self._normalize_anthropic_model(model)
         cache_key = self._get_cache_key(prompt, normalized_model, None, context, max_web_searches,

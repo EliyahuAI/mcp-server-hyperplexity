@@ -36,7 +36,7 @@ def load_config_settings():
         # Fallback to defaults
         return {
             'max_tokens': 16000,
-            'model': ['claude-opus-4-1', 'claude-opus-4-20240229', 'claude-sonnet-4-5']
+            'model': ['claude-opus-4-1', 'claude-opus-4-20240229', 'claude-sonnet-4-6']
         }
 
 def send_websocket_progress(session_id: str, message: str, progress: int = None):
@@ -383,7 +383,7 @@ The configuration must include all {column_count} columns in validation_targets.
         {
             "op": "replace",
             "path": "/qc_settings/model",
-            "value": ["claude-opus-4-6", "claude-sonnet-4-5"],
+            "value": ["claude-opus-4-6", "claude-sonnet-4-6"],
             "comment": "Update QC model list"
         },
         {

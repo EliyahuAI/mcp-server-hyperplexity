@@ -524,7 +524,7 @@ def _get_default_config() -> Dict[str, Any]:
     """
     return {
         "conversation": {
-            "model": "claude-sonnet-4-5",
+            "model": "claude-sonnet-4-6",
             "max_turns_before_preview": 3,
             "min_turns_before_preview": 1,
             "readiness_threshold": 0.75,
@@ -534,20 +534,20 @@ def _get_default_config() -> Dict[str, Any]:
         },
         "preview_generation": {
             "sample_row_count": 3,
-            "model": "claude-sonnet-4-5",
+            "model": "claude-sonnet-4-6",
             "max_tokens": 12000,
             "search_context": "high"
         },
         "full_table_generation": {
             "default_row_count": 20,
-            "model": "claude-sonnet-4-5",
+            "model": "claude-sonnet-4-6",
             "max_tokens": 16000,
             "batch_size": 10
         },
         "models": {
-            "conversation": "claude-sonnet-4-5",
-            "preview": "claude-sonnet-4-5",
-            "expansion": "claude-sonnet-4-5"
+            "conversation": "claude-sonnet-4-6",
+            "preview": "claude-sonnet-4-6",
+            "expansion": "claude-sonnet-4-6"
         },
         "features": {
             "enable_column_definitions_in_csv": True,
@@ -1090,7 +1090,7 @@ async def handle_table_conversation_start(request_data, context):
 
         # Start interview with user message
         interview_config = config.get('interview', {})
-        model = interview_config.get('model', 'claude-sonnet-4-5')
+        model = interview_config.get('model', 'claude-sonnet-4-6')
         max_tokens = interview_config.get('max_tokens', 8000)
         logger.info(f"[TABLE_MAKER] Starting interview with model: {model}")
 
@@ -1493,7 +1493,7 @@ Recommendations that were provided to user:
         # Continue interview with user message
         config = conversation_state.get('config', _load_table_maker_config())
         interview_config = config.get('interview', {})
-        model = interview_config.get('model', 'claude-sonnet-4-5')
+        model = interview_config.get('model', 'claude-sonnet-4-6')
         max_tokens = interview_config.get('max_tokens', 8000)
 
         logger.info(f"[TABLE_MAKER] Continuing interview with model: {model}")

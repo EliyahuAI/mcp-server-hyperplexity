@@ -526,7 +526,7 @@ async def _extract_claims(
 
         # Extract model info
         extraction_config = config.get('extraction', {})
-        model = extraction_config.get('model', 'claude-sonnet-4-5')
+        model = extraction_config.get('model', 'claude-sonnet-4-6')
 
         # Get enhanced metrics for tracking
         if 'enhanced_data' in api_response:
@@ -1369,7 +1369,7 @@ async def execute_reference_check(
                 session_id=session_id,
                 run_key=run_key,
                 api_response=extraction_result,
-                model=extraction_result.get('model_used', 'claude-sonnet-4-5'),
+                model=extraction_result.get('model_used', 'claude-sonnet-4-6'),
                 processing_time=extraction_result.get('processing_time', 0.0),
                 call_type='claim_extraction',
                 status='IN_PROGRESS',

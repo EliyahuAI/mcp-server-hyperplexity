@@ -36,7 +36,7 @@ class InitialDecision:
     async def make_decision(
         self,
         query: str,
-        model: str = "claude-sonnet-4-5",
+        model: str = "claude-sonnet-4-6",
         soft_schema: bool = False,
         debug_dir: str = None,
         custom_schema: Dict = None,

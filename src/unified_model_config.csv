@@ -3,6 +3,10 @@ model_pattern,api_provider,priority,enabled,min_batch_size,max_batch_size,initia
 claude-opus-4-6*,anthropic,0,true,50,200,100,1.7,0.5,5,2,5.00,25.00,128000,Tier 0: Opus 4.6 - Newest flagship with adaptive thinking (128K output, 1M context beta)
 claude-opus-4.6*,anthropic,0,true,50,200,100,1.7,0.5,5,2,5.00,25.00,128000,Tier 0: Opus 4.6 - Dot notation (128K output, 1M context beta)
 claude-4-6-opus*,anthropic,0,true,50,200,100,1.7,0.5,5,2,5.00,25.00,128000,Tier 0: Opus 4.6 - Alternate naming (128K output, 1M context beta)
+# TIER 0 OPTIMIZED: Claude 4.6 Sonnet (NEWEST - Aug 2025! $3/$15 - 64K output, 1M context beta)
+claude-sonnet-4-6*,anthropic,0,true,50,200,100,1.6,0.5,5,2,3.00,15.00,64000,Tier 0: Sonnet 4.6 - Newest balanced model (64K output, 1M context beta)
+claude-sonnet-4.6*,anthropic,0,true,50,200,100,1.6,0.5,5,2,3.00,15.00,64000,Tier 0: Sonnet 4.6 - Dot notation (64K output, 1M context beta)
+claude-4-6-sonnet*,anthropic,0,true,50,200,100,1.6,0.5,5,2,3.00,15.00,64000,Tier 0: Sonnet 4.6 - Alternate naming (64K output, 1M context beta)
 # TIER 1 OPTIMIZED: Claude 4.5 Opus (NEW - CHEAPER THAN 4.1! $5/$25 vs $15/$75)
 claude-opus-4-5*,anthropic,1,true,50,200,100,1.6,0.5,5,2,5.00,25.00,32000,Tier 1: Opus 4.5 - NEW cheaper flagship model
 # TIER 1 OPTIMIZED: Gemini Flash (2.5 Flash 65K output, 2.0 Flash 8K output)
@@ -25,10 +29,10 @@ claude-opus-4.1*,anthropic,2,true,50,200,100,1.5,0.5,5,2,15.00,75.00,32000,Tier 
 # TIER 2: Claude 4 Opus (450k input TPM, 90k output TPM, WEB SEARCH OPTIMIZED)
 claude-4-opus*,anthropic,2,true,50,200,100,1.5,0.5,5,2,15.00,75.00,32000,Tier 2: Opus 4.x - Most expensive but highest capability
 claude-opus-4*,anthropic,2,true,50,200,100,1.5,0.5,5,2,15.00,75.00,32000,Tier 2: Opus 4.x - Most expensive but highest capability (alternate naming)
-# TIER 2 OPTIMIZED: Claude 4.5 Sonnet (Latest - 450k input TPM, 90k output TPM)
-claude-sonnet-4-5*,anthropic,2,true,50,200,100,1.5,0.5,5,2,3.00,15.00,64000,Tier 2: Sonnet 4.5 - Latest balanced model
-claude-sonnet-4.5*,anthropic,2,true,50,200,100,1.5,0.5,5,2,3.00,15.00,64000,Tier 2: Sonnet 4.5 - Latest balanced model (dot notation)
-claude-4-sonnet-5*,anthropic,2,true,50,200,100,1.5,0.5,5,2,3.00,15.00,64000,Tier 2: Sonnet 4.5 - Latest balanced model (alternate naming)
+# TIER 2 OPTIMIZED: Claude 4.5 Sonnet aliases to claude-sonnet-4-6 (450k input TPM, 90k output TPM)
+claude-sonnet-4-5*,anthropic,2,true,50,200,100,1.5,0.5,5,2,3.00,15.00,64000,Tier 2: Sonnet 4.5 - Aliases to claude-sonnet-4-6 (same model)
+claude-sonnet-4.5*,anthropic,2,true,50,200,100,1.5,0.5,5,2,3.00,15.00,64000,Tier 2: Sonnet 4.5 - Aliases to claude-sonnet-4-6 (dot notation)
+claude-4-sonnet-5*,anthropic,2,true,50,200,100,1.5,0.5,5,2,3.00,15.00,64000,Tier 2: Sonnet 4.5 - Aliases to claude-sonnet-4-6 (alternate naming)
 # TIER 2 OPTIMIZED: Claude 4 Sonnet (450k input TPM, 90k output TPM, WEB SEARCH OPTIMIZED)
 claude-4*,anthropic,2,true,50,200,100,1.5,0.5,5,2,3.00,15.00,64000,Tier 2: Sonnet 4 - Balanced performance and cost
 claude-sonnet-4*,anthropic,2,true,50,200,100,1.5,0.5,5,2,3.00,15.00,64000,Tier 2: Sonnet 4 - Balanced performance and cost

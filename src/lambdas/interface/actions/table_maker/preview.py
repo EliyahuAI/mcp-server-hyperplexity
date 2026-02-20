@@ -374,7 +374,7 @@ def _get_default_config() -> Dict[str, Any]:
     return {
         'preview_generation': {
             'sample_row_count': 3,
-            'model': 'claude-sonnet-4-5',
+            'model': 'claude-sonnet-4-6',
             'max_tokens': 12000
         },
         'full_table_generation': {
@@ -576,7 +576,7 @@ Please generate the complete table structure with columns and sample rows."""
 
         # Use the conversation config settings for this generation
         conversation_config = config.get('conversation', {})
-        model = conversation_config.get('model', 'claude-sonnet-4-5')
+        model = conversation_config.get('model', 'claude-sonnet-4-6')
 
         logger.info(f"[PREVIEW_GENERATE] Generating table with original handler (web search enabled by default)")
 
@@ -787,7 +787,7 @@ Example format:
 Return only the JSON array, no other text."""
 
         # Call Claude
-        model = config.get('models', {}).get('preview', 'claude-sonnet-4-5')
+        model = config.get('models', {}).get('preview', 'claude-sonnet-4-6')
         max_tokens = config.get('preview_generation', {}).get('max_tokens', 12000)
 
         response = client.messages.create(

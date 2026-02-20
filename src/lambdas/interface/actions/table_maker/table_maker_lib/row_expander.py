@@ -36,7 +36,7 @@ class RowExpander:
         existing_rows: List[Dict[str, Any]],
         expansion_request: str,
         row_count: int = 10,
-        model: str = "claude-sonnet-4-5"
+        model: str = "claude-sonnet-4-6"
     ) -> Dict[str, Any]:
         """
         Generate additional rows based on user criteria.
@@ -229,7 +229,7 @@ class RowExpander:
         expansion_request: str,
         total_rows_needed: int,
         batch_size: int = 10,
-        model: str = "claude-sonnet-4-5",
+        model: str = "claude-sonnet-4-6",
         progress_callback=None
     ) -> Dict[str, Any]:
         """

@@ -173,7 +173,7 @@ async def test_system(system_name: str, query: str, schema: dict):
             result = await client.call_structured_api(
                 prompt=query,
                 schema=schema,
-                model="claude-sonnet-4-5",
+                model="claude-sonnet-4-6",
                 max_web_searches=3,
                 use_cache=False
             )

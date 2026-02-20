@@ -36,7 +36,7 @@ class ColumnDefinitionHandler:
         self,
         conversation_context: Dict[str, Any],
         background_research_result: Dict[str, Any] = None,
-        model: str = "claude-sonnet-4-5",
+        model: str = "claude-sonnet-4-6",
         max_tokens: int = 8000
     ) -> Dict[str, Any]:
         """
@@ -45,7 +45,7 @@ class ColumnDefinitionHandler:
         Args:
             conversation_context: Full conversation history and approved requirements
             background_research_result: Output from background_research_handler (REQUIRED)
-            model: AI model to use (default: claude-sonnet-4-5, no web search needed)
+            model: AI model to use (default: claude-sonnet-4-6, no web search needed)
             max_tokens: Maximum tokens for AI response
 
         Returns:

@@ -43,7 +43,7 @@ class QCReviewer:
         table_purpose: str = "",
         tablewide_research: str = "",
         user_requirements: str = "",
-        model: str = "claude-sonnet-4-5",
+        model: str = "claude-sonnet-4-6",
         max_tokens: int = 8000,
         min_qc_score: float = 0.5,
         max_rows: int = 50,
@@ -70,7 +70,7 @@ class QCReviewer:
             columns: List of column definitions
             user_requirements: Original user requirements/request
             table_name: Name of the table
-            model: AI model to use (default: claude-sonnet-4-5)
+            model: AI model to use (default: claude-sonnet-4-6)
             max_tokens: Maximum tokens for AI response
             min_qc_score: Minimum QC score to keep row (default: 0.5)
             max_rows: Maximum number of rows to return (default: 50)

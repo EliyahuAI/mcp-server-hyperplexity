@@ -159,7 +159,7 @@ async def test_claude(prompt: str, schema: dict, num_runs: int = 5):
         enhanced_prompt = f"{prompt}\n\nProvide your response as valid JSON matching this exact schema:\n{json.dumps(schema, indent=2)}"
 
         data = {
-            "model": "claude-sonnet-4-5-20250929",
+            "model": "claude-sonnet-4-6-20250929",
             "max_tokens": 1000,
             "temperature": 0.7,
             "messages": [

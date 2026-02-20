@@ -2039,7 +2039,7 @@ async def execute_full_table_generation(
         try:
             # Get config for column definition
             col_config = config.get('column_definition', {})
-            col_model = col_config.get('model', 'claude-sonnet-4-5')
+            col_model = col_config.get('model', 'claude-sonnet-4-6')
             col_max_tokens = col_config.get('max_tokens', 8000)
 
             # Call column definition handler with background research
@@ -2703,7 +2703,7 @@ async def execute_full_table_generation(
                 try:
                     # Get config for QC review
                     qc_config = config.get('qc_review', {})
-                    qc_model = qc_config.get('model', 'claude-sonnet-4-5')
+                    qc_model = qc_config.get('model', 'claude-sonnet-4-6')
                     qc_max_tokens = qc_config.get('max_tokens', 16000)
                     min_qc_score = qc_config.get('min_qc_score', 0.5)
                     min_row_count = qc_config.get('min_row_count', 4)

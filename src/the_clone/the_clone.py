@@ -117,7 +117,7 @@ class TheClone2Refined:
         # Load configuration
         if model_override:
             models = {
-                'initial_decision': model_override if 'claude' in model_override else 'claude-sonnet-4-5',
+                'initial_decision': model_override if 'claude' in model_override else 'claude-sonnet-4-6',
                 'triage': model_override,
                 'extraction': model_override,
                 'synthesis': model_override
@@ -357,7 +357,7 @@ class TheClone2Refined:
             synthesis_tier = initial_result.get('synthesis_tier', 'tier2')
             if model_override:
                 models = {
-                    'initial_decision': model_override if 'claude' in model_override else 'claude-sonnet-4-5',
+                    'initial_decision': model_override if 'claude' in model_override else 'claude-sonnet-4-6',
                     'triage': model_override,
                     'extraction': model_override,
                     'synthesis': model_override
@@ -797,7 +797,7 @@ class TheClone2Refined:
             # FINDALL mode: Use specific model chain for synthesis (faster for entity enumeration)
             # Only use models with 65K+ output limit for synthesis
             if not model_override:
-                models['synthesis'] = ['gemini-2.5-flash', 'deepseek-v3.2', 'claude-sonnet-4-5']
+                models['synthesis'] = ['gemini-2.5-flash', 'deepseek-v3.2', 'claude-sonnet-4-6']
                 logger.debug(f"[CLONE] FINDALL mode: Using model chain {models['synthesis']} for synthesis")
 
         logger.debug(f"[CLONE] Strategy: {strategy['name']} (breadth={breadth}, depth={depth})")

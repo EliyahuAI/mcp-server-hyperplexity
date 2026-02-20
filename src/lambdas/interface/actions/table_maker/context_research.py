@@ -37,7 +37,7 @@ class ContextResearcher:
         conv_config = config.get('conversation', {})
         self.enabled = config.get('features', {}).get('enable_context_research', True)
         self.max_searches = conv_config.get('context_web_searches', 3)
-        self.model = conv_config.get('model', 'claude-sonnet-4-5')
+        self.model = conv_config.get('model', 'claude-sonnet-4-6')
 
         # Use sonar model for web searches (Perplexity)
         self.search_model = 'sonar-pro'  # Perplexity's web search model

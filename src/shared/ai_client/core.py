@@ -177,7 +177,7 @@ class AIAPIClient:
             # Model not in hierarchy - use fast/cheap models as fallback
             return ["claude-haiku-4-5", "gemini-2.5-flash-lite"][:count]
 
-    async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-sonnet-4-5",
+    async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-sonnet-4-6",
                                  tool_name: str = "structured_response", use_cache: bool = True,
                                  context: str = "", max_tokens: int = None, max_web_searches: int = 3,
                                  search_context_size: str = "low", debug_name: str = None, soft_schema: bool = False,
@@ -767,7 +767,7 @@ class AIAPIClient:
             "tools": tools, "tool_choice": tool_choice
         }
 
-    async def call_text_api(self, prompt: str, model: Union[str, List[str]] = "claude-sonnet-4-5",
+    async def call_text_api(self, prompt: str, model: Union[str, List[str]] = "claude-sonnet-4-6",
                            use_cache: bool = True, context: str = "", max_web_searches: int = 3) -> Dict:
         if isinstance(model, list): model = model[0]
         return await self.anthropic.call_text_api(prompt, model, use_cache, context, max_web_searches)
