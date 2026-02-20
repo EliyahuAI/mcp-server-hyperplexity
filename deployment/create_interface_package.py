@@ -2128,6 +2128,7 @@ def main():
                 ('POST', '/v1/uploads/confirm'),
                 ('POST', '/v1/jobs'),
                 ('POST', '/v1/jobs/reference-check'),
+                ('POST', '/v1/jobs/update-table'),
                 ('GET',  '/v1/jobs/{job_id}'),
                 ('POST', '/v1/jobs/{job_id}/validate'),
                 ('GET',  '/v1/jobs/{job_id}/results'),
@@ -2285,10 +2286,12 @@ def deploy_external_api_gateway(lambda_arn: str, region: str = "us-east-1", envi
         # Jobs
         ('POST', '/v1/jobs'),
         ('POST', '/v1/jobs/reference-check'),
+        ('POST', '/v1/jobs/update-table'),
         ('GET',  '/v1/jobs/{job_id}'),
         ('POST', '/v1/jobs/{job_id}/validate'),
         ('GET',  '/v1/jobs/{job_id}/results'),
         ('GET',  '/v1/jobs/{job_id}/reference-results'),
+        ('GET',  '/v1/jobs/{job_id}/messages'),
         # Account
         ('GET',  '/v1/account/balance'),
         ('GET',  '/v1/account/usage'),
