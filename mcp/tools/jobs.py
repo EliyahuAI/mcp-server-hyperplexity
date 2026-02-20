@@ -17,10 +17,12 @@ def register(server):
     @server.tool()
     def create_job(
         session_id: str,
+        upload_id: Optional[str] = None,
         config_id: Optional[str] = None,
         config: Optional[dict] = None,
         s3_key: Optional[str] = None,
         preview_rows: Optional[int] = None,
+        notify_method: Optional[str] = None,
         webhook_url: Optional[str] = None,
     ) -> list[types.TextContent]:
         """Create a validation job (preview or full).
@@ -30,9 +32,13 @@ def register(server):
           - config     — supply a config dict directly
           - (neither)  — session must already hold a config from upload_interview
 
+        upload_id comes from the upload_file response.
+        notify_method: "poll" (default) or "webhook".
         preview_rows defaults to the API's default (usually 5).
         """
         payload: dict = {"session_id": session_id}
+        if upload_id:
+            payload["upload_id"] = upload_id
         if config_id:
             payload["config_id"] = config_id
         if config:
@@ -41,6 +47,8 @@ def register(server):
             payload["s3_key"] = s3_key
         if preview_rows is not None:
             payload["preview_rows"] = preview_rows
+        if notify_method:
+            payload["notify_method"] = notify_method
         if webhook_url:
             payload["webhook_url"] = webhook_url
 

@@ -365,12 +365,30 @@ def test_job_workflow(client: HyperplexityClient, upload: dict, full: bool):
     match_score    = upload.get("match_score", 0)
 
     # ── POST /jobs ────────────────────────────────────────────────────────
-    job_payload: dict = {"session_id": session_id, "preview_rows": 3}
+    upload_id = upload.get("upload_id", "")
+    s3_key    = upload["s3_key"]
+
+    job_payload: dict = {
+        "session_id":    session_id,
+        "s3_key":        s3_key,
+        "preview_rows":  3,
+        "notify_method": "poll",
+    }
+    if upload_id:
+        job_payload["upload_id"] = upload_id
+
     if best_config_id and match_score >= 0.80:
         job_payload["config_id"] = best_config_id
         info(f"Re-using config_id={best_config_id} (score={match_score:.2f})")
     else:
-        info("No config match — backend derives config from session")
+        # Load demo config so the API knows how to process the file
+        demo_config_path = BASE_DIR / "demos" / "01. Investment Research" / "InvestmentResearch_config.json"
+        if demo_config_path.exists():
+            import json as _json
+            job_payload["config"] = _json.loads(demo_config_path.read_text())
+            info("No config match — using demo config JSON")
+        else:
+            info("No config match — backend derives config from session")
 
     job = client.post("/jobs", json=job_payload)
     job["_guidance"] = build_guidance("create_job", job)
