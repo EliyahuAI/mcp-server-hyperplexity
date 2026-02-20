@@ -288,13 +288,14 @@ def test_upload_workflow(client: HyperplexityClient) -> dict | None:
     filename = file_path.name
     presign = client.post("/uploads/presigned", json={
         "filename": filename,
+        "file_size": file_path.stat().st_size,
         "file_type": file_type,
+        "content_type": content_type,
     })
-    check("presigned has upload_url",  "upload_url"  in presign, str(list(presign.keys())))
+    upload_url = presign.get("presigned_url") or presign.get("upload_url", "")
+    check("presigned has upload/presigned url", bool(upload_url), str(list(presign.keys())))
     check("presigned has s3_key",      "s3_key"      in presign, str(list(presign.keys())))
     check("presigned has session_id",  "session_id"  in presign, str(list(presign.keys())))
-
-    upload_url = presign["upload_url"]
     s3_key     = presign["s3_key"]
     session_id = presign["session_id"]
     info(f"session_id = {session_id}")
