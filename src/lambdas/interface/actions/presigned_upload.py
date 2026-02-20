@@ -43,14 +43,27 @@ FILE_CONFIGS = {
         'max_size': 50 * 1024 * 1024,  # 50 MB for Excel files
         'allowed_extensions': ['.xlsx', '.xls'],
         'error_message': 'Invalid Excel file'
-    }
+    },
+    'config': {
+        'max_size': 10 * 1024 * 1024,  # 10 MB for config JSON files
+        'allowed_extensions': ['.json'],
+        'error_message': 'Invalid config file — must be JSON'
+    },
+    'odf': {
+        'max_size': 50 * 1024 * 1024,  # 50 MB for ODF/ODT documents
+        'allowed_extensions': ['.odf', '.odt'],
+        'error_message': 'Invalid ODF/ODT file'
+    },
 }
 
 # Content type mappings by file extension
 CONTENT_TYPE_MAP = {
     '.pdf': 'application/pdf',
     '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    '.xls': 'application/vnd.ms-excel'
+    '.xls': 'application/vnd.ms-excel',
+    '.json': 'application/json',
+    '.odf': 'application/vnd.oasis.opendocument.formula',
+    '.odt': 'application/vnd.oasis.opendocument.text',
 }
 
 def get_content_type(filename: str) -> str:
@@ -147,7 +160,13 @@ def request_presigned_url(request_data: Dict[str, Any], context: Any) -> Dict[st
 
         # Sanitize filename
         safe_filename = filename.replace(' ', '_').replace('/', '_')
-        s3_key = f"results/{domain}/{email_prefix}/{session_id}/{upload_id}_{safe_filename}"
+
+        # Config files go into the session path so get_latest_config() can find them
+        if file_type == 'config':
+            session_path = storage_manager.get_session_path(email, session_id)
+            s3_key = f"{session_path}uploaded_config_{upload_id}.json"
+        else:
+            s3_key = f"results/{domain}/{email_prefix}/{session_id}/{upload_id}_{safe_filename}"
 
         # Get correct content type for file extension
         content_type = get_content_type(filename)
@@ -174,7 +193,7 @@ def request_presigned_url(request_data: Dict[str, Any], context: Any) -> Dict[st
 
         logger.info(f"[PRESIGNED_URL] Generated URL for {file_type}: {upload_id}, session: {session_id}, content_type: {content_type}")
 
-        return create_response(200, {
+        response_data = {
             'success': True,
             'presigned_url': presigned_url,
             'upload_id': upload_id,
@@ -183,7 +202,12 @@ def request_presigned_url(request_data: Dict[str, Any], context: Any) -> Dict[st
             'file_type': file_type,
             'content_type': content_type,  # Return to frontend so it knows what header to use
             'expires_in': 300
-        })
+        }
+        # Config uploads get a dedicated alias key for clarity in POST /v1/jobs
+        if file_type == 'config':
+            response_data['config_s3_key'] = s3_key
+
+        return create_response(200, response_data)
 
     except Exception as e:
         logger.error(f"[PRESIGNED_URL] Error generating presigned URL: {str(e)}", exc_info=True)

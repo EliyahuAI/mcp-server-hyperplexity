@@ -1,8 +1,8 @@
 # Hyperplexity External API - Design Document
 
-**Version:** 1.0
-**Date:** 2026-02-17
-**Status:** Design Phase
+**Version:** 2.0
+**Date:** 2026-02-19
+**Status:** Active Development
 **Branch:** `api`
 
 ---
@@ -289,6 +289,186 @@ curl -X PUT "${presigned_url}" \
 ```
 
 **Rate Limit:** 60 requests/minute
+
+---
+
+#### 1.2 Confirm Upload & Get Config Options
+
+**Endpoint:** `POST /v1/uploads/confirm`
+
+**Purpose:** Mirrors what the web UI does after an Excel upload — verifies the file landed in S3, finds any configs that match the table structure, seeds the session for downstream calls (interview, job creation), and returns a `next_steps` block with the exact API call(s) for every available path.
+
+This call is **required** before `POST /v1/conversations/upload-interview` (which needs `table_analysis` in session state). It is **recommended** before `POST /v1/jobs` when you don't already have a config, because it surfaces existing matches.
+
+**Request:**
+```json
+{
+  "session_id": "session_20260217_103045_abc123",
+  "s3_key": "results/hyperplexity.ai/.../upload_a1b2c3d4_companies.xlsx",
+  "upload_id": "upload_a1b2c3d4",
+  "filename": "companies.xlsx"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `session_id` | yes | Session ID returned by `POST /v1/uploads/presigned` |
+| `s3_key` | yes | S3 key returned by `POST /v1/uploads/presigned` |
+| `upload_id` | no | Upload ID from presigned response (used for session bookkeeping) |
+| `filename` | no | Original filename — inferred from s3_key if omitted |
+
+**Response — matches found (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "session_id": "session_20260217_103045_abc123",
+    "table_name": "Companies",
+    "file_size_bytes": 2048000,
+    "match_count": 2,
+    "perfect_match": false,
+    "matches": [
+      {
+        "config_id": "cfg_abc123",
+        "name": "Companies Validation v3",
+        "match_score": 0.94,
+        "matched_columns": 8,
+        "total_columns": 9,
+        "created_at": "2026-01-10T14:22:00Z"
+      },
+      {
+        "config_id": "cfg_def456",
+        "name": "Companies Validation v1",
+        "match_score": 0.78,
+        "matched_columns": 7,
+        "total_columns": 9,
+        "created_at": "2025-12-01T09:00:00Z"
+      }
+    ],
+    "next_steps": {
+      "recommended": "use_match",
+      "options": [
+        {
+          "action": "use_match",
+          "label": "Use a matching config",
+          "description": "2 existing configs matched this table structure. Pick one from the matches list.",
+          "method": "POST",
+          "url": "/v1/jobs",
+          "body": {
+            "session_id": "session_20260217_103045_abc123",
+            "config_id": "cfg_abc123",
+            "preview_rows": 3
+          },
+          "note": "Replace config_id with any config_id from the matches[] list."
+        },
+        {
+          "action": "use_code",
+          "label": "Use a config ID you already have",
+          "description": "If you know the config_id from a previous run or GET /v1/account/usage, submit it directly.",
+          "method": "POST",
+          "url": "/v1/jobs",
+          "body": {
+            "session_id": "session_20260217_103045_abc123",
+            "config_id": "<your_config_id>",
+            "preview_rows": 3
+          }
+        },
+        {
+          "action": "upload_config",
+          "label": "Upload your own config file",
+          "description": "Upload a JSON config file you already have.",
+          "steps": [
+            {
+              "step": 1,
+              "label": "Get a presigned URL for your config file",
+              "method": "POST",
+              "url": "/v1/uploads/presigned",
+              "body": {
+                "file_type": "config",
+                "filename": "my_config.json",
+                "file_size": "<byte_length>",
+                "session_id": "session_20260217_103045_abc123"
+              },
+              "note": "Response includes config_s3_key — use it in step 3."
+            },
+            {
+              "step": 2,
+              "label": "PUT your file to the presigned URL",
+              "method": "PUT",
+              "url": "<presigned_url from step 1>",
+              "headers": { "Content-Type": "application/json" },
+              "body": "<raw file bytes>"
+            },
+            {
+              "step": 3,
+              "label": "Submit the job referencing the uploaded config",
+              "method": "POST",
+              "url": "/v1/jobs",
+              "body": {
+                "session_id": "session_20260217_103045_abc123",
+                "config_s3_key": "<config_s3_key from step 1 response>",
+                "preview_rows": 3
+              }
+            }
+          ]
+        },
+        {
+          "action": "create_ai",
+          "label": "Generate a new config with AI",
+          "description": "Start a short interview and let the AI build a validation config tailored to this table.",
+          "steps": [
+            {
+              "step": 1,
+              "label": "Start the upload interview",
+              "method": "POST",
+              "url": "/v1/conversations/upload-interview",
+              "body": { "session_id": "session_20260217_103045_abc123" },
+              "note": "Returns conversation_id. The AI may ask clarifying questions."
+            },
+            {
+              "step": 2,
+              "label": "Poll conversation state; reply to AI questions if any",
+              "method": "GET",
+              "url": "/v1/conversations/{conv_id}?session_id=session_20260217_103045_abc123",
+              "note": "When trigger_execution == true, config generation is underway. Use next_step.body for step 3."
+            },
+            {
+              "step": 3,
+              "label": "Submit a preview job",
+              "method": "POST",
+              "url": "/v1/jobs",
+              "body": {
+                "session_id": "session_20260217_103045_abc123",
+                "preview_rows": 3
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+**Response — no matches found (200):**
+
+Same shape, with `match_count: 0`, `matches: []`, `perfect_match: false`, and `next_steps.recommended: "create_ai"`. The `use_match` option is omitted from `options[]`.
+
+**Response — perfect match found (200):**
+
+`perfect_match: true`, `recommended: "use_match"`, and `matches[0]` is the exact config. The client can call `POST /v1/jobs` with that `config_id` with no further steps.
+
+**Side effects (always happen regardless of match result):**
+- Session `table_name`, `input_file`, and `table_path` are saved — required by `POST /v1/jobs`
+- `table_analysis` (column list) is saved — required by `POST /v1/conversations/upload-interview`
+
+**Complete upload flow (no config):**
+```
+POST /v1/uploads/presigned  →  { presigned_url, session_id, upload_id, s3_key }
+PUT  <presigned_url>        →  file in S3
+POST /v1/uploads/confirm    →  { matches[], next_steps }
+  → follow next_steps.options[N] based on your choice
+```
 
 ---
 
@@ -2204,6 +2384,363 @@ if __name__ == '__main__':
 
 ---
 
+---
+
+## Phase 5c — Extended Capabilities
+
+**Status:** Complete
+**Commit branch:** `api`
+
+### Overview
+
+Phase 5c extends the External API with four new capability areas:
+
+1. **Preview Results** — Job status now surfaces Excel download URL and metadata URL immediately when `status == "preview_complete"`.
+2. **Config Source Flexibility** — `POST /v1/jobs` accepts `config_id`, `config_s3_key`, or inline `config` JSON.
+3. **Reference Check** — New `POST /v1/jobs/reference-check` and `GET /v1/jobs/{job_id}/reference-results` endpoints.
+4. **Conversation Protocol** — New `/v1/conversations/*` endpoints expose table-maker and upload-interview workflows.
+
+---
+
+### 5c.1  Preview Results in GET /v1/jobs/{job_id}
+
+When `status == "preview_complete"`, the response now includes:
+
+```json
+{
+  "status": "preview_complete",
+  "preview_results": {
+    "download_url": "https://s3.amazonaws.com/...?X-Amz-Expires=3600",
+    "file_format": "xlsx",
+    "metadata_url": "https://s3.amazonaws.com/.../table_metadata.json?..."
+  },
+  "cost_estimate": {
+    "estimated_total_cost_usd": 0.42,
+    "estimated_rows": 500
+  },
+  "next_steps": {
+    "approve_url": "/v1/jobs/{job_id}/validate",
+    "requires_approval": true
+  }
+}
+```
+
+---
+
+### 5c.2  Config Source Flexibility in POST /v1/jobs
+
+The request body now accepts three mutually exclusive config sources (priority order):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `config_id` | string | ID of a saved configuration. Copied into the session path via `use_config_by_id`. |
+| `config_s3_key` | string | S3 key of a JSON file previously uploaded via `POST /v1/uploads/presigned` with `file_type: "config"`. |
+| `config` | object | Inline JSON configuration (existing behaviour). |
+
+A 400 error is returned if none of the three are provided.
+
+**Config file upload example:**
+
+```http
+POST /v1/uploads/presigned
+{
+  "filename": "my_config.json",
+  "file_size": 4096,
+  "file_type": "config",
+  "session_id": "session_xxx"
+}
+```
+
+Response includes `config_s3_key` (alias for `s3_key`) for convenience.
+
+**ODF file upload** (`file_type: "odf"`) also supported for reference check documents (`.odf`/`.odt`).
+
+---
+
+### 5c.3  Reference Check Endpoints
+
+#### POST /v1/jobs/reference-check
+
+Submit text or an uploaded document for AI reference checking.
+
+**Request:**
+```json
+{
+  "text": "Revenue was $42M in Q3...",
+  "session_id": "session_xxx"
+}
+```
+
+Or with an uploaded file:
+```json
+{
+  "s3_key": "results/domain/user/session_xxx/upload_abc_report.odt",
+  "session_id": "session_xxx"
+}
+```
+
+**Response (202):**
+```json
+{
+  "success": true,
+  "data": {
+    "job_id": "session_xxx",
+    "conversation_id": "refcheck_abc123",
+    "status": "processing",
+    "urls": {
+      "status": "/v1/jobs/session_xxx",
+      "results": "/v1/jobs/session_xxx/reference-results"
+    },
+    "polling": {
+      "recommended_interval_seconds": 10,
+      "max_wait_seconds": 300
+    }
+  }
+}
+```
+
+Poll `GET /v1/jobs/{job_id}` until `status == "completed"`, then call:
+
+#### GET /v1/jobs/{job_id}/reference-results
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "job_id": "session_xxx",
+    "status": "completed",
+    "results": {
+      "download_url": "https://s3.amazonaws.com/.../reference_check_results.csv?...",
+      "file_format": "csv"
+    }
+  }
+}
+```
+
+---
+
+### 5c.4  Conversation Protocol
+
+#### POST /v1/conversations/table-maker
+
+Start a table-maker conversation.
+
+**Request:**
+```json
+{
+  "message": "Track AI startups with funding and headcount",
+  "session_id": "session_xxx"
+}
+```
+
+**Response (202):**
+```json
+{
+  "data": {
+    "session_id": "session_xxx",
+    "conversation_id": "table_conv_abc123",
+    "status": "processing",
+    "urls": {
+      "job_status": "/v1/jobs/session_xxx",
+      "conversation": "/v1/conversations/table_conv_abc123"
+    }
+  }
+}
+```
+
+#### POST /v1/conversations/upload-interview
+
+Start an upload interview for a session that already has an Excel file.
+
+**Request:**
+```json
+{
+  "session_id": "session_xxx",
+  "message": "I have an investment research spreadsheet."
+}
+```
+
+**Response (202):** Same envelope with `conversation_id` prefixed `upload_conv_`.
+
+#### GET /v1/conversations/{conv_id}?session_id={session_id}
+
+The single polling endpoint for all conversation workflows. Check `user_reply_needed` and `trigger_execution` on every poll — both drive what you do next, and the `next_step` block always tells you exactly what call to make.
+
+**Response fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | `processing` · `in_progress` · `awaiting_approval` · `execution_ready` · `recovery` |
+| `user_reply_needed` | bool | **True → the AI has asked a question; send a message.** False → keep polling or workflow is done. |
+| `trigger_execution` | bool | True → workflow complete, submit a preview job. |
+| `last_ai_message` | string\|null | The AI's most recent message (question or proposal). Only non-null when `user_reply_needed` is true. |
+| `turn_count` | int | Number of conversation turns completed so far. |
+| `table_name` | string\|null | Table name (table-maker only). |
+| `next_step` | object\|null | Always present. Tells you exactly what to call next. |
+
+**`status` meanings:**
+
+| Value | Meaning | `user_reply_needed` | `trigger_execution` |
+|-------|---------|---------------------|---------------------|
+| `processing` | SQS is still running; wait | false | false |
+| `in_progress` | AI asked a question | **true** | false |
+| `awaiting_approval` | AI presented a plan; confirm or revise | **true** | false |
+| `execution_ready` | Table maker: execution pipeline running | false | false |
+| `recovery` | Table maker: zero rows found; AI needs guidance | **true** | false |
+| `preview_generated` | Table maker: preview in progress | false | false |
+| *(any)* | Workflow done | false | **true** |
+
+---
+
+**Response — AI is processing (200):**
+```json
+{
+  "data": {
+    "conversation_id": "upload_conv_abc123",
+    "session_id": "session_xxx",
+    "status": "processing",
+    "turn_count": 0,
+    "last_ai_message": null,
+    "user_reply_needed": false,
+    "trigger_execution": false,
+    "table_name": null,
+    "next_step": { "action": "poll", "description": "The AI is still working. Poll again in a few seconds." }
+  }
+}
+```
+
+**Response — AI asked a question (200):**
+```json
+{
+  "data": {
+    "conversation_id": "upload_conv_abc123",
+    "session_id": "session_xxx",
+    "status": "in_progress",
+    "turn_count": 1,
+    "last_ai_message": "What type of data does this table contain — financial, contact, or something else?",
+    "user_reply_needed": true,
+    "trigger_execution": false,
+    "table_name": null,
+    "next_step": {
+      "action": "send_message",
+      "method": "POST",
+      "url": "/v1/conversations/upload_conv_abc123/message",
+      "body": { "session_id": "session_xxx", "message": "<your reply>" },
+      "description": "The AI has asked a question (see last_ai_message). Send your reply to continue the conversation."
+    }
+  }
+}
+```
+
+**Response — AI presented a plan, awaiting approval (200):**
+```json
+{
+  "data": {
+    "conversation_id": "upload_conv_abc123",
+    "session_id": "session_xxx",
+    "status": "awaiting_approval",
+    "turn_count": 2,
+    "last_ai_message": "Here's my plan: validate Company Name, Revenue, and Headcount columns using web search. Shall I proceed?",
+    "user_reply_needed": true,
+    "trigger_execution": false,
+    "table_name": null,
+    "next_step": {
+      "action": "send_message",
+      "method": "POST",
+      "url": "/v1/conversations/upload_conv_abc123/message",
+      "body": { "session_id": "session_xxx", "message": "<your reply>" },
+      "description": "The AI has proposed a validation plan (see last_ai_message). Reply with a confirmation (e.g. 'Yes, proceed') to start config generation, or describe any changes you want first."
+    }
+  }
+}
+```
+
+**Response — workflow complete, submit preview (200):**
+```json
+{
+  "data": {
+    "conversation_id": "upload_conv_abc123",
+    "session_id": "session_xxx",
+    "status": "in_progress",
+    "turn_count": 3,
+    "last_ai_message": null,
+    "user_reply_needed": false,
+    "trigger_execution": true,
+    "table_name": null,
+    "next_step": {
+      "action": "submit_preview",
+      "method": "POST",
+      "url": "/v1/jobs",
+      "body": { "session_id": "session_xxx", "preview_rows": 3 },
+      "description": "The workflow is complete and a config has been written to the session. Submit a preview job to validate the results before full processing."
+    }
+  }
+}
+```
+
+**Polling loop (pseudocode):**
+
+```python
+while True:
+    r = GET /v1/conversations/{conv_id}?session_id={session_id}
+    d = r["data"]
+
+    if d["user_reply_needed"]:
+        print("AI says:", d["last_ai_message"])
+        reply = input("Your reply: ")
+        POST /v1/conversations/{conv_id}/message  { session_id, message: reply }
+        # Next poll will return status='processing' while SQS runs
+
+    elif d["trigger_execution"]:
+        POST /v1/jobs  d["next_step"]["body"]   # submit preview
+        break
+
+    else:
+        sleep(5)   # still processing, keep polling
+```
+
+> **Implementation note:** Immediately after queuing to SQS (start or continue), the server writes `status: "processing"` to the state file. This means polls during that window always return `user_reply_needed: false` and `next_step.action: "poll"` rather than a 404 or the stale state from the previous turn.
+
+> **Why explicit?** The web UI auto-triggers a preview via WebSocket when these workflows complete. The External API keeps this step explicit so clients retain control over when (and whether) to proceed to validation. The `next_step` block removes any ambiguity about what to call next.
+
+#### POST /v1/conversations/{conv_id}/message
+
+Continue a conversation with a new user message.
+
+**Request:**
+```json
+{
+  "session_id": "session_xxx",
+  "message": "Add a column for last funding date"
+}
+```
+
+Dispatches by `conv_id` prefix (`table_conv_*`, `upload_conv_*`).
+Reference checks (`refcheck_*`) return 405.
+
+#### POST /v1/conversations/{conv_id}/select
+
+For upload interview post-upload config selection.
+
+**Request:**
+```json
+{
+  "session_id": "session_xxx",
+  "selection": "use_match"
+}
+```
+
+`selection` values:
+
+| Value | Action |
+|-------|--------|
+| `use_match` | Apply the best-matching saved configuration automatically |
+| `create_ai` | Queue AI-powered config generation |
+| `use_code` | Apply a specific config by `config_id` (also required in body) |
+
+---
+
 ## Document Revision History
 
 | Version | Date | Changes | Author |
@@ -2216,6 +2753,9 @@ if __name__ == '__main__':
 | 1.5 | 2026-02-18 | Fix 3 bugs in 14c-account-page.js: (1) Critical — Revoke button onclick broke for key names containing single quotes because browser HTML-decodes attribute values before JS execution; fixed by using `data-key-prefix`/`data-key-name` attributes on the button and reading them with `this.dataset.*` in onclick; (2) High — showCreateApiKeyModal and showRevokeKeyModal had no duplicate guard, allowing stacked modals on rapid clicks; fixed with early-return `if (document.getElementById(overlayId)) return`; (3) Medium — `item.amount \|\| item.cost \|\| 0` treated zero-dollar amounts as falsy; fixed with nullish coalescing `item.amount ?? item.cost ?? 0`. Also updated build.py to output account.html and account-dev.html as copies of the main build. | System |
 | 1.6 | 2026-02-19 | Mark Phase 5 complete (renamed to "E2E Testing & Results Enrichment"); rename old Phase 5 to Phase 5b (Documentation, pending). Created `deployment/test_external_api.py` — full E2E test. Fixed 5 bugs discovered during testing: (1) `columns_validated` = 0 — nested in `preview_data.validation_metrics.validated_columns_count`; (2) results file 404 — wrong filename `validation_results_enhanced.xlsx` vs actual `enhanced_validation.xlsx`; (3) xlsx treated as zip in test script; (4) `listApiKeys`/`createApiKey` "Unknown action" — API key routing missing from `application/json` branch of `http_handler.py`; (5) viewer URL base was `https://eliyahu.ai/hyperplexity` → fixed to `https://eliyahu.ai/viewer`. Enriched results package: receipt PDF generated by background_handler and uploaded to S3 (`receipt_s3_key` stored in DynamoDB), `metadata_url` and `receipt_url` presigned URLs added to GET /v1/jobs/{id}/results response, `job_info` block added to response. Updated section 2.4 (Get Job Results) response schema to match implementation. | System |
 | 1.7 | 2026-02-19 | **Phase 4 redesign** — full rewrite of account UI to standard card design language (commits `16602de1`, `2e641937`, `56c70906`). (1) `14c-account-page.js` rewritten: `createCard`-based account card and secondary API keys card replace custom `account-page` layout and modal overlays; `showApiKeysCard` / `refreshApiKeysList` / `showInlineAddKeyForm` / `submitNewApiKey` / `revokeKeyAndRefresh` replace old modal functions; `renderTransactionRow` shows last-10 transactions from `getAccountBalance` response; `showAddCreditsPrompt` / `selectCreditsAmount` / `purchaseCreditsAmount` add inline amount picker ($10/$25/$50/$100 chips + custom input) before delegating to `openAddCreditsPage(amount, 'account-card-messages')` for full guided Squarespace purchase flow; `.acct-balance[data-balance]` opts into `updateAllBalanceDisplays()` so displayed balance auto-refreshes after purchase detected. (2) `07-email-validation.js` `showSignedInBadge`: logout button removed from badge HTML; badge click → `requireEmailThen(() => initAccountPage(), ...)`. (3) `09-account.css` rewritten: old layout/modal/key-card styles removed; new `acct-*` utility classes added (balance display, divider, tx list, keys list, inline form, raw-key box, credit chip picker). (4) Fixed 2 frontend response field mapping bugs: `data.api_keys` (not `data.keys`) for `listApiKeys`; `data.account_info.current_balance` / `data.account_info.recent_transactions` (not top-level `data.balance` / `data.transactions`) for `getAccountBalance`; `transaction_type` field (not `type`) used for debit detection. (5) Sign Out button uses `quinary` variant (magenta `#e91e63` border, white background) matching app's standard card button style. Updated Phase 4 section to reflect current implementation. | System |
+| 2.0 | 2026-02-19 | **POST /v1/uploads/confirm** — new endpoint that mirrors `confirm_upload_complete()`: verifies S3, runs `_find_matching_configs()` on Excel bytes, saves `session_info` (table_name, input_file, table_path) and `table_analysis` (column list for upload-interview), returns structured `matches[]` and a rich `next_steps.options[]` block spelling out every available path (use_match, use_code, upload_config, create_ai) with ready-to-execute API call(s) per option. Recommended action set to `use_match` when matches exist, `create_ai` when none. `match_warning` field included if matching failed non-fatally. Added section 1.2 to API design doc with full request/response examples and side-effects note. | System |
+| 1.9 | 2026-02-19 | **Explicit preview-trigger protocol for conversation endpoints.** `GET /v1/conversations/{conv_id}` now returns `next_step` block when `trigger_execution: true`, containing the exact `POST /v1/jobs` call needed to start the preview. Documents the reason (web UI auto-triggers via WebSocket; API keeps it explicit). Added full polling pattern example to Phase 5c docs. | System |
+| 1.8 | 2026-02-19 | **Phase 5c — Extended Capabilities.** (1) Preview results: `GET /v1/jobs/{id}` returns `preview_results` (download_url, metadata_url), `cost_estimate`, and `next_steps` when `status == "preview_complete"`. (2) Config source flexibility: `POST /v1/jobs` accepts `config_id` (calls `use_config_by_id`), `config_s3_key` (S3 copy), or inline `config`; 400 if none provided. (3) `POST /v1/uploads/presigned` extended: `file_type: "config"` (JSON, returns `config_s3_key`) and `file_type: "odf"` (ODF/ODT documents). (4) Reference check: `POST /v1/jobs/reference-check` (inline text or uploaded PDF/ODF via `s3_key`) and `GET /v1/jobs/{id}/reference-results` (presigned CSV URL). ODF text extraction added to `pdf_converter.py` via `extract_text_from_s3()`. `handle_get_reference_results()` added to `status_check.py`. (5) Conversations: `POST /v1/conversations/table-maker`, `POST /v1/conversations/upload-interview`, `GET /v1/conversations/{conv_id}`, `POST /v1/conversations/{conv_id}/message`, `POST /v1/conversations/{conv_id}/select` (use_match/create_ai/use_code). (6) `test_external_api.py`: 6 new test sections, `delete_api_key()` cleanup at end of `main()`, `get_or_create_api_key()` returns `(raw_key, key_hash)`. | System |
 
 ---
 

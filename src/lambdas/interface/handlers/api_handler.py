@@ -18,6 +18,18 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+def _json_default(obj):
+    """Fallback JSON encoder — handles DynamoDB Decimal and datetime objects."""
+    import decimal
+    from datetime import datetime
+    if isinstance(obj, decimal.Decimal):
+        # Preserve integers as int, everything else as float
+        return int(obj) if obj == obj.to_integral_value() else float(obj)
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -191,15 +203,29 @@ def _route(http_method, path, headers, body, query_params, email, meta):
     if http_method == "POST" and clean == "/uploads/presigned":
         return _handle_presigned_upload(body, email, meta)
 
+    # POST /uploads/confirm
+    if http_method == "POST" and clean == "/uploads/confirm":
+        return _handle_confirm_upload(body, email, meta)
+
+    # POST /jobs/reference-check  (before generic /jobs route)
+    if http_method == "POST" and clean == "/jobs/reference-check":
+        return _handle_reference_check(body, email, meta)
+
     # POST /jobs
     if http_method == "POST" and clean == "/jobs":
         return _handle_create_job(body, email, meta)
 
-    # GET /jobs/{job_id}   (must not end in /validate or /results)
+    # GET /jobs/{job_id}/reference-results
+    if http_method == "GET" and clean.endswith("/reference-results"):
+        parts = clean.split("/")  # ['', 'jobs', '{job_id}', 'reference-results']
+        if len(parts) == 4 and parts[1] == "jobs":
+            return _handle_get_reference_results(parts[2], email, meta)
+
+    # GET /jobs/{job_id}   (must not end in /validate, /results, /reference-results)
     if (
         http_method == "GET"
         and clean.startswith("/jobs/")
-        and not clean.endswith(("/validate", "/results"))
+        and not clean.endswith(("/validate", "/results", "/reference-results"))
     ):
         job_id = clean[6:]
         if job_id and "/" not in job_id:
@@ -225,6 +251,33 @@ def _route(http_method, path, headers, body, query_params, email, meta):
     if http_method == "GET" and clean == "/account/usage":
         return _handle_account_usage(email, query_params, meta)
 
+    # --- Conversation routes ---
+    # POST /conversations/table-maker
+    if http_method == "POST" and clean == "/conversations/table-maker":
+        return _handle_start_table_maker(body, email, meta)
+
+    # POST /conversations/upload-interview
+    if http_method == "POST" and clean == "/conversations/upload-interview":
+        return _handle_start_upload_interview(body, email, meta)
+
+    if clean.startswith("/conversations/"):
+        conv_segment = clean[len("/conversations/"):]  # e.g. "{conv_id}" or "{conv_id}/message"
+        conv_parts = conv_segment.split("/", 1)
+        conv_id = conv_parts[0]
+        sub = conv_parts[1] if len(conv_parts) > 1 else ""
+
+        if conv_id and http_method == "GET" and not sub:
+            return _handle_get_conversation(conv_id, email, query_params, meta)
+
+        if conv_id and http_method == "POST" and sub == "message":
+            return _handle_conversation_message(conv_id, body, email, meta)
+
+        if conv_id and http_method == "POST" and sub == "select":
+            return _handle_conversation_select(conv_id, body, email, meta)
+
+        if conv_id and http_method == "POST" and sub == "refine-config":
+            return _handle_refine_config(conv_id, body, email, meta)
+
     return _error_response(
         404, "not_found",
         f"Endpoint not found: {http_method} /v1{clean}", meta
@@ -240,6 +293,282 @@ def _handle_presigned_upload(body, email, meta):
     request_data = {**body, "email": email, "_verified_email": email}
     resp = presigned_upload.request_presigned_url(request_data, None)
     return _wrap_handler_response(resp, meta)
+
+
+def _handle_confirm_upload(body, email, meta):
+    """
+    POST /v1/uploads/confirm
+
+    Mirrors what the web UI does after an Excel upload:
+      1. Verify the file landed in S3
+      2. Run _find_matching_configs() on the raw Excel bytes
+      3. Save session_info (table_name, input_file, table_path) so subsequent
+         calls (upload-interview, POST /v1/jobs) have everything they need
+      4. Save table_analysis so upload-interview doesn't have to re-parse
+      5. Return structured matches + a next_steps block that spells out every
+         available option with the exact API call(s) needed
+
+    Required body fields: s3_key, session_id
+    Optional: upload_id, filename
+    """
+    s3_key = body.get("s3_key")
+    session_id = body.get("session_id")
+    upload_id = body.get("upload_id", "")
+    filename = body.get("filename", "")
+
+    if not s3_key or not session_id:
+        return _error_response(400, "missing_fields", "s3_key and session_id are required.", meta)
+
+    if not session_id.startswith("session_"):
+        session_id = f"session_{session_id}"
+
+    try:
+        from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+        from interface_lambda.utils.helpers import clean_table_name
+
+        mgr = UnifiedS3Manager()
+
+        # 1. Verify the file actually landed in S3
+        try:
+            head = mgr.s3_client.head_object(Bucket=mgr.bucket_name, Key=s3_key)
+            file_size = head["ContentLength"]
+        except Exception:
+            return _error_response(
+                404, "file_not_found",
+                "File not found in S3. Ensure the PUT upload completed before calling confirm.", meta
+            )
+
+        # 2. Infer filename from s3_key if caller didn't send it
+        #    S3 key format: results/{domain}/{user}/{session_id}/{upload_id}_{filename}
+        if not filename:
+            raw = s3_key.split("/")[-1]
+            # Strip "upload_{hex}_" prefix
+            parts = raw.split("_", 2)
+            filename = parts[2] if (len(parts) == 3 and parts[0] == "upload") else raw
+
+        display_name = clean_table_name(filename, for_display=True)
+        filename_base = clean_table_name(filename, for_display=False)
+
+        # 3. Save session_info — everything downstream depends on this
+        try:
+            sess_info = mgr.load_session_info(email, session_id)
+            sess_info["original_filename"] = filename
+            sess_info["clean_table_name"] = display_name
+            sess_info["table_name_base"] = filename_base
+            sess_info["table_path"] = s3_key
+            sess_info["input_file"] = {
+                "s3_key": s3_key,
+                "upload_id": upload_id,
+                "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            }
+            mgr.save_session_info(email, session_id, sess_info)
+            logger.info(f"[CONFIRM_UPLOAD] Saved session_info for {session_id}")
+        except Exception as e:
+            logger.warning(f"[CONFIRM_UPLOAD] Could not save session_info: {e}")
+
+        # 4. Download bytes and run the match finder (same path as confirm_upload_complete)
+        matching_data = {"success": False, "matches": [], "perfect_match": False}
+        table_columns = []
+        match_error = None
+        try:
+            obj = mgr.s3_client.get_object(Bucket=mgr.bucket_name, Key=s3_key)
+            excel_content = obj["Body"].read()
+
+            from interface_lambda.actions.process_excel_unified import _find_matching_configs
+            result = _find_matching_configs(excel_content, email)
+            if result:
+                matching_data = result
+            table_columns = matching_data.get("table_columns") or []
+
+            # Save table_analysis so upload-interview doesn't have to re-parse
+            if table_columns:
+                try:
+                    sess_info = mgr.load_session_info(email, session_id)
+                    sess_info["table_analysis"] = {
+                        "columns": table_columns,
+                        "row_count": None,
+                        "sample_rows": [],
+                    }
+                    mgr.save_session_info(email, session_id, sess_info)
+                except Exception as e:
+                    logger.warning(f"[CONFIRM_UPLOAD] Could not save table_analysis: {e}")
+
+        except Exception as e:
+            logger.warning(f"[CONFIRM_UPLOAD] Match-finding error (non-fatal): {e}")
+            match_error = str(e)
+
+        # 5. Shape the matches list for the API response
+        raw_matches = matching_data.get("matches") or []
+        perfect_match = bool(matching_data.get("perfect_match"))
+        auto_select = matching_data.get("auto_select_config")
+
+        matches = []
+        for m in raw_matches:
+            if not m.get("config_id"):
+                continue
+            matches.append({
+                "config_id": m["config_id"],
+                "name": m.get("description") or m["config_id"],
+                "match_score": round(float(m.get("match_score") or 0), 3),
+                "matched_columns": m.get("matching_columns"),
+                "total_columns": m.get("column_count"),
+                "created_at": m.get("created_date") or m.get("last_modified"),
+            })
+
+        match_count = len(matches)
+        top_config_id = (auto_select or {}).get("config_id") or (matches[0]["config_id"] if matches else None)
+
+        # 6. Build next_steps — spell out every option with ready-to-execute calls
+        options = []
+
+        if match_count > 0:
+            options.append({
+                "action": "use_match",
+                "label": "Use a matching config",
+                "description": (
+                    f"{'Perfect match found. ' if perfect_match else ''}"
+                    f"{match_count} existing config{'s' if match_count > 1 else ''} "
+                    f"matched this table structure. Pick one from the matches list above."
+                ),
+                "method": "POST",
+                "url": "/v1/jobs",
+                "body": {
+                    "session_id": session_id,
+                    "config_id": top_config_id,
+                    "preview_rows": 3,
+                },
+                "note": "Replace config_id with any config_id from the matches[] list.",
+            })
+
+        options.append({
+            "action": "use_code",
+            "label": "Use a config ID you already have",
+            "description": (
+                "If you know the config_id from a previous run or from GET /v1/account/usage, "
+                "submit it directly without needing to match."
+            ),
+            "method": "POST",
+            "url": "/v1/jobs",
+            "body": {
+                "session_id": session_id,
+                "config_id": "<your_config_id>",
+                "preview_rows": 3,
+            },
+        })
+
+        options.append({
+            "action": "upload_config",
+            "label": "Upload your own config file",
+            "description": (
+                "Upload a JSON config file you already have. "
+                "The file goes straight to your session — no extra storage step needed."
+            ),
+            "steps": [
+                {
+                    "step": 1,
+                    "label": "Get a presigned URL for your config file",
+                    "method": "POST",
+                    "url": "/v1/uploads/presigned",
+                    "body": {
+                        "file_type": "config",
+                        "filename": "my_config.json",
+                        "file_size": "<byte_length_of_your_file>",
+                        "session_id": session_id,
+                    },
+                    "note": "Response includes config_s3_key — use it in step 3.",
+                },
+                {
+                    "step": 2,
+                    "label": "PUT your file to the presigned URL",
+                    "method": "PUT",
+                    "url": "<presigned_url from step 1>",
+                    "headers": {"Content-Type": "application/json"},
+                    "body": "<raw file bytes>",
+                },
+                {
+                    "step": 3,
+                    "label": "Submit the job referencing the uploaded config",
+                    "method": "POST",
+                    "url": "/v1/jobs",
+                    "body": {
+                        "session_id": session_id,
+                        "config_s3_key": "<config_s3_key from step 1 response>",
+                        "preview_rows": 3,
+                    },
+                },
+            ],
+        })
+
+        options.append({
+            "action": "create_ai",
+            "label": "Generate a new config with AI",
+            "description": (
+                "Start a short interview and let the AI build a validation config "
+                "tailored to this table. The interview usually takes 1–3 turns before "
+                "config generation begins (~2–4 min total)."
+            ),
+            "steps": [
+                {
+                    "step": 1,
+                    "label": "Start the upload interview",
+                    "method": "POST",
+                    "url": "/v1/conversations/upload-interview",
+                    "body": {"session_id": session_id},
+                    "note": "Returns conversation_id. The AI will ask clarifying questions.",
+                },
+                {
+                    "step": 2,
+                    "label": "Poll conversation state until trigger_execution is true",
+                    "method": "GET",
+                    "url": f"/v1/conversations/{{conv_id}}?session_id={session_id}",
+                    "note": (
+                        "Each response includes last_ai_message. If the AI asks a question, "
+                        "reply via POST /v1/conversations/{conv_id}/message. "
+                        "When trigger_execution == true, config generation has started — "
+                        "proceed to step 3."
+                    ),
+                },
+                {
+                    "step": 3,
+                    "label": "Submit a preview job (use next_step.body from step 2 response)",
+                    "method": "POST",
+                    "url": "/v1/jobs",
+                    "body": {
+                        "session_id": session_id,
+                        "preview_rows": 3,
+                    },
+                },
+            ],
+        })
+
+        # Determine recommended action
+        if perfect_match or match_count > 0:
+            recommended = "use_match"
+        else:
+            recommended = "create_ai"
+
+        next_steps = {
+            "recommended": recommended,
+            "options": options,
+        }
+
+        response_data = {
+            "session_id": session_id,
+            "table_name": display_name,
+            "file_size_bytes": file_size,
+            "match_count": match_count,
+            "perfect_match": perfect_match,
+            "matches": matches,
+            "next_steps": next_steps,
+        }
+        if match_error:
+            response_data["match_warning"] = f"Config matching encountered an error and was skipped: {match_error}"
+
+        return _success_response(200, response_data, meta)
+
+    except Exception as e:
+        logger.error(f"[CONFIRM_UPLOAD] Unexpected error: {e}", exc_info=True)
+        return _error_response(500, "server_error", f"Upload confirmation failed: {e}", meta)
 
 
 def _handle_create_job(body, email, meta):
@@ -271,9 +600,47 @@ def _handle_create_job(body, email, meta):
         except Exception as e:
             logger.warning(f"[API_HANDLER] Could not save s3_key to session_info: {e}")
 
-    # Persist the inline config to S3 if provided
+    # Resolve config in priority order: config_id → config_s3_key → inline config
+    config_id = body.get("config_id")
+    config_s3_key = body.get("config_s3_key")
     config = body.get("config")
-    if config:
+
+    if config_id:
+        # Copy saved config by ID into the session path
+        try:
+            from interface_lambda.actions.use_config_by_id import handle_use_config_by_id
+            result = handle_use_config_by_id(
+                {"_verified_email": email, "session_id": base_session_id, "config_id": config_id},
+                None,
+            )
+            # handle_use_config_by_id returns a create_response() envelope
+            parsed = _parse_handler_response(result)
+            if parsed["status_code"] >= 400 or parsed["body"].get("success") is False:
+                msg = (parsed["body"].get("message")
+                       or parsed["body"].get("error")
+                       or f"Configuration '{config_id}' not found.")
+                return _error_response(404, "config_not_found", msg, meta)
+            logger.info(f"[API_HANDLER] Applied config_id={config_id} for {base_session_id}")
+        except Exception as e:
+            logger.warning(f"[API_HANDLER] Could not apply config_id: {e}")
+            return _error_response(404, "config_not_found",
+                                   f"Configuration '{config_id}' not found.", meta)
+    elif config_s3_key:
+        # Copy already-uploaded config file to the canonical session config path
+        try:
+            from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+            mgr = UnifiedS3Manager()
+            target_key = f"{mgr.get_session_path(email, base_session_id)}config.json"
+            mgr.s3_client.copy_object(
+                Bucket=mgr.bucket_name,
+                CopySource={"Bucket": mgr.bucket_name, "Key": config_s3_key},
+                Key=target_key,
+            )
+            logger.info(f"[API_HANDLER] Copied config_s3_key={config_s3_key} → {target_key}")
+        except Exception as e:
+            logger.warning(f"[API_HANDLER] Could not copy config_s3_key: {e}")
+    elif config:
+        # Save inline config JSON to the canonical session config path
         try:
             from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
             mgr = UnifiedS3Manager()
@@ -287,6 +654,11 @@ def _handle_create_job(body, email, meta):
             logger.info(f"[API_HANDLER] Saved config to S3: {config_key}")
         except Exception as e:
             logger.warning(f"[API_HANDLER] Could not save config to S3: {e}")
+    else:
+        return _error_response(
+            400, "missing_config",
+            "One of config, config_id, or config_s3_key is required.", meta
+        )
 
     request_data = {
         "_verified_email": email,
@@ -333,6 +705,7 @@ def _handle_get_job_status(job_id, email, query_params, meta):
     """
     _STATUS_MAP = {
         "COMPLETED": "completed",
+        "COMPLETE": "completed",      # reference check stores lowercase "complete"
         "PROCESSING": "processing",
         "IN_PROGRESS": "processing",
         "PENDING": "queued",
@@ -365,7 +738,8 @@ def _handle_get_job_status(job_id, email, query_params, meta):
         db_status = str(record.get("status") or "PROCESSING").upper()
         pct = int(record.get("percent_complete") or 0)
         step = str(record.get("verbose_status") or record.get("message") or "")
-        submitted_at = record.get("start_time") or record.get("created_at")
+        _t = record.get("start_time") or record.get("created_at")
+        submitted_at = str(_t) if _t is not None else None
 
         logger.info(f"[JOB_STATUS] job_id={job_id} run_key={run_key!r} db_status={db_status} pct={pct}")
 
@@ -387,6 +761,29 @@ def _handle_get_job_status(job_id, email, query_params, meta):
         "current_step": step or None,
         "submitted_at": submitted_at,
     }
+
+    # Surface preview results when the preview run is complete
+    if api_status == "preview_complete" and record:
+        pr_key = record.get("preview_results_s3_key")
+        if pr_key:
+            from interface_lambda.core.s3_manager import generate_presigned_url, S3_RESULTS_BUCKET
+            pr_dir = pr_key.rsplit("/", 1)[0]
+            data["preview_results"] = {
+                "download_url": generate_presigned_url(S3_RESULTS_BUCKET, pr_key),
+                "file_format": "xlsx" if pr_key.endswith(".xlsx") else "unknown",
+                "metadata_url": generate_presigned_url(S3_RESULTS_BUCKET, f"{pr_dir}/table_metadata.json"),
+            }
+        pd = record.get("preview_data") or {}
+        ce = pd.get("cost_estimate") or {}
+        data["cost_estimate"] = {
+            "estimated_total_cost_usd": ce.get("total_cost"),
+            "estimated_rows": pd.get("total_rows"),
+        }
+        data["next_steps"] = {
+            "approve_url": f"/v1/jobs/{job_id}/validate",
+            "requires_approval": True,
+        }
+
     extra = {"Retry-After": "10"} if api_status in ("processing", "queued") else None
     return _success_response(200, data, meta, extra_headers=extra)
 
@@ -456,6 +853,630 @@ def _handle_account_usage(email, query_params, meta):
     return _wrap_handler_response(resp, meta)
 
 
+def _handle_reference_check(body, email, meta):
+    """POST /v1/jobs/reference-check"""
+    import asyncio
+
+    text = (body.get("text") or "").strip()
+    upload_s3_key = body.get("s3_key")
+    session_id = body.get("session_id") or f"session_{uuid.uuid4().hex[:16]}"
+
+    if not text and not upload_s3_key:
+        return _error_response(400, "missing_fields", "text or s3_key is required.", meta)
+
+    # Extract text from uploaded file if no inline text provided
+    if upload_s3_key and not text:
+        try:
+            from interface_lambda.actions.reference_check.pdf_converter import extract_text_from_s3
+            text = extract_text_from_s3(upload_s3_key)
+        except Exception as e:
+            logger.error(f"[API_HANDLER] Text extraction failed: {e}", exc_info=True)
+            return _error_response(500, "extraction_failed", f"Could not extract text from file: {e}", meta)
+
+    if not text:
+        return _error_response(400, "empty_text", "No text could be extracted from the provided file.", meta)
+
+    try:
+        from interface_lambda.actions.reference_check.conversation import handle_reference_check_start_async
+        resp = asyncio.run(handle_reference_check_start_async(
+            {"email": email, "session_id": session_id, "submitted_text": text},
+            None,
+        ))
+    except Exception as e:
+        logger.error(f"[API_HANDLER] Reference check start failed: {e}", exc_info=True)
+        return _error_response(500, "server_error", f"Failed to start reference check: {e}", meta)
+
+    parsed = _parse_handler_response(resp)
+    if parsed["status_code"] >= 400 or parsed["body"].get("success") is False:
+        b = parsed["body"]
+        return _error_response(
+            parsed["status_code"],
+            b.get("error", "request_failed"),
+            b.get("message") or "Failed to start reference check",
+            meta,
+        )
+
+    body_data = parsed["body"]
+    return _success_response(202, {
+        "job_id": session_id,
+        "conversation_id": body_data.get("conversation_id"),
+        "status": "processing",
+        "urls": {
+            "status": f"/v1/jobs/{session_id}",
+            "results": f"/v1/jobs/{session_id}/reference-results",
+        },
+        "polling": {
+            "recommended_interval_seconds": 10,
+            "max_wait_seconds": 300,
+        },
+    }, meta)
+
+
+def _handle_get_reference_results(job_id, email, meta):
+    """GET /v1/jobs/{job_id}/reference-results"""
+    request_data = {
+        "_api_email": email,
+        "_verified_email": email,
+        "job_id": job_id,
+    }
+    from interface_lambda.actions import status_check
+    resp = status_check.handle_get_reference_results(request_data, None)
+    return _wrap_handler_response(resp, meta)
+
+
+# ---------------------------------------------------------------------------
+# Conversation handlers
+# ---------------------------------------------------------------------------
+
+def _handle_start_table_maker(body, email, meta):
+    """POST /v1/conversations/table-maker"""
+    from interface_lambda.actions.table_maker.conversation import handle_table_conversation_start_async
+
+    session_id = body.get("session_id") or f"session_{uuid.uuid4().hex[:16]}"
+    resp = handle_table_conversation_start_async(
+        {
+            "email": email,
+            "session_id": session_id,
+            "user_message": body.get("message", ""),
+        },
+        None,
+    )
+    parsed = _parse_handler_response(resp)
+    if parsed["status_code"] >= 400 or parsed["body"].get("success") is False:
+        b = parsed["body"]
+        return _error_response(
+            parsed["status_code"],
+            b.get("error", "request_failed"),
+            b.get("message") or "Failed to start table maker",
+            meta,
+        )
+    b = parsed["body"]
+    conv_id = b.get("conversation_id")
+    actual_session_id = b.get("session_id", session_id)
+
+    # Write processing marker so GET /v1/conversations/{conv_id} returns
+    # status='processing' rather than 404 while SQS initialises.
+    if conv_id:
+        _write_processing_state(conv_id, email, actual_session_id)
+
+    return _success_response(202, {
+        "session_id": actual_session_id,
+        "conversation_id": conv_id,
+        "status": "processing",
+        "urls": {
+            "job_status": f"/v1/jobs/{actual_session_id}",
+            "conversation": f"/v1/conversations/{conv_id}",
+        },
+        "polling": {
+            "recommended_interval_seconds": 10,
+            "max_wait_seconds": 600,
+        },
+    }, meta)
+
+
+def _handle_start_upload_interview(body, email, meta):
+    """POST /v1/conversations/upload-interview"""
+    import asyncio
+    from interface_lambda.actions.upload_interview import handle_upload_interview_start_async
+
+    session_id = body.get("session_id")
+    if not session_id:
+        return _error_response(400, "missing_fields", "session_id is required for upload interview.", meta)
+
+    conv_id = f"upload_conv_{uuid.uuid4().hex[:12]}"
+    resp = asyncio.run(handle_upload_interview_start_async(
+        {
+            "email": email,
+            "session_id": session_id,
+            "conversation_id": conv_id,
+            "user_message": body.get("message", ""),
+        },
+        None,
+    ))
+    parsed = _parse_handler_response(resp)
+    if parsed["status_code"] >= 400 or parsed["body"].get("success") is False:
+        b = parsed["body"]
+        return _error_response(
+            parsed["status_code"],
+            b.get("error", "request_failed"),
+            b.get("message") or "Failed to start upload interview",
+            meta,
+        )
+    b = parsed["body"]
+    actual_conv_id = b.get("conversation_id", conv_id)
+
+    # Write processing marker so GET /v1/conversations/{conv_id} returns
+    # status='processing' rather than 404 while SQS initialises.
+    _write_processing_state(actual_conv_id, email, session_id)
+
+    return _success_response(202, {
+        "session_id": session_id,
+        "conversation_id": actual_conv_id,
+        "status": "processing",
+        "urls": {
+            "conversation": f"/v1/conversations/{actual_conv_id}",
+            "select": f"/v1/conversations/{actual_conv_id}/select",
+        },
+        "polling": {
+            "recommended_interval_seconds": 5,
+            "max_wait_seconds": 120,
+        },
+    }, meta)
+
+
+def _conv_state_key(conv_id, email, session_id):
+    """Return the S3 key for a conversation state file."""
+    if conv_id.startswith("table_conv_"):
+        return f"tables/{email}/{session_id}/table_maker/{conv_id}/conversation_state.json"
+    if conv_id.startswith("refcheck_"):
+        return f"reference_checks/{email}/{session_id}/{conv_id}/conversation_state.json"
+    if conv_id.startswith("upload_conv_"):
+        return f"uploads/{email}/{session_id}/interview/{conv_id}/conversation_state.json"
+    if conv_id.startswith("refine_"):
+        return f"refine/{email}/{session_id}/{conv_id}/conversation_state.json"
+    return None
+
+
+def _write_processing_state(conv_id, email, session_id, existing_state=None):
+    """
+    Write (or patch) the conversation state to status='processing' immediately
+    after queuing an SQS message.  This ensures GET /v1/conversations/{conv_id}
+    always returns a meaningful response while the background worker is running,
+    rather than a 404 or stale 'awaiting_reply' from the previous turn.
+    """
+    import json as _json
+    try:
+        from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+        state_key = _conv_state_key(conv_id, email, session_id)
+        if not state_key:
+            return
+        mgr = UnifiedS3Manager()
+        state = dict(existing_state) if existing_state else {}
+        state["status"] = "processing"
+        state.setdefault("conversation_id", conv_id)
+        state.setdefault("session_id", session_id)
+        state.setdefault("turn_count", 0)
+        mgr.s3_client.put_object(
+            Bucket=mgr.bucket_name,
+            Key=state_key,
+            Body=_json.dumps(state).encode("utf-8"),
+            ContentType="application/json",
+        )
+    except Exception as e:
+        logger.warning(f"[API_HANDLER] Could not write processing state for {conv_id}: {e}")
+
+
+def _extract_last_ai_message(state):
+    """
+    Pull the most recent AI message out of a conversation state dict.
+
+    Both the table maker and upload interview store conversation history in a
+    'messages' list of {'role': 'user'|'assistant', 'content': str} dicts.
+    There is no top-level 'last_ai_message' field — we derive it here.
+    """
+    messages = state.get("messages") or []
+    for msg in reversed(messages):
+        if msg.get("role") == "assistant":
+            return msg.get("content") or msg.get("ai_message")
+    # Fallback to any top-level field the background processor might have written
+    return (
+        state.get("ai_message")
+        or state.get("last_ai_message")
+        or state.get("follow_up_question")
+    )
+
+
+def _compute_conversation_signals(conv_id, state):
+    """
+    Derive user_reply_needed and trigger_execution from raw S3 state.
+
+    State machines differ by conversation type:
+
+    upload_conv_*:
+      status='processing'                          → user_reply_needed=False (SQS running)
+      status='in_progress', tcg=False              → user_reply_needed=True  (AI asked Q, mode 1)
+      status='awaiting_approval'                   → user_reply_needed=True  (AI presented plan, mode 2)
+      status='in_progress', tcg=True               → user_reply_needed=False (config gen queued)
+      trigger_execution=True                       → user_reply_needed=False (done)
+
+    table_conv_*:
+      status='processing'                          → user_reply_needed=False (SQS running)
+      status='in_progress',  trigger_execution=F   → user_reply_needed=True  (AI asking questions)
+      status='recovery'                            → user_reply_needed=True  (zero rows, needs guidance)
+      status='execution_ready' / trigger_exec=True → user_reply_needed=False (execution pipeline running)
+      status='preview_generated'                   → user_reply_needed=False (preview in progress)
+    """
+    status = state.get("status", "processing")
+    trigger_execution = bool(state.get("trigger_execution", False))
+    trigger_config_generation = bool(state.get("trigger_config_generation", False))
+
+    if trigger_execution:
+        return False, trigger_execution
+
+    if status == "processing":
+        return False, False
+
+    if conv_id.startswith("upload_conv_"):
+        if status == "awaiting_approval":
+            return True, False
+        if status == "in_progress" and not trigger_config_generation:
+            return True, False
+        # in_progress + trigger_config_generation=True → config gen running
+        return False, False
+
+    if conv_id.startswith("table_conv_"):
+        if status in ("in_progress",) and not trigger_execution:
+            return True, False
+        if status == "recovery":
+            return True, False
+        # execution_ready, preview_generated, or trigger_execution=True
+        return False, trigger_execution
+
+    if conv_id.startswith("refine_"):
+        # Fire-and-forget — never needs a user reply.
+        # trigger_execution is set by _handle_get_conversation once a newer
+        # config version is detected in S3.
+        return False, trigger_execution
+
+    return False, trigger_execution
+
+
+def _handle_get_conversation(conv_id, email, query_params, meta):
+    """GET /v1/conversations/{conv_id}"""
+    import json as _json
+    session_id = query_params.get("session_id")
+    if not session_id:
+        return _error_response(400, "missing_fields", "session_id query parameter is required.", meta)
+
+    state_key = _conv_state_key(conv_id, email, session_id)
+    if not state_key:
+        return _error_response(400, "unknown_conversation", f"Cannot determine type of conversation: {conv_id}", meta)
+
+    try:
+        from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+        mgr = UnifiedS3Manager()
+
+        # If the state file doesn't exist yet (SQS hasn't run), return a
+        # 'processing' response rather than a 404 — the conversation exists,
+        # it's just still being initialised in the background.
+        try:
+            state_obj = mgr.s3_client.get_object(Bucket=mgr.bucket_name, Key=state_key)
+            state = _json.loads(state_obj["Body"].read())
+        except mgr.s3_client.exceptions.NoSuchKey:
+            return _success_response(200, {
+                "conversation_id": conv_id,
+                "session_id": session_id,
+                "status": "processing",
+                "turn_count": 0,
+                "last_ai_message": None,
+                "user_reply_needed": False,
+                "trigger_execution": False,
+                "table_name": None,
+            }, meta, extra_headers={"Retry-After": "5"})
+        except Exception:
+            # head_object style 404 arrives as a generic ClientError
+            return _success_response(200, {
+                "conversation_id": conv_id,
+                "session_id": session_id,
+                "status": "processing",
+                "turn_count": 0,
+                "last_ai_message": None,
+                "user_reply_needed": False,
+                "trigger_execution": False,
+                "table_name": None,
+            }, meta, extra_headers={"Retry-After": "5"})
+
+        # For refine_ convs: lazily detect completion by checking if a new
+        # config version was saved to S3 since the refinement was queued.
+        if conv_id.startswith("refine_") and state.get("status") == "processing":
+            try:
+                from interface_lambda.actions.generate_config_unified import find_latest_config_in_session
+                mgr2 = mgr  # already initialised above
+                latest = find_latest_config_in_session(
+                    mgr2.s3_client, mgr2.bucket_name,
+                    mgr2.get_session_path(email, session_id)
+                )
+                if latest:
+                    current_version = int(
+                        (latest.get("storage_metadata") or {}).get("version") or 0
+                    )
+                    started_version = int(state.get("started_version") or 0)
+                    if current_version > started_version:
+                        # New config version exists — refinement is done
+                        sm = latest.get("storage_metadata") or {}
+                        new_config_id = sm.get("config_id") or sm.get("filename", "").replace(".json", "")
+                        ai_summary = (
+                            (latest.get("generation_metadata") or {}).get("ai_summary")
+                            or "Config updated."
+                        )
+                        state["status"] = "completed"
+                        state["trigger_execution"] = True
+                        state["completed_config_id"] = new_config_id
+                        state["ai_summary"] = ai_summary
+                        # Persist so subsequent polls are instant
+                        import json as _json2
+                        mgr2.s3_client.put_object(
+                            Bucket=mgr2.bucket_name, Key=state_key,
+                            Body=_json2.dumps(state).encode("utf-8"),
+                            ContentType="application/json",
+                        )
+            except Exception as _re:
+                logger.warning(f"[REFINE_POLL] Could not check config version: {_re}")
+
+        user_reply_needed, trigger_execution = _compute_conversation_signals(conv_id, state)
+        last_ai_message = _extract_last_ai_message(state) or state.get("ai_summary")
+        status = state.get("status", "processing")
+
+        data = {
+            "conversation_id": conv_id,
+            "session_id": session_id,
+            "status": status,
+            "turn_count": state.get("turn_count"),
+            "last_ai_message": last_ai_message,
+            "user_reply_needed": user_reply_needed,
+            "trigger_execution": trigger_execution,
+            "table_name": state.get("table_name"),
+        }
+
+        if user_reply_needed:
+            # Spell out exactly how to reply
+            if status == "awaiting_approval":
+                data["next_step"] = {
+                    "action": "send_message",
+                    "method": "POST",
+                    "url": f"/v1/conversations/{conv_id}/message",
+                    "body": {"session_id": session_id, "message": "<your reply>"},
+                    "description": (
+                        "The AI has proposed a validation plan (see last_ai_message). "
+                        "Reply with a confirmation (e.g. 'Yes, proceed') to start config "
+                        "generation, or describe any changes you want first."
+                    ),
+                }
+            else:
+                data["next_step"] = {
+                    "action": "send_message",
+                    "method": "POST",
+                    "url": f"/v1/conversations/{conv_id}/message",
+                    "body": {"session_id": session_id, "message": "<your reply>"},
+                    "description": (
+                        "The AI has asked a question (see last_ai_message). "
+                        "Send your reply to continue the conversation."
+                    ),
+                }
+
+        elif trigger_execution:
+            job_body = {"session_id": session_id, "preview_rows": 3}
+            description = (
+                "The workflow is complete and a config has been written to the session. "
+                "Submit a preview job to validate the results before full processing."
+            )
+            if conv_id.startswith("refine_") and state.get("completed_config_id"):
+                job_body["config_id"] = state["completed_config_id"]
+                description = (
+                    f"Config refinement complete (config_id: {state['completed_config_id']}). "
+                    "Submit a preview job to validate the updated configuration."
+                )
+            data["next_step"] = {
+                "action": "submit_preview",
+                "method": "POST",
+                "url": "/v1/jobs",
+                "body": job_body,
+                "description": description,
+            }
+
+        elif status == "processing":
+            data["next_step"] = {
+                "action": "poll",
+                "description": "The AI is still working. Poll again in a few seconds.",
+            }
+
+        extra = {"Retry-After": "5"} if status == "processing" else None
+        return _success_response(200, data, meta, extra_headers=extra)
+
+    except Exception as e:
+        logger.error(f"[API_HANDLER] Get conversation failed for {conv_id}: {e}", exc_info=True)
+        return _error_response(500, "server_error", f"Could not load conversation state: {e}", meta)
+
+
+def _handle_conversation_message(conv_id, body, email, meta):
+    """POST /v1/conversations/{conv_id}/message"""
+    import asyncio
+
+    if conv_id.startswith("table_conv_"):
+        from interface_lambda.actions.table_maker.conversation import handle_table_conversation_continue_async
+        session_id = body.get("session_id")
+        if not session_id:
+            return _error_response(400, "missing_fields", "session_id is required.", meta)
+        resp = handle_table_conversation_continue_async(
+            {
+                "email": email,
+                "session_id": session_id,
+                "conversation_id": conv_id,
+                "user_message": body.get("message", ""),
+            },
+            None,
+        )
+    elif conv_id.startswith("upload_conv_"):
+        from interface_lambda.actions.upload_interview import handle_upload_interview_continue_async
+        session_id = body.get("session_id")
+        if not session_id:
+            return _error_response(400, "missing_fields", "session_id is required.", meta)
+        resp = asyncio.run(handle_upload_interview_continue_async(
+            {
+                "email": email,
+                "session_id": session_id,
+                "conversation_id": conv_id,
+                "user_message": body.get("message", ""),
+            },
+            None,
+        ))
+    elif conv_id.startswith("refcheck_"):
+        return _error_response(405, "method_not_allowed", "Reference checks do not support multi-turn messages.", meta)
+    else:
+        return _error_response(400, "unknown_conversation", f"Cannot determine type of conversation: {conv_id}", meta)
+
+    # Mark state as 'processing' immediately after queuing so subsequent polls
+    # see status='processing' + user_reply_needed=False rather than the stale
+    # 'awaiting_reply' state from the previous turn.
+    _write_processing_state(conv_id, email, session_id)
+
+    return _wrap_handler_response(resp, meta, success_status=202)
+
+
+def _handle_conversation_select(conv_id, body, email, meta):
+    """POST /v1/conversations/{conv_id}/select"""
+    session_id = body.get("session_id")
+    if not session_id:
+        return _error_response(400, "missing_fields", "session_id is required.", meta)
+
+    selection = body.get("selection")
+    if selection not in ("use_match", "create_ai", "use_code"):
+        return _error_response(400, "invalid_selection", "selection must be use_match, create_ai, or use_code.", meta)
+
+    try:
+        if selection == "use_match":
+            # Find the best matching config and apply it
+            from interface_lambda.actions.process_excel_unified import _find_matching_configs
+            from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+            mgr = UnifiedS3Manager()
+            sess_info = mgr.load_session_info(email, session_id)
+            table_path = sess_info.get("table_path")
+            if table_path:
+                file_bytes = mgr.s3_client.get_object(Bucket=mgr.bucket_name, Key=table_path)["Body"].read()
+                matches = _find_matching_configs(file_bytes, email)
+                top = ((matches.get("matches") or [])[0:1] or [None])[0]
+                if top and top.get("config_id"):
+                    from interface_lambda.actions.use_config_by_id import handle_use_config_by_id
+                    handle_use_config_by_id(
+                        {"_verified_email": email, "session_id": session_id, "config_id": top["config_id"]},
+                        None,
+                    )
+                    return _success_response(200, {"applied": "use_match", "config_id": top["config_id"]}, meta)
+            return _error_response(404, "no_match", "No matching config found.", meta)
+
+        elif selection == "create_ai":
+            # Queue AI config generation
+            from interface_lambda.actions import generate_config_unified
+            resp = generate_config_unified.handle(
+                {"_verified_email": email, "session_id": session_id, "action": "generateConfig"},
+                None,
+            )
+            return _wrap_handler_response(resp, meta, success_status=202)
+
+        elif selection == "use_code":
+            config_id = body.get("config_id")
+            if not config_id:
+                return _error_response(400, "missing_fields", "config_id is required for use_code selection.", meta)
+            from interface_lambda.actions.use_config_by_id import handle_use_config_by_id
+            resp = handle_use_config_by_id(
+                {"_verified_email": email, "session_id": session_id, "config_id": config_id},
+                None,
+            )
+            parsed = _parse_handler_response(resp)
+            if parsed["body"].get("success") is False:
+                return _error_response(400, "config_error", parsed["body"].get("message", "Failed to apply config"), meta)
+            return _success_response(200, {"applied": "use_code", "config_id": config_id}, meta)
+
+    except Exception as e:
+        logger.error(f"[API_HANDLER] Conversation select failed: {e}", exc_info=True)
+        return _error_response(500, "server_error", f"Failed to apply selection: {e}", meta)
+
+
+def _handle_refine_config(conv_id, body, email, meta):
+    """POST /v1/conversations/{conv_id}/refine-config
+
+    Queues a config refinement (modifyConfig) for the session.  The current
+    config is auto-discovered; a new versioned config is written to S3 by the
+    background handler.  Poll GET /v1/conversations/{conv_id}?session_id=...
+    until next_step.action == "submit_preview" to know the refinement is done.
+    """
+    session_id = body.get("session_id")
+    instructions = (body.get("instructions") or "").strip()
+
+    if not session_id:
+        return _error_response(400, "missing_fields", "session_id is required.", meta)
+    if not instructions:
+        return _error_response(400, "missing_fields", "instructions is required.", meta)
+
+    # Record the current config version so polling can detect when a new one lands
+    started_version = 0
+    try:
+        from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+        from interface_lambda.actions.generate_config_unified import find_latest_config_in_session
+        mgr = UnifiedS3Manager()
+        existing = find_latest_config_in_session(
+            mgr.s3_client, mgr.bucket_name, mgr.get_session_path(email, session_id)
+        )
+        if existing:
+            started_version = int(
+                (existing.get("storage_metadata") or {}).get("version") or 0
+            )
+    except Exception as e:
+        logger.warning(f"[REFINE_CONFIG] Could not read current config version: {e}")
+
+    # Write processing marker immediately so first poll returns 200 not 404
+    _write_processing_state(conv_id, email, session_id, existing_state={
+        "started_version": started_version,
+        "instructions": instructions,
+    })
+
+    # Queue the SQS refinement job
+    try:
+        from interface_lambda.actions.generate_config_unified import handle_generate_config_async
+        resp = handle_generate_config_async(
+            {"email": email, "session_id": session_id, "instructions": instructions},
+            None,
+        )
+    except Exception as e:
+        logger.error(f"[REFINE_CONFIG] Failed to queue refinement: {e}", exc_info=True)
+        return _error_response(500, "server_error", f"Failed to queue refinement: {e}", meta)
+
+    parsed = _parse_handler_response(resp)
+    if parsed["status_code"] >= 400:
+        b = parsed["body"]
+        return _error_response(
+            parsed["status_code"],
+            b.get("error", "request_failed"),
+            b.get("message") or "Failed to queue config refinement.",
+            meta,
+        )
+
+    return _success_response(202, {
+        "conversation_id": conv_id,
+        "session_id": session_id,
+        "status": "processing",
+        "instructions": instructions,
+        "urls": {
+            "conversation": f"/v1/conversations/{conv_id}?session_id={session_id}",
+        },
+        "polling": {
+            "recommended_interval_seconds": 10,
+            "max_wait_seconds": 300,
+            "note": "Poll until next_step.action == 'submit_preview', then POST to /v1/jobs with next_step.body.",
+        },
+    }, meta)
+
+
 # ---------------------------------------------------------------------------
 # Response helpers
 # ---------------------------------------------------------------------------
@@ -506,7 +1527,7 @@ def _success_response(status_code, data, meta, extra_headers=None):
     return {
         "statusCode": status_code,
         "headers": headers,
-        "body": json.dumps({"success": True, "data": data, "error": None, "meta": meta}),
+        "body": json.dumps({"success": True, "data": data, "error": None, "meta": meta}, default=_json_default),
     }
 
 
@@ -525,5 +1546,5 @@ def _error_response(status_code, code, message, meta, details=None, extra_header
     return {
         "statusCode": status_code,
         "headers": headers,
-        "body": json.dumps({"success": False, "data": None, "error": error, "meta": meta}),
+        "body": json.dumps({"success": False, "data": None, "error": error, "meta": meta}, default=_json_default),
     }

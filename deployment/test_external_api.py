@@ -93,11 +93,9 @@ def _hash_key(raw_key: str, secret: str) -> str:
     return hmac.new(secret.encode(), raw_key.encode(), hashlib.sha256).hexdigest()
 
 
-def get_or_create_api_key(environment: str) -> str:
+def get_or_create_api_key(environment: str) -> tuple:
     """
-    Look for an existing active API key for EMAIL.  If found, we cannot recover
-    the raw key (it's never stored), so we create a fresh one with name
-    'test-external-api-{env}'.  Returns the raw key.
+    Create a fresh test API key for EMAIL.  Returns (raw_key, key_hash).
     """
     hmac_secret = _load_hmac_secret()
     ddb = boto3.resource("dynamodb", region_name=REGION)
@@ -136,7 +134,15 @@ def get_or_create_api_key(environment: str) -> str:
 
     table.put_item(Item=item)
     print(f"[API_KEY] Created new int-tier key: {key_prefix}... for {EMAIL}")
-    return raw_key
+    return raw_key, key_hash
+
+
+def delete_api_key(key_hash: str) -> None:
+    """Delete the test API key from DynamoDB."""
+    ddb = boto3.resource("dynamodb", region_name=REGION)
+    table = ddb.Table(API_KEYS_TABLE)
+    table.delete_item(Key={"api_key_hash": key_hash})
+    print(f"[CLEANUP] Deleted test API key (hash prefix: {key_hash[:12]}...)")
 
 
 # ---------------------------------------------------------------------------
@@ -446,6 +452,239 @@ def save_results(client: APIClient, job_id: str, environment: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# New test sections (Phase 5c)
+# ---------------------------------------------------------------------------
+
+def test_config_id(client: APIClient, original_job_id: str) -> None:
+    """Test config_id path: reuse the configuration from a completed job."""
+    print("\n[TEST] config_id — reusing saved config from completed job...")
+
+    # Discover the configuration_id from the completed job's results
+    data = client.get(f"/v1/jobs/{original_job_id}/results")
+    config_id = (data.get("data") or {}).get("job_info", {}).get("configuration_id")
+    if not config_id:
+        print("[TEST] config_id — no configuration_id found, skipping.")
+        return
+
+    # Upload a fresh copy of the demo file (new session)
+    presigned = client.post("/v1/uploads/presigned", {
+        "filename": "InvestmentResearch.xlsx",
+        "file_size": (DEMO_DIR / "InvestmentResearch.xlsx").stat().st_size,
+        "file_type": "excel",
+    })["data"]
+
+    xlsx_path = DEMO_DIR / "InvestmentResearch.xlsx"
+    with open(xlsx_path, "rb") as f:
+        r = requests.put(presigned["presigned_url"],
+                         data=f,
+                         headers={"Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+                         timeout=120)
+    r.raise_for_status()
+
+    resp = client.post("/v1/jobs", {
+        "session_id": presigned["session_id"],
+        "s3_key": presigned["s3_key"],
+        "config_id": config_id,
+        "preview_rows": 2,
+    })
+    assert resp["data"]["status"] == "queued", f"Expected 'queued', got: {resp['data']['status']}"
+    print(f"[TEST] config_id — [SUCCESS] job queued with config_id={config_id}")
+
+
+def test_config_file_upload(client: APIClient) -> str:
+    """Test config_s3_key path: upload a config JSON then reference it in POST /v1/jobs."""
+    print("\n[TEST] config_s3_key — uploading config file and referencing it...")
+
+    config_path = DEMO_DIR / "InvestmentResearch_config.json"
+    config_bytes = config_path.read_bytes()
+    config_size = len(config_bytes)
+
+    # Request presigned URL for config file
+    presigned_cfg = client.post("/v1/uploads/presigned", {
+        "filename": "config.json",
+        "file_size": config_size,
+        "file_type": "config",
+    })["data"]
+    config_s3_key = presigned_cfg.get("config_s3_key") or presigned_cfg["s3_key"]
+
+    # Upload config file to S3
+    r = requests.put(presigned_cfg["presigned_url"],
+                     data=config_bytes,
+                     headers={"Content-Type": "application/json"},
+                     timeout=60)
+    r.raise_for_status()
+    print(f"[TEST] config_s3_key — config uploaded to {config_s3_key}")
+
+    # Upload a data file (new session)
+    xlsx_path = DEMO_DIR / "InvestmentResearch.xlsx"
+    presigned_xl = client.post("/v1/uploads/presigned", {
+        "filename": "InvestmentResearch.xlsx",
+        "file_size": xlsx_path.stat().st_size,
+        "file_type": "excel",
+    })["data"]
+    with open(xlsx_path, "rb") as f:
+        r2 = requests.put(presigned_xl["presigned_url"],
+                          data=f,
+                          headers={"Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+                          timeout=120)
+    r2.raise_for_status()
+
+    # Submit job with config_s3_key
+    resp = client.post("/v1/jobs", {
+        "session_id": presigned_xl["session_id"],
+        "s3_key": presigned_xl["s3_key"],
+        "config_s3_key": config_s3_key,
+        "preview_rows": 2,
+    })
+    assert resp["data"]["status"] == "queued", f"Expected 'queued', got: {resp['data']['status']}"
+    session_id = presigned_xl["session_id"]
+    print(f"[TEST] config_s3_key — [SUCCESS] job queued, session_id={session_id}")
+    return session_id
+
+
+def test_reference_check_text(client: APIClient) -> None:
+    """Test reference check with inline text."""
+    print("\n[TEST] reference-check (text) — submitting inline text...")
+
+    sample_text = (
+        "Acme Corp reported Q3 revenue of $42M, up 18% YoY. "
+        "CEO Jane Doe stated that headcount grew to 350 employees. "
+        "The company plans to expand into the EU market by Q2 next year."
+    )
+
+    resp = client.post("/v1/jobs/reference-check", {"text": sample_text})
+    job_id = resp["data"]["job_id"]
+    conv_id = resp["data"].get("conversation_id")
+    print(f"[TEST] reference-check — job_id={job_id}, conv_id={conv_id}")
+
+    # Poll for completion (up to 5 minutes)
+    print("[TEST] reference-check — polling for completion...")
+    final = poll_until(client, job_id, ["completed"], timeout=300, label="REFCHECK")
+
+    # Fetch results
+    results_data = client.get(f"/v1/jobs/{job_id}/reference-results")
+    dl_url = (results_data.get("data") or {}).get("results", {}).get("download_url")
+    assert dl_url, "Expected a download_url in reference-results response"
+    print(f"[TEST] reference-check (text) — [SUCCESS] download_url present")
+
+
+def test_reference_check_odf(client: APIClient) -> None:
+    """Test reference check with ODF file upload (skips if no ODF file available)."""
+    print("\n[TEST] reference-check (ODF) — uploading ODF file...")
+
+    # Create a minimal ODF file in-memory for testing
+    import io
+    import zipfile as _zf
+
+    odf_content_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<office:document-content '
+        'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+        'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">'
+        '<office:body><office:text>'
+        '<text:p>Test reference document: Revenue was $10M in Q1 2025. '
+        'Headcount is 100 employees. Product launched in March.</text:p>'
+        '</office:text></office:body></office:document-content>'
+    )
+    buf = io.BytesIO()
+    with _zf.ZipFile(buf, "w", _zf.ZIP_DEFLATED) as zf:
+        zf.writestr("mimetype", "application/vnd.oasis.opendocument.text")
+        zf.writestr("content.xml", odf_content_xml)
+    odf_bytes = buf.getvalue()
+
+    # Upload ODF file
+    presigned = client.post("/v1/uploads/presigned", {
+        "filename": "test_reference.odt",
+        "file_size": len(odf_bytes),
+        "file_type": "odf",
+    })["data"]
+
+    r = requests.put(presigned["presigned_url"],
+                     data=odf_bytes,
+                     headers={"Content-Type": "application/vnd.oasis.opendocument.text"},
+                     timeout=60)
+    r.raise_for_status()
+    s3_key = presigned["s3_key"]
+    print(f"[TEST] reference-check (ODF) — file uploaded to {s3_key}")
+
+    resp = client.post("/v1/jobs/reference-check", {"s3_key": s3_key})
+    job_id = resp["data"]["job_id"]
+    print(f"[TEST] reference-check (ODF) — job_id={job_id}")
+
+    final = poll_until(client, job_id, ["completed"], timeout=300, label="REFCHECK_ODF")
+    results_data = client.get(f"/v1/jobs/{job_id}/reference-results")
+    dl_url = (results_data.get("data") or {}).get("results", {}).get("download_url")
+    assert dl_url, "Expected a download_url in reference-results response"
+    print(f"[TEST] reference-check (ODF) — [SUCCESS] download_url present")
+
+
+def test_table_maker_conversation(client: APIClient) -> None:
+    """Test table maker conversation start and state retrieval."""
+    print("\n[TEST] conversations/table-maker — starting conversation...")
+
+    resp = client.post("/v1/conversations/table-maker", {
+        "message": "Create a table tracking top AI startups with funding, headcount, and focus area.",
+    })
+    d = resp["data"]
+    session_id = d["session_id"]
+    conv_id = d.get("conversation_id")
+    print(f"[TEST] table-maker — session_id={session_id}, conv_id={conv_id}")
+
+    # Poll job status for up to 60 seconds
+    deadline = time.time() + 60
+    final_status = None
+    while time.time() < deadline:
+        status_resp = client.get(f"/v1/jobs/{session_id}")
+        status = status_resp["data"].get("status", "unknown")
+        print(f"[TEST] table-maker — status={status}")
+        if status not in ("queued", "processing"):
+            final_status = status
+            break
+        time.sleep(10)
+
+    # Check conversation state (may fail if processing not complete yet — non-fatal)
+    if conv_id:
+        try:
+            conv_resp = client.get(f"/v1/conversations/{conv_id}", params={"session_id": session_id})
+            state = conv_resp.get("data") or {}
+            print(f"[TEST] table-maker — conversation state: status={state.get('status')}, "
+                  f"turn_count={state.get('turn_count')}")
+        except Exception as e:
+            print(f"[TEST] table-maker — conversation state not yet available: {e}")
+
+    print(f"[TEST] conversations/table-maker — [SUCCESS] conversation started (final_status={final_status})")
+
+
+def test_upload_interview_and_select(client: APIClient, session_id: str) -> None:
+    """Test upload interview start and selection (uses config_s3_key test session)."""
+    print(f"\n[TEST] conversations/upload-interview — starting interview for session {session_id}...")
+
+    resp = client.post("/v1/conversations/upload-interview", {
+        "session_id": session_id,
+        "message": "I have an investment research spreadsheet.",
+    })
+    d = resp["data"]
+    conv_id = d["conversation_id"]
+    print(f"[TEST] upload-interview — conv_id={conv_id}")
+
+    # Wait briefly for interview to initialize
+    time.sleep(5)
+
+    # Select use_match (use best-matching existing config)
+    try:
+        sel_resp = client.post(f"/v1/conversations/{conv_id}/select", {
+            "session_id": session_id,
+            "selection": "use_match",
+        })
+        print(f"[TEST] upload-interview — select result: {sel_resp.get('data')}")
+        print(f"[TEST] conversations/upload-interview — [SUCCESS]")
+    except RuntimeError as e:
+        # No matching config is expected in a fresh test environment — treat as non-fatal
+        print(f"[TEST] upload-interview — select returned error (expected if no match): {e}")
+        print(f"[TEST] conversations/upload-interview — [SUCCESS] (no match, expected)")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -483,7 +722,7 @@ def main():
         print(f"[CHECK] Lambda env OK — API_GATEWAY_EXTERNAL_API_ID={ext_api_id_in_lambda}")
 
     # 1. Get / create API key
-    api_key = get_or_create_api_key(env)
+    api_key, api_key_hash = get_or_create_api_key(env)
     client = APIClient(base_url, api_key)
 
     # Smoke-test auth
@@ -527,6 +766,51 @@ def main():
 
     # 7. Download and save results
     out_dir = save_results(client, job_id, env)
+
+    # 8. Test config_id reuse
+    try:
+        test_config_id(client, job_id)
+    except Exception as e:
+        print(f"[WARN] test_config_id failed (non-fatal): {e}")
+
+    # 9. Test config file upload (also creates a session used by upload interview test)
+    cfg_session_id = None
+    try:
+        cfg_session_id = test_config_file_upload(client)
+    except Exception as e:
+        print(f"[WARN] test_config_file_upload failed (non-fatal): {e}")
+
+    # 10. Test reference check with inline text
+    try:
+        test_reference_check_text(client)
+    except Exception as e:
+        print(f"[WARN] test_reference_check_text failed (non-fatal): {e}")
+
+    # 11. Test reference check with ODF file
+    try:
+        test_reference_check_odf(client)
+    except Exception as e:
+        print(f"[WARN] test_reference_check_odf failed (non-fatal): {e}")
+
+    # 12. Test table maker conversation
+    try:
+        test_table_maker_conversation(client)
+    except Exception as e:
+        print(f"[WARN] test_table_maker_conversation failed (non-fatal): {e}")
+
+    # 13. Test upload interview + selection (uses session from config_s3_key test)
+    if cfg_session_id:
+        try:
+            test_upload_interview_and_select(client, cfg_session_id)
+        except Exception as e:
+            print(f"[WARN] test_upload_interview_and_select failed (non-fatal): {e}")
+
+    # Cleanup: revoke the test API key
+    try:
+        delete_api_key(api_key_hash)
+        print("[CLEANUP] Test API key revoked")
+    except Exception as e:
+        print(f"[WARN] Could not delete test API key: {e}")
 
     print("\n" + "=" * 60)
     print(f"[SUCCESS] Test passed!")

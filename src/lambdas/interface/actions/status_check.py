@@ -131,7 +131,7 @@ def handle_get_results(request_data, context=None):
 
         current_status = status_record.get('status', '').upper()
 
-        if current_status != 'COMPLETED':
+        if current_status not in ('COMPLETED', 'COMPLETE'):
             return create_response(404, {
                 'success': False,
                 'error': 'results_not_ready',
@@ -211,4 +211,102 @@ def handle_get_results(request_data, context=None):
             'success': False,
             'error': 'server_error',
             'message': f'Failed to get results: {str(e)}'
+        })
+
+
+def handle_get_reference_results(request_data, context=None):
+    """
+    Get download URL for a completed Reference Check run.
+
+    Called by api_handler for GET /v1/jobs/{job_id}/reference-results.
+
+    Expects:
+        request_data: {
+            '_api_email': 'user@example.com',
+            'job_id': 'session_xxx',
+        }
+
+    Returns standard create_response dict.
+    Returns 404 if Reference Check run is not found or not yet complete.
+    """
+    job_id = request_data.get('job_id') or request_data.get('session_id')
+    email = request_data.get('_api_email') or request_data.get('_verified_email') or request_data.get('email', '')
+
+    if not job_id:
+        return create_response(400, {'success': False, 'error': 'job_id is required'})
+
+    base_session_id = job_id
+    if not base_session_id.startswith('session_'):
+        base_session_id = f"session_{base_session_id}"
+
+    try:
+        run_key = find_run_key_by_type(base_session_id, "Reference Check")
+        if not run_key:
+            return create_response(404, {
+                'success': False,
+                'error': 'job_not_found',
+                'message': 'No Reference Check job found for this session.',
+            })
+
+        status_record = get_run_status(base_session_id, run_key)
+        if not status_record:
+            return create_response(404, {
+                'success': False,
+                'error': 'job_not_found',
+                'message': 'Reference Check status record not found.',
+            })
+
+        current_status = str(status_record.get('status') or '').upper()
+        if current_status not in ('COMPLETED', 'COMPLETE'):
+            return create_response(404, {
+                'success': False,
+                'error': 'results_not_ready',
+                'message': 'Reference Check results are not yet available.',
+                'details': {
+                    'current_status': current_status.lower(),
+                    'status_url': f'/v1/jobs/{job_id}',
+                },
+            })
+
+        # Load conversation state from S3 to get the CSV key
+        conversation_id = status_record.get('conversation_id')
+        csv_url = None
+        if conversation_id and email:
+            try:
+                from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+                mgr = UnifiedS3Manager()
+                state_key = (
+                    f"reference_checks/{email}/{base_session_id}/"
+                    f"{conversation_id}/conversation_state.json"
+                )
+                state_obj = mgr.s3_client.get_object(
+                    Bucket=mgr.bucket_name, Key=state_key
+                )
+                state = json.loads(state_obj['Body'].read())
+                csv_s3_key = state.get('csv_s3_key')
+                if csv_s3_key:
+                    csv_url = generate_presigned_url(S3_RESULTS_BUCKET, csv_s3_key)
+            except Exception as e:
+                logger.warning(f"[REF_RESULTS] Could not load conversation state: {e}")
+
+        # Fall back to results_s3_key on the run record
+        if not csv_url and status_record.get('results_s3_key'):
+            csv_url = generate_presigned_url(S3_RESULTS_BUCKET, status_record['results_s3_key'])
+
+        return create_response(200, {
+            'success': True,
+            'job_id': job_id,
+            'status': 'completed',
+            'results': {
+                'download_url': csv_url,
+                'file_format': 'csv',
+            },
+        })
+
+    except Exception as e:
+        logger.error(f"[REF_RESULTS] Error: {e}", exc_info=True)
+        return create_response(500, {
+            'success': False,
+            'error': 'server_error',
+            'message': f'Failed to get reference check results: {str(e)}',
         })

@@ -498,3 +498,66 @@ def fetch_pdf_markdown(request_data: Dict[str, Any], context: Any) -> Dict[str, 
             'error': 'unexpected_error',
             'message': f'An unexpected error occurred: {str(e)}'
         })
+
+
+def extract_text_from_s3(s3_key: str) -> str:
+    """
+    Download a file from S3 and extract its plain text content.
+
+    Supports:
+    - PDF  (.pdf)  — uses PyMuPDF (fitz) page-by-page text extraction
+    - ODF  (.odf, .odt) — ODF is a ZIP; extract content.xml and strip XML tags
+
+    Args:
+        s3_key: S3 key of the uploaded file (in the main storage bucket).
+
+    Returns:
+        Extracted plain text as a string.
+
+    Raises:
+        ValueError: If the file type is unsupported.
+        Exception:  On download or extraction failures.
+    """
+    import io
+    import re as _re
+    import zipfile
+
+    storage_manager = UnifiedS3Manager()
+    logger.info(f"[EXTRACT_TEXT] Downloading {s3_key}")
+
+    response = storage_manager.s3_client.get_object(
+        Bucket=storage_manager.bucket_name,
+        Key=s3_key,
+    )
+    file_bytes = response["Body"].read()
+    key_lower = s3_key.lower()
+
+    if key_lower.endswith(".pdf"):
+        # PDF extraction via PyMuPDF
+        if not PYMUPDF_AVAILABLE:
+            raise RuntimeError("PyMuPDF (fitz) is not installed — cannot extract PDF text")
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        pages = [page.get_text() for page in doc]
+        text = "\n\n".join(pages)
+        logger.info(f"[EXTRACT_TEXT] Extracted {len(text)} chars from PDF ({len(pages)} pages)")
+        return text
+
+    if key_lower.endswith(".odf") or key_lower.endswith(".odt"):
+        # ODF/ODT is a ZIP archive containing content.xml
+        try:
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+                with zf.open("content.xml") as xml_file:
+                    xml_content = xml_file.read().decode("utf-8", errors="replace")
+        except KeyError:
+            raise ValueError("content.xml not found inside ODF/ODT archive")
+
+        # Strip XML tags and decode XML entities
+        text = _re.sub(r"<[^>]+>", " ", xml_content)
+        text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+        text = text.replace("&quot;", '"').replace("&apos;", "'")
+        # Collapse whitespace
+        text = " ".join(text.split())
+        logger.info(f"[EXTRACT_TEXT] Extracted {len(text)} chars from ODF/ODT")
+        return text
+
+    raise ValueError(f"Unsupported file type for text extraction: {s3_key}")

@@ -1764,6 +1764,7 @@ def main():
     parser.add_argument('--skip-s3-setup', action='store_true', help='Skip S3 bucket setup during deployment')
     parser.add_argument('--skip-ws-test', action='store_true', help='Skip WebSocket connection testing during deployment')
     parser.add_argument('--deploy-external-api', action='store_true', help='Create/update the external HTTP API Gateway (api.hyperplexity.ai/v1) and link it to the Interface Lambda')
+    parser.add_argument('--update-api-routes', action='store_true', help='Add any missing routes to the existing external API Gateway without rebuilding the Lambda package')
     parser.add_argument('--environment', '-e', default='prod', choices=['dev', 'test', 'staging', 'prod'], help='Deployment environment (default: prod)')
     parser.add_argument('--mode', choices=['lightweight', 'background', 'unified'],
                        default='unified',
@@ -2095,6 +2096,74 @@ def main():
             logger.error(f"Failed to deploy external API Gateway: {e}")
             return 1
 
+    if args.update_api_routes:
+        logger.info("\n=== UPDATING EXTERNAL API GATEWAY ROUTES ===")
+        try:
+            resource_suffix = f"-{args.environment}" if args.environment != 'prod' else ''
+            api_name = f"hyperplexity-external-api{resource_suffix}"
+            apigw = boto3.client('apigatewayv2', region_name=args.region)
+
+            # Find the existing API
+            api_id = None
+            for api in apigw.get_apis().get('Items', []):
+                if api['Name'] == api_name:
+                    api_id = api['ApiId']
+                    break
+            if not api_id:
+                logger.error(f"API Gateway '{api_name}' not found. Run --deploy-external-api first.")
+                return 1
+            logger.info(f"Found API: {api_name} → {api_id}")
+
+            # Find the existing integration
+            integrations = apigw.get_integrations(ApiId=api_id).get('Items', [])
+            if not integrations:
+                logger.error("No integrations found. Run --deploy-external-api first.")
+                return 1
+            integration_id = integrations[0]['IntegrationId']
+            logger.info(f"Using integration: {integration_id}")
+
+            # Full desired route list (matches deploy_external_api_gateway)
+            all_routes = [
+                ('POST', '/v1/uploads/presigned'),
+                ('POST', '/v1/uploads/confirm'),
+                ('POST', '/v1/jobs'),
+                ('POST', '/v1/jobs/reference-check'),
+                ('GET',  '/v1/jobs/{job_id}'),
+                ('POST', '/v1/jobs/{job_id}/validate'),
+                ('GET',  '/v1/jobs/{job_id}/results'),
+                ('GET',  '/v1/jobs/{job_id}/reference-results'),
+                ('GET',  '/v1/account/balance'),
+                ('GET',  '/v1/account/usage'),
+                ('POST', '/v1/conversations/table-maker'),
+                ('POST', '/v1/conversations/upload-interview'),
+                ('GET',  '/v1/conversations/{conv_id}'),
+                ('POST', '/v1/conversations/{conv_id}/message'),
+                ('POST', '/v1/conversations/{conv_id}/select'),
+                ('POST', '/v1/conversations/{conv_id}/refine-config'),
+            ]
+
+            existing = {
+                r['RouteKey']: r['RouteId']
+                for r in apigw.get_routes(ApiId=api_id).get('Items', [])
+            }
+            logger.info(f"Existing routes: {len(existing)}")
+
+            added = 0
+            for method, path in all_routes:
+                route_key = f"{method} {path}"
+                if route_key in existing:
+                    logger.info(f"  [SKIP]  {route_key}")
+                else:
+                    apigw.create_route(ApiId=api_id, RouteKey=route_key,
+                                       Target=f"integrations/{integration_id}")
+                    logger.info(f"  [ADD]   {route_key}")
+                    added += 1
+
+            logger.info(f"✅ Done — {added} route(s) added.")
+        except Exception as e:
+            logger.error(f"Failed to update API routes: {e}")
+            return 1
+
     return 0
 
 
@@ -2209,13 +2278,26 @@ def deploy_external_api_gateway(lambda_arn: str, region: str = "us-east-1", envi
 
     # Define all routes
     routes = [
+        # Uploads
         ('POST', '/v1/uploads/presigned'),
+        ('POST', '/v1/uploads/confirm'),
+        # Jobs
         ('POST', '/v1/jobs'),
+        ('POST', '/v1/jobs/reference-check'),
         ('GET',  '/v1/jobs/{job_id}'),
         ('POST', '/v1/jobs/{job_id}/validate'),
         ('GET',  '/v1/jobs/{job_id}/results'),
+        ('GET',  '/v1/jobs/{job_id}/reference-results'),
+        # Account
         ('GET',  '/v1/account/balance'),
         ('GET',  '/v1/account/usage'),
+        # Conversations
+        ('POST', '/v1/conversations/table-maker'),
+        ('POST', '/v1/conversations/upload-interview'),
+        ('GET',  '/v1/conversations/{conv_id}'),
+        ('POST', '/v1/conversations/{conv_id}/message'),
+        ('POST', '/v1/conversations/{conv_id}/select'),
+        ('POST', '/v1/conversations/{conv_id}/refine-config'),
     ]
 
     # Get existing routes
