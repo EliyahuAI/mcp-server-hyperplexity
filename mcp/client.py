@@ -7,7 +7,7 @@ Error:    {"success": false, "error": {"code": "...", "message": "..."}}
 
 Base URL resolution order (first one set wins):
   1. HYPERPLEXITY_API_URL env var  — set this to your dev/prod API Gateway invoke URL
-  2. Hard-coded fallback            — https://api.hyperplexity.ai/v1 (prod custom domain)
+  2. Hard-coded fallback            — https://07w4n09m95.execute-api.us-east-1.amazonaws.com/v1 (dev)
 
 For local dev, find your URL with:
     aws apigatewayv2 get-apis --region us-east-1 \\
@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 import requests
 
-_DEFAULT_URL = "https://api.hyperplexity.ai/v1"
+_DEFAULT_URL = "https://07w4n09m95.execute-api.us-east-1.amazonaws.com/v1"
 
 
 def _resolve_base_url() -> str:

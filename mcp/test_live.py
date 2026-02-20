@@ -734,7 +734,8 @@ def main():
     args = parser.parse_args()
 
     print(f"\n{BOLD}Hyperplexity MCP — Live Integration Tests{RESET}")
-    print(f"API:  https://api.hyperplexity.ai/v1")
+    _api_url = os.environ.get("HYPERPLEXITY_API_URL", "https://api.hyperplexity.ai/v1")
+    print(f"API:  {_api_url}")
     print(f"Key:  {API_KEY[:14]}…{API_KEY[-4:]}")
     print(f"Mode: {'FULL (will approve + charge)' if args.full else 'PREVIEW-ONLY (safe)'}")
     if args.quick:
