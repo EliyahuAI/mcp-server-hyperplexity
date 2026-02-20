@@ -1036,13 +1036,25 @@ def _handle_start_upload_interview(body, email, meta):
 
 
 def _conv_state_key(conv_id, email, session_id):
-    """Return the S3 key for a conversation state file."""
+    """Return the S3 key for a conversation state file.
+
+    Paths must match what the background handler writes:
+      table_conv_  → UnifiedS3Manager.get_table_maker_path → results/{domain}/{prefix}/{session}/table_maker/{conv}/conversation_state.json
+      upload_conv_ → same base path but /upload_interview/ subdir and filename state.json
+      refcheck_    → reference_checks/{email}/{session}/{conv}/conversation_state.json  (uses raw email)
+      refine_      → refine/{email}/{session}/{conv}/conversation_state.json
+    """
     if conv_id.startswith("table_conv_"):
-        return f"tables/{email}/{session_id}/table_maker/{conv_id}/conversation_state.json"
+        from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+        mgr = UnifiedS3Manager()
+        return mgr.get_table_maker_path(email, session_id, conv_id, "conversation_state.json")
     if conv_id.startswith("refcheck_"):
         return f"reference_checks/{email}/{session_id}/{conv_id}/conversation_state.json"
     if conv_id.startswith("upload_conv_"):
-        return f"uploads/{email}/{session_id}/interview/{conv_id}/conversation_state.json"
+        from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+        mgr = UnifiedS3Manager()
+        base = mgr.get_table_maker_path(email, session_id, conv_id, "state.json")
+        return base.replace("/table_maker/", "/upload_interview/")
     if conv_id.startswith("refine_"):
         return f"refine/{email}/{session_id}/{conv_id}/conversation_state.json"
     return None

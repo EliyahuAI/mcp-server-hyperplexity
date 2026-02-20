@@ -333,7 +333,7 @@ def analyze_table_columns(email: str, session_id: str, storage_manager: UnifiedS
         # Use shared table parser to analyze columns
         try:
             # Analyze table structure directly from S3
-            table_analysis = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key, extract_formulas=True)
+            table_analysis = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key, extract_formulas=False)
 
             if not table_analysis:
                 logger.warning("Table analysis failed")
@@ -1060,7 +1060,7 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
                 }
 
             # Analyze table structure directly from S3
-            table_analysis = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key, extract_formulas=True)
+            table_analysis = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key, extract_formulas=False)
             if table_analysis:
                 column_analysis = table_analysis.get('column_analysis', {})
                 table_columns = [col.strip() for col in column_analysis.keys() if col and col.strip()]
