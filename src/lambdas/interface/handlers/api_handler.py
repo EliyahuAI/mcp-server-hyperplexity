@@ -371,11 +371,10 @@ def _handle_confirm_upload(body, email, meta):
         table_columns = []
         match_error = None
         try:
-            obj = mgr.s3_client.get_object(Bucket=mgr.bucket_name, Key=s3_key)
-            excel_content = obj["Body"].read()
-
-            from interface_lambda.actions.process_excel_unified import _find_matching_configs
-            result = _find_matching_configs(excel_content, email)
+            # find_matching_configs reads the Excel from S3 internally via session_info.table_path
+            # (saved above), so we don't need to download the bytes here.
+            from interface_lambda.actions.find_matching_config import find_matching_configs
+            result = find_matching_configs(email, session_id)
             if result:
                 matching_data = result
             table_columns = matching_data.get("table_columns") or []
@@ -610,7 +609,7 @@ def _handle_create_job(body, email, meta):
         try:
             from interface_lambda.actions.use_config_by_id import handle_use_config_by_id
             result = handle_use_config_by_id(
-                {"_verified_email": email, "session_id": base_session_id, "config_id": config_id},
+                {"email": email, "_verified_email": email, "session_id": base_session_id, "config_id": config_id},
                 None,
             )
             # handle_use_config_by_id returns a create_response() envelope
@@ -1356,19 +1355,14 @@ def _handle_conversation_select(conv_id, body, email, meta):
     try:
         if selection == "use_match":
             # Find the best matching config and apply it
-            from interface_lambda.actions.process_excel_unified import _find_matching_configs
-            from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
-            mgr = UnifiedS3Manager()
-            sess_info = mgr.load_session_info(email, session_id)
-            table_path = sess_info.get("table_path")
-            if table_path:
-                file_bytes = mgr.s3_client.get_object(Bucket=mgr.bucket_name, Key=table_path)["Body"].read()
-                matches = _find_matching_configs(file_bytes, email)
+            from interface_lambda.actions.find_matching_config import find_matching_configs
+            matches = find_matching_configs(email, session_id)
+            if matches:
                 top = ((matches.get("matches") or [])[0:1] or [None])[0]
                 if top and top.get("config_id"):
                     from interface_lambda.actions.use_config_by_id import handle_use_config_by_id
                     handle_use_config_by_id(
-                        {"_verified_email": email, "session_id": session_id, "config_id": top["config_id"]},
+                        {"email": email, "_verified_email": email, "session_id": session_id, "config_id": top["config_id"]},
                         None,
                     )
                     return _success_response(200, {"applied": "use_match", "config_id": top["config_id"]}, meta)
@@ -1389,7 +1383,7 @@ def _handle_conversation_select(conv_id, body, email, meta):
                 return _error_response(400, "missing_fields", "config_id is required for use_code selection.", meta)
             from interface_lambda.actions.use_config_by_id import handle_use_config_by_id
             resp = handle_use_config_by_id(
-                {"_verified_email": email, "session_id": session_id, "config_id": config_id},
+                {"email": email, "_verified_email": email, "session_id": session_id, "config_id": config_id},
                 None,
             )
             parsed = _parse_handler_response(resp)

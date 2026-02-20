@@ -240,7 +240,8 @@ def handle_get_reference_results(request_data, context=None):
         base_session_id = f"session_{base_session_id}"
 
     try:
-        run_key = find_run_key_by_type(base_session_id, "Reference Check")
+        # create_run_record strips spaces: "Reference Check" → "ReferenceCheck" in the sort key
+        run_key = find_run_key_by_type(base_session_id, "ReferenceCheck")
         if not run_key:
             return create_response(404, {
                 'success': False,
