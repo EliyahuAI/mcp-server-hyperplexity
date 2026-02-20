@@ -102,14 +102,52 @@ def poll_until(job_id, target_status, timeout=300, interval=10):
     raise TimeoutError("Timed out waiting for job")
 
 data = poll_until(job_id, "preview_complete")
-print(f"Preview ready — estimated cost: ${data['cost_estimate']['estimated_total_cost_usd']:.4f}")
-print(f"Preview Excel: {data['preview_results']['download_url']}")
 
-# ── Step 6: Approve and run the full validation ───────────────────────────────
+# ── Step 6: Review the preview ────────────────────────────────────────────────
+cost  = data["cost_estimate"]["estimated_total_cost_usd"]
+rows  = data["cost_estimate"]["estimated_rows"]
+prev  = data["preview_results"]["download_url"]       # presigned Excel URL
+print(f"Preview ready — {rows} rows, estimated cost: ${cost:.4f}")
+print(f"Preview Excel: {prev}")
+# Download and inspect `prev` to verify column mappings before spending credits.
+
+# ── Step 6a (optional): Refine the configuration ──────────────────────────────
+# If the preview shows the wrong columns, wrong logic, etc., refine the config
+# via natural language before approving.  A new config version is generated
+# asynchronously; poll GET /v1/conversations/{conv_id} until status=="completed".
+CONV_ID = f"refine_{job_id}"
+resp = requests.post(f"{BASE_URL}/conversations/{CONV_ID}/refine-config",
+                     headers=HEADERS, json={
+    "session_id": job_id,
+    "message": "Change 'Drug Name' column to also accept brand-name synonyms.",
+})
+conv_data = resp.json()["data"]
+print(f"Refine conversation: {conv_data['conversation_id']}")
+
+# Poll until the refined config is ready
+for _ in range(30):
+    time.sleep(10)
+    state = requests.get(f"{BASE_URL}/conversations/{conv_data['conversation_id']}",
+                         headers=HEADERS,
+                         params={"session_id": job_id}).json()["data"]
+    if state["status"] == "completed":
+        print(f"Refined config ready: {state['next_step']['request']['body']['config_id']}")
+        # Re-run the preview with the refined config
+        resp2 = requests.post(f"{BASE_URL}/jobs", headers=HEADERS,
+                              json={"session_id": job_id,
+                                    "config_id": state["next_step"]["request"]["body"]["config_id"],
+                                    "preview_rows": 5})
+        job_id = resp2.json()["data"]["job_id"]
+        data = poll_until(job_id, "preview_complete")
+        break
+    if state["status"] != "processing":
+        break
+
+# ── Step 7: Approve and run the full validation ───────────────────────────────
 requests.post(f"{BASE_URL}/jobs/{job_id}/validate", headers=HEADERS, json={})
 data = poll_until(job_id, "completed")
 
-# ── Step 7: Get results ───────────────────────────────────────────────────────
+# ── Step 8: Get results ───────────────────────────────────────────────────────
 resp = requests.get(f"{BASE_URL}/jobs/{job_id}/results", headers=HEADERS)
 results = resp.json()["data"]["results"]
 print(f"Download: {results['download_url']}")
@@ -332,13 +370,43 @@ if confirm == "y":
 
 ---
 
+## Preview Response Fields
+
+When `GET /v1/jobs/{job_id}` returns `status: "preview_complete"`, the response includes:
+
+```json
+{
+  "status": "preview_complete",
+  "progress_percent": 100,
+  "preview_results": {
+    "download_url": "https://...",     // presigned Excel URL (expires in 1 hour)
+    "file_format": "xlsx",
+    "metadata_url": "https://..."      // presigned URL for table_metadata.json
+  },
+  "cost_estimate": {
+    "estimated_total_cost_usd": 4.20,  // total cost for full run
+    "estimated_rows": 500
+  },
+  "next_steps": {
+    "approve_url": "/v1/jobs/{id}/validate",
+    "requires_approval": true
+  }
+}
+```
+
+Download the `preview_results.download_url` Excel to inspect column mappings, sample outputs,
+and accuracy before committing credits. If the config needs changes, use
+`POST /v1/conversations/{conv_id}/refine-config` (see Section 2, Step 6a).
+
+---
+
 ## Status Reference
 
 | Status | Meaning | What to do |
 |--------|---------|------------|
 | `queued` | Job accepted, waiting to start | Keep polling |
 | `processing` | Actively running | Keep polling |
-| `preview_complete` | Preview done, awaiting your approval | Review cost, call `POST /v1/jobs/{id}/validate` |
+| `preview_complete` | Preview done, awaiting your approval | Review preview Excel + cost, optionally refine, then call `POST /v1/jobs/{id}/validate` |
 | `completed` | Full validation done | Call `GET /v1/jobs/{id}/results` |
 | `failed` | Something went wrong | Check `error_message` field |
 

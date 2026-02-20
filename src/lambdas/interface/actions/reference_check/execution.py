@@ -1461,7 +1461,7 @@ async def execute_reference_check(
                 'claims': [{'claim_id': c['claim_id'], 'statement': c['statement'], 'reference': c.get('reference', 'None')} for c in claims[:10]]
             })
 
-        # Update runs database
+        # Update runs database — include results_s3_key so GET /reference-results can return a download URL
         if run_key:
             try:
                 update_run_status(
@@ -1469,7 +1469,8 @@ async def execute_reference_check(
                     run_key=run_key,
                     status='COMPLETE',
                     verbose_status=f"Completed: {result['summary']['total_claims']} claims validated",
-                    percent_complete=100
+                    percent_complete=100,
+                    results_s3_key=result.get('csv_s3_key'),
                 )
             except Exception as e:
                 logger.warning(f"[EXECUTION] Failed to update run status: {e}")

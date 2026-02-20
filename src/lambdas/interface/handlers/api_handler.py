@@ -639,18 +639,30 @@ def _handle_create_job(body, email, meta):
         except Exception as e:
             logger.warning(f"[API_HANDLER] Could not copy config_s3_key: {e}")
     elif config:
-        # Save inline config JSON to the canonical session config path
+        # Save inline config using store_config_file so storage_metadata.config_id
+        # is set — this lets background_handler record a real config_id in DynamoDB
+        # that can later be looked up via GET /v1/jobs/{id}/results and reused.
         try:
             from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
             mgr = UnifiedS3Manager()
-            config_key = f"{mgr.get_session_path(email, base_session_id)}config.json"
-            mgr.s3_client.put_object(
-                Bucket=mgr.bucket_name,
-                Key=config_key,
-                Body=json.dumps(config, indent=2).encode("utf-8"),
-                ContentType="application/json",
+            store_result = mgr.store_config_file(
+                email=email,
+                session_id=base_session_id,
+                config_data=config,
+                version=1,
+                source="api_inline",
             )
-            logger.info(f"[API_HANDLER] Saved config to S3: {config_key}")
+            if not store_result.get("success"):
+                logger.warning(f"[API_HANDLER] store_config_file failed: {store_result.get('error')}, falling back to raw put")
+                config_key = f"{mgr.get_session_path(email, base_session_id)}config.json"
+                mgr.s3_client.put_object(
+                    Bucket=mgr.bucket_name,
+                    Key=config_key,
+                    Body=json.dumps(config, indent=2).encode("utf-8"),
+                    ContentType="application/json",
+                )
+            else:
+                logger.info(f"[API_HANDLER] Saved inline config via store_config_file: {store_result.get('s3_key')}")
         except Exception as e:
             logger.warning(f"[API_HANDLER] Could not save config to S3: {e}")
     else:
