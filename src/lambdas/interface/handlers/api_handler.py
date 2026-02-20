@@ -947,11 +947,16 @@ def _handle_account_balance(email, meta):
     if parsed["status_code"] >= 400 or parsed["body"].get("success") is False:
         return _wrap_handler_response(resp, meta)
     account_info = parsed["body"].get("account_info", {})
+    _internal_fields = {"raw_cost", "multiplier_applied"}
+    transactions = [
+        {k: v for k, v in tx.items() if k not in _internal_fields}
+        for tx in account_info.get("recent_transactions", [])
+    ]
     return _success_response(200, {
         "email": account_info.get("email", email),
         "balance_usd": account_info.get("current_balance", 0),
         "domain": account_info.get("email_domain", ""),
-        "recent_transactions": account_info.get("recent_transactions", []),
+        "recent_transactions": transactions,
     }, meta)
 
 
