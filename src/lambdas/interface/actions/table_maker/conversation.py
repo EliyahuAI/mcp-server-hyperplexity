@@ -392,6 +392,7 @@ def handle_table_conversation_start_async(request_data, context):
 
         # Send to SQS for background processing
         conversation_request = {
+            'request_type': 'table_conversation',
             'action': 'startTableConversation',
             'email': email,
             'session_id': session_id,
@@ -454,6 +455,7 @@ def handle_table_conversation_continue_async(request_data, context):
 
         # Send to SQS for background processing
         conversation_request = {
+            'request_type': 'table_conversation',
             'action': 'continueTableConversation',
             'email': email,
             'session_id': session_id,

@@ -698,8 +698,8 @@ def test_update_table(client: HyperplexityClient):
         check("update_table response is a dict", isinstance(data, dict))
         assert_guidance(data, "update_table")
         info(f"update_table keys: {list(data.keys())}")
-    except RuntimeError as e:
-        # Expected: 404 source_not_found
+    except Exception as e:
+        # Expected: 404 source_not_found (HTTPError or RuntimeError from _check)
         check("update_table returns a structured error for unknown job_id",
               "source_not_found" in str(e) or "not found" in str(e).lower() or
               "404" in str(e) or "error" in str(e).lower(),
