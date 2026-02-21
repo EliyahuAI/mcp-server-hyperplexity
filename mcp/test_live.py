@@ -89,14 +89,35 @@ def assert_guidance(data: dict, ctx: str):
 def poll_job(client: HyperplexityClient, job_id: str,
              target_statuses: tuple[str, ...],
              timeout: int = POLL_TIMEOUT) -> dict | None:
-    """GET /jobs/{id} until status ∈ target_statuses."""
+    """GET /jobs/{id} until status ∈ target_statuses.
+    Fetches progress messages on each poll and prints them instead of raw step text.
+    """
     deadline = time.time() + timeout
+    last_seq  = 0
     while time.time() < deadline:
-        data = client.get(f"/jobs/{job_id}")
+        data   = client.get(f"/jobs/{job_id}")
         status = data.get("status", "")
         pct    = data.get("progress_percent", 0)
-        step   = data.get("current_step", "")
-        info(f"  [{status}] {pct}%  {step}")
+
+        # Fetch new messages since the last poll and surface them
+        try:
+            msgs_data = client.get(f"/jobs/{job_id}/messages",
+                                   params={"since_seq": last_seq})
+            new_msgs  = msgs_data.get("messages") or []
+            last_seq  = msgs_data.get("last_seq", last_seq) or last_seq
+            if new_msgs:
+                for m in new_msgs:
+                    raw = m.get("content", "")
+                    txt = (raw.get("text") or raw.get("message") or str(raw)
+                           if isinstance(raw, dict) else str(raw))
+                    info(f"  [{status}] {pct}%  {txt[:120]}")
+            else:
+                step = data.get("current_step", "")
+                info(f"  [{status}] {pct}%  {step or '…'}")
+        except Exception:
+            step = data.get("current_step", "")
+            info(f"  [{status}] {pct}%  {step}")
+
         if status in target_statuses:
             return data
         if status == "failed":

@@ -816,11 +816,20 @@ def _handle_get_job_status(job_id, email, query_params, meta):
                 "metadata_url": generate_presigned_url(S3_RESULTS_BUCKET, f"{pr_dir}/table_metadata.json"),
             }
         pd = record.get("preview_data") or {}
-        ce = pd.get("cost_estimate") or {}
+        # background_handler stores costs under "cost_estimates" (plural)
+        # with "effective_cost" (after discount) and "quoted_validation_cost" (before discount).
+        ce = pd.get("cost_estimates") or pd.get("cost_estimate") or {}
+        effective   = ce.get("effective_cost")
+        quoted      = ce.get("quoted_validation_cost")
+        discount    = ce.get("discount", 0)
+        cost_to_show = effective if effective is not None else quoted
         data["cost_estimate"] = {
-            "estimated_total_cost_usd": ce.get("total_cost"),
+            "estimated_total_cost_usd": cost_to_show,
             "estimated_rows": pd.get("total_rows"),
         }
+        if discount:
+            data["cost_estimate"]["discount_usd"] = discount
+            data["cost_estimate"]["pre_discount_cost_usd"] = quoted
         data["next_steps"] = {
             "approve_url": f"/v1/jobs/{job_id}/validate",
             "requires_approval": True,
