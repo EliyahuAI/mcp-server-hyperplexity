@@ -578,8 +578,14 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True, s
                     except Exception as e:
                         logger.warning(f"Could not retrieve existing environment variables: {e}")
                     
-                    # Merge existing and new environment variables, prioritizing new ones
+                    # Merge existing and new environment variables, prioritizing new ones.
+                    # Exception: if LAMBDA_CONFIG has an empty string for a key that
+                    # already has a non-empty value in AWS (e.g. API_GATEWAY_EXTERNAL_API_ID),
+                    # keep the existing value so redeployments don't wipe runtime-set vars.
                     merged_env_vars = {**existing_env_vars, **LAMBDA_CONFIG["Environment"]["Variables"]}
+                    for key, existing_val in existing_env_vars.items():
+                        if existing_val and not merged_env_vars.get(key):
+                            merged_env_vars[key] = existing_val
                     
                     # Update configuration with retry logic
                     max_config_retries = 3
