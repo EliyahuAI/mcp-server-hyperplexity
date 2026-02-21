@@ -17889,10 +17889,14 @@ async function initAccountPage() {
         subtitle: escHtml(globalState.email || ''),
         content: loadingHTML,
         buttons: [
+            { text: 'Add Credits', icon: '⚡', variant: 'primary',   callback: showAddCreditsCard },
             { text: 'Activity',    icon: '📊', variant: 'tertiary',  callback: showActivityCard },
             { text: 'API Keys',    icon: '🔑', variant: 'secondary', callback: showApiKeysCard },
-            { text: 'Add Credits', icon: '⚡', variant: 'primary',   callback: showAddCreditsCard },
-            { text: 'Sign Out',    icon: '⎋',  variant: 'quinary',   callback: () => handleLogout() }
+            { text: 'Sign Out',    icon: '⎋',  variant: 'quinary',   callback: () => handleLogout() },
+            { text: 'Close',       icon: '✕',  variant: 'secondary', callback: () => {
+                const c = document.getElementById('account-card');
+                if (c) c.remove();
+            }}
         ]
     });
 
@@ -18003,23 +18007,23 @@ async function showActivityCard() {
     if (!contentEl) return;
 
     try {
-        // Use data cached by initAccountPage when possible; otherwise re-fetch
-        let transactions = globalState._cachedTransactions || null;
-
-        if (!transactions) {
-            const response = await fetch(`${API_BASE}/validate`, {
-                method: 'POST',
-                headers: getAuthHeaders(),
-                body: JSON.stringify({ action: 'getAccountBalance', email: globalState.email })
-            });
-            const data = await response.json();
-            if (!data.success) {
-                contentEl.innerHTML = `<p style="color:#dc2626;font-size:0.85rem;">Failed to load activity.</p>`;
-                return;
-            }
-            const accountInfo = data.account_info || {};
-            transactions = accountInfo.recent_transactions || data.transactions || data.history || [];
+        // Always fetch full transaction history (up to 100) — do not use the 10-row cache
+        const response = await fetch(`${API_BASE}/validate`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+                action: 'getAccountBalance',
+                email: globalState.email,
+                transaction_limit: 100
+            })
+        });
+        const data = await response.json();
+        if (!data.success) {
+            contentEl.innerHTML = `<p style="color:#dc2626;font-size:0.85rem;">Failed to load activity.</p>`;
+            return;
         }
+        const accountInfo = data.account_info || {};
+        const transactions = accountInfo.recent_transactions || data.transactions || data.history || [];
 
         if (transactions.length === 0) {
             contentEl.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);">No transactions yet.</p>';

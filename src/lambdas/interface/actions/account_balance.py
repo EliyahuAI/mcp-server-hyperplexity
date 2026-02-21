@@ -63,9 +63,10 @@ def handle(request_data, context):
             logger.warning(f"[ACCOUNT_BALANCE] Could not get domain multiplier: {e}")
             domain_multiplier = Decimal('1')
         
-        # Get recent transactions (last 10)
+        # Get recent transactions (limit configurable by caller, default 10)
+        tx_limit = min(int(request_data.get('transaction_limit', 10)), 200)
         try:
-            recent_transactions = get_user_transactions(email, limit=10)
+            recent_transactions = get_user_transactions(email, limit=tx_limit)
         except Exception as e:
             logger.warning(f"Could not fetch transactions: {e}")
             recent_transactions = []
