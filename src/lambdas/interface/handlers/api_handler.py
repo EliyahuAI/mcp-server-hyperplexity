@@ -963,22 +963,44 @@ def _handle_account_balance(email, meta):
 def _handle_account_usage(email, query_params, meta):
     """GET /v1/account/usage"""
     try:
-        limit = int(query_params.get("limit", 100))
+        limit  = min(int(query_params.get("limit",  50)), 200)
         offset = int(query_params.get("offset", 0))
     except (ValueError, TypeError):
         return _error_response(400, "invalid_input", "limit and offset must be integers.", meta)
 
-    request_data = {
-        "email": email,
-        "_verified_email": email,
-        "start_date": query_params.get("start_date"),
-        "end_date": query_params.get("end_date"),
+    start_date = query_params.get("start_date", "")
+    end_date   = query_params.get("end_date", "")
+
+    try:
+        from dynamodb_schemas import get_user_transactions
+        # Fetch enough rows to support the requested offset+limit in one call.
+        raw = get_user_transactions(email, limit=limit + offset)
+    except Exception as e:
+        logger.error(f"[API_HANDLER] get_user_transactions failed: {e}", exc_info=True)
+        return _error_response(500, "server_error", "Failed to retrieve usage data.", meta)
+
+    _internal_fields = {"raw_cost", "multiplier_applied"}
+    filtered = []
+    for tx in raw:
+        ts = tx.get("timestamp", "")
+        if start_date and ts < start_date:
+            continue
+        if end_date and ts > end_date + "T23:59:59":
+            continue
+        filtered.append({k: v for k, v in tx.items() if k not in _internal_fields})
+
+    page = filtered[offset: offset + limit]
+    total_debited = round(
+        sum(abs(tx.get("amount", 0)) for tx in page if (tx.get("amount") or 0) < 0),
+        6,
+    )
+    return _success_response(200, {
+        "transactions": page,
+        "total_cost_usd": total_debited,
+        "count": len(page),
         "limit": limit,
         "offset": offset,
-    }
-    from interface_lambda.actions import user_stats
-    resp = user_stats.handle(request_data, None)
-    return _wrap_handler_response(resp, meta)
+    }, meta)
 
 
 def _handle_reference_check(body, email, meta):

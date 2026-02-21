@@ -42,9 +42,10 @@ API_KEY = os.environ.get(
     "HYPERPLEXITY_API_KEY",
     "hpx_live_2iTq6Ax-3fggf_gsKcsLOb8l-Zj5rJWbKbc2D9v0",
 )
-BASE_DIR  = MCP_DIR.parent
-DEMO_XLSX = BASE_DIR / "demos" / "01. Investment Research" / "InvestmentResearch.xlsx"
-DEMO_CSV  = BASE_DIR / "demos" / "02. Competitive Intelligence" / "Competitive_Intelligence.csv"
+BASE_DIR      = MCP_DIR.parent
+DEMO_XLSX     = BASE_DIR / "demos" / "01. Investment Research" / "InvestmentResearch.xlsx"
+DEMO_CSV      = BASE_DIR / "demos" / "02. Competitive Intelligence" / "Competitive_Intelligence.csv"
+MCP_TEST_CSV  = MCP_DIR / "test_data" / "demo_table.csv"   # tiny 4-row CSV for fast smoke tests
 
 POLL_INTERVAL = 10   # seconds between status polls
 POLL_TIMEOUT  = 600  # seconds before giving up
@@ -251,14 +252,15 @@ def test_account(client: HyperplexityClient):
     info(f"balance payload: {json.dumps({k: v for k, v in data.items() if k != '_guidance'})}")
 
     # GET /account/usage
-    try:
-        data = client.get("/account/usage", params={"limit": 3})
-        data["_guidance"] = build_guidance("get_usage", data)
-        check("get_usage returns a dict", isinstance(data, dict))
-        assert_guidance(data, "get_usage")
-        info(f"usage keys: {list(data.keys())}")
-    except Exception as exc:
-        info(f"get_usage skipped (backend error): {exc}")
+    data = client.get("/account/usage", params={"limit": 3})
+    data["_guidance"] = build_guidance("get_usage", data)
+    check("get_usage returns a dict",         isinstance(data, dict))
+    check("get_usage has transactions list",  isinstance(data.get("transactions"), list),
+          str(list(data.keys())))
+    check("get_usage has total_cost_usd",     "total_cost_usd" in data, str(list(data.keys())))
+    assert_guidance(data, "get_usage")
+    info(f"usage: {len(data.get('transactions', []))} transaction(s)  "
+         f"total_cost=${data.get('total_cost_usd', '?')}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -269,8 +271,12 @@ def test_upload_workflow(client: HyperplexityClient) -> dict | None:
     """upload_file compound tool + confirm_upload."""
     head("§3 · Upload workflow  (presign → S3 PUT → confirm)")
 
-    # pick demo file
-    if DEMO_XLSX.exists():
+    # pick demo file — prefer the tiny MCP test CSV for speed
+    if MCP_TEST_CSV.exists():
+        file_path    = MCP_TEST_CSV
+        file_type    = "csv"
+        content_type = "text/csv"
+    elif DEMO_XLSX.exists():
         file_path    = DEMO_XLSX
         file_type    = "excel"
         content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -279,7 +285,7 @@ def test_upload_workflow(client: HyperplexityClient) -> dict | None:
         file_type    = "csv"
         content_type = "text/csv"
     else:
-        fail(f"No demo file found. Expected:\n    {DEMO_XLSX}\n    {DEMO_CSV}")
+        fail(f"No demo file found. Expected:\n    {MCP_TEST_CSV}\n    {DEMO_XLSX}")
         return None
 
     info(f"Demo file: {file_path.name}  ({file_path.stat().st_size // 1024} KB)")
@@ -498,11 +504,15 @@ def test_job_workflow(client: HyperplexityClient, upload: dict, full: bool):
             info(f"Rows processed: {summary.get('rows_processed')}  "
                  f"Cost: ${summary.get('cost_usd')}  "
                  f"Config: {job_info.get('configuration_id')}")
+            return job_id  # hand to test_update_table
 
     elif status == "completed":
         info("Job skipped preview and went straight to completed")
+        return job_id
     elif status == "failed":
         fail(f"Job failed: {preview.get('error_message') or preview.get('error')}")
+
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -686,25 +696,48 @@ def test_reference_check(client: HyperplexityClient):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# § 8  Job actions  (update_table smoke test)
+# § 8  Job actions  (update_table)
 # ═══════════════════════════════════════════════════════════════════════════
 
-def test_update_table(client: HyperplexityClient):
-    head("§8 · update_table  (expects structured error for fake job_id)")
+def test_update_table(client: HyperplexityClient, completed_job_id: str | None = None):
+    head("§8 · update_table")
 
-    try:
-        data = client.post("/jobs/update-table", json={"source_job_id": "fake_job_test_smoke"})
-        data["_guidance"] = build_guidance("update_table", data)
-        check("update_table response is a dict", isinstance(data, dict))
-        assert_guidance(data, "update_table")
-        info(f"update_table keys: {list(data.keys())}")
-    except Exception as e:
-        # Expected: 404 source_not_found (HTTPError or RuntimeError from _check)
-        check("update_table returns a structured error for unknown job_id",
-              "source_not_found" in str(e) or "not found" in str(e).lower() or
-              "404" in str(e) or "error" in str(e).lower(),
-              str(e))
-        info(f"Expected error: {e}")
+    if completed_job_id:
+        # ── Real test: kick off an update on the job we just completed ────
+        info(f"Testing update_table with real completed job: {completed_job_id}")
+        try:
+            data = client.post("/jobs/update-table",
+                               json={"source_job_id": completed_job_id})
+            data["_guidance"] = build_guidance("update_table", data)
+            check("update_table returns a dict",            isinstance(data, dict))
+            check("update_table has job_id",                "job_id" in data, str(list(data.keys())))
+            check("update_table has status",                "status" in data, str(list(data.keys())))
+            assert_guidance(data, "update_table")
+            check("update_table guidance → get_job_status",
+                  any(s["tool"] == "get_job_status"
+                      for s in data["_guidance"]["next_steps"]))
+            new_job_id = data.get("job_id", "")
+            info(f"update_table started new job: {new_job_id}  status={data.get('status')}")
+            info("(Not polling to completion — skipping to avoid additional cost)")
+        except Exception as e:
+            fail(f"update_table failed unexpectedly: {e}")
+
+    else:
+        # ── Smoke test: fake job_id should return a structured error ──────
+        info("No completed job available — smoke-testing with fake job_id")
+        try:
+            data = client.post("/jobs/update-table",
+                               json={"source_job_id": "fake_job_test_smoke"})
+            data["_guidance"] = build_guidance("update_table", data)
+            check("update_table response is a dict", isinstance(data, dict))
+            assert_guidance(data, "update_table")
+            info(f"update_table keys: {list(data.keys())}")
+        except Exception as e:
+            check("update_table returns a structured error for unknown job_id",
+                  "source_not_found" in str(e) or "not found" in str(e).lower() or
+                  "404" in str(e) or "error" in str(e).lower(),
+                  str(e))
+            info(f"Expected error: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -784,9 +817,10 @@ def main():
         return
 
     # §3–4 upload + job workflow
-    upload_state = test_upload_workflow(client)
+    upload_state     = test_upload_workflow(client)
+    completed_job_id = None
     if upload_state:
-        test_job_workflow(client, upload_state, full=args.full)
+        completed_job_id = test_job_workflow(client, upload_state, full=args.full)
     else:
         info("§4 skipped — upload failed")
 
@@ -799,8 +833,8 @@ def main():
     # §7 reference check
     test_reference_check(client)
 
-    # §8 update_table smoke
-    test_update_table(client)
+    # §8 update_table (real job if available, otherwise smoke)
+    test_update_table(client, completed_job_id=completed_job_id)
 
     # §9 refine_config smoke
     test_refine_config_smoke(client)
