@@ -291,12 +291,16 @@ def _guidance_get_results(data: dict) -> dict:
             f"communicate this research: {viewer_url}"
         )
 
+    has_metadata = bool(result_info.get("metadata"))
     notes = [
         "HOW TO READ THE RESULTS:",
-        "1. Fetch results.metadata_url (a presigned S3 URL) to get table_metadata.json — "
-        "a structured JSON file containing every validated cell's full detail. "
-        "This is your primary machine-readable source of truth.",
-        "2. table_metadata.json structure:",
+        "1. results.metadata is the full table_metadata.json — already embedded inline in "
+        "this response. It is your primary machine-readable source of truth for every "
+        "validated cell." if has_metadata else
+        "1. results.metadata_url (presigned S3 URL) points to table_metadata.json — the "
+        "structured JSON file containing every validated cell's full detail. "
+        "Download it to access per-cell validation details.",
+        "2. results.metadata structure:",
         "   • table_name  — display name of the validated table",
         "   • columns[]   — list of validated columns with importance, description, notes",
         "   • rows[]      — one entry per row, keyed by row_key. Each row has cells{}:",
