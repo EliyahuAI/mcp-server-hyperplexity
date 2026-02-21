@@ -11,17 +11,37 @@
    BALANCE DISPLAY
    ============================================ */
 
+/* Balance + inline Add Credits button side by side, left-aligned */
+.acct-balance-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
 .acct-balance {
     font-size: 2rem;
     font-weight: 700;
+    font-family: var(--font-family);
     color: var(--primary-dark, var(--primary-color));
+    line-height: 1.1;
 }
 
 .acct-balance-label {
-    font-size: 0.75rem;
+    font-size: 0.72rem;
+    font-family: var(--font-family);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    opacity: 0.6;
+    letter-spacing: 0.07em;
+    opacity: 0.55;
+    margin-bottom: 0.2rem;
+}
+
+/* Compact "Add Credits" chip beside the balance number */
+.acct-balance-add-btn {
+    font-size: 0.9rem !important;
+    padding: 0.4rem 1rem !important;
+    white-space: nowrap;
 }
 
 /* ============================================
@@ -32,6 +52,32 @@
     height: 1px;
     background: rgba(0, 0, 0, 0.08);
     margin: 0.75rem 0;
+}
+
+/* ============================================
+   ACTIVITY SCROLL CONTAINER
+   ============================================ */
+
+.acct-activity-scroll {
+    max-height: 22rem;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+    /* Custom scrollbar — subtle */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0,0,0,0.18) transparent;
+}
+
+.acct-activity-scroll::-webkit-scrollbar {
+    width: 5px;
+}
+
+.acct-activity-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.acct-activity-scroll::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.18);
+    border-radius: 3px;
 }
 
 /* ============================================
@@ -46,11 +92,13 @@
 
 .acct-tx-row {
     display: grid;
-    grid-template-columns: 6rem 1fr auto;
+    grid-template-columns: 5.5rem 1fr auto;
     gap: 0.5rem;
     padding: 0.4rem 0;
     border-bottom: 1px solid rgba(0, 0, 0, 0.05);
     font-size: 0.85rem;
+    font-family: var(--font-family);
+    align-items: center;
 }
 
 .acct-tx-row:last-child {
@@ -59,6 +107,7 @@
 
 .acct-tx-date {
     opacity: 0.5;
+    white-space: nowrap;
 }
 
 .acct-tx-desc {
@@ -70,6 +119,7 @@
 .acct-tx-amount {
     font-weight: 600;
     white-space: nowrap;
+    text-align: right;
 }
 
 .acct-tx-debit {
@@ -96,6 +146,7 @@
     gap: 0.75rem;
     padding: 0.5rem 0;
     border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    flex-wrap: wrap;
 }
 
 .acct-key-row:last-child {
@@ -104,42 +155,48 @@
 
 .acct-key-name {
     font-weight: 600;
-    min-width: 8rem;
+    font-family: var(--font-family);
+    min-width: 7rem;
+    flex-shrink: 0;
 }
 
 .acct-key-prefix {
-    font-family: monospace;
+    font-family: 'Courier New', Courier, monospace;
     font-size: 0.8rem;
-    opacity: 0.7;
+    opacity: 0.65;
     flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 
+/* Remove button: compact size, matches outline danger style */
 .acct-key-remove {
     flex-shrink: 0;
-    font-size: 0.8rem;
-    padding: 0.25rem 0.6rem;
+    padding: 0.3rem 0.7rem !important;
+    font-size: 0.82rem !important;
+    border-width: 2px !important;
+    line-height: 1 !important;
+    min-height: unset !important;
 }
 
 /* ============================================
-   INLINE ADD-KEY FORM
+   INLINE ADD-KEY FORM (input only — button via createButtonRow)
    ============================================ */
 
 .acct-add-key-form {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
     margin-top: 0.75rem;
-    flex-wrap: wrap;
 }
 
 .acct-add-key-input {
-    flex: 1;
-    min-width: 10rem;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid rgba(0, 0, 0, 0.2);
-    border-radius: 0.5rem;
-    font-size: 0.9rem;
-    font-family: var(--font-family, sans-serif);
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.55rem 0.75rem;
+    border: 1.5px solid rgba(0, 0, 0, 0.2);
+    border-radius: var(--border-radius, 8px);
+    font-size: var(--font-size-base);
+    font-family: var(--font-family);
     color: var(--text-color);
     background: white;
     transition: border-color 0.15s ease;
@@ -148,54 +205,171 @@
 .acct-add-key-input:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.15);
+    box-shadow: 0 0 0 3px rgba(56, 142, 60, 0.12);
+}
+
+/* Error message line below the form */
+.acct-form-msg {
+    font-size: 0.82rem;
+    font-family: var(--font-family);
+    color: #dc2626;
+    min-height: 1.1em;
+    margin: 0.25rem 0 0 0;
 }
 
 /* ============================================
-   ADD CREDITS AMOUNT PICKER
+   ADD CREDITS AMOUNT PICKER (in Add Credits card)
    ============================================ */
 
-.acct-credits-prompt {
+/* Centered wrapper for the entire Add Credits card content */
+.acct-credits-inner {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+    align-items: center;
+    text-align: center;
+    gap: 0.4rem;
 }
 
 .acct-credits-label {
-    font-size: 0.82rem;
+    font-size: 0.88rem;
+    font-family: var(--font-family);
     color: var(--text-secondary);
     margin: 0;
 }
 
 .acct-credits-presets {
     display: flex;
-    gap: 0.4rem;
+    gap: 0.5rem;
     flex-wrap: wrap;
+    justify-content: center;
 }
 
 .acct-credit-chip {
     background: white;
     border: 2px solid var(--primary-color);
     color: var(--primary-color);
-    border-radius: 1rem;
-    padding: 0.25rem 0.85rem;
-    font-size: 0.85rem;
+    border-radius: 1.5rem;
+    padding: 0.3rem 0.9rem;
+    font-size: 0.88rem;
     font-weight: 600;
+    font-family: var(--font-family);
     cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
-    font-family: var(--font-family, sans-serif);
+    line-height: 1.4;
+    transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
 
 .acct-credit-chip:hover {
     background: var(--primary-color);
     color: white;
+    transform: translateY(-1px);
+}
+
+/* Custom amount row — $ sign + input, centered */
+.acct-credits-custom {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    margin-top: 0.25rem;
+}
+
+.acct-credits-custom-input {
+    width: 9rem !important;
+    text-align: center;
 }
 
 .acct-credits-currency {
-    font-weight: 600;
+    font-weight: 700;
+    font-family: var(--font-family);
     color: var(--text-color);
-    font-size: 0.9rem;
+    font-size: var(--font-size-base);
+    flex-shrink: 0;
+}
+
+/* ============================================
+   COST ESTIMATOR (inside Add Credits card)
+   ============================================ */
+
+.acct-est-divider {
+    width: 100%;
+    height: 1px;
+    background: rgba(0, 0, 0, 0.08);
+    margin: 0.5rem 0;
+}
+
+/* Three labeled inputs in a row */
+.acct-est-fields {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 0.25rem;
+}
+
+.acct-est-field {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+}
+
+.acct-est-field-label {
+    font-size: 0.72rem;
+    font-family: var(--font-family);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.55;
+}
+
+.acct-est-input {
+    width: 5.5rem !important;
+    text-align: center !important;
+}
+
+/* Result row shown after estimation */
+.acct-est-result {
+    min-height: 1.5rem;
+    width: 100%;
+}
+
+.acct-est-result-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin-top: 0.25rem;
+}
+
+.acct-est-result-label {
+    font-size: 0.85rem;
+    font-family: var(--font-family);
+    color: var(--text-secondary);
+}
+
+.acct-est-amount {
+    font-size: 1.4rem;
+    font-weight: 700;
+    font-family: var(--font-family);
+    color: var(--primary-color);
+    line-height: 1;
+}
+
+.acct-est-breakdown {
+    font-size: 0.74rem;
+    font-family: var(--font-family);
+    color: var(--text-secondary);
+    opacity: 0.65;
+    text-align: center;
+    margin: 0.2rem 0 0 0;
+}
+
+.acct-est-error {
+    font-size: 0.82rem;
+    font-family: var(--font-family);
+    color: #dc2626;
+    text-align: center;
+    margin: 0.25rem 0 0 0;
 }
 
 /* ============================================
@@ -205,43 +379,47 @@
 .acct-raw-key-box {
     background: #f1f5f9;
     border: 1px solid rgba(0, 0, 0, 0.12);
-    border-radius: 0.5rem;
+    border-radius: var(--border-radius, 8px);
     padding: 0.75rem 1rem;
-    margin: 0.75rem 0;
+    margin-top: 0.75rem;
 }
 
 .acct-raw-key-code {
-    font-family: monospace;
+    font-family: 'Courier New', Courier, monospace;
     font-size: 0.82rem;
     word-break: break-all;
     display: block;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.4rem;
     color: var(--text-color);
 }
 
 .acct-raw-key-warning {
     font-size: 0.78rem;
+    font-family: var(--font-family);
     color: #b45309;
-    margin-bottom: 0.5rem;
+    margin: 0 0 0.4rem 0;
 }
 
 /* ============================================
    DANGER BUTTON VARIANT
+   Outline style matching other std-button variants.
    ============================================ */
 
 .std-button.danger {
-    background: #dc2626;
-    color: white;
+    background: white;
+    color: #dc2626;
     border-color: #dc2626;
 }
 
 .std-button.danger:hover:not(:disabled) {
-    background: #b91c1c;
-    border-color: #b91c1c;
+    background: #dc2626;
+    color: white;
+    border-color: #dc2626;
+    transform: translateY(-2px);
 }
 
 .std-button.danger:disabled {
-    background: #fca5a5;
-    border-color: #fca5a5;
+    opacity: 0.5;
     cursor: not-allowed;
+    transform: none;
 }

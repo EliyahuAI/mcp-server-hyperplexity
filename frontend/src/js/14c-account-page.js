@@ -1,16 +1,17 @@
 /* ========================================
  * 14c-account-page.js - Account Management UI
  *
- * Card-based account dashboard: balance statement
- * and API key management. Uses the standard card/button
- * design language (createCard, createButtonRow, std-button).
+ * Card-based account dashboard: balance, activity history,
+ * add credits, and API key management.
+ * Uses the standard card/button design language
+ * (createCard, createButtonRow, std-button).
  *
  * Dependencies: 00-config.js, 04-cards.js, 14-account.js
  * ======================================== */
 
 /**
  * Initialize the account card.
- * Appends a standard card to #cardContainer showing balance + transactions.
+ * Shows balance and navigation buttons.
  * Guard: if card already exists, scroll to it and return.
  */
 async function initAccountPage() {
@@ -19,7 +20,6 @@ async function initAccountPage() {
         return;
     }
 
-    // Messages div is always in the content so openAddCreditsPage can target it immediately
     const loadingHTML = `
         <p style="color:var(--text-secondary);font-size:0.85rem;">Loading account\u2026</p>
         <div id="account-card-messages"></div>
@@ -32,9 +32,9 @@ async function initAccountPage() {
         subtitle: escHtml(globalState.email || ''),
         content: loadingHTML,
         buttons: [
-            { text: 'API Keys',    icon: '🔑', variant: 'secondary', callback: showApiKeysCard },
-            { text: 'Add Credits', icon: '➕', variant: 'primary',   callback: showAddCreditsPrompt },
-            { text: 'Sign Out',    icon: '⎋',  variant: 'quinary',   callback: () => handleLogout() }
+            { text: 'Activity', icon: '📊', variant: 'tertiary',  callback: showActivityCard },
+            { text: 'API Keys', icon: '🔑', variant: 'secondary', callback: showApiKeysCard },
+            { text: 'Sign Out', icon: '⎋',  variant: 'quinary',   callback: () => handleLogout() }
         ]
     });
 
@@ -69,30 +69,23 @@ async function initAccountPage() {
         balance = typeof balance === 'number' ? balance : parseFloat(balance) || 0;
         globalState.accountBalance = balance;
 
-        const transactions = accountInfo.recent_transactions || data.transactions || data.history || [];
+        // Cache for Activity card to avoid a second fetch
+        globalState._cachedTransactions = accountInfo.recent_transactions
+            || data.transactions
+            || data.history
+            || [];
 
-        // data-balance attribute lets updateAllBalanceDisplays() auto-update this element
-        // after a Squarespace purchase is detected on focus return
-        let html = `
-            <div class="acct-balance-label">Current Balance</div>
-            <div class="acct-balance" data-balance>$${balance.toFixed(2)}</div>
-            <div class="acct-divider"></div>
+        // data-balance attribute lets updateAllBalanceDisplays() auto-update on purchase
+        contentEl.innerHTML = `
+            <div class="acct-balance-row">
+                <div>
+                    <div class="acct-balance-label">Current Balance</div>
+                    <div class="acct-balance" data-balance>$${balance.toFixed(2)}</div>
+                </div>
+                <button class="acct-credit-chip acct-balance-add-btn" onclick="showAddCreditsCard()">+ Add Credits</button>
+            </div>
+            <div id="account-card-messages" style="margin-top:0.75rem;"></div>
         `;
-
-        if (transactions.length > 0) {
-            html += '<ul class="acct-tx-list">';
-            transactions.slice(0, 10).forEach(tx => {
-                html += renderTransactionRow(tx);
-            });
-            html += '</ul>';
-        } else {
-            html += '<p style="font-size:0.82rem;color:var(--text-secondary);">No recent transactions.</p>';
-        }
-
-        // Preserve messages div so any in-flight openAddCreditsPage messages survive the content swap
-        html += '<div id="account-card-messages" style="margin-top:0.75rem;"></div>';
-
-        contentEl.innerHTML = html;
     } catch (err) {
         console.error('[ACCOUNT] Error loading balance:', err);
         if (contentEl) {
@@ -106,7 +99,6 @@ async function initAccountPage() {
 
 /**
  * Render a single transaction as an HTML list-item string.
- * Phase 2 note: description will eventually include API key last-4 or source tag.
  * @param {Object} tx - Transaction object
  * @returns {string} HTML string for <li class="acct-tx-row">
  */
@@ -131,6 +123,139 @@ function renderTransactionRow(tx) {
 }
 
 /**
+ * Show the Activity card with all recent transactions in a scrollable list.
+ * Guard: if already open, scroll to it.
+ */
+async function showActivityCard() {
+    if (document.getElementById('activity-card')) {
+        document.getElementById('activity-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
+
+    createCard({
+        id: 'activity-card',
+        icon: '📊',
+        title: 'Activity',
+        subtitle: 'Recent transactions',
+        content: '<p style="color:var(--text-secondary);font-size:0.85rem;">Loading\u2026</p>',
+        buttons: [
+            { text: 'Done', icon: '\u2713', variant: 'secondary', callback: () => {
+                const c = document.getElementById('activity-card');
+                if (c) c.remove();
+            }}
+        ]
+    });
+
+    const contentEl = document.querySelector('#activity-card .card-content');
+    if (!contentEl) return;
+
+    try {
+        // Use data cached by initAccountPage when possible; otherwise re-fetch
+        let transactions = globalState._cachedTransactions || null;
+
+        if (!transactions) {
+            const response = await fetch(`${API_BASE}/validate`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ action: 'getAccountBalance', email: globalState.email })
+            });
+            const data = await response.json();
+            if (!data.success) {
+                contentEl.innerHTML = `<p style="color:#dc2626;font-size:0.85rem;">Failed to load activity.</p>`;
+                return;
+            }
+            const accountInfo = data.account_info || {};
+            transactions = accountInfo.recent_transactions || data.transactions || data.history || [];
+        }
+
+        if (transactions.length === 0) {
+            contentEl.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);">No transactions yet.</p>';
+            return;
+        }
+
+        let html = '<div class="acct-activity-scroll"><ul class="acct-tx-list">';
+        transactions.forEach(tx => { html += renderTransactionRow(tx); });
+        html += '</ul></div>';
+        contentEl.innerHTML = html;
+    } catch (err) {
+        console.error('[ACCOUNT] Error loading activity:', err);
+        if (contentEl) {
+            contentEl.innerHTML = '<p style="color:#dc2626;font-size:0.85rem;">Error loading activity. Please try again.</p>';
+        }
+    }
+}
+
+/**
+ * Show the Add Credits card (new card below account card).
+ * Includes preset chips, custom input, and a cost estimator.
+ * Guard: if already open, scroll to it.
+ */
+function showAddCreditsCard() {
+    if (document.getElementById('add-credits-card')) {
+        document.getElementById('add-credits-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
+
+    createCard({
+        id: 'add-credits-card',
+        icon: '⚡',
+        title: 'Add Credits',
+        subtitle: 'Choose an amount to add',
+        content: `
+            <div class="acct-credits-inner">
+                <p class="acct-credits-label">How many credits would you like to add?</p>
+                <div class="acct-credits-presets">
+                    <button class="acct-credit-chip" onclick="selectCreditsAmount(10)">$10</button>
+                    <button class="acct-credit-chip" onclick="selectCreditsAmount(25)">$25</button>
+                    <button class="acct-credit-chip" onclick="selectCreditsAmount(50)">$50</button>
+                    <button class="acct-credit-chip" onclick="selectCreditsAmount(100)">$100</button>
+                </div>
+                <div class="acct-credits-custom">
+                    <span class="acct-credits-currency">$</span>
+                    <input type="number" id="acct-credits-amount" class="acct-add-key-input acct-credits-custom-input"
+                           placeholder="Custom" min="1" max="10000" step="1"
+                           onkeydown="if(event.key==='Enter') purchaseCreditsAmount()" />
+                </div>
+
+                <div class="acct-est-divider"></div>
+
+                <p class="acct-credits-label">Not sure how much you need?</p>
+                <div class="acct-est-fields">
+                    <label class="acct-est-field">
+                        <span class="acct-est-field-label">Rows</span>
+                        <input type="number" id="acct-est-rows" class="acct-add-key-input acct-est-input"
+                               value="100" min="1" max="1000000" />
+                    </label>
+                    <label class="acct-est-field">
+                        <span class="acct-est-field-label">Columns</span>
+                        <input type="number" id="acct-est-cols" class="acct-add-key-input acct-est-input"
+                               value="10" min="1" max="500" />
+                    </label>
+                    <label class="acct-est-field">
+                        <span class="acct-est-field-label">Validations</span>
+                        <input type="number" id="acct-est-validations" class="acct-add-key-input acct-est-input"
+                               value="1" min="1" max="100" />
+                    </label>
+                </div>
+                <div id="acct-est-result" class="acct-est-result"></div>
+                <div id="add-credits-card-messages" style="margin-top:0.5rem;"></div>
+            </div>
+        `,
+        buttons: [
+            { text: 'Estimate Need', icon: '🔢', variant: 'tertiary',  callback: estimateCreditNeed },
+            { text: 'Buy Credits',   icon: '\u2795', variant: 'primary',   callback: purchaseCreditsAmount },
+            { text: 'Cancel',        icon: '\u00D7', variant: 'secondary', callback: () => {
+                const c = document.getElementById('add-credits-card');
+                if (c) c.remove();
+            }}
+        ]
+    });
+
+    // Focus the custom input after card renders
+    setTimeout(() => document.getElementById('acct-credits-amount')?.focus(), 150);
+}
+
+/**
  * Show the API Keys card (secondary card appended below account card).
  * Guard: if already open, scroll to it.
  */
@@ -140,16 +265,14 @@ async function showApiKeysCard() {
         return;
     }
 
-    const loadingHTML = '<p style="color:var(--text-secondary);font-size:0.85rem;">Loading keys\u2026</p>';
-
     createCard({
         id: 'api-keys-card',
         icon: '🔑',
         title: 'API Keys',
         subtitle: 'Your API access keys',
-        content: loadingHTML,
+        content: '<p style="color:var(--text-secondary);font-size:0.85rem;">Loading keys\u2026</p>',
         buttons: [
-            { text: 'Add New Key', icon: '\uFF0B', variant: 'primary',   callback: showInlineAddKeyForm },
+            { text: 'Add New Key', icon: '\u002B', variant: 'primary',   callback: showInlineAddKeyForm },
             { text: 'Done',        icon: '\u2713',  variant: 'secondary', callback: () => {
                 const c = document.getElementById('api-keys-card');
                 if (c) c.remove();
@@ -187,21 +310,22 @@ async function refreshApiKeysList() {
         const activeKeys = (data.api_keys || data.keys || []).filter(k => k.is_active);
 
         if (activeKeys.length === 0) {
-            contentEl.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);">No API keys yet.</p>';
+            contentEl.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);">No API keys yet. Click \u201CAdd New Key\u201D to create one.</p>';
             return;
         }
 
         let html = '<ul class="acct-keys-list">';
         activeKeys.forEach(key => {
-            const name   = escHtml(key.key_name   || 'Unnamed Key');
-            const prefix = escHtml(key.key_prefix  || 'hpx_???_...');
+            const name   = escHtml(key.key_name  || 'Unnamed Key');
+            const prefix = escHtml(key.key_prefix || 'hpx_???_...');
             html += `<li class="acct-key-row">
                 <span class="acct-key-name">${name}</span>
                 <span class="acct-key-prefix">${prefix}\u2026</span>
                 <button class="std-button danger acct-key-remove"
                         data-prefix="${prefix}"
                         onclick="revokeKeyAndRefresh(this.dataset.prefix)">
-                    Remove
+                    <span class="button-text">Remove</span>
+                    <span class="spinner"></span>
                 </button>
             </li>`;
         });
@@ -218,33 +342,42 @@ async function refreshApiKeysList() {
 
 /**
  * Append inline add-key form to the API keys card content.
- * Called from the "Add New Key" button callback.
+ * Uses createButtonRow so button heights match card buttons exactly.
  */
 function showInlineAddKeyForm() {
     const contentEl = document.querySelector('#api-keys-card .card-content');
     if (!contentEl) return;
-
-    // Don't add a second form if one already exists
     if (contentEl.querySelector('.acct-add-key-form')) return;
 
     contentEl.insertAdjacentHTML('beforeend', `
         <div class="acct-add-key-form" id="acct-add-key-form">
             <input type="text" class="acct-add-key-input" id="acct-new-key-name"
                    placeholder="Key name (e.g. My App)" maxlength="60" autocomplete="off" />
-            <button class="std-button primary" onclick="submitNewApiKey()">
-                <span class="button-text">Create</span>
-            </button>
         </div>
-        <div id="acct-add-key-messages" style="font-size:0.82rem;margin-top:0.4rem;color:#dc2626;"></div>
+        <p id="acct-add-key-messages" class="acct-form-msg"></p>
+        <div id="acct-key-create-buttons"></div>
     `);
 
+    createButtonRow('acct-key-create-buttons', [
+        { text: 'Create Key', icon: '\u2713', variant: 'primary',   callback: submitNewApiKey },
+        { text: 'Cancel',     icon: '\u00D7', variant: 'secondary', callback: () => {
+            ['acct-add-key-form', 'acct-add-key-messages', 'acct-key-create-buttons'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.remove();
+            });
+        }}
+    ]);
+
     const input = document.getElementById('acct-new-key-name');
-    if (input) input.focus();
+    if (input) {
+        input.focus();
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') submitNewApiKey(); });
+    }
 }
 
 /**
  * Submit the inline create-key form.
- * Called from inline onclick — reads #acct-new-key-name directly.
+ * Called as a createButtonRow callback — reads #acct-new-key-name directly.
  */
 async function submitNewApiKey() {
     const nameInput = document.getElementById('acct-new-key-name');
@@ -256,73 +389,53 @@ async function submitNewApiKey() {
         if (nameInput) nameInput.focus();
         return;
     }
-
-    const createBtn = document.querySelector('#acct-add-key-form .std-button');
-    if (createBtn) {
-        createBtn.disabled = true;
-        createBtn.querySelector('.button-text').textContent = 'Creating\u2026';
-    }
     if (msgEl) msgEl.textContent = '';
 
-    try {
-        const response = await fetch(`${API_BASE}/validate`, {
-            method: 'POST',
-            headers: getAuthHeaders(),
-            body: JSON.stringify({
-                action: 'createApiKey',
-                email: globalState.email,
-                key_name: keyName,
-                tier: 'live',
-                scopes: ['validate']
-            })
-        });
+    const response = await fetch(`${API_BASE}/validate`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+            action: 'createApiKey',
+            email: globalState.email,
+            key_name: keyName,
+            tier: 'live',
+            scopes: ['validate']
+        })
+    });
 
-        const data = await response.json();
+    const data = await response.json();
 
-        if (!data.success) {
-            if (msgEl) msgEl.textContent = data.error || 'Failed to create key.';
-            if (createBtn) {
-                createBtn.disabled = false;
-                createBtn.querySelector('.button-text').textContent = 'Create';
-            }
-            return;
-        }
+    if (!data.success) {
+        if (msgEl) msgEl.textContent = data.error || 'Failed to create key.';
+        return;
+    }
 
-        const rawKey = data.api_key || data.raw_key || data.key || '';
+    const rawKey = data.api_key || data.raw_key || data.key || '';
 
-        // Replace the form with the one-time raw key display
-        const formEl = document.getElementById('acct-add-key-form');
-        if (formEl) formEl.remove();
-        if (msgEl) msgEl.remove();
+    // Remove form + buttons before showing the one-time key
+    ['acct-add-key-form', 'acct-add-key-messages', 'acct-key-create-buttons'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+    });
 
-        const contentEl = document.querySelector('#api-keys-card .card-content');
-        if (contentEl) {
-            contentEl.insertAdjacentHTML('beforeend', `
-                <div class="acct-raw-key-box" id="acct-raw-key-box">
-                    <code class="acct-raw-key-code" id="acct-raw-key-code">${escHtml(rawKey)}</code>
-                    <p class="acct-raw-key-warning">\u26A0 Store this key \u2014 it will not be shown again.</p>
-                    <button class="std-button secondary" style="margin-right:0.5rem;" onclick="copyNewApiKey()">
-                        <span class="button-text">Copy</span>
-                    </button>
-                    <button class="std-button primary" onclick="closeRawKeyDisplay()">
-                        <span class="button-text">Close</span>
-                    </button>
-                </div>
-            `);
-        }
-    } catch (err) {
-        console.error('[ACCOUNT] Error creating key:', err);
-        if (msgEl) msgEl.textContent = 'Network error. Please try again.';
-        if (createBtn) {
-            createBtn.disabled = false;
-            createBtn.querySelector('.button-text').textContent = 'Create';
-        }
+    const contentEl = document.querySelector('#api-keys-card .card-content');
+    if (contentEl) {
+        contentEl.insertAdjacentHTML('beforeend', `
+            <div class="acct-raw-key-box" id="acct-raw-key-box">
+                <code class="acct-raw-key-code" id="acct-raw-key-code">${escHtml(rawKey)}</code>
+                <p class="acct-raw-key-warning">\u26A0 Store this key \u2014 it will not be shown again.</p>
+                <div id="acct-raw-key-buttons"></div>
+            </div>
+        `);
+        createButtonRow('acct-raw-key-buttons', [
+            { text: 'Copy Key', icon: '📋', variant: 'secondary', callback: copyNewApiKey },
+            { text: 'Done',     icon: '\u2713', variant: 'primary', callback: closeRawKeyDisplay }
+        ]);
     }
 }
 
 /**
  * Copy the one-time raw API key text to clipboard.
- * Called from inline onclick in the raw key display box.
  */
 async function copyNewApiKey() {
     const codeEl = document.getElementById('acct-raw-key-code');
@@ -340,17 +453,17 @@ async function copyNewApiKey() {
         window.getSelection().removeAllRanges();
     }
 
+    // Brief visual feedback on the Copy button text
     const box = document.getElementById('acct-raw-key-box');
-    const copyBtn = box ? box.querySelector('.std-button.secondary') : null;
-    if (copyBtn) {
-        copyBtn.querySelector('.button-text').textContent = 'Copied!';
-        setTimeout(() => { copyBtn.querySelector('.button-text').textContent = 'Copy'; }, 2000);
+    const btn = box ? box.querySelector('.std-button.secondary .button-text') : null;
+    if (btn) {
+        btn.textContent = '📋 Copied!';
+        setTimeout(() => { btn.textContent = '📋 Copy Key'; }, 2000);
     }
 }
 
 /**
  * Close the one-time raw key display and refresh the keys list.
- * Called from inline onclick.
  */
 function closeRawKeyDisplay() {
     const box = document.getElementById('acct-raw-key-box');
@@ -360,12 +473,9 @@ function closeRawKeyDisplay() {
 
 /**
  * Inline-confirm then revoke a key, then refresh the keys list.
- * Called from inline onclick on Remove buttons.
  * @param {string} keyPrefix
  */
 async function revokeKeyAndRefresh(keyPrefix) {
-    if (!confirm(`Revoke key ${keyPrefix}?`)) return;
-
     try {
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
@@ -392,57 +502,22 @@ async function revokeKeyAndRefresh(keyPrefix) {
 }
 
 // ============================================================
-// ADD CREDITS — AMOUNT PICKER
+// ADD CREDITS
 // ============================================================
 
 /**
- * Show an inline amount picker in the account card messages area.
- * Presents preset chips ($10 / $25 / $50 / $100) plus a custom
- * numeric input. Selecting any amount hands off to openAddCreditsPage()
- * which runs the full guided Squarespace purchase flow.
- */
-function showAddCreditsPrompt() {
-    const msgEl = document.getElementById('account-card-messages');
-    if (!msgEl) return;
-
-    // Guard: don't render a second picker if one is already visible
-    if (msgEl.querySelector('.acct-credits-prompt')) return;
-
-    msgEl.innerHTML = `
-        <div class="acct-credits-prompt">
-            <p class="acct-credits-label">How many credits would you like to add?</p>
-            <div class="acct-credits-presets">
-                <button class="acct-credit-chip" onclick="selectCreditsAmount(10)">$10</button>
-                <button class="acct-credit-chip" onclick="selectCreditsAmount(25)">$25</button>
-                <button class="acct-credit-chip" onclick="selectCreditsAmount(50)">$50</button>
-                <button class="acct-credit-chip" onclick="selectCreditsAmount(100)">$100</button>
-            </div>
-            <div class="acct-add-key-form" style="margin-top:0.35rem;">
-                <span class="acct-credits-currency">$</span>
-                <input type="number" id="acct-credits-amount" class="acct-add-key-input"
-                       placeholder="Custom amount" min="1" max="1000" step="1"
-                       style="max-width:9rem;"
-                       onkeydown="if(event.key==='Enter') purchaseCreditsAmount()" />
-                <button class="std-button primary" onclick="purchaseCreditsAmount()">
-                    <span class="button-text">Buy</span>
-                </button>
-            </div>
-        </div>
-    `;
-
-    document.getElementById('acct-credits-amount')?.focus();
-}
-
-/**
- * Called by preset chip onclick — immediately launches the purchase flow.
+ * Called by preset chip onclick — launches the purchase flow immediately.
  * @param {number} amount - Dollar amount of credits to add
  */
 function selectCreditsAmount(amount) {
-    openAddCreditsPage(amount, 'account-card-messages');
+    const msgId = document.getElementById('add-credits-card-messages')
+        ? 'add-credits-card-messages'
+        : 'account-card-messages';
+    openAddCreditsPage(amount, msgId);
 }
 
 /**
- * Called by the custom-amount "Buy" button — validates the input then launches.
+ * Called by the "Buy Credits" card button — validates the custom input then launches.
  */
 function purchaseCreditsAmount() {
     const input = document.getElementById('acct-credits-amount');
@@ -455,7 +530,59 @@ function purchaseCreditsAmount() {
         }
         return;
     }
-    openAddCreditsPage(amount, 'account-card-messages');
+    const msgId = document.getElementById('add-credits-card-messages')
+        ? 'add-credits-card-messages'
+        : 'account-card-messages';
+    openAddCreditsPage(amount, msgId);
+}
+
+// ============================================================
+// COST ESTIMATOR
+// ============================================================
+
+/**
+ * Calculate estimated credit need from rows × columns × validations × $0.05,
+ * add 20% buffer, round up to nearest dollar, minimum $2.
+ * Populates #acct-est-result with the result and a "Use" button.
+ */
+function estimateCreditNeed() {
+    const rows = parseInt(document.getElementById('acct-est-rows')?.value, 10) || 0;
+    const cols = parseInt(document.getElementById('acct-est-cols')?.value, 10) || 0;
+    const vals = parseInt(document.getElementById('acct-est-validations')?.value, 10) || 0;
+    const resultEl = document.getElementById('acct-est-result');
+    if (!resultEl) return;
+
+    if (!rows || !cols || !vals) {
+        resultEl.innerHTML = '<p class="acct-est-error">Please fill in all three fields.</p>';
+        return;
+    }
+
+    const base     = rows * cols * vals * 0.05;
+    const estimate = Math.max(2, Math.ceil(base * 1.2));
+
+    resultEl.innerHTML = `
+        <div class="acct-est-result-row">
+            <span class="acct-est-result-label">Estimated cost:</span>
+            <span class="acct-est-amount">~$${estimate}</span>
+            <button class="acct-credit-chip" onclick="useEstimatedAmount(${estimate})">Use $${estimate}</button>
+        </div>
+        <p class="acct-est-breakdown">
+            $0.05 &times; ${rows.toLocaleString()} rows &times; ${cols} cols &times; ${vals} validation${vals !== 1 ? 's' : ''} + 20% buffer
+        </p>
+    `;
+}
+
+/**
+ * Pre-fill the custom credit amount input with the estimated value.
+ * @param {number} amount
+ */
+function useEstimatedAmount(amount) {
+    const input = document.getElementById('acct-credits-amount');
+    if (input) {
+        input.value = amount;
+        input.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        input.focus();
+    }
 }
 
 /**
@@ -474,9 +601,13 @@ function escHtml(str) {
 // Expose for 99-init.js and badge click
 window.initAccountPage = initAccountPage;
 // Expose for inline onclick handlers
-window.submitNewApiKey      = submitNewApiKey;
-window.copyNewApiKey        = copyNewApiKey;
-window.closeRawKeyDisplay   = closeRawKeyDisplay;
-window.revokeKeyAndRefresh  = revokeKeyAndRefresh;
-window.selectCreditsAmount  = selectCreditsAmount;
+window.submitNewApiKey       = submitNewApiKey;
+window.copyNewApiKey         = copyNewApiKey;
+window.closeRawKeyDisplay    = closeRawKeyDisplay;
+window.revokeKeyAndRefresh   = revokeKeyAndRefresh;
+window.selectCreditsAmount   = selectCreditsAmount;
 window.purchaseCreditsAmount = purchaseCreditsAmount;
+window.showAddCreditsCard    = showAddCreditsCard;
+window.showActivityCard      = showActivityCard;
+window.estimateCreditNeed    = estimateCreditNeed;
+window.useEstimatedAmount    = useEstimatedAmount;
