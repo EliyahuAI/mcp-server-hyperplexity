@@ -1256,10 +1256,14 @@ def _conv_state_key(conv_id, email, session_id):
 
 def _write_processing_state(conv_id, email, session_id, existing_state=None):
     """
-    Write (or patch) the conversation state to status='processing' immediately
-    after queuing an SQS message.  This ensures GET /v1/conversations/{conv_id}
-    always returns a meaningful response while the background worker is running,
-    rather than a 404 or stale 'awaiting_reply' from the previous turn.
+    Patch the conversation state to status='processing' immediately after
+    queuing an SQS message, so polls see 'processing' rather than a stale
+    'awaiting_reply' or a 404 while the background worker initialises.
+
+    IMPORTANT: we must preserve the full conversation history (messages,
+    interview_context, run_key, …) so the background handler can load it.
+    We therefore read the existing S3 state first and only update the
+    'status' field — we never overwrite with a bare stub.
     """
     import json as _json
     try:
@@ -1268,7 +1272,20 @@ def _write_processing_state(conv_id, email, session_id, existing_state=None):
         if not state_key:
             return
         mgr = UnifiedS3Manager()
-        state = dict(existing_state) if existing_state else {}
+
+        # Start from the caller-supplied state, or load from S3 so we
+        # don't lose conversation history (messages, interview_context, …).
+        if existing_state is not None:
+            state = dict(existing_state)
+        else:
+            try:
+                state_obj = mgr.s3_client.get_object(
+                    Bucket=mgr.bucket_name, Key=state_key
+                )
+                state = _json.loads(state_obj["Body"].read())
+            except Exception:
+                state = {}  # file doesn't exist yet — first turn
+
         state["status"] = "processing"
         state.setdefault("conversation_id", conv_id)
         state.setdefault("session_id", session_id)
