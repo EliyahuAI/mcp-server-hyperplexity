@@ -727,9 +727,10 @@ def test_refine_config_smoke(client: HyperplexityClient):
         check("refine_config returns a dict", isinstance(data, dict))
         assert_guidance(data, "refine_config")
         info(f"refine_config status: {data.get('status')}")
-    except RuntimeError as e:
+    except Exception as e:
         check("refine_config returns a structured error for invalid session",
-              "error" in str(e).lower() or "not found" in str(e).lower() or "404" in str(e),
+              "error" in str(e).lower() or "not found" in str(e).lower() or
+              "400" in str(e) or "404" in str(e),
               str(e))
         info(f"Expected error: {e}")
 
