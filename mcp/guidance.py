@@ -269,10 +269,63 @@ def _guidance_approve_validation(data: dict) -> dict:
 
 
 def _guidance_get_results(data: dict) -> dict:
-    download_url = data.get("download_url") or data.get("results", {}).get("download_url", "")
+    result_info  = data.get("results") or {}
+    job_info     = data.get("job_info") or {}
+    summary      = data.get("summary") or {}
+    viewer_url   = result_info.get("interactive_viewer_url", "")
+    download_url = result_info.get("download_url", "")
+    metadata_url = result_info.get("metadata_url", "")
+    rows         = summary.get("rows_processed", "?")
+    cols         = summary.get("columns_validated", "?")
+    cost         = summary.get("cost_usd", "?")
+    table_name   = job_info.get("input_table_name", "")
+
+    summary_parts = [
+        f"Validation complete: {rows} rows, {cols} columns validated" +
+        (f" — {table_name}" if table_name else "") +
+        (f" (cost: ${cost})" if cost != "?" else "") + "."
+    ]
+    if viewer_url:
+        summary_parts.append(
+            f"Share the interactive viewer with humans — it is the best way to "
+            f"communicate this research: {viewer_url}"
+        )
+
+    notes = [
+        "HOW TO READ THE RESULTS:",
+        "1. Start with results.metadata_url — it contains a markdown summary of every "
+        "column's validation logic, data types, and confidence scores. Read this first "
+        "to understand what was validated and how.",
+        "2. For row-level detail use the _row_keys index in the metadata: each key maps "
+        "to a row in the Excel output. Under each row you will find:",
+        "   • Validation  — pass/fail status and the specific rule that was checked",
+        "   • Sources     — the web sources or databases consulted to verify the value",
+        "   • Citations   — exact quotes or data points from those sources",
+        "3. results.download_url is the enriched Excel file with all validation columns "
+        "already embedded as hyperlinks — open it when you need cell-level detail or "
+        "want to share a self-contained spreadsheet.",
+        "4. Always share results.interactive_viewer_url with human stakeholders — "
+        "it renders citations, sources, and validation status in a readable UI that "
+        "is far easier to navigate than raw JSON or spreadsheet formulas.",
+    ]
+
     return {
-        "summary": "Results ready." + (f" Download URL: {download_url}" if download_url else ""),
-        "next_steps": [],
+        "summary": " ".join(summary_parts),
+        "next_steps": [
+            {
+                "tool": "get_reference_results",
+                "params": {"job_id": job_info.get("job_id", data.get("job_id", ""))},
+                "note": "Optional: fetch reference-check sub-results if a reference document was provided.",
+            }
+        ] if job_info.get("has_reference_results") else [],
+        "notes": notes,
+        "key_urls": {
+            k: v for k, v in {
+                "interactive_viewer": viewer_url,
+                "download_excel":     download_url,
+                "metadata":           metadata_url,
+            }.items() if v
+        },
     }
 
 
