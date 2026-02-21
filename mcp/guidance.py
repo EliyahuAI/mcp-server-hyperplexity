@@ -293,20 +293,25 @@ def _guidance_get_results(data: dict) -> dict:
 
     notes = [
         "HOW TO READ THE RESULTS:",
-        "1. Start with results.metadata_url — it contains a markdown summary of every "
-        "column's validation logic, data types, and confidence scores. Read this first "
-        "to understand what was validated and how.",
-        "2. For row-level detail use the _row_keys index in the metadata: each key maps "
-        "to a row in the Excel output. Under each row you will find:",
-        "   • Validation  — pass/fail status and the specific rule that was checked",
-        "   • Sources     — the web sources or databases consulted to verify the value",
-        "   • Citations   — exact quotes or data points from those sources",
-        "3. results.download_url is the enriched Excel file with all validation columns "
-        "already embedded as hyperlinks — open it when you need cell-level detail or "
-        "want to share a self-contained spreadsheet.",
+        "1. Fetch results.metadata_url (a presigned S3 URL) to get table_metadata.json — "
+        "a structured JSON file containing every validated cell's full detail. "
+        "This is your primary machine-readable source of truth.",
+        "2. table_metadata.json structure:",
+        "   • table_name  — display name of the validated table",
+        "   • columns[]   — list of validated columns with importance, description, notes",
+        "   • rows[]      — one entry per row, keyed by row_key. Each row has cells{}:",
+        "       cells[ColumnName].full_value            — the validated/corrected value",
+        "       cells[ColumnName].confidence            — HIGH / MEDIUM / LOW / ID",
+        "       cells[ColumnName].comment.validator_explanation — why the value was accepted/changed",
+        "       cells[ColumnName].comment.qc_reasoning          — QC layer reasoning",
+        "       cells[ColumnName].comment.key_citation           — the single most important citation",
+        "       cells[ColumnName].comment.sources[]              — [{title, url, snippet}] supporting sources",
+        "3. results.download_url is the enriched Excel file — every cell has the same "
+        "validation detail embedded as hyperlinks and comments. Use it when you need "
+        "a self-contained file to share or analyse offline.",
         "4. Always share results.interactive_viewer_url with human stakeholders — "
-        "it renders citations, sources, and validation status in a readable UI that "
-        "is far easier to navigate than raw JSON or spreadsheet formulas.",
+        "it renders sources, citations, and confidence scores in a clean UI that is "
+        "far easier to navigate than raw JSON or spreadsheet formulas.",
     ]
 
     return {
