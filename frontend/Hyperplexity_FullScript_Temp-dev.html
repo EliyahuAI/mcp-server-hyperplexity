@@ -17889,9 +17889,10 @@ async function initAccountPage() {
         subtitle: escHtml(globalState.email || ''),
         content: loadingHTML,
         buttons: [
-            { text: 'Activity', icon: '📊', variant: 'tertiary',  callback: showActivityCard },
-            { text: 'API Keys', icon: '🔑', variant: 'secondary', callback: showApiKeysCard },
-            { text: 'Sign Out', icon: '⎋',  variant: 'quinary',   callback: () => handleLogout() }
+            { text: 'Activity',    icon: '📊', variant: 'tertiary',  callback: showActivityCard },
+            { text: 'API Keys',    icon: '🔑', variant: 'secondary', callback: showApiKeysCard },
+            { text: 'Add Credits', icon: '⚡', variant: 'primary',   callback: showAddCreditsCard },
+            { text: 'Sign Out',    icon: '⎋',  variant: 'quinary',   callback: () => handleLogout() }
         ]
     });
 
@@ -17934,13 +17935,8 @@ async function initAccountPage() {
 
         // data-balance attribute lets updateAllBalanceDisplays() auto-update on purchase
         contentEl.innerHTML = `
-            <div class="acct-balance-row">
-                <div>
-                    <div class="acct-balance-label">Current Balance</div>
-                    <div class="acct-balance" data-balance>$${balance.toFixed(2)}</div>
-                </div>
-                <button class="acct-credit-chip acct-balance-add-btn" onclick="showAddCreditsCard()">+ Add Credits</button>
-            </div>
+            <div class="acct-balance-label">Current Balance</div>
+            <div class="acct-balance" data-balance>$${balance.toFixed(2)}</div>
             <div id="account-card-messages" style="margin-top:0.75rem;"></div>
         `;
     } catch (err) {
@@ -18081,17 +18077,17 @@ function showAddCreditsCard() {
                     <label class="acct-est-field">
                         <span class="acct-est-field-label">Rows</span>
                         <input type="number" id="acct-est-rows" class="acct-add-key-input acct-est-input"
-                               value="100" min="1" max="1000000" />
+                               value="40" min="1" max="1000000" oninput="estimateCreditNeed()" />
                     </label>
                     <label class="acct-est-field">
                         <span class="acct-est-field-label">Columns</span>
                         <input type="number" id="acct-est-cols" class="acct-add-key-input acct-est-input"
-                               value="10" min="1" max="500" />
+                               value="5" min="1" max="500" oninput="estimateCreditNeed()" />
                     </label>
                     <label class="acct-est-field">
                         <span class="acct-est-field-label">Validations</span>
                         <input type="number" id="acct-est-validations" class="acct-add-key-input acct-est-input"
-                               value="1" min="1" max="100" />
+                               value="2" min="1" max="100" oninput="estimateCreditNeed()" />
                     </label>
                 </div>
                 <div id="acct-est-result" class="acct-est-result"></div>
@@ -18099,17 +18095,19 @@ function showAddCreditsCard() {
             </div>
         `,
         buttons: [
-            { text: 'Estimate Need', icon: '🔢', variant: 'tertiary',  callback: estimateCreditNeed },
-            { text: 'Buy Credits',   icon: '\u2795', variant: 'primary',   callback: purchaseCreditsAmount },
-            { text: 'Cancel',        icon: '\u00D7', variant: 'secondary', callback: () => {
+            { text: 'Buy Credits', icon: '\u2795', variant: 'primary',   callback: purchaseCreditsAmount },
+            { text: 'Cancel',      icon: '\u00D7', variant: 'secondary', callback: () => {
                 const c = document.getElementById('add-credits-card');
                 if (c) c.remove();
             }}
         ]
     });
 
-    // Focus the custom input after card renders
-    setTimeout(() => document.getElementById('acct-credits-amount')?.focus(), 150);
+    // Show initial estimate and focus custom input after card renders
+    setTimeout(() => {
+        estimateCreditNeed();
+        document.getElementById('acct-credits-amount')?.focus();
+    }, 150);
 }
 
 /**
@@ -18410,7 +18408,7 @@ function estimateCreditNeed() {
     if (!resultEl) return;
 
     if (!rows || !cols || !vals) {
-        resultEl.innerHTML = '<p class="acct-est-error">Please fill in all three fields.</p>';
+        resultEl.innerHTML = '';
         return;
     }
 
