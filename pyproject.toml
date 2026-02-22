@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-server-hyperplexity"
+version = "1.0.0"
+description = "MCP server for Hyperplexity — generate, validate, and fact-check research tables with AI"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = [
+    "mcp", "model-context-protocol", "claude", "ai", "llm", "agent",
+    "data-validation", "research", "fact-check", "hyperplexity",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "mcp>=1.0.0",
+    "requests>=2.31.0",
+]
+
+[project.urls]
+Homepage = "https://hyperplexity.ai"
+Documentation = "https://hyperplexity.ai/mcp"
+"API Reference" = "https://hyperplexity.ai/api"
+Repository = "https://github.com/hyperplexity/mcp-server-hyperplexity"
+
+[project.scripts]
+mcp-server-hyperplexity = "hyperplexity_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hyperplexity_mcp"]

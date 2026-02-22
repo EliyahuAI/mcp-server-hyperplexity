@@ -1,0 +1,88 @@
+"""Job tools: create_job, get_job_status, get_job_messages."""
+
+from __future__ import annotations
+
+import json
+from typing import Optional
+
+from mcp import types
+
+from hyperplexity_mcp.client import get_client
+from hyperplexity_mcp.guidance import build_guidance
+
+
+def register(server):
+    client = get_client()
+
+    @server.tool()
+    def create_job(
+        session_id: str,
+        upload_id: Optional[str] = None,
+        config_id: Optional[str] = None,
+        config: Optional[dict] = None,
+        s3_key: Optional[str] = None,
+        preview_rows: Optional[int] = None,
+        notify_method: Optional[str] = None,
+        webhook_url: Optional[str] = None,
+    ) -> list[types.TextContent]:
+        """Create a validation job (preview or full).
+
+        Provide one of:
+          - config_id  — reuse a known config (fastest)
+          - config     — supply a config dict directly
+          - (neither)  — session must already hold a config from upload_interview
+
+        upload_id comes from the upload_file response.
+        notify_method: "poll" (default) or "webhook".
+        preview_rows defaults to the API's default (usually 5).
+        """
+        payload: dict = {"session_id": session_id}
+        if upload_id:
+            payload["upload_id"] = upload_id
+        if config_id:
+            payload["config_id"] = config_id
+        if config:
+            payload["config"] = config
+        if s3_key:
+            payload["s3_key"] = s3_key
+        if preview_rows is not None:
+            payload["preview_rows"] = preview_rows
+        if notify_method:
+            payload["notify_method"] = notify_method
+        if webhook_url:
+            payload["webhook_url"] = webhook_url
+
+        data = client.post("/jobs", json=payload)
+        data["_guidance"] = build_guidance("create_job", data)
+        return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
+
+    @server.tool()
+    def get_job_status(job_id: str) -> list[types.TextContent]:
+        """Poll job status. _guidance tells you exactly what to do next.
+
+        Key statuses:
+          queued / processing  → keep polling (~10s interval)
+          preview_complete     → approve_validation (or refine_config)
+          completed            → get_results
+          failed               → check error field
+        """
+        data = client.get(f"/jobs/{job_id}")
+        data["_guidance"] = build_guidance("get_job_status", data)
+        return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
+
+    @server.tool()
+    def get_job_messages(
+        job_id: str,
+        since_seq: Optional[int] = None,
+    ) -> list[types.TextContent]:
+        """Fetch live progress messages for a running job.
+
+        Pass since_seq from the last message to receive only new messages.
+        """
+        params = {}
+        if since_seq is not None:
+            params["since_seq"] = since_seq
+        data = client.get(f"/jobs/{job_id}/messages", params=params or None)
+        data["job_id"] = job_id  # ensure job_id present for guidance
+        data["_guidance"] = build_guidance("get_job_messages", data)
+        return [types.TextContent(type="text", text=json.dumps(data, indent=2))]

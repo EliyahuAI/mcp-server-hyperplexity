@@ -1,0 +1,2 @@
+# Allow the example env file to be committed
+!.env.example
