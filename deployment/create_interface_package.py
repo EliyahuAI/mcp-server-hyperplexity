@@ -163,6 +163,40 @@ def clean_directory(dir_path):
     dir_path.mkdir(exist_ok=True)
     return dir_path
 
+DISPOSABLE_BLOCKLIST_URL = (
+    "https://raw.githubusercontent.com/disposable-email-domains/"
+    "disposable-email-domains/main/disposable_email_blocklist.conf"
+)
+DISPOSABLE_BLOCKLIST_PATH = SHARED_SRC_DIR / "disposable_email_blocklist.conf"
+DISPOSABLE_BLOCKLIST_MAX_AGE_DAYS = 30
+
+
+def refresh_disposable_email_blocklist():
+    """Download a fresh copy of the disposable email blocklist if it is missing or older than 30 days."""
+    import time as _time
+
+    needs_refresh = True
+    if DISPOSABLE_BLOCKLIST_PATH.exists():
+        age_days = (_time.time() - DISPOSABLE_BLOCKLIST_PATH.stat().st_mtime) / 86400
+        if age_days < DISPOSABLE_BLOCKLIST_MAX_AGE_DAYS:
+            logger.info(
+                f"Disposable email blocklist is {age_days:.1f} days old — skipping refresh "
+                f"(threshold: {DISPOSABLE_BLOCKLIST_MAX_AGE_DAYS} days)"
+            )
+            needs_refresh = False
+
+    if needs_refresh:
+        logger.info("Refreshing disposable email blocklist from GitHub...")
+        try:
+            response = requests.get(DISPOSABLE_BLOCKLIST_URL, timeout=15)
+            response.raise_for_status()
+            DISPOSABLE_BLOCKLIST_PATH.write_text(response.text, encoding="utf-8")
+            line_count = response.text.count("\n")
+            logger.info(f"Blocklist updated: {line_count} domains written to {DISPOSABLE_BLOCKLIST_PATH.name}")
+        except Exception as e:
+            logger.warning(f"Could not refresh disposable email blocklist: {e} — using existing file if present")
+
+
 def install_dependencies(mode='unified'):
     """Install dependencies to package directory based on deployment mode."""
     # Choose requirements file based on mode
@@ -206,6 +240,9 @@ def copy_source_files():
     """Copy necessary source files for the interface Lambda, mimicking the original successful structure."""
     logger.info("Copying interface Lambda source files...")
 
+    # Refresh disposable email blocklist if stale (>30 days old)
+    refresh_disposable_email_blocklist()
+
     # 1. Copy the main Lambda handler file from src root
     main_handler_src = PROJECT_DIR / "src" / "interface_lambda_function.py"
     if main_handler_src.exists():
@@ -241,6 +278,7 @@ def copy_source_files():
     # 3. Copy only the necessary shared modules directly into the package root
     shared_modules = [
         "dynamodb_schemas.py",
+        "disposable_email_blocklist.conf",
         "row_key_utils.py",
         "schema_validator_simplified.py",
         "shared_table_parser.py",

@@ -6,16 +6,11 @@ Response: {"success": true, "data": {...}}  — _check() unwraps the envelope au
 Error:    {"success": false, "error": {"code": "...", "message": "..."}}
 
 Base URL resolution order (first one set wins):
-  1. HYPERPLEXITY_API_URL env var  — set this to your dev/prod API Gateway invoke URL
-  2. Hard-coded fallback            — https://07w4n09m95.execute-api.us-east-1.amazonaws.com/v1 (dev)
-
-For local dev, find your URL with:
-    aws apigatewayv2 get-apis --region us-east-1 \\
-        --query "Items[?contains(Name,'hyperplexity-external')].{Name:Name,URL:ApiEndpoint}"
-Then export HYPERPLEXITY_API_URL=https://<id>.execute-api.us-east-1.amazonaws.com/prod/v1
+  1. HYPERPLEXITY_API_URL env var  — set this to override (e.g. for dev)
+  2. Hard-coded default            — https://api.hyperplexity.ai/v1
 
 Usage:
-    from client import get_client
+    from hyperplexity_mcp.client import get_client
     client = get_client()
     data = client.get("/account/balance")
     # → {"balance_usd": 42.50, ...}   (data: envelope already unwrapped)
@@ -26,7 +21,7 @@ from __future__ import annotations
 import os
 import requests
 
-_DEFAULT_URL = "https://07w4n09m95.execute-api.us-east-1.amazonaws.com/v1"
+_DEFAULT_URL = "https://api.hyperplexity.ai/v1"
 
 
 def _resolve_base_url() -> str:
@@ -89,6 +84,7 @@ def get_client() -> HyperplexityClient:
     if not api_key:
         raise RuntimeError(
             "HYPERPLEXITY_API_KEY environment variable is not set. "
-            "Add it to your Claude Desktop MCP config or export it in your shell."
+            "Get your API key at hyperplexity.ai/account and add it to your "
+            "Claude Desktop MCP config or export it in your shell."
         )
     return HyperplexityClient(api_key)

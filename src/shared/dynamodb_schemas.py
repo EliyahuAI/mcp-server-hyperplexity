@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional, List
 from botocore.exceptions import ClientError
 from decimal import Decimal
 import logging
+import os
 import time
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,39 @@ except Exception as e:
     _dynamodb_resource = None
 
 dynamodb = boto3.resource('dynamodb')
+
+# Configurable constants (overridable via Lambda env vars)
+WELCOME_CREDIT_AMOUNT = Decimal(os.environ.get('WELCOME_CREDIT_AMOUNT', '20.00'))
+ABUSE_PREVIEW_THRESHOLD = int(os.environ.get('ABUSE_PREVIEW_THRESHOLD', '15'))
+ABUSE_TABLE_MAKER_THRESHOLD = int(os.environ.get('ABUSE_TABLE_MAKER_THRESHOLD', '10'))
+
+# Disposable email blocklist — loaded once at module level
+_DISPOSABLE_DOMAINS: Optional[frozenset] = None
+
+def _load_disposable_domains() -> frozenset:
+    global _DISPOSABLE_DOMAINS
+    if _DISPOSABLE_DOMAINS is not None:
+        return _DISPOSABLE_DOMAINS
+    try:
+        blocklist_path = os.path.join(os.path.dirname(__file__), 'disposable_email_blocklist.conf')
+        with open(blocklist_path, 'r') as f:
+            domains = frozenset(
+                line.strip().lower() for line in f
+                if line.strip() and not line.startswith('#')
+            )
+        _DISPOSABLE_DOMAINS = domains
+        logger.info(f"Loaded {len(domains)} disposable email domains")
+        return domains
+    except Exception as e:
+        logger.warning(f"Could not load disposable email blocklist: {e}")
+        _DISPOSABLE_DOMAINS = frozenset()
+        return _DISPOSABLE_DOMAINS
+
+def is_disposable_email(email: str) -> bool:
+    """Return True if the email's domain is in the disposable blocklist."""
+    domain = email.lower().split('@')[-1] if '@' in email else ''
+    return domain in _load_disposable_domains()
+
 
 def convert_floats_to_decimal(obj):
     """Convert float values to Decimal for DynamoDB compatibility."""
@@ -1462,7 +1496,17 @@ def create_email_validation_request(email: str) -> Dict[str, Any]:
                 'error': 'invalid_email',
                 'message': 'Invalid email address format'
             }
-        
+
+        # Reject disposable/temporary email domains
+        if is_disposable_email(email):
+            logger.info(f"Blocked disposable email domain: {email.split('@')[-1]}")
+            return {
+                'success': False,
+                'validated': False,
+                'error': 'disposable_email',
+                'message': 'Temporary email addresses are not accepted. Please use a permanent email.'
+            }
+
         # Generate validation code and expiry
         validation_code = generate_validation_code()
         created_at = datetime.now(timezone.utc)
@@ -1691,12 +1735,14 @@ def validate_email_code(email: str, code: str, ip_address: str = None, terms_ver
         )
         
         # Initialize/update user tracking record with validation date
-        initialize_user_tracking(email, validated_at, terms_version=terms_version)
-        
+        tracking_result = initialize_user_tracking(email, validated_at, terms_version=terms_version)
+        is_new_user = tracking_result.get('is_new_user', False) if isinstance(tracking_result, dict) else False
+
         return {
             'success': True,
             'validated': True,
-            'message': 'Email validated successfully'
+            'message': 'Email validated successfully',
+            'is_new_user': is_new_user
         }
         
     except Exception as e:
@@ -1743,25 +1789,34 @@ def is_email_validated(email: str) -> bool:
         return False
 
 
-def initialize_user_tracking(email: str, validated_at: str = None, terms_version: str = None) -> bool:
-    """Initialize user tracking record for a newly validated email."""
+def initialize_user_tracking(email: str, validated_at: str = None, terms_version: str = None) -> dict:
+    """Initialize user tracking record for a newly validated email.
+
+    Returns:
+        dict: {'success': bool, 'is_new_user': bool}
+              is_new_user is True for brand-new records or existing records
+              that have never completed email validation.
+    """
     try:
         # Normalize email to lowercase
         email = email.lower().strip()
         email_domain = email.split('@')[-1] if '@' in email else 'unknown'
         current_time = validated_at or datetime.now(timezone.utc).isoformat()
-        
+
         table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.USER_TRACKING_TABLE)
-        
+
         # Check if user tracking already exists
         response = table.get_item(Key={'email': email})
-        
+
         if 'Item' in response:
             # User already exists, update last access and validation dates
             current_data = response['Item']
             update_expr = "SET last_access = :timestamp"
             expr_values = {':timestamp': current_time}
-            
+
+            # Determine if this is their first-ever validation
+            is_new_user = 'first_email_validation' not in current_data
+
             # If this is a new validation (validated_at provided), update validation dates
             if validated_at:
                 # Check if this is the first validation for this user
@@ -1773,7 +1828,7 @@ def initialize_user_tracking(email: str, validated_at: str = None, terms_version
                     # Subsequent validation - only update most recent
                     update_expr += ", most_recent_email_validation = :validation_date"
                     expr_values[':validation_date'] = validated_at
-            
+
             # Store terms acceptance if provided
             if terms_version:
                 update_expr += ", terms_accepted_version = :terms_ver, terms_accepted_at = :terms_at"
@@ -1785,7 +1840,7 @@ def initialize_user_tracking(email: str, validated_at: str = None, terms_version
                 UpdateExpression=update_expr,
                 ExpressionAttributeValues=expr_values
             )
-            return True
+            return {'success': True, 'is_new_user': is_new_user}
 
         # Create new user tracking record with consolidated field structure
         user_record = {
@@ -1793,12 +1848,13 @@ def initialize_user_tracking(email: str, validated_at: str = None, terms_version
             'email_domain': email_domain,
             'created_at': current_time,
             'last_access': current_time,
-            
+
             # Request counts by type (using new field names)
             'total_previews': 0,
             'total_validations': 0,
             'total_configurations': 0,
-            
+            'total_table_maker_runs': 0,
+
             # Enhanced validation metrics
             'total_rows_processed': 0,
             'total_rows_analyzed': 0,
@@ -1806,34 +1862,37 @@ def initialize_user_tracking(email: str, validated_at: str = None, terms_version
             'total_search_groups': 0,
             'total_high_context_search_groups': 0,
             'total_claude_calls': 0,
-            
-            # Cost tracking with consolidated nomenclature  
+
+            # Cost tracking with consolidated nomenclature
             'total_eliyahu_cost': Decimal('0.0'),
             'total_quoted_validation_cost': Decimal('0.0'),
             'total_validation_revenue': Decimal('0.0'),
             'total_config_eliyahu_cost': Decimal('0.0'),
-            
+
             # Request-type specific metrics
             'preview_rows_processed': 0,
             'preview_eliyahu_cost': Decimal('0.0'),
             'validation_rows_processed': 0,
             'validation_revenue': Decimal('0.0'),
             'config_generation_eliyahu_cost': Decimal('0.0'),
-            
+
             # Processing parameters tracking (per-run values)
             'batch_size': 50,  # Default batch size
             'estimated_time': Decimal('0'),
-            
+
             # API call tracking
             'total_api_calls_made': 0,
             'total_cached_calls_made': 0,
-            
+
             # Account balance fields
             'account_balance': Decimal('0.0'),
             'balance_last_updated': current_time,
-            'account_created_at': current_time
+            'account_created_at': current_time,
+
+            # Welcome credit tracking (prevents double-grant)
+            'welcome_credit_granted': False
         }
-        
+
         # Add validation dates if this is a validation event
         if validated_at:
             user_record['first_email_validation'] = validated_at
@@ -1846,15 +1905,32 @@ def initialize_user_tracking(email: str, validated_at: str = None, terms_version
 
         table.put_item(Item=user_record)
         logger.info(f"Initialized user tracking for {email}")
-        return True
-        
+        return {'success': True, 'is_new_user': True}
+
     except Exception as e:
         logger.error(f"Error initializing user tracking: {e}")
+        return {'success': False, 'is_new_user': False}
+
+
+def mark_welcome_credit_granted(email: str) -> bool:
+    """Mark in DynamoDB that the welcome credit has been granted (prevents double-grant)."""
+    try:
+        email = email.lower().strip()
+        table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.USER_TRACKING_TABLE)
+        table.update_item(
+            Key={'email': email},
+            UpdateExpression="SET welcome_credit_granted = :granted",
+            ExpressionAttributeValues={':granted': True}
+        )
+        logger.info(f"Marked welcome credit as granted for {email}")
+        return True
+    except Exception as e:
+        logger.error(f"Error marking welcome credit granted for {email}: {e}")
         return False
 
 
-def track_user_request(email: str, request_type: str, tokens_used: int = 0, 
-                      cost_usd: float = 0.0, provider: str = '', 
+def track_user_request(email: str, request_type: str, tokens_used: int = 0,
+                      cost_usd: float = 0.0, provider: str = '',
                       perplexity_tokens: int = 0, perplexity_cost: float = 0.0,
                       anthropic_tokens: int = 0, anthropic_cost: float = 0.0,
                       # NEW: Enhanced tracking metrics
@@ -1928,27 +2004,48 @@ def track_user_request(email: str, request_type: str, tokens_used: int = 0,
         elif request_type == 'config':
             updates['total_configurations'] = to_num(current_data.get('total_configurations', 0)) + 1
             updates['config_generation_eliyahu_cost'] = to_num(current_data.get('config_generation_eliyahu_cost', 0)) + config_cost
-        
+        elif request_type == 'table_maker':
+            updates['total_table_maker_runs'] = to_num(current_data.get('total_table_maker_runs', 0)) + 1
+
         # Build update expression
         update_parts = []
         expression_values = {}
-        
+
         for key, value in updates.items():
             placeholder = f":{key}"
             update_parts.append(f"{key} = {placeholder}")
             expression_values[placeholder] = value
-        
+
         update_expression = "SET " + ", ".join(update_parts)
-        
+
         # Convert floats to Decimal for DynamoDB
         expression_values = convert_floats_to_decimal(expression_values)
-        
+
+        # Abuse detection: piggyback on the existing write (zero extra DB calls)
+        new_preview_count = updates.get('total_previews', to_num(current_data.get('total_previews', 0)))
+        new_tm_count = updates.get('total_table_maker_runs', to_num(current_data.get('total_table_maker_runs', 0)))
+        total_revenue = float(current_data.get('total_quoted_validation_cost', 0))
+        already_flagged = current_data.get('abuse_flagged', False)
+
+        if not already_flagged and total_revenue == 0:
+            abuse_reason = None
+            if new_preview_count >= ABUSE_PREVIEW_THRESHOLD:
+                abuse_reason = f'preview_count={int(new_preview_count)}'
+            elif new_tm_count >= ABUSE_TABLE_MAKER_THRESHOLD:
+                abuse_reason = f'table_maker_count={int(new_tm_count)}'
+            if abuse_reason:
+                update_expression += ", abuse_flagged = :abuse_flag, abuse_flagged_at = :abuse_time, abuse_flagged_reason = :abuse_reason"
+                expression_values[':abuse_flag'] = True
+                expression_values[':abuse_time'] = datetime.now(timezone.utc).isoformat()
+                expression_values[':abuse_reason'] = abuse_reason
+                logger.warning(f"[ABUSE] Flagging {email}: {abuse_reason}")
+
         table.update_item(
             Key={'email': email},
             UpdateExpression=update_expression,
             ExpressionAttributeValues=expression_values
         )
-        
+
         return True
         
     except Exception as e:

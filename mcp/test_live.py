@@ -30,18 +30,19 @@ import sys
 import time
 from pathlib import Path
 
-# ── make sibling modules importable regardless of cwd ───────────────────────
+# ── make the package importable regardless of cwd ───────────────────────────
 MCP_DIR = Path(__file__).parent.resolve()
-sys.path.insert(0, str(MCP_DIR))
+sys.path.insert(0, str(MCP_DIR / "src"))
 
-from client import HyperplexityClient
-from guidance import build_guidance
+from hyperplexity_mcp.client import HyperplexityClient
+from hyperplexity_mcp.guidance import build_guidance
 
 # ── config ───────────────────────────────────────────────────────────────────
-API_KEY = os.environ.get(
-    "HYPERPLEXITY_API_KEY",
-    "hpx_live_2iTq6Ax-3fggf_gsKcsLOb8l-Zj5rJWbKbc2D9v0",
-)
+API_KEY = os.environ.get("HYPERPLEXITY_API_KEY", "")
+if not API_KEY:
+    print("ERROR: HYPERPLEXITY_API_KEY environment variable is not set.")
+    print("  Get your API key at hyperplexity.ai/account")
+    sys.exit(1)
 BASE_DIR      = MCP_DIR.parent
 DEMO_XLSX     = BASE_DIR / "demos" / "01. Investment Research" / "InvestmentResearch.xlsx"
 DEMO_CSV      = BASE_DIR / "demos" / "02. Competitive Intelligence" / "Competitive_Intelligence.csv"

@@ -12,8 +12,12 @@ from dynamodb_schemas import (
     validate_email_code,
     is_email_validated,
     check_or_send_validation,
-    is_new_user
+    is_new_user,
+    add_to_balance,
+    mark_welcome_credit_granted,
+    WELCOME_CREDIT_AMOUNT
 )
+from decimal import Decimal
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -52,6 +56,21 @@ def handle(request_data, context):
                 result['session_token'] = session_token
                 result['terms_accepted_version'] = terms_version
                 logger.info(f"[EMAIL_VALIDATION] Issued session token for {email}")
+
+                # Grant welcome credit to first-time users
+                if result.get('is_new_user'):
+                    granted = add_to_balance(
+                        email,
+                        WELCOME_CREDIT_AMOUNT,
+                        transaction_type='welcome_credit',
+                        description='Welcome bonus — $20 free credits'
+                    )
+                    if granted:
+                        result['welcome_credit_granted'] = True
+                        result['welcome_credit_amount'] = float(WELCOME_CREDIT_AMOUNT)
+                        result['new_balance'] = float(WELCOME_CREDIT_AMOUNT)
+                        mark_welcome_credit_granted(email)
+                        logger.info(f"[WELCOME_CREDIT] Granted ${WELCOME_CREDIT_AMOUNT} to new user {email}")
 
         elif action == 'checkEmailValidation':
             is_valid = is_email_validated(email)

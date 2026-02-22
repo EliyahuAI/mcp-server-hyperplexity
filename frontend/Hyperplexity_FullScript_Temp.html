@@ -4669,6 +4669,79 @@ body.viewer-mode .validator-container {
     transform: none;
 }
 
+/* ============================================
+   WELCOME CREDIT MODAL
+   Celebratory banner shown after first sign-up.
+   ============================================ */
+
+.welcome-credit-modal {
+    position: fixed;
+    top: -120px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    background: #ffffff;
+    border: 2px solid #16a34a;
+    border-radius: 14px;
+    box-shadow: 0 8px 32px rgba(22, 163, 74, 0.22), 0 2px 8px rgba(0, 0, 0, 0.10);
+    padding: 1rem 1.25rem;
+    min-width: 300px;
+    max-width: 420px;
+    transition: top 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.welcome-credit-modal.welcome-credit-modal-show {
+    top: 1.25rem;
+}
+
+.welcome-credit-content {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+}
+
+.welcome-credit-icon {
+    font-size: 2rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.welcome-credit-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.welcome-credit-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    font-family: var(--font-family);
+    color: #15803d;
+    line-height: 1.2;
+}
+
+.welcome-credit-subtitle {
+    font-size: 0.82rem;
+    font-family: var(--font-family);
+    color: var(--text-secondary);
+    margin-top: 0.15rem;
+}
+
+.welcome-credit-close {
+    background: none;
+    border: none;
+    font-size: 1.3rem;
+    line-height: 1;
+    color: rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+    padding: 0 0.2rem;
+    flex-shrink: 0;
+    transition: color 0.15s ease;
+}
+
+.welcome-credit-close:hover {
+    color: rgba(0, 0, 0, 0.7);
+}
+
     </style>
 </head>
 <body>
@@ -9725,6 +9798,11 @@ async function verifyCode(cardId, button) {
             markButtonSelected(button, '✓ Verified');
             // ALWAYS TREAT AS NEW USER FOR NOW
             globalState.isNewUser = true; // Override - show demo to everyone
+            if (data.welcome_credit_granted) {
+                globalState.accountBalance = data.new_balance || data.welcome_credit_amount || 20;
+                // Defer modal slightly so email validation card hides first
+                setTimeout(() => showWelcomeCreditModal(data.welcome_credit_amount || 20), 600);
+            }
             handleEmailValidated(cardId);
         } else {
             showMessage(`${cardId}-messages`, data.message || 'Invalid code. Please try again.', 'error');
@@ -16578,6 +16656,24 @@ function handleBalanceUpdate(data) {
     if (globalState) {
         globalState.accountBalance = newBalance;
     }
+}
+
+function showWelcomeCreditModal(amount) {
+    const panel = document.createElement('div');
+    panel.className = 'welcome-credit-modal';
+    panel.innerHTML = `
+        <div class="welcome-credit-content">
+            <div class="welcome-credit-icon">🎉</div>
+            <div class="welcome-credit-text">
+                <div class="welcome-credit-title">$${amount.toFixed(2)} Free Credits Added!</div>
+                <div class="welcome-credit-subtitle">Your account has been funded. Start validating!</div>
+            </div>
+            <button class="welcome-credit-close" onclick="this.closest('.welcome-credit-modal').remove()">×</button>
+        </div>
+    `;
+    document.body.appendChild(panel);
+    setTimeout(() => panel.classList.add('welcome-credit-modal-show'), 100);
+    setTimeout(() => { if (panel.parentElement) panel.remove(); }, 10000);
 }
 
 function showBalanceNotification(newBalance, transaction) {

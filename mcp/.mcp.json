@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "hyperplexity": {
+      "command": "uvx",
+      "args": ["mcp-server-hyperplexity"],
+      "env": {
+        "HYPERPLEXITY_API_KEY": "${HYPERPLEXITY_API_KEY}"
+      }
+    }
+  }
+}

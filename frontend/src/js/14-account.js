@@ -130,6 +130,24 @@ function handleBalanceUpdate(data) {
     }
 }
 
+function showWelcomeCreditModal(amount) {
+    const panel = document.createElement('div');
+    panel.className = 'welcome-credit-modal';
+    panel.innerHTML = `
+        <div class="welcome-credit-content">
+            <div class="welcome-credit-icon">🎉</div>
+            <div class="welcome-credit-text">
+                <div class="welcome-credit-title">$${amount.toFixed(2)} Free Credits Added!</div>
+                <div class="welcome-credit-subtitle">Your account has been funded. Start validating!</div>
+            </div>
+            <button class="welcome-credit-close" onclick="this.closest('.welcome-credit-modal').remove()">×</button>
+        </div>
+    `;
+    document.body.appendChild(panel);
+    setTimeout(() => panel.classList.add('welcome-credit-modal-show'), 100);
+    setTimeout(() => { if (panel.parentElement) panel.remove(); }, 10000);
+}
+
 function showBalanceNotification(newBalance, transaction) {
     // Create floating notification
     const notification = document.createElement('div');

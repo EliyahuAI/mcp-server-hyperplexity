@@ -239,6 +239,11 @@ async function verifyCode(cardId, button) {
             markButtonSelected(button, '✓ Verified');
             // ALWAYS TREAT AS NEW USER FOR NOW
             globalState.isNewUser = true; // Override - show demo to everyone
+            if (data.welcome_credit_granted) {
+                globalState.accountBalance = data.new_balance || data.welcome_credit_amount || 20;
+                // Defer modal slightly so email validation card hides first
+                setTimeout(() => showWelcomeCreditModal(data.welcome_credit_amount || 20), 600);
+            }
             handleEmailValidated(cardId);
         } else {
             showMessage(`${cardId}-messages`, data.message || 'Invalid code. Please try again.', 'error');

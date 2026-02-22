@@ -8,8 +8,8 @@ from typing import Optional
 
 from mcp import types
 
-from client import get_client
-from guidance import build_guidance
+from hyperplexity_mcp.client import get_client
+from hyperplexity_mcp.guidance import build_guidance
 
 _CONTENT_TYPES = {
     "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

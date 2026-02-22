@@ -30,7 +30,7 @@ from typing import Dict, Any, Optional
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
 from interface_lambda.utils.helpers import create_response
 from interface_lambda.core.sqs_service import send_table_conversation_request
-from dynamodb_schemas import create_run_record, update_run_status
+from dynamodb_schemas import create_run_record, update_run_status, track_user_request
 
 # Table maker imports (packaged with lambda)
 from .table_maker_lib.conversation_handler import TableConversationHandler
@@ -408,6 +408,12 @@ def handle_table_conversation_start_async(request_data, context):
             return create_response(500, {'error': 'Failed to queue table conversation request'})
 
         logger.info(f"Table conversation request queued successfully: {message_id}")
+
+        # Track table maker usage for analytics and abuse detection
+        try:
+            track_user_request(email, request_type='table_maker')
+        except Exception as track_err:
+            logger.warning(f"[TABLE_MAKER] Failed to track usage for {email}: {track_err}")
 
         # Return immediately - results will come via WebSocket
         response_body = {
