@@ -48,7 +48,7 @@ DEMO_XLSX     = BASE_DIR / "demos" / "01. Investment Research" / "InvestmentRese
 DEMO_CSV      = BASE_DIR / "demos" / "02. Competitive Intelligence" / "Competitive_Intelligence.csv"
 MCP_TEST_CSV  = MCP_DIR / "test_data" / "demo_table.csv"   # tiny 4-row CSV for fast smoke tests
 
-POLL_INTERVAL = 10   # seconds between status polls
+POLL_INTERVAL = 15   # seconds between status polls (matches guidance: 15s convs, 20s jobs)
 POLL_TIMEOUT  = 600  # seconds before giving up
 
 # ── terminal colours ─────────────────────────────────────────────────────────
@@ -192,10 +192,15 @@ def test_guidance_state_machine():
           any(s["tool"] == "create_job" and s["params"].get("config_id") == "cfg_xyz"
               for s in g["next_steps"]))
 
-    # no match → start_upload_interview
-    g = build_guidance("confirm_upload", {"session_id": "s1", "matches": [], "match_count": 0})
-    check("confirm_upload(no match) → start_upload_interview",
-          any(s["tool"] == "start_upload_interview" for s in g["next_steps"]))
+    # no match, interview auto-started → get_conversation (not start_upload_interview)
+    g = build_guidance("confirm_upload", {
+        "session_id": "s1", "matches": [], "match_count": 0,
+        "conversation_id": "upload_conv_abc123", "interview_auto_started": True,
+    })
+    check("confirm_upload(no match, auto-started) → get_conversation",
+          any(s["tool"] == "get_conversation" for s in g["next_steps"]))
+    check("confirm_upload(no match, auto-started) → NOT start_upload_interview",
+          not any(s["tool"] == "start_upload_interview" for s in g["next_steps"]))
 
     # ── get_conversation: user_reply_needed beats status=processing ──────
     g = build_guidance("get_conversation", {
@@ -217,14 +222,17 @@ def test_guidance_state_machine():
     check("get_conversation(processing, no reply) → get_conversation",
           any(s["tool"] == "get_conversation" for s in g["next_steps"]))
 
-    # submit_preview (no trigger_execution) → create_job
+    # submit_preview (no trigger_execution) → get_job_status (preview auto-queued, no create_job)
     g = build_guidance("get_conversation", {
         "conversation_id": "c1", "session_id": "s1",
         "status": "done", "user_reply_needed": False,
         "next_step": {"action": "submit_preview"},
     })
-    check("get_conversation(submit_preview) → create_job",
-          any(s["tool"] == "create_job" for s in g["next_steps"]))
+    _sp_tools = [s["tool"] for s in g["next_steps"]]
+    check("get_conversation(submit_preview, no trigger) → get_job_status",
+          "get_job_status" in _sp_tools, str(_sp_tools))
+    check("get_conversation(submit_preview, no trigger) → NOT create_job",
+          "create_job" not in _sp_tools, str(_sp_tools))
 
     # submit_preview + trigger_execution=True → get_job_status (NOT create_job)
     # The table maker just started running; config doesn't exist yet.
@@ -240,14 +248,16 @@ def test_guidance_state_machine():
     check("get_conversation(submit_preview, trigger_execution=True) → NOT create_job",
           "create_job" not in _te_tools, str(_te_tools))
 
-    # get_job_status: completed + "Config Generation" → create_job
+    # get_job_status: completed + "Config Generation" → get_job_status (preview auto-queued)
     g = build_guidance("get_job_status", {
         "job_id": "session_abc123", "status": "completed",
         "current_step": "Config Generation completed successfully",
     })
     _cg_tools = [s["tool"] for s in g["next_steps"]]
-    check("get_job_status(completed+Config Generation) → create_job",
-          "create_job" in _cg_tools, str(_cg_tools))
+    check("get_job_status(completed+Config Generation) → get_job_status (poll for preview_complete)",
+          "get_job_status" in _cg_tools, str(_cg_tools))
+    check("get_job_status(completed+Config Generation) → NOT create_job",
+          "create_job" not in _cg_tools, str(_cg_tools))
 
     # ── get_job_messages: uses last_seq not messages[-1]["seq"] ──────────
     g = build_guidance("get_job_messages", {
@@ -375,6 +385,7 @@ def test_upload_workflow(client: HyperplexityClient) -> dict | None:
     # ── Step 3: POST /uploads/confirm (optional — 503 means not yet live) ─
     matches = []
     best_config_id = None
+    auto_conv_id = None  # set when confirm_upload auto-starts an interview
     try:
         confirm = client.post("/uploads/confirm", json={
             "session_id": session_id,
@@ -391,6 +402,13 @@ def test_upload_workflow(client: HyperplexityClient) -> dict | None:
                  f"name={m.get('name', '?')}  config_id={m.get('config_id', '?')}")
         best = matches[0] if matches else {}
         best_config_id = best.get("config_id")
+        # Capture auto-started interview conv_id (API sessions with no strong match)
+        auto_conv_id = confirm.get("conversation_id")
+        if auto_conv_id:
+            info(f"confirm_upload auto-started interview: conversation_id={auto_conv_id}")
+            check("confirm_upload auto-start guidance → get_conversation",
+                  any(s["tool"] == "get_conversation"
+                      for s in confirm["_guidance"]["next_steps"]))
     except Exception as exc:
         info(f"confirm_upload skipped (backend error): {exc}")
 
@@ -401,6 +419,7 @@ def test_upload_workflow(client: HyperplexityClient) -> dict | None:
         "filename":       filename,
         "best_config_id": best_config_id,
         "match_score":    matches[0].get("match_score", 0) if matches else 0,
+        "auto_conv_id":   auto_conv_id,  # set if upload interview was auto-started
     }
 
 
@@ -664,28 +683,18 @@ def test_table_maker(client: HyperplexityClient) -> dict | None:
             if tm_done:
                 tm_done["_guidance"] = build_guidance("get_job_status", tm_done)
                 assert_guidance(tm_done, "get_job_status(Config Generation completed)")
-                check("Config Generation completed guidance → create_job",
-                      any(s["tool"] == "create_job" for s in tm_done["_guidance"]["next_steps"]),
+                # Preview is auto-queued — guidance should say poll get_job_status, NOT create_job
+                check("Config Generation completed guidance → get_job_status (not create_job)",
+                      any(s["tool"] == "get_job_status" for s in tm_done["_guidance"]["next_steps"])
+                      and not any(s["tool"] == "create_job" for s in tm_done["_guidance"]["next_steps"]),
                       str([s["tool"] for s in tm_done["_guidance"]["next_steps"]]))
-
-                # Create the preview job now that config is ready
-                info("Creating preview job after table maker completed…")
-                try:
-                    job = client.post("/jobs", json={"session_id": session_id})
-                    job["_guidance"] = build_guidance("create_job", job)
-                    check("create_job (table maker) returns dict", isinstance(job, dict))
-                    check("create_job (table maker) has job_id", "job_id" in job,
-                          str(list(job.keys())))
-                    assert_guidance(job, "create_job(table_maker)")
-                    info(f"Preview job: job_id={job.get('job_id')}  status={job.get('status')}")
-                except Exception as exc:
-                    fail(f"create_job after table maker failed: {exc}")
+                info("Preview auto-queued after table maker — no create_job() needed.")
             else:
-                info("Table maker did not complete within timeout — skipping create_job")
+                info("Table maker did not complete within timeout — skipping preview check")
         else:
-            # Upload-interview flow: guidance should already point to create_job
-            check("guidance → create_job after interview completes",
-                  any(s["tool"] == "create_job" for s in state["_guidance"]["next_steps"]))
+            # Upload-interview flow: preview auto-queued, guidance should point to get_job_status
+            check("guidance → get_job_status after interview completes (preview auto-queued)",
+                  any(s["tool"] == "get_job_status" for s in state["_guidance"]["next_steps"]))
 
     return {"conversation_id": conv_id, "session_id": session_id}
 
@@ -701,21 +710,24 @@ def test_upload_interview(client: HyperplexityClient, upload: dict | None):
         info("Skipping — no upload state (upload workflow failed earlier)")
         return
 
-    session_id = upload["session_id"]
-    iv = client.post("/conversations/upload-interview", json={
-        "session_id": session_id,
-        "message": "I want to validate company names, websites, and funding amounts.",
-    })
-    iv["_guidance"] = build_guidance("start_upload_interview", iv)
+    session_id   = upload["session_id"]
+    auto_conv_id = upload.get("auto_conv_id")
 
-    check("start_upload_interview returns a dict",      isinstance(iv, dict))
-    check("start_upload_interview has conversation_id", "conversation_id" in iv, str(list(iv.keys())))
-    assert_guidance(iv, "start_upload_interview")
-    check("guidance → get_conversation",
-          any(s["tool"] == "get_conversation" for s in iv["_guidance"]["next_steps"]))
-
-    conv_id = iv["conversation_id"]
-    info(f"interview conversation_id = {conv_id}")
+    if auto_conv_id:
+        # New path: confirm_upload auto-started the interview for this API session.
+        conv_id = auto_conv_id
+        info(f"Using auto-started interview conversation_id = {conv_id}")
+    else:
+        # Fallback: explicitly start an interview (e.g. non-API session or high match score).
+        info("No auto-started interview — starting explicitly via /conversations/upload-interview")
+        iv = client.post("/conversations/upload-interview", json={
+            "session_id": session_id,
+            "message": "I want to validate company names, websites, and funding amounts.",
+        })
+        check("upload-interview returns a dict",      isinstance(iv, dict))
+        check("upload-interview has conversation_id", "conversation_id" in iv, str(list(iv.keys())))
+        conv_id = iv["conversation_id"]
+        info(f"interview conversation_id = {conv_id}")
 
     info(f"Polling interview conversation (up to {POLL_TIMEOUT}s)…")
     state = poll_conversation(client, conv_id, session_id)

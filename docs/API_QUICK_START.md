@@ -221,9 +221,10 @@ output of a past validation that you've manually edited.
   auto-detected.
 
 After confirming the upload the system checks whether the column headers match any
-previous configuration. If there's a good match it offers to use that config or start
-a fresh AI interview. If there's no match at all the system starts an AI interview to
-build a new config.
+previous configuration. If there's a good match (score ≥ 0.85) you can reuse it with
+`create_job`. If there's no strong match the server automatically starts an AI
+interview and returns `conversation_id` in the response — no separate
+`/conversations/upload-interview` call needed.
 
 ```python
 TABLE_PATH = "new_dataset.xlsx"   # or "new_dataset.csv"
@@ -268,21 +269,21 @@ if matches and matches[0]["match_score"] >= 0.85:
     })
     job_id = resp.json()["data"]["job_id"]
 
-# ── Path B: No match — AI interview to build a new config ─────────────────────
+# ── Path B: No match — interview auto-started, poll until preview is queued ────
 else:
-    print("\nNo match found — starting AI interview...")
+    # The server auto-starts an upload interview and returns conversation_id.
+    # No separate POST to /conversations/upload-interview needed.
+    conv_id = confirm.get("conversation_id")
+    if not conv_id:
+        raise RuntimeError("Expected conversation_id in confirm response (interview auto-start)")
 
-    resp = requests.post(f"{BASE_URL}/conversations/upload-interview", headers=HEADERS, json={
-        "session_id": session_id,
-        "message": "Please help me configure validation for this table.",
-    })
-    data = resp.json()["data"]
-    conv_id = data["conversation_id"]
+    print(f"\nNo strong match — interview auto-started: {conv_id}")
 
-    # Poll + reply until config generation is triggered
+    # Poll + reply until the interview is complete and preview is auto-queued.
+    # Once complete, poll get_job_status until preview_complete (no create_job call).
     def conversation_loop(conv_id, session_id, max_turns=20):
         for turn in range(max_turns):
-            time.sleep(8)
+            time.sleep(15)   # 15s recommended interval for conversations
             resp = requests.get(
                 f"{BASE_URL}/conversations/{conv_id}",
                 headers=HEADERS,
@@ -307,10 +308,9 @@ else:
 
             next_step = state.get("next_step", {})
             if next_step.get("action") == "submit_preview":
-                print("\nConfig ready — starting preview...")
-                resp = requests.post(f"{BASE_URL}/jobs", headers=HEADERS,
-                                     json={"session_id": session_id, "preview_rows": 3})
-                return resp.json()["data"]["job_id"]
+                print("\nInterview complete — preview is being auto-queued (no create_job needed).")
+                # Poll get_job_status every 20s; preview is triggered automatically.
+                return session_id   # poll by session_id, not a separate job_id
 
         raise RuntimeError("Conversation did not complete")
 
@@ -349,10 +349,12 @@ conv_id    = data["conversation_id"]
 session_id = data["session_id"]
 print(f"Conversation: {conv_id}  Session: {session_id}")
 
-# ── Step 2: Poll + reply until done ─────────────────────────────────────────
+# ── Step 2: Poll + reply until table is built ────────────────────────────────
+# When the conversation reaches submit_preview the table is done.
+# A preview validation job is automatically queued — do NOT call POST /jobs.
 def conversation_loop(conv_id, session_id, max_turns=20):
     for turn in range(max_turns):
-        time.sleep(8)
+        time.sleep(15)   # 15s recommended interval for conversations
         resp = requests.get(
             f"{BASE_URL}/conversations/{conv_id}",
             headers=HEADERS,
@@ -378,15 +380,13 @@ def conversation_loop(conv_id, session_id, max_turns=20):
 
         next_step = state.get("next_step", {})
         if next_step.get("action") == "submit_preview":
-            print("\nTable design complete — starting preview...")
-            resp = requests.post(f"{BASE_URL}/jobs", headers=HEADERS,
-                                 json={"session_id": session_id, "preview_rows": 3})
-            return resp.json()["data"]["job_id"]
+            print("\nTable design complete — preview auto-queued (no POST /jobs needed).")
+            return session_id   # poll get_job_status by session_id
 
     raise RuntimeError("Conversation did not complete")
 
 job_id = conversation_loop(conv_id, session_id)
-print(f"\nPreview job: {job_id}")
+print(f"\nPolling preview for session: {job_id}")
 
 # ── Step 3: Standard poll → approve → results ────────────────────────────────
 data = poll_until(job_id, "preview_complete")
