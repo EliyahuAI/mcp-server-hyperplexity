@@ -21,11 +21,13 @@ def register(server):
         config_id: Optional[str] = None,
         config: Optional[dict] = None,
         s3_key: Optional[str] = None,
-        preview_rows: Optional[int] = None,
         notify_method: Optional[str] = None,
         webhook_url: Optional[str] = None,
     ) -> list[types.TextContent]:
-        """Create a validation job (preview or full).
+        """Create a validation job.
+
+        Always runs as a 3-row preview first — approve_validation is required
+        before full processing begins.
 
         Provide one of:
           - config_id  — reuse a known config (fastest)
@@ -34,9 +36,8 @@ def register(server):
 
         upload_id comes from the upload_file response.
         notify_method: "poll" (default) or "webhook".
-        preview_rows defaults to the API's default (usually 5).
         """
-        payload: dict = {"session_id": session_id}
+        payload: dict = {"session_id": session_id, "preview_rows": 3}
         if upload_id:
             payload["upload_id"] = upload_id
         if config_id:
@@ -45,8 +46,6 @@ def register(server):
             payload["config"] = config
         if s3_key:
             payload["s3_key"] = s3_key
-        if preview_rows is not None:
-            payload["preview_rows"] = preview_rows
         if notify_method:
             payload["notify_method"] = notify_method
         if webhook_url:
