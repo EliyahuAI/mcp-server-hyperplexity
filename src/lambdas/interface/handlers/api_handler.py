@@ -1018,7 +1018,7 @@ def _handle_reference_check(body, email, meta):
 
     text = (body.get("text") or "").strip()
     upload_s3_key = body.get("s3_key")
-    session_id = body.get("session_id") or f"session_{uuid.uuid4().hex[:16]}"
+    session_id = body.get("session_id") or f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
     if not text and not upload_s3_key:
         return _error_response(400, "missing_fields", "text or s3_key is required.", meta)
@@ -1137,7 +1137,7 @@ def _handle_start_table_maker(body, email, meta):
     """POST /v1/conversations/table-maker"""
     from interface_lambda.actions.table_maker.conversation import handle_table_conversation_start_async
 
-    session_id = body.get("session_id") or f"session_{uuid.uuid4().hex[:16]}"
+    session_id = body.get("session_id") or f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
     resp = handle_table_conversation_start_async(
         {
             "email": email,
