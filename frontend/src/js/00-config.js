@@ -185,6 +185,27 @@ function getAuthHeaders() {
     return headers;
 }
 
+/**
+ * Handle authentication failures (expired/revoked token returning 401).
+ * Clears the stale session from storage and re-prompts for email validation.
+ * Call this whenever an API returns 401.
+ */
+function handleAuthError() {
+    console.warn('[AUTH] Session invalid - clearing stale token and requesting re-login');
+    localStorage.removeItem(SK_TOKEN);
+    localStorage.removeItem(SK_EMAIL);
+    sessionStorage.removeItem('validatedEmail');
+    globalState.email = null;
+    globalState.sessionToken = null;
+    if (typeof hideSignedInBadge === 'function') {
+        hideSignedInBadge();
+    }
+    if (typeof createEmailValidationCard === 'function') {
+        createEmailValidationCard();
+    }
+}
+window.handleAuthError = handleAuthError;
+
 // ============================================
 // DEFERRED EMAIL VALIDATION
 // ============================================

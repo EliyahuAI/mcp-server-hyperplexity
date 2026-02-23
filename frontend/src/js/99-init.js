@@ -165,7 +165,7 @@ if (storedEmail && storedEmail.includes('@')) {
     if (storedToken) {
         globalState.sessionToken = storedToken;
 
-        // Show signed-in badge if both email and token are present
+        // Show signed-in badge optimistically (will be cleared if token is invalid)
         if (typeof showSignedInBadge === 'function') {
             // Defer badge display to ensure DOM is ready
             setTimeout(() => {
@@ -175,6 +175,30 @@ if (storedEmail && storedEmail.includes('@')) {
         } else {
             console.warn('[AUTH] showSignedInBadge function not available yet');
         }
+
+        // Background verification: probe a protected endpoint to confirm the token
+        // is still accepted by the backend (catches revoked/expired tokens).
+        // Uses getAccountBalance as a lightweight, side-effect-free authenticated call.
+        // 300ms delay: after badge shows (100ms) but before typical user interaction.
+        setTimeout(async () => {
+            try {
+                const verifyResponse = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        action: 'getAccountBalance',
+                        email: storedEmail
+                    })
+                });
+                if (verifyResponse.status === 401) {
+                    console.warn('[AUTH] Stored token rejected by backend - clearing stale session');
+                    handleAuthError();
+                }
+            } catch (e) {
+                // Network error - keep existing session optimistically (user may be offline)
+                console.warn('[AUTH] Token verification skipped (network error):', e.message);
+            }
+        }, 300);
     } else {
         // Check if user explicitly logged out (forceReverify flag set)
         // If so, skip auto-reauth to force them to re-enter validation code

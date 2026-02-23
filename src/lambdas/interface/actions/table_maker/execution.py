@@ -3658,6 +3658,34 @@ async def execute_full_table_generation(
         result['success'] = True
         logger.info(f"[EXECUTION] Pipeline complete: {len(approved_rows)} rows")
 
+        # ── Auto-trigger preview for API sessions (table maker path) ──
+        # When session_info.via_api is True, queue a preview SQS message so the
+        # LLM only needs to poll get_job_status() — no explicit create_job() call.
+        if result.get('config_generated') and result.get('excel_s3_key') and result.get('config_s3_key'):
+            try:
+                _api_sess = storage_manager.load_session_info(email, session_id)
+                if _api_sess.get('via_api'):
+                    from interface_lambda.core.sqs_service import send_preview_request
+                    _api_pin = (
+                        session_id.split('_')[-1] if '_' in session_id else session_id[:6]
+                    )
+                    send_preview_request(
+                        session_id=session_id,
+                        excel_s3_key=result['excel_s3_key'],
+                        config_s3_key=result['config_s3_key'],
+                        email=email,
+                        reference_pin=_api_pin,
+                    )
+                    result['preview_auto_triggered'] = True
+                    logger.info(
+                        f"[AUTO_PREVIEW] Queued preview for API table maker session {session_id}"
+                    )
+            except Exception as _api_err:
+                logger.warning(
+                    f"[AUTO_PREVIEW] Could not auto-trigger table maker preview "
+                    f"(non-fatal): {_api_err}"
+                )
+
         # Flush memory cache to S3 at batch end (single write for all stored tables)
         if SEARCH_MEMORY_AVAILABLE:
             try:

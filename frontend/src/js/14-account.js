@@ -821,6 +821,11 @@ window.refreshCurrentBalance = async function refreshCurrentBalance() {
             })
         });
 
+        if (response.status === 401) {
+            handleAuthError();
+            return;
+        }
+
         if (response.ok) {
             const data = await response.json();
 

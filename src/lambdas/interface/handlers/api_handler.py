@@ -302,6 +302,20 @@ def _handle_presigned_upload(body, email, meta):
     from interface_lambda.actions import presigned_upload
     request_data = {**body, "email": email, "_verified_email": email}
     resp = presigned_upload.request_presigned_url(request_data, None)
+    # Mark session as created via API so downstream handlers can auto-trigger previews.
+    _parsed = _parse_handler_response(resp)
+    if _parsed["status_code"] < 400:
+        _session_id = _parsed["body"].get("session_id")
+        if _session_id:
+            try:
+                from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+                _mgr = UnifiedS3Manager()
+                _sess = _mgr.load_session_info(email, _session_id)
+                if not _sess.get("via_api"):
+                    _sess["via_api"] = True
+                    _mgr.save_session_info(email, _session_id, _sess)
+            except Exception as _e:
+                logger.warning(f"[PRESIGNED_UPLOAD] Could not set via_api flag: {_e}")
     return _wrap_handler_response(resp, meta)
 
 
@@ -426,6 +440,31 @@ def _handle_confirm_upload(body, email, meta):
 
         match_count = len(matches)
         top_config_id = (auto_select or {}).get("config_id") or (matches[0]["config_id"] if matches else None)
+
+        # Auto-start upload interview for API sessions with no strong config match.
+        # The conversation_id is included in the response so the LLM can poll it directly.
+        _best_score = matches[0].get("match_score", 0) if matches else 0
+        _auto_interview_conv_id = None
+        if sess_info.get("via_api") and (not matches or _best_score < 0.85):
+            try:
+                import asyncio as _asyncio
+                from interface_lambda.actions.upload_interview import handle_upload_interview_start_async
+                _conv_id = f"upload_conv_{uuid.uuid4().hex[:12]}"
+                _int_resp = _asyncio.run(handle_upload_interview_start_async(
+                    {"email": email, "session_id": session_id,
+                     "conversation_id": _conv_id, "user_message": ""},
+                    None,
+                ))
+                _int_parsed = _parse_handler_response(_int_resp)
+                if _int_parsed["status_code"] < 400:
+                    _auto_interview_conv_id = _int_parsed["body"].get("conversation_id", _conv_id)
+                    _write_processing_state(_auto_interview_conv_id, email, session_id)
+                    logger.info(
+                        f"[CONFIRM_UPLOAD] Auto-started upload interview "
+                        f"{_auto_interview_conv_id} for API session {session_id}"
+                    )
+            except Exception as _ie:
+                logger.warning(f"[CONFIRM_UPLOAD] Could not auto-start upload interview: {_ie}")
 
         # 6. Build next_steps — spell out every option with ready-to-execute calls
         options = []
@@ -572,6 +611,9 @@ def _handle_confirm_upload(body, email, meta):
         }
         if match_error:
             response_data["match_warning"] = f"Config matching encountered an error and was skipped: {match_error}"
+        if _auto_interview_conv_id:
+            response_data["conversation_id"] = _auto_interview_conv_id
+            response_data["interview_auto_started"] = True
 
         return _success_response(200, response_data, meta)
 
@@ -736,7 +778,7 @@ def _handle_create_job(body, email, meta):
             "results": f"/v1/jobs/{job_id}/results",
         },
         "polling": {
-            "recommended_interval_seconds": 10,
+            "recommended_interval_seconds": 20,
             "max_wait_seconds": 1800,
         },
     }, meta)
@@ -770,14 +812,14 @@ def _handle_get_job_status(job_id, email, query_params, meta):
             return _success_response(200, {
                 "job_id": job_id, "status": "queued",
                 "progress_percent": 0, "current_step": "Job is queued.",
-            }, meta, extra_headers={"Retry-After": "10"})
+            }, meta, extra_headers={"Retry-After": "20"})
 
         record = get_run_status(job_id, run_key)
         if not record:
             return _success_response(200, {
                 "job_id": job_id, "status": "queued",
                 "progress_percent": 0, "current_step": "Job is processing.",
-            }, meta, extra_headers={"Retry-After": "10"})
+            }, meta, extra_headers={"Retry-After": "20"})
 
         # Safely extract fields — DynamoDB returns Decimal for numbers
         db_status = str(record.get("status") or "PROCESSING").upper()
@@ -841,7 +883,7 @@ def _handle_get_job_status(job_id, email, query_params, meta):
             "requires_approval": True,
         }
 
-    extra = {"Retry-After": "10"} if api_status in ("processing", "queued") else None
+    extra = {"Retry-After": "20"} if api_status in ("processing", "queued") else None
     return _success_response(200, data, meta, extra_headers=extra)
 
 
@@ -1071,7 +1113,7 @@ def _handle_reference_check(body, email, meta):
             "results": f"/v1/jobs/{session_id}/reference-results",
         },
         "polling": {
-            "recommended_interval_seconds": 10,
+            "recommended_interval_seconds": 20,
             "max_wait_seconds": 300,
         },
     }, meta)
@@ -1179,7 +1221,7 @@ def _handle_start_table_maker(body, email, meta):
             "conversation": f"/v1/conversations/{conv_id}",
         },
         "polling": {
-            "recommended_interval_seconds": 10,
+            "recommended_interval_seconds": 15,
             "max_wait_seconds": 600,
         },
     }, meta)
@@ -1412,7 +1454,7 @@ def _handle_get_conversation(conv_id, email, query_params, meta):
                 "user_reply_needed": False,
                 "trigger_execution": False,
                 "table_name": None,
-            }, meta, extra_headers={"Retry-After": "5"})
+            }, meta, extra_headers={"Retry-After": "15"})
         except Exception:
             # head_object style 404 arrives as a generic ClientError
             return _success_response(200, {
@@ -1424,7 +1466,7 @@ def _handle_get_conversation(conv_id, email, query_params, meta):
                 "user_reply_needed": False,
                 "trigger_execution": False,
                 "table_name": None,
-            }, meta, extra_headers={"Retry-After": "5"})
+            }, meta, extra_headers={"Retry-After": "15"})
 
         # For refine_ convs: lazily detect completion by checking if a new
         # config version was saved to S3 since the refinement was queued.
@@ -1530,7 +1572,7 @@ def _handle_get_conversation(conv_id, email, query_params, meta):
                 "description": "The AI is still working. Poll again in a few seconds.",
             }
 
-        extra = {"Retry-After": "5"} if status == "processing" else None
+        extra = {"Retry-After": "15"} if status == "processing" else None
         return _success_response(200, data, meta, extra_headers=extra)
 
     except Exception as e:
@@ -1723,9 +1765,9 @@ def _handle_refine_config(conv_id, body, email, meta):
             "conversation": f"/v1/conversations/{conv_id}?session_id={session_id}",
         },
         "polling": {
-            "recommended_interval_seconds": 10,
+            "recommended_interval_seconds": 15,
             "max_wait_seconds": 300,
-            "note": "Poll until next_step.action == 'submit_preview', then POST to /v1/jobs with next_step.body.",
+            "note": "Poll until trigger_execution == true, then poll get_job_status until preview_complete.",
         },
     }, meta)
 

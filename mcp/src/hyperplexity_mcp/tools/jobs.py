@@ -62,18 +62,17 @@ def register(server):
                     "_guidance": {
                         "summary": (
                             "No validation config found for this session. "
-                            "If this is a table-maker session, the config is written during "
-                            "execution — poll get_job_status until current_step contains "
-                            "'Config Generation completed', then retry create_job."
+                            "For table-maker sessions, the preview is auto-queued once execution "
+                            "finishes — do NOT call create_job(). "
+                            "Poll get_job_status every 20s until status == 'preview_complete'."
                         ),
                         "next_steps": [
                             {
                                 "tool": "get_job_status",
                                 "params": {"job_id": session_id},
                                 "note": (
-                                    "Poll every 15s. When status='completed' and current_step "
-                                    "contains 'Config Generation completed', the config is ready "
-                                    "and you can retry create_job(session_id=session_id)."
+                                    "Poll every 20s. The preview is auto-triggered after the "
+                                    "table maker finishes — you do not need to call create_job."
                                 ),
                             }
                         ],
@@ -90,7 +89,7 @@ def register(server):
         """Poll job status. _guidance tells you exactly what to do next.
 
         Key statuses:
-          queued / processing  → keep polling (~10s interval)
+          queued / processing  → keep polling (~20s interval)
           preview_complete     → approve_validation (or refine_config)
           completed            → get_results
           failed               → check error field

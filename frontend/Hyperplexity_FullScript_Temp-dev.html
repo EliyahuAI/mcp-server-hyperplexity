@@ -4943,6 +4943,27 @@ function getAuthHeaders() {
     return headers;
 }
 
+/**
+ * Handle authentication failures (expired/revoked token returning 401).
+ * Clears the stale session from storage and re-prompts for email validation.
+ * Call this whenever an API returns 401.
+ */
+function handleAuthError() {
+    console.warn('[AUTH] Session invalid - clearing stale token and requesting re-login');
+    localStorage.removeItem(SK_TOKEN);
+    localStorage.removeItem(SK_EMAIL);
+    sessionStorage.removeItem('validatedEmail');
+    globalState.email = null;
+    globalState.sessionToken = null;
+    if (typeof hideSignedInBadge === 'function') {
+        hideSignedInBadge();
+    }
+    if (typeof createEmailValidationCard === 'function') {
+        createEmailValidationCard();
+    }
+}
+window.handleAuthError = handleAuthError;
+
 // ============================================
 // DEFERRED EMAIL VALIDATION
 // ============================================
@@ -8831,6 +8852,10 @@ function proceedWithUpload(cardId) {
                                 }, 1000);
                             }
                         } else {
+                            if (uploadResponse.status === 401) {
+                                handleAuthError();
+                                return;
+                            }
                             throw new Error(data.error || 'Failed to upload file');
                         }
                     } catch (error) {
@@ -9049,6 +9074,10 @@ async function uploadExcelFile(cardId, file) {
         const presignedData = await presignedResponse.json();
 
         if (!presignedResponse.ok || !presignedData.success) {
+            if (presignedResponse.status === 401) {
+                handleAuthError();
+                return false;
+            }
             throw new Error(presignedData.message || 'Failed to get upload URL');
         }
 
@@ -17349,6 +17378,11 @@ window.refreshCurrentBalance = async function refreshCurrentBalance() {
             })
         });
 
+        if (response.status === 401) {
+            handleAuthError();
+            return;
+        }
+
         if (response.ok) {
             const data = await response.json();
 
@@ -21457,7 +21491,7 @@ if (storedEmail && storedEmail.includes('@')) {
     if (storedToken) {
         globalState.sessionToken = storedToken;
 
-        // Show signed-in badge if both email and token are present
+        // Show signed-in badge optimistically (will be cleared if token is invalid)
         if (typeof showSignedInBadge === 'function') {
             // Defer badge display to ensure DOM is ready
             setTimeout(() => {
@@ -21467,6 +21501,30 @@ if (storedEmail && storedEmail.includes('@')) {
         } else {
             console.warn('[AUTH] showSignedInBadge function not available yet');
         }
+
+        // Background verification: probe a protected endpoint to confirm the token
+        // is still accepted by the backend (catches revoked/expired tokens).
+        // Uses getAccountBalance as a lightweight, side-effect-free authenticated call.
+        // 300ms delay: after badge shows (100ms) but before typical user interaction.
+        setTimeout(async () => {
+            try {
+                const verifyResponse = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        action: 'getAccountBalance',
+                        email: storedEmail
+                    })
+                });
+                if (verifyResponse.status === 401) {
+                    console.warn('[AUTH] Stored token rejected by backend - clearing stale session');
+                    handleAuthError();
+                }
+            } catch (e) {
+                // Network error - keep existing session optimistically (user may be offline)
+                console.warn('[AUTH] Token verification skipped (network error):', e.message);
+            }
+        }, 300);
     } else {
         // Check if user explicitly logged out (forceReverify flag set)
         // If so, skip auto-reauth to force them to re-enter validation code

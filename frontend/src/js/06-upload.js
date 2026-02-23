@@ -248,6 +248,10 @@ function proceedWithUpload(cardId) {
                                 }, 1000);
                             }
                         } else {
+                            if (uploadResponse.status === 401) {
+                                handleAuthError();
+                                return;
+                            }
                             throw new Error(data.error || 'Failed to upload file');
                         }
                     } catch (error) {
@@ -466,6 +470,10 @@ async function uploadExcelFile(cardId, file) {
         const presignedData = await presignedResponse.json();
 
         if (!presignedResponse.ok || !presignedData.success) {
+            if (presignedResponse.status === 401) {
+                handleAuthError();
+                return false;
+            }
             throw new Error(presignedData.message || 'Failed to get upload URL');
         }
 
