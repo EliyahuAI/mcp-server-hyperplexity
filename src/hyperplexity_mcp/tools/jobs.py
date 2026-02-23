@@ -7,7 +7,7 @@ from typing import Optional
 
 from mcp import types
 
-from hyperplexity_mcp.client import get_client
+from hyperplexity_mcp.client import APIError, get_client
 from hyperplexity_mcp.guidance import build_guidance
 
 
@@ -42,7 +42,7 @@ def register(server):
             payload["upload_id"] = upload_id
         if config_id:
             payload["config_id"] = config_id
-        if config:
+        if config is not None:
             payload["config"] = config
         if s3_key:
             payload["s3_key"] = s3_key
@@ -51,7 +51,37 @@ def register(server):
         if webhook_url:
             payload["webhook_url"] = webhook_url
 
-        data = client.post("/jobs", json=payload)
+        try:
+            data = client.post("/jobs", json=payload)
+        except APIError as exc:
+            if "missing_config" in str(exc):
+                result = {
+                    "error": "missing_config",
+                    "message": str(exc),
+                    "session_id": session_id,
+                    "_guidance": {
+                        "summary": (
+                            "No validation config found for this session. "
+                            "If this is a table-maker session, the config is written during "
+                            "execution — poll get_job_status until current_step contains "
+                            "'Config Generation completed', then retry create_job."
+                        ),
+                        "next_steps": [
+                            {
+                                "tool": "get_job_status",
+                                "params": {"job_id": session_id},
+                                "note": (
+                                    "Poll every 15s. When status='completed' and current_step "
+                                    "contains 'Config Generation completed', the config is ready "
+                                    "and you can retry create_job(session_id=session_id)."
+                                ),
+                            }
+                        ],
+                    },
+                }
+                return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
+            raise
+
         data["_guidance"] = build_guidance("create_job", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
