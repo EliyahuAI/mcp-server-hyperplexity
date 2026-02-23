@@ -42,7 +42,7 @@ def register(server):
             payload["upload_id"] = upload_id
         if config_id:
             payload["config_id"] = config_id
-        if config:
+        if config is not None:
             payload["config"] = config
         if s3_key:
             payload["s3_key"] = s3_key

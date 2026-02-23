@@ -217,7 +217,7 @@ def test_guidance_state_machine():
     check("get_conversation(processing, no reply) → get_conversation",
           any(s["tool"] == "get_conversation" for s in g["next_steps"]))
 
-    # submit_preview → create_job
+    # submit_preview (no trigger_execution) → create_job
     g = build_guidance("get_conversation", {
         "conversation_id": "c1", "session_id": "s1",
         "status": "done", "user_reply_needed": False,
@@ -225,6 +225,29 @@ def test_guidance_state_machine():
     })
     check("get_conversation(submit_preview) → create_job",
           any(s["tool"] == "create_job" for s in g["next_steps"]))
+
+    # submit_preview + trigger_execution=True → get_job_status (NOT create_job)
+    # The table maker just started running; config doesn't exist yet.
+    g = build_guidance("get_conversation", {
+        "conversation_id": "c1", "session_id": "s1",
+        "status": "execution_ready", "user_reply_needed": False,
+        "next_step": {"action": "submit_preview", "trigger_execution": True},
+        "trigger_execution": True,
+    })
+    _te_tools = [s["tool"] for s in g["next_steps"]]
+    check("get_conversation(submit_preview, trigger_execution=True) → get_job_status",
+          "get_job_status" in _te_tools, str(_te_tools))
+    check("get_conversation(submit_preview, trigger_execution=True) → NOT create_job",
+          "create_job" not in _te_tools, str(_te_tools))
+
+    # get_job_status: completed + "Config Generation" → create_job
+    g = build_guidance("get_job_status", {
+        "job_id": "session_abc123", "status": "completed",
+        "current_step": "Config Generation completed successfully",
+    })
+    _cg_tools = [s["tool"] for s in g["next_steps"]]
+    check("get_job_status(completed+Config Generation) → create_job",
+          "create_job" in _cg_tools, str(_cg_tools))
 
     # ── get_job_messages: uses last_seq not messages[-1]["seq"] ──────────
     g = build_guidance("get_job_messages", {
@@ -399,7 +422,6 @@ def test_job_workflow(client: HyperplexityClient, upload: dict, full: bool):
     job_payload: dict = {
         "session_id":    session_id,
         "s3_key":        s3_key,
-        "preview_rows":  3,
         "notify_method": "poll",
     }
     if upload_id:
@@ -612,8 +634,58 @@ def test_table_maker(client: HyperplexityClient) -> dict | None:
             state = state2
 
     elif next_step == "submit_preview":
-        check("guidance → create_job after interview completes",
-              any(s["tool"] == "create_job" for s in state["_guidance"]["next_steps"]))
+        trigger_exec = (state.get("trigger_execution")
+                        or (state.get("next_step") or {}).get("trigger_execution"))
+        if trigger_exec:
+            # Table maker is running — guidance should direct us to poll get_job_status,
+            # NOT to call create_job immediately (config doesn't exist until generation done).
+            check("guidance → get_job_status (not create_job) when trigger_execution=True",
+                  any(s["tool"] == "get_job_status" for s in state["_guidance"]["next_steps"]) and
+                  not any(s["tool"] == "create_job" for s in state["_guidance"]["next_steps"]),
+                  str([s["tool"] for s in state["_guidance"]["next_steps"]]))
+
+            # Poll job status until Config Generation completed (up to ~10 min)
+            info(f"Polling get_job_status until table maker finishes (up to {POLL_TIMEOUT}s)…")
+            deadline = time.time() + POLL_TIMEOUT
+            tm_done = None
+            while time.time() < deadline:
+                js = client.get(f"/jobs/{session_id}")
+                st = js.get("status", "")
+                cs = js.get("current_step", "") or ""
+                info(f"  [table_maker] status={st}  current_step={cs[:80]}")
+                if st == "completed" and "Config Generation" in cs:
+                    tm_done = js
+                    break
+                if st == "failed":
+                    fail(f"Table maker job failed: {js.get('error_message') or js.get('error')}")
+                    break
+                time.sleep(15)
+
+            if tm_done:
+                tm_done["_guidance"] = build_guidance("get_job_status", tm_done)
+                assert_guidance(tm_done, "get_job_status(Config Generation completed)")
+                check("Config Generation completed guidance → create_job",
+                      any(s["tool"] == "create_job" for s in tm_done["_guidance"]["next_steps"]),
+                      str([s["tool"] for s in tm_done["_guidance"]["next_steps"]]))
+
+                # Create the preview job now that config is ready
+                info("Creating preview job after table maker completed…")
+                try:
+                    job = client.post("/jobs", json={"session_id": session_id})
+                    job["_guidance"] = build_guidance("create_job", job)
+                    check("create_job (table maker) returns dict", isinstance(job, dict))
+                    check("create_job (table maker) has job_id", "job_id" in job,
+                          str(list(job.keys())))
+                    assert_guidance(job, "create_job(table_maker)")
+                    info(f"Preview job: job_id={job.get('job_id')}  status={job.get('status')}")
+                except Exception as exc:
+                    fail(f"create_job after table maker failed: {exc}")
+            else:
+                info("Table maker did not complete within timeout — skipping create_job")
+        else:
+            # Upload-interview flow: guidance should already point to create_job
+            check("guidance → create_job after interview completes",
+                  any(s["tool"] == "create_job" for s in state["_guidance"]["next_steps"]))
 
     return {"conversation_id": conv_id, "session_id": session_id}
 
