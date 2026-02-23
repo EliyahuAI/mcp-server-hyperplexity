@@ -567,6 +567,27 @@ def _guidance_get_conversation(data: dict) -> dict:
     if action == "submit_preview":
         trigger_execution = data.get("trigger_execution") or next_step.get("trigger_execution")
         if trigger_execution:
+            if conv_id.startswith("refine_"):
+                # Config refinement complete — the table was already built.
+                # A new preview has been automatically queued with the refined config.
+                return {
+                    "summary": (
+                        "Config refinement complete. A new preview validation job has been "
+                        "automatically queued with the updated config. "
+                        "Do NOT call create_job(). "
+                        "Poll get_job_status(session_id) every 20s until status == 'preview_complete'."
+                    ),
+                    "next_steps": [
+                        {
+                            "tool": "get_job_status",
+                            "params": {"job_id": session_id},
+                            "note": (
+                                "Poll every 20s. Once status == 'preview_complete', "
+                                "review cost_estimate and call approve_validation."
+                            ),
+                        },
+                    ],
+                }
             # The table maker is NOW RUNNING. Once complete, a preview validation
             # job is automatically queued for API sessions — do NOT call create_job().
             # Poll get_job_status every 20s; it will reach 'preview_complete' when

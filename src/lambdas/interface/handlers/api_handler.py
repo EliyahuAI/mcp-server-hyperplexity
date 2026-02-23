@@ -374,6 +374,7 @@ def _handle_confirm_upload(body, email, meta):
         filename_base = clean_table_name(filename, for_display=False)
 
         # 3. Save session_info — everything downstream depends on this
+        sess_info = {}  # default so line 448 check is safe if load raises
         try:
             sess_info = mgr.load_session_info(email, session_id)
             sess_info["original_filename"] = filename
@@ -1206,6 +1207,17 @@ def _handle_start_table_maker(body, email, meta):
     b = parsed["body"]
     conv_id = b.get("conversation_id")
     actual_session_id = b.get("session_id", session_id)
+
+    # Mark session as API-originated so execution.py auto-triggers preview.
+    try:
+        from interface_lambda.core.unified_s3_manager import UnifiedS3Manager as _TmMgr
+        _tm_mgr = _TmMgr()
+        _tm_sess = _tm_mgr.load_session_info(email, actual_session_id)
+        if not _tm_sess.get("via_api"):
+            _tm_sess["via_api"] = True
+            _tm_mgr.save_session_info(email, actual_session_id, _tm_sess)
+    except Exception as _tm_e:
+        logger.warning(f"[TABLE_MAKER] Could not set via_api flag: {_tm_e}")
 
     # Write processing marker so GET /v1/conversations/{conv_id} returns
     # status='processing' rather than 404 while SQS initialises.

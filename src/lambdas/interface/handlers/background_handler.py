@@ -6654,34 +6654,24 @@ async def handle_config_generation_async(event, context):
             # ── Auto-trigger preview for API sessions (upload-interview path) ──
             # When session_info.via_api is True, queue a preview SQS message so the
             # LLM only needs to poll get_job_status() — no explicit create_job() call.
-            try:
-                _at_email = (event.get('email') or '').lower().strip()
-                _at_session = event.get('original_session_id') or session_id
-                if _at_email and _at_session and config_s3_key:
-                    from ..core.unified_s3_manager import UnifiedS3Manager as _AtMgr
-                    _at_mgr = _AtMgr()
-                    _at_sess = _at_mgr.load_session_info(_at_email, _at_session)
-                    if _at_sess.get('via_api'):
-                        _at_excel = _at_sess.get('table_path')
-                        if _at_excel:
-                            from ..core.sqs_service import send_preview_request as _spr
-                            _at_pin = (
-                                _at_session.split('_')[-1]
-                                if '_' in _at_session else _at_session[:6]
-                            )
-                            _spr(
-                                session_id=_at_session,
-                                excel_s3_key=_at_excel,
-                                config_s3_key=config_s3_key,
-                                email=_at_email,
-                                reference_pin=_at_pin,
-                            )
+            # Skip for config refinements (event has 'instructions'); they re-queue
+            # their own preview via the refine_config → get_conversation flow.
+            if not event.get('instructions'):
+                try:
+                    _at_email = (event.get('email') or '').lower().strip()
+                    _at_session = event.get('original_session_id') or session_id
+                    if _at_email and _at_session:
+                        from ..core.unified_s3_manager import UnifiedS3Manager as _AtMgr
+                        _at_sess = _AtMgr().load_session_info(_at_email, _at_session)
+                        if _at_sess.get('via_api'):
+                            from ..actions.start_preview import handle_start_preview as _hsp
+                            _hsp({'email': _at_email, 'session_id': _at_session, 'preview_max_rows': 3}, None)
                             logger.info(
                                 f"[AUTO_PREVIEW] Queued preview for API session {_at_session} "
                                 f"after upload-interview config generation"
                             )
-            except Exception as _at_err:
-                logger.warning(f"[AUTO_PREVIEW] Could not auto-trigger preview (non-fatal): {_at_err}")
+                except Exception as _at_err:
+                    logger.warning(f"[AUTO_PREVIEW] Could not auto-trigger preview (non-fatal): {_at_err}")
 
         else:
             # Update config generation run record with failure

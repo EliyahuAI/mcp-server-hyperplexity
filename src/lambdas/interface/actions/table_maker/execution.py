@@ -3665,17 +3665,8 @@ async def execute_full_table_generation(
             try:
                 _api_sess = storage_manager.load_session_info(email, session_id)
                 if _api_sess.get('via_api'):
-                    from interface_lambda.core.sqs_service import send_preview_request
-                    _api_pin = (
-                        session_id.split('_')[-1] if '_' in session_id else session_id[:6]
-                    )
-                    send_preview_request(
-                        session_id=session_id,
-                        excel_s3_key=result['excel_s3_key'],
-                        config_s3_key=result['config_s3_key'],
-                        email=email,
-                        reference_pin=_api_pin,
-                    )
+                    from interface_lambda.actions.start_preview import handle_start_preview as _hsp
+                    _hsp({'email': email, 'session_id': session_id, 'preview_max_rows': 3}, None)
                     result['preview_auto_triggered'] = True
                     logger.info(
                         f"[AUTO_PREVIEW] Queued preview for API table maker session {session_id}"
