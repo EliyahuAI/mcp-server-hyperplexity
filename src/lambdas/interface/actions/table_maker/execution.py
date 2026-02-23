@@ -2679,7 +2679,7 @@ async def execute_full_table_generation(
                 conversation_id=conversation_id,
                 current_step=4,
                 total_steps=4,
-                status=f'Finding and checking candidate rows... (reviewing {len(final_rows)} candidates)',
+                status=f'QC review: scoring and deduplicating {len(final_rows)} candidate rows...',
                 progress_percent=75
             )
 
@@ -2733,7 +2733,7 @@ async def execute_full_table_generation(
                         model=qc_model,
                         max_tokens=qc_max_tokens,
                         min_qc_score=min_qc_score,
-                        max_rows=999,  # No artificial cutoff
+                        max_rows=qc_target if user_target > 0 else 999,  # Respect user's requested row count
                         min_row_count=min_row_count,
                         search_strategy=search_strategy,
                         discovery_result=discovery_result,

@@ -24,6 +24,17 @@ import requests
 _DEFAULT_URL = "https://api.hyperplexity.ai/v1"
 
 
+class APIError(RuntimeError):
+    """Raised by HyperplexityClient._check for API-level errors.
+
+    Attributes:
+        status_code: HTTP status code from the response (0 if unknown).
+    """
+    def __init__(self, message: str, status_code: int = 0):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def _resolve_base_url() -> str:
     url = os.environ.get("HYPERPLEXITY_API_URL", "").rstrip("/")
     return url if url else _DEFAULT_URL
@@ -42,15 +53,29 @@ class HyperplexityClient:
         return self.base_url + path
 
     def _check(self, resp: requests.Response) -> dict:
-        resp.raise_for_status()
-        body = resp.json()
+        # Parse the body first so we can surface the real error message even on
+        # non-2xx responses (previously raise_for_status() discarded the body).
+        try:
+            body = resp.json()
+        except Exception:
+            resp.raise_for_status()
+            raise
+
         if isinstance(body, dict) and body.get("success") is False:
             err = body.get("error") or body.get("message") or "API returned success=false"
             if isinstance(err, dict):
                 code = err.get("code", "")
                 msg  = err.get("message", "unknown error")
-                raise RuntimeError(f"Hyperplexity API error [{code}]: {msg}")
-            raise RuntimeError(f"Hyperplexity API error: {err}")
+                raise APIError(f"Hyperplexity API error [{code}]: {msg}", resp.status_code)
+            raise APIError(f"Hyperplexity API error: {err}", resp.status_code)
+
+        # Non-2xx with no success=false body — raise with body text for context.
+        if not resp.ok:
+            raise APIError(
+                f"Hyperplexity API error {resp.status_code}: {resp.text[:500]}",
+                resp.status_code,
+            )
+
         # Unwrap the "data" envelope present on all external API responses.
         if isinstance(body, dict) and "data" in body:
             return body["data"]

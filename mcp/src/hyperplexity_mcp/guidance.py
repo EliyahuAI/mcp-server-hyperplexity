@@ -154,6 +154,9 @@ def _guidance_get_job_status(data: dict) -> dict:
         refine_session = data.get("refine_session_id") or data.get("conversation_id", "")
         session_id = data.get("session_id", "")
 
+        # Fix #5: surface preview Excel download URL if present.
+        prev_url = (data.get("preview_results") or {}).get("download_url", "")
+
         next_steps = [
             {
                 "tool": "approve_validation",
@@ -175,16 +178,31 @@ def _guidance_get_job_status(data: dict) -> dict:
                 "note": "Optional: refine column mappings before approving.",
             })
 
+        summary = (
+            f"Preview complete. Estimated cost: ${cost}. "
+            + (f"config_id for future reruns: {config_id}. " if config_id else "")
+            + "Approve to start full processing."
+        )
+        if prev_url:
+            summary += f" Preview Excel download: {prev_url}"
+
         return {
-            "summary": (
-                f"Preview complete. Estimated cost: ${cost}. "
-                + (f"config_id for future reruns: {config_id}. " if config_id else "")
-                + "Approve to start full processing."
-            ),
+            "summary": summary,
             "next_steps": next_steps,
         }
 
     if status == "completed":
+        # Fix #2: table maker jobs complete with "Config Generation" in current_step.
+        # Their results live in the web viewer, not the /results endpoint.
+        current_step = data.get("current_step", "")
+        if "Config Generation" in current_step:
+            return {
+                "summary": (
+                    "Table maker generation complete. Results are accessible via the "
+                    "Hyperplexity web viewer, not the standard /results endpoint."
+                ),
+                "next_steps": [],
+            }
         return {
             "summary": "Job completed successfully. Fetch your results.",
             "next_steps": [
@@ -232,8 +250,25 @@ def _guidance_get_job_messages(data: dict) -> dict:
     params = {"job_id": job_id}
     if last_seq is not None:
         params["since_seq"] = last_seq
-    return {
-        "summary": f"Fetched {len(messages)} message(s). Continue polling job status.",
+
+    # Fix #3: scan message payloads for viewer/download URLs buried in message_data.
+    _URL_KEYS = ("download_url", "viewer_url", "interactive_viewer_url")
+    found_urls: dict[str, str] = {}
+    for msg in messages:
+        msg_data = msg.get("message_data") or msg.get("data") or {}
+        if isinstance(msg_data, dict):
+            for key in _URL_KEYS:
+                val = msg_data.get(key)
+                if val and key not in found_urls:
+                    found_urls[key] = val
+
+    summary = f"Fetched {len(messages)} message(s). Continue polling job status."
+    if found_urls:
+        url_str = "; ".join(f"{k}: {v}" for k, v in found_urls.items())
+        summary += f" URLs found in messages — {url_str}"
+
+    result: dict = {
+        "summary": summary,
         "next_steps": [
             {
                 "tool": "get_job_messages",
@@ -247,6 +282,9 @@ def _guidance_get_job_messages(data: dict) -> dict:
             },
         ],
     }
+    if found_urls:
+        result["found_urls"] = found_urls
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -470,8 +508,26 @@ def _guidance_get_conversation(data: dict) -> dict:
 
     action = next_step.get("action", "")
     if action == "submit_preview":
+        # Fix #6: if trigger_execution is set, the table maker is actively generating
+        # rows — give the agent context about the expected wait time and result location.
+        trigger_execution = data.get("trigger_execution") or next_step.get("trigger_execution")
+        if trigger_execution:
+            summary = (
+                "Table maker config is ready and generation is underway. "
+                "Create a job now — the table maker will research and generate rows. "
+                "This typically takes 3-4 minutes, but can take up to 10 minutes when "
+                "many rows are requested or the information is hard to find. "
+                "Poll get_job_status every 10-15s. "
+                "Note: results for table maker jobs appear in the Hyperplexity web viewer, "
+                "not via get_results."
+            )
+        else:
+            summary = (
+                "Interview complete. The session holds the generated config. "
+                "Create a job to preview."
+            )
         return {
-            "summary": "Interview complete. The session holds the generated config. Create a job to preview.",
+            "summary": summary,
             "next_steps": [
                 {
                     "tool": "create_job",
