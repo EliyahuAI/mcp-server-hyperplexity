@@ -677,9 +677,10 @@ def _handle_create_job(body, email, meta):
             logger.warning(f"[API_HANDLER] Could not save config to S3: {e}")
     else:
         # No config supplied via request — check if the session already has one.
-        # This is the normal path after a table-maker or upload-interview flow,
-        # where the background handler writes a config to the session before
-        # setting trigger_execution=True.
+        # This is the normal path after a table-maker or upload-interview flow:
+        # the table maker writes the validation config to S3 as part of its
+        # execution (after trigger_execution=True is set), so create_job must
+        # not be called until get_job_status shows "Config Generation completed".
         try:
             from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
             from interface_lambda.actions.generate_config_unified import find_latest_config_in_session
@@ -695,7 +696,12 @@ def _handle_create_job(body, email, meta):
         if not _existing:
             return _error_response(
                 400, "missing_config",
-                "One of config, config_id, or config_s3_key is required.", meta
+                "No validation config found for this session. "
+                "If this is a table-maker session, the config is generated during execution — "
+                "poll get_job_status until current_step contains 'Config Generation completed', "
+                "then retry create_job. "
+                "Otherwise, provide config, config_id, or config_s3_key.",
+                meta
             )
         logger.info(f"[API_HANDLER] Using existing session config for {base_session_id}")
 
