@@ -22,12 +22,49 @@ def register(server):
     ) -> list[types.TextContent]:
         """Approve a preview and start full validation processing.
 
-        approved_cost_usd should match the estimated_cost_usd from get_job_status
-        (preview_complete state). Omit to approve without a cost cap.
+        approved_cost_usd MUST be provided and must match the estimated cost from
+        get_job_status (preview_complete state). This prevents accidental billing
+        without first reviewing preview results and the cost estimate.
+
+        Workflow:
+          1. Call get_job_status to reach preview_complete and read preview_results.download_url
+          2. Review the estimated cost in cost_estimate.estimated_total_cost_usd
+          3. Call approve_validation(job_id, approved_cost_usd=<that value>)
         """
-        payload: dict = {}
-        if approved_cost_usd is not None:
-            payload["approved_cost_usd"] = approved_cost_usd
+        # Issue 4: refuse to approve without an explicit cost confirmation.
+        # This prevents the agent from silently triggering full validation before
+        # reviewing the preview rows and cost estimate.
+        if approved_cost_usd is None:
+            result = {
+                "error": "cost_approval_required",
+                "message": (
+                    "approved_cost_usd is required. "
+                    "First call get_job_status to reach preview_complete state and review "
+                    "preview_results.download_url and cost_estimate.estimated_total_cost_usd. "
+                    "Then call approve_validation again with approved_cost_usd set to that value."
+                ),
+                "job_id": job_id,
+                "_guidance": {
+                    "summary": (
+                        "Approval blocked — approved_cost_usd not provided. "
+                        "Review the preview results and cost estimate before approving."
+                    ),
+                    "next_steps": [
+                        {
+                            "tool": "get_job_status",
+                            "params": {"job_id": job_id},
+                            "note": (
+                                "Check preview_results.download_url and "
+                                "cost_estimate.estimated_total_cost_usd, then call "
+                                "approve_validation with approved_cost_usd."
+                            ),
+                        }
+                    ],
+                },
+            }
+            return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
+
+        payload: dict = {"approved_cost_usd": approved_cost_usd}
 
         try:
             data = client.post(f"/jobs/{job_id}/validate", json=payload)
@@ -104,7 +141,20 @@ def register(server):
             try:
                 resp = _requests.get(metadata_url, timeout=15)
                 resp.raise_for_status()
-                data.setdefault("results", {})["metadata"] = resp.json()
+                metadata = resp.json()
+                data.setdefault("results", {})["metadata"] = metadata
+
+                # Issue 5: warn when the embedded metadata is very large so the
+                # agent knows to use jq rather than trying to parse the raw JSON.
+                metadata_size = len(json.dumps(metadata))
+                if metadata_size > 50_000:
+                    data["results"]["metadata_size_warning"] = (
+                        f"metadata is large ({metadata_size:,} chars). "
+                        "If this response was saved to a file, use jq to extract key fields: "
+                        "jq '.result[0].text | fromjson | .results.metadata | "
+                        "{cols: (.columns | map(.name)), "
+                        "rows: (.rows | map(.cells | map(.display_value)))}' <file>"
+                    )
             except Exception as exc:
                 data.setdefault("results", {})["metadata_fetch_error"] = str(exc)
 

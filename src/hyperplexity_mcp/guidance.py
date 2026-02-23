@@ -110,6 +110,33 @@ def _guidance_confirm_upload(data: dict) -> dict:
 def _guidance_create_job(data: dict) -> dict:
     job_id = data.get("job_id", "")
     status = data.get("status", "")
+    run_type = data.get("run_type", "")
+
+    # Issue 3: for table maker session IDs, get_job_status returns stale data from
+    # the original table maker run (not the preview job).  Direct the agent to
+    # get_job_messages (which shows live progress_update messages) and then
+    # approve_validation (a 409 means still in progress — wait and retry).
+    if job_id.startswith("session_") and run_type == "preview":
+        return {
+            "summary": (
+                f"Preview job created (status={status}). "
+                "WARNING: get_job_status may return stale table maker data for session IDs. "
+                "Use get_job_messages to track real-time progress. "
+                "When messages show completion, call get_job_status to get the cost estimate "
+                "from preview_results, then call approve_validation with approved_cost_usd."
+            ),
+            "next_steps": [
+                {
+                    "tool": "get_job_messages",
+                    "params": {"job_id": job_id},
+                    "note": (
+                        "Monitor progress_update messages (card_id='preview') for real-time "
+                        "progress. Keep polling until messages stop or show 100% progress."
+                    ),
+                },
+            ],
+        }
+
     return {
         "summary": f"Job created (status={status}). Poll for status updates.",
         "next_steps": [
@@ -196,12 +223,21 @@ def _guidance_get_job_status(data: dict) -> dict:
         # Their results live in the web viewer, not the /results endpoint.
         current_step = data.get("current_step", "")
         if "Config Generation" in current_step:
+            # Issue 1: was returning next_steps: [] — dead end. Direct to create_job.
+            # Issue 2: preview_rows=3 is required; omitting it causes missing_config error.
             return {
                 "summary": (
-                    "Table maker generation complete. Results are accessible via the "
-                    "Hyperplexity web viewer, not the standard /results endpoint."
+                    "Table maker generation complete. The generated rows are now ready for "
+                    "validation. Run create_job with preview_rows=3 to validate and enrich "
+                    "the table. Results will be available via the Hyperplexity web viewer."
                 ),
-                "next_steps": [],
+                "next_steps": [
+                    {
+                        "tool": "create_job",
+                        "params": {"session_id": job_id},
+                        "note": "Start a 3-row preview validation on the generated rows.",
+                    }
+                ],
             }
         return {
             "summary": "Job completed successfully. Fetch your results.",
@@ -341,19 +377,24 @@ def _guidance_get_results(data: dict) -> dict:
         "2. results.metadata structure:",
         "   • table_name  — display name of the validated table",
         "   • columns[]   — list of validated columns with importance, description, notes",
-        "   • rows[]      — one entry per row, keyed by row_key. Each row has cells{}:",
-        "       cells[ColumnName].full_value            — the validated/corrected value",
-        "       cells[ColumnName].confidence            — HIGH / MEDIUM / LOW / ID",
-        "       cells[ColumnName].comment.validator_explanation — why the value was accepted/changed",
-        "       cells[ColumnName].comment.qc_reasoning          — QC layer reasoning",
-        "       cells[ColumnName].comment.key_citation           — the single most important citation",
-        "       cells[ColumnName].comment.sources[]              — [{title, url, snippet}] supporting sources",
+        "   • rows[]      — one entry per row. Each row has cells[] array (positional, aligned to columns[]):",
+        "       cells[i].display_value      — formatted value with confidence emoji prefix",
+        "       cells[i].full_value         — raw validated/corrected value",
+        "       cells[i].confidence         — HIGH / MEDIUM / LOW / ID",
+        "       cells[i].comment.validator_explanation — why the value was accepted/changed",
+        "       cells[i].comment.qc_reasoning          — QC layer reasoning",
+        "       cells[i].comment.key_citation          — the single most important citation",
+        "       cells[i].comment.sources[]             — [{title, url, snippet}] supporting sources",
+        "   jq extraction: .results.metadata | {cols: (.columns | map(.name)), rows: (.rows | map(.cells | map(.display_value)))}",
         "3. results.download_url is the enriched Excel file — every cell has the same "
         "validation detail embedded as hyperlinks and comments. Use it when you need "
         "a self-contained file to share or analyse offline.",
         "4. Always share results.interactive_viewer_url with human stakeholders — "
         "it renders sources, citations, and confidence scores in a clean UI that is "
         "far easier to navigate than raw JSON or spreadsheet formulas.",
+        "5. If the response was too large and saved to a file, use jq to extract key fields: "
+        "jq '.result[0].text | fromjson | .results.metadata | "
+        "{cols: (.columns | map(.name)), rows: (.rows | map(.cells | map(.display_value)))}' <file>",
     ]
 
     return {
@@ -532,7 +573,7 @@ def _guidance_get_conversation(data: dict) -> dict:
                 {
                     "tool": "create_job",
                     "params": {"session_id": session_id},
-                    "note": "The config is embedded in the session — no need to pass it explicitly.",
+                    "note": "The config is embedded in the session. Always runs a 3-row preview.",
                 },
                 {
                     "tool": "refine_config",
@@ -543,6 +584,29 @@ def _guidance_get_conversation(data: dict) -> dict:
                     },
                     "note": "Optional: refine the config before creating a job.",
                 },
+            ],
+        }
+
+    # Issue 7: execution_ready with an action other than submit_preview — handle explicitly.
+    if status == "execution_ready":
+        return {
+            "summary": (
+                f"Conversation is execution_ready (next_step.action='{action}'). "
+                "Review next_step for the required action and follow its instructions."
+            ),
+            "next_steps": [
+                {
+                    "tool": "send_conversation_reply",
+                    "params": {
+                        "conversation_id": conv_id,
+                        "session_id": session_id,
+                        "message": "<follow next_step.action instructions>",
+                    },
+                    "note": (
+                        f"next_step.action is '{action}' — inspect the full next_step object "
+                        "for required params and body before calling."
+                    ),
+                }
             ],
         }
 
