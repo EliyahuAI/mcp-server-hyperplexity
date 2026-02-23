@@ -27,7 +27,7 @@ dependencies = [
 Homepage = "https://hyperplexity.ai"
 Documentation = "https://hyperplexity.ai/mcp"
 "API Reference" = "https://hyperplexity.ai/api"
-Repository = "https://github.com/hyperplexity/mcp-server-hyperplexity"
+Repository = "https://github.com/EliyahuAI/mcp-server-hyperplexity"
 
 [project.scripts]
 mcp-server-hyperplexity = "hyperplexity_mcp.server:main"

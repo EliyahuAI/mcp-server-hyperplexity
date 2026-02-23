@@ -209,7 +209,7 @@ The `interactive_viewer_url` in the results opens a shareable web view with all 
 - Your file data is uploaded to Hyperplexity's secure AWS S3 storage and processed in isolated, single-tenant jobs
 - API keys are hashed with HMAC-SHA256 — never stored in plaintext
 - This server sends no telemetry and stores no data locally
-- The server is open source — audit the code at [github.com/hyperplexity/mcp-server-hyperplexity](https://github.com/hyperplexity/mcp-server-hyperplexity)
+- The server is open source — audit the code at [github.com/EliyahuAI/mcp-server-hyperplexity](https://github.com/EliyahuAI/mcp-server-hyperplexity)
 
 ---
 
