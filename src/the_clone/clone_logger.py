@@ -1,9 +1,12 @@
+import logging
 import os
 import json
 import time
 import io
 from typing import Any, Dict, Optional, List
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 class CloneLogger:
     """
@@ -277,10 +280,11 @@ class CloneLogger:
                 return f"```json\n{json.dumps(content, indent=2, ensure_ascii=False)}\n```"
             except (TypeError, ValueError) as e:
                 # Handle non-serializable objects (exceptions, semaphores, etc.)
-                import traceback
                 logger.warning(f"[CLONE_LOGGER] Failed to JSON serialize content: {e}")
-                # Convert to string representation instead
-                return f"```text\n{str(content)}\n\nNote: Content contained non-JSON-serializable objects\n```"
+                try:
+                    return f"```text\n{repr(content)}\n\nNote: Content contained non-JSON-serializable objects\n```"
+                except Exception:
+                    return "```text\n[content not representable]\n```"
         elif isinstance(content, str):
             if content.strip().startswith("```"): return content
             return f"```text\n{content}\n```"

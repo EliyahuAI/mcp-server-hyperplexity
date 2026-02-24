@@ -677,15 +677,11 @@ def test_table_maker_conversation(client: APIClient) -> Optional[str]:
             })
             continue
 
-        # Execution triggered — submit the preview job
+        # Execution triggered — backend auto-queues the preview job (via_api flag).
+        # Do NOT call POST /v1/jobs — just poll GET /v1/jobs/{session_id} directly.
         if trigger_execution or next_step.get("action") == "submit_preview":
-            job_body = next_step.get("body") or {}
-            job_body.setdefault("session_id", session_id)
-            job_body.setdefault("preview_rows", 3)
-            print(f"[TEST] table-maker — table design complete, submitting preview job...")
-            job_resp = client.post("/v1/jobs", job_body)
-            job_id = job_resp["data"]["job_id"]
-            print(f"[TEST] table-maker — preview job queued: {job_id}")
+            print(f"[TEST] table-maker — table design complete, preview auto-queued by backend")
+            job_id = session_id  # session_id is the job_id for table-maker sessions
             break
 
         # Any other terminal state — stop
@@ -697,8 +693,8 @@ def test_table_maker_conversation(client: APIClient) -> Optional[str]:
               f"conversation did not trigger execution within {PREVIEW_TIMEOUT}s")
         return None
 
-    # Poll the preview job to preview_complete
-    print(f"[TEST] table-maker — polling preview job {job_id} for preview_complete...")
+    # Poll the session for preview_complete (preview was auto-triggered by the backend)
+    print(f"[TEST] table-maker — polling session {job_id} for preview_complete...")
     try:
         preview_data = poll_until(
             client, job_id, ["preview_complete"],
