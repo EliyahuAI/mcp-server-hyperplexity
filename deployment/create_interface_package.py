@@ -1730,7 +1730,7 @@ def get_lambda_config_for_mode(mode, base_config):
 
     if mode == 'lightweight':
         config['FunctionName'] = config['FunctionName']  # Keep same name or could be different
-        config['MemorySize'] = 128  # Absolute minimum - lazy imports + /health before imports makes this viable
+        config['MemorySize'] = 512  # 512MB = ~4x more CPU than 128MB; confirm_upload needs real CPU for lazy imports
         config['Timeout'] = 30  # Short timeout for API responses
         config['Description'] = 'Lightweight API routing and quick operations'
         config['Environment'] = config.get('Environment', {}).copy()

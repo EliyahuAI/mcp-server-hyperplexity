@@ -399,11 +399,15 @@ def _handle_confirm_upload(body, email, meta):
         table_columns = []
         match_error = None
         try:
+            # Import everything before starting the timer — lazy imports at 128-512 MB Lambda
+            # CPU take several seconds each, and they must NOT eat into the timeout budget.
             import concurrent.futures as _cf
+            import asyncio as _asyncio_pre
             from interface_lambda.actions.find_matching_config import find_matching_configs
+            from interface_lambda.core.sqs_service import send_upload_interview_request as _sqs_send_interview
             _MATCH_TIMEOUT = 8  # seconds — leaves headroom before the 29s API Gateway cutoff.
-            # The handler has ~12-13s of additional overhead (lazy imports, S3 session_info
-            # save, SQS enqueue, _write_processing_state) so 8s here keeps total < 22s.
+            # With all imports done above, overhead after the timeout is only S3 + SQS network
+            # I/O (~2-3s), keeping total well under 20s.
             # NOTE: do NOT use ThreadPoolExecutor as a context manager here.
             # `with executor:` calls shutdown(wait=True) on exit, which blocks until
             # the submitted thread finishes even after fut.result() raises TimeoutError —
@@ -470,10 +474,8 @@ def _handle_confirm_upload(body, email, meta):
         _auto_interview_conv_id = None
         if sess_info.get("via_api") and (not matches or _best_score < 0.85):
             try:
-                import asyncio as _asyncio
-                from interface_lambda.core.sqs_service import send_upload_interview_request
                 _conv_id = f"upload_conv_{uuid.uuid4().hex[:12]}"
-                _sqs_resp = _asyncio.run(send_upload_interview_request(
+                _sqs_resp = _asyncio_pre.run(_sqs_send_interview(
                     session_id=session_id,
                     email=email,
                     conversation_id=_conv_id,
