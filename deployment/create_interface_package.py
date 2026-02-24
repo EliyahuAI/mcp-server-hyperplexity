@@ -59,7 +59,7 @@ LAMBDA_CONFIG = {
     "Runtime": "python3.11",
     "Handler": "interface_lambda_function.lambda_handler", # This will be created in the package root
     "Timeout": 900,  # 15 minutes for file uploads and processing
-    "MemorySize": 128,  # Lightweight mode: API routing only (background Lambda uses 512MB)
+    "MemorySize": 1024,  # confirm_upload runs DynamoDB + S3 queries that need real CPU
     "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
     "Environment": {
         "Variables": {

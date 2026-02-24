@@ -391,17 +391,28 @@ def _handle_confirm_upload(body, email, meta):
         except Exception as e:
             logger.warning(f"[CONFIRM_UPLOAD] Could not save session_info: {e}")
 
-        # 4. Download bytes and run the match finder (same path as confirm_upload_complete)
+        # 4. Run config match finder with a hard wall-clock timeout so we never hit the
+        #    API Gateway 29-second limit.  DynamoDB GSI fallbacks previously caused full
+        #    table scans that exceeded this limit; the GSI fallbacks are now removed, but
+        #    we keep the timeout as a safety net for any future slow paths.
         matching_data = {"success": False, "matches": [], "perfect_match": False}
         table_columns = []
         match_error = None
         try:
-            # find_matching_configs reads the Excel from S3 internally via session_info.table_path
-            # (saved above), so we don't need to download the bytes here.
+            import concurrent.futures as _cf
             from interface_lambda.actions.find_matching_config import find_matching_configs
-            result = find_matching_configs(email, session_id)
-            if result:
-                matching_data = result
+            _MATCH_TIMEOUT = 15  # seconds — leaves headroom before the 29s API Gateway cutoff
+            with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
+                _fut = _ex.submit(find_matching_configs, email, session_id)
+                try:
+                    result = _fut.result(timeout=_MATCH_TIMEOUT)
+                    if result:
+                        matching_data = result
+                except _cf.TimeoutError:
+                    logger.warning(
+                        f"[CONFIRM_UPLOAD] find_matching_configs timed out after {_MATCH_TIMEOUT}s "
+                        f"(session {session_id}) — proceeding with empty matches"
+                    )
             table_columns = matching_data.get("table_columns") or []
 
             # Save table_analysis so upload-interview doesn't have to re-parse

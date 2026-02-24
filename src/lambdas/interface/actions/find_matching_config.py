@@ -192,13 +192,9 @@ def get_columns_from_dynamodb(email: str, session_id: str) -> List[str]:
                 Limit=1  # Only need the most recent
             )
         except Exception as query_error:
-            # Fallback to scan if index doesn't exist
-            logger.debug(f"[QC_COLUMNS] Query failed, falling back to scan: {query_error}")
-            response = table.scan(
-                FilterExpression=Attr('session_id').eq(session_id) &
-                               Attr('qc_metrics').exists() &
-                               Attr('qc_metrics.qc_by_column').exists()
-            )
+            # Do NOT fall back to a full table scan — it times out on large tables.
+            logger.debug(f"[QC_COLUMNS] GSI query failed, skipping: {query_error}")
+            return None
 
         # Get the most recent run with qc_by_column data
         runs_with_qc = response.get('Items', [])
@@ -300,13 +296,9 @@ def batch_get_columns_from_dynamodb(email: str, session_ids: List[str]) -> Dict[
             return results
 
         except Exception as query_error:
-            logger.warning(f"[BATCH_QC] Batch query failed: {query_error}, falling back to individual queries")
-            # Fall back to individual queries
-            for session_id in session_ids:
-                columns = get_columns_from_dynamodb(email, session_id)
-                if columns:
-                    results[session_id] = columns
-            return results
+            # Do NOT fall back to per-session individual queries — each could trigger a scan.
+            logger.warning(f"[BATCH_QC] Batch query failed, skipping (no fallback): {query_error}")
+            return {}
 
     except Exception as e:
         logger.error(f"[BATCH_QC] Batch get columns failed: {e}")
@@ -511,14 +503,9 @@ def get_successfully_used_config_ids(email: str) -> List[str]:
                 ScanIndexForward=False  # Most recent first
             )
         except Exception as e:
-            # Fallback to scan if GSI doesn't exist
-            logger.debug(f"[GET_CONFIGS] EmailStartTimeIndex GSI not available, falling back to scan: {e}")
-            response = table.scan(
-                FilterExpression=Attr('email').eq(email) &
-                               Attr('run_type').is_in(['Preview', 'Validation']) &
-                               Attr('status').eq('COMPLETED') &
-                               Attr('configuration_id').exists()
-            )
+            # Do NOT fall back to a full table scan — it times out on large tables.
+            logger.debug(f"[GET_CONFIGS] EmailStartTimeIndex GSI not available, skipping: {e}")
+            return []
 
         # Collect configs with their start_time for sorting
         for item in response.get('Items', []):
