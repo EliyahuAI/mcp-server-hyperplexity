@@ -117,10 +117,9 @@ Every tool response includes a `_guidance` block with a plain-English summary of
 | Tool | Description |
 |---|---|
 | `upload_file` | Upload an Excel or CSV file (handles presigned S3 upload automatically) |
-| `confirm_upload` | Verify upload, detect matching prior validation configs (reuse if score ≥ 0.85) |
-| `start_upload_interview` | Start AI interview to build a validation config tailored to your file's columns |
+| `confirm_upload` | Verify upload, detect matching prior validation configs (reuse if score ≥ 0.85). When no strong match is found, an AI interview is automatically started and `conversation_id` is returned. |
 | `refine_config` | Refine the generated config with natural language instructions |
-| `create_job` | Submit a validation job (preview first, then approve for full run) |
+| `create_job` | Submit a validation job (preview first, then approve for full run) — only needed when reusing a known `config_id`. Preview is auto-queued after interview or table-maker flows. |
 | `get_job_status` | Poll job progress — includes cost estimate at `preview_complete` stage |
 | `get_job_messages` | Stream live progress messages during processing |
 | `approve_validation` | Approve the preview and start full validation (credits are charged here) |
@@ -145,30 +144,43 @@ Every tool response includes a `_guidance` block with a plain-English summary of
 
 ## Typical workflows
 
-### Validate a table
+### Validate a table (config match found)
 
 ```
 upload_file("companies.xlsx")
-  → confirm_upload(session_id, s3_key)
-    → create_job(session_id, config_id)        # free preview (a few rows)
-      → get_job_status(job_id)                  # poll until preview_complete
-        → approve_validation(job_id, cost_usd)  # charges credits
+  → confirm_upload(session_id, s3_key)           # score ≥ 0.85 → match returned
+    → create_job(session_id, config_id)          # free preview (a few rows)
+      → get_job_status(job_id)                   # poll every 20s until preview_complete
+        → approve_validation(job_id, cost_usd)   # charges credits
           → get_job_status(job_id)               # poll until completed
-            → get_results(job_id)                # download enriched Excel + view inline metadata
+            → get_results(job_id)                # download enriched Excel + inline metadata
 ```
 
-If no prior config matches, substitute `confirm_upload` → `start_upload_interview` → answer AI questions → `create_job`.
+### Validate a table (no prior config — AI interview)
+
+```
+upload_file("companies.xlsx")
+  → confirm_upload(session_id, s3_key)           # no strong match → interview auto-started
+    [response includes conversation_id]
+    → get_conversation(conv_id, session_id)      # poll every 15s
+      → send_conversation_reply(...)             # answer AI questions
+        [interview complete → preview auto-queued]
+        → get_job_status(session_id)             # poll every 20s until preview_complete
+          → approve_validation(job_id, cost_usd)
+            → get_job_status(job_id)             # poll until completed
+              → get_results(job_id)
+```
 
 ### Generate a table from a prompt
 
 ```
 start_table_maker("Top 20 US biotech companies: name, market cap, lead drug, phase, ticker")
-  → get_conversation(conv_id, session_id)       # poll for AI questions
+  → get_conversation(conv_id, session_id)        # poll every 15s for AI questions
     → send_conversation_reply(...)               # answer any clarifying questions
-      → create_job(session_id)                   # free preview
-        → get_job_status(job_id)                 # poll until preview_complete
-          → approve_validation(job_id, cost_usd)
-            → get_results(job_id)                # download generated + validated table
+      [table builds → preview auto-queued, do NOT call create_job()]
+      → get_job_status(session_id)               # poll every 20s until preview_complete
+        → approve_validation(job_id, cost_usd)
+          → get_results(job_id)                  # download generated + validated table
 ```
 
 ### Fact-check a document

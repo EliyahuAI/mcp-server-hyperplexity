@@ -1,5 +1,9 @@
-"""Conversation tools: start_table_maker, start_upload_interview,
-get_conversation, send_conversation_reply, refine_config.
+"""Conversation tools: start_table_maker, get_conversation,
+send_conversation_reply, refine_config.
+
+Note: start_upload_interview is intentionally not exposed as an MCP tool —
+the server auto-starts an upload interview from confirm_upload when no strong
+config match is found, returning conversation_id directly in that response.
 """
 
 from __future__ import annotations
@@ -29,24 +33,6 @@ def register(server):
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
     @server.tool()
-    def start_upload_interview(
-        session_id: str,
-        message: Optional[str] = None,
-    ) -> list[types.TextContent]:
-        """Start an AI interview to build a validation config for an uploaded file.
-
-        The AI will ask questions about your columns and validation goals.
-        Optionally provide an initial message to pre-fill context.
-        """
-        payload: dict = {"session_id": session_id}
-        if message:
-            payload["message"] = message
-
-        data = client.post("/conversations/upload-interview", json=payload)
-        data["_guidance"] = build_guidance("start_upload_interview", data)
-        return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
-
-    @server.tool()
     def get_conversation(
         conversation_id: str,
         session_id: str,
@@ -54,9 +40,9 @@ def register(server):
         """Poll a conversation for new messages or a status change.
 
         Key statuses:
-          processing       → poll again in ~8s
-          user_reply_needed → send_conversation_reply
-          next_step.action = submit_preview → create_job(session_id)
+          processing         → poll again in ~15s
+          user_reply_needed  → send_conversation_reply
+          trigger_execution  → preview is auto-queued; switch to get_job_status
         """
         data = client.get(f"/conversations/{conversation_id}", params={"session_id": session_id})
         data.setdefault("conversation_id", conversation_id)

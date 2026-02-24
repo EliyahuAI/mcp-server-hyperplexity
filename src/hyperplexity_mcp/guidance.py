@@ -55,9 +55,33 @@ def _guidance_upload_file(data: dict) -> dict:
 
 def _guidance_confirm_upload(data: dict) -> dict:
     session_id = data.get("session_id", "")
+    conv_id = data.get("conversation_id", "")
     # External API returns "matches" (not "config_matches")
     matches = data.get("matches") or data.get("config_matches") or []
     best_score = matches[0].get("match_score", 0) if matches else 0
+
+    # Server auto-started an upload interview (API session, no strong match).
+    # conversation_id is present in the response — just poll it.
+    if conv_id and data.get("interview_auto_started"):
+        return {
+            "summary": (
+                "Upload confirmed. No strong config match found — an AI interview has been "
+                "automatically started to build a validation config. "
+                f"conversation_id: {conv_id}"
+            ),
+            "next_steps": [
+                {
+                    "tool": "get_conversation",
+                    "params": {"conversation_id": conv_id, "session_id": session_id},
+                    "note": (
+                        "Poll every 15s. Answer the AI's questions via send_conversation_reply. "
+                        "Once the interview completes, a preview job will start automatically — "
+                        "switch to polling get_job_status(session_id) every 20s until "
+                        "status == 'preview_complete', then call approve_validation."
+                    ),
+                }
+            ],
+        }
 
     if best_score >= 0.85:
         config_id = matches[0].get("config_id", "")
@@ -72,32 +96,22 @@ def _guidance_confirm_upload(data: dict) -> dict:
                     "params": {"session_id": session_id, "config_id": config_id},
                     "note": "Creates a preview job using the matched config. Fastest path.",
                 },
-                {
-                    "tool": "start_upload_interview",
-                    "params": {"session_id": session_id, "message": ""},
-                    "note": "Optional: start an AI interview to build or modify a config instead.",
-                },
             ],
         }
     else:
         return {
             "summary": (
-                "Upload confirmed. No strong prior config match — start an AI interview "
-                "to generate a config, or provide one manually."
+                "Upload confirmed. No strong prior config match. "
+                "Use create_job with a known config_id, or supply a config directly."
             ),
             "next_steps": [
-                {
-                    "tool": "start_upload_interview",
-                    "params": {"session_id": session_id, "message": ""},
-                    "note": "Recommended: AI-guided interview to create a validation config.",
-                },
                 {
                     "tool": "create_job",
                     "params": {
                         "session_id": session_id,
                         "config": "<paste config JSON here>",
                     },
-                    "note": "Alternative: supply your own config JSON directly.",
+                    "note": "Supply your own config JSON directly.",
                 },
             ],
         }
@@ -154,7 +168,7 @@ def _guidance_create_job(data: dict) -> dict:
             {
                 "tool": "get_job_status",
                 "params": {"job_id": job_id},
-                "note": "Poll every 10s until status changes from 'queued' or 'processing'.",
+                "note": "Poll every 20s until status changes from 'queued' or 'processing'.",
             }
         ],
     }
@@ -171,7 +185,7 @@ def _guidance_get_job_status(data: dict) -> dict:
                 {
                     "tool": "get_job_status",
                     "params": {"job_id": job_id},
-                    "note": "Poll again in ~10 seconds.",
+                    "note": "Poll again in ~20 seconds.",
                 },
                 {
                     "tool": "get_job_messages",
@@ -234,25 +248,24 @@ def _guidance_get_job_status(data: dict) -> dict:
         # Their results live in the web viewer, not the /results endpoint.
         current_step = data.get("current_step", "")
         if "Config Generation" in current_step:
-            # Table maker has finished and written the validation config to S3.
-            # create_job(session_id=...) will now succeed.
-            # After the preview completes, get_job_status returns preview_complete with:
-            #   - config_id  — save this for future reruns
-            #   - cost_estimate.estimated_total_cost_usd — pass as approved_cost_usd to approve_validation
-            #   - preview_results.download_url — review the 3 preview rows before approving
+            # Table maker has finished. For API sessions the preview is already
+            # auto-queued — do NOT call create_job().  Just keep polling
+            # get_job_status until status == 'preview_complete'.
             return {
                 "summary": (
-                    "Table maker complete. The validation config is now saved. "
-                    "Call create_job to start a preview (required before full validation). "
-                    "After preview_complete: review the rows, note the config_id and estimated cost, "
-                    "then call approve_validation to run full validation on all rows."
+                    "Table maker complete. A preview validation job has been automatically queued. "
+                    "Do NOT call create_job() — the preview is already running. "
+                    "Keep polling get_job_status every 20s until status == 'preview_complete'. "
+                    "Then review cost_estimate and call approve_validation."
                 ),
                 "next_steps": [
                     {
-                        "tool": "create_job",
-                        "params": {"session_id": job_id},
+                        "tool": "get_job_status",
+                        "params": {"job_id": job_id},
                         "note": (
-                            "The config was generated by the table maker and is now stored in the session."
+                            "Poll every 20s. Wait for status == 'preview_complete', "
+                            "then review preview_results.download_url and cost_estimate "
+                            "before calling approve_validation."
                         ),
                     }
                 ],
@@ -354,7 +367,7 @@ def _guidance_approve_validation(data: dict) -> dict:
             {
                 "tool": "get_job_status",
                 "params": {"job_id": job_id},
-                "note": "Poll every 10-15s. Status will move to 'completed' when done.",
+                "note": "Poll every 20s. Status will move to 'completed' when done.",
             }
         ],
     }
@@ -485,12 +498,12 @@ def _guidance_start_table_maker(data: dict) -> dict:
 
     if status == "completed":
         return {
-            "summary": "Table-maker finished immediately. Fetch the conversation for results.",
+            "summary": "Table-maker conversation started (completed immediately). Fetch the conversation for results.",
             "next_steps": [
                 {
                     "tool": "get_conversation",
                     "params": {"conversation_id": conv_id, "session_id": session_id},
-                    "note": "Retrieve the completed table and any next-step instructions.",
+                    "note": "Retrieve the completed conversation and any next-step instructions.",
                 }
             ],
         }
@@ -502,22 +515,7 @@ def _guidance_start_table_maker(data: dict) -> dict:
             {
                 "tool": "get_conversation",
                 "params": {"conversation_id": conv_id, "session_id": session_id},
-                "note": "Poll every 8s while status is 'processing'.",
-            }
-        ],
-    }
-
-
-def _guidance_start_upload_interview(data: dict) -> dict:
-    conv_id = data.get("conversation_id", "")
-    session_id = data.get("session_id", "")
-    return {
-        "summary": "Upload interview started. Poll the conversation for the AI's first question.",
-        "next_steps": [
-            {
-                "tool": "get_conversation",
-                "params": {"conversation_id": conv_id, "session_id": session_id},
-                "note": "Poll every 8s while status is 'processing'.",
+                "note": "Poll every 15s while status is 'processing'.",
             }
         ],
     }
@@ -555,12 +553,12 @@ def _guidance_get_conversation(data: dict) -> dict:
 
     if status == "processing":
         return {
-            "summary": "Conversation is still processing. Poll again in 8s.",
+            "summary": "Conversation is still processing. Poll again in 15s.",
             "next_steps": [
                 {
                     "tool": "get_conversation",
                     "params": {"conversation_id": conv_id, "session_id": session_id},
-                    "note": "Poll every 8 seconds.",
+                    "note": "Poll every 15 seconds.",
                 }
             ],
         }
@@ -569,44 +567,68 @@ def _guidance_get_conversation(data: dict) -> dict:
     if action == "submit_preview":
         trigger_execution = data.get("trigger_execution") or next_step.get("trigger_execution")
         if trigger_execution:
-            # The table maker is NOW RUNNING — it has NOT completed yet.
-            # The validation config is written to S3 only when execution finishes.
-            # DO NOT call create_job yet — it will fail with missing_config because
-            # the config doesn't exist until "Config Generation completed" appears
-            # in get_job_status.  Poll get_job_status until that state, then call
-            # create_job (the next step will appear in its guidance automatically).
+            if conv_id.startswith("refine_"):
+                # Config refinement complete — the table was already built.
+                # A new preview has been automatically queued with the refined config.
+                return {
+                    "summary": (
+                        "Config refinement complete. A new preview validation job has been "
+                        "automatically queued with the updated config. "
+                        "Do NOT call create_job(). "
+                        "Poll get_job_status(session_id) every 20s until status == 'preview_complete'."
+                    ),
+                    "next_steps": [
+                        {
+                            "tool": "get_job_status",
+                            "params": {"job_id": session_id},
+                            "note": (
+                                "Poll every 20s. Once status == 'preview_complete', "
+                                "review cost_estimate and call approve_validation."
+                            ),
+                        },
+                    ],
+                }
+            # The table maker is NOW RUNNING. Once complete, a preview validation
+            # job is automatically queued for API sessions — do NOT call create_job().
+            # Poll get_job_status every 20s; it will reach 'preview_complete' when
+            # the auto-triggered preview finishes.
             return {
                 "summary": (
-                    "Table maker row generation is now running. "
-                    "DO NOT call create_job yet — the validation config is saved only when "
-                    "the table maker finishes (typically 3–10 minutes). "
-                    "Poll get_job_status every 15s until status=completed AND "
-                    "current_step contains 'Config Generation completed'. "
-                    "The guidance on that response will tell you to call create_job."
+                    "Table is being built. A preview validation job will start automatically "
+                    "once the table maker finishes (typically 3–10 minutes). "
+                    "Do NOT call create_job() — the preview is auto-queued. "
+                    "Switch to polling get_job_status(session_id) every 20s until "
+                    "status == 'preview_complete'."
                 ),
                 "next_steps": [
                     {
                         "tool": "get_job_status",
                         "params": {"job_id": session_id},
                         "note": (
-                            "Poll every 15s. Wait for status='completed' AND "
-                            "'Config Generation' in current_step before calling create_job."
+                            "Poll every 20s. Once status == 'preview_complete', "
+                            "review cost_estimate and call approve_validation."
                         ),
                     },
                 ],
             }
         else:
-            # Upload-interview flow: config is already stored; create the preview job.
+            # Upload-interview flow: config is generated and a preview job has been
+            # automatically queued. Switch to polling get_job_status.
             return {
                 "summary": (
-                    "Interview complete. The session holds the generated config. "
-                    "Create a preview job to validate a sample before running the full set."
+                    "Interview complete. The config has been generated and a preview job "
+                    "has been automatically queued. "
+                    "Do NOT call create_job() — the preview is already running. "
+                    "Poll get_job_status(session_id) every 20s until status == 'preview_complete'."
                 ),
                 "next_steps": [
                     {
-                        "tool": "create_job",
-                        "params": {"session_id": session_id},
-                        "note": "The config is embedded in the session.",
+                        "tool": "get_job_status",
+                        "params": {"job_id": session_id},
+                        "note": (
+                            "Poll every 20s until status == 'preview_complete'. "
+                            "Then review cost_estimate and call approve_validation."
+                        ),
                     },
                     {
                         "tool": "refine_config",
@@ -615,7 +637,7 @@ def _guidance_get_conversation(data: dict) -> dict:
                             "session_id": session_id,
                             "instructions": "<describe changes>",
                         },
-                        "note": "Optional: refine the config before creating a job.",
+                        "note": "Optional: refine the config before the preview completes.",
                     },
                 ],
             }
@@ -665,7 +687,7 @@ def _guidance_send_conversation_reply(data: dict) -> dict:
             {
                 "tool": "get_conversation",
                 "params": {"conversation_id": conv_id, "session_id": session_id},
-                "note": "Poll every 8s while the AI is processing.",
+                "note": "Poll every 15s while the AI is processing.",
             }
         ],
     }
@@ -680,7 +702,7 @@ def _guidance_refine_config(data: dict) -> dict:
             {
                 "tool": "get_conversation",
                 "params": {"conversation_id": conv_id, "session_id": session_id},
-                "note": "Poll every 8s for the refined config response.",
+                "note": "Poll every 15s for the refined config response.",
             }
         ],
     }
@@ -722,7 +744,6 @@ _BUILDERS: dict[str, Callable] = {
     "update_table": _guidance_update_table,
     "reference_check": _guidance_reference_check,
     "start_table_maker": _guidance_start_table_maker,
-    "start_upload_interview": _guidance_start_upload_interview,
     "get_conversation": _guidance_get_conversation,
     "send_conversation_reply": _guidance_send_conversation_reply,
     "refine_config": _guidance_refine_config,
