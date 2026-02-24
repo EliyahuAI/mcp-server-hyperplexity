@@ -71,9 +71,19 @@ def lambda_handler(event, context):
                 'body': json.dumps({'error': error_msg, 'mode': 'lightweight_interface'})
             }
 
-        # Route to external API handler if request comes from the external API Gateway
+        # Route to external API handler if request comes from the external API Gateway.
+        # Detection strategy (in priority order):
+        #   1. HTTP API v2 event signature (routeKey present / version=="2.0") — the
+        #      external API uses HTTP API v2; the web UI uses REST API v1 which never
+        #      has routeKey.  This works even when API_GATEWAY_EXTERNAL_API_ID is blank
+        #      (e.g. immediately after a deployment clears env vars).
+        #   2. apiId match against the configured env var (belt-and-suspenders).
         ext_api_id = os.environ.get('API_GATEWAY_EXTERNAL_API_ID')
-        if ext_api_id and event.get('requestContext', {}).get('apiId') == ext_api_id:
+        _is_external_api = (
+            'routeKey' in event or event.get('version') == '2.0'  # HTTP API v2 signature
+            or (ext_api_id and event.get('requestContext', {}).get('apiId') == ext_api_id)
+        )
+        if _is_external_api:
             logger.info("Execution mode: EXTERNAL_API_GATEWAY (lightweight)")
             from interface_lambda.handlers import api_handler
             return api_handler.handle(event, context)
@@ -94,9 +104,13 @@ def lambda_handler(event, context):
         return background_handler.handle(event, context)
 
     elif _is_http_event:
-        # Route to external API handler if request comes from the external API Gateway
+        # Route to external API handler if request comes from the external API Gateway.
         ext_api_id = os.environ.get('API_GATEWAY_EXTERNAL_API_ID')
-        if ext_api_id and event.get('requestContext', {}).get('apiId') == ext_api_id:
+        _is_external_api = (
+            'routeKey' in event or event.get('version') == '2.0'
+            or (ext_api_id and event.get('requestContext', {}).get('apiId') == ext_api_id)
+        )
+        if _is_external_api:
             logger.info("Execution mode: EXTERNAL_API_GATEWAY")
             from interface_lambda.handlers import api_handler
             return api_handler.handle(event, context)
