@@ -75,9 +75,9 @@ def _guidance_confirm_upload(data: dict) -> dict:
                     "params": {"conversation_id": conv_id, "session_id": session_id},
                     "note": (
                         "Poll every 15s. Answer the AI's questions via send_conversation_reply. "
-                        "Once the interview completes, a preview job will start automatically — "
-                        "switch to polling get_job_status(session_id) every 20s until "
-                        "status == 'preview_complete', then call approve_validation."
+                        "Once the interview completes, a preview job starts automatically — "
+                        "then call wait_for_job(session_id) to track it with live progress "
+                        "until preview_complete, then call approve_validation."
                     ),
                 }
             ],
@@ -127,48 +127,50 @@ def _guidance_create_job(data: dict) -> dict:
     run_type = data.get("run_type", "")
 
     # Issue 3: for table maker session IDs, get_job_status returns stale data from
-    # the original table maker run (not the preview job).  Direct the agent to
-    # get_job_messages (which shows live progress_update messages) and then
-    # approve_validation (a 409 means still in progress — wait and retry).
+    # the original table maker run (not the preview job). Drive from messages via
+    # wait_for_job, which uses the messages endpoint as the primary progress source
+    # and only calls get_job_status once a terminal state is confirmed.
     if job_id.startswith("session_") and run_type == "preview":
         return {
             "summary": (
                 f"Preview job created (status={status}). "
                 "IMPORTANT: get_job_status may return stale table maker data (status=completed, "
-                "current_step='Config Generation') for this session ID — this reflects the "
-                "table maker run, not the preview. "
-                "Use get_job_messages to track live preview progress instead. "
-                "When messages show completion (card_id='preview', 100%), call get_job_status — "
-                "it should now return status=preview_complete with cost_estimate and config_id. "
-                "Save config_id for future reruns. Then call approve_validation with approved_cost_usd."
+                "current_step='Config Generation') — this reflects the table maker run, not the "
+                "preview. The messages endpoint is authoritative for real-time progress. "
+                "Use wait_for_job to wait for preview_complete with live progress notifications; "
+                "it drives from messages and retries status confirmation automatically. "
+                "Save config_id from the result for future reruns, then call approve_validation."
             ),
             "next_steps": [
+                {
+                    "tool": "wait_for_job",
+                    "params": {"job_id": job_id},
+                    "note": (
+                        "Preferred: blocks until preview_complete, emitting live progress from "
+                        "messages. Returns the same payload as get_job_status."
+                    ),
+                },
                 {
                     "tool": "get_job_messages",
                     "params": {"job_id": job_id},
                     "note": (
-                        "Monitor progress_update messages (card_id='preview') for real-time "
-                        "progress. Keep polling until messages show 100% or stop arriving."
-                    ),
-                },
-                {
-                    "tool": "get_job_status",
-                    "params": {"job_id": job_id},
-                    "note": (
-                        "After messages indicate completion, call this to get preview_complete "
-                        "state with cost_estimate and config_id."
+                        "Fallback: manually poll messages (card_id='preview') for real-time "
+                        "progress, then call get_job_status once messages show 100%."
                     ),
                 },
             ],
         }
 
     return {
-        "summary": f"Job created (status={status}). Poll for status updates.",
+        "summary": f"Job created (status={status}). Use wait_for_job to track completion.",
         "next_steps": [
             {
-                "tool": "get_job_status",
+                "tool": "wait_for_job",
                 "params": {"job_id": job_id},
-                "note": "Poll every 20s until status changes from 'queued' or 'processing'.",
+                "note": (
+                    "Preferred: blocks until preview_complete with live progress notifications. "
+                    "Returns the full status payload including cost_estimate and config_id."
+                ),
             }
         ],
     }
@@ -180,17 +182,24 @@ def _guidance_get_job_status(data: dict) -> dict:
 
     if status in ("queued", "processing"):
         return {
-            "summary": f"Job is {status}. Keep polling.",
+            "summary": (
+                f"Job is {status}. Use wait_for_job to block until a terminal state — "
+                "it drives from the messages endpoint (more reliable than status polling) "
+                "and emits live MCP progress notifications."
+            ),
             "next_steps": [
+                {
+                    "tool": "wait_for_job",
+                    "params": {"job_id": job_id},
+                    "note": (
+                        "Preferred: blocks until terminal state with live progress. "
+                        "Returns the same payload as get_job_status."
+                    ),
+                },
                 {
                     "tool": "get_job_status",
                     "params": {"job_id": job_id},
-                    "note": "Poll again in ~20 seconds.",
-                },
-                {
-                    "tool": "get_job_messages",
-                    "params": {"job_id": job_id},
-                    "note": "Optional: fetch live progress messages from the job.",
+                    "note": "Fallback: one-shot poll — re-call every ~20 seconds manually.",
                 },
             ],
         }
@@ -249,25 +258,33 @@ def _guidance_get_job_status(data: dict) -> dict:
         current_step = data.get("current_step", "")
         if "Config Generation" in current_step:
             # Table maker has finished. For API sessions the preview is already
-            # auto-queued — do NOT call create_job().  Just keep polling
-            # get_job_status until status == 'preview_complete'.
+            # auto-queued — do NOT call create_job(). wait_for_job handles this
+            # phase transition automatically (detects intermediate complete, resets,
+            # and continues polling into the preview phase).
             return {
                 "summary": (
-                    "Table maker complete. A preview validation job has been automatically queued. "
-                    "Do NOT call create_job() — the preview is already running. "
-                    "Keep polling get_job_status every 20s until status == 'preview_complete'. "
-                    "Then review cost_estimate and call approve_validation."
+                    "Table maker complete (intermediate phase). A preview validation job has been "
+                    "automatically queued. Do NOT call create_job() — the preview is already running. "
+                    "Use wait_for_job to track the preview phase with live progress; it detects this "
+                    "phase boundary automatically and keeps polling until preview_complete."
                 ),
                 "next_steps": [
+                    {
+                        "tool": "wait_for_job",
+                        "params": {"job_id": job_id},
+                        "note": (
+                            "Preferred: detects the phase transition and blocks until preview_complete, "
+                            "emitting live progress. Returns the full status payload with cost_estimate."
+                        ),
+                    },
                     {
                         "tool": "get_job_status",
                         "params": {"job_id": job_id},
                         "note": (
-                            "Poll every 20s. Wait for status == 'preview_complete', "
-                            "then review preview_results.download_url and cost_estimate "
-                            "before calling approve_validation."
+                            "Fallback: poll every 20s until status == 'preview_complete', "
+                            "then call approve_validation."
                         ),
-                    }
+                    },
                 ],
             }
         return {
@@ -362,12 +379,15 @@ def _guidance_approve_validation(data: dict) -> dict:
     job_id = data.get("job_id", "")
     status = data.get("status", "")
     return {
-        "summary": f"Validation approved. Job is now {status}. Poll for completion.",
+        "summary": f"Validation approved. Job is now {status}. Use wait_for_job to track completion.",
         "next_steps": [
             {
-                "tool": "get_job_status",
+                "tool": "wait_for_job",
                 "params": {"job_id": job_id},
-                "note": "Poll every 20s. Status will move to 'completed' when done.",
+                "note": (
+                    "Preferred: blocks until completed with live progress notifications. "
+                    "Returns the final status payload; then call get_results."
+                ),
             }
         ],
     }
@@ -462,12 +482,12 @@ def _guidance_get_reference_results(data: dict) -> dict:
 def _guidance_update_table(data: dict) -> dict:
     job_id = data.get("job_id", "")
     return {
-        "summary": "Update-table job started. Poll for status.",
+        "summary": "Update-table job started. Use wait_for_job to track completion.",
         "next_steps": [
             {
-                "tool": "get_job_status",
+                "tool": "wait_for_job",
                 "params": {"job_id": job_id},
-                "note": "Poll until completed.",
+                "note": "Blocks until completed with live progress. Then call get_results.",
             }
         ],
     }
@@ -476,12 +496,12 @@ def _guidance_update_table(data: dict) -> dict:
 def _guidance_reference_check(data: dict) -> dict:
     job_id = data.get("job_id", "")
     return {
-        "summary": "Reference-check job started. Poll for status.",
+        "summary": "Reference-check job started. Use wait_for_job to track completion.",
         "next_steps": [
             {
-                "tool": "get_job_status",
+                "tool": "wait_for_job",
                 "params": {"job_id": job_id},
-                "note": "Poll until completed, then call get_reference_results.",
+                "note": "Blocks until completed with live progress. Then call get_reference_results.",
             }
         ],
     }
@@ -575,59 +595,59 @@ def _guidance_get_conversation(data: dict) -> dict:
                         "Config refinement complete. A new preview validation job has been "
                         "automatically queued with the updated config. "
                         "Do NOT call create_job(). "
-                        "Poll get_job_status(session_id) every 20s until status == 'preview_complete'."
+                        "Use wait_for_job(session_id) to track the preview with live progress."
                     ),
                     "next_steps": [
                         {
-                            "tool": "get_job_status",
+                            "tool": "wait_for_job",
                             "params": {"job_id": session_id},
                             "note": (
-                                "Poll every 20s. Once status == 'preview_complete', "
-                                "review cost_estimate and call approve_validation."
+                                "Preferred: blocks until preview_complete with live progress. "
+                                "Then review cost_estimate and call approve_validation."
                             ),
                         },
                     ],
                 }
             # The table maker is NOW RUNNING. Once complete, a preview validation
             # job is automatically queued for API sessions — do NOT call create_job().
-            # Poll get_job_status every 20s; it will reach 'preview_complete' when
-            # the auto-triggered preview finishes.
+            # wait_for_job handles the phase transition (table-maker → preview) automatically.
             return {
                 "summary": (
                     "Table is being built. A preview validation job will start automatically "
                     "once the table maker finishes (typically 3–10 minutes). "
                     "Do NOT call create_job() — the preview is auto-queued. "
-                    "Switch to polling get_job_status(session_id) every 20s until "
-                    "status == 'preview_complete'."
+                    "Use wait_for_job(session_id) — it detects the phase transition and "
+                    "tracks both the table-maker and preview phases with live progress."
                 ),
                 "next_steps": [
                     {
-                        "tool": "get_job_status",
+                        "tool": "wait_for_job",
                         "params": {"job_id": session_id},
                         "note": (
-                            "Poll every 20s. Once status == 'preview_complete', "
-                            "review cost_estimate and call approve_validation."
+                            "Preferred: handles the table-maker → preview phase boundary "
+                            "automatically. Blocks until preview_complete, then call "
+                            "approve_validation."
                         ),
                     },
                 ],
             }
         else:
             # Upload-interview flow: config is generated and a preview job has been
-            # automatically queued. Switch to polling get_job_status.
+            # automatically queued. Use wait_for_job to track the preview.
             return {
                 "summary": (
                     "Interview complete. The config has been generated and a preview job "
                     "has been automatically queued. "
                     "Do NOT call create_job() — the preview is already running. "
-                    "Poll get_job_status(session_id) every 20s until status == 'preview_complete'."
+                    "Use wait_for_job(session_id) to track the preview with live progress."
                 ),
                 "next_steps": [
                     {
-                        "tool": "get_job_status",
+                        "tool": "wait_for_job",
                         "params": {"job_id": session_id},
                         "note": (
-                            "Poll every 20s until status == 'preview_complete'. "
-                            "Then review cost_estimate and call approve_validation."
+                            "Preferred: blocks until preview_complete with live progress. "
+                            "Returns the full status payload; then call approve_validation."
                         ),
                     },
                     {
@@ -737,6 +757,7 @@ _BUILDERS: dict[str, Callable] = {
     "confirm_upload": _guidance_confirm_upload,
     "create_job": _guidance_create_job,
     "get_job_status": _guidance_get_job_status,
+    "wait_for_job": _guidance_get_job_status,  # same payload shape — reuse builder
     "get_job_messages": _guidance_get_job_messages,
     "approve_validation": _guidance_approve_validation,
     "get_results": _guidance_get_results,
