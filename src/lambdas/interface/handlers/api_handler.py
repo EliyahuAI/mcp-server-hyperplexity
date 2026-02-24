@@ -402,17 +402,24 @@ def _handle_confirm_upload(body, email, meta):
             import concurrent.futures as _cf
             from interface_lambda.actions.find_matching_config import find_matching_configs
             _MATCH_TIMEOUT = 15  # seconds — leaves headroom before the 29s API Gateway cutoff
-            with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
-                _fut = _ex.submit(find_matching_configs, email, session_id)
-                try:
-                    result = _fut.result(timeout=_MATCH_TIMEOUT)
-                    if result:
-                        matching_data = result
-                except _cf.TimeoutError:
-                    logger.warning(
-                        f"[CONFIRM_UPLOAD] find_matching_configs timed out after {_MATCH_TIMEOUT}s "
-                        f"(session {session_id}) — proceeding with empty matches"
-                    )
+            # NOTE: do NOT use ThreadPoolExecutor as a context manager here.
+            # `with executor:` calls shutdown(wait=True) on exit, which blocks until
+            # the submitted thread finishes even after fut.result() raises TimeoutError —
+            # completely defeating the timeout.  shutdown(wait=False) returns immediately
+            # and lets the thread finish in the background (Lambda freezes it on return).
+            _ex = _cf.ThreadPoolExecutor(max_workers=1)
+            _fut = _ex.submit(find_matching_configs, email, session_id)
+            try:
+                result = _fut.result(timeout=_MATCH_TIMEOUT)
+                if result:
+                    matching_data = result
+            except _cf.TimeoutError:
+                logger.warning(
+                    f"[CONFIRM_UPLOAD] find_matching_configs timed out after {_MATCH_TIMEOUT}s "
+                    f"(session {session_id}) — proceeding with empty matches"
+                )
+            finally:
+                _ex.shutdown(wait=False)
             table_columns = matching_data.get("table_columns") or []
 
             # Save table_analysis so upload-interview doesn't have to re-parse
