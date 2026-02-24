@@ -461,29 +461,34 @@ def _handle_confirm_upload(body, email, meta):
         top_config_id = (auto_select or {}).get("config_id") or (matches[0]["config_id"] if matches else None)
 
         # Auto-start upload interview for API sessions with no strong config match.
-        # The conversation_id is included in the response so the LLM can poll it directly.
+        # Enqueue via SQS (returns in <100 ms) — do NOT call the handler inline,
+        # which would invoke an LLM and easily push total response time past the
+        # 29-second API Gateway limit.
         _best_score = matches[0].get("match_score", 0) if matches else 0
         _auto_interview_conv_id = None
         if sess_info.get("via_api") and (not matches or _best_score < 0.85):
             try:
                 import asyncio as _asyncio
-                from interface_lambda.actions.upload_interview import handle_upload_interview_start_async
+                from interface_lambda.core.sqs_service import send_upload_interview_request
                 _conv_id = f"upload_conv_{uuid.uuid4().hex[:12]}"
-                _int_resp = _asyncio.run(handle_upload_interview_start_async(
-                    {"email": email, "session_id": session_id,
-                     "conversation_id": _conv_id, "user_message": ""},
-                    None,
+                _sqs_resp = _asyncio.run(send_upload_interview_request(
+                    session_id=session_id,
+                    email=email,
+                    conversation_id=_conv_id,
+                    user_message="",
+                    action="startUploadInterview",
                 ))
-                _int_parsed = _parse_handler_response(_int_resp)
-                if _int_parsed["status_code"] < 400:
-                    _auto_interview_conv_id = _int_parsed["body"].get("conversation_id", _conv_id)
+                if _sqs_resp.get("success"):
+                    _auto_interview_conv_id = _conv_id
                     _write_processing_state(_auto_interview_conv_id, email, session_id)
                     logger.info(
-                        f"[CONFIRM_UPLOAD] Auto-started upload interview "
+                        f"[CONFIRM_UPLOAD] Queued upload interview via SQS: "
                         f"{_auto_interview_conv_id} for API session {session_id}"
                     )
+                else:
+                    logger.warning(f"[CONFIRM_UPLOAD] SQS enqueue failed: {_sqs_resp}")
             except Exception as _ie:
-                logger.warning(f"[CONFIRM_UPLOAD] Could not auto-start upload interview: {_ie}")
+                logger.warning(f"[CONFIRM_UPLOAD] Could not queue upload interview: {_ie}")
 
         # 6. Build next_steps — spell out every option with ready-to-execute calls
         options = []
