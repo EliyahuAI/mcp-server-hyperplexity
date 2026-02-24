@@ -401,7 +401,9 @@ def _handle_confirm_upload(body, email, meta):
         try:
             import concurrent.futures as _cf
             from interface_lambda.actions.find_matching_config import find_matching_configs
-            _MATCH_TIMEOUT = 15  # seconds — leaves headroom before the 29s API Gateway cutoff
+            _MATCH_TIMEOUT = 8  # seconds — leaves headroom before the 29s API Gateway cutoff.
+            # The handler has ~12-13s of additional overhead (lazy imports, S3 session_info
+            # save, SQS enqueue, _write_processing_state) so 8s here keeps total < 22s.
             # NOTE: do NOT use ThreadPoolExecutor as a context manager here.
             # `with executor:` calls shutdown(wait=True) on exit, which blocks until
             # the submitted thread finishes even after fut.result() raises TimeoutError —
