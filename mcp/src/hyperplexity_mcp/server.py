@@ -2,7 +2,7 @@
 """
 Hyperplexity MCP Server — entry point.
 
-Registers all 17 tools across 6 modules and runs a stdio-based MCP server
+Registers all 18 tools across 6 modules and runs a stdio-based MCP server
 via FastMCP (the high-level MCP Python SDK).
 
 Usage (after pip install):

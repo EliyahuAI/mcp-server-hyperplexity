@@ -71,16 +71,24 @@ def _guidance_confirm_upload(data: dict) -> dict:
             ),
             "next_steps": [
                 {
+                    "tool": "wait_for_conversation",
+                    "params": {
+                        "conversation_id": conv_id,
+                        "session_id": session_id,
+                        "expected_seconds": 120,
+                    },
+                    "note": (
+                        "Preferred: blocks with synthetic progress until the AI asks a question "
+                        "or execution starts. Answer questions via send_conversation_reply. "
+                        "Once the interview completes, a preview is auto-queued — do NOT call "
+                        "create_job(). Switch to wait_for_job(session_id)."
+                    ),
+                },
+                {
                     "tool": "get_conversation",
                     "params": {"conversation_id": conv_id, "session_id": session_id},
-                    "note": (
-                        "Poll every 15s. Answer the AI's questions via send_conversation_reply. "
-                        "Once the interview completes, a preview job is automatically queued "
-                        "for API sessions — do NOT call create_job(). "
-                        "Switch to wait_for_job(session_id) to track it with live progress "
-                        "until preview_complete, then call approve_validation."
-                    ),
-                }
+                    "note": "Fallback: one-shot poll — re-call every 15s manually.",
+                },
             ],
         }
 
@@ -202,6 +210,11 @@ def _guidance_get_job_status(data: dict) -> dict:
                     "params": {"job_id": job_id},
                     "note": "Fallback: one-shot poll — re-call every ~20 seconds manually.",
                 },
+            ],
+            "notes": [
+                "session_id and job_id are the same value — this is by design. "
+                "The status endpoint always reflects the most recent run for this session "
+                "(config-gen → preview → validation as the pipeline advances)."
             ],
         }
 
@@ -381,6 +394,12 @@ def _guidance_get_job_messages(data: dict) -> dict:
                 "emitted messages in this batch. Each card has its own independent _seq counter "
                 "— apparent gaps in sequence numbers are normal and expected."
             ),
+            (
+                "CONFIDENCE INDICATOR: confidence_score in progress messages is an aggregate "
+                "quality signal used internally to color the UI progress bar. It is NOT the "
+                "per-cell HIGH / MEDIUM / LOW confidence rating in the final results — do not "
+                "interpret it as a per-row confidence score."
+            ),
         ],
     }
     if found_urls:
@@ -549,13 +568,25 @@ def _guidance_start_table_maker(data: dict) -> dict:
 
     # Default: still processing (status == "processing" or unknown)
     return {
-        "summary": "Table-maker conversation started. Poll for its response.",
+        "summary": "Table-maker conversation started. Wait for the AI's response.",
         "next_steps": [
+            {
+                "tool": "wait_for_conversation",
+                "params": {
+                    "conversation_id": conv_id,
+                    "session_id": session_id,
+                    "expected_seconds": 150,
+                },
+                "note": (
+                    "Preferred: blocks with synthetic progress until the AI presents a table "
+                    "structure or asks a clarifying question. First turn typically takes 2–3 min."
+                ),
+            },
             {
                 "tool": "get_conversation",
                 "params": {"conversation_id": conv_id, "session_id": session_id},
-                "note": "Poll every 15s while status is 'processing'.",
-            }
+                "note": "Fallback: one-shot poll — re-call every 15s manually.",
+            },
         ],
     }
 
@@ -592,13 +623,27 @@ def _guidance_get_conversation(data: dict) -> dict:
 
     if status == "processing":
         return {
-            "summary": "Conversation is still processing. Poll again in 15s.",
+            "summary": (
+                "Conversation is still processing. "
+                "Use wait_for_conversation for a live progress indicator."
+            ),
             "next_steps": [
+                {
+                    "tool": "wait_for_conversation",
+                    "params": {
+                        "conversation_id": conv_id,
+                        "session_id": session_id,
+                    },
+                    "note": (
+                        "Preferred: blocks with synthetic time-based progress until the AI "
+                        "responds. No token cost while waiting."
+                    ),
+                },
                 {
                     "tool": "get_conversation",
                     "params": {"conversation_id": conv_id, "session_id": session_id},
-                    "note": "Poll every 15 seconds.",
-                }
+                    "note": "Fallback: one-shot poll — re-call every 15s manually.",
+                },
             ],
         }
 
@@ -723,13 +768,25 @@ def _guidance_send_conversation_reply(data: dict) -> dict:
     conv_id = data.get("conversation_id", "")
     session_id = data.get("session_id", "")
     return {
-        "summary": "Reply sent. Poll the conversation for the AI's next message.",
+        "summary": "Reply sent. Wait for the AI's next message.",
         "next_steps": [
+            {
+                "tool": "wait_for_conversation",
+                "params": {
+                    "conversation_id": conv_id,
+                    "session_id": session_id,
+                    "expected_seconds": 60,
+                },
+                "note": (
+                    "Preferred: blocks with synthetic progress. "
+                    "Simple confirmations ('yes') typically resolve in 30–90s."
+                ),
+            },
             {
                 "tool": "get_conversation",
                 "params": {"conversation_id": conv_id, "session_id": session_id},
-                "note": "Poll every 15s while the AI is processing.",
-            }
+                "note": "Fallback: one-shot poll — re-call every 15s manually.",
+            },
         ],
     }
 
@@ -738,13 +795,22 @@ def _guidance_refine_config(data: dict) -> dict:
     conv_id = data.get("conversation_id", "")
     session_id = data.get("session_id", "")
     return {
-        "summary": "Config refinement submitted. Poll the conversation for the result.",
+        "summary": "Config refinement submitted. Wait for the updated config.",
         "next_steps": [
+            {
+                "tool": "wait_for_conversation",
+                "params": {
+                    "conversation_id": conv_id,
+                    "session_id": session_id,
+                    "expected_seconds": 90,
+                },
+                "note": "Preferred: blocks with synthetic progress until the refined config is ready.",
+            },
             {
                 "tool": "get_conversation",
                 "params": {"conversation_id": conv_id, "session_id": session_id},
-                "note": "Poll every 15s for the refined config response.",
-            }
+                "note": "Fallback: one-shot poll — re-call every 15s manually.",
+            },
         ],
     }
 
