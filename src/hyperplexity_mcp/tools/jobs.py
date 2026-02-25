@@ -175,14 +175,26 @@ def register(server):
         """
         # ── Helpers: phase and terminal classification ────────────────────────
 
-        # Step names embedded in current_step that mark an intermediate completed
-        # state (generator phase done, next pipeline stage not yet started).
-        _INTERMEDIATE_STEPS = ("Config Generation", "Table Making", "Claim Extraction")
+        # Step names (lowercased) embedded in current_step that mark an
+        # intermediate completed state (generator phase done, next pipeline
+        # stage not yet started).  Lowercase comparison avoids mismatches like
+        # "Config Generation" vs "Configuration generation completed…" (Issue #1).
+        _INTERMEDIATE_STEPS = (
+            "config generation",
+            "configuration generation",
+            "table making",
+            "claim extraction",
+        )
+
+        # Track the last current_step that triggered a phase split so that a
+        # stuck status endpoint returning the same stale response doesn't keep
+        # re-splitting the progress range on every poll cycle.
+        _last_intermediate_step: list = [None]
 
         def _is_intermediate_complete(d: dict) -> bool:
             if d.get("status") != "completed":
                 return False
-            step = d.get("current_step") or d.get("step") or ""
+            step = (d.get("current_step") or d.get("step") or "").lower()
             return any(s in step for s in _INTERMEDIATE_STEPS)
 
         def _is_true_terminal(d: dict) -> bool:
@@ -322,15 +334,24 @@ def register(server):
                     # range is left — usually the full 0–99 if this is the only
                     # transition seen.
                     #
+                    # Only apply the phase split if this is a NEW intermediate
+                    # step — if the status endpoint is stuck returning the same
+                    # stale "completed / Config Generation" response on every
+                    # poll, skip the split to prevent the range from converging
+                    # toward 99% without the job actually advancing (Issue #2).
+                    #
                     # Do NOT reset last_seq — keep consuming new messages from
                     # where we are; resetting would replay stale messages and
                     # re-trigger this block.
-                    spend = _pf[0] + (_pc[0] - _pf[0]) * 0.8   # 80% of range used
-                    new_floor = max(spend, last_emitted + 0.5)   # never regress
-                    new_floor = min(new_floor, _pc[0] - 1.0)     # always leave room
-                    _pf[0] = new_floor
-                    # _pc[0] stays at 99 — the next phase inherits the rest
-                    msg_progress = 2.0
+                    current_step_key = (data.get("current_step") or "").lower()
+                    if current_step_key != _last_intermediate_step[0]:
+                        _last_intermediate_step[0] = current_step_key
+                        spend = _pf[0] + (_pc[0] - _pf[0]) * 0.8   # 80% of range used
+                        new_floor = max(spend, last_emitted + 0.5)   # never regress
+                        new_floor = min(new_floor, _pc[0] - 1.0)     # always leave room
+                        _pf[0] = new_floor
+                        # _pc[0] stays at 99 — the next phase inherits the rest
+                        msg_progress = 2.0
 
                 elif _is_true_terminal(data):
                     await _report(100.0)
