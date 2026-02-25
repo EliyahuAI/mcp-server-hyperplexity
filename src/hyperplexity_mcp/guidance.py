@@ -267,10 +267,15 @@ def _guidance_get_job_status(data: dict) -> dict:
         }
 
     if status == "completed":
-        # Fix #2: table maker jobs complete with "Config Generation" in current_step.
+        # Table maker / config-gen jobs complete with an intermediate current_step.
         # Their results live in the web viewer, not the /results endpoint.
+        # Use case-insensitive substring match to handle backend variations such as
+        # "Configuration generation completed successfully." vs "Config Generation".
         current_step = data.get("current_step", "")
-        if "Config Generation" in current_step:
+        if any(s in current_step.lower() for s in (
+            "config generation", "configuration generation",
+            "table making", "table maker",
+        )):
             # Table maker has finished. For API sessions the preview is already
             # auto-queued — do NOT call create_job(). wait_for_job handles this
             # phase transition automatically (detects intermediate complete, resets,

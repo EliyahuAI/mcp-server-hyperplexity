@@ -183,6 +183,7 @@ def register(server):
             "config generation",
             "configuration generation",
             "table making",
+            "table maker",
             "claim extraction",
         )
 
