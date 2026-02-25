@@ -2185,7 +2185,7 @@ def generate_table_preview_metadata(
             if not isinstance(field_data, dict):
                 raw = str(field_data) if field_data else ''
                 cells[col_name] = {
-                    'display_value': _confidence_icon('UNKNOWN') + ' ' + raw,
+                    'display_value': raw,
                     'full_value': raw,
                     'confidence': 'UNKNOWN',
                     'comment': {}
@@ -2204,8 +2204,8 @@ def generate_table_preview_metadata(
             if importance in ('ID', 'IGNORED'):
                 confidence = 'ID'
 
-            # Prefix display_value with confidence icon for direct rendering
-            display_value = _confidence_icon(confidence) + ' ' + full_value
+            # display_value is the raw value; confidence icon is handled by frontend color-coding
+            display_value = full_value
 
             # Build comment
             comment = _build_preview_cell_comment(
