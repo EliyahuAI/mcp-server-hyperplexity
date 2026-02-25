@@ -78,10 +78,11 @@ def _guidance_confirm_upload(data: dict) -> dict:
                         "expected_seconds": 120,
                     },
                     "note": (
-                        "Preferred: blocks with synthetic progress until the AI asks a question "
-                        "or execution starts. Answer questions via send_conversation_reply. "
-                        "Once the interview completes, a preview is auto-queued — do NOT call "
-                        "create_job(). Switch to wait_for_job(session_id)."
+                        "Preferred: blocks with synthetic progress until the AI asks a question. "
+                        "Answer questions via send_conversation_reply. "
+                        "When the interview finishes (status=approved, trigger_config_generation=true), "
+                        "call create_job(session_id) to start the preview — "
+                        "the preview is NOT auto-queued for upload-interview sessions."
                     ),
                 },
                 {
@@ -680,6 +681,16 @@ def _guidance_get_conversation(data: dict) -> dict:
             # The table maker is NOW RUNNING. Once complete, a preview validation
             # job is automatically queued for API sessions — do NOT call create_job().
             # wait_for_job handles the phase transition (table-maker → preview) automatically.
+            target_rows = data.get("target_row_count")
+            row_count_warning = ""
+            if target_rows and int(target_rows) > 0:
+                row_count_warning = (
+                    f" WARNING: You requested {target_rows} rows, but the table builder may "
+                    f"produce significantly more if it finds additional candidates — row count "
+                    f"is not strictly enforced by the backend. Cost is proportional to actual "
+                    f"rows built and is only visible at preview_complete. If this is a concern, "
+                    f"reconsider the request scope before the table builder finishes."
+                )
             return {
                 "summary": (
                     "Table is being built. A preview validation job will start automatically "
@@ -687,6 +698,7 @@ def _guidance_get_conversation(data: dict) -> dict:
                     "Do NOT call create_job() — the preview is auto-queued. "
                     "Use wait_for_job(session_id) — it detects the phase transition and "
                     "tracks both the table-maker and preview phases with live progress."
+                    + row_count_warning
                 ),
                 "next_steps": [
                     {
@@ -753,6 +765,36 @@ def _guidance_get_conversation(data: dict) -> dict:
                         "for required params and body before calling."
                     ),
                 }
+            ],
+        }
+
+    # Upload-interview terminal state: status=approved + trigger_config_generation=true.
+    # The config has been generated; the preview is NOT auto-queued — agent must call create_job.
+    if status == "approved" and data.get("trigger_config_generation"):
+        return {
+            "summary": (
+                "Upload interview complete. The validation config has been generated and approved. "
+                "Call create_job(session_id) now to start the 3-row preview — "
+                "the preview is NOT auto-queued for upload-interview sessions."
+            ),
+            "next_steps": [
+                {
+                    "tool": "create_job",
+                    "params": {"session_id": session_id},
+                    "note": (
+                        "Starts a 3-row preview using the generated config. "
+                        "After preview_complete, review the results and call approve_validation."
+                    ),
+                },
+                {
+                    "tool": "refine_config",
+                    "params": {
+                        "conversation_id": conv_id,
+                        "session_id": session_id,
+                        "instructions": "<describe changes>",
+                    },
+                    "note": "Optional: refine the config before starting the preview.",
+                },
             ],
         }
 
