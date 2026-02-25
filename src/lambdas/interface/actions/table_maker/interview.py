@@ -178,14 +178,16 @@ class TableInterviewHandler:
                 friendly_subject = f"of {table_name}" if table_name else ""
                 structured_data['trigger_execution'] = False
                 structured_data['mode'] = 1  # clarification turn
+                structured_data['show_structure'] = False  # no structure preview during clarification
                 structured_data['ai_message'] = (
                     f"I need at least 4 rows to work my magic! "
                     f"You asked for {target_row_count} — can I make it 4{(' ' + friendly_subject) if friendly_subject else ''} instead? "
                     "Just say \"yes\" and I'll get started right away!"
                 )
                 trigger_execution = False
+                target_row_count = 4  # store the offered minimum, not the user's bad count
                 logger.info(
-                    f"[INTERVIEW] Blocked execution: target_row_count={target_row_count} < 4 minimum. "
+                    f"[INTERVIEW] Blocked execution: target_row_count adjusted to 4 minimum. "
                     "Offering 4 rows instead."
                 )
 
@@ -336,14 +338,16 @@ class TableInterviewHandler:
                 friendly_subject = f"of {table_name}" if table_name else ""
                 structured_data['trigger_execution'] = False
                 structured_data['mode'] = 1  # clarification turn
+                structured_data['show_structure'] = False  # no structure preview during clarification
                 structured_data['ai_message'] = (
                     f"I need at least 4 rows to work my magic! "
                     f"You asked for {target_row_count} — can I make it 4{(' ' + friendly_subject) if friendly_subject else ''} instead? "
                     "Just say \"yes\" and I'll get started right away!"
                 )
                 trigger_execution = False
+                target_row_count = 4  # store the offered minimum, not the user's bad count
                 logger.info(
-                    f"[INTERVIEW] Blocked execution: target_row_count={target_row_count} < 4 minimum. "
+                    f"[INTERVIEW] Blocked execution: target_row_count adjusted to 4 minimum. "
                     "Offering 4 rows instead."
                 )
 

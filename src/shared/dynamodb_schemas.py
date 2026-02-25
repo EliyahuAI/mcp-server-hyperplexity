@@ -3821,7 +3821,8 @@ def find_existing_run_key(session_id: str) -> Optional[str]:
         from boto3.dynamodb.conditions import Key
         response = table.query(
             KeyConditionExpression=Key('session_id').eq(session_id),
-            Limit=1  # We only need one existing run
+            ScanIndexForward=False,  # most-recent first; without this, oldest (config-gen) run is returned
+            Limit=1
         )
         items = response.get('Items', [])
         if items:
