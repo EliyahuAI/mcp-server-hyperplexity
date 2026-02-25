@@ -2782,6 +2782,19 @@ async def execute_full_table_generation(
                         # Sort all rows by ID columns A-Z, right to left
                         approved_rows = _sort_rows_by_id_columns(approved_rows, id_col_names)
 
+                        # Hard cap: never deliver more rows than the user's target_row_count.
+                        # QC should have used remove_prepopulated_row_ids to trim prepopulated
+                        # rows before this point, but the merge can still exceed the target
+                        # when column_definition generates a large initial set (e.g., background
+                        # research finds a comprehensive list). This is the final safety net.
+                        if user_target > 0 and len(approved_rows) > user_target:
+                            logger.warning(
+                                f"[TARGET_CAP] Merged {len(approved_rows)} rows exceeds "
+                                f"target_row_count={user_target} — trimming. "
+                                f"QC should have used remove_prepopulated_row_ids."
+                            )
+                            approved_rows = approved_rows[:user_target]
+
                         # Track API call
                         _add_api_call_to_runs(
                             session_id=session_id,

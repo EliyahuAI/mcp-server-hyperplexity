@@ -87,6 +87,14 @@ Review ALL rows (both pre-existing and discovered) and choose ONE action:
 - If `keep_row_ids_in_order` is null, ALL discovered rows are kept in original order
 - If `remove_prepopulated_row_ids` is null, ALL pre-existing rows are kept
 
+### ENFORCING TARGET ROW COUNT (ceiling AND floor)
+
+**If total rows will EXCEED {{TARGET_ROW_COUNT}}:**
+Select the most relevant, representative rows and trim the rest. Use `remove_prepopulated_row_ids` to remove excess pre-existing rows, and `keep_row_ids_in_order` to select which discovered rows to keep. Prefer rows that best answer the user's specific request (e.g., "most popular" → keep the highest-ranked/most-cited ones, not alphabetically first). Always use `filter` action when trimming.
+
+**If total rows will FALL BELOW {{TARGET_ROW_COUNT}}:**
+Use `retrigger_discovery` (if allowed and domain is not exhausted) to find more entities.
+
 ### Action: "pass"
 **When:** All rows (both pre-existing and discovered) look good - no duplicates, no missing IDs, no quality issues
 **Output:** `keep_row_ids_in_order: null`, `remove_prepopulated_row_ids: null`, `overall_score`

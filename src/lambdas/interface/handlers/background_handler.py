@@ -6654,9 +6654,10 @@ async def handle_config_generation_async(event, context):
             # ── Auto-trigger preview for API sessions (upload-interview path) ──
             # When session_info.via_api is True, queue a preview SQS message so the
             # LLM only needs to poll get_job_status() — no explicit create_job() call.
-            # Skip for config refinements (event has 'instructions'); they re-queue
-            # their own preview via the refine_config → get_conversation flow.
-            if not event.get('instructions'):
+            # Only trigger for upload-interview config gen (source='upload_interview').
+            # Config refinements use a different source and re-queue their own preview
+            # via the refine_config → get_conversation flow.
+            if event.get('source') == 'upload_interview':
                 try:
                     _at_email = (event.get('email') or '').lower().strip()
                     _at_session = event.get('original_session_id') or session_id
