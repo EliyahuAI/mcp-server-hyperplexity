@@ -80,9 +80,9 @@ def _guidance_confirm_upload(data: dict) -> dict:
                     "note": (
                         "Preferred: blocks with synthetic progress until the AI asks a question. "
                         "Answer questions via send_conversation_reply. "
-                        "When the interview finishes (status=approved, trigger_config_generation=true), "
-                        "call create_job(session_id) to start the preview — "
-                        "the preview is NOT auto-queued for upload-interview sessions."
+                        "When the interview finishes (status=approved), config generation runs "
+                        "automatically and the preview is auto-queued — "
+                        "do NOT call create_job(). Switch to wait_for_job(session_id)."
                     ),
                 },
                 {
@@ -769,31 +769,24 @@ def _guidance_get_conversation(data: dict) -> dict:
         }
 
     # Upload-interview terminal state: status=approved + trigger_config_generation=true.
-    # The config has been generated; the preview is NOT auto-queued — agent must call create_job.
+    # Config generation is running in the background; preview is auto-queued once it
+    # finishes — do NOT call create_job(). Switch to wait_for_job(session_id).
     if status == "approved" and data.get("trigger_config_generation"):
         return {
             "summary": (
-                "Upload interview complete. The validation config has been generated and approved. "
-                "Call create_job(session_id) now to start the 3-row preview — "
-                "the preview is NOT auto-queued for upload-interview sessions."
+                "Upload interview complete. Config generation is running automatically in the "
+                "background. A preview job will be auto-queued once the config is ready — "
+                "do NOT call create_job(). Use wait_for_job(session_id) to track the preview."
             ),
             "next_steps": [
                 {
-                    "tool": "create_job",
-                    "params": {"session_id": session_id},
+                    "tool": "wait_for_job",
+                    "params": {"job_id": session_id},
                     "note": (
-                        "Starts a 3-row preview using the generated config. "
-                        "After preview_complete, review the results and call approve_validation."
+                        "Preferred: blocks until preview_complete with live progress. "
+                        "Config generation + preview typically takes 60–120s. "
+                        "Then call approve_validation."
                     ),
-                },
-                {
-                    "tool": "refine_config",
-                    "params": {
-                        "conversation_id": conv_id,
-                        "session_id": session_id,
-                        "instructions": "<describe changes>",
-                    },
-                    "note": "Optional: refine the config before starting the preview.",
                 },
             ],
         }
