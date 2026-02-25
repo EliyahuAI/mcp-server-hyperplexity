@@ -100,7 +100,7 @@ Add a `.mcp.json` to your project root — every team member gets the server aut
 
 ---
 
-## Tool reference (17 tools)
+## Tool reference (18 tools)
 
 Every tool response includes a `_guidance` block with a plain-English summary of where you are in the workflow and the exact next tool call(s) to make — so Claude can drive the full workflow autonomously.
 
@@ -120,8 +120,9 @@ Every tool response includes a `_guidance` block with a plain-English summary of
 | `confirm_upload` | Verify upload, detect matching prior validation configs (reuse if score ≥ 0.85). When no strong match is found, an AI interview is automatically started and `conversation_id` is returned. |
 | `refine_config` | Refine the generated config with natural language instructions |
 | `create_job` | Submit a validation job (preview first, then approve for full run) — only needed when reusing a known `config_id`. Preview is auto-queued after interview or table-maker flows. |
-| `get_job_status` | Poll job progress — includes cost estimate at `preview_complete` stage |
-| `get_job_messages` | Stream live progress messages during processing |
+| `wait_for_job` | **Preferred progress tracker.** Blocks until a terminal state (`preview_complete`, `completed`, `failed`), emitting live MCP progress notifications. Drives from the messages endpoint (more reliable than status polling) and handles multi-phase pipelines (e.g. table-maker → preview) automatically. No extra token cost. |
+| `get_job_status` | One-shot status poll — fallback when `wait_for_job` is not suitable |
+| `get_job_messages` | Fetch live progress messages with native progress percentages (paginated by `since_seq`) |
 | `approve_validation` | Approve the preview and start full validation (credits are charged here) |
 | `get_results` | Fetch enriched results: Excel download URL, table metadata (inline), interactive viewer URL |
 | `update_table` | Re-validate the enriched output after analyst corrections — no re-upload needed |
@@ -150,9 +151,9 @@ Every tool response includes a `_guidance` block with a plain-English summary of
 upload_file("companies.xlsx")
   → confirm_upload(session_id, s3_key)           # score ≥ 0.85 → match returned
     → create_job(session_id, config_id)          # free preview (a few rows)
-      → get_job_status(job_id)                   # poll every 20s until preview_complete
+      → wait_for_job(job_id)                     # blocks until preview_complete; live progress
         → approve_validation(job_id, cost_usd)   # charges credits
-          → get_job_status(job_id)               # poll until completed
+          → wait_for_job(job_id)                 # blocks until completed; live progress
             → get_results(job_id)                # download enriched Excel + inline metadata
 ```
 
@@ -165,9 +166,9 @@ upload_file("companies.xlsx")
     → get_conversation(conv_id, session_id)      # poll every 15s
       → send_conversation_reply(...)             # answer AI questions
         [interview complete → preview auto-queued]
-        → get_job_status(session_id)             # poll every 20s until preview_complete
+        → wait_for_job(session_id)               # blocks until preview_complete; live progress
           → approve_validation(job_id, cost_usd)
-            → get_job_status(job_id)             # poll until completed
+            → wait_for_job(job_id)               # blocks until completed; live progress
               → get_results(job_id)
 ```
 
@@ -178,7 +179,7 @@ start_table_maker("Top 20 US biotech companies: name, market cap, lead drug, pha
   → get_conversation(conv_id, session_id)        # poll every 15s for AI questions
     → send_conversation_reply(...)               # answer any clarifying questions
       [table builds → preview auto-queued, do NOT call create_job()]
-      → get_job_status(session_id)               # poll every 20s until preview_complete
+      → wait_for_job(session_id)                 # spans table-maker + preview phases; live progress
         → approve_validation(job_id, cost_usd)
           → get_results(job_id)                  # download generated + validated table
 ```
@@ -187,7 +188,7 @@ start_table_maker("Top 20 US biotech companies: name, market cap, lead drug, pha
 
 ```
 reference_check(text="...")       # or upload_file(...) first, then pass s3_key
-  → get_job_status(job_id)        # poll until completed
+  → wait_for_job(job_id)          # blocks until completed; live progress
     → get_reference_results(job_id)
 ```
 

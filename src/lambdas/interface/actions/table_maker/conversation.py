@@ -1553,6 +1553,11 @@ Recommendations that were provided to user:
         conversation_state['context_web_research'] = result['context_web_research']  # Update research items
         conversation_state['trigger_execution'] = result['trigger_execution']
 
+        # Update target_row_count if the LLM extracted a new specific value this turn.
+        new_target = interview_result.get('target_row_count', -1)
+        if isinstance(new_target, int) and new_target != -1:
+            conversation_state['target_row_count'] = new_target
+
         # Store confirmation_response for quick approval bypass (skips redundant AI call)
         # Clear old one first, then add new one if provided
         conversation_state.pop('confirmation_response', None)

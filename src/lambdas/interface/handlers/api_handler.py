@@ -832,8 +832,15 @@ def _handle_get_job_status(job_id, email, query_params, meta):
     try:
         from dynamodb_schemas import find_run_key_by_type, find_existing_run_key, get_run_status
 
-        # Prefer the Validation run if one exists; fall back to any run (Preview)
-        run_key = find_run_key_by_type(job_id, "Validation") or find_existing_run_key(job_id)
+        # Prefer Validation run if one exists; then Preview (to surface preview_complete
+        # correctly when config-gen and preview run records both exist for the same
+        # session — find_existing_run_key might return the config-gen record instead
+        # of the Preview record, causing status to appear stuck at "completed").
+        run_key = (
+            find_run_key_by_type(job_id, "Validation")
+            or find_run_key_by_type(job_id, "Preview")
+            or find_existing_run_key(job_id)
+        )
 
         if not run_key:
             logger.info(f"[JOB_STATUS] No run record found for job_id={job_id}")
@@ -910,6 +917,14 @@ def _handle_get_job_status(job_id, email, query_params, meta):
             "approve_url": f"/v1/jobs/{job_id}/validate",
             "requires_approval": True,
         }
+        # Embed the markdown preview table inline so agents can review actual cell
+        # values without a separate file download (Issue #9).
+        # Cap at 64 KB — well under the API Gateway 128 KB WebSocket frame limit.
+        _mt = pd.get("markdown_table") or ""
+        if _mt:
+            if len(_mt) > 65536:
+                _mt = _mt[:65536] + "\n…(truncated)"
+            data["preview_table"] = _mt
 
     extra = {"Retry-After": "20"} if api_status in ("processing", "queued") else None
     return _success_response(200, data, meta, extra_headers=extra)
@@ -1177,11 +1192,21 @@ def _handle_get_job_messages(job_id, email, query_params, meta):
             if "message" in data:
                 latest_step = data["message"]
 
+        # Collect distinct card_ids present in this batch (Issue #6).
+        # Each pipeline stage (config-gen, preview, table-maker, …) has its own
+        # card_id with an independent sequence counter.  Seq "gaps" between
+        # messages are normal — they come from other card_ids sharing the namespace.
+        card_ids = list(dict.fromkeys(
+            msg.get("card_id", "") for msg in result.get("messages", [])
+            if msg.get("card_id")
+        ))
+
         return _success_response(200, {
             "job_id": job_id,
             "messages": result["messages"],
             "last_seq": result["last_seq"],
             "has_more": result["has_more"],
+            "card_ids_present": card_ids,
             "summary": {
                 "latest_progress_percent": latest_pct,
                 "latest_step": latest_step,
@@ -1606,10 +1631,23 @@ def _handle_get_conversation(conv_id, email, query_params, meta):
             }
 
         elif status == "processing":
+            # Expose any available hint about what the AI is currently doing (Issue #8).
+            activity = (
+                state.get("current_activity")
+                or state.get("current_step")
+                or state.get("phase")
+            )
+            step_desc = (
+                f"The AI is still working ({activity}). Poll again in a few seconds."
+                if activity else
+                "The AI is still working. Poll again in a few seconds."
+            )
             data["next_step"] = {
                 "action": "poll",
-                "description": "The AI is still working. Poll again in a few seconds.",
+                "description": step_desc,
             }
+            if activity:
+                data["current_activity"] = activity
 
         extra = {"Retry-After": "15"} if status == "processing" else None
         return _success_response(200, data, meta, extra_headers=extra)

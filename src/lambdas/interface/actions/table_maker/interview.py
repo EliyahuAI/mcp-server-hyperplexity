@@ -169,6 +169,25 @@ class TableInterviewHandler:
             # Store interview context
             # Handle both old 'trigger_preview' and new 'trigger_execution' for backward compatibility
             trigger_execution = structured_data.get('trigger_execution', structured_data.get('trigger_preview', False))
+            target_row_count = structured_data.get('target_row_count', -1)
+
+            # Guard: minimum 4 rows required. If the user approved a plan with fewer
+            # rows, block execution and offer to proceed with 4 instead.
+            if trigger_execution and isinstance(target_row_count, int) and 0 < target_row_count < 4:
+                table_name = (structured_data.get('table_name') or '').strip()
+                friendly_subject = f"of {table_name}" if table_name else ""
+                structured_data['trigger_execution'] = False
+                structured_data['mode'] = 1  # clarification turn
+                structured_data['ai_message'] = (
+                    f"I need at least 4 rows to work my magic! "
+                    f"You asked for {target_row_count} — can I make it 4{(' ' + friendly_subject) if friendly_subject else ''} instead? "
+                    "Just say \"yes\" and I'll get started right away!"
+                )
+                trigger_execution = False
+                logger.info(
+                    f"[INTERVIEW] Blocked execution: target_row_count={target_row_count} < 4 minimum. "
+                    "Offering 4 rows instead."
+                )
 
             self.interview_context = {
                 'mode': structured_data.get('mode', 0),
@@ -193,6 +212,7 @@ class TableInterviewHandler:
                 'context_web_research': self.interview_context['context_web_research'],
                 'processing_steps': self.interview_context['processing_steps'],
                 'table_name': self.interview_context['table_name'],
+                'target_row_count': target_row_count,
                 'api_metadata': response,  # Full response from call_structured_api
                 'error': None
             }
@@ -307,6 +327,25 @@ class TableInterviewHandler:
             # Update interview context
             # Handle both old 'trigger_preview' and new 'trigger_execution' for backward compatibility
             trigger_execution = structured_data.get('trigger_execution', structured_data.get('trigger_preview', False))
+            target_row_count = structured_data.get('target_row_count', -1)
+
+            # Guard: minimum 4 rows required. If the user approved a plan with fewer
+            # rows, block execution and offer to proceed with 4 instead.
+            if trigger_execution and isinstance(target_row_count, int) and 0 < target_row_count < 4:
+                table_name = (structured_data.get('table_name') or '').strip()
+                friendly_subject = f"of {table_name}" if table_name else ""
+                structured_data['trigger_execution'] = False
+                structured_data['mode'] = 1  # clarification turn
+                structured_data['ai_message'] = (
+                    f"I need at least 4 rows to work my magic! "
+                    f"You asked for {target_row_count} — can I make it 4{(' ' + friendly_subject) if friendly_subject else ''} instead? "
+                    "Just say \"yes\" and I'll get started right away!"
+                )
+                trigger_execution = False
+                logger.info(
+                    f"[INTERVIEW] Blocked execution: target_row_count={target_row_count} < 4 minimum. "
+                    "Offering 4 rows instead."
+                )
 
             self.interview_context = {
                 'mode': structured_data.get('mode', 0),
@@ -331,6 +370,7 @@ class TableInterviewHandler:
                 'context_web_research': self.interview_context['context_web_research'],
                 'processing_steps': self.interview_context['processing_steps'],
                 'table_name': self.interview_context['table_name'],
+                'target_row_count': target_row_count,
                 'api_metadata': response,  # Full response from call_structured_api
                 'error': None
             }
