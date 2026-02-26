@@ -2604,7 +2604,7 @@ def handle_main_processing(event, context):
                         logger.debug(f"[SEARCH_GROUP_SKIP] Skipping group {search_group_id} - no validation targets")
                         continue
 
-                    model = search_group.get('model', 'sonar-pro')
+                    model = search_group.get('model', 'the-clone-kimi')
                     search_context = search_group.get('search_context', 'low')
 
                     # Build model display name
@@ -5524,7 +5524,7 @@ def handle_main_processing(event, context):
                         for search_group in search_groups_list:
                             search_group_id = search_group.get('group_id', 0)
                             columns_for_this_group = columns_per_search_group.get(search_group_id, 0)
-                            model = search_group.get('model', 'sonar-pro')
+                            model = search_group.get('model', 'the-clone-kimi')
                             search_context = search_group.get('search_context', 'low')
 
                             # Build model display name
