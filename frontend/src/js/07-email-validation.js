@@ -27,7 +27,8 @@ function createEmailValidationCard(options = {}) {
     const subtitle = options.subtitle || "Verify your email to continue";
     const infoHeaderText = options.infoHeaderText || 'Enter your email address to access this feature. We\'ll send you a verification code.';
 
-    const termsAlreadyAccepted = localStorage.getItem(SK_TERMS) === TERMS_VERSION;
+    let termsAlreadyAccepted = false;
+    try { termsAlreadyAccepted = localStorage.getItem(SK_TERMS) === TERMS_VERSION; } catch (e) { /* storage restricted */ }
 
     const termsHTML = termsAlreadyAccepted ? '' : `
                 <div class="privacy-checkbox">
@@ -107,10 +108,11 @@ async function sendEmailCode(cardId, button) {
         globalState.email = email;
 
         // Check if we should force re-verification (e.g., after logout)
-        const forceReverify = sessionStorage.getItem('forceReverify') === 'true';
-        if (forceReverify) {
-            sessionStorage.removeItem('forceReverify');
-        }
+        let forceReverify = false;
+        try {
+            forceReverify = sessionStorage.getItem('forceReverify') === 'true';
+            if (forceReverify) sessionStorage.removeItem('forceReverify');
+        } catch (e) { /* storage restricted */ }
 
         const response = await fetch(`${API_BASE}/validate`, {
             method: 'POST',
@@ -135,7 +137,7 @@ async function sendEmailCode(cardId, button) {
 
                 // Store email alongside token for auto-reauth after browser restart
                 try { localStorage.setItem(SK_EMAIL, email); } catch (e) { /* private browsing */ }
-                sessionStorage.setItem('validatedEmail', email);
+                try { sessionStorage.setItem('validatedEmail', email); } catch (e) { /* storage restricted */ }
 
                 // Sync terms acceptance from server
                 if (data.terms_accepted_version === TERMS_VERSION) {
@@ -198,7 +200,8 @@ async function verifyCode(cardId, button) {
     }
 
     // Validate checkboxes only if they are present (not already accepted)
-    const termsAlreadyAccepted = localStorage.getItem(SK_TERMS) === TERMS_VERSION;
+    let termsAlreadyAccepted = false;
+    try { termsAlreadyAccepted = localStorage.getItem(SK_TERMS) === TERMS_VERSION; } catch (e) { /* storage restricted */ }
     if (!termsAlreadyAccepted) {
         const termsCheckbox = document.getElementById(`${cardId}-terms`);
         const privacyCheckbox = document.getElementById(`${cardId}-privacy`);
@@ -250,8 +253,23 @@ async function verifyCode(cardId, button) {
             clearCodeDigits(cardId);
         }
     } catch (error) {
-        console.error('Code verification error:', error);
-        showMessage(`${cardId}-messages`, 'Network error. Please try again.', 'error');
+        console.error('[VERIFY] Error:', error.name, error.message, error);
+
+        let userMessage;
+        if (error instanceof TypeError) {
+            // fetch() rejected — actual network failure
+            userMessage = 'Network error. Please check your connection and try again.';
+        } else if (error instanceof SyntaxError) {
+            // response.json() failed — server returned non-JSON (gateway timeout, etc.)
+            userMessage = 'Server error. Please try again in a moment.';
+        } else if (error.name === 'QuotaExceededError' || error.name === 'SecurityError') {
+            // localStorage/sessionStorage blocked by browser settings
+            userMessage = 'Your browser is blocking storage. Try opening this page directly in your browser (not from an app).';
+        } else {
+            userMessage = 'Verification failed (' + error.name + '). Please try again.';
+        }
+
+        showMessage(`${cardId}-messages`, userMessage, 'error');
         clearCodeDigits(cardId);
     }
 }
@@ -323,8 +341,8 @@ function handleEmailValidated(cardId) {
     // Store email in BOTH sessionStorage and localStorage
     // sessionStorage for current session, localStorage to enable auto-reauth after browser restart
     // Backend validates token ownership via DynamoDB, so localStorage email is safe
-    sessionStorage.setItem('validatedEmail', globalState.email);
-    try { localStorage.setItem(SK_EMAIL, globalState.email); } catch (e) { /* private browsing */ }
+    try { sessionStorage.setItem('validatedEmail', globalState.email); } catch (e) { /* storage restricted */ }
+    try { localStorage.setItem(SK_EMAIL, globalState.email); } catch (e) { /* storage restricted */ }
 
     // Track email validation conversion
     trackEmailValidationConversion(globalState.email);
