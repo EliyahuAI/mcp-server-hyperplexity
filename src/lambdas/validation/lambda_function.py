@@ -479,7 +479,7 @@ def determine_api_provider(model) -> str:
     """
     # Handle backup models (list)
     if isinstance(model, list):
-        model = model[0] if model else 'the-clone-kimi'
+        model = model[0] if model else 'llama-3.1-sonar-small-128k-online'
 
     if (model.startswith('anthropic/') or
         model.startswith('anthropic.') or
@@ -1802,7 +1802,7 @@ def get_config_generation_schema() -> Dict:
             "default_model": {
                 "type": "string",
                 "description": "Default model to use for validation",
-                "default": "the-clone-kimi"
+                "default": "sonar-pro"
             },
             "search_groups": {
                 "type": "array",
