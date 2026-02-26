@@ -6,7 +6,7 @@ from typing import Dict, List, Union, Optional
 from datetime import datetime
 
 from .config import (
-    MODEL_HIERARCHY,
+    MODEL_BACKUPS,
     get_anthropic_api_key,
     get_perplexity_api_key,
     get_baseten_api_key,
@@ -65,7 +65,7 @@ def _schema_has_conditionals(schema: Dict) -> bool:
 class AIAPIClient:
     """Shared AI API client with caching and schema support."""
 
-    MODEL_HIERARCHY = MODEL_HIERARCHY
+    MODEL_BACKUPS = MODEL_BACKUPS
 
     # Class-level session context (shared across ALL instances)
     # This ensures memory system works even if multiple AIAPIClient instances exist
@@ -168,29 +168,11 @@ class AIAPIClient:
         logger.info(f"[AI_CLIENT_MEMORY] Session context set on CLASS (instance {id(self)}): session_id={session_id}, email={email}, s3_manager={type(s3_manager).__name__ if s3_manager else 'None'}")
 
     def _get_backup_models(self, primary_model: str, count: int = 2) -> List[str]:
-        try:
-            primary_index = self.MODEL_HIERARCHY.index(primary_model)
-            primary_is_baseten = 'baseten' in primary_model.lower()
-            
-            backup_models = []
-            curr_index = primary_index + 1
-            
-            while len(backup_models) < count and curr_index < len(self.MODEL_HIERARCHY):
-                candidate = self.MODEL_HIERARCHY[curr_index]
-                candidate_is_baseten = 'baseten' in candidate.lower()
-                
-                # Rule: Baseten models only chosen if primary was Baseten
-                if candidate_is_baseten and not primary_is_baseten:
-                    curr_index += 1
-                    continue
-                
-                backup_models.append(candidate)
-                curr_index += 1
-                
-            return backup_models
-        except ValueError:
-            # Model not in hierarchy - use fast/cheap models as fallback
+        backups = self.MODEL_BACKUPS.get(primary_model, [])
+        if not backups:
+            logger.warning(f"[BACKUP_MODELS] No backup chain defined for '{primary_model}', using safe defaults")
             return ["claude-haiku-4-5", "gemini-2.5-flash-lite"][:count]
+        return backups[:count]
 
     async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-sonnet-4-6",
                                  tool_name: str = "structured_response", use_cache: bool = True,
@@ -574,13 +556,10 @@ class AIAPIClient:
                 logger.info(f"[BACKUP_RETRY] Trying next model in queue (remaining: {len(models_to_try) - model_index - 1})")
                 last_error = e
                 if "[REFUSAL]" in str(e):
-                    # Add fallbacks
-                    try:
-                        idx = self.MODEL_HIERARCHY.index(current_model)
-                        for m in self.MODEL_HIERARCHY[idx+1:]:
-                            if m not in models_to_try: models_to_try.append(m)
-                    except:
-                        pass
+                    # On refusal, append this model's backup chain (capability-appropriate)
+                    for m in self.MODEL_BACKUPS.get(current_model, []):
+                        if m not in models_to_try:
+                            models_to_try.append(m)
                 continue
         
         raise last_error or Exception("All models failed")

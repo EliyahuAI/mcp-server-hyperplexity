@@ -3,7 +3,7 @@ import os
 import logging
 import boto3
 import tempfile
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -105,21 +105,75 @@ def get_timeout_tier(model: str) -> str:
         return f"slow ({timeout}s)"
 
 
-# Model hierarchy from best to most basic
-MODEL_HIERARCHY = [
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    "gemini-3-flash-preview",      # Gemini 3 Flash Preview (thinking model, strong reasoning)
-    "the-clone-baseten", # hybrid perplexity/deepseek/claude via baseten
-    "the-clone-claude", # hybrid perplexity/claude
-    "the-clone", # hybrid perplexity/deepseek/claude option
-    "deepseek-v3.2-baseten",      # Baseten-hosted DeepSeek V3.2
-    "deepseek-v3.2",         # Ultra-low cost, most capable DeepSeek
-    "sonar-pro",
-    "gemini-2.5-flash-lite",       # Google's latest multimodal model (FREE in preview!)
-    "claude-haiku-4-5",
-    "sonar"
-]
+# Per-model backup chains, organized by capability stack.
+#
+# Models within the same stack have compatible capabilities — they access the same
+# types of information and produce results of the same quality class.
+# Cross-stack backups are avoided because:
+#   - Web-native → non-web: loses real-time data, results degrade silently
+#   - Non-web → web-native: overkill cost, wrong tool for the task
+#
+# STACK 1 — WEB SEARCH NATIVE  (sonar, the-clone — real-time internet access)
+# STACK 2 — THINKING / REASONING  (gemini-3-flash-preview, claude, deepseek)
+# STACK 3 — EXTRACTION / COST-OPTIMIZED  (gemini-2.5-flash-lite, haiku, minimax)
+#
+MODEL_BACKUPS: Dict[str, List[str]] = {
+
+    # ── STACK 1: Web Search Native ───────────────────────────────────────────
+    # Sonar family (Perplexity — real-time grounded search)
+    "sonar-pro":           ["sonar"],                        # step down within web stack
+    "sonar":               ["sonar-pro"],                    # step up within web stack
+    "sonar-reasoning-pro": ["sonar-pro", "sonar"],
+
+    # The Clone family (Perplexity + DeepSeek/Claude synthesis hybrid)
+    "the-clone":         ["the-clone-baseten", "the-clone-claude"],
+    "the-clone-baseten": ["the-clone", "the-clone-claude"],
+    "the-clone-claude":  ["the-clone", "the-clone-baseten"],
+    "the-clone-kimi":    ["the-clone", "the-clone-baseten"],
+
+    # ── STACK 2: Thinking / Reasoning ────────────────────────────────────────
+    # Gemini 3 Flash Preview — HIGH thinking (config-gen, column-def, upload interview)
+    "gemini-3-flash-preview-high":            ["openrouter/gemini-3-flash-preview-high", "claude-sonnet-4-6"],
+    "openrouter/gemini-3-flash-preview-high": ["gemini-3-flash-preview-high", "claude-sonnet-4-6"],
+
+    # Gemini 3 Flash Preview — MEDIUM thinking (routing, initial decision)
+    "gemini-3-flash-preview":            ["openrouter/gemini-3-flash-preview", "claude-sonnet-4-6"],
+    "openrouter/gemini-3-flash-preview": ["gemini-3-flash-preview", "claude-sonnet-4-6"],
+
+    # Gemini 3 Flash Preview — LOW thinking (light reasoning)
+    "gemini-3-flash-preview-low":            ["openrouter/gemini-3-flash-preview-low", "gemini-3-flash-preview"],
+    "openrouter/gemini-3-flash-preview-low": ["gemini-3-flash-preview-low", "gemini-3-flash-preview"],
+
+    # Gemini 3 Flash Preview — MIN thinking (fast inference, no thinking budget)
+    # Closest peers are extraction-stack models at similar cost/speed
+    "gemini-3-flash-preview-min":            ["openrouter/gemini-3-flash-preview-min", "gemini-2.5-flash-lite"],
+    "openrouter/gemini-3-flash-preview-min": ["gemini-3-flash-preview-min", "gemini-2.5-flash-lite"],
+
+    # Claude — strong reasoning
+    "claude-opus-4-6":   ["claude-sonnet-4-6", "gemini-3-flash-preview-high"],
+    "claude-sonnet-4-6": ["gemini-3-flash-preview-high", "claude-opus-4-6"],
+
+    # DeepSeek — cheap synthesis (Vertex primary, Baseten backup)
+    "deepseek-v3.2":         ["deepseek-v3.2-baseten", "claude-haiku-4-5"],
+    "deepseek-v3.2-baseten": ["deepseek-v3.2", "claude-haiku-4-5"],
+    "deepseek-v3.2-exp":     ["deepseek-v3.2", "deepseek-v3.2-baseten"],
+
+    # ── STACK 3: Extraction / Cost-Optimized ─────────────────────────────────
+    # Gemini 2.5 Flash Lite (primary extraction model — fast and cheap)
+    "gemini-2.5-flash-lite":            ["openrouter/gemini-2.5-flash-lite", "deepseek-v3.2"],
+    "openrouter/gemini-2.5-flash-lite": ["gemini-2.5-flash-lite", "deepseek-v3.2"],
+
+    # Gemini 2.5 Flash (superseded; redirect to Gemini 3 for reasoning tasks)
+    "gemini-2.5-flash":            ["gemini-3-flash-preview", "openrouter/gemini-3-flash-preview"],
+    "openrouter/gemini-2.5-flash": ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
+
+    # Claude Haiku — cheapest Claude, good for classification and light tasks
+    "claude-haiku-4-5": ["gemini-2.5-flash-lite", "deepseek-v3.2"],
+
+    # OpenRouter models
+    "minimax/minimax-m2.5": ["gemini-2.5-flash-lite", "deepseek-v3.2"],
+    "moonshotai/kimi-k2.5": ["claude-sonnet-4-6", "deepseek-v3.2"],
+}
 
 def get_anthropic_api_key() -> str:
     """Get Anthropic API key from environment or SSM."""
