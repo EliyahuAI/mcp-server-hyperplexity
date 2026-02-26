@@ -233,8 +233,10 @@ Response format: Return ONLY the JSON object, nothing else."""
             }
 
             # Pass thinking config for Gemini 3 Flash Preview via OpenRouter.
-            # OpenRouter forwards this to Google's thinkingConfig via the 'thinking' field.
-            if thinking_budget is not None:
+            # Only inject when budget > 0 — sending type:'enabled' with budget_tokens:0
+            # is invalid (contradictory). Budget=0 means disabled; omitting the field
+            # entirely is the correct way to send a non-thinking call.
+            if thinking_budget is not None and thinking_budget > 0:
                 data['thinking'] = {
                     'type': 'enabled',
                     'budget_tokens': thinking_budget,

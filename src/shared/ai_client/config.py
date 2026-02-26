@@ -145,17 +145,19 @@ MODEL_BACKUPS: Dict[str, List[str]] = {
     "openrouter/gemini-3-flash-preview-low": ["gemini-3-flash-preview-low", "gemini-3-flash-preview"],
 
     # Gemini 3 Flash Preview — MIN thinking (fast inference, no thinking budget)
-    # Closest peers are extraction-stack models at similar cost/speed
-    "gemini-3-flash-preview-min":            ["openrouter/gemini-3-flash-preview-min", "gemini-2.5-flash-lite"],
-    "openrouter/gemini-3-flash-preview-min": ["gemini-3-flash-preview-min", "gemini-2.5-flash-lite"],
+    # Same model family — fall back to medium thinking variant, not a different family
+    "gemini-3-flash-preview-min":            ["openrouter/gemini-3-flash-preview-min", "gemini-3-flash-preview"],
+    "openrouter/gemini-3-flash-preview-min": ["gemini-3-flash-preview-min", "gemini-3-flash-preview"],
 
     # Claude — strong reasoning
     "claude-opus-4-6":   ["claude-sonnet-4-6", "gemini-3-flash-preview-high"],
-    "claude-sonnet-4-6": ["gemini-3-flash-preview-high", "claude-opus-4-6"],
+    # Use medium thinking (8192 tokens) for routine failover — -high (24576) is wasteful
+    "claude-sonnet-4-6": ["gemini-3-flash-preview", "claude-opus-4-6"],
 
     # DeepSeek — cheap synthesis (Vertex primary, Baseten backup)
-    "deepseek-v3.2":         ["deepseek-v3.2-baseten", "claude-haiku-4-5"],
-    "deepseek-v3.2-baseten": ["deepseek-v3.2", "claude-haiku-4-5"],
+    # Sonnet is the right cross-provider peer: comparable capability, haiku is weaker and costlier
+    "deepseek-v3.2":         ["deepseek-v3.2-baseten", "claude-sonnet-4-6"],
+    "deepseek-v3.2-baseten": ["deepseek-v3.2", "claude-sonnet-4-6"],
     "deepseek-v3.2-exp":     ["deepseek-v3.2", "deepseek-v3.2-baseten"],
 
     # ── STACK 3: Extraction / Cost-Optimized ─────────────────────────────────
