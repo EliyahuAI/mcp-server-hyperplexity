@@ -9,7 +9,6 @@ This document contains shared guidelines used by both new config creation and re
 
 - **Model Tiers (lowest to highest capability/cost)**:
   - **Standard** (default): `the-clone-flash` — Perplexity web search + Gemini 3 Flash synthesis, fast and cost-effective for most tables
-  - **Mid-tier**: `the-clone-kimi` — Perplexity web search + Kimi K2.5 synthesis, for tables requiring stronger reasoning
   - **Upgraded**: `the-clone-claude` — Perplexity web search + Claude synthesis, for complex or nuanced research
   - **Scientific/Technical tables** (use this as first choice, not an upgrade): `the-clone-claude` for all search groups + `claude-opus-4-6` QC (no web search) — whenever the table has a strong scientific, medical, or technical basis
   - **Calculation/light reasoning**: `gemini-3-flash-preview-min` — fast, no web search, for derived or formula-like fields
