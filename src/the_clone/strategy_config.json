@@ -194,6 +194,32 @@
           "description": "Deepest analysis - falls back to Claude Opus"
         }
       }
+    },
+    "flash": {
+      "description": "Gemini 3 Flash (Google AI Studio) synthesis — fast, low-cost, web-grounded via Perplexity",
+      "default_extraction_model": "gemini-2.5-flash-lite",
+      "tiers": {
+        "tier1": {
+          "synthesis": "gemini-3-flash-preview-min",
+          "label": "Fast",
+          "description": "Fast synthesis via Gemini 3 Flash min-thinking (AI Studio → OpenRouter)"
+        },
+        "tier2": {
+          "synthesis": "gemini-3-flash-preview-low",
+          "label": "Balanced",
+          "description": "Balanced synthesis with low thinking budget (AI Studio → OpenRouter)"
+        },
+        "tier3": {
+          "synthesis": "gemini-2.5-flash-lite",
+          "label": "Strong",
+          "description": "Cost-optimized fallback via Gemini 2.5 Flash Lite"
+        },
+        "tier4": {
+          "synthesis": "moonshotai/kimi-k2.5",
+          "label": "Deepest",
+          "description": "Cross-provider fallback via Kimi K2.5 (OpenRouter)"
+        }
+      }
     }
   }
 }

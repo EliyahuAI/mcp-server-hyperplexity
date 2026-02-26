@@ -220,7 +220,7 @@ For EACH column (no exceptions):
 ### Step 5: Select Models, Context, and QC Settings
 
 Follow the guidance from Common Configuration Guidance above:
-- **Model Selection**: stick with `the-clone-kimi` unless simple calculation `gemini-3-flash-preview-min` or advanced/technical analysis needed (use `the-clone-claude`)
+- **Model Selection**: stick with `the-clone-flash` unless simple calculation `gemini-3-flash-preview-min` or advanced/technical analysis needed (use `the-clone-claude`)
 - **QC Settings**: Enable `enable_qc: true` (recommended for Table Maker configs)
 
 ### Step 6: Write Summary

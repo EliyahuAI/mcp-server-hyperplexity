@@ -136,6 +136,7 @@ MODEL_BACKUPS: Dict[str, List[str]] = {
     "the-clone-baseten": ["the-clone", "the-clone-claude"],
     "the-clone-claude":  ["the-clone", "the-clone-baseten"],
     "the-clone-kimi":    ["the-clone", "the-clone-baseten"],
+    "the-clone-flash":   ["the-clone-kimi", "the-clone"],
 
     # ── STACK 2: Thinking / Reasoning ────────────────────────────────────────
     # Gemini 3 Flash Preview — HIGH thinking (config-gen, column-def, upload interview)

@@ -3,12 +3,13 @@
 This document contains shared guidelines used by both new config creation and refinement processes.
 
 ## Model Selection Guidelines
-- **Default Model**: `the-clone-kimi` is the default for ALL search groups. This is an agentic mix of Perplexity web search with Kimi K2.5 synthesis.
+- **Default Model**: `the-clone-flash` is the default for ALL search groups. This is an agentic mix of Perplexity web search with Gemini 3 Flash synthesis (Google AI Studio → OpenRouter).
 
-- **IMPORTANT**: Only specify a `model` in a search group when you need something OTHER than `the-clone-kimi`. If omitted, `the-clone-kimi` is automatically used.
+- **IMPORTANT**: Only specify a `model` in a search group when you need something OTHER than `the-clone-flash`. If omitted, `the-clone-flash` is automatically used.
 
 - **Model Tiers (lowest to highest capability/cost)**:
-  - **Standard** (default): `the-clone-kimi` — Perplexity web search + Kimi K2.5 synthesis, suitable for most tables
+  - **Standard** (default): `the-clone-flash` — Perplexity web search + Gemini 3 Flash synthesis, fast and cost-effective for most tables
+  - **Mid-tier**: `the-clone-kimi` — Perplexity web search + Kimi K2.5 synthesis, for tables requiring stronger reasoning
   - **Upgraded**: `the-clone-claude` — Perplexity web search + Claude synthesis, for complex or nuanced research
   - **Scientific/Technical tables** (use this as first choice, not an upgrade): `the-clone-claude` for all search groups + `claude-opus-4-6` QC (no web search) — whenever the table has a strong scientific, medical, or technical basis
   - **Calculation/light reasoning**: `gemini-3-flash-preview-min` — fast, no web search, for derived or formula-like fields
@@ -208,7 +209,7 @@ Search groups are **REQUIRED** for every configuration - they are essential for 
 - **Target Number of Groups**: Shoot for number of validation columns ceil((non-ID or IGNORED)/2)
 - **Upper limit**: Maximum 10
 - **No ungrouped fields allowed**: Every column must belong to a search group for optimal performance
-- **Model field**: ONLY specify `model` in a search group when using something other than `the-clone` (the default). Omit the model field to use `the-clone`.
+- **Model field**: ONLY specify `model` in a search group when using something other than `the-clone-flash` (the default). Omit the model field to use `the-clone-flash`.
 
 ## Embedding Tablewide Context Research
 

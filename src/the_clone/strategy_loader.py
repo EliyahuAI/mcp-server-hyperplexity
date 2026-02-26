@@ -62,7 +62,7 @@ def get_provider_config(provider: str = "deepseek") -> Dict[str, Any]:
     Get provider configuration.
 
     Args:
-        provider: Provider name ("deepseek", "claude", or "baseten")
+        provider: Provider name ("deepseek", "claude", "baseten", "kimi", or "flash")
 
     Returns:
         Provider configuration dict
@@ -79,7 +79,7 @@ def get_models_for_tier(provider: str, synthesis_tier: str, strategy: Dict = Non
     Get models for specified provider and synthesis tier.
 
     Args:
-        provider: Provider name ("deepseek", "claude", or "baseten")
+        provider: Provider name ("deepseek", "claude", "baseten", "kimi", or "flash")
         synthesis_tier: Tier name ("tier1", "tier2", "tier3", or "tier4")
         strategy: Optional strategy config (can override synthesis model)
 
