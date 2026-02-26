@@ -7,6 +7,6 @@
     "enable_qc": true,
     "max_tokens_default": 16000,
     "tokens_per_validated_column_default":4000,
-    "model": ["gemini-3-flash-preview", "claude-sonnet-4-6"]
+    "model": ["deepseek-v3.2", "claude-sonnet-4-6"]
   }
 }

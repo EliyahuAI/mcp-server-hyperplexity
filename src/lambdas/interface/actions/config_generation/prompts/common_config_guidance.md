@@ -3,18 +3,18 @@
 This document contains shared guidelines used by both new config creation and refinement processes.
 
 ## Model Selection Guidelines
-- **Default Model**: `the-clone-flash` is the default for ALL search groups. This is an agentic mix of Perplexity web search with Gemini 3 Flash synthesis (Google AI Studio → OpenRouter).
+- **Default Model**: `the-clone` is the default for ALL search groups. This is an agentic mix of Perplexity web search with DeepSeek V3.2 synthesis.
 
-- **IMPORTANT**: Only specify a `model` in a search group when you need something OTHER than `the-clone-flash`. If omitted, `the-clone-flash` is automatically used.
+- **IMPORTANT**: Only specify a `model` in a search group when you need something OTHER than `the-clone`. If omitted, `the-clone` is automatically used.
 
 - **Model Tiers (lowest to highest capability/cost)**:
-  - **Standard** (default): `the-clone-flash` — Perplexity web search + Gemini 3 Flash synthesis, fast and cost-effective for most tables
+  - **Standard** (default): `the-clone` — Perplexity web search + DeepSeek V3.2 synthesis, fast and cost-effective for most tables
   - **Upgraded**: `the-clone-claude` — Perplexity web search + Claude synthesis, for complex or nuanced research
   - **Scientific/Technical tables** (use this as first choice, not an upgrade): `the-clone-claude` for all search groups + `claude-opus-4-6` QC (no web search) — whenever the table has a strong scientific, medical, or technical basis
   - **Calculation/light reasoning**: `gemini-3-flash-preview-min` — fast, no web search, for derived or formula-like fields
   - **Advanced synthesis without web**: `claude-sonnet-4-6` or `claude-opus-4-6` — for complex reasoning on existing context, no web access needed
 
-- **Recommended QC Approach**: Default QC is `moonshotai/kimi-k2.5`. Upgrade to `claude-opus-4-6` (no web search) for scientific/technical tables or when default QC is missing errors.
+- **Recommended QC Approach**: Default QC is `deepseek-v3.2`. Upgrade to `claude-opus-4-6` (no web search) for scientific/technical tables or when default QC is missing errors.
 
 ## Importance Level Guidelines
 - **ID**: These define the rows - **AT LEAST ONE COLUMN MUST BE ASSIGNED 'ID'** (MANDATORY), usually the first/primary identifier column(s) to the left of the table. Getting these right is critical as these define the row information and the stability of the analysis. An Index alone is not enough - use meaningful identifiers. **⚠️ NEVER convert ALL ID columns to RESEARCH - at least one must remain ID.**
@@ -208,7 +208,7 @@ Search groups are **REQUIRED** for every configuration - they are essential for 
 - **Target Number of Groups**: Shoot for number of validation columns ceil((non-ID or IGNORED)/2)
 - **Upper limit**: Maximum 10
 - **No ungrouped fields allowed**: Every column must belong to a search group for optimal performance
-- **Model field**: ONLY specify `model` in a search group when using something other than `the-clone-flash` (the default). Omit the model field to use `the-clone-flash`.
+- **Model field**: ONLY specify `model` in a search group when using something other than `the-clone` (the default). Omit the model field to use `the-clone`.
 
 ## Embedding Tablewide Context Research
 

@@ -82,7 +82,7 @@ class SimplifiedSchemaValidator:
         self.cache_ttl_days = config.get('cache_ttl_days', 1)
         
         # Model configuration
-        self.default_model = config.get('default_model', 'the-clone-flash')
+        self.default_model = config.get('default_model', 'the-clone')
         
         # Search context size configuration
         self.default_search_context_size = config.get('default_search_context_size', 'low')
