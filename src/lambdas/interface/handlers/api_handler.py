@@ -1660,6 +1660,22 @@ def _handle_get_conversation(conv_id, email, query_params, meta):
                 "description": description,
             }
 
+        elif status == "approved":
+            # Upload interview complete — config generation is running in the
+            # background, preview auto-queues once it finishes.  Expose the
+            # flag so MCP/agents know to call wait_for_job(session_id).
+            data["trigger_config_generation"] = bool(
+                state.get("trigger_config_generation", True)
+            )
+            data["next_step"] = {
+                "action": "wait_for_job",
+                "description": (
+                    "Interview complete. Config generation is running automatically. "
+                    "Call wait_for_job(session_id) — it detects config generation as "
+                    "an intermediate step and waits for preview_complete."
+                ),
+            }
+
         elif status == "processing":
             # Expose any available hint about what the AI is currently doing (Issue #8).
             activity = (

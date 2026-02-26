@@ -821,10 +821,13 @@ def _guidance_get_conversation(data: dict) -> dict:
             ],
         }
 
-    # Upload-interview terminal state: status=approved + trigger_config_generation=true.
+    # Upload-interview terminal state: status=approved.
     # Config generation is running in the background; preview is auto-queued once it
     # finishes — do NOT call create_job(). Switch to wait_for_job(session_id).
-    if status == "approved" and data.get("trigger_config_generation"):
+    # NOTE: The backend API does not expose trigger_config_generation in the
+    # response — only the internal S3 state has it. status="approved" alone is
+    # sufficient because only upload interviews reach this state.
+    if status == "approved":
         return {
             "summary": (
                 "Upload interview complete. Config generation is running automatically in the "
