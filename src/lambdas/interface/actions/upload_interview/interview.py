@@ -39,7 +39,7 @@ _CONFIG = _load_config()
 
 def get_interview_model() -> list:
     """Get the model(s) to use for interview from config. Returns list of models."""
-    model = _CONFIG.get('interview', {}).get('model', ['gemini-3-flash-preview-high', 'openrouter/gemini-3-flash-preview-high', 'moonshotai/kimi-k2.5'])
+    model = _CONFIG.get('interview', {}).get('model', ['openrouter/gemini-3-flash-preview-low', 'gemini-3-flash-preview-low', 'moonshotai/kimi-k2.5'])
     # Ensure it's always a list
     if isinstance(model, str):
         model = [model]
