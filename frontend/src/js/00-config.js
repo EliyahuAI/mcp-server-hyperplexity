@@ -178,7 +178,8 @@ const SK_TERMS = `${CURRENT_ENV}_termsAcceptedVersion`;
  */
 function getAuthHeaders() {
     const headers = { 'Content-Type': 'application/json' };
-    const token = localStorage.getItem(SK_TOKEN);
+    // Fall back to in-memory token when localStorage is unavailable (e.g. iOS private browsing)
+    const token = localStorage.getItem(SK_TOKEN) || globalState.sessionToken;
     if (token) {
         headers['X-Session-Token'] = token;
     }

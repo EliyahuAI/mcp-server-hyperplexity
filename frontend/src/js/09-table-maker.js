@@ -62,8 +62,7 @@ async function preInitializeTableMaker() {
         const data = await resp.json();
         if (data.success && data.session_id) {
             // Store session ID from backend (authoritative source)
-            globalState.sessionId = data.session_id;
-            localStorage.setItem('sessionId', data.session_id);
+            saveSessionId(data.session_id);
             console.log('[TABLE_MAKER] Session initialized from backend:', data.session_id);
 
             // Connect WebSocket now that we have a confirmed session
@@ -1044,9 +1043,7 @@ try {
 
         // Store session_id from backend (always use backend's authoritative value)
         if (data.session_id) {
-            globalState.sessionId = data.session_id;
-            localStorage.setItem('sessionId', data.session_id);
-            // Stored session ID
+            saveSessionId(data.session_id);
         }
 
         // Connect to WebSocket session

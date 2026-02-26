@@ -197,7 +197,7 @@ function proceedWithUpload(cardId) {
                         // New file upload should NEVER reuse existing session - always generate new session ID
 
                         const uploadHeaders = {};
-                        const uploadToken = localStorage.getItem(SK_TOKEN);
+                        const uploadToken = localStorage.getItem(SK_TOKEN) || globalState.sessionToken;
                         if (uploadToken) uploadHeaders['X-Session-Token'] = uploadToken;
 
                         const uploadResponse = await fetch(`${API_BASE}/upload`, {
@@ -213,8 +213,7 @@ function proceedWithUpload(cardId) {
                             showFinalCardState(cardId, `File uploaded: ${globalState.excelFileName}`, 'success');
                             // Update session info from upload
                             if (data.session_id) {
-                                globalState.sessionId = data.session_id;
-                                localStorage.setItem('sessionId', data.session_id);
+                                saveSessionId(data.session_id);
                             }
                             globalState.excelFileUploaded = true;
                             globalState.workflowPhase = 'upload';
@@ -484,8 +483,7 @@ async function uploadExcelFile(cardId, file) {
 
         // Store session_id if backend generated one
         if (sessionId && !globalState.sessionId) {
-            globalState.sessionId = sessionId;
-            localStorage.setItem('sessionId', sessionId);
+            saveSessionId(sessionId);
         }
 
         showMessage(`${cardId}-messages`,
@@ -858,9 +856,7 @@ if (!result.success) {
 
 // Update session ID with new one from demo (like table uploads)
 if (result.session_id) {
-    globalState.sessionId = result.session_id;
-    // Store new session ID in localStorage for persistence
-    localStorage.setItem('sessionId', result.session_id);
+    saveSessionId(result.session_id);
 }
 
 // Set global state as if user uploaded files

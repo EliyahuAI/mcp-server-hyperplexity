@@ -56,8 +56,7 @@ try {
 
     // Store session_id if backend generated one
     if (sessionId && !globalState.sessionId) {
-        globalState.sessionId = sessionId;
-        localStorage.setItem('sessionId', sessionId);
+        saveSessionId(sessionId);
     }
 
     referenceCheckState.pdfId = uploadId;
@@ -234,8 +233,7 @@ try {
 
         // Store session_id if backend generated one
         if (data.session_id && !globalState.sessionId) {
-            globalState.sessionId = data.session_id;
-            localStorage.setItem('sessionId', data.session_id);
+            saveSessionId(data.session_id);
         }
 
         // Connect to WebSocket session
@@ -316,8 +314,7 @@ if (!cardId) return;
 if (data.csv_s3_key) globalState.csvS3Key = data.csv_s3_key;
 if (data.config_s3_key) globalState.configS3Key = data.config_s3_key;
 if (data.session_id) {
-    globalState.sessionId = data.session_id;
-    localStorage.setItem('sessionId', data.session_id);
+    saveSessionId(data.session_id);
 }
 
 // Mark files as ready for validation

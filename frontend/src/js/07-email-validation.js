@@ -130,16 +130,16 @@ async function sendEmailCode(cardId, button) {
                 console.log('[EMAIL] Email already validated, token issued');
 
                 // Store session token (30-day expiration, persists across browser restarts)
-                localStorage.setItem(SK_TOKEN, data.session_token);
+                try { localStorage.setItem(SK_TOKEN, data.session_token); } catch (e) { /* private browsing */ }
                 globalState.sessionToken = data.session_token;
 
                 // Store email alongside token for auto-reauth after browser restart
-                localStorage.setItem(SK_EMAIL, email);
+                try { localStorage.setItem(SK_EMAIL, email); } catch (e) { /* private browsing */ }
                 sessionStorage.setItem('validatedEmail', email);
 
                 // Sync terms acceptance from server
                 if (data.terms_accepted_version === TERMS_VERSION) {
-                    localStorage.setItem(SK_TERMS, data.terms_accepted_version);
+                    try { localStorage.setItem(SK_TERMS, data.terms_accepted_version); } catch (e) { /* private browsing */ }
                 }
 
                 // Show message that email is already validated
@@ -231,11 +231,11 @@ async function verifyCode(cardId, button) {
         if (response.ok && data.success) {
             // SECURITY: Store session token from backend (30-day expiration)
             if (data.session_token) {
-                localStorage.setItem(SK_TOKEN, data.session_token);
+                try { localStorage.setItem(SK_TOKEN, data.session_token); } catch (e) { /* private browsing */ }
                 globalState.sessionToken = data.session_token;
             }
             // Persist terms acceptance so checkboxes won't show next time
-            localStorage.setItem(SK_TERMS, TERMS_VERSION);
+            try { localStorage.setItem(SK_TERMS, TERMS_VERSION); } catch (e) { /* private browsing */ }
             markButtonSelected(button, '✓ Verified');
             // ALWAYS TREAT AS NEW USER FOR NOW
             globalState.isNewUser = true; // Override - show demo to everyone
@@ -271,6 +271,17 @@ function setupCodeDigitInputs(cardId) {
         // Auto-advance on digit entry
         input.addEventListener('input', (e) => {
             const val = e.target.value;
+            // iOS OTP autofill puts the full 6-digit code into the first box —
+            // distribute it across all boxes instead of clearing it.
+            if (val && val.length > 1) {
+                const cleaned = val.replace(/\D/g, '').slice(0, 6);
+                for (let i = 0; i < 6; i++) {
+                    digits[i].value = cleaned[i] || '';
+                }
+                const focusIdx = Math.min(cleaned.length, 5);
+                digits[focusIdx].focus();
+                return;
+            }
             // Allow only single digit
             if (val && !/^\d$/.test(val)) {
                 e.target.value = '';
@@ -313,7 +324,7 @@ function handleEmailValidated(cardId) {
     // sessionStorage for current session, localStorage to enable auto-reauth after browser restart
     // Backend validates token ownership via DynamoDB, so localStorage email is safe
     sessionStorage.setItem('validatedEmail', globalState.email);
-    localStorage.setItem(SK_EMAIL, globalState.email);
+    try { localStorage.setItem(SK_EMAIL, globalState.email); } catch (e) { /* private browsing */ }
 
     // Track email validation conversion
     trackEmailValidationConversion(globalState.email);

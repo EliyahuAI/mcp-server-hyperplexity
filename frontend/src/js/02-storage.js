@@ -10,9 +10,9 @@
 // ============================================
 
 function saveSessionId(sessionId) {
+    globalState.sessionId = sessionId;
     try {
         localStorage.setItem('sessionId', sessionId);
-        globalState.sessionId = sessionId;
     } catch (e) {
         console.error('[STORAGE] Error saving session ID:', e);
     }

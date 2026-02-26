@@ -4936,7 +4936,8 @@ const SK_TERMS = `${CURRENT_ENV}_termsAcceptedVersion`;
  */
 function getAuthHeaders() {
     const headers = { 'Content-Type': 'application/json' };
-    const token = localStorage.getItem(SK_TOKEN);
+    // Fall back to in-memory token when localStorage is unavailable (e.g. iOS private browsing)
+    const token = localStorage.getItem(SK_TOKEN) || globalState.sessionToken;
     if (token) {
         headers['X-Session-Token'] = token;
     }
@@ -5553,9 +5554,9 @@ function showMessage(containerId, message, type = 'info', updateExisting = false
 // ============================================
 
 function saveSessionId(sessionId) {
+    globalState.sessionId = sessionId;
     try {
         localStorage.setItem('sessionId', sessionId);
-        globalState.sessionId = sessionId;
     } catch (e) {
         console.error('[STORAGE] Error saving session ID:', e);
     }
@@ -8801,7 +8802,7 @@ function proceedWithUpload(cardId) {
                         // New file upload should NEVER reuse existing session - always generate new session ID
 
                         const uploadHeaders = {};
-                        const uploadToken = localStorage.getItem(SK_TOKEN);
+                        const uploadToken = localStorage.getItem(SK_TOKEN) || globalState.sessionToken;
                         if (uploadToken) uploadHeaders['X-Session-Token'] = uploadToken;
 
                         const uploadResponse = await fetch(`${API_BASE}/upload`, {
@@ -8817,8 +8818,7 @@ function proceedWithUpload(cardId) {
                             showFinalCardState(cardId, `File uploaded: ${globalState.excelFileName}`, 'success');
                             // Update session info from upload
                             if (data.session_id) {
-                                globalState.sessionId = data.session_id;
-                                localStorage.setItem('sessionId', data.session_id);
+                                saveSessionId(data.session_id);
                             }
                             globalState.excelFileUploaded = true;
                             globalState.workflowPhase = 'upload';
@@ -9088,8 +9088,7 @@ async function uploadExcelFile(cardId, file) {
 
         // Store session_id if backend generated one
         if (sessionId && !globalState.sessionId) {
-            globalState.sessionId = sessionId;
-            localStorage.setItem('sessionId', sessionId);
+            saveSessionId(sessionId);
         }
 
         showMessage(`${cardId}-messages`,
@@ -9462,9 +9461,7 @@ if (!result.success) {
 
 // Update session ID with new one from demo (like table uploads)
 if (result.session_id) {
-    globalState.sessionId = result.session_id;
-    // Store new session ID in localStorage for persistence
-    localStorage.setItem('sessionId', result.session_id);
+    saveSessionId(result.session_id);
 }
 
 // Set global state as if user uploaded files
@@ -9718,16 +9715,16 @@ async function sendEmailCode(cardId, button) {
                 console.log('[EMAIL] Email already validated, token issued');
 
                 // Store session token (30-day expiration, persists across browser restarts)
-                localStorage.setItem(SK_TOKEN, data.session_token);
+                try { localStorage.setItem(SK_TOKEN, data.session_token); } catch (e) { /* private browsing */ }
                 globalState.sessionToken = data.session_token;
 
                 // Store email alongside token for auto-reauth after browser restart
-                localStorage.setItem(SK_EMAIL, email);
+                try { localStorage.setItem(SK_EMAIL, email); } catch (e) { /* private browsing */ }
                 sessionStorage.setItem('validatedEmail', email);
 
                 // Sync terms acceptance from server
                 if (data.terms_accepted_version === TERMS_VERSION) {
-                    localStorage.setItem(SK_TERMS, data.terms_accepted_version);
+                    try { localStorage.setItem(SK_TERMS, data.terms_accepted_version); } catch (e) { /* private browsing */ }
                 }
 
                 // Show message that email is already validated
@@ -9819,11 +9816,11 @@ async function verifyCode(cardId, button) {
         if (response.ok && data.success) {
             // SECURITY: Store session token from backend (30-day expiration)
             if (data.session_token) {
-                localStorage.setItem(SK_TOKEN, data.session_token);
+                try { localStorage.setItem(SK_TOKEN, data.session_token); } catch (e) { /* private browsing */ }
                 globalState.sessionToken = data.session_token;
             }
             // Persist terms acceptance so checkboxes won't show next time
-            localStorage.setItem(SK_TERMS, TERMS_VERSION);
+            try { localStorage.setItem(SK_TERMS, TERMS_VERSION); } catch (e) { /* private browsing */ }
             markButtonSelected(button, '✓ Verified');
             // ALWAYS TREAT AS NEW USER FOR NOW
             globalState.isNewUser = true; // Override - show demo to everyone
@@ -9859,6 +9856,17 @@ function setupCodeDigitInputs(cardId) {
         // Auto-advance on digit entry
         input.addEventListener('input', (e) => {
             const val = e.target.value;
+            // iOS OTP autofill puts the full 6-digit code into the first box —
+            // distribute it across all boxes instead of clearing it.
+            if (val && val.length > 1) {
+                const cleaned = val.replace(/\D/g, '').slice(0, 6);
+                for (let i = 0; i < 6; i++) {
+                    digits[i].value = cleaned[i] || '';
+                }
+                const focusIdx = Math.min(cleaned.length, 5);
+                digits[focusIdx].focus();
+                return;
+            }
             // Allow only single digit
             if (val && !/^\d$/.test(val)) {
                 e.target.value = '';
@@ -9901,7 +9909,7 @@ function handleEmailValidated(cardId) {
     // sessionStorage for current session, localStorage to enable auto-reauth after browser restart
     // Backend validates token ownership via DynamoDB, so localStorage email is safe
     sessionStorage.setItem('validatedEmail', globalState.email);
-    localStorage.setItem(SK_EMAIL, globalState.email);
+    try { localStorage.setItem(SK_EMAIL, globalState.email); } catch (e) { /* private browsing */ }
 
     // Track email validation conversion
     trackEmailValidationConversion(globalState.email);
@@ -11347,8 +11355,7 @@ async function startConfigGenerationWithContext(cardId, userAnswers) {
             
             // Update session ID from backend response
             if (uploadData.session_id) {
-                globalState.sessionId = uploadData.session_id;
-                localStorage.setItem('sessionId', globalState.sessionId);
+                saveSessionId(uploadData.session_id);
             }
             
             // Store the storage path for reference
@@ -12409,8 +12416,7 @@ async function preInitializeTableMaker() {
         const data = await resp.json();
         if (data.success && data.session_id) {
             // Store session ID from backend (authoritative source)
-            globalState.sessionId = data.session_id;
-            localStorage.setItem('sessionId', data.session_id);
+            saveSessionId(data.session_id);
             console.log('[TABLE_MAKER] Session initialized from backend:', data.session_id);
 
             // Connect WebSocket now that we have a confirmed session
@@ -13391,9 +13397,7 @@ try {
 
         // Store session_id from backend (always use backend's authoritative value)
         if (data.session_id) {
-            globalState.sessionId = data.session_id;
-            localStorage.setItem('sessionId', data.session_id);
-            // Stored session ID
+            saveSessionId(data.session_id);
         }
 
         // Connect to WebSocket session
@@ -14239,8 +14243,7 @@ try {
 
     // Store session_id if backend generated one
     if (sessionId && !globalState.sessionId) {
-        globalState.sessionId = sessionId;
-        localStorage.setItem('sessionId', sessionId);
+        saveSessionId(sessionId);
     }
 
     referenceCheckState.pdfId = uploadId;
@@ -14417,8 +14420,7 @@ try {
 
         // Store session_id if backend generated one
         if (data.session_id && !globalState.sessionId) {
-            globalState.sessionId = data.session_id;
-            localStorage.setItem('sessionId', data.session_id);
+            saveSessionId(data.session_id);
         }
 
         // Connect to WebSocket session
@@ -14499,8 +14501,7 @@ if (!cardId) return;
 if (data.csv_s3_key) globalState.csvS3Key = data.csv_s3_key;
 if (data.config_s3_key) globalState.configS3Key = data.config_s3_key;
 if (data.session_id) {
-    globalState.sessionId = data.session_id;
-    localStorage.setItem('sessionId', data.session_id);
+    saveSessionId(data.session_id);
 }
 
 // Mark files as ready for validation
@@ -15059,7 +15060,7 @@ async function startPreview(cardId) {
             const url = `${API_BASE}/validate?async=true&preview_first_row=true&preview_max_rows=3`;
 
             const fetchHeaders = {};
-            const token = localStorage.getItem(SK_TOKEN);
+            const token = localStorage.getItem(SK_TOKEN) || globalState.sessionToken;
             if (token) fetchHeaders['X-Session-Token'] = token;
 
             response = await fetch(url, {
@@ -15388,7 +15389,7 @@ async function startFullProcessing(cardId) {
         const url = `${API_BASE}/validate?async=true`;
 
         const fetchHeaders = {};
-        const token = localStorage.getItem(SK_TOKEN);
+        const token = localStorage.getItem(SK_TOKEN) || globalState.sessionToken;
         if (token) fetchHeaders['X-Session-Token'] = token;
 
         const response = await fetch(url, {
@@ -18798,8 +18799,7 @@ async function handlePdfUpload(cardId, file) {
 
         // Store session_id if backend generated one
         if (sessionId && !globalState.sessionId) {
-            globalState.sessionId = sessionId;
-            localStorage.setItem('sessionId', sessionId);
+            saveSessionId(sessionId);
         }
 
         referenceCheckState.pdfId = uploadId;
@@ -18986,8 +18986,7 @@ async function startReferenceCheck(cardId) {
 
             // Store session_id if backend generated one
             if (data.session_id && !globalState.sessionId) {
-                globalState.sessionId = data.session_id;
-                localStorage.setItem('sessionId', data.session_id);
+                saveSessionId(data.session_id);
             }
 
             // Connect to WebSocket session
@@ -19068,8 +19067,7 @@ function handleReferenceCheckComplete(data, cardId) {
     if (data.csv_s3_key) globalState.csvS3Key = data.csv_s3_key;
     if (data.config_s3_key) globalState.configS3Key = data.config_s3_key;
     if (data.session_id) {
-        globalState.sessionId = data.session_id;
-        localStorage.setItem('sessionId', data.session_id);
+        saveSessionId(data.session_id);
     }
 
     // Mark files as ready for validation

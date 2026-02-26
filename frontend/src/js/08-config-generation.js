@@ -1255,8 +1255,7 @@ async function startConfigGenerationWithContext(cardId, userAnswers) {
             
             // Update session ID from backend response
             if (uploadData.session_id) {
-                globalState.sessionId = uploadData.session_id;
-                localStorage.setItem('sessionId', globalState.sessionId);
+                saveSessionId(uploadData.session_id);
             }
             
             // Store the storage path for reference
