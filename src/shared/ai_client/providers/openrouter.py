@@ -5,7 +5,7 @@ import aiohttp
 from datetime import datetime
 from typing import Dict, Optional
 
-from ..utils import extract_json_from_text, validate_and_normalize_soft_schema, repair_json_with_haiku
+from ..utils import extract_json_from_text, validate_and_normalize_soft_schema, repair_json_with_haiku, parse_gemini_thinking_suffix
 from ..config import get_model_timeout, get_timeout_tier
 
 logger = logging.getLogger(__name__)
@@ -184,6 +184,18 @@ class OpenRouterProvider:
         """
         enforced_max_tokens = self.usage_handler.enforce_provider_token_limit(model, max_tokens)
 
+        # Parse thinking suffix for openrouter/gemini-3-flash-preview-* models.
+        # effective_model = model name without suffix (e.g. 'openrouter/gemini-3-flash-preview')
+        # thinking_budget = None for non-thinking models; int for gemini-3-flash-preview.
+        effective_model, thinking_budget = parse_gemini_thinking_suffix(model)
+
+        # Map openrouter/gemini-X → google/gemini-X for the OpenRouter API.
+        # The 'openrouter/' prefix is our internal routing marker; the actual
+        # OpenRouter API expects 'google/gemini-...' as the model identifier.
+        api_model = effective_model
+        if api_model.startswith('openrouter/'):
+            api_model = 'google/' + api_model[len('openrouter/'):]
+
         # Build prompt: always embed schema for reliable extraction
         final_prompt = prompt
         if schema and soft_schema:
@@ -208,7 +220,7 @@ Response format: Return ONLY the JSON object, nothing else."""
             }
 
             data = {
-                'model': model,
+                'model': api_model,  # normalized: openrouter/gemini-X → google/gemini-X
                 'messages': [{'role': 'user', 'content': final_prompt}],
                 'temperature': 0.1,
                 'max_tokens': enforced_max_tokens,
@@ -219,6 +231,15 @@ Response format: Return ONLY the JSON object, nothing else."""
                 # Zero Data Retention — only route to ZDR endpoints
                 'provider': {'zdr': True},
             }
+
+            # Pass thinking config for Gemini 3 Flash Preview via OpenRouter.
+            # OpenRouter forwards this to Google's thinkingConfig via the 'thinking' field.
+            if thinking_budget is not None:
+                data['thinking'] = {
+                    'type': 'enabled',
+                    'budget_tokens': thinking_budget,
+                }
+                logger.debug(f"[OPENROUTER] Thinking budget={thinking_budget} for {api_model}")
 
             timeout_seconds = get_model_timeout(model, timeout_override) or _DEFAULT_TIMEOUT
             logger.debug(f"[OPENROUTER] Calling {model}, timeout={timeout_seconds}s, soft_schema={soft_schema}")

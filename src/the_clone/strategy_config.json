@@ -62,12 +62,12 @@
       "stop_condition": null,
       "max_tokens_per_page": 512,
       "batch_extraction": true,
-      "synthesis_model": "gemini-2.5-flash",
+      "synthesis_model": "gemini-3-flash-preview",
       "max_results_per_search": 15,
       "bypass_global_source_limit": true
     },
     "extraction": {
-      "description": "Structured data extraction: Deep content + parallel processing + Gemini 2.5 synthesis",
+      "description": "Structured data extraction: Deep content + parallel processing + Gemini 3 synthesis",
       "breadth": "narrow",
       "depth": "extraction",
       "sources_per_batch": 10,
@@ -78,7 +78,7 @@
       "max_tokens_per_page": 8192,
       "batch_extraction": true,
       "use_search_api": true,
-      "synthesis_model": "gemini-2.5-flash",
+      "synthesis_model": "gemini-3-flash-preview",
       "parallel_extraction": true,
       "max_results_per_search": 10
     }

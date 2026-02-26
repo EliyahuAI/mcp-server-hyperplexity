@@ -136,15 +136,29 @@ class UsageHandler:
                 usage_data = response.get('usageMetadata', response.get('usage', {}))
                 prompt_tokens = max(0, int(usage_data.get('promptTokenCount', 0)))
                 candidates_tokens = max(0, int(usage_data.get('candidatesTokenCount', 0)))
-                total_tokens = max(0, int(usage_data.get('totalTokenCount', prompt_tokens + candidates_tokens)))
+                # Thinking tokens (thoughtsTokenCount) are billed at the output rate.
+                # Google docs: "Output price (including thinking tokens)".
+                # They appear separately from candidatesTokenCount and must be added
+                # to output_tokens so cost calculation uses the correct token count.
+                thoughts_tokens = max(0, int(usage_data.get('thoughtsTokenCount', 0)))
+                billable_output_tokens = candidates_tokens + thoughts_tokens
+                total_tokens = max(0, int(usage_data.get('totalTokenCount', prompt_tokens + billable_output_tokens)))
 
-                return {
+                result = {
                     'api_provider': 'gemini',
                     'model': model,
                     'input_tokens': prompt_tokens,
-                    'output_tokens': candidates_tokens,
-                    'total_tokens': total_tokens
+                    'output_tokens': billable_output_tokens,  # includes thinking tokens (billed at output rate)
+                    'total_tokens': total_tokens,
                 }
+                # Expose thinking breakdown for visibility/audit when present
+                if thoughts_tokens > 0:
+                    result['thoughts_token_count'] = thoughts_tokens
+                    result['candidates_token_count'] = candidates_tokens  # visible text only
+                    logger.debug(f"[GEMINI_TOKENS] {model}: input={prompt_tokens}, "
+                                 f"visible_output={candidates_tokens}, thinking={thoughts_tokens}, "
+                                 f"billable_output={billable_output_tokens}")
+                return result
 
             elif api_provider == 'vertex':
                 return self._extract_vertex_token_usage(response, model)
@@ -478,7 +492,10 @@ class UsageHandler:
                 'output_tokens': token_usage.get('output_tokens', 0),
                 'total_tokens': token_usage.get('total_tokens', 0),
                 'cache_creation_tokens': token_usage.get('cache_creation_tokens', 0),
-                'cache_read_tokens': token_usage.get('cache_read_tokens', 0)
+                'cache_read_tokens': token_usage.get('cache_read_tokens', 0),
+                # Gemini thinking model breakdown (0 for non-thinking models)
+                'thoughts_token_count': token_usage.get('thoughts_token_count', 0),
+                'candidates_token_count': token_usage.get('candidates_token_count', 0),
             },
             'costs': {
                 'actual': cost_data,

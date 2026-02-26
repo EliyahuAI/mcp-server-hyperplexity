@@ -13,7 +13,7 @@
         "max_boundary_distance": 2000
     },
     "reference_extraction": {
-        "model": "gemini-2.5-flash",
+        "model": "gemini-3-flash-preview-high",
         "max_tokens": 64000,
         "temperature": 0.2,
         "timeout_seconds": 120,

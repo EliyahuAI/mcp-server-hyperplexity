@@ -6,7 +6,7 @@
 
   "interview": {
     "_comment": "Interview phase - AI interacts with user to understand table structure and validation requirements",
-    "model": ["gemini-2.5-flash", "claude-haiku-4-5"],
+    "model": ["gemini-3-flash-preview-high", "openrouter/gemini-3-flash-preview-high", "moonshotai/kimi-k2.5"],
     "max_tokens": 32000,
     "use_web_search": false,
     "_note_web_search": "Web search is disabled for interview phase - fast local analysis only"

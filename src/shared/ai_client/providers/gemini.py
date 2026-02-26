@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional, Tuple
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 
-from ..utils import extract_json_from_text, validate_and_normalize_soft_schema, repair_json_with_haiku
+from ..utils import extract_json_from_text, validate_and_normalize_soft_schema, repair_json_with_haiku, parse_gemini_thinking_suffix
 from ..config import get_model_timeout, get_timeout_tier
 
 logger = logging.getLogger(__name__)
@@ -564,6 +564,11 @@ class GeminiProvider:
         """Make a single call to Gemini via Vertex AI."""
         enforced_max_tokens = self.usage_handler.enforce_provider_token_limit(model, max_tokens)
 
+        # Parse thinking-level suffix for gemini-3-flash-preview-{level} models.
+        # effective_model = base model name (suffix stripped) used in the API URL.
+        # thinking_budget = None for non-thinking models; int for gemini-3-flash-preview.
+        effective_model, thinking_budget = parse_gemini_thinking_suffix(model)
+
         # Build request
         request_body = {
             "contents": [{
@@ -576,9 +581,15 @@ class GeminiProvider:
             }
         }
 
-        # Explicitly disable thinking for Gemini 2.5 models to prevent thinking tokens
-        # from counting against maxOutputTokens (thinkingBudget: 0 = disabled)
-        if '2.5' in model or '2-5' in model:
+        # Thinking config:
+        # - gemini-3-flash-preview models: use suffix-based budget (parsed above)
+        # - gemini-2.5 models: explicitly disable thinking (prevents token budget surprises)
+        if thinking_budget is not None:
+            request_body["generationConfig"]["thinkingConfig"] = {"thinkingBudget": thinking_budget}
+            logger.debug(f"[GEMINI] Thinking budget={thinking_budget} tokens for {effective_model}")
+        elif '2.5' in model or '2-5' in model:
+            # Explicitly disable thinking for Gemini 2.5 models to prevent thinking tokens
+            # from counting against maxOutputTokens (thinkingBudget: 0 = disabled)
             request_body["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
 
         # Track schema conversions for later restoration
@@ -612,25 +623,30 @@ Return raw JSON (first char {{, last char }}, parseable by json.loads() as-is):
         debug_request = {'model': model, 'prompt': prompt, 'max_tokens': enforced_max_tokens}
 
         # Get model-specific timeout (with optional override)
+        # Use original model name for timeout lookup (CSV has entries for each variant)
         timeout_seconds = get_model_timeout(model, timeout_override)
         logger.debug(f"[GEMINI] Using timeout {get_timeout_tier(model)} for {model}{' (override)' if timeout_override else ''}")
 
-        # Get per-model semaphore for concurrency control
-        semaphore = get_gemini_semaphore(model)
+        # Get per-model semaphore for concurrency control.
+        # Use effective_model (suffix-stripped) so all thinking levels share one semaphore.
+        semaphore = get_gemini_semaphore(effective_model)
 
         try:
-            # Build URL and headers based on endpoint choice
+            # Build URL and headers based on endpoint choice.
+            # Use effective_model (suffix-stripped) in the API URL — the API doesn't
+            # know about our internal thinking-level suffixes.
             if self.use_ai_studio:
                 # Google AI Studio: API key auth, global endpoint, higher rate limits
-                url = f"{self.AI_STUDIO_BASE_URL}/models/{model}:generateContent?key={self.ai_studio_api_key}"
+                url = f"{self.AI_STUDIO_BASE_URL}/models/{effective_model}:generateContent?key={self.ai_studio_api_key}"
                 headers = {
                     'Content-Type': 'application/json'
                 }
-                logger.debug(f"[GEMINI] Using AI Studio endpoint for {model}")
+                logger.debug(f"[GEMINI] Using AI Studio endpoint for {effective_model}"
+                             + (f" (thinking={thinking_budget})" if thinking_budget is not None else ""))
             else:
                 # Vertex AI: OAuth2 auth, regional endpoint
                 access_token = await self._get_access_token()
-                url = f"https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{model}:generateContent"
+                url = f"https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{effective_model}:generateContent"
                 headers = {
                     'Authorization': f'Bearer {access_token}',
                     'Content-Type': 'application/json'

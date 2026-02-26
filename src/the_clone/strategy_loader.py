@@ -96,8 +96,8 @@ def get_models_for_tier(provider: str, synthesis_tier: str, strategy: Dict = Non
     tier_config = provider_config['tiers'][synthesis_tier]
     extraction_model = provider_config['default_extraction_model']
 
-    # Use Gemini 2.0 Flash for initial decision across all providers (fast, cost-effective routing)
-    routing_model = 'gemini-2.5-flash-lite'
+    # Use Gemini 3 Flash Preview for initial decision (medium thinking, best reasoning at low cost)
+    routing_model = 'gemini-3-flash-preview'
 
     # Check if strategy overrides synthesis model (for extraction mode)
     synthesis_model = tier_config['synthesis']
@@ -146,25 +146,29 @@ def get_model_with_backups(model, provider: str = None) -> list:
     # If already a list, return as-is (pre-defined chain)
     if isinstance(model, list):
         return model
-    # Gemini 2.5 Flash Lite (primary extraction model) → other 65K+ models → Haiku
-    if model == 'gemini-2.5-flash-lite':
-        if provider == 'baseten':
-            return ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'deepseek-v3.2-baseten', 'claude-haiku-4-5']
-        else:
-            return ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'deepseek-v3.2', 'claude-haiku-4-5']
 
-    # Gemini 2.5 Flash (synthesis/complex tasks) → other 65K+ models → Sonnet
-    # NOTE: Removed Haiku from chain - too weak for synthesis, causes poor results
+    # Gemini 3 Flash Preview HIGH thinking (conversation / config-gen / table-maker)
+    # → OpenRouter fallback → Kimi K2.5 (no Gemini 2.5 — they have different capabilities)
+    if model == 'gemini-3-flash-preview-high':
+        return ['gemini-3-flash-preview-high', 'openrouter/gemini-3-flash-preview-high', 'moonshotai/kimi-k2.5']
+
+    # Gemini 3 Flash Preview MEDIUM thinking (initial decision / routing)
+    # → OpenRouter fallback → Kimi K2.5
+    if model == 'gemini-3-flash-preview':
+        return ['gemini-3-flash-preview', 'openrouter/gemini-3-flash-preview', 'moonshotai/kimi-k2.5']
+
+    # Gemini 2.5 Flash (redirected to Gemini 3 — superseded for all synthesis tasks)
     if model == 'gemini-2.5-flash':
-        if provider == 'baseten':
-            return ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'deepseek-v3.2-baseten', 'claude-sonnet-4-6']
-        else:
-            return ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'deepseek-v3.2', 'claude-sonnet-4-6']
+        return ['gemini-3-flash-preview', 'openrouter/gemini-3-flash-preview']
 
-    # Other Gemini models → standard Gemini chain
-    # NOTE: Use Sonnet instead of Haiku for better synthesis quality
+    # Gemini 2.5 Flash Lite (primary extraction model) → OpenRouter fallback → MiniMax → Haiku
+    # Keeps gemini-2.5-flash-lite as primary; Gemini 3 is too expensive for bulk extraction.
+    if model == 'gemini-2.5-flash-lite':
+        return ['gemini-2.5-flash-lite', 'openrouter/gemini-2.5-flash-lite', 'minimax/minimax-m2.5', 'claude-haiku-4-5']
+
+    # Other Gemini models → Gemini 3 chain (catch-all for any other gemini-* variants)
     if model.startswith('gemini-'):
-        return [model, 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'claude-sonnet-4-6']
+        return [model, 'gemini-3-flash-preview', 'openrouter/gemini-3-flash-preview', 'claude-sonnet-4-6']
 
     # DeepSeek Baseten → DeepSeek → Claude Sonnet
     if model == 'deepseek-v3.2-baseten':

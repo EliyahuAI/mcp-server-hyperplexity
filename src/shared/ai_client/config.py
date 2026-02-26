@@ -40,6 +40,11 @@ MODEL_TIMEOUTS: Dict[str, int] = {
     'claude-opus-4-6': TIMEOUT_SLOW,
     'gemini-2.5-flash': TIMEOUT_SLOW,
     'gemini-1.5-pro': TIMEOUT_SLOW,
+    # Gemini 3 Flash Preview (thinking model — needs extra time for reasoning)
+    'gemini-3-flash-preview': TIMEOUT_SLOW,
+    'gemini-3-flash-preview-low': TIMEOUT_SLOW,
+    'gemini-3-flash-preview-high': TIMEOUT_SLOW,
+    'gemini-3-flash-preview-min': TIMEOUT_SLOW,
 }
 
 def get_model_timeout(model: str, override: Optional[int] = None) -> int:
@@ -104,13 +109,14 @@ def get_timeout_tier(model: str) -> str:
 MODEL_HIERARCHY = [
     "claude-opus-4-6",
     "claude-sonnet-4-6",
+    "gemini-3-flash-preview",      # Gemini 3 Flash Preview (thinking model, strong reasoning)
     "the-clone-baseten", # hybrid perplexity/deepseek/claude via baseten
     "the-clone-claude", # hybrid perplexity/claude
     "the-clone", # hybrid perplexity/deepseek/claude option
     "deepseek-v3.2-baseten",      # Baseten-hosted DeepSeek V3.2
     "deepseek-v3.2",         # Ultra-low cost, most capable DeepSeek
     "sonar-pro",
-    "gemini-2.5-flash-lite",       # Google's latest multimodal model (FREE in preview!) 
+    "gemini-2.5-flash-lite",       # Google's latest multimodal model (FREE in preview!)
     "claude-haiku-4-5",
     "sonar"
 ]

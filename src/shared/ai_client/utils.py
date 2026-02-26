@@ -83,6 +83,48 @@ def normalize_openrouter_model(model: str) -> str:
     """Expand OpenRouter shortform aliases to full vendor/model-name format."""
     return _OPENROUTER_SHORTFORMS.get(model, model)
 
+
+# Thinking budget by suffix keyword — applied to gemini-3-flash-preview models only.
+# Other Gemini models (2.5 Flash etc.) don't support configurable thinking budgets.
+_GEMINI_THINKING_BUDGETS = {
+    'min': 0,       # Thinking disabled
+    'low': 1024,    # Minimal thinking
+    'high': 24576,  # Maximum thinking
+}
+_GEMINI_THINKING_DEFAULT = 8192  # bare model name = medium thinking
+
+
+def parse_gemini_thinking_suffix(model: str):
+    """
+    Parse thinking-level suffix from a Gemini model name.
+
+    Suffix scheme (applied to gemini-3-flash-preview models only):
+      -min  → thinkingBudget=0     (disabled)
+      -low  → thinkingBudget=1024  (light)
+      bare  → thinkingBudget=8192  (medium, default)
+      -high → thinkingBudget=24576 (heavy)
+
+    For all other models, returns (model, None) — no thinking config injected.
+    Works on names with or without a vendor prefix:
+      'gemini-3-flash-preview-high'            → ('gemini-3-flash-preview', 24576)
+      'openrouter/gemini-3-flash-preview-high' → ('openrouter/gemini-3-flash-preview', 24576)
+      'gemini-2.5-flash-lite'                  → ('gemini-2.5-flash-lite', None)
+
+    Returns:
+        Tuple of (base_model_name: str, thinking_budget: int | None)
+    """
+    if 'gemini-3-flash-preview' not in model:
+        return model, None
+
+    for suffix, budget in _GEMINI_THINKING_BUDGETS.items():
+        if model.endswith(f'-{suffix}'):
+            base = model[:-(len(suffix) + 1)]  # strip '-{suffix}'
+            return base, budget
+
+    # No suffix → default medium thinking
+    return model, _GEMINI_THINKING_DEFAULT
+
+
 def normalize_anthropic_model(model: str) -> str:
     """Convert anthropic/ format to direct API format if needed."""
     if model.startswith('anthropic/'):
