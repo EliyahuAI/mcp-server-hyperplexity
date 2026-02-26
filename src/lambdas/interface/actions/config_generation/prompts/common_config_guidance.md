@@ -8,9 +8,9 @@ This document contains shared guidelines used by both new config creation and re
 - **IMPORTANT**: Only specify a `model` in a search group when you need something OTHER than `the-clone`. If omitted, `the-clone` is automatically used.
 
 - **When to Override the Default**:
-  - Calculation/light reasoning → `gemini-2.0-flash`
+  - Calculation/light reasoning → `gemini-2.5-flash-lite`
   - Advanced PhD level synthesis with web → `the-clone-claude` (forces Claude over Deepseek, with web search)
-  - Advanced PhD+ level synthesis (without web) → `claude-sonnet-4-5` or `claude-opus-4-6`
+  - Advanced PhD+ level synthesis (without web) → `claude-sonnet-4-6` or `claude-opus-4-6`
 
 - **Recommended QC Approach**: `deepseek-v3.2` is ultra-low cost with excellent quality. Use `the-clone` for QC only when you need additional web research capability (not as first approach).
 
@@ -133,7 +133,7 @@ QC provides automated review of validation outputs to improve accuracy and consi
 
 ### QC Configuration Options
 - **Enable QC**: Set `enable_qc: true` to enable automated quality control review
-- **QC Models**: Default is `["deepseek-v3.2", "claude-sonnet-4-5"]` for ultra-low cost with quality fallback
+- **QC Models**: Default is `["deepseek-v3.2", "claude-sonnet-4-6"]` for ultra-low cost with quality fallback
 - **Token Allocation**: Default 8K base + 4K per validated column (excluding ID fields)
 
 ### When to Configure QC

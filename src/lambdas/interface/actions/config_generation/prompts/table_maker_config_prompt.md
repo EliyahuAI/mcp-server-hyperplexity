@@ -220,7 +220,7 @@ For EACH column (no exceptions):
 ### Step 5: Select Models, Context, and QC Settings
 
 Follow the guidance from Common Configuration Guidance above:
-- **Model Selection**: stick with `the-clone` unless simple calculation `gemeni-2.0-flash` or advanced analysis needed
+- **Model Selection**: stick with `the-clone` unless simple calculation `gemini-2.5-flash-lite` or advanced analysis needed
 - **QC Settings**: Enable `enable_qc: true` (recommended for Table Maker configs)
 
 ### Step 6: Write Summary
