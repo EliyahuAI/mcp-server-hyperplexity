@@ -13,9 +13,10 @@ logger = logging.getLogger(__name__)
 # Timeouts in seconds for different model tiers
 # These can be overridden via environment variables or at runtime
 
-TIMEOUT_FAST = 60      # Fast models: Haiku, Gemini 2.0 Flash
+TIMEOUT_FAST = 60      # Fast models: Haiku, Gemini Flash Lite
 TIMEOUT_MEDIUM = 240   # Medium models: Sonar, Sonar Pro (4 mins)
 TIMEOUT_SLOW = 300     # Slow models: DeepSeek, Anthropic, Gemini 2.5 (5 mins)
+TIMEOUT_VERY_SLOW = 480  # Very slow models: Kimi K2.5 on OpenRouter (8 mins — large prompts)
 TIMEOUT_DEFAULT = 300  # Default timeout for unknown models
 
 # Model-specific timeout mapping
@@ -45,6 +46,11 @@ MODEL_TIMEOUTS: Dict[str, int] = {
     'gemini-3-flash-preview-low': TIMEOUT_SLOW,
     'gemini-3-flash-preview-high': TIMEOUT_SLOW,
     'gemini-3-flash-preview-min': TIMEOUT_SLOW,
+
+    # Very slow models (8 mins) — slow on large prompts via OpenRouter
+    'moonshotai/kimi-k2.5': TIMEOUT_VERY_SLOW,
+    'kimi-k2.5': TIMEOUT_VERY_SLOW,
+    'minimax/minimax-m2.5': TIMEOUT_VERY_SLOW,
 }
 
 def get_model_timeout(model: str, override: Optional[int] = None) -> int:
