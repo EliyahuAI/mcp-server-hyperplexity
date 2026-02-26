@@ -95,7 +95,7 @@ def register(server):
         session_id: str,
         ctx: Context,
         expected_seconds: int = 120,
-        timeout_seconds: int = 600,
+        timeout_seconds: int = 900,
         poll_interval: int = 8,
     ) -> list[types.TextContent]:
         """Wait for a conversation turn to complete, emitting live synthetic progress.
@@ -121,7 +121,8 @@ def register(server):
           Upload interview first turn (CSV analysis + plan): ~90–150s.
           Follow-up confirmations ("yes, proceed"): ~30–60s.
         poll_interval:    seconds between status checks (default 8).
-        timeout_seconds:  max wall time before returning (default 600).
+        timeout_seconds:  max wall time before returning (default 900).
+          Upload interview turns can take up to 15 minutes — set accordingly.
         """
 
         def _synthetic_progress(elapsed: float, expected: float) -> float:

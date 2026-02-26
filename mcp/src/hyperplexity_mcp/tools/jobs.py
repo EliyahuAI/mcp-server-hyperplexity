@@ -65,18 +65,25 @@ def register(server):
                     "_guidance": {
                         "summary": (
                             "No validation config found for this session. "
-                            "For table-maker sessions, the preview is auto-queued once execution "
-                            "finishes — do NOT call create_job(). "
-                            "Use wait_for_job(session_id) to track the table-maker and preview "
-                            "phases with live progress until preview_complete."
+                            "This happens in two cases: "
+                            "(1) Upload-interview session: config generation is still in progress — "
+                            "the backend is building the validation config from the interview. "
+                            "Do NOT retry create_job. "
+                            "(2) Table-maker session: the table is still being built and the "
+                            "preview is not yet auto-queued. "
+                            "In both cases, call wait_for_job(session_id) — it detects the "
+                            "intermediate phase, waits for config generation or table-making to "
+                            "finish, and tracks the preview phase automatically until "
+                            "preview_complete."
                         ),
                         "next_steps": [
                             {
                                 "tool": "wait_for_job",
                                 "params": {"job_id": session_id},
                                 "note": (
-                                    "Preferred: handles the table-maker → preview phase boundary "
-                                    "automatically and blocks until preview_complete."
+                                    "Preferred: handles the config-gen → preview and "
+                                    "table-maker → preview phase boundaries automatically. "
+                                    "Blocks until preview_complete."
                                 ),
                             }
                         ],
@@ -128,7 +135,7 @@ def register(server):
     async def wait_for_job(
         job_id: str,
         ctx: Context,
-        timeout_seconds: int = 600,
+        timeout_seconds: int = 900,
         poll_interval: int = 10,
     ) -> list[types.TextContent]:
         """Wait for a job to reach a terminal state, emitting live MCP progress notifications.
@@ -170,7 +177,9 @@ def register(server):
         Returns the same payload shape as get_job_status so downstream tools
         (approve_validation, get_results, etc.) apply directly.
 
-        timeout_seconds: max wall time before returning last known state (default 600)
+        timeout_seconds: max wall time before returning last known state (default 900).
+          Upload-interview + config-gen phases and large table previews can take up
+          to 15 minutes — set timeout_seconds=900 or higher for long-running jobs.
         poll_interval:   seconds between poll cycles (default 10)
         """
         # ── Helpers: phase and terminal classification ────────────────────────
