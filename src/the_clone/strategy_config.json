@@ -200,24 +200,24 @@
       "default_extraction_model": "gemini-2.5-flash-lite",
       "tiers": {
         "tier1": {
-          "synthesis": "gemini-3-flash-preview-high",
+          "synthesis": "gemini-3-flash-preview-low",
           "label": "Fast",
-          "description": "Primary synthesis via Gemini 3 Flash high-thinking (AI Studio → OpenRouter)"
+          "description": "Fast synthesis via Gemini 3 Flash low-thinking (AI Studio → OpenRouter)"
         },
         "tier2": {
-          "synthesis": "gemini-3-flash-preview",
+          "synthesis": "gemini-3-flash-preview-high",
           "label": "Balanced",
-          "description": "Balanced synthesis with medium thinking budget (AI Studio → OpenRouter)"
+          "description": "High-thinking synthesis via Gemini 3 Flash (AI Studio → OpenRouter)"
         },
         "tier3": {
-          "synthesis": "gemini-2.5-flash-lite",
+          "synthesis": "claude-sonnet-4-6",
           "label": "Strong",
-          "description": "Cost-optimized fallback via Gemini 2.5 Flash Lite"
+          "description": "Strong reasoning fallback via Claude Sonnet"
         },
         "tier4": {
-          "synthesis": "moonshotai/kimi-k2.5",
+          "synthesis": "claude-opus-4-6",
           "label": "Deepest",
-          "description": "Cross-provider fallback via Kimi K2.5 (OpenRouter)"
+          "description": "Maximum capability fallback via Claude Opus"
         }
       }
     }
