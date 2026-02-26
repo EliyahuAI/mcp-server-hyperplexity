@@ -157,13 +157,13 @@ def get_model_with_backups(model, provider: str = None) -> list:
     if model == 'gemini-3-flash-preview':
         return ['gemini-3-flash-preview', 'openrouter/gemini-3-flash-preview', 'moonshotai/kimi-k2.5']
 
-    # Gemini 3 Flash Preview LOW thinking → OpenRouter mirror → medium fallback
+    # Gemini 3 Flash Preview LOW thinking → OpenRouter mirror → different provider (Kimi)
     if model == 'gemini-3-flash-preview-low':
-        return ['gemini-3-flash-preview-low', 'openrouter/gemini-3-flash-preview-low', 'gemini-3-flash-preview']
+        return ['gemini-3-flash-preview-low', 'openrouter/gemini-3-flash-preview-low', 'moonshotai/kimi-k2.5']
 
-    # Gemini 3 Flash Preview MIN thinking (no budget) → OpenRouter mirror → medium fallback
+    # Gemini 3 Flash Preview MIN thinking (no budget) → OpenRouter mirror → different provider (Kimi)
     if model == 'gemini-3-flash-preview-min':
-        return ['gemini-3-flash-preview-min', 'openrouter/gemini-3-flash-preview-min', 'gemini-3-flash-preview']
+        return ['gemini-3-flash-preview-min', 'openrouter/gemini-3-flash-preview-min', 'moonshotai/kimi-k2.5']
 
     # Gemini 2.5 Flash (redirected to Gemini 3 — superseded for all synthesis tasks)
     if model == 'gemini-2.5-flash':

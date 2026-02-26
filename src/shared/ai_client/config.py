@@ -141,13 +141,14 @@ MODEL_BACKUPS: Dict[str, List[str]] = {
     "openrouter/gemini-3-flash-preview": ["gemini-3-flash-preview", "claude-sonnet-4-6"],
 
     # Gemini 3 Flash Preview — LOW thinking (light reasoning)
-    "gemini-3-flash-preview-low":            ["openrouter/gemini-3-flash-preview-low", "gemini-3-flash-preview"],
-    "openrouter/gemini-3-flash-preview-low": ["gemini-3-flash-preview-low", "gemini-3-flash-preview"],
+    # Second fallback is cross-provider (Claude), not a budget variant on the same Vertex endpoint
+    "gemini-3-flash-preview-low":            ["openrouter/gemini-3-flash-preview-low", "claude-sonnet-4-6"],
+    "openrouter/gemini-3-flash-preview-low": ["gemini-3-flash-preview-low", "claude-sonnet-4-6"],
 
     # Gemini 3 Flash Preview — MIN thinking (fast inference, no thinking budget)
-    # Same model family — fall back to medium thinking variant, not a different family
-    "gemini-3-flash-preview-min":            ["openrouter/gemini-3-flash-preview-min", "gemini-3-flash-preview"],
-    "openrouter/gemini-3-flash-preview-min": ["gemini-3-flash-preview-min", "gemini-3-flash-preview"],
+    # Second fallback is cross-provider (Claude), not a budget variant on the same Vertex endpoint
+    "gemini-3-flash-preview-min":            ["openrouter/gemini-3-flash-preview-min", "claude-sonnet-4-6"],
+    "openrouter/gemini-3-flash-preview-min": ["gemini-3-flash-preview-min", "claude-sonnet-4-6"],
 
     # Claude — strong reasoning
     "claude-opus-4-6":   ["claude-sonnet-4-6", "gemini-3-flash-preview-high"],
