@@ -93,6 +93,7 @@ deepseek*,vertex,4,true,50,150,100,1.3,0.7,5,2,0.28,0.40,120000,Vertex: Generic 
 # THE-CLONE TIER: Custom DeepSeek routing (via ai_client to Vertex/Baseten)
 the-clone-claude*,anthropic,1,true,20,100,50,1.3,0.6,5,2,3.00,15.00,64000,The-Clone: Claude variant - uses Anthropic API
 the-clone-baseten*,baseten,2,true,20,100,50,1.3,0.6,5,2,0.30,0.45,120000,The-Clone: Baseten variant - DeepSeek via Baseten
+the-clone-flash*,gemini,1,true,20,100,50,1.4,0.6,5,2,0.50,3.00,65535,The-Clone: Flash variant - Gemini 3 Flash synthesis (AI Studio → OpenRouter)
 the-clone-kimi*,openrouter,2,true,20,100,50,1.3,0.6,5,2,0.45,2.20,66000,The-Clone: Kimi K2.5 variant - Kimi synthesis via OpenRouter
 the-clone*,vertex,2,true,20,100,50,1.3,0.6,5,2,0.28,0.40,120000,The-Clone: Default - DeepSeek V3.2 via Vertex AI
 

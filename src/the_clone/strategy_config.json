@@ -205,9 +205,9 @@
           "description": "Fast synthesis via Gemini 3 Flash low-thinking (AI Studio → OpenRouter)"
         },
         "tier2": {
-          "synthesis": "gemini-3-flash-preview-high",
+          "synthesis": "gemini-3-flash-preview",
           "label": "Balanced",
-          "description": "High-thinking synthesis via Gemini 3 Flash (AI Studio → OpenRouter)"
+          "description": "Medium-thinking synthesis via Gemini 3 Flash (AI Studio → OpenRouter)"
         },
         "tier3": {
           "synthesis": "claude-sonnet-4-6",

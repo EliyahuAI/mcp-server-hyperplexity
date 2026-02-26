@@ -2,11 +2,11 @@
   "max_tokens": 28000,
   "max_tokens_default": 6000,
   "tokens_per_validated_column_default": 4000,
-  "model": ["deepseek-v3.2", "gemini-3-flash-preview-high", "claude-sonnet-4-6"],
+  "model": ["deepseek-v3.2", "gemini-3-flash-preview", "claude-sonnet-4-6"],
   "qc_settings": {
     "enable_qc": true,
     "max_tokens_default": 16000,
     "tokens_per_validated_column_default":4000,
-    "model": ["deepseek-v3.2","claude-sonnet-4-5"]
+    "model": ["moonshotai/kimi-k2.5", "claude-sonnet-4-6"]
   }
 }

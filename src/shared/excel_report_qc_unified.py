@@ -908,7 +908,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                     qc_applied = True
                                     logger.debug(f"[QC_APPLIED] Row {row_key}, Col {col_name}: Using QC value '{updated_value}'")
                                 else:
-                                    logger.error(f"[QC_NOT_APPLIED] Row {row_key}, Col {col_name}: QC available but not applied - qc_applied={field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
+                                    logger.debug(f"[QC_NO_CHANGE] Row {row_key}, Col {col_name}: QC reviewed but kept value unchanged - qc_applied={field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
                             else:
                                 # Check if this is validation data (should have QC) vs preview data (expected no QC)
                                 row_validation_data = validation_results.get(row_key) if isinstance(validation_results, dict) else None

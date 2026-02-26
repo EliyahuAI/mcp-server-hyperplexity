@@ -54,8 +54,8 @@
 
   "column_definition": {
     "_comment": "Step 1 - Defines column specifications and search strategy using background research output as input. Generates initial rows from available data.",
-    "model": "gemini-3-flash-preview-high",
-    "_note_model": "Uses gemini-3-flash-preview-high (high thinking) for quality column definition (no web search needed)",
+    "model": "gemini-3-flash-preview",
+    "_note_model": "Uses gemini-3-flash-preview (medium thinking, 8192 tokens) for column definition — -high timed out at 64K output",
     "max_tokens": 64000,
     "_note_max_tokens": "Set to 64000 to handle large entity counts (100+ rows). Word limit in prompt calculated as max_tokens * 0.75 * 0.5 (aggressive buffer).",
     "show_preview_table": false,
