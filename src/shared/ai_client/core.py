@@ -11,12 +11,14 @@ from .config import (
     get_perplexity_api_key,
     get_baseten_api_key,
     get_google_ai_studio_api_key,
+    get_openrouter_api_key,
     setup_vertex_credentials
 )
 from .utils import (
     determine_api_provider,
     normalize_anthropic_model,
     normalize_vertex_model,
+    normalize_openrouter_model,
     extract_structured_response,
     extract_citations_from_response,
     extract_citations_from_perplexity_response,
@@ -31,6 +33,7 @@ from .providers.vertex import VertexProvider
 from .providers.baseten import BasetenProvider
 from .providers.clone import CloneProvider
 from .providers.gemini import GeminiProvider
+from .providers.openrouter import OpenRouterProvider
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +116,18 @@ class AIAPIClient:
         except Exception as e:
              logger.warning(f"Failed to initialize Baseten provider: {e}")
              self.baseten = None
+
+        # Initialize OpenRouter provider (optional — only if API key available)
+        try:
+            openrouter_key = get_openrouter_api_key()
+            if openrouter_key:
+                self.openrouter = OpenRouterProvider(openrouter_key, self.cache_handler, self.usage_handler, ai_client=self)
+            else:
+                logger.debug("OpenRouter API key not configured — provider disabled")
+                self.openrouter = None
+        except Exception as e:
+            logger.warning(f"Failed to initialize OpenRouter provider: {e}")
+            self.openrouter = None
 
         # Initialize Clone provider
         self.clone = CloneProvider(self, self.cache_handler, self.usage_handler)
@@ -354,9 +369,11 @@ class AIAPIClient:
             try:
                 api_provider = determine_api_provider(current_model)
                 current_model_normalized = normalize_anthropic_model(current_model)
-                
-                if api_provider == 'vertex': 
+
+                if api_provider == 'vertex':
                      current_model_normalized = normalize_vertex_model(current_model)
+                elif api_provider == 'openrouter':
+                     current_model_normalized = normalize_openrouter_model(current_model)
 
                 cache_key = self.cache_handler.get_cache_key(prompt, current_model_normalized, schema, context, max_web_searches,
                                                soft_schema, include_domains, exclude_domains) if use_cache else None
@@ -450,6 +467,12 @@ class AIAPIClient:
                     # Force soft_schema for Baseten DeepSeek V3.2 due to potential native JSON issues or consistency
                     use_soft_schema_for_baseten = True
                     result = await self.baseten.make_single_call(effective_prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 64000, use_soft_schema_for_baseten, timeout)
+                elif api_provider == 'openrouter':
+                    if not self.openrouter: continue
+                    # Always force soft_schema: MiniMax M2.5 ignores json_schema mode;
+                    # Kimi K2.5 supports it but soft_schema is equally reliable.
+                    # current_model_normalized resolves shortforms (e.g. kimi-k2.5 → moonshotai/kimi-k2.5)
+                    result = await self.openrouter.make_single_call(effective_prompt, schema, current_model_normalized, use_cache, cache_key, call_start_time, max_tokens or 64000, soft_schema=True, timeout_override=timeout)
                 elif api_provider == 'clone':
                     result = await self.clone.make_structured_call(effective_prompt, current_model, use_cache, cache_key, call_start_time, schema, soft_schema, debug_name, include_domains, exclude_domains, use_code_extraction, findall, extraction, findall_iterations)
                 else:
@@ -462,7 +485,7 @@ class AIAPIClient:
                     result['attempted_models'] = attempted_models
 
                     # Normalize response format for compatibility FIRST
-                    if api_provider in ['anthropic', 'gemini', 'baseten', 'vertex']:
+                    if api_provider in ['anthropic', 'gemini', 'baseten', 'vertex', 'openrouter']:
                         # Convert to unified format
                         import json
                         api_response = result['response']
@@ -483,7 +506,7 @@ class AIAPIClient:
 
                     # Cache the VALIDATED response (after normalization and validation)
                     # This ensures cache hits don't need re-validation/repair
-                    if api_provider in ['anthropic', 'gemini', 'baseten', 'vertex']:
+                    if api_provider in ['anthropic', 'gemini', 'baseten', 'vertex', 'openrouter']:
                         if use_cache and cache_key and not result.get('is_cached', False):
                             processing_time = result.get('processing_time', 0)
                             token_usage = result.get('token_usage', {})

@@ -168,6 +168,32 @@
           "description": "Deepest analysis for hardest problems"
         }
       }
+    },
+    "kimi": {
+      "description": "Gemini extraction + Kimi K2.5 synthesis via OpenRouter",
+      "default_extraction_model": "gemini-2.5-flash-lite",
+      "tiers": {
+        "tier1": {
+          "synthesis": "moonshotai/kimi-k2.5",
+          "label": "Fast",
+          "description": "Fast synthesis via Kimi K2.5 (OpenRouter)"
+        },
+        "tier2": {
+          "synthesis": "moonshotai/kimi-k2.5",
+          "label": "Balanced",
+          "description": "Balanced performance via Kimi K2.5 (OpenRouter)"
+        },
+        "tier3": {
+          "synthesis": "claude-sonnet-4-6",
+          "label": "Strong",
+          "description": "Strong reasoning - falls back to Claude Sonnet"
+        },
+        "tier4": {
+          "synthesis": "claude-opus-4-6",
+          "label": "Deepest",
+          "description": "Deepest analysis - falls back to Claude Opus"
+        }
+      }
     }
   }
 }

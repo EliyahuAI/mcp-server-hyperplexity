@@ -250,6 +250,10 @@ class CacheHandler:
             is_refusal = error and ('[REFUSAL]' in str(error) or 'stop_reason=refusal' in str(error))
             if is_refusal:
                 path = "debug/refusals" if self.use_unified_structure else "api_debug/refusals"
+            elif api_provider == 'openrouter' and '/' in model:
+                # Subfolder per vendor: debug/openrouter/minimax/, debug/openrouter/moonshotai/
+                vendor = model.split('/')[0]
+                path = f"debug/{api_provider}/{vendor}" if self.use_unified_structure else f"api_debug/{api_provider}/{vendor}"
             else:
                 path = f"debug/{api_provider}" if self.use_unified_structure else f"api_debug/{api_provider}"
 
@@ -284,7 +288,11 @@ class CacheHandler:
                 filename = f"{timestamp}_{model_clean}.md"
 
             # Store in debug folder alongside JSON debug files
-            path = f"debug/{api_provider}" if self.use_unified_structure else f"api_debug/{api_provider}"
+            if api_provider == 'openrouter' and '/' in model:
+                vendor = model.split('/')[0]
+                path = f"debug/{api_provider}/{vendor}" if self.use_unified_structure else f"api_debug/{api_provider}/{vendor}"
+            else:
+                path = f"debug/{api_provider}" if self.use_unified_structure else f"api_debug/{api_provider}"
             s3_key = f"{path}/{filename}"
 
             async with self.s3_session.client('s3') as s3_client:

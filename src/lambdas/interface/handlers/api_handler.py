@@ -906,13 +906,43 @@ def _handle_get_job_status(job_id, email, query_params, meta):
         quoted      = ce.get("quoted_validation_cost")
         discount    = ce.get("discount", 0)
         cost_to_show = effective if effective is not None else quoted
+        total_rows = pd.get("total_rows")
         data["cost_estimate"] = {
             "estimated_total_cost_usd": cost_to_show,
-            "estimated_rows": pd.get("total_rows"),
+            "estimated_rows": total_rows,
         }
         if discount:
             data["cost_estimate"]["discount_usd"] = discount
             data["cost_estimate"]["pre_discount_cost_usd"] = quoted
+        # Surface the estimated full-validation time for the MCP layer (Issue #6).
+        # background_handler already computes this and stores it in cost_estimates as
+        # "estimated_validation_time" (seconds) and "estimated_validation_time_minutes".
+        # Prefer the pre-computed backend value; fall back to a simple extrapolation
+        # from the actual preview processing time if the backend value is absent.
+        est_time_s = ce.get("estimated_validation_time")
+        if not est_time_s:
+            est_time_mins = (
+                ce.get("estimated_validation_time_minutes")
+                or record.get("estimated_validation_time_minutes")
+            )
+            if est_time_mins:
+                try:
+                    est_time_s = float(est_time_mins) * 60.0
+                except (ValueError, TypeError):
+                    est_time_s = None
+        if not est_time_s:
+            # Last-resort extrapolation: (preview_time / 3 preview rows) * total_rows
+            preview_time_s = ce.get("actual_processing_time_seconds") or record.get("run_time_s")
+            if preview_time_s and total_rows:
+                try:
+                    est_time_s = float(preview_time_s) / 3.0 * int(total_rows)
+                except (ValueError, TypeError, ZeroDivisionError):
+                    est_time_s = None
+        if est_time_s:
+            try:
+                data["cost_estimate"]["estimated_validation_time_seconds"] = round(float(est_time_s))
+            except (ValueError, TypeError):
+                pass
         data["next_steps"] = {
             "approve_url": f"/v1/jobs/{job_id}/validate",
             "requires_approval": True,

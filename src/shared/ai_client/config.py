@@ -209,6 +209,35 @@ def get_perplexity_api_key() -> str:
         logger.error(f"Failed to retrieve Perplexity API key: {str(e)}")
         raise
 
+def get_openrouter_api_key() -> Optional[str]:
+    """Get OpenRouter API key from environment or SSM."""
+    api_key = os.environ.get('OPENROUTER_API_KEY')
+    if api_key:
+        logger.debug("Using OpenRouter API key from environment variable")
+        return api_key
+
+    try:
+        ssm_client = boto3.client('ssm')
+        param_names = [
+            '/perplexity-validator/OPENROUTER_API_KEY',
+            '/perplexity-validator/openrouter-api-key',
+            'OpenRouter_API_Key',
+        ]
+        for param_name in param_names:
+            try:
+                response = ssm_client.get_parameter(Name=param_name, WithDecryption=True)
+                logger.debug(f"Retrieved OpenRouter API key from SSM {param_name}")
+                return response['Parameter']['Value']
+            except Exception as e:
+                logger.warning(f"Failed to get OpenRouter API key from SSM '{param_name}': {e}")
+                continue
+        logger.warning("OpenRouter API key not found in environment or SSM")
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to retrieve OpenRouter API key: {e}")
+        return None
+
+
 def get_google_ai_studio_api_key() -> Optional[str]:
     """Get Google AI Studio API key from environment or SSM."""
     api_key = os.environ.get('GOOGLE_AI_STUDIO_API_KEY')

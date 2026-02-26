@@ -7,6 +7,42 @@ from difflib import SequenceMatcher
 
 logger = logging.getLogger(__name__)
 
+
+# OpenRouter vendor prefixes (models in the form "vendor/model-name").
+# These are NOT handled by other providers, so we route them to OpenRouter.
+# anthropic/ is already handled by the anthropic branch below.
+_OPENROUTER_VENDOR_PREFIXES = (
+    'minimax/',
+    'moonshotai/',
+    'mistralai/',
+    'meta-llama/',
+    'qwen/',
+    'x-ai/',
+    'nousresearch/',
+    'microsoft/',
+    'nvidia/',
+    'cohere/',
+    'openrouter/',
+    'liquid/',
+    'inflection/',
+    'sao10k/',
+    'neversleep/',
+    'undi95/',
+    'gryphe/',
+    'thedrummer/',
+    'eva-unit-01/',
+    'sophosympatheia/',
+    'latitudegames/',
+    'anthracite-org/',
+)
+
+# OpenRouter shortform aliases — no vendor prefix, resolved to full id at call time.
+_OPENROUTER_SHORTFORMS = {
+    'minimax-m2.5': 'minimax/minimax-m2.5',
+    'kimi-k2.5': 'moonshotai/kimi-k2.5',
+}
+
+
 def determine_api_provider(model: str) -> str:
     """Determine API provider based on model name."""
     if model.startswith('the-clone'):
@@ -32,7 +68,20 @@ def determine_api_provider(model: str) -> str:
             return 'baseten'
         return 'vertex'
 
+    # OpenRouter shortform aliases (e.g. minimax-m2.5, kimi-k2.5)
+    if model in _OPENROUTER_SHORTFORMS:
+        return 'openrouter'
+
+    # OpenRouter models use "vendor/model-name" format
+    if any(model.startswith(prefix) for prefix in _OPENROUTER_VENDOR_PREFIXES):
+        return 'openrouter'
+
     return 'perplexity'
+
+
+def normalize_openrouter_model(model: str) -> str:
+    """Expand OpenRouter shortform aliases to full vendor/model-name format."""
+    return _OPENROUTER_SHORTFORMS.get(model, model)
 
 def normalize_anthropic_model(model: str) -> str:
     """Convert anthropic/ format to direct API format if needed."""

@@ -153,6 +153,12 @@ class UsageHandler:
                 # Baseten uses OpenAI-compatible format (same as Vertex for DeepSeek)
                 return self._extract_vertex_token_usage(response, model)
 
+            elif api_provider == 'openrouter':
+                # OpenRouter uses OpenAI-compatible format (prompt_tokens / completion_tokens)
+                # _extract_vertex_token_usage handles all three field-name variants and uses
+                # determine_api_provider() to stamp api_provider='openrouter' correctly.
+                return self._extract_vertex_token_usage(response, model)
+
             else:
                 # Perplexity
                 prompt_tokens = max(0, int(usage.get('prompt_tokens', 0)))

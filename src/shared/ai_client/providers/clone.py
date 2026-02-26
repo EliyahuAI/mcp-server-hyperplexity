@@ -56,6 +56,8 @@ class CloneProvider:
                 provider = 'claude'
             elif model == 'the-clone-baseten':
                 provider = 'baseten'
+            elif model == 'the-clone-kimi':
+                provider = 'kimi'
             elif model == 'the-clone':
                 provider = 'deepseek'
             

@@ -174,6 +174,10 @@ def get_model_with_backups(model, provider: str = None) -> list:
     if model == 'deepseek-v3.2':
         return ['deepseek-v3.2', 'claude-sonnet-4-6']
 
+    # Kimi K2.5 (OpenRouter) → Claude Sonnet
+    if model == 'moonshotai/kimi-k2.5':
+        return ['moonshotai/kimi-k2.5', 'claude-sonnet-4-6']
+
     # DeepSeek Exp (same as v3.2) → DeepSeek → Claude Sonnet
     if model == 'deepseek-v3.2-exp':
         return ['deepseek-v3.2-exp', 'deepseek-v3.2', 'claude-sonnet-4-6']

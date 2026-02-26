@@ -105,9 +105,9 @@ class QCModule:
         self.enabled = self.qc_settings.get('enable_qc', True)
 
         # QC-specific configuration - ensure model is a string or list for fallback
-        default_model = config.get('model', ['deepseek-v3.2', 'claude-sonnet-4-6'])
+        default_model = config.get('model', ['moonshotai/kimi-k2.5', 'claude-sonnet-4-6'])
         if isinstance(default_model, list):
-            default_model = default_model if default_model else ['deepseek-v3.2', 'claude-sonnet-4-6']
+            default_model = default_model if default_model else ['moonshotai/kimi-k2.5', 'claude-sonnet-4-6']
         else:
             # Convert single model to list with backup
             default_model = [default_model, 'claude-sonnet-4-6']
@@ -115,7 +115,7 @@ class QCModule:
         qc_model_setting = self.qc_settings.get('model', default_model)
         # Keep as list for automatic fallback, or convert to list if single string
         if isinstance(qc_model_setting, list):
-            self.qc_model = qc_model_setting if qc_model_setting else ['deepseek-v3.2', 'claude-sonnet-4-6']
+            self.qc_model = qc_model_setting if qc_model_setting else ['moonshotai/kimi-k2.5', 'claude-sonnet-4-6']
         else:
             # Convert single model to list with backup
             self.qc_model = [qc_model_setting, 'claude-sonnet-4-6']
