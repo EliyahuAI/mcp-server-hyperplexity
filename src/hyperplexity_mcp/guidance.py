@@ -80,9 +80,10 @@ def _guidance_confirm_upload(data: dict) -> dict:
                     "note": (
                         "Preferred: blocks with synthetic progress until the AI asks a question. "
                         "Answer questions via send_conversation_reply. "
-                        "When the interview finishes (status=approved), config generation runs "
-                        "automatically and the preview is auto-queued — "
-                        "do NOT call create_job(). Switch to wait_for_job(session_id)."
+                        "When the interview finishes (trigger_config_generation=true or "
+                        "status=approved), call wait_for_job(session_id) directly — "
+                        "it waits for config generation to complete, then tracks the preview "
+                        "phase automatically until preview_complete. Do NOT call create_job()."
                     ),
                 },
                 {
@@ -200,10 +201,14 @@ def _guidance_get_job_status(data: dict) -> dict:
             "next_steps": [
                 {
                     "tool": "wait_for_job",
-                    "params": {"job_id": job_id},
+                    "params": {"job_id": job_id, "timeout_seconds": 1800},
                     "note": (
                         "Preferred: blocks until terminal state with live progress. "
-                        "Returns the same payload as get_job_status."
+                        "If this is a full validation (post-approve_validation), set "
+                        "timeout_seconds = max(900, estimated_validation_time_seconds * 2) "
+                        "using the estimate from the preview_complete response — full "
+                        "validations can exceed 15 min for large tables. "
+                        "1800 shown here is a safe default when the estimate is unavailable."
                     ),
                 },
                 {
@@ -233,15 +238,52 @@ def _guidance_get_job_status(data: dict) -> dict:
         # Fix #5: surface preview Excel download URL if present.
         prev_url = (data.get("preview_results") or {}).get("download_url", "")
 
+        # Issue #6: surface estimated full-validation time and compute a safe timeout.
+        # Full validations can run well beyond 15 min for large tables, so the
+        # timeout for the wait_for_job call AFTER approve_validation should be
+        # 2× the estimate rather than a fixed cap.  Minimum floor: 900s.
+        est_time_s = cost_est.get("estimated_validation_time_seconds")
+        if est_time_s:
+            try:
+                est_time_s = int(est_time_s)
+                time_label = (
+                    f"~{round(est_time_s / 60)} min" if est_time_s >= 60
+                    else f"~{est_time_s}s"
+                )
+                suggested_timeout = max(900, est_time_s * 2)
+            except (ValueError, TypeError):
+                est_time_s = None
+                time_label = ""
+                suggested_timeout = 900
+        else:
+            time_label = ""
+            suggested_timeout = 900
+
+        approve_note = (
+            f"Review preview_results.download_url and preview_table first, then approve. "
+            f"Estimated cost: ${cost}."
+            + (f" Estimated time: {time_label}." if time_label else "")
+            + f" After approval, call wait_for_job with timeout_seconds={suggested_timeout} "
+            f"(2× the time estimate, min 900)."
+        )
+
         next_steps = [
             {
                 "tool": "approve_validation",
                 "params": {"job_id": job_id, "approved_cost_usd": cost},
+                "note": approve_note,
+            },
+            {
+                "tool": "wait_for_job",
+                "params": {"job_id": job_id, "timeout_seconds": suggested_timeout},
                 "note": (
-                    f"Review preview_results.download_url first, then approve. "
-                    f"Estimated cost: ${cost}."
+                    "Call this AFTER approve_validation returns. "
+                    + (f"timeout_seconds={suggested_timeout} = 2× the {time_label} estimate. "
+                       if time_label else "timeout_seconds=900 (default; increase if table is large). ")
+                    + "Returns the final status payload; then call get_results."
                 ),
-            }
+                "when": "after approve_validation",
+            },
         ]
         if refine_session:
             next_steps.append({
@@ -255,9 +297,11 @@ def _guidance_get_job_status(data: dict) -> dict:
             })
 
         summary = (
-            f"Preview complete. Estimated cost: ${cost}. "
-            + (f"config_id for future reruns: {config_id}. " if config_id else "")
-            + "Approve to start full processing."
+            f"Preview complete. Estimated cost: ${cost}."
+            + (f" Estimated time: {time_label}." if time_label else "")
+            + (f" After approving, use timeout_seconds={suggested_timeout} for wait_for_job." if est_time_s else "")
+            + (f" config_id for future reruns: {config_id}." if config_id else "")
+            + " Approve to start full processing."
         )
         if prev_url:
             summary += f" Preview Excel download: {prev_url}"
@@ -423,13 +467,22 @@ def _guidance_approve_validation(data: dict) -> dict:
     job_id = data.get("job_id", "")
     status = data.get("status", "")
     return {
-        "summary": f"Validation approved. Job is now {status}. Use wait_for_job to track completion.",
+        "summary": (
+            f"Validation approved. Job is now {status}. "
+            "Use wait_for_job with a generous timeout — full validations can exceed 15 minutes "
+            "for large tables. Set timeout_seconds = 2× the estimated_validation_time_seconds "
+            "you received in the preview_complete response (minimum 900)."
+        ),
         "next_steps": [
             {
                 "tool": "wait_for_job",
-                "params": {"job_id": job_id},
+                "params": {"job_id": job_id, "timeout_seconds": 1800},
                 "note": (
-                    "Preferred: blocks until completed with live progress notifications. "
+                    "IMPORTANT: override timeout_seconds = max(900, estimated_validation_time_seconds * 2) "
+                    "if you have the estimate from the preview_complete response "
+                    "(cost_estimate.estimated_validation_time_seconds). "
+                    "Full validations can run well beyond 15 min for large tables — 1800 shown here "
+                    "is a safe default when the estimate is unavailable. "
                     "Returns the final status payload; then call get_results."
                 ),
             }
@@ -768,10 +821,13 @@ def _guidance_get_conversation(data: dict) -> dict:
             ],
         }
 
-    # Upload-interview terminal state: status=approved + trigger_config_generation=true.
+    # Upload-interview terminal state: status=approved.
     # Config generation is running in the background; preview is auto-queued once it
     # finishes — do NOT call create_job(). Switch to wait_for_job(session_id).
-    if status == "approved" and data.get("trigger_config_generation"):
+    # NOTE: The backend API does not expose trigger_config_generation in the
+    # response — only the internal S3 state has it. status="approved" alone is
+    # sufficient because only upload interviews reach this state.
+    if status == "approved":
         return {
             "summary": (
                 "Upload interview complete. Config generation is running automatically in the "
