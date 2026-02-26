@@ -3,16 +3,18 @@
 This document contains shared guidelines used by both new config creation and refinement processes.
 
 ## Model Selection Guidelines
-- **Default Model**: `the-clone` is the default for ALL search groups. This is an agentic mix of perplexity search with deepseek-v3.2 and scales internally to the need.
+- **Default Model**: `the-clone-kimi` is the default for ALL search groups. This is an agentic mix of Perplexity web search with Kimi K2.5 synthesis.
 
-- **IMPORTANT**: Only specify a `model` in a search group when you need something OTHER than `the-clone`. If omitted, `the-clone` is automatically used.
+- **IMPORTANT**: Only specify a `model` in a search group when you need something OTHER than `the-clone-kimi`. If omitted, `the-clone-kimi` is automatically used.
 
-- **When to Override the Default**:
-  - Calculation/light reasoning → `gemini-2.5-flash-lite`
-  - Advanced PhD level synthesis with web → `the-clone-claude` (forces Claude over Deepseek, with web search)
-  - Advanced PhD+ level synthesis (without web) → `claude-sonnet-4-6` or `claude-opus-4-6`
+- **Model Tiers (lowest to highest capability/cost)**:
+  - **Standard** (default): `the-clone-kimi` — Perplexity web search + Kimi K2.5 synthesis, suitable for most tables
+  - **Upgraded**: `the-clone-claude` — Perplexity web search + Claude synthesis, for complex or nuanced research
+  - **Scientific/Technical tables** (use this as first choice, not an upgrade): `the-clone-claude` for all search groups + `claude-opus-4-6` QC (no web search) — whenever the table has a strong scientific, medical, or technical basis
+  - **Calculation/light reasoning**: `gemini-3-flash-preview-min` — fast, no web search, for derived or formula-like fields
+  - **Advanced synthesis without web**: `claude-sonnet-4-6` or `claude-opus-4-6` — for complex reasoning on existing context, no web access needed
 
-- **Recommended QC Approach**: `deepseek-v3.2` is ultra-low cost with excellent quality. Use `the-clone` for QC only when you need additional web research capability (not as first approach).
+- **Recommended QC Approach**: Default QC is `moonshotai/kimi-k2.5`. Upgrade to `claude-opus-4-6` (no web search) for scientific/technical tables or when default QC is missing errors.
 
 ## Importance Level Guidelines
 - **ID**: These define the rows - **AT LEAST ONE COLUMN MUST BE ASSIGNED 'ID'** (MANDATORY), usually the first/primary identifier column(s) to the left of the table. Getting these right is critical as these define the row information and the stability of the analysis. An Index alone is not enough - use meaningful identifiers. **⚠️ NEVER convert ALL ID columns to RESEARCH - at least one must remain ID.**
@@ -133,14 +135,14 @@ QC provides automated review of validation outputs to improve accuracy and consi
 
 ### QC Configuration Options
 - **Enable QC**: Set `enable_qc: true` to enable automated quality control review
-- **QC Models**: Default is `["deepseek-v3.2", "claude-sonnet-4-6"]` for ultra-low cost with quality fallback
+- **QC Models**: Default is `["moonshotai/kimi-k2.5"]`; upgrade to `["claude-opus-4-6"]` for scientific/technical tables
 - **Token Allocation**: Default 8K base + 4K per validated column (excluding ID fields)
 
 ### When to Configure QC
 - **Enable QC (Recommended)**: For most validation tasks where accuracy is important
-- **Default QC**: Uses `deepseek-v3.2` (97% cheaper than Claude, excellent quality)
-- **Give QC Search Access**: use `the-clone` when initial validation is not finding the right results - only when pushed.
-- **Disable QC**: Only for simple fact-checking tasks or when speed is more important than accuracy or when psuhed to reduce costs.
+- **Default QC**: `moonshotai/kimi-k2.5` — fast, cost-effective quality control
+- **Upgrade QC**: `claude-opus-4-6` (no web search) — for scientific/technical tables or when default QC is catching frequent errors
+- **Disable QC**: Only for simple fact-checking tasks or when speed is more important than accuracy or when pushed to reduce costs.
 
 ## Web Search Configuration (Claude Models Only)
 
