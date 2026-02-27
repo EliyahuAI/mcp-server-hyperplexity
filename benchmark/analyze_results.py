@@ -256,6 +256,9 @@ def score_runs(runs: List[Dict], ground_truth: Dict[Tuple, str]) -> List[Dict]:
         complexity = meta.get("complexity_tier", "")
         is_gt_run = meta.get("is_ground_truth", False)
         total_time = _safe_float(meta.get("total_elapsed_s"))
+        # estimated_validation_time_s is extrapolated from preview rows before caching occurs.
+        # It is the fair time metric — wall-clock elapsed is distorted by cache hits on QC runs.
+        est_val_time = _safe_float(meta.get("estimated_validation_time_s"))
         session_id = meta.get("session_id", "")
         started_at = meta.get("started_at", "")
         costs = _extract_costs(meta)
@@ -302,7 +305,9 @@ def score_runs(runs: List[Dict], ground_truth: Dict[Tuple, str]) -> List[Dict]:
                     "estimated_eliyahu_cost": round(costs["estimated_eliyahu_cost"], 6),
                     "eliyahu_cost_validation": round(costs["eliyahu_cost_validation"], 6),
                     "quoted_cost": round(costs["quoted_cost"], 2),
-                    # Timing
+                    # Timing — estimated_validation_time_s is the fair comparison metric;
+                    # wall-clock times are preserved for debugging but not used in the report.
+                    "estimated_validation_time_s": est_val_time,
                     "total_elapsed_s": total_time,
                     "preview_elapsed_s": meta.get("preview_elapsed_s"),
                     "validation_elapsed_s": meta.get("validation_elapsed_s"),
@@ -334,6 +339,7 @@ def score_runs(runs: List[Dict], ground_truth: Dict[Tuple, str]) -> List[Dict]:
                         "estimated_eliyahu_cost": round(costs["estimated_eliyahu_cost"], 6),
                         "eliyahu_cost_validation": round(costs["eliyahu_cost_validation"], 6),
                         "quoted_cost": round(costs["quoted_cost"], 2),
+                        "estimated_validation_time_s": est_val_time,
                         "total_elapsed_s": total_time,
                         "preview_elapsed_s": meta.get("preview_elapsed_s"),
                         "validation_elapsed_s": meta.get("validation_elapsed_s"),
@@ -375,7 +381,12 @@ def aggregate_by_run(cell_scores: List[Dict]) -> List[Dict]:
         est_cost = _safe_float(cells[0].get("estimated_eliyahu_cost")) if cells else 0.0
         val_cost = _safe_float(cells[0].get("eliyahu_cost_validation")) if cells else 0.0
         quoted = _safe_float(cells[0].get("quoted_cost")) if cells else 0.0
-        elapsed = _safe_float(cells[0].get("total_elapsed_s")) if cells else 0.0
+        # est_time: use preview-extrapolated estimate (unaffected by cache hits on QC runs).
+        # Falls back to actual validation wall-clock if estimate not available.
+        est_time = (
+            _safe_float(cells[0].get("estimated_validation_time_s"))
+            or _safe_float(cells[0].get("validation_elapsed_s"))
+        ) if cells else 0.0
 
         # Cost per validated cell (estimated cost ÷ total cells scored in this run)
         # Uses total_cells (not just scoreable) so it reflects the actual workload
@@ -401,7 +412,8 @@ def aggregate_by_run(cell_scores: List[Dict]) -> List[Dict]:
             "eliyahu_cost_validation": round(val_cost, 5),  # actual cost paid for validation
             "quoted_cost": round(quoted, 2),                # $2-minimum flat fee
             "cost_per_cell": cost_per_cell,                 # estimated_cost / total_cells
-            "elapsed_s": round(elapsed, 1) if elapsed else 0,
+            # Time: preview-extrapolated estimate (fair; unaffected by cache hits on QC runs)
+            "est_time_s": round(est_time, 1) if est_time else 0,
         })
 
     return sorted(rows, key=lambda r: (r["test_id"], r["search_model"], r["qc_model"] or ""))
@@ -512,28 +524,30 @@ def generate_report(run_rows: List[Dict], cell_scores: List[Dict], results_dir: 
         lines.append(f"### {test_id}\n")
         sort_key = lambda x: (x["search_model"], x["qc_model"] or "")
         if has_gt:
-            lines.append("| Search Model | QC | Accuracy | Exact% | HIGH | MED | LOW | Est Cost ($) | ¢/cell | Time (s) | GT |")
+            lines.append("| Search Model | QC | Accuracy | Exact% | HIGH | MED | LOW | Est Cost ($) | ¢/cell | Est Time (s) | GT |")
             lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
             for r in sorted(test_rows, key=sort_key):
                 gt_marker = "✓" if r["is_ground_truth"] else ""
                 cost_str = f"${r['estimated_eliyahu_cost']:.4f}" if r["estimated_eliyahu_cost"] else "—"
                 cpc_str = f"{r['cost_per_cell']*100:.2f}¢" if r["cost_per_cell"] else "—"
+                time_str = f"{r['est_time_s']}s" if r["est_time_s"] else "—"
                 lines.append(
                     f"| {r['search_model']} | {r['qc_model']} | "
                     f"{r['accuracy_pct']}% | {r['exact_pct']}% | "
                     f"{r['high_conf_cells']} | {r['medium_conf_cells']} | {r['low_conf_cells']} | "
-                    f"{cost_str} | {cpc_str} | {r['elapsed_s']}s | {gt_marker} |"
+                    f"{cost_str} | {cpc_str} | {time_str} | {gt_marker} |"
                 )
         else:
-            lines.append("| Search Model | QC | HIGH conf | MED conf | LOW conf | Est Cost ($) | ¢/cell | Time (s) |")
+            lines.append("| Search Model | QC | HIGH conf | MED conf | LOW conf | Est Cost ($) | ¢/cell | Est Time (s) |")
             lines.append("|---|---|---|---|---|---|---|---|")
             for r in sorted(test_rows, key=sort_key):
                 cost_str = f"${r['estimated_eliyahu_cost']:.4f}" if r["estimated_eliyahu_cost"] else "—"
                 cpc_str = f"{r['cost_per_cell']*100:.2f}¢" if r["cost_per_cell"] else "—"
+                time_str = f"{r['est_time_s']}s" if r["est_time_s"] else "—"
                 lines.append(
                     f"| {r['search_model']} | {r['qc_model']} | "
                     f"{r['high_conf_cells']} | {r['medium_conf_cells']} | {r['low_conf_cells']} | "
-                    f"{cost_str} | {cpc_str} | {r['elapsed_s']}s |"
+                    f"{cost_str} | {cpc_str} | {time_str} |"
                 )
         lines.append("")
 
@@ -544,7 +558,7 @@ def generate_report(run_rows: List[Dict], cell_scores: List[Dict], results_dir: 
         for r in run_rows:
             by_model[(r["search_model"], r["qc_model"])].append(r)
 
-        lines.append("| Search Model | QC | Avg Accuracy | Avg Exact% | Avg Est Cost ($) | Avg ¢/cell | Avg Time (s) | Runs |")
+        lines.append("| Search Model | QC | Avg Accuracy | Avg Exact% | Avg Est Cost ($) | Avg ¢/cell | Avg Est Time (s) | Runs |")
         lines.append("|---|---|---|---|---|---|---|---|")
         model_summaries = []
         for (sm, qm), rows_list in by_model.items():
@@ -555,7 +569,7 @@ def generate_report(run_rows: List[Dict], cell_scores: List[Dict], results_dir: 
             avg_exact = round(sum(r["exact_pct"] for r in scoreable) / len(scoreable), 1)
             avg_cost = round(sum(r["estimated_eliyahu_cost"] for r in rows_list) / len(rows_list), 5)
             avg_cpc = round(sum(r["cost_per_cell"] for r in rows_list) / len(rows_list), 6)
-            avg_time = round(sum(r["elapsed_s"] for r in rows_list) / len(rows_list), 1)
+            avg_time = round(sum(r["est_time_s"] for r in rows_list) / len(rows_list), 1)
             model_summaries.append((sm, qm, avg_acc, avg_exact, avg_cost, avg_cpc, avg_time, len(rows_list)))
 
         for sm, qm, avg_acc, avg_exact, avg_cost, avg_cpc, avg_time, n in sorted(model_summaries, key=lambda x: (x[0], x[1] or "")):

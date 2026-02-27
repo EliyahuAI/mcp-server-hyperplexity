@@ -676,15 +676,29 @@ def main():
 
     if args.parallel and len(runs_to_execute) > 1:
         max_workers = min(len(runs_to_execute), args.max_workers)
-        logger.info(f"Running {len(runs_to_execute)} runs in parallel (max_workers={max_workers})")
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(_run_and_save, row): row for row in runs_to_execute}
-            for future in as_completed(futures):
-                try:
-                    future.result()
-                except Exception as exc:
-                    row = futures[future]
-                    logger.error(f"[{row['run_id']}] Unhandled exception in thread: {exc}")
+
+        # Two-phase execution: no-QC runs first (warm the search cache), then QC variants.
+        # QC runs reuse cached search results from Phase 1, which is the intended production
+        # behavior. Running them in parallel would distort timing and may miss cache hits.
+        phase1 = [r for r in runs_to_execute if r["qc_model"] == "none"]
+        phase2 = [r for r in runs_to_execute if r["qc_model"] != "none"]
+
+        def _run_phase(phase_rows: List[Dict], label: str):
+            if not phase_rows:
+                return
+            workers = min(len(phase_rows), max_workers)
+            logger.info(f"{label}: {len(phase_rows)} runs (max_workers={workers})")
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {executor.submit(_run_and_save, row): row for row in phase_rows}
+                for future in as_completed(futures):
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        row = futures[future]
+                        logger.error(f"[{row['run_id']}] Unhandled exception in thread: {exc}")
+
+        _run_phase(phase1, "Phase 1 (no-QC, cache warm)")
+        _run_phase(phase2, "Phase 2 (QC variants, cache hot)")
     else:
         client = HyperplexityClient(api_url, api_key)
         for run_row in runs_to_execute:
