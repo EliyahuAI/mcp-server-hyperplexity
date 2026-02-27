@@ -514,6 +514,7 @@ def generate_report(run_rows: List[Dict], cell_scores: List[Dict], results_dir: 
         "| test_05 | Particle Physics | Meson | Mass (MeV/c²), Full Width Γ (MeV) | Extreme |",
         "| test_06 | Reaction Thermodynamics | Reaction | ΔH°rxn (kJ/mol), log10(Keq) at 298 K | Extreme |",
         "| test_07 | Oncology Clinical Trials | Trial | PFS Hazard Ratio, Median PFS – experimental arm (months) | Extreme+ |",
+        "| test_08 | Immunotherapy Long-Term OS | Trial | OS at landmark – experimental arm (%), Absolute OS benefit (pp) | Extreme+ |",
         "\n## Scoring\n",
         f"- **Exact** (≤{EXACT_TOLERANCE*100:.0f}% relative error or string match): 1.0 point",
         f"- **Close** (≤{CLOSE_TOLERANCE*100:.0f}% relative error): 0.5 points",
