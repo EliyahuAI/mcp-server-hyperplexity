@@ -31,6 +31,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -446,7 +447,23 @@ def run_single(
     run_result["total_elapsed_s"] = round(time.time() - t0, 1)
     run_result["finished_at"] = datetime.utcnow().isoformat() + "Z"
 
-    # Save run metadata
+    # 8. Enrich with DynamoDB actual costs (only possible after run completes)
+    # estimated_eliyahu_cost  = full-table cost estimate from preview (no caching distortion)
+    # eliyahu_cost_validation = actual cost paid for the validation run (cached rows cheaper)
+    # quoted_cost             = what user was charged ($2 minimum applies)
+    if run_result.get("session_id") and run_result.get("status") == "completed":
+        logger.info(f"[{run_id}] Fetching DynamoDB cost data...")
+        dynamo = fetch_dynamo_costs(run_result["session_id"])
+        if dynamo:
+            run_result["dynamo"] = dynamo
+            # Convenience top-level aliases used by analyze_results.py
+            run_result["estimated_eliyahu_cost"] = dynamo.get("estimated_eliyahu_cost", 0.0)
+            run_result["eliyahu_cost_validation"] = dynamo.get("eliyahu_cost_validation", 0.0)
+            run_result["eliyahu_cost_total"] = dynamo.get("eliyahu_cost_total", 0.0)
+            run_result["quoted_cost"] = dynamo.get("quoted_cost", 0.0)
+            run_result["provider_costs"] = dynamo.get("provider_costs", {})
+
+    # Save run metadata (includes DynamoDB costs if fetched)
     (run_dir / "run_meta.json").write_text(json.dumps(run_result, indent=2))
     return run_result
 
@@ -461,6 +478,125 @@ def _summarize_results(results_resp: Dict) -> Dict:
         "cost_usd": summary.get("cost_usd"),
         "run_time_seconds": job_info.get("run_time_seconds"),
     }
+
+
+# ---------------------------------------------------------------------------
+# DynamoDB cost enrichment
+# ---------------------------------------------------------------------------
+
+def _float(v: Any) -> float:
+    """Convert Decimal/str/None to float safely."""
+    if v is None:
+        return 0.0
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def fetch_dynamo_costs(session_id: str) -> Dict:
+    """
+    Query perplexity-validator-runs for a session and return detailed cost data.
+
+    Returns a dict with:
+        eliyahu_cost_validation   — actual cost we paid for the full validation run
+        eliyahu_cost_preview      — actual cost we paid for the preview run
+        eliyahu_cost_total        — sum of the two
+        quoted_cost               — what the user was charged (includes $2 min)
+        estimated_eliyahu_cost    — estimated full-table cost from the preview (no caching)
+        provider_costs            — {provider_name: {actual, estimated, calls}} for validation run
+        models_used               — raw models field from validation run
+        preview_run_time_s        — actual run time of the preview
+        validation_run_time_s     — actual run time of the validation
+    """
+    try:
+        import boto3
+        from boto3.dynamodb.conditions import Key
+    except ImportError:
+        logger.warning("boto3 not available — skipping DynamoDB cost enrichment")
+        return {}
+
+    try:
+        dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+        table = dynamodb.Table("perplexity-validator-runs")
+        resp = table.query(KeyConditionExpression=Key("session_id").eq(session_id))
+        items = resp.get("Items", [])
+    except Exception as e:
+        logger.warning(f"DynamoDB query failed for {session_id}: {e}")
+        return {}
+
+    if not items:
+        logger.warning(f"No DynamoDB records found for session {session_id}")
+        return {}
+
+    preview_item = next((i for i in items if str(i.get("run_key", "")).startswith("Preview")), None)
+    val_item = next((i for i in items if str(i.get("run_key", "")).startswith("Validation")), None)
+
+    result = {
+        "eliyahu_cost_validation": 0.0,
+        "eliyahu_cost_preview": 0.0,
+        "eliyahu_cost_total": 0.0,
+        "quoted_cost": 0.0,
+        "estimated_eliyahu_cost": 0.0,
+        "provider_costs": {},
+        "models_used": "",
+        "preview_run_time_s": 0.0,
+        "validation_run_time_s": 0.0,
+    }
+
+    if preview_item:
+        result["eliyahu_cost_preview"] = _float(preview_item.get("eliyahu_cost", 0))
+        result["quoted_cost"] = _float(preview_item.get("quoted_validation_cost", 0))
+        result["estimated_eliyahu_cost"] = _float(preview_item.get("estimated_validation_eliyahu_cost", 0))
+        result["preview_run_time_s"] = _float(preview_item.get("run_time_s", 0))
+
+    if val_item:
+        result["eliyahu_cost_validation"] = _float(val_item.get("eliyahu_cost", 0))
+        result["validation_run_time_s"] = _float(val_item.get("run_time_s", 0))
+        # If preview quoted_cost wasn't set, try validation record
+        if not result["quoted_cost"]:
+            result["quoted_cost"] = _float(val_item.get("quoted_validation_cost", 0))
+        # Provider cost breakdown from validation run
+        provider_metrics = val_item.get("provider_metrics") or {}
+        for pname, pdata in provider_metrics.items():
+            if not isinstance(pdata, dict):
+                continue
+            if pdata.get("is_metadata_only"):
+                continue
+            ca = _float(pdata.get("cost_actual", 0))
+            ce = _float(pdata.get("cost_estimated", 0))
+            calls = _float(pdata.get("calls", 0))
+            if ca > 0 or ce > 0:
+                result["provider_costs"][pname] = {
+                    "cost_actual": round(ca, 6),
+                    "cost_estimated": round(ce, 6),
+                    "calls": int(calls),
+                }
+        # Models field
+        models_raw = val_item.get("models", "")
+        if isinstance(models_raw, dict):
+            # Summarize model names from the nested structure
+            names = []
+            for sg_data in models_raw.values():
+                if isinstance(sg_data, dict):
+                    m = sg_data.get("mode_model_used", "")
+                    if m:
+                        names.append(m)
+            result["models_used"] = ", ".join(sorted(set(names)))
+        else:
+            result["models_used"] = str(models_raw)
+
+    result["eliyahu_cost_total"] = round(
+        result["eliyahu_cost_preview"] + result["eliyahu_cost_validation"], 6
+    )
+
+    logger.info(
+        f"  DynamoDB costs: preview=${result['eliyahu_cost_preview']:.4f}, "
+        f"validation=${result['eliyahu_cost_validation']:.4f}, "
+        f"quoted=${result['quoted_cost']:.2f}, "
+        f"providers={list(result['provider_costs'].keys())}"
+    )
+    return result
 
 
 # ---------------------------------------------------------------------------

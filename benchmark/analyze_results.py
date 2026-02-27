@@ -205,6 +205,39 @@ def _normalize_string(s: str) -> str:
     return s
 
 
+def _extract_costs(meta: Dict) -> Dict:
+    """
+    Return the best available cost fields from run_meta.
+
+    Priority:
+      - dynamo.estimated_eliyahu_cost  — projected full-table cost from preview (no caching
+        distortion; best apples-to-apples comparison across models)
+      - dynamo.eliyahu_cost_validation — actual cost paid for validation run
+      - dynamo.eliyahu_cost_total      — preview + validation actual
+      - dynamo.quoted_cost             — $2 minimum flat fee charged to account
+      Falls back to the coarse API fields if DynamoDB data is absent.
+    """
+    # DynamoDB enriched costs (preferred)
+    est = _safe_float(meta.get("estimated_eliyahu_cost"))       # from preview extrapolation
+    val_actual = _safe_float(meta.get("eliyahu_cost_validation"))
+    total_actual = _safe_float(meta.get("eliyahu_cost_total"))
+    quoted = _safe_float(meta.get("quoted_cost"))
+
+    # Fallback to coarse API fields
+    if not est and not val_actual:
+        preview_cost = _safe_float(meta.get("preview_cost")) or 0.0
+        val_cost = _safe_float(meta.get("validation_cost")) or 0.0
+        total_actual = preview_cost + val_cost
+        est = total_actual  # best guess
+
+    return {
+        "estimated_eliyahu_cost": est or 0.0,
+        "eliyahu_cost_validation": val_actual or 0.0,
+        "eliyahu_cost_total": total_actual or 0.0,
+        "quoted_cost": quoted or 0.0,
+    }
+
+
 def score_runs(runs: List[Dict], ground_truth: Dict[Tuple, str]) -> List[Dict]:
     """
     Build the master data sheet: one row per (run × entity × column).
@@ -222,12 +255,10 @@ def score_runs(runs: List[Dict], ground_truth: Dict[Tuple, str]) -> List[Dict]:
         qc_model = meta.get("qc_model", "")
         complexity = meta.get("complexity_tier", "")
         is_gt_run = meta.get("is_ground_truth", False)
-        preview_cost = _safe_float(meta.get("preview_cost")) or 0.0
-        val_cost = _safe_float(meta.get("validation_cost")) or 0.0
-        total_cost = preview_cost + val_cost
         total_time = _safe_float(meta.get("total_elapsed_s"))
         session_id = meta.get("session_id", "")
         started_at = meta.get("started_at", "")
+        costs = _extract_costs(meta)
 
         metadata_index = run.get("metadata_index") or {}
 
@@ -267,10 +298,11 @@ def score_runs(runs: List[Dict], ground_truth: Dict[Tuple, str]) -> List[Dict]:
                     "key_citation": cell_info.get("key_citation", ""),
                     "validator_explanation": cell_info.get("validator_explanation", ""),
                     "qc_reasoning": cell_info.get("qc_reasoning", ""),
-                    # Cost / timing
-                    "total_cost_usd": round(total_cost, 5),
-                    "preview_cost_usd": round(preview_cost, 5),
-                    "validation_cost_usd": round(val_cost, 5),
+                    # Cost — use DynamoDB estimated cost (no caching distortion) as primary
+                    "estimated_eliyahu_cost": round(costs["estimated_eliyahu_cost"], 6),
+                    "eliyahu_cost_validation": round(costs["eliyahu_cost_validation"], 6),
+                    "quoted_cost": round(costs["quoted_cost"], 2),
+                    # Timing
                     "total_elapsed_s": total_time,
                     "preview_elapsed_s": meta.get("preview_elapsed_s"),
                     "validation_elapsed_s": meta.get("validation_elapsed_s"),
@@ -298,9 +330,10 @@ def score_runs(runs: List[Dict], ground_truth: Dict[Tuple, str]) -> List[Dict]:
                         "column": col_name, "predicted": predicted, "original_value": "",
                         "ground_truth": gt_val, "verdict": verdict, "confidence": "UNKNOWN",
                         "sources_count": 0, "key_citation": "", "validator_explanation": "",
-                        "qc_reasoning": "", "total_cost_usd": round(total_cost, 5),
-                        "preview_cost_usd": round(preview_cost, 5),
-                        "validation_cost_usd": round(val_cost, 5),
+                        "qc_reasoning": "",
+                        "estimated_eliyahu_cost": round(costs["estimated_eliyahu_cost"], 6),
+                        "eliyahu_cost_validation": round(costs["eliyahu_cost_validation"], 6),
+                        "quoted_cost": round(costs["quoted_cost"], 2),
                         "total_elapsed_s": total_time,
                         "preview_elapsed_s": meta.get("preview_elapsed_s"),
                         "validation_elapsed_s": meta.get("validation_elapsed_s"),
@@ -337,8 +370,17 @@ def aggregate_by_run(cell_scores: List[Dict]) -> List[Dict]:
         accuracy_pct = round(100 * (exact + close * 0.5) / total, 1) if total else 0
         exact_pct = round(100 * exact / total, 1) if total else 0
 
-        cost = cells[0]["total_cost_usd"] if cells else 0
-        elapsed = cells[0]["total_elapsed_s"] if cells else 0
+        # Cost: use estimated_eliyahu_cost (projected full-table, no caching distortion)
+        # All cells in a run share the same run-level cost, so take from first cell.
+        est_cost = _safe_float(cells[0].get("estimated_eliyahu_cost")) if cells else 0.0
+        val_cost = _safe_float(cells[0].get("eliyahu_cost_validation")) if cells else 0.0
+        quoted = _safe_float(cells[0].get("quoted_cost")) if cells else 0.0
+        elapsed = _safe_float(cells[0].get("total_elapsed_s")) if cells else 0.0
+
+        # Cost per validated cell (estimated cost ÷ total cells scored in this run)
+        # Uses total_cells (not just scoreable) so it reflects the actual workload
+        n_cells = len(cells)
+        cost_per_cell = round(est_cost / n_cells, 6) if n_cells and est_cost else 0.0
 
         # Confidence breakdown for this run
         conf_counts = defaultdict(int)
@@ -348,13 +390,17 @@ def aggregate_by_run(cell_scores: List[Dict]) -> List[Dict]:
         rows.append({
             "run_id": run_id, "test_id": test_id, "search_model": search_model,
             "qc_model": qc_model, "complexity_tier": complexity, "is_ground_truth": is_gt,
-            "total_cells": len(cells), "scoreable_cells": total,
+            "total_cells": n_cells, "scoreable_cells": total,
             "exact": exact, "close": close, "wrong": wrong,
             "accuracy_pct": accuracy_pct, "exact_pct": exact_pct,
             "high_conf_cells": conf_counts.get("HIGH", 0),
             "medium_conf_cells": conf_counts.get("MEDIUM", 0),
             "low_conf_cells": conf_counts.get("LOW", 0),
-            "cost_usd": round(cost, 4),
+            # Cost fields
+            "estimated_eliyahu_cost": round(est_cost, 5),   # projected full-table (no caching)
+            "eliyahu_cost_validation": round(val_cost, 5),  # actual cost paid for validation
+            "quoted_cost": round(quoted, 2),                # $2-minimum flat fee
+            "cost_per_cell": cost_per_cell,                 # estimated_cost / total_cells
             "elapsed_s": round(elapsed, 1) if elapsed else 0,
         })
 
@@ -441,24 +487,28 @@ def generate_report(run_rows: List[Dict], cell_scores: List[Dict], results_dir: 
             continue
         lines.append(f"### {test_id}\n")
         if has_gt:
-            lines.append("| Search Model | QC | Accuracy | Exact% | HIGH | MED | LOW | Cost ($) | Time (s) | GT |")
-            lines.append("|---|---|---|---|---|---|---|---|---|---|")
+            lines.append("| Search Model | QC | Accuracy | Exact% | HIGH | MED | LOW | Est Cost ($) | ¢/cell | Time (s) | GT |")
+            lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
             for r in sorted(test_rows, key=lambda x: -x["accuracy_pct"]):
                 gt_marker = "✓" if r["is_ground_truth"] else ""
+                cost_str = f"${r['estimated_eliyahu_cost']:.4f}" if r["estimated_eliyahu_cost"] else "—"
+                cpc_str = f"{r['cost_per_cell']*100:.2f}¢" if r["cost_per_cell"] else "—"
                 lines.append(
                     f"| {r['search_model']} | {r['qc_model']} | "
                     f"{r['accuracy_pct']}% | {r['exact_pct']}% | "
                     f"{r['high_conf_cells']} | {r['medium_conf_cells']} | {r['low_conf_cells']} | "
-                    f"${r['cost_usd']:.3f} | {r['elapsed_s']}s | {gt_marker} |"
+                    f"{cost_str} | {cpc_str} | {r['elapsed_s']}s | {gt_marker} |"
                 )
         else:
-            lines.append("| Search Model | QC | HIGH conf | MED conf | LOW conf | Cost ($) | Time (s) |")
-            lines.append("|---|---|---|---|---|---|---|")
+            lines.append("| Search Model | QC | HIGH conf | MED conf | LOW conf | Est Cost ($) | ¢/cell | Time (s) |")
+            lines.append("|---|---|---|---|---|---|---|---|")
             for r in sorted(test_rows, key=lambda x: -x["high_conf_cells"]):
+                cost_str = f"${r['estimated_eliyahu_cost']:.4f}" if r["estimated_eliyahu_cost"] else "—"
+                cpc_str = f"{r['cost_per_cell']*100:.2f}¢" if r["cost_per_cell"] else "—"
                 lines.append(
                     f"| {r['search_model']} | {r['qc_model']} | "
                     f"{r['high_conf_cells']} | {r['medium_conf_cells']} | {r['low_conf_cells']} | "
-                    f"${r['cost_usd']:.3f} | {r['elapsed_s']}s |"
+                    f"{cost_str} | {cpc_str} | {r['elapsed_s']}s |"
                 )
         lines.append("")
 
@@ -469,8 +519,8 @@ def generate_report(run_rows: List[Dict], cell_scores: List[Dict], results_dir: 
         for r in run_rows:
             by_model[(r["search_model"], r["qc_model"])].append(r)
 
-        lines.append("| Search Model | QC | Avg Accuracy | Avg Exact% | Avg Cost ($) | Avg Time (s) | Runs |")
-        lines.append("|---|---|---|---|---|---|---|")
+        lines.append("| Search Model | QC | Avg Accuracy | Avg Exact% | Avg Est Cost ($) | Avg ¢/cell | Avg Time (s) | Runs |")
+        lines.append("|---|---|---|---|---|---|---|---|")
         model_summaries = []
         for (sm, qm), rows_list in by_model.items():
             scoreable = [r for r in rows_list if r["scoreable_cells"] > 0]
@@ -478,30 +528,35 @@ def generate_report(run_rows: List[Dict], cell_scores: List[Dict], results_dir: 
                 continue
             avg_acc = round(sum(r["accuracy_pct"] for r in scoreable) / len(scoreable), 1)
             avg_exact = round(sum(r["exact_pct"] for r in scoreable) / len(scoreable), 1)
-            avg_cost = round(sum(r["cost_usd"] for r in rows_list) / len(rows_list), 4)
+            avg_cost = round(sum(r["estimated_eliyahu_cost"] for r in rows_list) / len(rows_list), 5)
+            avg_cpc = round(sum(r["cost_per_cell"] for r in rows_list) / len(rows_list), 6)
             avg_time = round(sum(r["elapsed_s"] for r in rows_list) / len(rows_list), 1)
-            model_summaries.append((sm, qm, avg_acc, avg_exact, avg_cost, avg_time, len(rows_list)))
+            model_summaries.append((sm, qm, avg_acc, avg_exact, avg_cost, avg_cpc, avg_time, len(rows_list)))
 
-        for sm, qm, avg_acc, avg_exact, avg_cost, avg_time, n in sorted(model_summaries, key=lambda x: -x[2]):
-            lines.append(f"| {sm} | {qm} | {avg_acc}% | {avg_exact}% | ${avg_cost:.3f} | {avg_time}s | {n} |")
+        for sm, qm, avg_acc, avg_exact, avg_cost, avg_cpc, avg_time, n in sorted(model_summaries, key=lambda x: -x[2]):
+            cost_str = f"${avg_cost:.4f}" if avg_cost else "—"
+            cpc_str = f"{avg_cpc*100:.2f}¢" if avg_cpc else "—"
+            lines.append(f"| {sm} | {qm} | {avg_acc}% | {avg_exact}% | {cost_str} | {cpc_str} | {avg_time}s | {n} |")
         lines.append("")
 
         # --- Cost-accuracy frontier ---
         lines.append("## Cost-Accuracy Frontier\n")
-        lines.append("Models on the frontier: highest accuracy for a given cost budget.\n")
+        lines.append("Models on the frontier: highest accuracy for a given estimated cost.\n")
         pareto = []
-        for sm, qm, avg_acc, avg_exact, avg_cost, avg_time, n in sorted(model_summaries, key=lambda x: x[4]):
+        for sm, qm, avg_acc, avg_exact, avg_cost, avg_cpc, avg_time, n in sorted(model_summaries, key=lambda x: x[4]):
             dominated = any(
-                other_cost <= avg_cost and other_acc > avg_acc
-                for _, _, other_acc, _, other_cost, _, _ in model_summaries
+                oc <= avg_cost and oa > avg_acc
+                for _, _, oa, _, oc, _, _, _ in model_summaries
             )
-            pareto.append((sm, qm, avg_acc, avg_cost, not dominated))
+            pareto.append((sm, qm, avg_acc, avg_cost, avg_cpc, not dominated))
 
-        lines.append("| Search Model | QC | Avg Accuracy | Avg Cost ($) | On Frontier |")
-        lines.append("|---|---|---|---|---|")
-        for sm, qm, avg_acc, avg_cost, on_frontier in sorted(pareto, key=lambda x: x[3]):
+        lines.append("| Search Model | QC | Avg Accuracy | Avg Est Cost ($) | Avg ¢/cell | On Frontier |")
+        lines.append("|---|---|---|---|---|---|")
+        for sm, qm, avg_acc, avg_cost, avg_cpc, on_frontier in sorted(pareto, key=lambda x: x[3]):
             frontier_marker = "★" if on_frontier else ""
-            lines.append(f"| {sm} | {qm} | {avg_acc}% | ${avg_cost:.3f} | {frontier_marker} |")
+            cost_str = f"${avg_cost:.4f}" if avg_cost else "—"
+            cpc_str = f"{avg_cpc*100:.2f}¢" if avg_cpc else "—"
+            lines.append(f"| {sm} | {qm} | {avg_acc}% | {cost_str} | {cpc_str} | {frontier_marker} |")
         lines.append("")
 
     # --- Confidence Distribution ---
@@ -646,7 +701,8 @@ def main():
             top = max(scoreable, key=lambda r: r["accuracy_pct"])
             print(
                 f"\nTop performer: {top['search_model']} + qc={top['qc_model']} "
-                f"on {top['test_id']} — {top['accuracy_pct']}% accuracy, ${top['cost_usd']:.3f}"
+                f"on {top['test_id']} — {top['accuracy_pct']}% accuracy, "
+            f"${top['estimated_eliyahu_cost']:.4f} est ({top['cost_per_cell']*100:.2f}¢/cell)"
             )
     else:
         # Show confidence distribution summary
