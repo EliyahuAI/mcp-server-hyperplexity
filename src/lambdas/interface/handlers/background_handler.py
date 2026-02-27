@@ -3204,7 +3204,7 @@ def handle_main_processing(event, context):
                         'error': 'insufficient_balance',
                         'current_balance': float(current_balance) if current_balance else 0,
                         'estimated_cost': float(estimated_cost),
-                        'credits_needed': max(0, estimated_cost - (current_balance or 0))
+                        'credits_needed': max(0, estimated_cost - float(current_balance or 0))
                     })
 
                     # Update run status to failed
