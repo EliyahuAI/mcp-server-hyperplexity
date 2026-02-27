@@ -31,7 +31,7 @@
         "CH4(g) + CO2(g) → 2CO(g) + 2H2(g)",
         "CO(g) + 2H2(g) → CH3OH(g)",
         "2NO2(g) → N2O4(g)",
-        "CO2(g) + C(s,graphite) → 2CO(g)"
+        "CO2(g) + C(s) → 2CO(g)"
       ],
       "search_group": 0
     },
