@@ -1,0 +1,38 @@
+role,context,model,fallback_1,fallback_2,description
+config_gen_primary,config_gen,deepseek-v3.2,gemini-3-flash-preview,claude-sonnet-4-6,Primary model for config generation (upload-interview path)
+config_gen_qc_default,qc,gemini-3-flash-preview,moonshotai/kimi-k2.5,claude-sonnet-4-6,Default QC model used by config_settings.json
+table_maker_interview,table_maker,deepseek-v3.2,moonshotai/kimi-k2.5,,Table maker interview phase model
+table_maker_background_research,table_maker,sonar-pro,,,Background research model (Step 0) — sonar-pro with high context
+table_maker_column_definition,table_maker,gemini-3-flash-preview,moonshotai/kimi-k2.5,,Column definition model (Step 1) — medium thinking
+table_maker_row_discovery_l1,table_maker,sonar,,,Row discovery escalation level 1 (active)
+table_maker_row_discovery_l2,table_maker,sonar-pro,,,Row discovery escalation level 2 (currently disabled)
+table_maker_row_discovery_l3,table_maker,claude-haiku-4-5,,,Row discovery escalation level 3 (currently disabled)
+table_maker_qc,table_maker,claude-opus-4-6,claude-sonnet-4-6,,QC review model for table maker (Step 3)
+upload_interview,interview,openrouter/gemini-3-flash-preview-low,gemini-3-flash-preview-low,moonshotai/kimi-k2.5,Upload interview phase model — fast cheap model for dialog
+validation_qc_default,qc,gemini-3-flash-preview,moonshotai/kimi-k2.5,claude-sonnet-4-6,Default QC model for validation runs
+clone_extraction_default,clone_deepseek,gemini-2.5-flash-lite,,,Default extraction model across all clone providers
+clone_deepseek_t1,clone_deepseek,gemini-2.5-flash-lite,,,Clone/deepseek tier1 synthesis — fast cost-effective
+clone_deepseek_t2,clone_deepseek,deepseek-v3.2,claude-sonnet-4-5,,Clone/deepseek tier2 synthesis — balanced (default)
+clone_deepseek_t3,clone_deepseek,claude-sonnet-4-5,claude-opus-4-6,,Clone/deepseek tier3 synthesis — strong reasoning
+clone_deepseek_t4,clone_deepseek,claude-opus-4-6,claude-sonnet-4-5,,Clone/deepseek tier4 synthesis — deepest (auto-upgrade)
+clone_claude_t1,clone_claude,claude-haiku-4-5,claude-sonnet-4-5,,Clone/claude tier1 synthesis — fast
+clone_claude_t2,clone_claude,claude-sonnet-4-5,claude-haiku-4-5,,Clone/claude tier2 synthesis — balanced
+clone_claude_t3,clone_claude,claude-sonnet-4-5,claude-opus-4-6,,Clone/claude tier3 synthesis — strong
+clone_claude_t4,clone_claude,claude-opus-4-6,claude-sonnet-4-5,,Clone/claude tier4 synthesis — deepest
+clone_flash_t1,clone_flash,gemini-3-flash-preview-low,gemini-3-flash-preview,,Clone/flash tier1 synthesis — low thinking
+clone_flash_t2,clone_flash,gemini-3-flash-preview,gemini-3-flash-preview-low,,Clone/flash tier2 synthesis — medium thinking (default)
+clone_flash_t3,clone_flash,claude-sonnet-4-6,claude-opus-4-6,,Clone/flash tier3 synthesis — strong reasoning fallback
+clone_flash_t4,clone_flash,claude-opus-4-6,claude-sonnet-4-6,,Clone/flash tier4 synthesis — maximum capability fallback
+clone_kimi_t1,clone_kimi,moonshotai/kimi-k2.5,claude-sonnet-4-6,,Clone/kimi tier1 synthesis — fast via Kimi K2.5
+clone_kimi_t2,clone_kimi,moonshotai/kimi-k2.5,claude-sonnet-4-6,,Clone/kimi tier2 synthesis — balanced via Kimi K2.5
+clone_kimi_t3,clone_kimi,claude-sonnet-4-6,claude-opus-4-6,,Clone/kimi tier3 synthesis — strong reasoning fallback
+clone_kimi_t4,clone_kimi,claude-opus-4-6,claude-sonnet-4-6,,Clone/kimi tier4 synthesis — deepest fallback
+clone_baseten_t1,clone_baseten,deepseek-v3.2-baseten,deepseek-v3.2,,Clone/baseten tier1 synthesis — fast via Baseten
+clone_baseten_t2,clone_baseten,deepseek-v3.2-baseten,deepseek-v3.2,,Clone/baseten tier2 synthesis — balanced via Baseten
+clone_baseten_t3,clone_baseten,claude-sonnet-4-5,claude-opus-4-6,,Clone/baseten tier3 synthesis — strong reasoning
+clone_baseten_t4,clone_baseten,claude-opus-4-6,claude-sonnet-4-5,,Clone/baseten tier4 synthesis — deepest
+table_extraction,table_maker,the-clone-flash,,,Table extraction step 0b — clone for pagination support
+table_maker_table_population,table_maker,deepseek-v3.2,moonshotai/kimi-k2.5,,Table population phase model
+table_maker_config_generation,table_maker,deepseek-v3.2,moonshotai/kimi-k2.5,,Config generation within table maker pipeline
+table_maker_validator_qc_primary,table_maker,deepseek-v3.2,claude-sonnet-4-5,,Validator QC primary model for table maker QC strategy=validator
+rumor_generation,table_maker,claude-opus-4-6,claude-sonnet-4-5,,Rumor generation model — broad entity knowledge required
