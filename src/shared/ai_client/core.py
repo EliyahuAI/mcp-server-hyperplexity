@@ -406,6 +406,16 @@ class AIAPIClient:
                                     cached_time_estimated=cached_time_estimated  # Pass original time for aggregation
                                 )
 
+                                # For Clone provider: restore provider_metrics from the originally cached
+                                # enhanced_data, which has the correct underlying provider breakdown
+                                # (vertex, anthropic, perplexity, etc.). Without this, the default
+                                # enhanced_data has {'clone': {...}} as the key, which pollutes the
+                                # provider attribution in the runs DB.
+                                if api_provider == 'clone':
+                                    cached_provider_metrics = cached_data.get('enhanced_data', {}).get('provider_metrics', {})
+                                    if cached_provider_metrics:
+                                        enhanced_data['provider_metrics'] = cached_provider_metrics
+
                                 # Use stored citations if available (clone provider), otherwise extract from response
                                 cached_citations = cached_data.get('citations', [])
                                 if not cached_citations:
