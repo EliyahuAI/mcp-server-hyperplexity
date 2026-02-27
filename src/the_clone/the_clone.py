@@ -34,6 +34,53 @@ from the_clone.search_memory import SearchMemory, extract_urls_from_text
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Flash thinking helpers
+# ---------------------------------------------------------------------------
+_FLASH_BASE = 'gemini-3-flash-preview'
+
+def _compute_flash_model(snippet_count: int, context: str, self_correction: int, floor_tier: str = 'tier1') -> str:
+    """Compute Gemini Flash model name from complexity signals (depth > breadth).
+
+    Scoring (0–5):
+      context  'low'=0, 'medium'/'findall'=1, 'high'=2  (depth signal, weight 2)
+      self_correction  capped at 2                        (depth signal, weight 2)
+      snippet_count    ≤20→0, >20→1                       (breadth signal, weight 1)
+
+    Total → model level: 0=min, 1-2=low, 3-4=medium, 5=high
+    floor_tier='tier2' enforces minimum medium.
+    """
+    ctx = {'low': 0, 'medium': 1, 'findall': 1, 'high': 2}.get(context, 1)
+    itr = min(self_correction, 2)
+    snp = 0 if snippet_count <= 20 else 1
+    total = ctx + itr + snp  # 0–5
+
+    if total == 0:      level = 'min'
+    elif total <= 2:    level = 'low'
+    elif total <= 4:    level = 'medium'
+    else:               level = 'high'
+
+    if floor_tier == 'tier2' and level in ('min', 'low'):
+        level = 'medium'
+
+    return _FLASH_BASE if level == 'medium' else f'{_FLASH_BASE}-{level}'
+
+
+def _flash_bump_thinking(current_model: str):
+    """Bump Gemini Flash thinking one level up (+T signal).
+
+    Returns the bumped model name, or None if already at maximum (-high).
+    """
+    if current_model.endswith('-min'):  return current_model[:-4] + '-low'
+    if current_model.endswith('-low'):  return _FLASH_BASE           # low → medium
+    if current_model == _FLASH_BASE:    return _FLASH_BASE + '-high' # medium → high
+    return None  # already -high, caller should treat as +E
+
+
+def _is_flash_model(model: str) -> bool:
+    return isinstance(model, str) and model.startswith(_FLASH_BASE)
+# ---------------------------------------------------------------------------
+
 
 class TheClone2Refined:
     """
@@ -366,6 +413,13 @@ class TheClone2Refined:
                 }
             else:
                 models = get_models_for_tier(provider, synthesis_tier)
+                if provider == 'flash' and _is_flash_model(models.get('synthesis', '')):
+                    dynamic_model = _compute_flash_model(
+                        len(url_snippets), 'medium', 0, floor_tier=synthesis_tier
+                    )
+                    if dynamic_model != models['synthesis']:
+                        logger.debug(f"[CLONE] Flash dynamic (skip-synth): {models['synthesis']} → {dynamic_model}")
+                        models['synthesis'] = dynamic_model
 
             step_start_phase = time.time()
             synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
@@ -403,7 +457,8 @@ class TheClone2Refined:
             # Extract self-assessment for iteration logic
             self_assessment = synthesis_result.get('self_assessment', 'A')
             suggested_search_terms = synthesis_result.get('suggested_search_terms', [])
-            request_upgrade = synthesis_result.get('request_capability_upgrade', False)
+            needs_thinking = synthesis_result.get('needs_thinking', False)
+            needs_expert   = synthesis_result.get('needs_expert', False)
             note_to_self = synthesis_result.get('note_to_self')
             original_note_to_self = note_to_self
             previous_answer = synthesis_result.get('answer', {})
@@ -418,7 +473,7 @@ class TheClone2Refined:
             self_correction_count = 0
 
             while (self_assessment not in ['A+', 'A']
-                   and suggested_search_terms
+                   and (suggested_search_terms or needs_thinking or needs_expert)
                    and self_correction_count < max_self_corrections):
 
                 self_correction_count += 1
@@ -426,8 +481,8 @@ class TheClone2Refined:
 
                 # Filter out already-used search terms and limit to 2
                 suggested_search_terms = [t for t in suggested_search_terms if t not in all_search_terms_used][:2]
-                if not suggested_search_terms:
-                    logger.debug(f"[CLONE] No new search terms to try, stopping self-correction")
+                if not suggested_search_terms and not needs_thinking and not needs_expert:
+                    logger.debug(f"[CLONE] No actionable signals, stopping self-correction")
                     break
 
                 all_search_terms_used.update(suggested_search_terms)
@@ -436,14 +491,12 @@ class TheClone2Refined:
                 if clone_logger:
                     clone_logger.log_section("Skip-to-Synthesis Self-Correction", f"Iteration {self_correction_count}: Grade {self_assessment}. Executing: {suggested_search_terms}", level=2)
 
-                # Prepend system message to note_to_self
-                prefix = "Providing additional search results that you requested"
-                if note_to_self:
-                    note_to_self = f"{prefix}: {note_to_self}"
-                else:
-                    note_to_self = f"{prefix}."
+                # Prepend context note for re-synthesis
+                if suggested_search_terms:
+                    prefix = "Providing additional search results that you requested"
+                    note_to_self = f"{prefix}: {note_to_self}" if note_to_self else f"{prefix}."
 
-                # Search
+                # Search (only if search terms available)
                 search_settings = {
                     'max_results_per_query': 10,
                     'recency_days': None,
@@ -589,21 +642,55 @@ class TheClone2Refined:
 
                     logger.debug(f"[CLONE] Added {total_new_snippets} new snippets")
 
-                # Re-synthesis with new snippets
-                target_model = models['synthesis']
+                # Re-synthesis — apply +T/+E model adjustments
                 target_soft_schema = False
+                action_parts = []
 
-                if request_upgrade and synthesis_tier != 'tier4':
-                    logger.debug(f"[CLONE] Upgrading to tier4 (PhD+ capability) as requested")
-                    tier4_models = get_models_for_tier(provider, 'tier4')
-                    target_model = tier4_models['synthesis']
-                    synthesis_tier = 'tier4'
-                    models['synthesis'] = target_model
-                    upgraded = True
-                    action_name = "Skip-to-Synthesis Tier 4 Upgrade"
-                else:
-                    logger.debug(f"[CLONE] Re-synthesizing with current model ({target_model})")
-                    action_name = "Skip-to-Synthesis Re-Synthesis"
+                # Apply +T: bump flash thinking, or escalate if at limit / non-flash
+                made_change = False
+                if needs_thinking:
+                    if _is_flash_model(models['synthesis']):
+                        bumped = _flash_bump_thinking(models['synthesis'])
+                        if bumped is not None:
+                            logger.debug(f"[CLONE] +T: {models['synthesis']} → {bumped}")
+                            models['synthesis'] = bumped
+                            action_parts.append("ThinkBump")
+                            made_change = True
+                        else:
+                            logger.debug(f"[CLONE] +T: already at max thinking, escalating")
+                            needs_expert = True
+                            action_parts.append("ThinkMaxEscalate")
+                    else:
+                        logger.debug(f"[CLONE] +T: non-flash model, escalating")
+                        needs_expert = True
+                        action_parts.append("ThinkEscalate")
+
+                # Apply +E: step up to next expert tier
+                if needs_expert:
+                    if synthesis_tier in ('tier1', 'tier2'):
+                        logger.debug(f"[CLONE] +E: {synthesis_tier} → tier3 (Sonnet)")
+                        synthesis_tier = 'tier3'
+                        models['synthesis'] = get_models_for_tier(provider, 'tier3')['synthesis']
+                        upgraded = True
+                        made_change = True
+                        action_parts.append("→Sonnet")
+                    elif synthesis_tier == 'tier3':
+                        logger.debug(f"[CLONE] +E: tier3 → tier4 (Opus)")
+                        synthesis_tier = 'tier4'
+                        models['synthesis'] = get_models_for_tier(provider, 'tier4')['synthesis']
+                        upgraded = True
+                        made_change = True
+                        action_parts.append("→Opus")
+                    # tier4: already at max, no-op
+
+                # If no search terms and no model change occurred, nothing to do
+                if not suggested_search_terms and not made_change:
+                    logger.debug(f"[CLONE] No effective actions (already at max tier), stopping self-correction")
+                    break
+
+                target_model = models['synthesis']
+                action_name = ("Skip-to-Synthesis " + " & ".join(action_parts) + " Re-Synthesis"
+                               if action_parts else "Skip-to-Synthesis Re-Synthesis")
 
                 step_start_phase = time.time()
                 if clone_logger:
@@ -652,6 +739,8 @@ class TheClone2Refined:
                 # Extract values for next iteration
                 self_assessment = synthesis_result.get('self_assessment', 'A')
                 suggested_search_terms = synthesis_result.get('suggested_search_terms', [])
+                needs_thinking = synthesis_result.get('needs_thinking', False)
+                needs_expert   = synthesis_result.get('needs_expert', False)
                 previous_answer = synthesis_result.get('answer', {})
                 logger.debug(f"[CLONE] Skip-to-Synthesis self-correction {self_correction_count} complete: grade={self_assessment}, new_terms={len(suggested_search_terms)}")
 
@@ -789,6 +878,7 @@ class TheClone2Refined:
         # Get models for synthesis tier (unless overridden)
         if not model_override:
             models = get_models_for_tier(provider, synthesis_tier, strategy=strategy)
+            # Dynamic flash model will be applied just before synthesis (after snippets are collected)
 
         # Override global limits for findall mode
         if strategy.get('bypass_global_source_limit'):
@@ -1863,6 +1953,18 @@ class TheClone2Refined:
         }
         synthesis_context = context_map.get(strategy['name'], 'medium')
 
+        # Dynamic flash model: compute from complexity signals (depth > breadth)
+        # Guard: only override if synthesis model is currently a flash model (not Sonnet/Opus tier3/4,
+        # and not a list from FINDALL mode which would lose the fallback chain).
+        if provider == 'flash' and not model_override and _is_flash_model(models.get('synthesis', '')):
+            dynamic_model = _compute_flash_model(
+                len(all_snippets), synthesis_context, 0, floor_tier=synthesis_tier
+            )
+            if dynamic_model != models['synthesis']:
+                logger.debug(f"[CLONE] Flash dynamic: {models['synthesis']} → {dynamic_model} "
+                             f"(snippets={len(all_snippets)}, ctx={synthesis_context})")
+                models['synthesis'] = dynamic_model
+
         synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
             query=prompt,
             snippets=all_snippets,
@@ -1892,11 +1994,11 @@ class TheClone2Refined:
             clone_logger.record_step_metric("Synthesis", synth_provider, used_model, synth_cost, step_time_phase, f"Generated {len(synthesis_result.get('citations', []))} citations")
             clone_logger.end_step("Synthesis")
 
-        # Check self-assessment and upgrade to tier4 if needed
-        # self_assessment is now extracted in unified_synthesizer before transform loses it
+        # Extract self-assessment signals
         self_assessment = synthesis_result.get('self_assessment', 'A')
         suggested_search_terms = synthesis_result.get('suggested_search_terms', [])
-        request_upgrade = synthesis_result.get('request_capability_upgrade', False)
+        needs_thinking = synthesis_result.get('needs_thinking', False)
+        needs_expert   = synthesis_result.get('needs_expert', False)
         note_to_self = synthesis_result.get('note_to_self')
         original_note_to_self = note_to_self  # Preserve original before prefix is added
         previous_answer = synthesis_result.get('answer', {})  # Capture for passing to next iteration
@@ -1909,9 +2011,9 @@ class TheClone2Refined:
         max_self_corrections = findall_iterations if findall else 1
         self_correction_count = 0
 
-        # Self-correction loop: runs up to max_self_corrections times while we have search terms
+        # Self-correction loop: runs when grade is below A and there are actionable signals
         while (self_assessment not in ['A+', 'A']
-               and suggested_search_terms
+               and (suggested_search_terms or needs_thinking or needs_expert)
                and self_correction_count < max_self_corrections):
 
             self_correction_count += 1
@@ -1919,8 +2021,8 @@ class TheClone2Refined:
 
             # Filter out already-used search terms and limit to 2
             suggested_search_terms = [t for t in suggested_search_terms if t not in all_search_terms_used][:2]
-            if not suggested_search_terms:
-                logger.debug(f"[CLONE] No new search terms to try, stopping self-correction")
+            if not suggested_search_terms and not needs_thinking and not needs_expert:
+                logger.debug(f"[CLONE] No actionable signals, stopping self-correction")
                 break
 
             all_search_terms_used.update(suggested_search_terms)
@@ -1929,12 +2031,10 @@ class TheClone2Refined:
             if clone_logger:
                 clone_logger.log_section("Self-Correction Search", f"Iteration {self_correction_count}: Grade {self_assessment}. Executing: {suggested_search_terms}", level=2)
 
-            # Prepend system message to note_to_self
-            prefix = "Providing additional search results that you requested"
-            if note_to_self:
-                note_to_self = f"{prefix}: {note_to_self}"
-            else:
-                note_to_self = f"{prefix}."
+            # Prepend context note for re-synthesis
+            if suggested_search_terms:
+                prefix = "Providing additional search results that you requested"
+                note_to_self = f"{prefix}: {note_to_self}" if note_to_self else f"{prefix}."
 
             # Search
             new_search_results = await self.search_manager.execute_searches(
@@ -2086,23 +2186,55 @@ class TheClone2Refined:
 
                 logger.debug(f"[CLONE] Added {total_new_snippets} new snippets")
 
-            # 2. Determine model for re-synthesis
-            target_model = models['synthesis']
+            # 2. Apply +T/+E model adjustments, then re-synthesize
             target_soft_schema = False
+            action_parts = []
+            made_change = False
 
-            if request_upgrade and synthesis_tier != 'tier4':
-                logger.debug(f"[CLONE] Upgrading to tier4 (PhD+ capability) as requested")
-                tier4_models = get_models_for_tier(provider, 'tier4', strategy=strategy)
-                target_model = tier4_models['synthesis']
-                # ai_client will handle soft_schema automatically for DeepSeek/Baseten
-                target_soft_schema = False
-                synthesis_tier = 'tier4'
-                models['synthesis'] = target_model # Update current model state
-                upgraded = True
-                action_name = "Tier 4 Upgrade & Re-Synthesis"
-            else:
-                logger.debug(f"[CLONE] Re-synthesizing with current model ({target_model})")
-                action_name = "Re-Synthesis (Current Model)"
+            # Apply +T: bump flash thinking, or escalate if at limit / non-flash
+            if needs_thinking:
+                if _is_flash_model(models['synthesis']):
+                    bumped = _flash_bump_thinking(models['synthesis'])
+                    if bumped is not None:
+                        logger.debug(f"[CLONE] +T: {models['synthesis']} → {bumped}")
+                        models['synthesis'] = bumped
+                        action_parts.append("ThinkBump")
+                        made_change = True
+                    else:
+                        logger.debug(f"[CLONE] +T: already at max thinking, escalating")
+                        needs_expert = True
+                        action_parts.append("ThinkMaxEscalate")
+                else:
+                    logger.debug(f"[CLONE] +T: non-flash model, escalating")
+                    needs_expert = True
+                    action_parts.append("ThinkEscalate")
+
+            # Apply +E: step up to next expert tier
+            if needs_expert:
+                if synthesis_tier in ('tier1', 'tier2'):
+                    logger.debug(f"[CLONE] +E: {synthesis_tier} → tier3 (Sonnet)")
+                    synthesis_tier = 'tier3'
+                    models['synthesis'] = get_models_for_tier(provider, 'tier3', strategy=strategy)['synthesis']
+                    upgraded = True
+                    made_change = True
+                    action_parts.append("→Sonnet")
+                elif synthesis_tier == 'tier3':
+                    logger.debug(f"[CLONE] +E: tier3 → tier4 (Opus)")
+                    synthesis_tier = 'tier4'
+                    models['synthesis'] = get_models_for_tier(provider, 'tier4', strategy=strategy)['synthesis']
+                    upgraded = True
+                    made_change = True
+                    action_parts.append("→Opus")
+                # tier4: already at max, no-op
+
+            # If no search terms and no actual model change occurred, stop
+            if not suggested_search_terms and not made_change:
+                logger.debug(f"[CLONE] No effective actions (already at max tier), stopping self-correction")
+                break
+
+            target_model = models['synthesis']
+            action_name = (" & ".join(action_parts) + " Re-Synthesis"
+                           if action_parts else "Re-Synthesis (Current Model)")
 
             step_start_phase = time.time()
             if clone_logger:
@@ -2152,73 +2284,16 @@ class TheClone2Refined:
                 clone_logger.end_step(action_name)
 
             # Extract values for next iteration (if loop continues)
-            answer_data = synthesis_result.get('answer', {})
-            self_assessment = answer_data.get('self_assessment', 'A') if isinstance(answer_data, dict) else 'A'
+            self_assessment = synthesis_result.get('self_assessment', 'A')
             suggested_search_terms = synthesis_result.get('suggested_search_terms', [])
+            needs_thinking = synthesis_result.get('needs_thinking', False)
+            needs_expert   = synthesis_result.get('needs_expert', False)
             previous_answer = synthesis_result.get('answer', {})
             logger.debug(f"[CLONE] Self-correction {self_correction_count} complete: grade={self_assessment}, new_terms={len(suggested_search_terms)}")
 
-        # Handle tier4 upgrade request if loop didn't run (no search terms but upgrade requested)
-        if (self_correction_count == 0
-            and self_assessment not in ['A+', 'A']
-            and request_upgrade
-            and synthesis_tier != 'tier4'):
-
-            logger.info(f"[CLONE] Grade {self_assessment} with upgrade request (no search terms). Upgrading to tier4.")
-            tier4_models = get_models_for_tier(provider, 'tier4', strategy=strategy)
-            target_model = tier4_models['synthesis']
-            synthesis_tier = 'tier4'
-            models['synthesis'] = target_model
-            upgraded = True
-
-            step_start_phase = time.time()
-            if clone_logger:
-                clone_logger.start_step("Tier 4 Upgrade (No Search)")
-                clone_logger.log_section("Tier 4 Upgrade", f"Grade {self_assessment}. Upgrading model without new searches.", level=2)
-
-            synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
-                query=prompt,
-                snippets=all_snippets,
-                context=synthesis_context,
-                iteration=iteration,
-                is_last_iteration=True,
-                schema=schema,
-                model=target_model,
-                search_terms=list(all_search_terms_used),
-                debug_dir=debug_dir,
-                soft_schema=False,
-                clone_logger=clone_logger,
-                note_to_self=note_to_self,
-                initial_decision=decision,
-                sources_examined=sources_examined,
-                previous_iteration_data={
-                    'iteration': 1,
-                    'grade': self_assessment,
-                    'response': previous_answer,
-                    'note_to_self': original_note_to_self or '',
-                    'search_terms': list(all_search_terms_used)
-                }
-            )
-
-            upgrade_cost, upgrade_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}), clone_logger, stats)
-            costs['synthesis'] += upgrade_cost
-            costs_by_provider[upgrade_provider] = costs_by_provider.get(upgrade_provider, 0.0) + upgrade_cost
-            calls_by_provider[upgrade_provider] = calls_by_provider.get(upgrade_provider, 0) + 1
-
-            step_time_phase = time.time() - step_start_phase
-            if clone_logger:
-                model_resp = synthesis_result.get('model_response', {})
-                used_model = model_resp.get('model_used', target_model)
-                if model_resp.get('used_backup_model'): used_model += " (Backup)"
-                clone_logger.record_step_metric("Tier 4 Upgrade (No Search)", upgrade_provider, used_model, upgrade_cost, step_time_phase, "Upgraded")
-                clone_logger.end_step("Tier 4 Upgrade (No Search)")
-
-            answer_data = synthesis_result.get('answer', {})
-            self_assessment = answer_data.get('self_assessment', 'A') if isinstance(answer_data, dict) else 'A'
-
         # Warn if low grade but no self-correction was possible
-        elif self_correction_count == 0 and self_assessment not in ['A+', 'A']:
-            logger.warning(f"[CLONE] Low self-assessment ({self_assessment}) but no search terms suggested. Returning best effort.")
+        if self_correction_count == 0 and self_assessment not in ['A+', 'A']:
+            logger.warning(f"[CLONE] Low self-assessment ({self_assessment}) but no actionable signals. Returning best effort.")
 
         # Build response
         total_time = time.time() - call_start_time # Use overall start time

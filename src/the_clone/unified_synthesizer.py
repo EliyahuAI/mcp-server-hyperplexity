@@ -236,13 +236,19 @@ class UnifiedSynthesizer:
                 # Handle both dict (normal synthesis) and list (refinement mode with array responses)
                 if isinstance(data, dict):
                     suggested = data.get('suggested_search_terms', [])
-                    request_upgrade = data.get('request_capability_upgrade', False)
                     new_note = data.get('note_to_self')
-                    self_assessment = data.get('self_assessment', 'A')  # Extract before transform loses it
+                    # Parse pipe-separated grade+signals: "B|T|S" → grade="B", T/E flags
+                    grade_raw = data.get('self_assessment', 'A')
+                    grade_parts = [p.strip() for p in grade_raw.split('|')]
+                    self_assessment = grade_parts[0] if grade_parts else 'A'
+                    signal_flags = set(grade_parts[1:])
+                    needs_thinking = 'T' in signal_flags
+                    needs_expert   = 'E' in signal_flags
                 else:
                     # List response (from refinement mode) - no metadata fields
                     suggested = []
-                    request_upgrade = False
+                    needs_thinking = False
+                    needs_expert   = False
                     new_note = None
                     self_assessment = 'A'
             else:
@@ -265,7 +271,8 @@ class UnifiedSynthesizer:
                     answer_raw = data
                     missing = []
                     suggested = []
-                request_upgrade = False
+                needs_thinking = False
+                needs_expert   = False
                 new_note = None
                 self_assessment = 'A'  # Evaluation mode doesn't use self-assessment
 
@@ -282,7 +289,8 @@ class UnifiedSynthesizer:
                             'answer_raw': answer_raw,
                             'missing': missing,
                             'suggested': suggested,
-                            'request_upgrade': request_upgrade,
+                            'needs_thinking': needs_thinking,
+                            'needs_expert': needs_expert,
                             'note_to_self': new_note
                         }, f, indent=2)
                 except:
@@ -333,7 +341,8 @@ class UnifiedSynthesizer:
                 "snippets_used": snippets_used,
                 "missing_aspects": missing,
                 "suggested_search_terms": suggested,
-                "request_capability_upgrade": request_upgrade,
+                "needs_thinking": needs_thinking,
+                "needs_expert": needs_expert,
                 "note_to_self": new_note,
                 "self_assessment": self_assessment,  # Preserve for iteration logic
                 "iteration": iteration,  # Track iteration number for next refinement
@@ -554,27 +563,31 @@ Imagine a client paid an expert researcher for this answer. Would they be satisf
 - Complete coverage (nothing important missing that's findable online)
 - Clear and well-organized presentation
 
-**Grade your synthesis (A+ to C-):**
-- **A+/A**: Expert-quality - client would be satisfied, nothing important missing
-- **B**: Acceptable but incomplete - missing information that's likely findable online
-  - **Optional:** Provide `suggested_search_terms` ONLY if you have specific, concrete gaps that targeted searches would fill.
-  - **Optional:** `request_capability_upgrade=true` if reasoning is too complex.
-  - **Optional:** `note_to_self` for next attempt.
-- **C**: Insufficient - cannot meaningfully answer, or information not available
-  - **Optional:** Provide `suggested_search_terms` ONLY if specific searches would likely help.
+**Grade your synthesis using format: GRADE[|T][|S][|E]**
+- **A+/A**: Expert-quality — client would be satisfied, nothing important missing
+- **A-/B**: Acceptable but incomplete — missing information likely findable online
+- **C**: Insufficient — cannot meaningfully answer, or information not available
 
-**CRITICAL for suggested_search_terms:**
+**Optional signals (append to grade with `|`, only effective when grade is below A):**
+- **|T**: More thinking depth needed — bumps thinking budget or escalates to a stronger model
+  (use when the *reasoning challenge* requires deeper analysis, not just more data)
+- **|S**: More/better search would help — also provide `suggested_search_terms`
+- **|E**: Escalate to an expert model — PhD-level reasoning required beyond current capability
+
+**Examples:** `"A"`, `"B|S"`, `"C|T|S"`, `"A+|T"`, `"B|E"`, `"C|T|S|E"`
+
+**CRITICAL for suggested_search_terms (when using |S):**
 - ONLY suggest search terms when you have HIGH CONFIDENCE they will find new, useful information
 - Do NOT suggest speculative or exploratory searches ("maybe there's more about X")
 - Each term should target a SPECIFIC gap you identified (e.g., "Company Y Phase 3 trial results 2024")
-- If you're unsure whether more searches would help, do NOT suggest any - just give your best answer
+- If you're unsure whether more searches would help, do NOT use |S — just give your best answer
 - Empty `suggested_search_terms` is preferable to low-confidence guesses
 
 **CRITICAL:**
 - You MUST always provide an answer that satisfies the schema structure, even if incomplete.
-- We will only re-run searches if you provide `suggested_search_terms` OR set `request_capability_upgrade=true`.
+- Signals are only acted on when grade is below A.
 
-Return JSON with 'comparison', 'self_assessment', and optional 'suggested_search_terms', 'request_capability_upgrade', and 'note_to_self' fields.
+Return JSON with 'comparison', 'self_assessment', and optional 'suggested_search_terms' and 'note_to_self' fields.
 
 **⚠️ RESPONSE LENGTH LIMIT: Keep your total response under 24000 words.{' Be terse - validation will expand details later.' if context == 'findall' else ''}**"""
 

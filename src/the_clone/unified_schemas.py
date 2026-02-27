@@ -88,17 +88,20 @@ def get_synthesis_only_schema(answer_schema: dict = None) -> dict:
             "comparison": comparison_schema,
             "self_assessment": {
                 "type": "string",
-                "enum": ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-"],
-                "description": "Grade synthesis quality: A+/A if handled well OR info not available, B if struggled with complexity, C if insufficient"
+                "description": (
+                    "Grade synthesis quality with optional pipe-separated action signals. "
+                    "Format: GRADE[|T][|S][|E]. "
+                    "Grades: A+/A (expert quality), A-/B (partial/incomplete), C (insufficient). "
+                    "|T = more thinking depth needed (bumps thinking budget or escalates model). "
+                    "|S = more/better search needed — also provide suggested_search_terms. "
+                    "|E = escalate to a smarter expert model (PhD+ reasoning required). "
+                    "Examples: 'A', 'B|S', 'C|T|S', 'A+|T', 'B|E', 'C|T|S|E'"
+                )
             },
             "suggested_search_terms": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Optional: Search terms to improve answer if grade < A"
-            },
-            "request_capability_upgrade": {
-                "type": "boolean",
-                "description": "Optional: Set true if reasoning complexity requires a smarter model (PhD+ level)."
+                "description": "Optional: Search terms to improve answer if grade < A (use with |S signal)"
             },
             "note_to_self": {
                 "type": "string",

@@ -94,24 +94,29 @@
     "deepseek": {
       "description": "Default provider using Gemini 2.5 Flash Lite for extraction, DeepSeek for synthesis",
       "default_extraction_model": "gemini-2.5-flash-lite",
+      "default_extraction_model_role": "clone_extraction_default",
       "tiers": {
         "tier1": {
           "synthesis": "gemini-2.5-flash-lite",
+          "model_role": "clone_deepseek_t1",
           "label": "Fast",
           "description": "Fast, cost-effective synthesis for simple queries"
         },
         "tier2": {
           "synthesis": "deepseek-v3.2",
+          "model_role": "clone_deepseek_t2",
           "label": "Balanced",
           "description": "Balanced synthesis with DeepSeek → Sonnet → Opus fallback chain"
         },
         "tier3": {
           "synthesis": "claude-sonnet-4-5",
+          "model_role": "clone_deepseek_t3",
           "label": "Strong",
           "description": "Explicit upgrade to Claude Sonnet for complex reasoning"
         },
         "tier4": {
           "synthesis": "claude-opus-4-6",
+          "model_role": "clone_deepseek_t4",
           "label": "Deepest",
           "description": "Maximum capability - Opus for hardest problems (auto-upgrade tier)"
         }
@@ -120,24 +125,29 @@
     "claude": {
       "description": "Gemini extraction + Claude synthesis for speed and reliability",
       "default_extraction_model": "gemini-2.5-flash-lite",
+      "default_extraction_model_role": "clone_extraction_default",
       "tiers": {
         "tier1": {
           "synthesis": "claude-haiku-4-5",
+          "model_role": "clone_claude_t1",
           "label": "Fast",
           "description": "Fast synthesis for simple queries"
         },
         "tier2": {
           "synthesis": "claude-sonnet-4-5",
+          "model_role": "clone_claude_t2",
           "label": "Balanced",
           "description": "Balanced performance for typical queries"
         },
         "tier3": {
           "synthesis": "claude-sonnet-4-5",
+          "model_role": "clone_claude_t3",
           "label": "Strong",
           "description": "Strong reasoning for complex queries"
         },
         "tier4": {
           "synthesis": "claude-opus-4-6",
+          "model_role": "clone_claude_t4",
           "label": "Deepest",
           "description": "Deepest analysis for hardest problems"
         }
@@ -146,24 +156,29 @@
     "baseten": {
       "description": "Gemini extraction + Baseten DeepSeek synthesis for speed",
       "default_extraction_model": "gemini-2.5-flash-lite",
+      "default_extraction_model_role": "clone_extraction_default",
       "tiers": {
         "tier1": {
           "synthesis": "deepseek-v3.2-baseten",
+          "model_role": "clone_baseten_t1",
           "label": "Fast",
           "description": "Fast, cost-effective synthesis via Baseten"
         },
         "tier2": {
           "synthesis": "deepseek-v3.2-baseten",
+          "model_role": "clone_baseten_t2",
           "label": "Balanced",
           "description": "Balanced performance via Baseten"
         },
         "tier3": {
           "synthesis": "claude-sonnet-4-5",
+          "model_role": "clone_baseten_t3",
           "label": "Strong",
           "description": "Strong reasoning for complex queries"
         },
         "tier4": {
           "synthesis": "claude-opus-4-6",
+          "model_role": "clone_baseten_t4",
           "label": "Deepest",
           "description": "Deepest analysis for hardest problems"
         }
@@ -172,24 +187,29 @@
     "kimi": {
       "description": "Gemini extraction + Kimi K2.5 synthesis via OpenRouter",
       "default_extraction_model": "gemini-2.5-flash-lite",
+      "default_extraction_model_role": "clone_extraction_default",
       "tiers": {
         "tier1": {
           "synthesis": "moonshotai/kimi-k2.5",
+          "model_role": "clone_kimi_t1",
           "label": "Fast",
           "description": "Fast synthesis via Kimi K2.5 (OpenRouter)"
         },
         "tier2": {
           "synthesis": "moonshotai/kimi-k2.5",
+          "model_role": "clone_kimi_t2",
           "label": "Balanced",
           "description": "Balanced performance via Kimi K2.5 (OpenRouter)"
         },
         "tier3": {
           "synthesis": "claude-sonnet-4-6",
+          "model_role": "clone_kimi_t3",
           "label": "Strong",
           "description": "Strong reasoning - falls back to Claude Sonnet"
         },
         "tier4": {
           "synthesis": "claude-opus-4-6",
+          "model_role": "clone_kimi_t4",
           "label": "Deepest",
           "description": "Deepest analysis - falls back to Claude Opus"
         }
@@ -198,24 +218,29 @@
     "flash": {
       "description": "Gemini 3 Flash (Google AI Studio) synthesis — high thinking, web-grounded via Perplexity",
       "default_extraction_model": "gemini-2.5-flash-lite",
+      "default_extraction_model_role": "clone_extraction_default",
       "tiers": {
         "tier1": {
           "synthesis": "gemini-3-flash-preview-low",
+          "model_role": "clone_flash_t1",
           "label": "Fast",
           "description": "Fast synthesis via Gemini 3 Flash low-thinking (AI Studio → OpenRouter)"
         },
         "tier2": {
           "synthesis": "gemini-3-flash-preview",
+          "model_role": "clone_flash_t2",
           "label": "Balanced",
           "description": "Medium-thinking synthesis via Gemini 3 Flash (AI Studio → OpenRouter)"
         },
         "tier3": {
           "synthesis": "claude-sonnet-4-6",
+          "model_role": "clone_flash_t3",
           "label": "Strong",
           "description": "Strong reasoning fallback via Claude Sonnet"
         },
         "tier4": {
           "synthesis": "claude-opus-4-6",
+          "model_role": "clone_flash_t4",
           "label": "Deepest",
           "description": "Maximum capability fallback via Claude Opus"
         }
