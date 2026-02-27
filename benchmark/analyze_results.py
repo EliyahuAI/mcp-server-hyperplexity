@@ -160,12 +160,19 @@ def load_run_results(results_dir: Path) -> List[Dict]:
 # Scoring
 # ---------------------------------------------------------------------------
 
+import re as _re
+
+def _strip_citations(s: str) -> str:
+    """Remove trailing citation markers like [1], [2], [1,2], (1), etc."""
+    return _re.sub(r'(\s*\[\d+(?:,\s*\d+)*\]|\s*\(\d+\))+\s*$', '', s).strip()
+
+
 def score_cell(predicted: str, ground_truth: str) -> str:
     """Return 'exact', 'close', or 'wrong'."""
     if not predicted or not ground_truth:
         return "wrong"
 
-    pred_clean = predicted.strip().lower()
+    pred_clean = _strip_citations(predicted.strip().lower())
     gt_clean = ground_truth.strip().lower()
 
     if pred_clean == gt_clean:
