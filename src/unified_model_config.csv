@@ -90,9 +90,11 @@ deepseek-v3.1*,vertex,3,true,50,180,100,1.4,0.6,5,2,0.60,1.70,120000,Vertex: Dee
 deepseek-v3*,vertex,3,true,50,180,100,1.4,0.6,5,2,0.60,1.70,120000,Vertex: DeepSeek-V3 alias for V3.1 (120K context)
 deepseek*,vertex,4,true,50,150,100,1.3,0.7,5,2,0.28,0.40,120000,Vertex: Generic DeepSeek fallback - uses V3.2 pricing (120K context)
 
-# THE-CLONE TIER: excluded — the-clone models are compound pipelines that call other
-# models internally (Gemini/Kimi/DeepSeek/Claude). Their costs are tracked via those
-# underlying models. Listing the-clone here causes incorrect rate-limit and cost attribution.
+# THE-CLONE TIER: compound pipeline — registers for batch sizing only, NOT cost tracking.
+# Costs are always tracked via the underlying synthesis models (Gemini/Kimi/DeepSeek/Claude).
+# Zero cost fields prevent any accidental cost attribution through this entry.
+# max_tokens=64000 matches Claude Sonnet 4.6 output limit (safe ceiling for all clone variants).
+the-clone*,clone,2,true,10,100,50,1.3,0.6,5,2,0.00,0.00,64000,The-Clone: Compound pipeline - batch sizing only, zero cost (costs tracked via synthesis models)
 
 # OPENROUTER TIER: MiniMax M2.5 and Kimi K2.5 (via OpenRouter)
 minimax/minimax-m2.5*,openrouter,1,true,20,80,50,1.3,0.7,5,2,0.30,1.10,66000,OpenRouter: MiniMax M2.5 - Ultra-low cost (fp8 quant, 197K context, no tools)
