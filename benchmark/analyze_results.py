@@ -269,6 +269,7 @@ def score_runs(runs: List[Dict], ground_truth: Dict[Tuple, str]) -> List[Dict]:
         session_id = meta.get("session_id", "")
         started_at = meta.get("started_at", "")
         costs = _extract_costs(meta)
+        viewer_url = (run.get("results") or {}).get("results", {}).get("interactive_viewer_url", "")
 
         metadata_index = run.get("metadata_index") or {}
 
@@ -318,6 +319,7 @@ def score_runs(runs: List[Dict], ground_truth: Dict[Tuple, str]) -> List[Dict]:
                     "total_elapsed_s": total_time,
                     "preview_elapsed_s": meta.get("preview_elapsed_s"),
                     "validation_elapsed_s": meta.get("validation_elapsed_s"),
+                    "viewer_url": viewer_url,
                 })
         else:
             # Fallback: try results rows (no confidence data available)
@@ -350,6 +352,7 @@ def score_runs(runs: List[Dict], ground_truth: Dict[Tuple, str]) -> List[Dict]:
                         "total_elapsed_s": total_time,
                         "preview_elapsed_s": meta.get("preview_elapsed_s"),
                         "validation_elapsed_s": meta.get("validation_elapsed_s"),
+                        "viewer_url": viewer_url,
                     })
 
     return cell_scores
@@ -383,6 +386,7 @@ def aggregate_by_run(cell_scores: List[Dict]) -> List[Dict]:
         accuracy_pct = round(100 * (exact + close * 0.5) / total, 1) if total else 0
         exact_pct = round(100 * exact / total, 1) if total else 0
 
+        viewer_url = cells[0].get("viewer_url", "") if cells else ""
         # Cost: use estimated_eliyahu_cost (projected full-table, no caching distortion)
         # All cells in a run share the same run-level cost, so take from first cell.
         est_cost = _safe_float(cells[0].get("estimated_eliyahu_cost")) if cells else 0.0
@@ -421,6 +425,7 @@ def aggregate_by_run(cell_scores: List[Dict]) -> List[Dict]:
             "cost_per_cell": cost_per_cell,                 # estimated_cost / total_cells
             # Time: preview-extrapolated estimate (fair; unaffected by cache hits on QC runs)
             "est_time_s": round(est_time, 1) if est_time else 0,
+            "viewer_url": viewer_url,
         })
 
     return sorted(rows, key=lambda r: (r["test_id"], r["search_model"], r["qc_model"] or ""))
@@ -533,30 +538,34 @@ def generate_report(run_rows: List[Dict], cell_scores: List[Dict], results_dir: 
         lines.append(f"### {test_id}\n")
         sort_key = lambda x: (x["search_model"], x["qc_model"] or "")
         if has_gt:
-            lines.append("| Search Model | QC | Accuracy | Exact% | HIGH | MED | LOW | Est Cost ($) | ¢/cell | Est Time (s) | GT |")
-            lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
+            lines.append("| Search Model | QC | Accuracy | Exact% | HIGH | MED | LOW | Est Cost ($) | ¢/cell | Est Time (s) | GT | Viewer |")
+            lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
             for r in sorted(test_rows, key=sort_key):
                 gt_marker = "✓" if r["is_ground_truth"] else ""
                 cost_str = f"${r['estimated_eliyahu_cost']:.4f}" if r["estimated_eliyahu_cost"] else "—"
                 cpc_str = f"{r['cost_per_cell']*100:.2f}¢" if r["cost_per_cell"] else "—"
                 time_str = f"{r['est_time_s']}s" if r["est_time_s"] else "—"
+                url = r.get("viewer_url", "")
+                viewer_str = f"[view]({url})" if url else "—"
                 lines.append(
                     f"| {r['search_model']} | {r['qc_model']} | "
                     f"{r['accuracy_pct']}% | {r['exact_pct']}% | "
                     f"{r['high_conf_cells']} | {r['medium_conf_cells']} | {r['low_conf_cells']} | "
-                    f"{cost_str} | {cpc_str} | {time_str} | {gt_marker} |"
+                    f"{cost_str} | {cpc_str} | {time_str} | {gt_marker} | {viewer_str} |"
                 )
         else:
-            lines.append("| Search Model | QC | HIGH conf | MED conf | LOW conf | Est Cost ($) | ¢/cell | Est Time (s) |")
-            lines.append("|---|---|---|---|---|---|---|---|")
+            lines.append("| Search Model | QC | HIGH conf | MED conf | LOW conf | Est Cost ($) | ¢/cell | Est Time (s) | Viewer |")
+            lines.append("|---|---|---|---|---|---|---|---|---|")
             for r in sorted(test_rows, key=sort_key):
                 cost_str = f"${r['estimated_eliyahu_cost']:.4f}" if r["estimated_eliyahu_cost"] else "—"
                 cpc_str = f"{r['cost_per_cell']*100:.2f}¢" if r["cost_per_cell"] else "—"
                 time_str = f"{r['est_time_s']}s" if r["est_time_s"] else "—"
+                url = r.get("viewer_url", "")
+                viewer_str = f"[view]({url})" if url else "—"
                 lines.append(
                     f"| {r['search_model']} | {r['qc_model']} | "
                     f"{r['high_conf_cells']} | {r['medium_conf_cells']} | {r['low_conf_cells']} | "
-                    f"{cost_str} | {cpc_str} | {time_str} |"
+                    f"{cost_str} | {cpc_str} | {time_str} | {viewer_str} |"
                 )
         lines.append("")
 
