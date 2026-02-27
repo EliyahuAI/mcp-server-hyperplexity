@@ -3,7 +3,7 @@
 run_benchmark.py — Benchmark orchestrator for Hyperplexity validation quality.
 
 Runs all combinations defined in model_matrix.csv against the 5 esoteric-science
-test datasets, collects results + model_snapshot.csv per run, and saves everything
+test datasets, collects results + metadata per run, and saves everything
 to a timestamped results/ directory.
 
 Usage:
@@ -12,6 +12,8 @@ Usage:
     python benchmark/run_benchmark.py --full                    # all 46 runs in model_matrix.csv
     python benchmark/run_benchmark.py --full --resume           # skip runs that already have results.json
     python benchmark/run_benchmark.py --run-ids 001 005 016     # specific run IDs only
+    python benchmark/run_benchmark.py --minimal --parallel      # run all selected runs concurrently
+    python benchmark/run_benchmark.py --full --test-id test_01  # all runs for test_01 only
 
 Configuration (env vars or .env file in benchmark/):
     HYPERPLEXITY_API_URL     Base URL, e.g. https://abc123.execute-api.us-east-1.amazonaws.com/prod
@@ -27,6 +29,7 @@ import logging
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -254,18 +257,30 @@ def load_model_matrix() -> List[Dict]:
     return rows
 
 
-def filter_matrix(rows: List[Dict], mode: str, run_ids: Optional[List[str]] = None) -> List[Dict]:
+def filter_matrix(
+    rows: List[Dict],
+    mode: str,
+    run_ids: Optional[List[str]] = None,
+    test_id: Optional[str] = None,
+) -> List[Dict]:
     if run_ids:
-        return [r for r in rows if r["run_id"] in run_ids and r["enabled"]]
-    if mode == "smoke-test":
+        result = [r for r in rows if r["run_id"] in run_ids and r["enabled"]]
+    elif mode == "smoke-test":
         # Exactly 1 run: test_01 × the-clone × no_qc
-        return [r for r in rows if r["test_id"] == "test_01" and r["search_model"] == "the-clone"
+        result = [r for r in rows if r["test_id"] == "test_01" and r["search_model"] == "the-clone"
                 and r["qc_model"] == "none" and r["enabled"]][:1]
-    if mode == "minimal":
+    elif mode == "minimal":
         # test_01 × all search models × qc=none only
-        return [r for r in rows if r["test_id"] == "test_01" and r["qc_model"] == "none" and r["enabled"]]
-    # full
-    return [r for r in rows if r["enabled"]]
+        result = [r for r in rows if r["test_id"] == "test_01" and r["qc_model"] == "none" and r["enabled"]]
+    else:
+        # full
+        result = [r for r in rows if r["enabled"]]
+
+    # Optional test_id filter (applied on top of mode)
+    if test_id:
+        result = [r for r in result if r["test_id"] == test_id]
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -296,8 +311,6 @@ def run_single(
     )
 
     # Load test CSV and base config
-    csv_path = TEST_DATA_DIR / f"{test_id}_*.csv"
-    # Find actual file
     csv_files = list(TEST_DATA_DIR.glob(f"{test_id}_*.csv"))
     if not csv_files:
         raise FileNotFoundError(f"No CSV found for {test_id} in {TEST_DATA_DIR}")
@@ -368,7 +381,6 @@ def run_single(
         run_result["preview_cost"] = cost_est.get("total_cost") or cost_est.get("preview_cost")
         run_result["estimated_validation_time_s"] = cost_est.get("estimated_validation_time_seconds")
 
-        # Capture model snapshot S3 key hint (may appear in status response)
         run_result["model_snapshot_s3_key"] = preview_status.get("model_snapshot_s3_key")
 
         # 4. Approve validation (pass cost so backend doesn't reject mismatched estimate)
@@ -402,8 +414,23 @@ def run_single(
         results_resp = client.get_results(session_id)
         run_result["results_summary"] = _summarize_results(results_resp)
 
-        # Save full results
+        # Save full results response
         results_file.write_text(json.dumps(results_resp, indent=2))
+
+        # 7. Fetch and save metadata JSON (per-cell data: confidence, sources, explanations)
+        # The metadata_url is presigned and expires — fetch it immediately while it's valid
+        metadata_url = (results_resp.get("results") or {}).get("metadata_url")
+        if metadata_url:
+            try:
+                logger.info(f"[{run_id}] Fetching per-cell metadata...")
+                meta_resp = requests.get(metadata_url, timeout=60)
+                meta_resp.raise_for_status()
+                (run_dir / "metadata.json").write_text(meta_resp.text)
+                logger.info(f"[{run_id}] Metadata saved ({len(meta_resp.content):,} bytes)")
+            except Exception as e:
+                logger.warning(f"[{run_id}] Could not fetch metadata: {e}")
+        else:
+            logger.warning(f"[{run_id}] No metadata_url in results response")
 
         run_result["status"] = "completed"
         logger.info(
@@ -426,11 +453,13 @@ def run_single(
 
 def _summarize_results(results_resp: Dict) -> Dict:
     """Extract compact summary from full results response."""
-    rows = results_resp.get("rows") or results_resp.get("data") or []
+    summary = results_resp.get("summary") or {}
+    job_info = results_resp.get("job_info") or {}
     return {
-        "row_count": len(rows),
-        "columns": list(rows[0].keys()) if rows else [],
-        "sample": rows[:2] if rows else [],
+        "rows_processed": summary.get("rows_processed"),
+        "columns_validated": summary.get("columns_validated"),
+        "cost_usd": summary.get("cost_usd"),
+        "run_time_seconds": job_info.get("run_time_seconds"),
     }
 
 
@@ -444,7 +473,10 @@ def main():
     mode_group.add_argument("--minimal", action="store_true", help="test_01 × all search models × no_qc (7 runs)")
     mode_group.add_argument("--full", action="store_true", default=True, help="All enabled rows in model_matrix.csv")
     parser.add_argument("--run-ids", nargs="+", metavar="ID", help="Run specific run_ids only (e.g. 001 005)")
+    parser.add_argument("--test-id", metavar="TEST_ID", help="Filter to a specific test table (e.g. test_01)")
     parser.add_argument("--resume", action="store_true", help="Skip runs that already have results.json")
+    parser.add_argument("--parallel", action="store_true", help="Run all selected runs concurrently")
+    parser.add_argument("--max-workers", type=int, default=6, help="Max concurrent workers for --parallel (default: 6)")
     parser.add_argument("--results-dir", type=Path, help="Override results output directory")
     parser.add_argument("--dry-run", action="store_true", help="Print what would run, do not execute")
     args = parser.parse_args()
@@ -477,13 +509,15 @@ def main():
 
     # Load and filter matrix
     matrix = load_model_matrix()
-    runs_to_execute = filter_matrix(matrix, mode, args.run_ids)
+    runs_to_execute = filter_matrix(matrix, mode, args.run_ids, args.test_id)
 
     if not runs_to_execute:
         logger.error("No runs matched the specified filter. Check model_matrix.csv and --run-ids.")
         sys.exit(1)
 
-    logger.info(f"Mode: {mode} | Runs to execute: {len(runs_to_execute)}")
+    logger.info(f"Mode: {mode} | Runs to execute: {len(runs_to_execute)}"
+                + (f" | test_id filter: {args.test_id}" if args.test_id else "")
+                + (" | parallel" if args.parallel else ""))
     for r in runs_to_execute:
         gt_marker = " [GT]" if r["is_ground_truth"] else ""
         logger.info(f"  [{r['run_id']}] {r['test_id']} | {r['search_model']} × {r['qc_model']}{gt_marker}")
@@ -492,19 +526,38 @@ def main():
         logger.info("--dry-run: exiting without executing runs")
         return
 
-    client = HyperplexityClient(api_url, api_key)
     all_results = []
+    all_results_lock = __import__("threading").Lock()
 
-    for run_row in runs_to_execute:
-        result = run_single(run_row, client, results_dir, resume=args.resume)
-        all_results.append(result)
+    def _run_and_save(run_row: Dict) -> Dict:
+        """Run single benchmark and update the shared summary CSV."""
+        thread_client = HyperplexityClient(api_url, api_key)
+        result = run_single(run_row, thread_client, results_dir, resume=args.resume)
+        with all_results_lock:
+            all_results.append(result)
+            _write_summary_csv(all_results, results_dir / "summary.csv")
+        return result
 
-        # Write running summary CSV after each run
-        _write_summary_csv(all_results, results_dir / "summary.csv")
-
-        # Brief pause between runs to avoid rate-limiting
-        if run_row is not runs_to_execute[-1]:
-            time.sleep(3)
+    if args.parallel and len(runs_to_execute) > 1:
+        max_workers = min(len(runs_to_execute), args.max_workers)
+        logger.info(f"Running {len(runs_to_execute)} runs in parallel (max_workers={max_workers})")
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_run_and_save, row): row for row in runs_to_execute}
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as exc:
+                    row = futures[future]
+                    logger.error(f"[{row['run_id']}] Unhandled exception in thread: {exc}")
+    else:
+        client = HyperplexityClient(api_url, api_key)
+        for run_row in runs_to_execute:
+            result = run_single(run_row, client, results_dir, resume=args.resume)
+            all_results.append(result)
+            _write_summary_csv(all_results, results_dir / "summary.csv")
+            # Brief pause between sequential runs to avoid rate-limiting
+            if run_row is not runs_to_execute[-1]:
+                time.sleep(3)
 
     # Final summary
     completed = sum(1 for r in all_results if r.get("status") == "completed")
