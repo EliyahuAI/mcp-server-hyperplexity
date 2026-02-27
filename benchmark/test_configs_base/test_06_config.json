@@ -1,0 +1,57 @@
+{
+  "general_notes": "Standard thermodynamic properties at 298 K and 1 bar (NIST WebBook / NIST-JANAF). Each reaction requires applying Hess's law: ΔH°rxn = Σ νᵢ ΔHf°(products) − Σ νⱼ ΔHf°(reactants). log10(Keq) is derived from ΔG°rxn = Σ νᵢ ΔGf° via K = 10^(−ΔG°rxn / (RT ln10)), where RT ln10 = 5.708 kJ/mol at 298 K. Use gas-phase (g) formation values for all species unless the reaction specifies otherwise (e.g. C(s,graphite)). ΔHf° and ΔGf° of elements in their standard state are zero by definition.",
+  "default_model": "__SEARCH_MODEL__",
+  "cache_ttl_days": 30,
+  "qc_settings": {
+    "enable_qc": "__QC_ENABLED__",
+    "model": ["__QC_MODEL__"]
+  },
+  "search_groups": [
+    {
+      "group_id": 0,
+      "group_name": "Row Identifier",
+      "description": "Chemical reaction equation with phase labels."
+    },
+    {
+      "group_id": 1,
+      "group_name": "Reaction Thermodynamics",
+      "description": "Standard enthalpy of reaction ΔH°rxn and equilibrium constant Keq at 298 K. Requires looking up ΔHf° and ΔGf° for each species from NIST WebBook or NIST-JANAF tables, then applying Hess's law and the Gibbs–Helmholtz relation.",
+      "model": "__SEARCH_MODEL__"
+    }
+  ],
+  "validation_targets": [
+    {
+      "column": "Reaction",
+      "description": "Chemical reaction equation with stoichiometry and phase labels (g = gas, s = solid).",
+      "importance": "ID",
+      "format": "String",
+      "notes": "Use the exact reaction string including phase labels as written in the CSV.",
+      "examples": [
+        "N2(g) + 3H2(g) → 2NH3(g)",
+        "CH4(g) + CO2(g) → 2CO(g) + 2H2(g)",
+        "CO(g) + 2H2(g) → CH3OH(g)",
+        "2NO2(g) → N2O4(g)",
+        "CO2(g) + C(s,graphite) → 2CO(g)"
+      ],
+      "search_group": 0
+    },
+    {
+      "column": "ΔH°rxn (kJ/mol)",
+      "description": "Standard molar enthalpy of reaction at 298 K in kJ/mol, computed via Hess's law from NIST standard enthalpies of formation.",
+      "importance": "RESEARCH",
+      "format": "Decimal",
+      "notes": "Sign convention: negative = exothermic. Apply Hess's law: ΔH°rxn = Σ νᵢ ΔHf°(i). Round to 1 decimal place. Source: NIST WebBook standard formation enthalpies at 298 K.",
+      "examples": ["-91.8", "247.3", "-90.1", "-55.3", "172.5"],
+      "search_group": 1
+    },
+    {
+      "column": "log10(Keq) at 298 K",
+      "description": "Base-10 logarithm of the thermodynamic equilibrium constant at 298 K, derived from ΔG°rxn = Σ νᵢ ΔGf°(i) and K = 10^(−ΔG°rxn / 5.708 kJ/mol).",
+      "importance": "RESEARCH",
+      "format": "Decimal",
+      "notes": "Use RT ln(10) = 5.708 kJ/mol at 298 K. Large negative values (e.g. −29.9) mean reaction is thermodynamically unfavorable at 298 K. Round to 2 decimal places. Source: NIST WebBook standard Gibbs formation energies at 298 K.",
+      "examples": ["5.76", "-29.9", "4.35", "0.49", "-21.0"],
+      "search_group": 1
+    }
+  ]
+}

@@ -45,3 +45,13 @@ run_id,test_id,search_model,qc_model,web_searches,enabled,is_ground_truth,comple
 044,test_05,the-clone-claude,claude-sonnet-4-6,0,true,false,hard
 045,test_05,the-clone-claude,claude-opus-4-6,0,true,false,hard
 046,test_05,claude-opus-4-6,claude-opus-4-6,3,true,true,hard
+047,test_06,the-clone,none,0,true,false,extreme
+048,test_06,the-clone,gemini-3-flash-preview,0,true,false,extreme
+049,test_06,the-clone-claude,none,0,true,false,extreme
+050,test_06,the-clone-claude,gemini-3-flash-preview,0,true,false,extreme
+051,test_06,the-clone-flash,none,0,true,false,extreme
+052,test_06,sonar,none,0,true,false,extreme
+053,test_06,sonar-pro,none,0,true,false,extreme
+054,test_06,the-clone-claude,claude-sonnet-4-6,0,true,false,extreme
+055,test_06,the-clone-claude,claude-opus-4-6,0,true,false,extreme
+056,test_06,claude-opus-4-6,claude-opus-4-6,3,true,true,extreme

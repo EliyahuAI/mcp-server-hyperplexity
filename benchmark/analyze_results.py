@@ -404,44 +404,67 @@ def aggregate_by_run(cell_scores: List[Dict]) -> List[Dict]:
             "elapsed_s": round(elapsed, 1) if elapsed else 0,
         })
 
-    return sorted(rows, key=lambda r: (r["test_id"], -r["accuracy_pct"]))
+    return sorted(rows, key=lambda r: (r["test_id"], r["search_model"], r["qc_model"] or ""))
 
 
 def aggregate_confidence_by_model(cell_scores: List[Dict]) -> List[Dict]:
     """
-    Per (search_model, qc_model, confidence_tier): count cells and accuracy.
-    Useful for calibration analysis (does HIGH confidence → higher accuracy?).
+    One row per (search_model, qc_model) with per-tier confidence stats.
+
+    Each row has nested dicts for HIGH, MEDIUM, LOW tiers (or None if absent):
+        {"n": int, "pct_cells": float, "accuracy_pct": float}
+
+    Also includes a "calibrated" string: "✓" (HIGH acc ≥ MED acc ≥ LOW acc),
+    "✗" (not monotone), or "" (only one tier — can't assess).
     """
-    by_model_conf = defaultdict(lambda: defaultdict(list))
+    by_model: Dict[Tuple, Dict[str, List[str]]] = defaultdict(lambda: {"HIGH": [], "MEDIUM": [], "LOW": []})
 
     for cs in cell_scores:
         if cs["verdict"] == "no_gt":
             continue
         conf = (cs.get("confidence") or "UNKNOWN").upper()
         if conf not in ("HIGH", "MEDIUM", "LOW"):
-            conf = "UNKNOWN"
+            continue  # skip UNKNOWN for calibration analysis
         key = (cs["search_model"], cs["qc_model"])
-        by_model_conf[key][conf].append(cs["verdict"])
+        by_model[key][conf].append(cs["verdict"])
+
+    _TIER_ORDER = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
 
     rows = []
-    for (sm, qm), conf_dict in sorted(by_model_conf.items()):
-        total_scoreable = sum(len(v) for v in conf_dict.values())
-        for conf in CONFIDENCE_TIERS:
-            verdicts = conf_dict.get(conf, [])
+    for (sm, qm), tiers in sorted(by_model.items()):
+        total_scoreable = sum(len(v) for v in tiers.values())
+
+        tier_stats: Dict[str, Optional[Dict]] = {}
+        for tier in ("HIGH", "MEDIUM", "LOW"):
+            verdicts = tiers[tier]
             if not verdicts:
+                tier_stats[tier] = None
                 continue
             n = len(verdicts)
-            pct_of_cells = round(100 * n / total_scoreable, 1) if total_scoreable else 0
+            pct_cells = round(100 * n / total_scoreable, 1) if total_scoreable else 0.0
             exact = sum(1 for v in verdicts if v == "exact")
             close = sum(1 for v in verdicts if v == "close")
-            wrong = sum(1 for v in verdicts if v == "wrong")
-            accuracy = round(100 * (exact + close * 0.5) / n, 1) if n else 0
-            rows.append({
-                "search_model": sm, "qc_model": qm, "confidence": conf,
-                "cell_count": n, "pct_of_cells": pct_of_cells,
-                "exact": exact, "close": close, "wrong": wrong,
-                "accuracy_pct": accuracy,
-            })
+            accuracy = round(100 * (exact + close * 0.5) / n, 1) if n else 0.0
+            tier_stats[tier] = {"n": n, "pct_cells": pct_cells, "accuracy_pct": accuracy}
+
+        # Calibration: does accuracy decrease from HIGH → MEDIUM → LOW?
+        present = [(t, d["accuracy_pct"]) for t, d in tier_stats.items() if d is not None]
+        present.sort(key=lambda x: -_TIER_ORDER[x[0]])  # HIGH first
+        calibrated = ""
+        if len(present) >= 2:
+            calibrated = "✓" if all(
+                present[i][1] >= present[i + 1][1] for i in range(len(present) - 1)
+            ) else "✗"
+
+        rows.append({
+            "search_model": sm,
+            "qc_model": qm,
+            "HIGH": tier_stats.get("HIGH"),
+            "MEDIUM": tier_stats.get("MEDIUM"),
+            "LOW": tier_stats.get("LOW"),
+            "calibrated": calibrated,
+            "total_scored": total_scoreable,
+        })
 
     return rows
 
@@ -470,6 +493,7 @@ def generate_report(run_rows: List[Dict], cell_scores: List[Dict], results_dir: 
         "| test_03 | Molecular Spectroscopy | Molecule | ωₑ (cm⁻¹), ωₑxₑ (cm⁻¹) | Very Hard |",
         "| test_04 | Crystallography | Mineral | a-axis (Å), c-axis (Å) | Very Hard |",
         "| test_05 | Particle Physics | Meson | Mass (MeV/c²), Full Width Γ (MeV) | Extreme |",
+        "| test_06 | Reaction Thermodynamics | Reaction | ΔH°rxn (kJ/mol), log10(Keq) at 298 K | Extreme |",
         "\n## Scoring\n",
         f"- **Exact** (≤{EXACT_TOLERANCE*100:.0f}% relative error or string match): 1.0 point",
         f"- **Close** (≤{CLOSE_TOLERANCE*100:.0f}% relative error): 0.5 points",
@@ -486,10 +510,11 @@ def generate_report(run_rows: List[Dict], cell_scores: List[Dict], results_dir: 
         if not test_rows:
             continue
         lines.append(f"### {test_id}\n")
+        sort_key = lambda x: (x["search_model"], x["qc_model"] or "")
         if has_gt:
             lines.append("| Search Model | QC | Accuracy | Exact% | HIGH | MED | LOW | Est Cost ($) | ¢/cell | Time (s) | GT |")
             lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
-            for r in sorted(test_rows, key=lambda x: -x["accuracy_pct"]):
+            for r in sorted(test_rows, key=sort_key):
                 gt_marker = "✓" if r["is_ground_truth"] else ""
                 cost_str = f"${r['estimated_eliyahu_cost']:.4f}" if r["estimated_eliyahu_cost"] else "—"
                 cpc_str = f"{r['cost_per_cell']*100:.2f}¢" if r["cost_per_cell"] else "—"
@@ -502,7 +527,7 @@ def generate_report(run_rows: List[Dict], cell_scores: List[Dict], results_dir: 
         else:
             lines.append("| Search Model | QC | HIGH conf | MED conf | LOW conf | Est Cost ($) | ¢/cell | Time (s) |")
             lines.append("|---|---|---|---|---|---|---|---|")
-            for r in sorted(test_rows, key=lambda x: -x["high_conf_cells"]):
+            for r in sorted(test_rows, key=sort_key):
                 cost_str = f"${r['estimated_eliyahu_cost']:.4f}" if r["estimated_eliyahu_cost"] else "—"
                 cpc_str = f"{r['cost_per_cell']*100:.2f}¢" if r["cost_per_cell"] else "—"
                 lines.append(
@@ -533,7 +558,7 @@ def generate_report(run_rows: List[Dict], cell_scores: List[Dict], results_dir: 
             avg_time = round(sum(r["elapsed_s"] for r in rows_list) / len(rows_list), 1)
             model_summaries.append((sm, qm, avg_acc, avg_exact, avg_cost, avg_cpc, avg_time, len(rows_list)))
 
-        for sm, qm, avg_acc, avg_exact, avg_cost, avg_cpc, avg_time, n in sorted(model_summaries, key=lambda x: -x[2]):
+        for sm, qm, avg_acc, avg_exact, avg_cost, avg_cpc, avg_time, n in sorted(model_summaries, key=lambda x: (x[0], x[1] or "")):
             cost_str = f"${avg_cost:.4f}" if avg_cost else "—"
             cpc_str = f"{avg_cpc*100:.2f}¢" if avg_cpc else "—"
             lines.append(f"| {sm} | {qm} | {avg_acc}% | {avg_exact}% | {cost_str} | {cpc_str} | {avg_time}s | {n} |")
@@ -564,45 +589,31 @@ def generate_report(run_rows: List[Dict], cell_scores: List[Dict], results_dir: 
     if conf_rows:
         lines.append("## Confidence Distribution by Model\n")
         lines.append(
-            "Each model's tendency to produce HIGH/MEDIUM/LOW confidence cells, "
-            "and whether that confidence is calibrated (higher confidence → higher accuracy).\n"
+            "One row per model. For each tier: **n (% of cells) / accuracy%**. "
+            "Calibrated ✓ means accuracy decreases from HIGH → MED → LOW (well-ordered).\n"
         )
-        lines.append("| Search Model | QC | Confidence | Cells | % of Cells | Accuracy |")
+
+        def _tier_cell(tier_data: Optional[Dict], show_acc: bool) -> str:
+            if tier_data is None:
+                return "—"
+            n = tier_data["n"]
+            pct = tier_data["pct_cells"]
+            if show_acc:
+                acc = tier_data["accuracy_pct"]
+                return f"{n} ({pct}%) / {acc}%"
+            return f"{n} ({pct}%)"
+
+        lines.append("| Search Model | QC | HIGH n(%)/acc% | MED n(%)/acc% | LOW n(%)/acc% | Calibrated |")
         lines.append("|---|---|---|---|---|---|")
         for r in conf_rows:
-            acc_str = f"{r['accuracy_pct']}%" if has_gt else "—"
+            h = _tier_cell(r["HIGH"], has_gt)
+            m = _tier_cell(r["MEDIUM"], has_gt)
+            lo = _tier_cell(r["LOW"], has_gt)
+            cal = r["calibrated"] if has_gt else "—"
             lines.append(
-                f"| {r['search_model']} | {r['qc_model']} | {r['confidence']} | "
-                f"{r['cell_count']} | {r['pct_of_cells']}% | {acc_str} |"
+                f"| {r['search_model']} | {r['qc_model']} | {h} | {m} | {lo} | {cal} |"
             )
         lines.append("")
-
-        if has_gt:
-            # Calibration summary: one row per model
-            lines.append("### Confidence Calibration\n")
-            lines.append(
-                "Well-calibrated models have HIGH accuracy > MEDIUM accuracy > LOW accuracy.\n"
-            )
-            lines.append("| Search Model | QC | HIGH acc | MEDIUM acc | LOW acc | Calibrated? |")
-            lines.append("|---|---|---|---|---|---|")
-            by_model_conf = defaultdict(dict)
-            for r in conf_rows:
-                by_model_conf[(r["search_model"], r["qc_model"])][r["confidence"]] = r["accuracy_pct"]
-            for (sm, qm), conf_acc in sorted(by_model_conf.items()):
-                high_acc = conf_acc.get("HIGH")
-                med_acc = conf_acc.get("MEDIUM")
-                low_acc = conf_acc.get("LOW")
-                h_str = f"{high_acc}%" if high_acc is not None else "—"
-                m_str = f"{med_acc}%" if med_acc is not None else "—"
-                l_str = f"{low_acc}%" if low_acc is not None else "—"
-                # Check calibration
-                calibrated = ""
-                if high_acc is not None and med_acc is not None and low_acc is not None:
-                    calibrated = "✓" if high_acc >= med_acc >= low_acc else "✗"
-                elif high_acc is not None and med_acc is not None:
-                    calibrated = "✓" if high_acc >= med_acc else "✗"
-                lines.append(f"| {sm} | {qm} | {h_str} | {m_str} | {l_str} | {calibrated} |")
-            lines.append("")
 
     # --- Hard cells analysis (only with GT) ---
     if has_gt:
