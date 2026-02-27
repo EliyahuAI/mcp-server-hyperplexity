@@ -1,5 +1,5 @@
 {
-  "general_notes": "Values must come from the LONG-TERM FOLLOW-UP paper for each trial — NOT the primary publication. The primary publication for each trial does not report the queried landmark time point. Each trial's landmark time point is specified in the Trial column (e.g., '4-yr OS'). Models must identify and cite the specific follow-up paper that reports OS at that time point.\n\nColumn 1 ('OS at landmark - experimental arm (%)') is the overall survival rate at the landmark time point for the experimental/investigational arm, from the follow-up paper.\n\nColumn 2 ('Absolute OS benefit at landmark (pp)') is the DIFFERENCE between experimental arm OS% and control arm OS% at the same landmark, computed as: experimental_arm_OS% MINUS control_arm_OS%. This value is not directly stated in any paper — it must be computed from two values in the follow-up paper. Express as percentage points (pp) to 1 decimal place. A positive value means the experimental arm did better.\n\nKey pitfalls:\n(1) Do not use the primary paper — it does not report the queried time point.\n(2) CheckMate 067 has three arms (nivo+ipi, nivo alone, and ipi alone). The experimental arm is nivolumab+ipilimumab; the control arm is ipilimumab alone.\n(3) KEYNOTE-189 and PACIFIC are in similar indications (NSCLC after CRT vs mNSCLC) — do not mix up.\n(4) CASPIAN has two experimental arms in some analyses (durvalumab+chemo and tremelimumab+durvalumab+chemo) — use durvalumab+chemotherapy only vs chemotherapy control.\n(5) The absolute benefit must be computed: (experimental OS%) − (control OS%). Do not divide or use HR.\n(6) Multiple follow-up papers may exist; use the one that reports the specified landmark (e.g., for PACIFIC 4-yr, use the Lancet Oncology 2021 update by Faivre-Finn et al., not the primary Antonia NEJM 2017).\n\nSynthesis requirement: Each row requires finding data from TWO publications: the primary trial paper (to understand trial design and identify the correct arms) and the long-term follow-up paper (to extract the OS landmark rates).",
+  "general_notes": "Long-term follow-up data from Phase 3 immunotherapy trials. Each row specifies a trial and a landmark OS time point. Values must come from the peer-reviewed publication that reports overall survival at that specific time point — this may or may not be the primary trial publication. The absolute OS benefit is the difference between the two randomized arms at the landmark. Cite the source paper used.",
   "default_model": "__SEARCH_MODEL__",
   "cache_ttl_days": 30,
   "qc_settings": {
@@ -10,19 +10,19 @@
     {
       "group_id": 0,
       "group_name": "Row Identifier",
-      "description": "Trial name with experimental drug, indication, and landmark time point."
+      "description": "Trial name with experimental drug, indication, and OS landmark time point."
     },
     {
       "group_id": 1,
-      "group_name": "Long-Term OS from Follow-Up Papers",
-      "description": "Overall survival landmark rates at specified time points from long-term follow-up papers published after the primary Phase 3 trial. The primary trial paper does NOT contain the queried time point. Must identify the correct long-term update paper. Key requirement: Column 2 (Absolute OS benefit) requires extracting BOTH the experimental arm OS% and control arm OS% from the follow-up paper, then computing their difference. This value will not be directly stated anywhere in the paper. Traps: (1) Using primary paper landmark data; (2) Confusing which arm is experimental vs control; (3) Using a different follow-up paper that reports a different landmark; (4) CheckMate 067 has 3 arms — nivo+ipi is experimental, ipi alone is control.",
+      "group_name": "OS Landmark Data",
+      "description": "Overall survival rates and absolute benefit at the specified landmark time point. Requires identifying the correct published source for each trial and time point, extracting OS rates for both arms, and computing the absolute difference. Each trial has its own nuance regarding arm definitions, published updates, and patient population.",
       "model": "__SEARCH_MODEL__"
     }
   ],
   "validation_targets": [
     {
       "column": "Trial",
-      "description": "Trial name with investigational drug, indication, and landmark time point.",
+      "description": "Trial name with investigational drug, indication, and OS landmark time point.",
       "importance": "ID",
       "format": "String",
       "notes": "Identifier column — not validated.",
@@ -37,32 +37,20 @@
     },
     {
       "column": "OS at landmark - experimental arm (%)",
-      "description": "Overall survival rate at the specified landmark time point for the experimental (investigational) arm only. Must come from the long-term follow-up paper, not the primary trial publication.",
+      "description": "Overall survival rate (%) at the specified landmark time point for the experimental arm. Report to 1 decimal place.",
       "importance": "RESEARCH",
       "format": "Decimal",
-      "notes": "Report the OS rate as a percentage to 1 decimal place (e.g., 49.6). Source: the long-term update paper for each trial. Do NOT use the primary paper landmark data. Landmark time points: PACIFIC=4yr (Faivre-Finn et al. Lancet Oncol 2021), KEYNOTE-024=5yr (Reck et al. JCO 2021), CheckMate 067=6.5yr (Larkin et al. NEJM 2022), KEYNOTE-189=4yr (Garassino et al., JCO or Ann Oncol update), CASPIAN=3yr (Goldman et al. Lancet 2021 update or later). Always cite the follow-up paper, not the primary.",
-      "examples": [
-        "49.6",
-        "31.9",
-        "57.0",
-        "30.1",
-        "17.6"
-      ],
+      "notes": "Source the value from the publication reporting OS at the queried time point. Use the intention-to-treat or all-randomized population unless otherwise specified. The experimental arm is the investigational drug arm named in the Trial column.",
+      "examples": ["49.6", "31.9", "49.0", "30.1", "17.6"],
       "search_group": 1
     },
     {
       "column": "Absolute OS benefit at landmark (pp)",
-      "description": "The absolute difference in overall survival at the landmark time point: experimental arm OS% MINUS control arm OS%, in percentage points. This value is not directly stated in the paper — it must be computed from both arm rates in the follow-up paper.",
+      "description": "Absolute difference in OS at the landmark between the two main randomized arms: experimental arm OS% minus control arm OS%, in percentage points. Report to 1 decimal place.",
       "importance": "RESEARCH",
       "format": "Decimal",
-      "notes": "Compute as: (experimental arm OS%) − (control arm OS%) using values from the long-term follow-up paper. Express to 1 decimal place. A positive number means the experimental arm had higher OS. PACIFIC: durvalumab% − placebo%. KEYNOTE-024: pembrolizumab% − chemotherapy%. CheckMate 067: nivolumab+ipilimumab% − ipilimumab alone% (NOT vs nivolumab alone). KEYNOTE-189: pembrolizumab+chemo% − placebo+chemo%. CASPIAN: durvalumab+chemo% − chemotherapy alone% (NOT tremelimumab arm). This column specifically tests whether the model can find BOTH arm values and subtract correctly.",
-      "examples": [
-        "13.3",
-        "15.6",
-        "34.0",
-        "14.4",
-        "6.4"
-      ],
+      "notes": "Compute as (experimental arm OS%) − (control arm OS%) from the same publication and same ITT population. A positive value means experimental arm had higher OS. This value is typically not directly stated — it must be derived from the two arm rates.",
+      "examples": ["13.3", "15.6", "26.0", "14.4", "11.8"],
       "search_group": 1
     }
   ]
