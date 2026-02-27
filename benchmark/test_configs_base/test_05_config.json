@@ -1,0 +1,42 @@
+{
+  "ai_summary": "Validate meson masses and total decay widths from the Particle Data Group (PDG) Review of Particle Physics for specific light and heavy vector/pseudoscalar mesons.",
+  "general_notes": "All values are from the Particle Data Group (PDG) 2024 Review of Particle Physics (https://pdg.lbl.gov/). Mass is the pole mass in MeV/c^2. Full width Gamma is the total decay width in MeV (related to lifetime by Gamma = hbar/tau). For narrow states, the width is very small (e.g. J/psi: ~0.093 MeV). These are the world-average values from the most recent PDG summary tables.",
+  "columns": [
+    {
+      "name": "Meson",
+      "importance": "ID",
+      "search_group": 0,
+      "data_type": "string",
+      "notes": "PDG particle name with charge superscript (e.g. rho(770)0, phi(1020), J/psi(1S)). Use PDG naming convention."
+    },
+    {
+      "name": "Mass (MeV/c2)",
+      "importance": "RESEARCH",
+      "search_group": 1,
+      "data_type": "decimal",
+      "notes": "PDG world-average pole mass in MeV/c^2. Source: PDG 2024 summary tables. Express to 2-3 decimal places."
+    },
+    {
+      "name": "Full Width Gamma (MeV)",
+      "importance": "RESEARCH",
+      "search_group": 1,
+      "data_type": "decimal",
+      "notes": "PDG world-average total decay width Gamma in MeV. Source: PDG 2024 summary tables. For narrow resonances (J/psi, Upsilon) this is O(0.1 MeV) or smaller — report at least 4 significant figures."
+    }
+  ],
+  "search_groups": [
+    {
+      "group_id": 0,
+      "columns": ["Meson"]
+    },
+    {
+      "group_id": 1,
+      "columns": ["Mass (MeV/c2)", "Full Width Gamma (MeV)"],
+      "model": "__SEARCH_MODEL__"
+    }
+  ],
+  "qc_settings": {
+    "enable_qc": "__QC_ENABLED__",
+    "model": ["__QC_MODEL__"]
+  }
+}

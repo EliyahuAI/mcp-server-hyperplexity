@@ -8,6 +8,7 @@
   "interview": {
     "_comment": "Interview phase - AI interacts with user to understand requirements and approve table structure",
     "model": "deepseek-v3.2",
+    "model_role": "table_maker_interview",
     "max_tokens": 8000,
     "use_web_search": false,
     "max_turns": 5,
@@ -18,6 +19,7 @@
     "_comment": "Step 0 - ALWAYS runs before column definition. Finds authoritative sources and starting tables to guide column design. On restructure, cached research is ALWAYS reused (never re-run)",
 
     "model": "sonar-pro",
+    "model_role": "table_maker_background_research",
     "_note_model": "Uses sonar-pro with high context for fast comprehensive research",
     "max_tokens": 8000,
     "_note_max_tokens": "Background research only outputs 15 sample entities max, so 8000 tokens is sufficient. Token boost for large entity counts happens in column_definition instead.",
@@ -55,6 +57,7 @@
   "column_definition": {
     "_comment": "Step 1 - Defines column specifications and search strategy using background research output as input. Generates initial rows from available data.",
     "model": "gemini-3-flash-preview",
+    "model_role": "table_maker_column_definition",
     "_note_model": "Uses gemini-3-flash-preview (medium thinking, 8192 tokens) for column definition — -high timed out at 64K output",
     "max_tokens": 64000,
     "_note_max_tokens": "Set to 64000 to handle large entity counts (100+ rows). Word limit in prompt calculated as max_tokens * 0.75 * 0.5 (aggressive buffer).",
@@ -145,6 +148,7 @@
 
     "_basic_settings": "Core QC parameters",
     "model": "claude-opus-4-6",
+    "model_role": "table_maker_qc",
     "_note_model": "Claude Opus 4.6 - best model for strict dedup, entity knowledge, and guiding retrigger with known missing entities",
     "max_tokens": 8000,
     "min_qc_score": 0.3,

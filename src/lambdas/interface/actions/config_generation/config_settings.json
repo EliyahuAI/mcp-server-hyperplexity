@@ -3,10 +3,14 @@
   "max_tokens_default": 6000,
   "tokens_per_validated_column_default": 4000,
   "model": ["deepseek-v3.2", "gemini-3-flash-preview", "claude-sonnet-4-6"],
+  "model_role": "config_gen_primary",
+  "_note_model_role": "model_role overrides model[] at runtime via ModelConfig.get(). Falls back to model[] if CSV unavailable.",
   "qc_settings": {
     "enable_qc": true,
     "max_tokens_default": 16000,
     "tokens_per_validated_column_default":4000,
-    "model": ["deepseek-v3.2", "claude-sonnet-4-6"]
+    "model": ["deepseek-v3.2", "claude-sonnet-4-6"],
+    "model_role": "config_gen_qc_default",
+    "_note_model_role": "model_role overrides model[] for QC at runtime via ModelConfig."
   }
 }

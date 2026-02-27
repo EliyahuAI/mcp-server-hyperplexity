@@ -14,7 +14,7 @@ This document contains shared guidelines used by both new config creation and re
   - **Calculation/light reasoning**: `gemini-3-flash-preview-min` — fast, no web search, for derived or formula-like fields
   - **Advanced synthesis without web**: `claude-sonnet-4-6` or `claude-opus-4-6` — for complex reasoning on existing context, no web access needed
 
-- **Recommended QC Approach**: Default QC is `deepseek-v3.2`. Upgrade to `claude-opus-4-6` (no web search) for scientific/technical tables or when default QC is missing errors.
+- **Recommended QC Approach**: Default QC is `moonshotai/kimi-k2.5` (fast, cost-effective). Upgrade to `claude-opus-4-6` (no web search) for scientific/technical tables or when default QC is missing errors.
 
 ## Importance Level Guidelines
 - **ID**: These define the rows - **AT LEAST ONE COLUMN MUST BE ASSIGNED 'ID'** (MANDATORY), usually the first/primary identifier column(s) to the left of the table. Getting these right is critical as these define the row information and the stability of the analysis. An Index alone is not enough - use meaningful identifiers. **⚠️ NEVER convert ALL ID columns to RESEARCH - at least one must remain ID.**

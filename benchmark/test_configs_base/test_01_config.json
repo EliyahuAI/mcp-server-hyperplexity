@@ -1,0 +1,42 @@
+{
+  "ai_summary": "Validate natural isotopic abundance percentages and nuclear spin quantum numbers for NMR-active stable isotopes from authoritative nuclear data tables (NUBASE/IUPAC).",
+  "general_notes": "All values come from NUBASE2020 / IUPAC isotopic compositions tables. Natural abundance is expressed as a percentage of all naturally occurring atoms of that element. Nuclear spin I is expressed in units of hbar (h-bar) as a simple fraction (e.g. 1/2, 3/2, 9/2). These are fixed physical constants — values from any year are equivalent.",
+  "columns": [
+    {
+      "name": "Isotope",
+      "importance": "ID",
+      "search_group": 0,
+      "data_type": "string",
+      "notes": "Nuclide notation: element symbol hyphen mass number (e.g. Xe-129). Unique identifier."
+    },
+    {
+      "name": "Natural Abundance (%)",
+      "importance": "RESEARCH",
+      "search_group": 1,
+      "data_type": "decimal",
+      "notes": "Mole fraction of the isotope in the naturally occurring element, expressed as percent. Source: IUPAC 2016 atomic weights / NUBASE2020. Report to at least 3 decimal places where available."
+    },
+    {
+      "name": "Nuclear Spin (hbar)",
+      "importance": "RESEARCH",
+      "search_group": 1,
+      "data_type": "string",
+      "notes": "Ground-state nuclear spin quantum number I in units of hbar. Express as fraction: 1/2, 3/2, 9/2, etc. Source: NUBASE2020."
+    }
+  ],
+  "search_groups": [
+    {
+      "group_id": 0,
+      "columns": ["Isotope"]
+    },
+    {
+      "group_id": 1,
+      "columns": ["Natural Abundance (%)", "Nuclear Spin (hbar)"],
+      "model": "__SEARCH_MODEL__"
+    }
+  ],
+  "qc_settings": {
+    "enable_qc": "__QC_ENABLED__",
+    "model": ["__QC_MODEL__"]
+  }
+}

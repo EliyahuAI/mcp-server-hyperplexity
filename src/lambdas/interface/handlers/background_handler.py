@@ -1454,6 +1454,29 @@ def handle_main_processing(event, context):
         run_type_initial = "Preview" if is_preview else "Validation"
         update_run_status_for_session(status='PROCESSING', run_type=run_type_initial)
 
+        # Write model snapshot + version.json to S3 for auditability (fire-and-forget)
+        if run_key:
+            try:
+                from model_config_loader import ModelConfig, get_deploy_commit
+                _snapshot_csv = ModelConfig.snapshot()
+                _commit = get_deploy_commit()
+                _snap_domain = email.split('@')[-1].lower().strip() if email and '@' in email else 'unknown'
+                _snap_email_pfx = (email.split('@')[0].replace('.', '_').replace('+', '_plus_')[:20]
+                                   if email and '@' in email else 'unknown')
+                _snap_key = f"results/{_snap_domain}/{_snap_email_pfx}/{session_id}/{run_key}/model_snapshot.csv"
+                _snap_bucket = os.environ.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage')
+                # Prepend a header comment with deploy commit so the file is self-describing
+                _snap_body = f"# deploy_commit: {_commit}\n{_snapshot_csv}"
+                s3_client.put_object(
+                    Bucket=_snap_bucket,
+                    Key=_snap_key,
+                    Body=_snap_body.encode('utf-8'),
+                    ContentType='text/csv',
+                )
+                logger.info(f"[ModelSnapshot] Wrote model_snapshot.csv to s3://{_snap_bucket}/{_snap_key}")
+            except Exception as _snap_err:
+                logger.warning(f"[ModelSnapshot] Failed to write model snapshot (non-fatal): {_snap_err}")
+
         if is_preview:
             preview_max_rows = event.get('preview_max_rows', 5)
             sequential_call_num = event.get('sequential_call')

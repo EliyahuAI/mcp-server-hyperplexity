@@ -3155,6 +3155,14 @@ def create_run_record(session_id: str, email: str, total_rows: int, batch_size: 
     
     try:
         table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
+        # Resolve deploy_commit from ModelConfig (graceful — never blocks run creation)
+        _deploy_commit = "unknown"
+        try:
+            from model_config_loader import get_deploy_commit
+            _deploy_commit = get_deploy_commit()
+        except Exception:
+            pass
+
         item = {
             'session_id': session_id,
             'run_key': run_key,
@@ -3163,15 +3171,16 @@ def create_run_record(session_id: str, email: str, total_rows: int, batch_size: 
             'total_rows': total_rows,
             'processed_rows': 0,
             'start_time': timestamp,
-            'last_update': timestamp
+            'last_update': timestamp,
+            'deploy_commit': _deploy_commit,
         }
         if batch_size is not None:
             item['batch_size'] = batch_size
         if run_type is not None:
             item['run_type'] = run_type
-        
+
         table.put_item(Item=item)
-        
+
         # Return the run_key for subsequent update calls
         return run_key
     except ClientError as e:
@@ -3187,13 +3196,14 @@ def create_run_record(session_id: str, email: str, total_rows: int, batch_size: 
                 'total_rows': total_rows,
                 'processed_rows': 0,
                 'start_time': timestamp,
-                'last_update': timestamp
+                'last_update': timestamp,
+                'deploy_commit': _deploy_commit,
             }
             if batch_size is not None:
                 item['batch_size'] = batch_size
             if run_type is not None:
                 item['run_type'] = run_type
-            
+
             table.put_item(Item=item)
             return run_key
         else:
@@ -3206,6 +3216,8 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
                       processing_mode: str = None, delegation_timestamp: str = None, estimated_processing_minutes: float = None, sync_timeout_limit_minutes: float = None, delegation_reason: str = None, async_context: dict = None, async_context_s3_key: str = None, async_progress: dict = None, async_results_s3_key: str = None, async_completion_timestamp: str = None, async_total_duration_seconds: float = None, async_input_files: dict = None,
                       # Phase 5: History handling confidence distribution fields
                       confidences_original: str = None, confidences_updated: str = None,
+                      # Deploy commit tracking — written by each Lambda independently
+                      validation_deploy_commit: str = None,
                       **kwargs):
     """Updates the status and progress of a validation run using composite primary key."""
     table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
@@ -3495,6 +3507,10 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
     if confidences_updated is not None:
         update_expression += ", confidences_updated = :cu"
         expression_attribute_values[':cu'] = confidences_updated
+
+    if validation_deploy_commit is not None:
+        update_expression += ", validation_deploy_commit = :vdc"
+        expression_attribute_values[':vdc'] = validation_deploy_commit
 
     if status in ['COMPLETED', 'FAILED']:
         update_expression += ", end_time = :et"

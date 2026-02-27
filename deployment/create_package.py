@@ -249,7 +249,42 @@ def copy_source_files():
     else:
         logger.warning(f"config directory not found at {config_src_dir}")
     
-    # 7. Copy logo files for PDF receipts
+    # 7. Bundle model_config/ directory (model_control.csv + __init__.py)
+    # model_config_loader.py is already included via step 2 (shutil.copytree of SHARED_SRC_DIR)
+    # but model_control.csv lives in src/model_config/, not src/shared/, so it needs explicit copy
+    model_config_src = SRC_DIR / "model_config"
+    if model_config_src.exists():
+        shutil.copytree(model_config_src, PACKAGE_DIR / "model_config", dirs_exist_ok=True)
+        # Also place a copy under shared/model_config/ for nested import paths
+        shutil.copytree(model_config_src, PACKAGE_DIR / "shared" / "model_config", dirs_exist_ok=True)
+        logger.info("Copied 'model_config/' directory (model_control.csv)")
+    else:
+        logger.warning(f"'model_config' directory not found at {model_config_src} — ModelConfig will have no bundled CSV")
+
+    # 8. Generate version.json with this Lambda's deploy commit
+    try:
+        from datetime import datetime as _dt
+        _commit = subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=str(PROJECT_DIR), stderr=subprocess.DEVNULL
+        ).decode().strip()
+        _short = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'], cwd=str(PROJECT_DIR), stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except Exception:
+        _commit = "unknown"
+        _short = "unknown"
+    _version_info = {
+        "commit": _commit,
+        "short_commit": _short,
+        "deployed_at": _dt.utcnow().isoformat() + "Z",
+        "lambda": "perplexity-validator",
+    }
+    (PACKAGE_DIR / "version.json").write_text(
+        json.dumps(_version_info, indent=2), encoding="utf-8"
+    )
+    logger.info(f"Written version.json: commit={_short}, deployed_at={_version_info['deployed_at']}")
+
+    # 9. Copy logo files for PDF receipts
     # Primary: New hyperplexity logo
     new_logo_file = PROJECT_DIR / "frontend" / "hyperplexity-logo-2.png"
     if new_logo_file.exists():

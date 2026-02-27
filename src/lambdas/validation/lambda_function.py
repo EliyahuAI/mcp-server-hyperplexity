@@ -3109,11 +3109,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         }]
                     }
 
+                    # Stamp this Lambda's own deploy_commit so the run record
+                    # carries both the interface Lambda's commit (deploy_commit, set at
+                    # create_run_record time) and this Lambda's commit (validation_deploy_commit).
+                    _val_commit = "unknown"
+                    try:
+                        from model_config_loader import get_deploy_commit as _gdc
+                        _val_commit = _gdc()
+                    except Exception:
+                        pass
+
                     update_run_status(
                         session_id=session_id,
                         run_key=run_key,
                         status=status,
                         verbose_status=verbose_status,
+                        validation_deploy_commit=_val_commit,
                         **additional_data
                     )
                     logger.debug(f"[ASYNC_START] Updated DynamoDB run status to {status} for session {session_id}")

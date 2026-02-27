@@ -393,6 +393,45 @@ def copy_source_files():
     # No need to copy root table_maker directory - Lambda uses the local copy
     logger.info("Table Maker prompts/schemas already in interface_lambda/actions/table_maker/ (no root copy needed)")
 
+    # 8. Bundle model_config/ directory (model_control.csv + __init__.py)
+    model_config_src = SRC_DIR / "model_config"
+    if model_config_src.exists():
+        shutil.copytree(model_config_src, PACKAGE_DIR / "model_config", dirs_exist_ok=True)
+        logger.info("Copied 'model_config/' directory (model_control.csv + __init__.py)")
+    else:
+        logger.warning(f"'model_config' directory not found at {model_config_src} — ModelConfig will have no bundled CSV")
+
+    # 9. Also copy model_config_loader.py into the package root (alongside other shared modules)
+    mc_loader_src = SHARED_SRC_DIR / "model_config_loader.py"
+    if mc_loader_src.exists():
+        shutil.copy(mc_loader_src, PACKAGE_DIR / "model_config_loader.py")
+        logger.info("Copied 'model_config_loader.py' to package root")
+    else:
+        logger.warning(f"'model_config_loader.py' not found at {mc_loader_src}")
+
+    # 10. Generate version.json with deploy commit info and write it to the package root
+    try:
+        from datetime import datetime as _dt
+        _commit = subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=str(PROJECT_DIR), stderr=subprocess.DEVNULL
+        ).decode().strip()
+        _short = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'], cwd=str(PROJECT_DIR), stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except Exception:
+        _commit = "unknown"
+        _short = "unknown"
+    _version_info = {
+        "commit": _commit,
+        "short_commit": _short,
+        "deployed_at": _dt.utcnow().isoformat() + "Z",
+        "lambda": "perplexity-validator-interface",
+    }
+    (PACKAGE_DIR / "version.json").write_text(
+        json.dumps(_version_info, indent=2), encoding="utf-8"
+    )
+    logger.info(f"Written version.json: commit={_short}, deployed_at={_version_info['deployed_at']}")
+
 def create_zip():
     """Create ZIP file for Lambda deployment."""
     logger.info(f"Creating ZIP file: {OUTPUT_ZIP}")

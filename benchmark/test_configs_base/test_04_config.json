@@ -1,0 +1,42 @@
+{
+  "ai_summary": "Validate unit cell lattice parameters (a-axis and c-axis lengths in Angstroms) for hexagonal and rhombohedral minerals from crystallographic databases (ICDD PDF-4 / RRUFF).",
+  "general_notes": "All minerals crystallize in hexagonal or trigonal (rhombohedral R) symmetry and are described using hexagonal axes. Parameters are for the room-temperature (298 K) low-pressure polymorph. Values from ICDD PDF-4+ / RRUFF project / NIST crystal data. The a-axis and c-axis are the two independent lattice parameters (b=a for hexagonal). Express in Angstroms to 4 decimal places.",
+  "columns": [
+    {
+      "name": "Mineral",
+      "importance": "ID",
+      "search_group": 0,
+      "data_type": "string",
+      "notes": "Mineral name with formula and polymorph prefix in parentheses (e.g. Corundum (alpha-Al2O3)). Use the Greek letter prefix to specify polymorph unambiguously."
+    },
+    {
+      "name": "a-axis (Angstrom)",
+      "importance": "RESEARCH",
+      "search_group": 1,
+      "data_type": "decimal",
+      "notes": "Hexagonal a lattice parameter in Angstroms at room temperature and ambient pressure. Source: ICDD PDF-4+ or RRUFF. 4 decimal places."
+    },
+    {
+      "name": "c-axis (Angstrom)",
+      "importance": "RESEARCH",
+      "search_group": 1,
+      "data_type": "decimal",
+      "notes": "Hexagonal c lattice parameter in Angstroms at room temperature and ambient pressure. Source: ICDD PDF-4+ or RRUFF. 4 decimal places."
+    }
+  ],
+  "search_groups": [
+    {
+      "group_id": 0,
+      "columns": ["Mineral"]
+    },
+    {
+      "group_id": 1,
+      "columns": ["a-axis (Angstrom)", "c-axis (Angstrom)"],
+      "model": "__SEARCH_MODEL__"
+    }
+  ],
+  "qc_settings": {
+    "enable_qc": "__QC_ENABLED__",
+    "model": ["__QC_MODEL__"]
+  }
+}
