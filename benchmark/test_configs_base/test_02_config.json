@@ -1,42 +1,51 @@
 {
-  "ai_summary": "Validate superconducting transition temperatures and year of first synthesis for high-temperature cuprate superconductors from condensed matter physics literature.",
   "general_notes": "All compounds are cuprate high-temperature superconductors. Tc is the bulk superconducting transition temperature in Kelvin measured at ambient pressure on the optimal-doping stoichiometry. Year of first synthesis refers to the first peer-reviewed report of superconductivity in that compound class. Sources: original discovery papers, Reviews of Modern Physics, and standard solid-state physics references.",
-  "columns": [
-    {
-      "name": "Compound",
-      "importance": "ID",
-      "search_group": 0,
-      "data_type": "string",
-      "notes": "Cuprate compound formula with common abbreviation in parentheses. Use the full formula for identification."
-    },
-    {
-      "name": "Critical Temperature Tc (K)",
-      "importance": "RESEARCH",
-      "search_group": 1,
-      "data_type": "decimal",
-      "notes": "Bulk onset superconducting transition temperature in Kelvin at ambient pressure, optimal doping. Integer or one decimal place. For YBCO: 93 K. For LSCO: 38 K. Report the widely cited/consensus value."
-    },
-    {
-      "name": "Year First Synthesized",
-      "importance": "RESEARCH",
-      "search_group": 1,
-      "data_type": "integer",
-      "notes": "Year the first peer-reviewed discovery paper was published reporting superconductivity in this compound class. 4-digit year."
-    }
-  ],
-  "search_groups": [
-    {
-      "group_id": 0,
-      "columns": ["Compound"]
-    },
-    {
-      "group_id": 1,
-      "columns": ["Critical Temperature Tc (K)", "Year First Synthesized"],
-      "model": "__SEARCH_MODEL__"
-    }
-  ],
+  "default_model": "__SEARCH_MODEL__",
+  "cache_ttl_days": 30,
   "qc_settings": {
     "enable_qc": "__QC_ENABLED__",
     "model": ["__QC_MODEL__"]
-  }
+  },
+  "search_groups": [
+    {
+      "group_id": 0,
+      "group_name": "Row Identifier",
+      "description": "Cuprate compound formula with common abbreviation."
+    },
+    {
+      "group_id": 1,
+      "group_name": "Superconductor Data",
+      "description": "Critical temperature and year of first synthesis from condensed matter physics literature.",
+      "model": "__SEARCH_MODEL__"
+    }
+  ],
+  "validation_targets": [
+    {
+      "column": "Compound",
+      "description": "Cuprate compound formula with common abbreviation in parentheses.",
+      "importance": "ID",
+      "format": "String",
+      "notes": "Use the full formula for identification. Abbreviation in parentheses (e.g. YBCO, Bi-2223).",
+      "examples": ["YBa2Cu3O7 (YBCO)", "Bi2Sr2Ca2Cu3O10 (Bi-2223)", "HgBa2Ca2Cu3O8 (Hg-1223)"],
+      "search_group": 0
+    },
+    {
+      "column": "Critical Temperature Tc (K)",
+      "description": "Bulk onset superconducting transition temperature in Kelvin at ambient pressure, optimal doping.",
+      "importance": "RESEARCH",
+      "format": "Number",
+      "notes": "Integer or one decimal place. For YBCO: 93 K. For LSCO: 38 K. Report the widely cited consensus value.",
+      "examples": ["93", "110", "134", "127", "38"],
+      "search_group": 1
+    },
+    {
+      "column": "Year First Synthesized",
+      "description": "Year the first peer-reviewed discovery paper was published reporting superconductivity in this compound class.",
+      "importance": "RESEARCH",
+      "format": "Number",
+      "notes": "4-digit year. Sources: original discovery papers and Reviews of Modern Physics.",
+      "examples": ["1987", "1988", "1993", "1986"],
+      "search_group": 1
+    }
+  ]
 }

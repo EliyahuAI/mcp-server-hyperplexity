@@ -1,42 +1,51 @@
 {
-  "ai_summary": "Validate molecular spectroscopic constants (vibrational wavenumber and anharmonicity) for specific isotopologues of diatomic molecules from NIST WebBook and Huber-Herzberg molecular constants tables.",
   "general_notes": "All values refer to the electronic ground state of the specified diatomic isotopologue. Vibrational wavenumber we (omega_e) is the harmonic vibrational frequency in cm^-1. Anharmonicity constant wexe (omega_e * x_e) is in cm^-1. Both are Dunham expansion coefficients. Authoritative source: NIST Chemistry WebBook / Huber & Herzberg 'Molecular Spectra and Molecular Structure IV' (1979) / Irikura JPCRD 2007. These are fixed, well-tabulated constants.",
-  "columns": [
-    {
-      "name": "Molecule",
-      "importance": "ID",
-      "search_group": 0,
-      "data_type": "string",
-      "notes": "Diatomic isotopologue notation: mass-number + element symbol hyphenated pairs (e.g. H-35Cl). Unique identifier."
-    },
-    {
-      "name": "Vibrational Wavenumber we (cm-1)",
-      "importance": "RESEARCH",
-      "search_group": 1,
-      "data_type": "decimal",
-      "notes": "Harmonic vibrational wavenumber omega_e for the ground electronic state in cm^-1. Source: NIST WebBook / Huber-Herzberg. Report to 3 decimal places for hydrogen-containing species, 1 decimal for heavier diatomics."
-    },
-    {
-      "name": "Anharmonicity constant wexe (cm-1)",
-      "importance": "RESEARCH",
-      "search_group": 1,
-      "data_type": "decimal",
-      "notes": "Anharmonicity constant omega_e * x_e for the ground electronic state in cm^-1. Source: NIST WebBook / Huber-Herzberg. Report to 3 decimal places for hydrogen-containing species, 2 decimal for heavier diatomics."
-    }
-  ],
-  "search_groups": [
-    {
-      "group_id": 0,
-      "columns": ["Molecule"]
-    },
-    {
-      "group_id": 1,
-      "columns": ["Vibrational Wavenumber we (cm-1)", "Anharmonicity constant wexe (cm-1)"],
-      "model": "__SEARCH_MODEL__"
-    }
-  ],
+  "default_model": "__SEARCH_MODEL__",
+  "cache_ttl_days": 30,
   "qc_settings": {
     "enable_qc": "__QC_ENABLED__",
     "model": ["__QC_MODEL__"]
-  }
+  },
+  "search_groups": [
+    {
+      "group_id": 0,
+      "group_name": "Row Identifier",
+      "description": "Diatomic isotopologue in mass-number + element symbol notation."
+    },
+    {
+      "group_id": 1,
+      "group_name": "Spectroscopic Constants",
+      "description": "Vibrational wavenumber and anharmonicity constant from NIST WebBook and Huber-Herzberg tables.",
+      "model": "__SEARCH_MODEL__"
+    }
+  ],
+  "validation_targets": [
+    {
+      "column": "Molecule",
+      "description": "Diatomic isotopologue in mass-number + element symbol hyphenated notation.",
+      "importance": "ID",
+      "format": "String",
+      "notes": "e.g. H-35Cl, H-79Br, 32S-16O. Specifies the exact isotopologue unambiguously.",
+      "examples": ["H-35Cl", "H-79Br", "32S-16O", "79Br-19F", "12C-16O"],
+      "search_group": 0
+    },
+    {
+      "column": "Vibrational Wavenumber we (cm-1)",
+      "description": "Harmonic vibrational wavenumber omega_e for the ground electronic state in cm^-1.",
+      "importance": "RESEARCH",
+      "format": "Decimal",
+      "notes": "Source: NIST WebBook / Huber-Herzberg. Report to 3 decimal places for hydrogen-containing species, 1 decimal for heavier diatomics.",
+      "examples": ["2990.946", "2648.975", "1149.2", "670.75", "2169.814"],
+      "search_group": 1
+    },
+    {
+      "column": "Anharmonicity constant wexe (cm-1)",
+      "description": "Anharmonicity constant omega_e * x_e for the ground electronic state in cm^-1.",
+      "importance": "RESEARCH",
+      "format": "Decimal",
+      "notes": "Source: NIST WebBook / Huber-Herzberg. Report to 3 decimal places for hydrogen-containing species, 2 decimal for heavier diatomics.",
+      "examples": ["52.819", "45.217", "5.602", "4.05", "13.288"],
+      "search_group": 1
+    }
+  ]
 }

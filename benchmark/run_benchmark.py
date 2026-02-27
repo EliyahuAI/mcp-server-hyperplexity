@@ -73,7 +73,7 @@ class HyperplexityClient:
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
         self.session.headers.update({
-            "X-API-Key": api_key,
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         })
@@ -82,32 +82,62 @@ class HyperplexityClient:
     def _url(self, path: str) -> str:
         return f"{self.base_url}/{path.lstrip('/')}"
 
-    def upload_file(self, file_path: Path) -> Dict:
-        """Upload a CSV file and return {session_id, ...}."""
-        with file_path.open("rb") as fh:
-            resp = requests.post(
-                self._url("/upload"),
-                headers={"X-API-Key": self.session.headers["X-API-Key"]},
-                files={"file": (file_path.name, fh, "text/csv")},
-                timeout=self.timeout,
-            )
-        resp.raise_for_status()
-        return resp.json()
+    @staticmethod
+    def _unwrap(resp_json: Dict) -> Dict:
+        """Unwrap { success, data, meta } envelope — return data if present."""
+        return resp_json.get("data") if "data" in resp_json else resp_json
 
-    def create_job(self, session_id: str, config: Dict) -> Dict:
-        """Create a job with inline config (bypasses interview)."""
+    def upload_file(self, file_path: Path) -> Dict:
+        """3-step presigned upload. Returns {session_id, upload_id, s3_key}."""
+        filename = file_path.name
+
+        # Step 1: Get presigned S3 URL
+        file_size = file_path.stat().st_size
         resp = self.session.post(
-            self._url("/jobs"),
-            json={"session_id": session_id, "config": config},
+            self._url("/uploads/presigned"),
+            json={"filename": filename, "file_type": "csv", "file_size": file_size},
             timeout=self.timeout,
         )
         resp.raise_for_status()
-        return resp.json()
+        presigned = self._unwrap(resp.json())
+        presigned_url = presigned["presigned_url"]
+        session_id = presigned["session_id"]
+        upload_id = presigned.get("upload_id", "")
+        s3_key = presigned["s3_key"]
+        content_type = presigned.get("content_type", "text/csv")
+
+        # Step 2: PUT file bytes directly to S3 — Content-Type must match signed header
+        with file_path.open("rb") as fh:
+            put_resp = requests.put(presigned_url, data=fh,
+                                    headers={"Content-Type": content_type}, timeout=120)
+        put_resp.raise_for_status()
+
+        # Step 3: Confirm upload (seeds session state for POST /jobs)
+        confirm_resp = self.session.post(
+            self._url("/uploads/confirm"),
+            json={"session_id": session_id, "s3_key": s3_key,
+                  "upload_id": upload_id, "filename": filename},
+            timeout=self.timeout,
+        )
+        confirm_resp.raise_for_status()
+
+        return {"session_id": session_id, "upload_id": upload_id, "s3_key": s3_key}
+
+    def create_job(self, session_id: str, upload_id: str, s3_key: str, config: Dict) -> Dict:
+        """Create a job with inline config (bypasses interview)."""
+        resp = self.session.post(
+            self._url("/jobs"),
+            json={"session_id": session_id, "upload_id": upload_id,
+                  "s3_key": s3_key, "config": config},
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return self._unwrap(resp.json())
 
     def get_job_status(self, session_id: str) -> Dict:
         resp = self.session.get(self._url(f"/jobs/{session_id}"), timeout=self.timeout)
         resp.raise_for_status()
-        return resp.json()
+        return self._unwrap(resp.json())
 
     def get_job_messages(self, session_id: str, after_seq: int = 0) -> Dict:
         resp = self.session.get(
@@ -116,20 +146,24 @@ class HyperplexityClient:
             timeout=self.timeout,
         )
         resp.raise_for_status()
-        return resp.json()
+        return self._unwrap(resp.json())
 
-    def approve_validation(self, session_id: str) -> Dict:
+    def approve_validation(self, session_id: str, approved_cost_usd: float = None) -> Dict:
+        payload = {}
+        if approved_cost_usd is not None:
+            payload["approved_cost_usd"] = approved_cost_usd
         resp = self.session.post(
-            self._url(f"/jobs/{session_id}/approve"),
+            self._url(f"/jobs/{session_id}/validate"),
+            json=payload,
             timeout=self.timeout,
         )
         resp.raise_for_status()
-        return resp.json()
+        return self._unwrap(resp.json())
 
     def get_results(self, session_id: str) -> Dict:
         resp = self.session.get(self._url(f"/jobs/{session_id}/results"), timeout=self.timeout)
         resp.raise_for_status()
-        return resp.json()
+        return self._unwrap(resp.json())
 
     def wait_for_status(
         self,
@@ -153,7 +187,7 @@ class HyperplexityClient:
                 continue
 
             status = status_resp.get("status", "")
-            pct = status_resp.get("percent_complete", 0)
+            pct = status_resp.get("progress_percent", 0)
 
             if status != last_status or pct != last_pct:
                 logger.info(f"  [{label or session_id[:12]}] {status} {pct}%")
@@ -181,17 +215,19 @@ def make_config(base_config: Dict, search_model: str, qc_model: str, web_searche
     """Inject search_model + qc_model into a base config template."""
     config = copy.deepcopy(base_config)
 
-    # Replace __SEARCH_MODEL__ placeholder in search_groups
+    # Set top-level default_model (internal format)
+    config["default_model"] = search_model
+
+    # Also set model on each non-ID search group (used by background handler for display)
     for sg in config.get("search_groups", []):
         if sg.get("group_id", 0) == 0:
-            # ID group — no model needed
             sg.pop("model", None)
             continue
         sg["model"] = search_model
         if web_searches > 0 and search_model.startswith("claude-"):
             sg["anthropic_max_web_searches"] = web_searches
 
-    # Replace __QC_ENABLED__ / __QC_MODEL__ placeholders
+    # QC settings
     qc = config.get("qc_settings", {})
     if qc_model == "none":
         qc["enable_qc"] = False
@@ -299,18 +335,18 @@ def run_single(
     t0 = time.time()
 
     try:
-        # 1. Upload CSV
+        # 1. Upload CSV (presigned → PUT → confirm)
         logger.info(f"[{run_id}] Uploading {csv_path.name}...")
         upload_resp = client.upload_file(csv_path)
-        session_id = upload_resp.get("session_id") or upload_resp.get("sessionId")
-        if not session_id:
-            raise ValueError(f"No session_id in upload response: {upload_resp}")
+        session_id = upload_resp["session_id"]
+        upload_id = upload_resp["upload_id"]
+        s3_key = upload_resp["s3_key"]
         run_result["session_id"] = session_id
-        logger.info(f"[{run_id}] session_id={session_id}")
+        logger.info(f"[{run_id}] session_id={session_id} upload_id={upload_id}")
 
         # 2. Create job with inline config (bypasses interview → triggers preview)
         logger.info(f"[{run_id}] Creating job with inline config...")
-        create_resp = client.create_job(session_id, config)
+        create_resp = client.create_job(session_id, upload_id, s3_key, config)
         logger.info(f"[{run_id}] create_job response: {create_resp.get('status', create_resp)}")
 
         # 3. Wait for preview
@@ -335,9 +371,9 @@ def run_single(
         # Capture model snapshot S3 key hint (may appear in status response)
         run_result["model_snapshot_s3_key"] = preview_status.get("model_snapshot_s3_key")
 
-        # 4. Approve validation
+        # 4. Approve validation (pass cost so backend doesn't reject mismatched estimate)
         logger.info(f"[{run_id}] Approving validation...")
-        approve_resp = client.approve_validation(session_id)
+        approve_resp = client.approve_validation(session_id, approved_cost_usd=run_result.get("preview_cost"))
         logger.info(f"[{run_id}] approve response: {approve_resp.get('status', approve_resp)}")
 
         # 5. Wait for validation_complete
