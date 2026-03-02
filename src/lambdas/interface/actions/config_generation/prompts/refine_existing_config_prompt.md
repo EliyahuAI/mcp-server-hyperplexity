@@ -57,7 +57,7 @@ This conversation context is essential for making informed refinements that buil
 **HIGH PRIORITY** (Address these first):
 - Columns with >20% overall QC fail rate or >30% value fail rate
 - Search groups with unexpectedly high costs or processing times
-- Models that are underperforming for their assigned task complexity
+- Search groups that are repeatedly inaccurate and may need capability escalation (add `U` to the group — note: 2–5× cost increase, last resort only)
 
 **MEDIUM PRIORITY**:
 - User-requested improvements to well-performing areas
@@ -66,7 +66,7 @@ This conversation context is essential for making informed refinements that buil
 
 **LOW PRIORITY**:
 - Cosmetic changes to well-performing configurations
-- Model changes that don't address specific performance issues
+- Capability flag changes that don't address specific performance issues
 ## Refinement Principles
 - **Preserve what works**: Don't change existing settings if they look like they are getting good high confidence results (there is preview information here somewhere)
 - **Focus on user needs**: Address specific instructions given
@@ -79,12 +79,14 @@ This conversation context is essential for making informed refinements that buil
 **CRITICAL**: When reviewing preview results, specifically identify fields returning low confidence that should be readily available online. Would you be happy if someone gave you these results? What can we do to make sure we capture this information?
 
 ### 2. Search Group Restructuring
-- **Goal**: Small enough search groups, with enough context, sent to smarter models to solve identified issues, that are reliably talking about the right information. 
-- **Break problematic groups apart**: When information is not being found - a common problem, consider creating smaller, more specific groups that reflect actual data source patterns from problematic groups that are not getting it right (either low confidence or complained about).
+- **Goal**: Small enough search groups, with enough context, reliably focused on the right information.
+- **Break problematic groups apart**: When information is not being found, consider creating smaller, more specific groups that reflect actual data source patterns.
 
-### 3. Change model
-- **the-clone-claude**: this version forces the clone to use claude over deepseek and can give better results at higher cost  
-- **Use Claude**: for advanced reasoning tasks (no web) use claude sonnet, or opus. 
+### 3. Escalate capability flags on underperforming search groups
+⚠️ **`C` and `U` are high-cost escalations (2–5× more expensive) — use only when clearly justified:**
+- **Add `U`** only to a search group whose previous results were concretely wrong — this is the last resort for a specific broken group
+- **Add `C`** only if the search group genuinely requires expert-level multi-source synthesis that simpler search cannot provide
+- Do NOT set `model` directly on search groups — models are derived automatically from the `capability` field
 
 ### 4. Adjust the ID Columns
 - **Stabilization**: If the columns are not getting information about the right thing cosistently, use more columns as input 'ID' fields in Group 0 to make sure that the sequential searches in the same row focus on the correct single topic. 
@@ -94,13 +96,12 @@ This conversation context is essential for making informed refinements that buil
 - **column notes**: Utilize column notes to add nuance to the requirements. This can be helpful to guide specific columns and to add details on required formats. When a user specifically mentions an issue with a column - this detail must be explicit in the notes. 
 
 ## Common Refinement Scenarios
-- **Restructure search groups** to better reflect where information appears in sources.
-- **Choose a smarter model** based on business priorities and user feedback
+- **Restructure search groups** to better reflect where information appears in sources
+- **Escalate underperforming search groups** by adding `U` to the group (previous results wrong) or `C` (needs deep synthesis)
 - **Update examples** with more accurate, realistic data from the table (including proper units)
-- **Refine general and column notes descriptions** for clarity and business relevance in the column notes or search group descriptions
+- **Refine general and column notes descriptions** for clarity and business relevance
 - **Add unit requirements** to notes for measurement columns (weights, volumes, temperatures, etc.)
 - **Adjust importance levels** based on business priorities and user feedback
-- **Add QC Power** make sure QC is on, consider giving web access 
 
 {{TABLE_ANALYSIS}}
 

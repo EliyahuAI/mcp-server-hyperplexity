@@ -14,6 +14,7 @@ from pathlib import Path
 from shared.ai_api_client import ai_client
 from shared_table_parser import s3_table_parser
 from config_validator import validate_config_complete
+from capability_model_derivation import derive_model_config
 
 # Import WebSocket client for progress updates
 try:
@@ -268,6 +269,13 @@ Return the full updated configuration as valid JSON matching the original schema
 
         if not updated_config:
             return {'success': False, 'error': 'No config returned from cheap model'}
+
+        # Derive group models and QC from capability codes (no-op if no codes present)
+        try:
+            derive_model_config(updated_config)
+        except Exception as e:
+            logger.error(f"[CONFIG_GEN] Model derivation failed (cheap model path): {e}")
+            return {'success': False, 'error': f'Model derivation failed: {e}'}
 
         # Validate
         is_valid, errors, warnings = validate_config_complete(updated_config, table_analysis)
@@ -530,6 +538,13 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
 
                 updated_config = result['refined_data']
 
+                # Derive group models and QC from capability codes (no-op if no codes present)
+                try:
+                    derive_model_config(updated_config)
+                except Exception as e:
+                    logger.error(f"[CONFIG_GEN] Model derivation failed (refinement path): {e}")
+                    return {'success': False, 'error': f'Model derivation failed: {e}'}
+
                 # CRITICAL: Restore conversation history - AI doesn't include config_change_log in output
                 if 'config_change_log' not in updated_config:
                     if conversation_history:
@@ -676,6 +691,14 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             except json.JSONDecodeError as e:
                 logger.error(f"[CONFIG_PARSING] Failed to parse updated_config JSON: {e}")
                 raise ValueError(f"Invalid JSON in updated_config: {str(e)}")
+
+        # Derive group models and QC from capability codes (no-op if no codes present)
+        if updated_config:
+            try:
+                derive_model_config(updated_config)
+            except Exception as e:
+                logger.error(f"[CONFIG_GEN] Model derivation failed (generation path): {e}")
+                return {'success': False, 'error': f'Model derivation failed: {e}'}
 
         clarifying_questions = response_data.get('clarifying_questions', '')
         clarification_urgency = response_data.get('clarification_urgency', 0.0)

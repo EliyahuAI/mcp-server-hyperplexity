@@ -1999,6 +1999,7 @@ class TheClone2Refined:
         suggested_search_terms = synthesis_result.get('suggested_search_terms', [])
         needs_thinking = synthesis_result.get('needs_thinking', False)
         needs_expert   = synthesis_result.get('needs_expert', False)
+        needs_search   = synthesis_result.get('needs_search', False)
         note_to_self = synthesis_result.get('note_to_self')
         original_note_to_self = note_to_self  # Preserve original before prefix is added
         previous_answer = synthesis_result.get('answer', {})  # Capture for passing to next iteration
@@ -2013,7 +2014,7 @@ class TheClone2Refined:
 
         # Self-correction loop: runs when grade is below A and there are actionable signals
         while (self_assessment not in ['A+', 'A']
-               and (suggested_search_terms or needs_thinking or needs_expert)
+               and (suggested_search_terms or needs_thinking or needs_expert or needs_search)
                and self_correction_count < max_self_corrections):
 
             self_correction_count += 1
@@ -2021,7 +2022,7 @@ class TheClone2Refined:
 
             # Filter out already-used search terms and limit to 2
             suggested_search_terms = [t for t in suggested_search_terms if t not in all_search_terms_used][:2]
-            if not suggested_search_terms and not needs_thinking and not needs_expert:
+            if not suggested_search_terms and not needs_thinking and not needs_expert and not needs_search:
                 logger.debug(f"[CLONE] No actionable signals, stopping self-correction")
                 break
 

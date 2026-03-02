@@ -4,17 +4,16 @@ Query: {query}
 
 ## Decision 1: Answer Directly or Search?
 
-**Answer Directly IF:**
-- General concepts, definitions, well-established facts
-- High confidence, no post-cutoff information needed
-- No citations required
+**Answer Directly ONLY FOR trivial universal common knowledge:**
+- Facts universally known by anyone with no domain context required (e.g., how many states in the US)
+- No numeric values, no citations, no precision required
 - You must provide a complete answer in your response if you select this
+- When in doubt, search — the bar is very high
 
 **Need Search IF:**
-- Today's date is provided above - it is later than your training. Accept this fact.
-- Recent events, current data, specifications
-- Requires authoritative sources or citations
-- Post-cutoff information
+- Any domain-specific or technical value, even if you are confident you know it
+- Any value that could be cited, measured, or looked up in a reference source
+- Recent events, current data, post-cutoff information, or authoritative sources needed
 
 **Academic Mode:**
 Set `academic: true` if query requires scholarly/peer-reviewed sources:

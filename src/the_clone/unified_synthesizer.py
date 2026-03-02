@@ -27,6 +27,21 @@ from the_clone.strategy_loader import get_model_with_backups
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+_SHORT_ID_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+
+def _make_short_id(index: int) -> str:
+    """Generate a two-letter snippet anchor (AA, AB, ..., ZZ) from a zero-based index."""
+    a = (index // 26) % 26
+    b = index % 26
+    return _SHORT_ID_ALPHABET[a] + _SHORT_ID_ALPHABET[b]
+
+
+def _query_slug(query: str, max_len: int = 40) -> str:
+    """Convert a query string to a safe filename slug."""
+    slug = re.sub(r'[^a-zA-Z0-9]+', '_', (query or 'unknown')[:max_len])
+    return slug.strip('_') or 'unknown'
+
 
 class UnifiedSynthesizer:
     """
@@ -83,6 +98,13 @@ class UnifiedSynthesizer:
                 - citations: list (final citations with snippet ID conversion)
         """
         logger.debug(f"[UNIFIED] Mode: {'Synthesis' if is_last_iteration else 'Evaluation+Synthesis'}")
+
+        # 2d: Assign stable two-letter short_ids to all snippets for this synthesis call.
+        # These are assigned here (not at extraction time) so they're always unique within
+        # the full set of snippets passed to this synthesizer invocation.
+        for i, snippet in enumerate(snippets):
+            if 'short_id' not in snippet:
+                snippet['short_id'] = _make_short_id(i)
 
         # Build prompt
         prompt = self._build_prompt(
@@ -244,11 +266,13 @@ class UnifiedSynthesizer:
                     signal_flags = set(grade_parts[1:])
                     needs_thinking = 'T' in signal_flags
                     needs_expert   = 'E' in signal_flags
+                    needs_search   = 'S' in signal_flags
                 else:
                     # List response (from refinement mode) - no metadata fields
                     suggested = []
                     needs_thinking = False
                     needs_expert   = False
+                    needs_search   = False
                     new_note = None
                     self_assessment = 'A'
             else:
@@ -273,6 +297,7 @@ class UnifiedSynthesizer:
                     suggested = []
                 needs_thinking = False
                 needs_expert   = False
+                needs_search   = False
                 new_note = None
                 self_assessment = 'A'  # Evaluation mode doesn't use self-assessment
 
@@ -291,6 +316,7 @@ class UnifiedSynthesizer:
                             'suggested': suggested,
                             'needs_thinking': needs_thinking,
                             'needs_expert': needs_expert,
+                            'needs_search': needs_search,
                             'note_to_self': new_note
                         }, f, indent=2)
                 except:
@@ -311,7 +337,9 @@ class UnifiedSynthesizer:
                     answer_final, citations, snippets_used = await self._convert_snippet_ids_to_citations(
                         answer=answer_raw,
                         snippets=snippets,
-                        schema=schema
+                        schema=schema,
+                        debug_dir=debug_dir,
+                        query=query
                     )
                     logger.debug(f"[UNIFIED] Converting snippet IDs to citations (final={is_last_iteration})")
 
@@ -343,6 +371,7 @@ class UnifiedSynthesizer:
                 "suggested_search_terms": suggested,
                 "needs_thinking": needs_thinking,
                 "needs_expert": needs_expert,
+                "needs_search": needs_search,
                 "note_to_self": new_note,
                 "self_assessment": self_assessment,  # Preserve for iteration logic
                 "iteration": iteration,  # Track iteration number for next refinement
@@ -756,11 +785,54 @@ Query: {query}
 
         return '\n'.join(formatted)
 
+    async def _llm_resolve_snippet(self, reference: str, snippet_map: dict, query: str = None) -> str | None:
+        """Use a small LLM to identify which snippet best matches an unresolvable reference.
+
+        Called as a last-resort fallback (Suggestion 2b) when exact/fuzzy/handle/sibling
+        matching all fail for a single-occurrence citation reference.
+
+        Returns snippet_id string if a match is found, None otherwise.
+        """
+        candidates = sorted(snippet_map.values(), key=lambda s: s.get('p', 0), reverse=True)[:10]
+        if not candidates:
+            return None
+
+        candidate_lines = []
+        for s in candidates:
+            sid = s.get('id', '?')
+            handle = s.get('verbal_handle', '?')
+            preview = (s.get('text') or '')[:120].replace('\n', ' ')
+            candidate_lines.append(f"- {sid}  [{handle}]  {preview}")
+
+        prompt = (
+            f'Which snippet best matches this unresolved citation reference: "{reference}"?\n'
+            + (f'Query context: {(query or "")[:100]}\n\n' if query else '\n')
+            + 'Available snippets:\n'
+            + '\n'.join(candidate_lines)
+            + '\n\nReturn ONLY the snippet id (e.g. S1.2.3.0-p0.95) of the best match, '
+            + 'or exactly the word "none" if no snippet matches.'
+        )
+        try:
+            resp = await self.ai_client.query_async(
+                prompt=prompt,
+                model='gemini-3-flash-preview-low',
+                context='snippet_llm_resolve',
+                max_tokens=60
+            )
+            result = (resp.get('text') or '').strip().split('\n')[0].strip()
+            if result and result != 'none' and result in snippet_map:
+                return result
+        except Exception as e:
+            logger.debug(f"[CITATIONS] LLM snippet resolve error: {e}")
+        return None
+
     async def _convert_snippet_ids_to_citations(
         self,
         answer: Dict[str, Any],
         snippets: List[Dict],
-        schema: Dict = None
+        schema: Dict = None,
+        debug_dir: str = None,
+        query: str = None
     ) -> tuple:
         """Convert snippet IDs to citation numbers."""
         answer_str = json.dumps(answer)
@@ -768,6 +840,8 @@ Query: {query}
         # Build snippet maps FIRST - needed for handle lookup
         snippet_map = {s.get('id'): s for s in snippets}
         handle_to_id = {s.get('verbal_handle'): s.get('id') for s in snippets if s.get('verbal_handle')}
+        # 2d: two-letter short_id map (stable anchor; assigned in evaluate_and_synthesize)
+        short_id_map = {s.get('short_id'): s.get('id') for s in snippets if s.get('short_id')}
 
         # Pull ALL bracketed items and try strategies on each
         all_brackets = re.findall(r'\[([^\]]+)\]', answer_str)
@@ -786,6 +860,17 @@ Query: {query}
 
             matched = False
             extracted_sid = None
+
+            # Strategy 0 (2d): Two-letter short_id anchor (AA, AB, ..., ZZ)
+            # Checked first because it's unambiguous when present.
+            if not matched and re.match(r'^[A-Z]{2}$', item):
+                sid = short_id_map.get(item)
+                if sid:
+                    matched = True
+                    if sid not in seen:
+                        snippet_ids.append(sid)
+                        seen.add(sid)
+                        logger.debug(f"[CITATIONS] Short-ID match: [{item}] → {sid}")
 
             # Strategy 1: Contains comma - try [handle, ID] format
             if ',' in item:
@@ -861,41 +946,73 @@ Query: {query}
                     snippet_ids.append(sid)
                     seen.add(sid)
 
+            # Strategy 4 (2a): Sibling fallback — find any snippet from the same source.
+            # When the specific snippet ID is unavailable (e.g., dropped during extraction),
+            # use another snippet from the same source URL as a citation anchor.
+            if not matched:
+                sid_to_try = extracted_sid or (item if re.match(r'S(?:M|C|\d+)(?:\.\d+)', item) else None)
+                if sid_to_try:
+                    # Source prefix: S{search_ref}.{source_num}  (first two numeric segments)
+                    src_prefix_match = re.match(r'(S(?:M|C|\d+)\.\d+)\.', sid_to_try)
+                    if src_prefix_match:
+                        src_prefix = src_prefix_match.group(1) + '.'
+                        for full_id in snippet_map:
+                            if full_id.startswith(src_prefix) and full_id not in seen:
+                                snippet_ids.append(full_id)
+                                seen.add(full_id)
+                                matched = True
+                                logger.debug(f"[CITATIONS] Sibling fallback: [{item}] → {full_id}")
+                                break
+
+            # Strategy 5 (2b): LLM fallback — for single-occurrence unresolvable references,
+            # ask a small model which available snippet best matches the verbal handle.
+            if not matched and snippet_map:
+                ref_count = answer_str.count(item)
+                if ref_count <= 2:  # Single or double occurrence — worth the small LLM call
+                    resolved = await self._llm_resolve_snippet(item, snippet_map, query=query)
+                    if resolved and resolved not in seen:
+                        snippet_ids.append(resolved)
+                        seen.add(resolved)
+                        matched = True
+                        logger.debug(f"[CITATIONS] LLM fallback resolved: [{item}] → {resolved}")
+
             # Track failures for logging
             if not matched:
                 failed_items.append(item)
 
         if failed_items:
-            logger.warning(f"[CITATIONS] Could not match {len(failed_items)} items")
+            logger.warning(f"[CITATIONS] Could not match {len(failed_items)} items: {failed_items}")
 
-            # Save debug file with missing items and available pairs
-            debug_output = []
-            debug_output.append("=== MISSING CITATIONS ===\n")
-            for item in failed_items:
-                debug_output.append(f"[{item}]\n")
-
-            debug_output.append("\n=== AVAILABLE [handle, ID] PAIRS ===\n")
-            for handle, sid in sorted(handle_to_id.items()):
-                snippet = snippet_map.get(sid)
-                if snippet:
-                    p_score = snippet.get('p', 0)
-                    debug_output.append(f"[{handle}, {sid}]\n")
-
-            # Write to file (use /tmp in Lambda, test_results locally)
+            # 2c: Log structured resolution failure record for systematic diagnosis.
             try:
-                import os
-                # Use /tmp for Lambda (read-only file system), else local test_results
-                if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
-                    debug_dir = '/tmp'
-                else:
-                    debug_dir = os.path.join(os.path.dirname(__file__), 'test_results')
-                os.makedirs(debug_dir, exist_ok=True)
-                debug_file = os.path.join(debug_dir, 'citation_debug.txt')
-                with open(debug_file, 'w') as f:
-                    f.writelines(debug_output)
-                logger.debug(f"[CITATIONS] Debug info saved to {debug_file}")
+                failure_record = {
+                    "query": (query or '')[:200],
+                    "failed_references": failed_items,
+                    "available_snippet_ids": list(snippet_map.keys()),
+                    "available_handles": {h: sid for h, sid in handle_to_id.items()},
+                    "available_short_ids": {k: v for k, v in short_id_map.items()},
+                    "snippet_count": len(snippets),
+                    "resolution_strategies_tried": ["short_id", "direct_id", "fuzzy_handle", "super_fuzzy", "snippet_id", "prefix_id", "verbal_handle", "sibling", "llm"],
+                }
+                failure_json = json.dumps(failure_record, indent=2)
+
+                # Prefer the caller-supplied debug_dir; fall back to /tmp or local test_results
+                _debug_base = debug_dir
+                if not _debug_base:
+                    if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+                        _debug_base = '/tmp'
+                    else:
+                        _debug_base = os.path.join(os.path.dirname(__file__), 'test_results')
+
+                failure_dir = os.path.join(_debug_base, 'snippet_resolution_failures')
+                os.makedirs(failure_dir, exist_ok=True)
+                slug = _query_slug(query)
+                failure_file = os.path.join(failure_dir, f'{slug}.json')
+                with open(failure_file, 'w', encoding='utf-8') as f:
+                    f.write(failure_json)
+                logger.debug(f"[CITATIONS] Resolution failure log saved to {failure_file}")
             except Exception as e:
-                logger.debug(f"[CITATIONS] Could not save debug file: {e}")
+                logger.debug(f"[CITATIONS] Could not save resolution failure log: {e}")
 
         logger.debug(f"[CITATIONS] Matched {len(snippet_ids)} snippet references from {len(all_brackets)} bracketed items ({len(failed_items)} unmatched)")
 

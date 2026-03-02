@@ -79,15 +79,13 @@
             "type": "string",
             "description": "Description of what this search group represents"
           },
+          "capability": {
+            "type": "string",
+            "description": "Pipe-separated capability flags for this search group. Controls the processing model derived automatically for the group. Ql = qualitative answer (summary, label, or narrative — not a precise measurement). P = provenance required (critical decision, not freshman-obvious). C = master's-level expertise or multi-source synthesis (use sparingly — 2–5× cost). N = no web search needed (derived/calculated group). U = escalate one tier — refinement only, when previous results were concretely wrong (2–5× cost). Leave empty for standard precision/quantitative search."
+          },
           "model": {
             "type": "string",
-            "description": "Model to use for this search group. Optional - defaults to 'the-clone' if not specified. Only specify when using a different model like 'gemini-2.0-flash', 'claude-sonnet-4-5', or 'the-clone-claude'."
-          },
-          "anthropic_max_web_searches": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 10,
-            "description": "Maximum web searches for this search group when using Claude models. Overrides anthropic_max_web_searches_default. Only set when explicitly requested - adds cost and latency."
+            "description": "Derived automatically from the capability field — do not set manually."
           }
         },
         "additionalProperties": false

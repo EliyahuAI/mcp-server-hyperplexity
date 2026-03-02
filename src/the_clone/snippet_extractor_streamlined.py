@@ -660,6 +660,8 @@ class SnippetExtractorStreamlined:
             snippets_by_source = {src['source_id']: [] for src in labeled_sources}
             snippet_counters = {src['source_id']: 0 for src in labeled_sources}
             dropped_by_source = {src['source_id']: 0 for src in labeled_sources}
+            # Track sources that already got a pass-all fallback (2a: avoid duplicates)
+            used_passall_sources = set()
 
             for search_num_str, quotes in quotes_by_search.items():
                 search_num = int(search_num_str)
@@ -762,6 +764,36 @@ class SnippetExtractorStreamlined:
                         if prev_code or next_code:
                             bounds_info = f" (neighbors: {prev_code or '?'} < ? < {next_code or '?'})"
                         logger.warning(f"[BATCH EXTRACTOR] Code not found: '{code_without_prefix}' doesn't exist in {source_id}{bounds_info}, skipping")
+
+                        # 2a: Pass-all fallback — preserve source URL/title as citation anchor
+                        # even when the specific snippet text can't be resolved.
+                        # Only add once per source to avoid duplicate source-level entries.
+                        if source_id not in used_passall_sources and source_p >= effective_threshold:
+                            passall_text = resolver.resolve('*')
+                            if passall_text:
+                                used_passall_sources.add(source_id)
+                                fb_snippet_id = f"{snippet_id_prefix}.{labeled_src['search_ref']}.{source_num}.{snippet_counters[source_id]}-p{source_p:.2f}"
+                                fb_snippet = {
+                                    "id": fb_snippet_id,
+                                    "verbal_handle": f"{source_handle}_source-ref-fallback",
+                                    "text": passall_text[:1500],
+                                    "p": round(source_p * 0.9, 2),
+                                    "c": source_c,
+                                    "validation_reason": "PASSALL_FALLBACK",
+                                    "search_ref": search_num,
+                                    "_source_title": labeled_src['title'],
+                                    "_source_url": labeled_src['url'],
+                                    "_source_date": labeled_src['date'],
+                                    "_source_reliability": labeled_src['reliability'],
+                                    "_search_term": labeled_src['search_term'],
+                                    "_source_handle": source_handle,
+                                    "_code": '*',
+                                    "_is_lower_quality": True,
+                                    "_fallback_reason": f"code_not_found:{code_without_prefix}"
+                                }
+                                snippets_by_source[source_id].append(fb_snippet)
+                                snippet_counters[source_id] += 1
+                                logger.debug(f"[BATCH EXTRACTOR] Pass-all fallback added for {source_id} (failed code: {code_without_prefix})")
                         continue
 
                     # Filter by dynamic effective threshold

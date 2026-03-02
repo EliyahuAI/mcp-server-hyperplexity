@@ -7,7 +7,7 @@
 1. **YOUR CORE TASK**: Create validation config for AI-generated table with ALL columns validated
 2. **TABLE MAKER CONTEXT**: Rich context from conversation, column definitions, tablewide research
 3. **CRITICAL REQUIREMENTS**: NO IGNORED COLUMNS, use column definitions exactly, generate examples
-4. **GENERAL GUIDANCE**: Model selection, search context, importance levels, search groups
+4. **GENERAL GUIDANCE**: Capability codes, search context, importance levels, search groups
 5. **YOUR TASK**: Step-by-step config creation instructions
 6. **FINAL REMINDER**: Core requirements repeated with critical constraints
 
@@ -20,7 +20,7 @@
 **DELIVERABLES:**
 - Validation targets for EVERY SINGLE column (no exceptions)
 - Search groups organized by information sources
-- Appropriate models and context sizes for each group
+- Capability codes for each validation target to control processing depth
 - Clear general notes and column-specific notes incorporating all context
 - Clear ai_summary explaining the configuration
 
@@ -217,11 +217,11 @@ For EACH column (no exceptions):
 - Then append: "Additional context: [column-specific information from research]" (only if applicable to just this column)
 - Example: "Description: Company headquarters location. Validation: Verify city and country match the company's official HQ. Additional context: For biotech companies in this dataset, many have multiple locations - prioritize the corporate HQ, not R&D facilities."
 
-### Step 5: Select Models, Context, and QC Settings
+### Step 5: Assign Capability Codes and QC Settings
 
-Follow the guidance from Common Configuration Guidance above:
-- **Model Selection**: stick with `the-clone` unless simple calculation `gemini-3-flash-preview-min` or advanced/technical analysis needed (use `the-clone-claude`)
-- **QC Settings**: Enable `enable_qc: true` (recommended for Table Maker configs)
+Follow the capability code guidance from Common Configuration Guidance above:
+- **Capability Codes**: Assign appropriate flags (`Ql`, `P`, `C`, `N`) to each RESEARCH validation target — models and QC are derived automatically from these flags
+- **QC**: Enabled automatically when 2+ search groups with validated columns are present — no manual setting needed
 
 ### Step 6: Write Summary
 

@@ -163,8 +163,12 @@ def load_run_results(results_dir: Path) -> List[Dict]:
 import re as _re
 
 def _strip_citations(s: str) -> str:
-    """Remove trailing citation markers like [1], [2], [1,2], (1), etc."""
-    return _re.sub(r'(\s*\[\d+(?:,\s*\d+)*\]|\s*\(\d+\))+\s*$', '', s).strip()
+    """Remove trailing citation markers like [1], [2], [1,2], (1), etc.
+    Also strips a leading '=' (spreadsheet formula prefix) that some QC models output."""
+    s = _re.sub(r'(\s*\[\d+(?:,\s*\d+)*\]|\s*\(\d+\))+\s*$', '', s).strip()
+    if s.startswith('='):
+        s = s[1:].strip()
+    return s
 
 
 def score_cell(predicted: str, ground_truth: str) -> str:

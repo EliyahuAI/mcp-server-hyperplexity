@@ -2,19 +2,26 @@
 
 This document contains shared guidelines used by both new config creation and refinement processes.
 
-## Model Selection Guidelines
-- **Default Model**: `the-clone` is the default for ALL search groups. This is an agentic mix of Perplexity web search with DeepSeek V3.2 synthesis.
+## Search Group Capability Codes
 
-- **IMPORTANT**: Only specify a `model` in a search group when you need something OTHER than `the-clone`. If omitted, `the-clone` is automatically used.
+Assign a `capability` field to each **search group** (Groups 1+, not Group 0) using pipe-separated flags (e.g., `P|C`). The model and QC settings for that group are derived automatically — **do not set `model` on search groups or `qc_settings` manually**.
 
-- **Model Tiers (lowest to highest capability/cost)**:
-  - **Standard** (default): `the-clone` — Perplexity web search + DeepSeek V3.2 synthesis, fast and cost-effective for most tables
-  - **Upgraded**: `the-clone-claude` — Perplexity web search + Claude synthesis, for complex or nuanced research
-  - **Scientific/Technical tables** (use this as first choice, not an upgrade): `the-clone-claude` for all search groups + `claude-opus-4-6` QC (no web search) — whenever the table has a strong scientific, medical, or technical basis
-  - **Calculation/light reasoning**: `gemini-3-flash-preview-min` — fast, no web search, for derived or formula-like fields
-  - **Advanced synthesis without web**: `claude-sonnet-4-6` or `claude-opus-4-6` — for complex reasoning on existing context, no web access needed
+Think about what the group as a whole needs. If most columns are quantitative but one is qualitative, set the flag that best represents the group's dominant need.
 
-- **Recommended QC Approach**: Default QC is `moonshotai/kimi-k2.5` (fast, cost-effective). Upgrade to `claude-opus-4-6` (no web search) for scientific/technical tables or when default QC is missing errors.
+| Code | When to apply to the group |
+|------|---------------------------|
+| `Ql` | The group's answers are qualitative — summaries, labels, or narratives rather than precise numeric values or measurements |
+| `P` | Provenance required — at least one critical column in this group hinges on a traceable source, and the answer is not obvious to a non-specialist |
+| `C` | The group requires master's-level domain expertise or synthesis across multiple independent sources |
+| `N` | The group contains only derived/calculated columns — no web search needed |
+| `U` | Previous results from this group were concretely wrong — escalate (refinement only) |
+
+**Rules:**
+- Leave `capability` empty for standard precision/quantitative groups — the default search model handles these well
+- `C` and `U` dramatically escalate processing cost (2–5× more expensive) — use them **only when critical**: `C` only for genuinely expert-level synthesis, `U` only when a group produced concretely wrong results in prior runs
+- `P` raises cost modestly — enables provenance verification (QC) even for single-group configs
+- `U` is for refinement only; do not add on first-time generation
+- If you see `model` fields already set on groups (e.g. during refinement), leave them — they are overwritten automatically and are not your concern
 
 ## Importance Level Guidelines
 - **ID**: These define the rows - **AT LEAST ONE COLUMN MUST BE ASSIGNED 'ID'** (MANDATORY), usually the first/primary identifier column(s) to the left of the table. Getting these right is critical as these define the row information and the stability of the analysis. An Index alone is not enough - use meaningful identifiers. **⚠️ NEVER convert ALL ID columns to RESEARCH - at least one must remain ID.**
@@ -131,71 +138,13 @@ Auto-detect from sample data:
 
 ## Quality Control (QC) Settings Guidelines
 
-QC provides automated review of validation outputs to improve accuracy and consistency.
+QC is derived automatically from capability codes — **do not set `qc_settings` manually**.
 
-### QC Configuration Options
-- **Enable QC**: Set `enable_qc: true` to enable automated quality control review
-- **QC Models**: Default is `["moonshotai/kimi-k2.5"]`; upgrade to `["claude-opus-4-6"]` for scientific/technical tables
+- **No QC**: single search group with no `P` flag, or no capability codes on any group
+- **QC enabled** (standard): 2+ search groups with capability codes, or any group has `P`
+- **QC elevated**: any group uses `C` or `U` — triggers the stronger QC tier automatically
+- **P flag**: enables QC even when there is only one search group (provenance verification)
 - **Token Allocation**: Default 8K base + 4K per validated column (excluding ID fields)
-
-### When to Configure QC
-- **Enable QC (Recommended)**: For most validation tasks where accuracy is important
-- **Default QC**: `moonshotai/kimi-k2.5` — fast, cost-effective quality control
-- **Upgrade QC**: `claude-opus-4-6` (no web search) — for scientific/technical tables or when default QC is catching frequent errors
-- **Disable QC**: Only for simple fact-checking tasks or when speed is more important than accuracy or when pushed to reduce costs.
-
-## Web Search Configuration (Claude Models Only)
-
-**IMPORTANT**: Web search access for Claude models is **NOT a first-line approach**. Only configure when:
-1. ✅ **Explicitly requested** by the user
-2. ✅ **Other approaches have failed** - tried different models/strategies and accuracy is still poor
-3. ❌ **NEVER as default** - adds significant cost and latency
-
-### Where Web Search Can Be Configured
-
-**QC Settings** (most common use case):
-```json
-{
-  "qc_settings": {
-    "enable_qc": true,
-    "model": ["claude-opus-4-6"],
-    "anthropic_max_web_searches": 3
-  }
-}
-```
-- Use when QC needs to verify information from current web sources
-- Default is 0 (disabled)
-- Range: 0-10 searches
-
-**Search Groups** (per-group override):
-```json
-{
-  "search_groups": [
-    {
-      "group_id": 1,
-      "model": "claude-sonnet-4-5",
-      "anthropic_max_web_searches": 3
-    }
-  ]
-}
-```
-- Only when a specific search group needs web access and user has requested it
-- Overrides `anthropic_max_web_searches_default` if both are set
-
-**Top-level Default** (applies to all Claude search groups):
-```json
-{
-  "anthropic_max_web_searches_default": 3
-}
-```
-- Rarely used - only when user explicitly wants all Claude groups to have web access
-- Does NOT affect QC (QC has its own setting)
-
-### Web Search Guidelines
-- **Cost Impact**: Each web search adds API cost and processing time
-- **When to Use**: Only after trying `the-clone` (which has built-in web via Perplexity) first
-- **Typical Values**: 3 searches is standard when enabled, 5+ for complex research
-- **QC vs Validation**: If validation already uses `the-clone`, enable web search on QC only when QC specifically needs to verify with current sources
 
 ## Search Group Requirements (MANDATORY)
 Search groups are **REQUIRED** for every configuration - they are essential for building an effective search strategy and cannot be omitted.
@@ -208,7 +157,7 @@ Search groups are **REQUIRED** for every configuration - they are essential for 
 - **Target Number of Groups**: Shoot for number of validation columns ceil((non-ID or IGNORED)/2)
 - **Upper limit**: Maximum 10
 - **No ungrouped fields allowed**: Every column must belong to a search group for optimal performance
-- **Model field**: ONLY specify `model` in a search group when using something other than `the-clone` (the default). Omit the model field to use `the-clone`.
+- **Capability field**: Set `capability` on each Group 1+ to control processing depth — **do NOT set `model`** directly, it is derived automatically from the capability flags.
 
 ## Embedding Tablewide Context Research
 
