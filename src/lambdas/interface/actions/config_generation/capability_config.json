@@ -14,13 +14,15 @@
   },
 
   "search_track": {
-    "_note": "Default track for groups without N. Two sub-tiers before upgrades: qualitative columns use a lightweight search model; everything else uses the deep-search model. Upgrade flags push to the top tier.",
+    "_note": "Default track for groups without N (or when P is present, which overrides N). Two sub-tiers before upgrades: qualitative columns use a lightweight search model; everything else uses the deep-search model. Upgrade flags push to the top tier.",
+    "force_search_flag": "P",
+    "_note_force_search_flag": "P = provenance required. Overrides N (forces search even for derived-column groups) AND overrides Ql routing (forces the-clone instead of sonar-pro, because citation tracing needs deeper search). P alone routes to base_default, not base_qualitative.",
     "qualitative_flag": "Ql",
-    "_note_qualitative_flag": "If this flag is present and no upgrade flags are present, the column routes to base_qualitative. The LLM decides whether the expected answer is qualitative; the system decides what that means for model selection.",
+    "_note_qualitative_flag": "If this flag is present AND force_search_flag is NOT present AND no upgrade flags are present, the group routes to base_qualitative. P takes priority over Ql.",
     "base_qualitative": "sonar-pro",
-    "_note_base_qualitative": "Model used for Ql columns with no upgrades. Good at broad retrieval and summarisation. No deep reasoning or citation pinning needed.",
+    "_note_base_qualitative": "Model used for Ql-only groups (no P, no upgrades). Good at broad retrieval and summarisation. No deep reasoning or citation pinning needed.",
     "base_default": "the-clone-flash",
-    "_note_base_default": "Model used for untagged (precision/quantitative) columns with no upgrade flags. Perplexity-backed deep search with flash reasoning.",
+    "_note_base_default": "Model used for untagged (precision/quantitative) groups and P-flagged groups. Perplexity-backed deep search with flash reasoning and citation support.",
     "upgrade_flags": ["C", "U"],
     "_note_upgrade_flags": "Same semantics as no_search_track: each flag is one upgrade step. On the search track both C and U land on the-clone-claude regardless of count — the table repeats the same value intentionally.",
     "upgrade_table": ["the-clone-claude", "the-clone-claude"],
@@ -30,7 +32,7 @@
   "qc": {
     "_note": "QC runs a second model over all group outputs together, catching cross-group inconsistencies and hallucinations that individual groups miss. It is only worthwhile when there are multiple groups to cross-check.",
     "min_search_groups": 2,
-    "_note_min_search_groups": "QC is disabled for single-group configs unless the P flag is present. With one group there is nothing to cross-check and QC adds cost without accuracy benefit (confirmed by benchmark). Exception: P = provenance required — QC is enabled to verify that claims are properly sourced, even in single-group configs.",
+    "_note_min_search_groups": "QC is disabled for single-group configs. With one group there is nothing to cross-check and QC adds cost without accuracy benefit (confirmed by benchmark).",
     "standard": "gemini-3-flash-preview",
     "_note_standard": "Default QC model. Benchmark showed sonar-pro + gemini QC reaches 100% on hard science cells at 1.71c/cell — the best cost-accuracy point in the matrix.",
     "elevated": "claude-opus-4.6",

@@ -11,7 +11,7 @@ Think about what the group as a whole needs. If most columns are quantitative bu
 | Code | When to apply to the group |
 |------|---------------------------|
 | `Ql` | The group's answers are qualitative — summaries, labels, or narratives rather than precise numeric values or measurements |
-| `P` | Provenance required — at least one critical column in this group hinges on a traceable source, and the answer is not obvious to a non-specialist |
+| `P` | Provenance required — at least one critical column in this group hinges on a traceable source, and the answer is not obvious to a non-specialist. Forces deep web search with the-clone models (overrides `Ql` and `N`) |
 | `C` | The group requires master's-level domain expertise or synthesis across multiple independent sources |
 | `N` | The group contains only derived/calculated columns — no web search needed |
 | `U` | Previous results from this group were concretely wrong — escalate (refinement only) |
@@ -19,7 +19,7 @@ Think about what the group as a whole needs. If most columns are quantitative bu
 **Rules:**
 - Leave `capability` empty for standard precision/quantitative groups — the default search model handles these well
 - `C` and `U` dramatically escalate processing cost (2–5× more expensive) — use them **only when critical**: `C` only for genuinely expert-level synthesis, `U` only when a group produced concretely wrong results in prior runs
-- `P` raises cost modestly — enables provenance verification (QC) even for single-group configs
+- `P` raises cost modestly — forces the search track (overrides `N`) and forces the-clone models (overrides `Ql`→sonar-pro), ensuring traceable, citation-capable results
 - `U` is for refinement only; do not add on first-time generation
 - If you see `model` fields already set on groups (e.g. during refinement), leave them — they are overwritten automatically and are not your concern
 
@@ -140,10 +140,9 @@ Auto-detect from sample data:
 
 QC is derived automatically from capability codes — **do not set `qc_settings` manually**.
 
-- **No QC**: single search group with no `P` flag, or no capability codes on any group
-- **QC enabled** (standard): 2+ search groups with capability codes, or any group has `P`
+- **No QC**: single search group, or no capability codes on any group
+- **QC enabled** (standard): 2+ search groups with capability codes
 - **QC elevated**: any group uses `C` or `U` — triggers the stronger QC tier automatically
-- **P flag**: enables QC even when there is only one search group (provenance verification)
 - **Token Allocation**: Default 8K base + 4K per validated column (excluding ID fields)
 
 ## Search Group Requirements (MANDATORY)

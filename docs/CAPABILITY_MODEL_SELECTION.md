@@ -18,7 +18,7 @@ Each search group (Groups 1+) in a config carries a `capability` field with pipe
 | Flag | What the LLM is deciding |
 |------|--------------------------|
 | `Ql` | The group's answers are qualitative — summaries, labels, or narratives rather than precise numeric values |
-| `P` | Provenance required — at least one critical column in this group must be traceable to a source, and is not obvious to a non-specialist |
+| `P` | Provenance required — at least one critical column in this group must be traceable to a source, and is not obvious to a non-specialist. Forces search track (overrides `N`) and the-clone models (overrides `Ql`) |
 | `C` | The group requires master's-level domain expertise or synthesis across multiple independent sources — **use sparingly, 2–5× cost increase** |
 | `N` | The group contains only derived/calculated columns — no web search is needed |
 | `U` | Previous results from this group were concretely wrong — last-resort escalation (refinement only) — **2–5× cost increase** |
