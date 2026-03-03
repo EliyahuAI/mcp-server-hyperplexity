@@ -14,7 +14,7 @@ from pathlib import Path
 from shared.ai_api_client import ai_client
 from shared_table_parser import s3_table_parser
 from config_validator import validate_config_complete
-from capability_model_derivation import derive_model_config
+from .capability_model_derivation import derive_model_config
 
 # Import WebSocket client for progress updates
 try:
