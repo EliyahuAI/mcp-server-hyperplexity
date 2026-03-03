@@ -614,6 +614,7 @@ def main():
     parser.add_argument("--parallel", action="store_true", help="Run all selected runs concurrently")
     parser.add_argument("--max-workers", type=int, default=6, help="Max concurrent workers for --parallel (default: 6)")
     parser.add_argument("--results-dir", type=Path, help="Override results output directory")
+    parser.add_argument("--matrix", type=Path, help="Override model matrix CSV (default: model_matrix.csv)")
     parser.add_argument("--dry-run", action="store_true", help="Print what would run, do not execute")
     args = parser.parse_args()
 
@@ -644,6 +645,9 @@ def main():
         logger.info(f"Results directory: {results_dir}")
 
     # Load and filter matrix
+    if args.matrix:
+        global MODEL_MATRIX_PATH
+        MODEL_MATRIX_PATH = args.matrix if args.matrix.is_absolute() else BENCHMARK_DIR / args.matrix
     matrix = load_model_matrix()
     runs_to_execute = filter_matrix(matrix, mode, args.run_ids, args.test_id)
 
