@@ -1,0 +1,81 @@
+test_id,entity_id,column,ground_truth_value,notes
+test_01,Xe-129,Natural Abundance (%),26.401,IUPAC 2016. Opus GT: HIGH confidence.
+test_01,Xe-129,Nuclear Spin (hbar),1/2,NUBASE2020. Opus GT: HIGH confidence.
+test_01,Xe-131,Natural Abundance (%),21.232,IUPAC 2016. Opus GT: HIGH confidence.
+test_01,Xe-131,Nuclear Spin (hbar),3/2,NUBASE2020. Opus GT: HIGH confidence.
+test_01,Kr-83,Natural Abundance (%),11.500,IUPAC 2016 / NIST. Note: CSV had 11.593 which is Kr-82 abundance. Kr-83 correct value is 11.500%.
+test_01,Kr-83,Nuclear Spin (hbar),9/2,NUBASE2020. Opus GT: HIGH confidence.
+test_01,Hg-199,Natural Abundance (%),16.87,IUPAC 2016. Opus GT: HIGH confidence. (16.87% matches NIST; CSV had 16.873.)
+test_01,Hg-199,Nuclear Spin (hbar),1/2,NUBASE2020. Opus GT: HIGH confidence.
+test_01,Tl-203,Natural Abundance (%),29.524,IUPAC 2016. Opus GT: HIGH confidence.
+test_01,Tl-203,Nuclear Spin (hbar),1/2,NUBASE2020. Opus GT: HIGH confidence.
+test_02,YBa2Cu3O7 (YBCO),Critical Temperature Tc (K),93,Wu et al. 1987. Standard value; Opus GT: HIGH.
+test_02,YBa2Cu3O7 (YBCO),Year First Synthesized,1987,Wu et al. PRL 1987. Opus GT: HIGH.
+test_02,Bi2Sr2Ca2Cu3O10 (Bi-2223),Critical Temperature Tc (K),110,Maeda et al. 1988; Opus GT: HIGH.
+test_02,Bi2Sr2Ca2Cu3O10 (Bi-2223),Year First Synthesized,1988,Maeda et al. Jpn J Appl Phys 1988. Opus GT: HIGH.
+test_02,HgBa2Ca2Cu3O8 (Hg-1223),Critical Temperature Tc (K),134,Schilling et al. Nature 1993. Opus GT: HIGH.
+test_02,HgBa2Ca2Cu3O8 (Hg-1223),Year First Synthesized,1993,Schilling et al. Nature 1993. Opus GT: HIGH.
+test_02,Tl2Ba2Ca2Cu3O10 (Tl-2223),Critical Temperature Tc (K),127,Sheng & Hermann 1988. Opus GT: HIGH.
+test_02,Tl2Ba2Ca2Cu3O10 (Tl-2223),Year First Synthesized,1988,Sheng & Hermann Nature 1988. Opus GT: HIGH.
+test_02,La1.85Sr0.15CuO4 (LSCO),Critical Temperature Tc (K),38,Bednorz & Müller 1986 / Cava et al. 1987. Opus GT: HIGH.
+test_02,La1.85Sr0.15CuO4 (LSCO),Year First Synthesized,1986,Bednorz & Müller ZPB 1986. Opus GT: HIGH.
+test_03,H-35Cl,Vibrational Wavenumber we (cm-1),2990.946,NIST Webbook. Opus GT: HIGH confidence.
+test_03,H-35Cl,Anharmonicity constant wexe (cm-1),52.819,NIST Webbook. Opus GT: HIGH confidence.
+test_03,H-79Br,Vibrational Wavenumber we (cm-1),2648.975,NIST Webbook. Opus GT: HIGH confidence.
+test_03,H-79Br,Anharmonicity constant wexe (cm-1),45.217,NIST Webbook. Opus GT: HIGH confidence.
+test_03,32S-16O,Vibrational Wavenumber we (cm-1),1149.2,NIST Webbook. Opus GT: HIGH confidence.
+test_03,32S-16O,Anharmonicity constant wexe (cm-1),5.602,NIST Webbook (Opus GT returned 5.6 — both score as exact within 1%).
+test_03,79Br-19F,Vibrational Wavenumber we (cm-1),670.75,NIST Webbook. Opus GT: HIGH confidence.
+test_03,79Br-19F,Anharmonicity constant wexe (cm-1),4.05,NIST Webbook. Opus GT: HIGH confidence.
+test_03,12C-16O,Vibrational Wavenumber we (cm-1),2169.814,NIST Webbook. Opus GT: HIGH confidence.
+test_03,12C-16O,Anharmonicity constant wexe (cm-1),13.288,NIST Webbook. Opus GT: HIGH confidence.
+test_04,Corundum (alpha-Al2O3),a-axis (Angstrom),4.7591,AMCSD / ICDD standard value. Opus GT: HIGH.
+test_04,Corundum (alpha-Al2O3),c-axis (Angstrom),12.9894,AMCSD / ICDD standard value. Opus GT: HIGH.
+test_04,Hematite (alpha-Fe2O3),a-axis (Angstrom),5.0356,AMCSD / ICDD standard value. Opus GT: HIGH.
+test_04,Hematite (alpha-Fe2O3),c-axis (Angstrom),13.7489,AMCSD / ICDD standard value. Opus GT: HIGH.
+test_04,Quartz (alpha-SiO2),a-axis (Angstrom),4.9134,AMCSD / ICDD standard value. Opus GT: HIGH.
+test_04,Quartz (alpha-SiO2),c-axis (Angstrom),5.4052,AMCSD / ICDD standard value. Opus GT: HIGH.
+test_04,Calcite (CaCO3),a-axis (Angstrom),4.9896,Markgraf & Reeder 1985 / AMCSD 0000450. Opus GT value (CSV had 4.9898; both within 1% exact tolerance).
+test_04,Calcite (CaCO3),c-axis (Angstrom),17.0610,Markgraf & Reeder 1985 / AMCSD 0000450. Opus GT value (CSV had 17.0615; both within 1% exact tolerance).
+test_04,Cinnabar (alpha-HgS),a-axis (Angstrom),4.1449,AMCSD / ICDD standard value. Opus GT: HIGH.
+test_04,Cinnabar (alpha-HgS),c-axis (Angstrom),9.4959,AMCSD / ICDD standard value. Opus GT: HIGH.
+test_05,rho(770)0,Mass (MeV/c2),775.26,PDG 2024 BW mass
+test_05,rho(770)0,Full Width Gamma (MeV),147.8,PDG 2024 BW width
+test_05,K*(892)0,Mass (MeV/c2),895.55,PDG 2024
+test_05,K*(892)0,Full Width Gamma (MeV),47.3,PDG 2024
+test_05,phi(1020),Mass (MeV/c2),1019.461,PDG 2024
+test_05,phi(1020),Full Width Gamma (MeV),4.249,PDG 2024
+test_05,J/psi(1S),Mass (MeV/c2),3096.900,PDG 2024
+test_05,J/psi(1S),Full Width Gamma (MeV),0.09294,PDG 2024 (92.94 keV)
+test_05,Upsilon(1S),Mass (MeV/c2),9460.30,PDG 2024
+test_05,Upsilon(1S),Full Width Gamma (MeV),0.05402,PDG 2024 (54.02 keV)
+test_06,N2(g) + 3H2(g) → 2NH3(g),ΔH°rxn (kJ/mol),-91.8,NIST JANAF; unanimous
+test_06,N2(g) + 3H2(g) → 2NH3(g),log10(Keq) at 298 K,5.76,ΔGf(NH3)=-16.45; ΔGrxn=-32.90; 32.90/5.708=5.76
+test_06,CH4(g) + CO2(g) → 2CO(g) + 2H2(g),ΔH°rxn (kJ/mol),247.3,NIST JANAF; unanimous
+test_06,CH4(g) + CO2(g) → 2CO(g) + 2H2(g),log10(Keq) at 298 K,-29.89,ΔGrxn=+170.77; Opus GT; all models within 0.1%
+test_06,CO(g) + 2H2(g) → CH3OH(g),ΔH°rxn (kJ/mol),-90.5,NIST ΔHf(CH3OH-g)=-201.0; Opus GT and majority
+test_06,CO(g) + 2H2(g) → CH3OH(g),log10(Keq) at 298 K,4.34,ΔGf(CH3OH)=-162.0; ΔGrxn=-24.83; Opus GT
+test_06,2NO2(g) → N2O4(g),ΔH°rxn (kJ/mol),-57.2,NIST: ΔHf(NO2)=33.10 ΔHf(N2O4)=9.16; CSV had wrong -55.3
+test_06,2NO2(g) → N2O4(g),log10(Keq) at 298 K,0.84,NIST: ΔGf(NO2)=51.31 ΔGf(N2O4)=97.89; ΔGrxn=-4.73; CSV had wrong 0.49
+test_06,"CO2(g) + C(s,",ΔH°rxn (kJ/mol),172.5,Boudouard; entity truncated by unquoted comma in C(s-graphite); values correct
+test_06,"CO2(g) + C(s,",log10(Keq) at 298 K,-21.02,ΔGf(CO)=-137.17 ΔGf(CO2)=-394.36; ΔGrxn=+120.02; Opus GT
+test_07,DESTINY-Breast04 (T-DXd / HER2-low breast cancer),PFS Hazard Ratio,0.50,Modi et al. NEJM 2022;387:9-20. All-randomized-patients ITT by BICR. Not the HR+ subgroup HR of 0.51.
+test_07,DESTINY-Breast04 (T-DXd / HER2-low breast cancer),Median PFS - experimental arm (months),9.9,Modi et al. NEJM 2022. T-DXd arm in all randomized patients ITT by BICR.
+test_07,LAURA (osimertinib / unresectable stage III NSCLC after CRT),PFS Hazard Ratio,0.16,Lu et al. NEJM 2024;391:585-597. ITT analysis by BICR in all 216 randomized patients.
+test_07,LAURA (osimertinib / unresectable stage III NSCLC after CRT),Median PFS - experimental arm (months),39.1,Lu et al. NEJM 2024. Osimertinib arm (95% CI: 31.5 to not calculable).
+test_07,KEYNOTE-811 (pembrolizumab / HER2-positive gastric or GEJ cancer),PFS Hazard Ratio,0.72,Rha et al. Lancet 2023;402:2197-2208 (second interim). Note: primary PFS publication was Lancet not NEJM.
+test_07,KEYNOTE-811 (pembrolizumab / HER2-positive gastric or GEJ cancer),Median PFS - experimental arm (months),10.0,Lancet 2023 second interim. Pembro arm (95% CI 8.6-11.7).
+test_07,FLAURA2 (osimertinib + chemo / first-line EGFR-mutant NSCLC),PFS Hazard Ratio,0.62,Planchard et al. NEJM 2023;389:1935-1948. ITT by investigator-assessed and BICR (both 0.62).
+test_07,FLAURA2 (osimertinib + chemo / first-line EGFR-mutant NSCLC),Median PFS - experimental arm (months),25.5,Planchard et al. NEJM 2023. Osimertinib+chemo arm (95% CI: 24.7 to NE).
+test_07,ADRIATIC (durvalumab / limited-stage SCLC after CRT),PFS Hazard Ratio,0.76,Cheng et al. NEJM 2024;391:1313-1327. ITT population (97.195% CI 0.59-0.98).
+test_07,ADRIATIC (durvalumab / limited-stage SCLC after CRT),Median PFS - experimental arm (months),16.6,Cheng et al. NEJM 2024. Durvalumab arm (95% CI 10.2-28.2).
+test_08,PACIFIC (durvalumab / unresectable stage III NSCLC post-CRT) — 4-yr OS,OS at landmark - experimental arm (%),49.6,Faivre-Finn et al. J Thorac Oncol 2021 (4-year update). Durvalumab arm 4-yr OS.
+test_08,PACIFIC (durvalumab / unresectable stage III NSCLC post-CRT) — 4-yr OS,Absolute OS benefit at landmark (pp),13.3,Durvalumab 49.6% - placebo 36.3% = 13.3 pp. Source: Faivre-Finn JTO 2021.
+test_08,KEYNOTE-024 (pembrolizumab / PD-L1≥50% NSCLC) — 5-yr OS,OS at landmark - experimental arm (%),31.9,Reck et al. JCO 2021 (5-year update). Pembrolizumab arm 5-yr OS.
+test_08,KEYNOTE-024 (pembrolizumab / PD-L1≥50% NSCLC) — 5-yr OS,Absolute OS benefit at landmark (pp),15.6,Pembrolizumab 31.9% - chemo 16.3% = 15.6 pp. Source: Reck JCO 2021.
+test_08,CheckMate 067 (nivolumab+ipilimumab / advanced melanoma) — 6.5-yr OS,OS at landmark - experimental arm (%),49.0,Wolchok et al. JCO 2022 (6.5-yr update). Nivo+ipi ITT arm OS. Note: 57% is the BRAF-mutant subgroup — use ITT 49%.
+test_08,CheckMate 067 (nivolumab+ipilimumab / advanced melanoma) — 6.5-yr OS,Absolute OS benefit at landmark (pp),26.0,Nivo+ipi ITT 49% - ipi alone 23% = 26.0 pp. Source: Wolchok JCO 2022.
+test_08,KEYNOTE-189 (pembrolizumab + chemotherapy / non-sq mNSCLC) — 4-yr OS,OS at landmark - experimental arm (%),30.1,4-year OS for pembro+chemo arm. Source: WCLC 2021 / Garassino et al. JTO 2021. MEDIUM confidence.
+test_08,KEYNOTE-189 (pembrolizumab + chemotherapy / non-sq mNSCLC) — 4-yr OS,Absolute OS benefit at landmark (pp),14.4,Pembro+chemo ~30.1% - placebo+chemo ~15.7% = 14.4 pp. Source: 4-year follow-up data. MEDIUM confidence.
+test_08,CASPIAN (durvalumab + chemotherapy / extensive-stage SCLC) — 3-yr OS,OS at landmark - experimental arm (%),17.6,Paz-Ares et al. ESMO Open 2022 (3-yr update). Durvalumab+EP arm 3-yr OS.
+test_08,CASPIAN (durvalumab + chemotherapy / extensive-stage SCLC) — 3-yr OS,Absolute OS benefit at landmark (pp),11.8,Durvalumab+EP 17.6% - EP alone 5.8% = 11.8 pp. Source: Paz-Ares ESMO Open 2022. Note: initial CSV value of 6.4 was wrong (used incorrect control arm estimate).

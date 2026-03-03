@@ -17,7 +17,8 @@ Usage:
     python benchmark/analyze_results.py --results-dir benchmark/results/run_20260227_120000
 
 Ground truth file (optional — can be created later):
-    benchmark/results/run_YYYYMMDD_HHMMSS/ground_truth_verified.csv
+    benchmark/ground_truth_verified.csv          (canonical, auto-loaded for every run)
+    benchmark/results/run_.../ground_truth_verified.csv  (run-specific override)
     Columns: test_id, entity_id, column, ground_truth_value
 """
 
@@ -45,8 +46,15 @@ CONFIDENCE_TIERS = ("HIGH", "MEDIUM", "LOW", "UNKNOWN")
 # ---------------------------------------------------------------------------
 
 def load_ground_truth(results_dir: Path) -> Dict[Tuple, str]:
-    """Returns {(test_id, entity_id, column): ground_truth_value}. Returns {} if file absent."""
+    """Returns {(test_id, entity_id, column): ground_truth_value}. Returns {} if file absent.
+
+    Lookup order:
+      1. <results_dir>/ground_truth_verified.csv  (run-specific override)
+      2. benchmark/ground_truth_verified.csv       (canonical shared file)
+    """
     gt_path = results_dir / "ground_truth_verified.csv"
+    if not gt_path.exists():
+        gt_path = BENCHMARK_DIR / "ground_truth_verified.csv"
     if not gt_path.exists():
         return {}
     gt = {}
@@ -693,7 +701,10 @@ def main():
         sys.exit(1)
 
     # Ground truth is optional — can be added later and re-run
-    print(f"Loading ground truth from {results_dir}...")
+    _gt_run   = results_dir / "ground_truth_verified.csv"
+    _gt_canon = BENCHMARK_DIR / "ground_truth_verified.csv"
+    _gt_src   = _gt_run if _gt_run.exists() else _gt_canon if _gt_canon.exists() else None
+    print(f"Loading ground truth from {_gt_src or '(none)'}...")
     ground_truth = load_ground_truth(results_dir)
     if ground_truth:
         print(f"  {len(ground_truth)} ground truth cells loaded")
