@@ -96,12 +96,15 @@ def derive_model_config(
     """
     search_groups = config.get("search_groups", [])
 
-    has_capabilities = any(
-        g.get("capability", "").strip()
+    # Use the capability system if ANY non-0 group has the `capability` key present
+    # (even with an empty value — empty means "use the default model").
+    # Legacy configs that predate this system have no `capability` key at all → no-op.
+    has_capability_field = any(
+        "capability" in g
         for g in search_groups
         if g.get("group_id", 0) != 0
     )
-    if not has_capabilities:
+    if not has_capability_field:
         return config
 
     if cap_config is None:
@@ -114,10 +117,10 @@ def derive_model_config(
         gid = group["group_id"]
         if gid == 0:
             continue
+        if "capability" not in group:
+            continue  # skip groups that opted out of the capability system entirely
         cap_str = group.get("capability", "")
-        if not cap_str or not cap_str.strip():
-            continue
-        flags = parse_capability(cap_str)
+        flags = parse_capability(cap_str)  # empty string → empty set → base_default
 
         model = _group_model(flags, cap_config)
         group["model"] = model
