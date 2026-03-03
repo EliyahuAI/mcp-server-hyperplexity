@@ -380,7 +380,7 @@ def run_single(
 
         # Capture preview cost if available
         cost_est = preview_status.get("cost_estimate") or preview_status.get("preview_cost", {})
-        run_result["preview_cost"] = cost_est.get("total_cost") or cost_est.get("preview_cost")
+        run_result["preview_cost"] = cost_est.get("estimated_total_cost_usd") or cost_est.get("total_cost") or cost_est.get("preview_cost")
         run_result["estimated_validation_time_s"] = cost_est.get("estimated_validation_time_seconds")
 
         run_result["model_snapshot_s3_key"] = preview_status.get("model_snapshot_s3_key")
