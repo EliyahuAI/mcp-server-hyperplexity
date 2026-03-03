@@ -83,9 +83,9 @@ This conversation context is essential for making informed refinements that buil
 - **Break problematic groups apart**: When information is not being found, consider creating smaller, more specific groups that reflect actual data source patterns.
 
 ### 3. Escalate capability flags on underperforming search groups
-⚠️ **`C` and `U` are high-cost escalations (2–5× more expensive) — use only when clearly justified:**
-- **Add `U`** only to a search group whose previous results were concretely wrong — this is the last resort for a specific broken group
-- **Add `C`** only if the search group genuinely requires expert-level multi-source synthesis that simpler search cannot provide
+⚠️ **`C` and `U` are high-cost escalations (2–5× more expensive) — last resort only:**
+- **Add `U`** only when: (a) results were wrong, AND (b) better notes, search group restructuring, or clearer guidance have already been tried or clearly won't help — the problem is model sophistication, not search strategy or instructions
+- **Add `C`** only when a PhD-level reasoning capability is genuinely required — a competent domain expert with internet access still couldn't answer correctly. Do NOT add for hard-to-find facts or technical lookups
 - Do NOT set `model` directly on search groups — models are derived automatically from the `capability` field
 
 ### 4. Adjust the ID Columns

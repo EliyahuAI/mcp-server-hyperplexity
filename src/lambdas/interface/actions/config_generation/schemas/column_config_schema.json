@@ -81,7 +81,7 @@
           },
           "capability": {
             "type": "string",
-            "description": "Pipe-separated capability flags for this search group. Controls the processing model derived automatically for the group. Ql = qualitative answer (summary, label, or narrative — not a precise measurement). P = provenance required (critical decision, not freshman-obvious). C = master's-level expertise or multi-source synthesis (use sparingly — 2–5× cost). N = no web search needed (derived/calculated group). U = escalate one tier — refinement only, when previous results were concretely wrong (2–5× cost). Leave empty for standard precision/quantitative search."
+            "description": "Pipe-separated capability flags for this search group. Controls the processing model derived automatically for the group. Ql = qualitative answer (summary, label, or narrative — not a precise measurement). P = exact supporting text required — answer must be matched to specific verbatim figures or data from a primary source; forces the-clone models, overrides Ql and N. C = PhD-level reasoning required — a competent domain expert with internet access could not answer without deep specialised expertise or synthesising conflicting evidence; use sparingly, 2–5× cost. N = no web search needed (derived/calculated group). U = model sophistication was insufficient — results wrong after other fixes (notes, search group restructuring) have been tried; true last resort, refinement only, 2–5× cost. Leave empty for standard precision/quantitative search."
           },
           "model": {
             "type": "string",

@@ -18,10 +18,10 @@ Each search group (Groups 1+) in a config carries a `capability` field with pipe
 | Flag | What the LLM is deciding |
 |------|--------------------------|
 | `Ql` | The group's answers are qualitative — summaries, labels, or narratives rather than precise numeric values |
-| `P` | Provenance required — at least one critical column in this group must be traceable to a source, and is not obvious to a non-specialist. Forces search track (overrides `N`) and the-clone models (overrides `Ql`) |
-| `C` | The group requires master's-level domain expertise or synthesis across multiple independent sources — **use sparingly, 2–5× cost increase** |
+| `P` | Exact supporting text required — the answer must be matched to specific verbatim figures or data from a primary source. Do NOT use just because a topic is important or non-obvious. Forces search track (overrides `N`) and the-clone models (overrides `Ql`) |
+| `C` | PhD-level reasoning required — a competent domain expert with internet access could not answer this without applying deep specialised expertise or synthesising genuinely conflicting evidence. Do NOT use for hard-to-find facts or technical multi-field lookups — **2–5× cost increase** |
 | `N` | The group contains only derived/calculated columns — no web search is needed |
-| `U` | Previous results from this group were concretely wrong — last-resort escalation (refinement only) — **2–5× cost increase** |
+| `U` | Model sophistication was insufficient — results were wrong AND other fixes (notes, search group restructuring) have already been tried or clearly won't help. True last resort — **2–5× cost increase**, refinement only |
 
 The LLM decides only whether these descriptions match the group's needs. Model routing is handled entirely by `capability_model_derivation.py` reading `capability_config.json`.
 

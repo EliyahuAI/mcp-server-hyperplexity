@@ -11,15 +11,15 @@ Think about what the group as a whole needs. If most columns are quantitative bu
 | Code | When to apply to the group |
 |------|---------------------------|
 | `Ql` | The group's answers are qualitative — summaries, labels, or narratives rather than precise numeric values or measurements |
-| `P` | Provenance required — at least one critical column in this group hinges on a traceable source, and the answer is not obvious to a non-specialist. Forces deep web search with the-clone models (overrides `Ql` and `N`) |
-| `C` | The group requires master's-level domain expertise or synthesis across multiple independent sources |
+| `P` | Exact supporting text required — the answer must be matched to specific verbatim text, figures, or data from a primary source (e.g. an exact clinical trial endpoint value, a specific regulatory filing number, a precise contractual term). Do NOT use just because the topic is important or non-obvious — use only when the value must be verified character-for-character against source text. Forces the-clone models (overrides `Ql` and `N`) |
+| `C` | PhD-level reasoning required — the question cannot be answered by a competent domain expert with internet access; it requires synthesising conflicting evidence, applying deep specialised expertise, or making expert judgements across sources in a way that goes beyond reading and summarising. Do NOT use for hard-to-find facts, technical topics, or multi-field lookups — those are handled fine without `C` |
 | `N` | The group contains only derived/calculated columns — no web search needed |
-| `U` | Previous results from this group were concretely wrong — escalate (refinement only) |
+| `U` | Model sophistication was insufficient — previous results were wrong and other fixes (better notes, restructured search groups, clearer guidance) have already been tried or clearly won't help. This is a last resort that escalates the model tier. Do NOT add just because results were inaccurate — first try fixing the search group structure or notes (refinement only) |
 
 **Rules:**
-- Leave `capability` empty for standard precision/quantitative groups — the default search model handles these well
-- `C` and `U` dramatically escalate processing cost (2–5× more expensive) — use them **only when critical**: `C` only for genuinely expert-level synthesis, `U` only when a group produced concretely wrong results in prior runs
-- `P` raises cost modestly — forces the search track (overrides `N`) and forces the-clone models (overrides `Ql`→sonar-pro), ensuring traceable, citation-capable results
+- Leave `capability` empty for the vast majority of groups — the default search model handles lookup, numeric retrieval, and standard research well
+- `C` and `U` dramatically escalate processing cost (2–5× more expensive) — use them only when the above definitions are clearly met; for wrong results, always try fixing search group structure or notes first before reaching for `U`
+- `P` raises cost modestly — forces the-clone models (overrides `Ql`→sonar-pro and `N`→no-search)
 - `U` is for refinement only; do not add on first-time generation
 - If you see `model` fields already set on groups (e.g. during refinement), leave them — they are overwritten automatically and are not your concern
 
