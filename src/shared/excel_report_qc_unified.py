@@ -205,6 +205,33 @@ def normalize_citation_references(text: str) -> str:
 
     return text
 
+
+def _most_cited_in_text(text: str, citations: list) -> str | None:
+    """
+    Return a '[N]' key citation reference for the citation most frequently
+    mentioned in text (e.g. validator explanation).  Matches bare [N] only —
+    ignores [VN], [QCN], [KNOWLEDGE], [UNVERIFIED].
+
+    Returns None when no citation references are found in text, so callers can
+    cleanly omit key_citation rather than defaulting to citations[0].
+    """
+    import re
+    if not text or not citations:
+        return None
+    refs = re.findall(r'(?<![VQ])\[(\d+)\]', text)
+    if not refs:
+        return None
+    counts: dict[int, int] = {}
+    for r in refs:
+        n = int(r)
+        counts[n] = counts.get(n, 0) + 1
+    # Most-frequent first, then lowest index to break ties
+    for idx in sorted(counts, key=lambda n: (-counts[n], n)):
+        if 1 <= idx <= len(citations):
+            return f"[{idx}]"
+    return None
+
+
 def calculate_confidence_distribution(validation_results, qc_results, excluded_fields=None):
     """
     Calculate percentage distribution of confidence levels.
@@ -1055,21 +1082,11 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                         if qc_key_citation and str(qc_key_citation).strip():
                                             key_citation = qc_key_citation
 
-                                # If no QC key_citation, use first validation citation
+                                # If no QC key_citation, use most-cited in explanation
                                 if not key_citation:
                                     citations = field_data.get('citations', []) if field_data else []
-                                    if citations and len(citations) > 0:
-                                        first_citation = citations[0]
-                                        cite_text = first_citation.get('title', 'Source')
-                                        cite_url = first_citation.get('url', '')
-                                        cite_snippet = first_citation.get('cited_text', '')
-                                        if cite_snippet and len(cite_snippet) > 150:
-                                            cite_snippet = cite_snippet[:150] + "..."
-                                        key_citation = f"{cite_text}"
-                                        if cite_snippet:
-                                            key_citation += f" - {cite_snippet}"
-                                        if cite_url:
-                                            key_citation += f" ({cite_url})"
+                                    explanation_text = field_data.get('explanation', '') if field_data else ''
+                                    key_citation = _most_cited_in_text(explanation_text, citations)
 
                                 if key_citation:
                                     # Normalize citation references: [n] → [QCn], then [Vn] → [n]
@@ -1326,21 +1343,11 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                         if qc_key_citation and str(qc_key_citation).strip():
                                             key_citation = qc_key_citation
 
-                                # If no QC key_citation, use first validation citation
+                                # If no QC key_citation, use most-cited in explanation
                                 if not key_citation:
                                     citations = field_data.get('citations', []) if field_data else []
-                                    if citations and len(citations) > 0:
-                                        first_citation = citations[0]
-                                        cite_text = first_citation.get('title', 'Source')
-                                        cite_url = first_citation.get('url', '')
-                                        cite_snippet = first_citation.get('cited_text', '')
-                                        if cite_snippet and len(cite_snippet) > 150:
-                                            cite_snippet = cite_snippet[:150] + "..."
-                                        key_citation = f"{cite_text}"
-                                        if cite_snippet:
-                                            key_citation += f" - {cite_snippet}"
-                                        if cite_url:
-                                            key_citation += f" ({cite_url})"
+                                    explanation_text = field_data.get('explanation', '') if field_data else ''
+                                    key_citation = _most_cited_in_text(explanation_text, citations)
 
                                 if key_citation:
                                     # Normalize citation references: [n] → [QCn], then [Vn] → [n]
@@ -2347,21 +2354,11 @@ def _build_preview_cell_comment(col_name: str, field_data: dict, field_qc_data: 
         if qc_key_citation and str(qc_key_citation).strip():
             key_citation = qc_key_citation
 
-    # If no QC key_citation, use first validation citation
+    # If no QC key_citation, use most-cited in explanation
     if not key_citation:
         citations = field_data.get('citations', [])
-        if citations and len(citations) > 0:
-            first_citation = citations[0]
-            cite_text = first_citation.get('title', 'Source')
-            cite_url = first_citation.get('url', '')
-            cite_snippet = first_citation.get('cited_text', '')
-            if cite_snippet and len(cite_snippet) > 150:
-                cite_snippet = cite_snippet[:150] + "..."
-            key_citation = cite_text
-            if cite_snippet:
-                key_citation += f" - {cite_snippet}"
-            if cite_url:
-                key_citation += f" ({cite_url})"
+        explanation = field_data.get('explanation', '')
+        key_citation = _most_cited_in_text(explanation, citations)
 
     if key_citation:
         # Normalize citation references: [n] → [QCn], then [Vn] → [n]
