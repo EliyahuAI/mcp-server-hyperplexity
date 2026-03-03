@@ -39,7 +39,18 @@ _CONFIG = _load_config()
 
 def get_interview_model() -> list:
     """Get the model(s) to use for interview from config. Returns list of models."""
-    model = _CONFIG.get('interview', {}).get('model', ['openrouter/gemini-3-flash-preview-low', 'gemini-3-flash-preview-low', 'moonshotai/kimi-k2.5'])
+    interview_cfg = _CONFIG.get('interview', {})
+    model = interview_cfg.get('model', ['openrouter/gemini-3-flash-preview-low', 'gemini-3-flash-preview-low', 'moonshotai/kimi-k2.5'])
+    # Apply model_role override from ModelConfig CSV if available
+    model_role = interview_cfg.get('model_role')
+    if model_role:
+        try:
+            from model_config_loader import ModelConfig
+            resolved = ModelConfig.get_with_fallbacks(model_role)
+            if resolved:
+                model = resolved
+        except Exception as e:
+            logger.warning(f"ModelConfig override skipped for interview: {e}")
     # Ensure it's always a list
     if isinstance(model, str):
         model = [model]

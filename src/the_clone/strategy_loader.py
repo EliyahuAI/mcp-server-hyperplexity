@@ -95,12 +95,28 @@ def get_models_for_tier(provider: str, synthesis_tier: str, strategy: Dict = Non
 
     tier_config = provider_config['tiers'][synthesis_tier]
     extraction_model = provider_config['default_extraction_model']
+    synthesis_model = tier_config['synthesis']
+
+    # Apply model_role overrides from ModelConfig CSV (overrides JSON backup values)
+    try:
+        from model_config_loader import ModelConfig
+        extraction_role = provider_config.get('default_extraction_model_role')
+        if extraction_role:
+            resolved = ModelConfig.get_with_fallbacks(extraction_role)
+            if resolved:
+                extraction_model = resolved[0]
+        synthesis_role = tier_config.get('model_role')
+        if synthesis_role:
+            resolved = ModelConfig.get_with_fallbacks(synthesis_role)
+            if resolved:
+                synthesis_model = resolved[0]
+    except Exception as e:
+        logger.warning(f"ModelConfig override skipped for {provider}/{synthesis_tier}: {e}")
 
     # Use Gemini 3 Flash Preview for initial decision (medium thinking, best reasoning at low cost)
     routing_model = 'gemini-3-flash-preview'
 
     # Check if strategy overrides synthesis model (for extraction mode)
-    synthesis_model = tier_config['synthesis']
     if strategy and 'synthesis_model' in strategy:
         synthesis_model = strategy['synthesis_model']
         logger.debug(f"[STRATEGY] Using strategy-specific synthesis model: {synthesis_model}")

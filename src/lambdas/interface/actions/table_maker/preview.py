@@ -358,8 +358,23 @@ def _load_table_maker_config() -> Dict[str, Any]:
         if config_path.exists():
             with open(config_path, 'r') as f:
                 config = json.load(f)
-                logger.info(f"[PREVIEW_GENERATE] Loaded config from {config_path}")
-                return config
+            logger.info(f"[PREVIEW_GENERATE] Loaded config from {config_path}")
+
+            # Apply model_role overrides from ModelConfig CSV (overrides JSON backup values)
+            try:
+                from model_config_loader import ModelConfig
+                for phase in ('interview', 'background_research', 'column_definition', 'qc_review',
+                              'table_extraction', 'rumor_generation'):
+                    phase_cfg = config.get(phase, {})
+                    role = phase_cfg.get('model_role')
+                    if role:
+                        resolved = ModelConfig.get_with_fallbacks(role)
+                        if resolved:
+                            phase_cfg['model'] = resolved[0]
+            except Exception as e:
+                logger.warning(f"[PREVIEW_GENERATE] ModelConfig override skipped: {e}")
+
+            return config
         else:
             logger.warning(f"[PREVIEW_GENERATE] Config not found at {config_path}, using defaults")
             return _get_default_config()

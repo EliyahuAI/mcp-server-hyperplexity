@@ -1269,15 +1269,39 @@ def _generate_md_tables_content(
 
 
 def _load_config() -> Dict:
-    """Load table_maker_config.json."""
+    """Load table_maker_config.json, applying model_role overrides from ModelConfig CSV."""
     try:
         # Config is in the same directory as this file
         config_path = Path(__file__).parent / 'table_maker_config.json'
         with open(config_path, 'r') as f:
-            return json.load(f)
+            config = json.load(f)
     except Exception as e:
         logger.error(f"[EXECUTION] Failed to load config: {e}")
         return {}
+
+    # Apply model_role overrides from ModelConfig CSV (overrides JSON backup values)
+    try:
+        from model_config_loader import ModelConfig
+        # Simple phase sections
+        for phase in ('interview', 'background_research', 'column_definition', 'qc_review',
+                      'table_extraction', 'rumor_generation'):
+            phase_cfg = config.get(phase, {})
+            role = phase_cfg.get('model_role')
+            if role:
+                resolved = ModelConfig.get_with_fallbacks(role)
+                if resolved:
+                    phase_cfg['model'] = resolved[0]
+        # Escalation strategy array (row_discovery)
+        for entry in config.get('row_discovery', {}).get('escalation_strategy', []):
+            role = entry.get('model_role')
+            if role:
+                resolved = ModelConfig.get_with_fallbacks(role)
+                if resolved:
+                    entry['model'] = resolved[0]
+    except Exception as e:
+        logger.warning(f"[EXECUTION] ModelConfig override skipped: {e}")
+
+    return config
 
 
 async def _generate_validation_config(

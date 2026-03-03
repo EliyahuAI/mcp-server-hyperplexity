@@ -93,6 +93,7 @@
   "providers": {
     "deepseek": {
       "description": "Default provider using Gemini 2.5 Flash Lite for extraction, DeepSeek for synthesis",
+      "_note_backup": "BACKUP VALUES — 'synthesis' in each tier and 'default_extraction_model' are used only if model_config.csv is unavailable. At runtime, model_role / default_extraction_model_role resolve the actual models from model_config.csv. Edit the CSV to change models.",
       "default_extraction_model": "gemini-2.5-flash-lite",
       "default_extraction_model_role": "clone_extraction_default",
       "tiers": {
@@ -124,6 +125,7 @@
     },
     "claude": {
       "description": "Gemini extraction + Claude synthesis for speed and reliability",
+      "_note_backup": "BACKUP VALUES — 'synthesis' in each tier and 'default_extraction_model' are used only if model_config.csv is unavailable. At runtime, model_role / default_extraction_model_role resolve the actual models from model_config.csv. Edit the CSV to change models.",
       "default_extraction_model": "gemini-2.5-flash-lite",
       "default_extraction_model_role": "clone_extraction_default",
       "tiers": {
@@ -155,6 +157,7 @@
     },
     "baseten": {
       "description": "Gemini extraction + Baseten DeepSeek synthesis for speed",
+      "_note_backup": "BACKUP VALUES — 'synthesis' in each tier and 'default_extraction_model' are used only if model_config.csv is unavailable. At runtime, model_role / default_extraction_model_role resolve the actual models from model_config.csv. Edit the CSV to change models.",
       "default_extraction_model": "gemini-2.5-flash-lite",
       "default_extraction_model_role": "clone_extraction_default",
       "tiers": {
@@ -186,6 +189,7 @@
     },
     "kimi": {
       "description": "Gemini extraction + Kimi K2.5 synthesis via OpenRouter",
+      "_note_backup": "BACKUP VALUES — 'synthesis' in each tier and 'default_extraction_model' are used only if model_config.csv is unavailable. At runtime, model_role / default_extraction_model_role resolve the actual models from model_config.csv. Edit the CSV to change models.",
       "default_extraction_model": "gemini-2.5-flash-lite",
       "default_extraction_model_role": "clone_extraction_default",
       "tiers": {
@@ -217,6 +221,7 @@
     },
     "flash": {
       "description": "Gemini 3 Flash (Google AI Studio) synthesis — high thinking, web-grounded via Perplexity",
+      "_note_backup": "BACKUP VALUES — 'synthesis' in each tier and 'default_extraction_model' are used only if model_config.csv is unavailable. At runtime, model_role / default_extraction_model_role resolve the actual models from model_config.csv. Edit the CSV to change models.",
       "default_extraction_model": "gemini-2.5-flash-lite",
       "default_extraction_model_role": "clone_extraction_default",
       "tiers": {

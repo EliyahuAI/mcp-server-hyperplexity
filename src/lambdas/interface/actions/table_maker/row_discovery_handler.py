@@ -237,6 +237,20 @@ def _load_table_maker_config() -> Dict[str, Any]:
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
 
+        # Apply model_role overrides from ModelConfig CSV (overrides JSON backup values)
+        try:
+            from model_config_loader import ModelConfig
+            for phase in ('interview', 'background_research', 'column_definition', 'qc_review',
+                          'table_extraction', 'rumor_generation'):
+                phase_cfg = config.get(phase, {})
+                role = phase_cfg.get('model_role')
+                if role:
+                    resolved = ModelConfig.get_with_fallbacks(role)
+                    if resolved:
+                        phase_cfg['model'] = resolved[0]
+        except Exception as e:
+            logger.warning(f"ModelConfig override skipped for table_maker config: {e}")
+
         logger.info("Loaded table maker configuration successfully")
         return config
 

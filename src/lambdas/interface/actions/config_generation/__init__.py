@@ -28,17 +28,33 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 def load_config_settings():
-    """Load configuration settings from JSON file"""
+    """Load configuration settings from JSON file, applying model_role overrides from ModelConfig."""
     settings_path = os.path.join(os.path.dirname(__file__), 'config_settings.json')
     try:
         with open(settings_path, 'r') as f:
-            return json.load(f)
+            settings = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        # Fallback to defaults
-        return {
+        settings = {
             'max_tokens': 16000,
             'model': ['claude-opus-4-1', 'claude-opus-4-20240229', 'claude-sonnet-4-6']
         }
+
+    # Apply model_role override from ModelConfig CSV if available
+    try:
+        from model_config_loader import ModelConfig
+        if 'model_role' in settings:
+            resolved = ModelConfig.get_with_fallbacks(settings['model_role'])
+            if resolved:
+                settings['model'] = resolved
+        qc = settings.get('qc_settings', {})
+        if 'model_role' in qc:
+            resolved_qc = ModelConfig.get_with_fallbacks(qc['model_role'])
+            if resolved_qc:
+                qc['model'] = resolved_qc
+    except Exception as e:
+        logger.warning(f"ModelConfig override skipped: {e}")
+
+    return settings
 
 def send_websocket_progress(session_id: str, message: str, progress: int = None):
     """Send progress update via WebSocket"""

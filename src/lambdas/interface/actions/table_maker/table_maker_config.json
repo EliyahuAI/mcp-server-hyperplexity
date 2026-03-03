@@ -8,6 +8,7 @@
   "interview": {
     "_comment": "Interview phase - AI interacts with user to understand requirements and approve table structure",
     "model": "deepseek-v3.2",
+    "_note_model": "BACKUP VALUE — overridden at runtime by model_config.csv via model_role. Edit the CSV to change the model.",
     "model_role": "table_maker_interview",
     "max_tokens": 8000,
     "use_web_search": false,
@@ -19,8 +20,8 @@
     "_comment": "Step 0 - ALWAYS runs before column definition. Finds authoritative sources and starting tables to guide column design. On restructure, cached research is ALWAYS reused (never re-run)",
 
     "model": "sonar-pro",
+    "_note_model": "BACKUP VALUE — overridden at runtime by model_config.csv via model_role. Edit the CSV to change the model.",
     "model_role": "table_maker_background_research",
-    "_note_model": "Uses sonar-pro with high context for fast comprehensive research",
     "max_tokens": 8000,
     "_note_max_tokens": "Background research only outputs 15 sample entities max, so 8000 tokens is sufficient. Token boost for large entity counts happens in column_definition instead.",
 
@@ -39,7 +40,9 @@
   "table_extraction": {
     "_comment": "Step 0b - Sequential follow-up to background research. Extracts complete tables from identified URLs. Only runs if background research identifies tables with extract_table=true",
 
-    "model": "the-clone",
+    "model": "the-clone-flash",
+    "_note_model": "BACKUP VALUE — overridden at runtime by model_config.csv via model_role. Edit the CSV to change the model.",
+    "model_role": "table_extraction",
     "max_web_searches": 10,
     "_note_max_web_searches": "FOR ANTHROPIC MODELS ONLY (claude-*). Increased to 10 to support pagination - allows extracting from up to 10 pages in a single call",
 
@@ -57,8 +60,8 @@
   "column_definition": {
     "_comment": "Step 1 - Defines column specifications and search strategy using background research output as input. Generates initial rows from available data.",
     "model": "gemini-3-flash-preview",
+    "_note_model": "BACKUP VALUE — overridden at runtime by model_config.csv via model_role. Edit the CSV to change the model.",
     "model_role": "table_maker_column_definition",
-    "_note_model": "Uses gemini-3-flash-preview (medium thinking, 8192 tokens) for column definition — -high timed out at 64K output",
     "max_tokens": 64000,
     "_note_max_tokens": "Set to 64000 to handle large entity counts (100+ rows). Word limit in prompt calculated as max_tokens * 0.75 * 0.5 (aggressive buffer).",
     "show_preview_table": false,
@@ -80,6 +83,8 @@
     "escalation_strategy": [
       {
         "model": "sonar",
+        "_note_model": "BACKUP VALUE — overridden at runtime by model_config.csv via model_role.",
+        "model_role": "table_maker_row_discovery_l1",
         "search_context_size": "high",
         "description": "Single round: sonar with high context. Rely on QC retrigger for additional rows.",
         "min_candidates_percentage": null,
@@ -88,7 +93,9 @@
     ],
     "_disabled_escalation_rounds": [
       {
-        "model": "the-clone",
+        "model": "sonar-pro",
+        "_note_model": "BACKUP VALUE — overridden at runtime by model_config.csv via model_role.",
+        "model_role": "table_maker_row_discovery_l2",
         "search_context_size": "high",
         "findall": true,
         "findall_iterations": 1,
@@ -97,7 +104,9 @@
         "_note": "Disabled: relying on QC retrigger instead of multi-round escalation"
       },
       {
-        "model": "the-clone",
+        "model": "the-clone-flash",
+        "_note_model": "BACKUP VALUE — overridden at runtime by model_config.csv via model_role.",
+        "model_role": "table_maker_row_discovery_l3",
         "search_context_size": "high",
         "findall": true,
         "findall_iterations": 1,
@@ -148,8 +157,8 @@
 
     "_basic_settings": "Core QC parameters",
     "model": "claude-opus-4-6",
+    "_note_model": "BACKUP VALUE — overridden at runtime by model_config.csv via model_role. Edit the CSV to change the model.",
     "model_role": "table_maker_qc",
-    "_note_model": "Claude Opus 4.6 - best model for strict dedup, entity knowledge, and guiding retrigger with known missing entities",
     "max_tokens": 8000,
     "min_qc_score": 0.3,
 
@@ -199,7 +208,8 @@
     "enabled": false,
     "_note_enabled": "Set to true to always run rumor generation. Also triggered automatically if '...' appears in the table maker conversation (code trigger, no web access).",
     "model": "claude-opus-4-6",
-    "_note_model": "Single model for candidate generation. Opus chosen for broad entity knowledge.",
+    "_note_model": "BACKUP VALUE — overridden at runtime by model_config.csv via model_role. Edit the CSV to change the model.",
+    "model_role": "rumor_generation",
     "per_model_count": 20,
     "_note_count": "Number of candidate entities to generate",
     "realness_threshold": 0.6,

@@ -4,13 +4,14 @@
   "tokens_per_validated_column_default": 4000,
   "model": ["deepseek-v3.2", "gemini-3-flash-preview", "claude-sonnet-4-6"],
   "model_role": "config_gen_primary",
-  "_note_model_role": "model_role overrides model[] at runtime via ModelConfig.get(). Falls back to model[] if CSV unavailable.",
+  "_note_model_role": "BACKUP VALUE — model[] is used only if model_config.csv is unavailable. At runtime, model_role resolves the actual model from model_config.csv. Edit the CSV to change the model, not this field.",
   "qc_settings": {
     "enable_qc": true,
     "max_tokens_default": 16000,
     "tokens_per_validated_column_default":4000,
     "model": ["deepseek-v3.2", "claude-sonnet-4-6"],
     "model_role": "config_gen_qc_default",
-    "_note_model_role": "model_role overrides model[] for QC at runtime via ModelConfig."
-  }
+    "_note_model_role": "BACKUP VALUE — model[] is used only if model_config.csv is unavailable. At runtime, model_role resolves the actual QC model from model_config.csv."
+  },
+  "_note_capability": "Capability flag → model mapping is in capability_config.json"
 }
