@@ -396,12 +396,8 @@ def aggregate_by_run(cell_scores: List[Dict]) -> List[Dict]:
         est_cost = _safe_float(cells[0].get("estimated_eliyahu_cost")) if cells else 0.0
         val_cost = _safe_float(cells[0].get("eliyahu_cost_validation")) if cells else 0.0
         quoted = _safe_float(cells[0].get("quoted_cost")) if cells else 0.0
-        # est_time: use preview-extrapolated estimate (unaffected by cache hits on QC runs).
-        # Falls back to actual validation wall-clock if estimate not available.
-        est_time = (
-            _safe_float(cells[0].get("estimated_validation_time_s"))
-            or _safe_float(cells[0].get("validation_elapsed_s"))
-        ) if cells else 0.0
+        # est_time: preview-extrapolated estimate only — actual wall-clock is cache-distorted.
+        est_time = _safe_float(cells[0].get("estimated_validation_time_s")) if cells else 0.0
 
         # Cost per validated cell (estimated cost ÷ total cells scored in this run)
         # Uses total_cells (not just scoreable) so it reflects the actual workload
