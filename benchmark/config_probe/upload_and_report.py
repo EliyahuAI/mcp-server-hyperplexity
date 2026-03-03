@@ -135,6 +135,7 @@ def parse_model_assignments(cfg: dict) -> dict:
         groups.append({
             "group_id":    sg.get("group_id"),
             "group_name":  sg.get("group_name"),
+            "capability":  sg.get("capability", ""),
             "model":       sg.get("model"),
             "columns":     sg.get("column_names") or sg.get("columns"),
             "description": (sg.get("description") or "")[:120],
@@ -211,7 +212,8 @@ def main():
             a = entry["assignments"]
             print(f"  qc_enable={a['qc_enable']}  qc_model={a['qc_model']}")
             for sg in a["search_groups"]:
-                print(f"  group {sg['group_id']}: model={sg['model']}  cols={sg['columns']}")
+                cap = sg['capability'] or "(none)"
+                print(f"  group {sg['group_id']}: capability={cap}  model={sg['model']}  cols={sg['columns']}")
         else:
             print("  Timed out waiting for config — session_id recorded for manual review")
 
@@ -224,23 +226,27 @@ def main():
         "Tables uploaded without explicit configuration. "
         "First column header pluralized (+s) to avoid config cache hits.\n\n",
         "## Summary\n\n",
-        "| test | match | auto_interview | qc | qc_model | search groups | viewer |\n",
-        "|---|---|---|---|---|---|---|\n",
+        "| test | match | qc | qc_model | group | capability | model | viewer |\n",
+        "|---|---|---|---|---|---|---|---|\n",
     ]
     for e in results:
         if e["error"]:
-            lines.append(f"| {e['test_id']} | ERROR | — | — | — | — | — |\n")
+            lines.append(f"| {e['test_id']} | ERROR | — | — | — | — | — | — |\n")
             continue
         a   = e["assignments"] or {}
         mc  = "PERFECT" if e["perfect_match"] else (str(e["match_count"]) if e["match_count"] else "0")
         qce = str(a.get("qc_enable", "?"))
-        qcm = str(a.get("qc_model", "?"))
-        sgs = "; ".join(
-            f"{sg['group_name'] or sg['group_id']}: {sg['model']}"
-            for sg in (a.get("search_groups") or [])
-        ) or "?"
+        qcm = str(a.get("qc_model") or "—")
         view = f"[view]({e['viewer_url']})" if e["viewer_url"] else "—"
-        lines.append(f"| {e['test_id']} | {mc} | yes | {qce} | {qcm} | {sgs} | {view} |\n")
+        sgs = a.get("search_groups") or []
+        if sgs:
+            for sg in sgs:
+                name = sg.get("group_name") or str(sg["group_id"])
+                cap  = sg.get("capability") or "—"
+                mdl  = sg.get("model") or "?"
+                lines.append(f"| {e['test_id']} | {mc} | {qce} | {qcm} | {name} | {cap} | {mdl} | {view} |\n")
+        else:
+            lines.append(f"| {e['test_id']} | {mc} | {qce} | {qcm} | ? | ? | ? | {view} |\n")
 
     lines.append("\n## Per-Test Detail\n\n")
     for e in results:
