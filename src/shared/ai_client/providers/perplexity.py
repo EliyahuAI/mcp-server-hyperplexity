@@ -18,17 +18,27 @@ from ..utils import (
 logger = logging.getLogger(__name__)
 
 class PerplexityProvider:
+    # Sonar-family models always use high context — broad retrieval is their primary value.
+    _HIGH_CONTEXT_MODELS = frozenset({'sonar', 'sonar-pro', 'sonar-reasoning', 'sonar-reasoning-pro'})
+
     def __init__(self, api_key: str, cache_handler, usage_handler, ai_client=None):
         self.api_key = api_key
         self.cache_handler = cache_handler
         self.usage_handler = usage_handler
         self.ai_client = ai_client  # For Haiku JSON repair
 
+    def _effective_context_size(self, model: str, search_context_size: str) -> str:
+        """Return search_context_size, forcing 'high' for sonar-family models."""
+        if model in self._HIGH_CONTEXT_MODELS:
+            return 'high'
+        return search_context_size
+
     async def validate_with_smart_cache(self, prompt: str, row_data: Dict, targets: List,
                                         model: str, search_context_size: str,
                                         use_cache: bool, config_hash: str,
                                         cache_ttl_days: int = 1) -> Dict:
         """Validate with Perplexity using smart caching."""
+        search_context_size = self._effective_context_size(model, search_context_size)
         cache_key = self.cache_handler.get_validation_cache_key(row_data, targets, model, search_context_size, config_hash) if use_cache else None
 
         expired_cache_context = ""
@@ -71,6 +81,8 @@ class PerplexityProvider:
                        exclude_domains: Optional[List[str]] = None,
                        cache_ttl_days: int = 1) -> Dict:
         """Validate a prompt using Perplexity API."""
+        search_context_size = self._effective_context_size(model, search_context_size)
+
         cache_key = self.cache_handler.get_cache_key(prompt, model, None, f"{context}:{search_context_size}",
                                                      0, False, include_domains, exclude_domains) if use_cache else None
 
