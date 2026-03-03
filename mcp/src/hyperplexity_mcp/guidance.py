@@ -236,8 +236,10 @@ def _guidance_get_job_status(data: dict) -> dict:
         refine_session = data.get("refine_session_id") or data.get("conversation_id", "")
         session_id = data.get("session_id", "")
 
-        # Fix #5: surface preview Excel download URL if present.
-        prev_url = (data.get("preview_results") or {}).get("download_url", "")
+        # Surface preview download URLs if present.
+        _prev_results = data.get("preview_results") or {}
+        prev_url = _prev_results.get("download_url", "")
+        prev_metadata_url = _prev_results.get("metadata_url", "")
 
         # Issue #6: surface estimated full-validation time and compute a safe timeout.
         # Full validations can run well beyond 15 min for large tables, so the
@@ -260,9 +262,20 @@ def _guidance_get_job_status(data: dict) -> dict:
             time_label = ""
             suggested_timeout = 900
 
+        _prev_links = []
+        if prev_url:
+            _prev_links.append(f"Excel: {prev_url}")
+        if prev_metadata_url:
+            _prev_links.append(f"metadata.json: {prev_metadata_url}")
+        _prev_links_str = " | ".join(_prev_links) if _prev_links else ""
+
         approve_note = (
-            f"Review preview_results.download_url and preview_table first, then approve. "
-            f"Estimated cost: ${cost}."
+            "Decision point — review output quality and cost before approving. "
+            "preview_results contains richer detail than inline preview_table: "
+            "metadata.json has per-cell confidence, citations, and validator reasoning "
+            "for every cell in the preview. "
+            + (_prev_links_str + ". " if _prev_links_str else "")
+            + f"Estimated cost: ${cost}."
             + (f" Estimated time: {time_label}." if time_label else "")
             + f" After approval, call wait_for_job with timeout_seconds={suggested_timeout} "
             f"(2× the time estimate, min 900)."
@@ -285,27 +298,31 @@ def _guidance_get_job_status(data: dict) -> dict:
                 ),
                 "when": "after approve_validation",
             },
-        ]
-        if refine_session:
-            next_steps.append({
+            {
                 "tool": "refine_config",
                 "params": {
-                    "conversation_id": refine_session,
+                    "conversation_id": refine_session if refine_session else "<conversation_id from confirm_upload or start_table_maker>",
                     "session_id": session_id,
                     "instructions": "<describe the changes you want>",
                 },
-                "note": "Optional: refine column mappings before approving.",
-            })
+                "note": (
+                    "Not satisfied with the preview? Call refine_config to adjust columns or "
+                    "validation approach before approving."
+                    + (" Use the conversation_id from your initial confirm_upload or "
+                       "start_table_maker call." if not refine_session else "")
+                ),
+            },
+        ]
 
         summary = (
-            f"Preview complete. Estimated cost: ${cost}."
-            + (f" Estimated time: {time_label}." if time_label else "")
+            f"Preview complete. Review output quality and cost (${cost}) before approving — "
+            "preview_results.metadata_url contains per-cell confidence, citations, and "
+            "validator reasoning for every cell; more complete than inline preview_table."
+            + (_prev_links_str and f" {_prev_links_str}." or "")
+            + (f" Estimated full-run time: {time_label}." if time_label else "")
             + (f" After approving, use timeout_seconds={suggested_timeout} for wait_for_job." if est_time_s else "")
             + (f" config_id for future reruns: {config_id}." if config_id else "")
-            + " Approve to start full processing."
         )
-        if prev_url:
-            summary += f" Preview Excel download: {prev_url}"
 
         return {
             "summary": summary,
@@ -768,23 +785,52 @@ def _guidance_get_conversation(data: dict) -> dict:
                 rows = int(target_rows)
                 if rows > 0:
                     # Rough cost range: $2 minimum; ~$0.05/cell standard, ~$0.25/cell advanced.
-                    # Assume 4–6 validated columns as a typical range.
-                    low = max(2.0, rows * 4 * 0.05)
-                    high = rows * 6 * 0.25
-                    cost_hint = (
-                        f" ESTIMATED COST: {rows} rows × 4–6 columns ≈ ${low:.0f}–${high:.0f} "
-                        f"(standard ~$0.05/cell; advanced up to ~$0.25/cell; $2 minimum). "
-                        f"Exact cost confirmed at preview_complete."
+                    # Try to get actual column count from conversation data; fall back to
+                    # typical 4–6 column range if the response doesn't include column info.
+                    cols = None
+                    config = data.get("config") or {}
+                    col_list = (
+                        config.get("columns")
+                        or data.get("columns")
+                        or data.get("validated_columns")
+                        or []
                     )
+                    if col_list and isinstance(col_list, list):
+                        cols = len(col_list)
+                    elif data.get("column_count"):
+                        try:
+                            cols = int(data["column_count"])
+                        except (ValueError, TypeError):
+                            pass
+
+                    if cols and cols > 0:
+                        low = max(2.0, rows * cols * 0.05)
+                        high = rows * cols * 0.25
+                        cost_hint = (
+                            f" BALLPARK COST: {rows} rows × {cols} columns ≈ ${low:.2f}–${high:.2f} "
+                            f"(~$0.05/cell standard, ~$0.25/cell advanced, $2 minimum). "
+                            f"Column count may shift slightly — lock in at preview_complete after reviewing output."
+                        )
+                    else:
+                        low = max(2.0, rows * 4 * 0.05)
+                        high = rows * 6 * 0.25
+                        cost_hint = (
+                            f" BALLPARK COST: {rows} rows × ~4–6 columns ≈ ${low:.0f}–${high:.0f} "
+                            f"(column count finalizes after preview; "
+                            f"~$0.05/cell standard, ~$0.25/cell advanced, $2 minimum). "
+                            f"Lock in at preview_complete after reviewing output."
+                        )
             except (ValueError, TypeError):
                 pass
         return {
             "summary": (
                 "Table is being built. A preview validation job will start automatically "
-                "once the table maker finishes (typically 3–10 minutes). "
+                "once the table maker finishes (typically 5–30 minutes; complex research "
+                "requests may take longer). "
                 "Do NOT call create_job() — the preview is auto-queued. "
                 "Use wait_for_job(session_id) — it detects the phase transition and "
-                "tracks both the table-maker and preview phases with live progress."
+                "tracks both the table-maker and preview phases with live progress. "
+                "If wait_for_job times out, call it again — the job is still running."
                 + cost_hint
             ),
             "next_steps": [

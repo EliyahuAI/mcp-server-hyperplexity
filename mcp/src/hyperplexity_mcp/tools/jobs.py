@@ -379,8 +379,9 @@ def register(server):
                 data["_guidance"] = build_guidance("get_job_status", data)
                 data["_wait_timeout"] = (
                     f"wait_for_job timed out after {timeout_seconds}s. "
-                    "Job has not reached a terminal state. "
-                    "Call wait_for_job again or poll get_job_status manually."
+                    "The job is still running — this is normal for complex research requests. "
+                    "Call wait_for_job again to continue tracking (it will resume from where "
+                    "it left off). For table-maker jobs, slow runs can take 25–35 minutes total."
                 )
                 return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
