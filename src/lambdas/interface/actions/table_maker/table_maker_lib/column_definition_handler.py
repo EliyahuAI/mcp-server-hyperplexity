@@ -315,15 +315,33 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             search_strategy = ai_response.get('search_strategy', {})
             requirements = search_strategy.get('requirements', [])
 
-            if not requirements or len(requirements) == 0:
-                error_msg = "search_strategy.requirements must have at least 1 item (hard or soft)"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
-
-            logger.info(f"Requirements validation passed: {len(requirements)} requirements found")
-
             # Validate trigger_row_discovery + subdomains consistency
             trigger_row_discovery = ai_response.get('trigger_row_discovery', True)
+
+            if not requirements or len(requirements) == 0:
+                # Auto-inject a fallback requirement rather than hard-failing.
+                # Requirements are always needed — they are sent to the frontend and used
+                # for row expansion even when discovery is skipped today.
+                table_name = ai_response.get('table_name', '')
+                description = search_strategy.get('description', '')
+                fallback_text = description or table_name or 'match the table topic'
+                auto_req = {
+                    "requirement": f"Must be a relevant entry for: {fallback_text}",
+                    "type": "soft",
+                    "rationale": "Auto-generated fallback — model did not specify requirements"
+                }
+                if 'requirements' not in search_strategy:
+                    search_strategy['requirements'] = []
+                search_strategy['requirements'].append(auto_req)
+                requirements = search_strategy['requirements']
+                severity = "error" if trigger_row_discovery else "warning"
+                getattr(logger, severity)(
+                    f"search_strategy.requirements was empty — auto-injected fallback: '{auto_req['requirement']}'. "
+                    f"Requirements should always be explicitly specified (they are stored for row expansion). "
+                    f"If this model consistently omits them, update the column definition prompt."
+                )
+
+            logger.info(f"Requirements validation passed: {len(requirements)} requirements found")
             subdomains = search_strategy.get('subdomains', [])
             num_subdomains = len(subdomains)
             discovery_guidance = ai_response.get('discovery_guidance')

@@ -274,17 +274,39 @@ If background_research has `extracted_tables`:
 - Set `importance: "RESEARCH"` and provide `validation_strategy`
 - Examples: Funding stage, employee count, program existence
 
+### Principle 4: Hard Requirements as First Research Columns
+
+**For each hard requirement, add a corresponding research column — unless that criterion is already obviously captured by an existing column.**
+
+- **Hard requirements only** (soft requirements don't need columns — they are preferences, not gates)
+- **Place these columns first** among the research columns, before any other research columns
+- This lets the validator verify rows actually meet the hard requirements, and row expansion can filter on these criteria later
+
+**Examples:**
+
+| Hard Requirement | Obvious existing column? | Action |
+|------------------|--------------------------|--------|
+| "Must be US-based" | "Country" or "HQ Location" already present | No new column needed |
+| "Must be US-based" | No geography column | Add "HQ Country" as first research column |
+| "Must be from 2024" | "Year" or "Published Date" already present | No new column needed |
+| "Must be from 2024" | No date column | Add "Year" as first research column |
+| "Must be a publicly traded company" | No stock/exchange column | Add "Stock Exchange" as first research column |
+
+**Rule of thumb:** If you defined a hard requirement and can't point to an existing column that directly validates it, add one — and put it at the top of your research columns list.
+
 ═══════════════════════════════════════════════════════════════
-## ✔️ REQUIREMENTS SPECIFICATION (ALWAYS REQUIRED)
+## ✔️ REQUIREMENTS SPECIFICATION (ALWAYS REQUIRED — even when skipping discovery)
 ═══════════════════════════════════════════════════════════════
 
-**You must define at least ONE requirement (hard or soft).**
+**You must define at least ONE requirement (hard or soft), regardless of trigger_row_discovery.**
+
+**Why always required:** Requirements are sent to the frontend and stored permanently. They will be used for row expansion (adding more rows to the table later) — so they matter even when row discovery is skipped today.
 
 ### Hard Requirements (0-2 typical)
 Use for entity type, geography, or time period if truly essential.
 
 **Examples:**
-- "Must be a company"
+- "Must be a pizza topping"
 - "Must be from 2024"
 - "Must be US-based"
 
@@ -292,7 +314,7 @@ Use for entity type, geography, or time period if truly essential.
 Use "Prefers" language.
 
 **Examples:**
-- "Prefers midsized companies (100-500 employees)"
+- "Prefers toppings ranked in national consumer surveys"
 - "Prefers companies with active job postings"
 
 ### Requirements Notes
@@ -447,8 +469,12 @@ target_per_subdomain = ceil(total_target / subdomain_count)
 {
   "columns": [...],
   "search_strategy": {
-    "description": "...",
-    "requirements": [...]
+    "description": "All 50 US states with capitals and population data",
+    "requirements": [
+      {"requirement": "Must be one of the 50 US states", "type": "hard", "rationale": "Entity type definition"},
+      {"requirement": "Prefers current population figures (2020 census or later)", "type": "soft", "rationale": "Data recency"}
+    ],
+    "requirements_notes": "Well-known finite set. Use official government sources for population data."
   },
   "table_name": "US States and Capitals",
 
@@ -494,7 +520,7 @@ target_per_subdomain = ceil(total_target / subdomain_count)
 
 **ALWAYS OUTPUT:**
 - [ ] Column definitions (ID + research columns)
-- [ ] Requirements (at least 1) in search_strategy
+- [ ] Requirements (at least 1 hard or soft) in search_strategy — **REQUIRED even when skipping discovery** (used for row expansion)
 - [ ] Table name
 - [ ] Rows (as many as you can generate with as much data as you have)
 - [ ] trigger_row_discovery (true or false)
@@ -504,6 +530,7 @@ target_per_subdomain = ceil(total_target / subdomain_count)
 - [ ] Identified ALL entities (rows) user wants
 - [ ] ID columns populated (research columns can be empty - validator handles those)
 - [ ] NO subdomains in search_strategy
+- [ ] **Requirements still specified** — they are stored for future row expansion
 
 **IF trigger_row_discovery = true:**
 - [ ] Provided discovery_guidance (what's still needed)
