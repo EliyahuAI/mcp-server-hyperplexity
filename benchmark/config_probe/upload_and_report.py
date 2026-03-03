@@ -84,7 +84,7 @@ def upload_file(csv_path: pathlib.Path) -> dict:
         "filename":   filename,
     }, timeout=30)
     r.raise_for_status()
-    confirm = r.json()
+    confirm = r.json().get("data", r.json())   # unwrap {success, data, ...} envelope
 
     return {
         "session_id":             session_id,
@@ -92,6 +92,7 @@ def upload_file(csv_path: pathlib.Path) -> dict:
         "interview_auto_started": confirm.get("interview_auto_started", False),
         "match_count":            confirm.get("match_count", 0),
         "perfect_match":          confirm.get("perfect_match", False),
+        "matches":                confirm.get("matches", []),
     }
 
 # ---------------------------------------------------------------------------
@@ -191,6 +192,7 @@ def main():
             "conv_id":      None,
             "match_count":  None,
             "perfect_match": None,
+            "matches":      [],
             "s3_config_key": None,
             "assignments":  None,
             "viewer_url":   None,
@@ -205,19 +207,30 @@ def main():
             entry["error"] = str(e)
             continue
 
-        entry["session_id"]   = up["session_id"]
-        entry["conv_id"]      = up["conversation_id"]
-        entry["match_count"]  = up["match_count"]
+        entry["session_id"]    = up["session_id"]
+        entry["conv_id"]       = up["conversation_id"]
+        entry["match_count"]   = up["match_count"]
         entry["perfect_match"] = up["perfect_match"]
-        entry["viewer_url"]   = f"https://eliyahu.ai/viewer?session={up['session_id']}"
+        entry["matches"]       = up["matches"]
+        entry["viewer_url"]    = f"https://eliyahu.ai/viewer?session={up['session_id']}"
 
         print(f"  session_id  = {up['session_id']}")
         print(f"  conv_id     = {up['conversation_id']}")
         print(f"  match_count = {up['match_count']}  perfect_match = {up['perfect_match']}")
         print(f"  interview_auto_started = {up['interview_auto_started']}")
 
-        if up["perfect_match"]:
-            print("  WARNING: perfect config match — column rename may not have been enough, config reused")
+        if up["matches"]:
+            for m in up["matches"]:
+                print(f"  match: config_id={m.get('config_id')}  score={m.get('match_score')}  name={m.get('name')}")
+
+        # If a match was used and no interview was started, no new config is generated
+        # for this session — skip the S3 poll and record the top match details instead.
+        if up["match_count"] > 0 and not up["interview_auto_started"]:
+            if up["perfect_match"]:
+                print("  Perfect match — existing config reused, no new config generated.")
+            else:
+                print("  Strong match — existing config reused, no new config generated.")
+            continue
 
         print(f"  Polling S3 for config (up to {CONFIG_TIMEOUT}s)...")
         cfg, s3_key = fetch_config_from_s3(up["session_id"], CONFIG_TIMEOUT)
@@ -273,11 +286,17 @@ def main():
         lines.append(f"- **conv_id:** `{e['conv_id']}`\n")
         lines.append(f"- **viewer:** {e['viewer_url']}\n")
         lines.append(f"- **match_count:** {e['match_count']}  perfect: {e['perfect_match']}\n")
+        if e.get("matches"):
+            lines.append("- **matches:**\n")
+            for m in e["matches"]:
+                lines.append(f"  - `{m.get('config_id')}` score={m.get('match_score')} — {m.get('name')}\n")
         if e["s3_config_key"]:
             lines.append(f"- **s3_config:** `{e['s3_config_key']}`\n")
         a = e.get("assignments") or {}
         if a:
             lines.append(f"\n```json\n{json.dumps(a, indent=2)}\n```\n")
+        elif e.get("match_count", 0) > 0:
+            lines.append("\n_Existing config matched and reused — see match details above._\n")
         else:
             lines.append("\n_Config not yet retrieved — check viewer manually._\n")
         lines.append("\n")
