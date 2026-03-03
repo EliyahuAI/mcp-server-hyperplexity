@@ -129,17 +129,30 @@ def fetch_config_from_s3(session_id: str, timeout: int) -> dict | None:
     return None, None
 
 def parse_model_assignments(cfg: dict) -> dict:
-    """Extract search_groups and qc_settings from config JSON."""
+    """Extract search_groups and qc_settings from config JSON.
+
+    Columns subscribe to groups via search_group on each validation_target —
+    groups themselves do not carry a columns list.
+    """
+    # Build group_id → [column names] from validation targets
+    col_by_group: dict[int, list[str]] = {}
+    for vt in cfg.get("validation_targets", []):
+        gid = vt.get("search_group")
+        col = vt.get("column")
+        if gid is not None and col:
+            col_by_group.setdefault(gid, []).append(col)
+
     groups = []
     for sg in cfg.get("search_groups", []):
         if sg.get("group_id") == 0:
             continue  # skip the entity-id group
+        gid = sg.get("group_id")
         groups.append({
-            "group_id":    sg.get("group_id"),
+            "group_id":    gid,
             "group_name":  sg.get("group_name"),
             "capability":  sg.get("capability", ""),
             "model":       sg.get("model"),
-            "columns":     sg.get("column_names") or sg.get("columns"),
+            "columns":     col_by_group.get(gid, []),
             "description": (sg.get("description") or "")[:120],
         })
     qc = cfg.get("qc_settings", {})
