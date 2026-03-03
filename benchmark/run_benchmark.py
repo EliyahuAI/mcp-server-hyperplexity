@@ -120,7 +120,8 @@ class HyperplexityClient:
         confirm_resp = self.session.post(
             self._url("/uploads/confirm"),
             json={"session_id": session_id, "s3_key": s3_key,
-                  "upload_id": upload_id, "filename": filename},
+                  "upload_id": upload_id, "filename": filename,
+                  "skip_interview": True},
             timeout=self.timeout,
         )
         confirm_resp.raise_for_status()
@@ -529,7 +530,7 @@ def fetch_dynamo_costs(session_id: str) -> Dict:
         logger.warning(f"No DynamoDB records found for session {session_id}")
         return {}
 
-    preview_item = next((i for i in items if str(i.get("run_key", "")).startswith("Preview")), None)
+    preview_item = next((i for i in reversed(items) if str(i.get("run_key", "")).startswith("Preview")), None)
     val_item = next((i for i in items if str(i.get("run_key", "")).startswith("Validation")), None)
 
     result = {

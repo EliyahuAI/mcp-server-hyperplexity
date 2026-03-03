@@ -472,7 +472,7 @@ def _handle_confirm_upload(body, email, meta):
         # 29-second API Gateway limit.
         _best_score = matches[0].get("match_score", 0) if matches else 0
         _auto_interview_conv_id = None
-        if sess_info.get("via_api") and (not matches or _best_score < 0.85):
+        if sess_info.get("via_api") and not body.get("skip_interview") and (not matches or _best_score < 0.85):
             try:
                 _conv_id = f"upload_conv_{uuid.uuid4().hex[:12]}"
                 _sqs_resp = _asyncio_pre.run(_sqs_send_interview(
