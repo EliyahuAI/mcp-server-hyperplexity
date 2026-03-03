@@ -11,6 +11,7 @@ Each per-tool function returns a dict with:
 
 from __future__ import annotations
 
+import json
 from typing import Callable
 
 
@@ -647,6 +648,14 @@ def _guidance_start_table_maker(data: dict) -> dict:
                 "note": "Fallback: one-shot poll — re-call every 15s manually.",
             },
         ],
+        "cost_guidance": (
+            "Tables start at ~$2 minimum. Standard validation is ~$0.05 per validated cell "
+            "(rows × validated columns). Advanced tables routed to more sophisticated models "
+            "can be up to ~$0.25/cell. Cost is minimized by limiting validated columns to only "
+            "those that need research, enrichment, or verification — you can scope this during "
+            "the conversation, or use refine_config after the preview to adjust column selection "
+            "before approving. Exact cost is confirmed at preview_complete."
+        ),
     }
 
 
@@ -662,9 +671,23 @@ def _guidance_get_conversation(data: dict) -> dict:
     # to avoid trapping agents in a poll loop when a reply is required.
     if user_reply_needed:
         last_message = ""
-        messages = data.get("messages") or []
-        if messages:
-            last_message = messages[-1].get("content", "")
+        # last_ai_message is the authoritative source — may be a JSON-encoded
+        # string (parse it) or a dict.  Fall back to messages list if absent.
+        raw = data.get("last_ai_message")
+        if raw:
+            if isinstance(raw, str):
+                try:
+                    parsed = json.loads(raw)
+                    last_message = (parsed.get("ai_message")
+                                    or parsed.get("content") or "")
+                except Exception:
+                    last_message = raw  # treat as plain text
+            elif isinstance(raw, dict):
+                last_message = raw.get("ai_message") or raw.get("content") or ""
+        if not last_message:
+            messages = data.get("messages") or []
+            if messages:
+                last_message = messages[-1].get("content", "")
         return {
             "summary": f"AI is waiting for your reply. Question: {last_message}",
             "next_steps": [
@@ -707,75 +730,22 @@ def _guidance_get_conversation(data: dict) -> dict:
         }
 
     action = next_step.get("action", "")
-    if action == "submit_preview":
-        trigger_execution = data.get("trigger_execution") or next_step.get("trigger_execution")
-        if trigger_execution:
-            if conv_id.startswith("refine_"):
-                # Config refinement complete — the table was already built.
-                # A new preview has been automatically queued with the refined config.
-                return {
-                    "summary": (
-                        "Config refinement complete. A new preview validation job has been "
-                        "automatically queued with the updated config. "
-                        "Do NOT call create_job(). "
-                        "Use wait_for_job(session_id) to track the preview with live progress."
-                    ),
-                    "next_steps": [
-                        {
-                            "tool": "wait_for_job",
-                            "params": {"job_id": session_id},
-                            "note": (
-                                "Preferred: blocks until preview_complete with live progress. "
-                                "Then review cost_estimate and call approve_validation."
-                            ),
-                        },
-                    ],
-                }
-            # The table maker is NOW RUNNING. Once complete, a preview validation
-            # job is automatically queued for API sessions — do NOT call create_job().
-            # wait_for_job handles the phase transition (table-maker → preview) automatically.
-            target_rows = data.get("target_row_count")
-            row_count_warning = ""
-            if target_rows and int(target_rows) > 0:
-                row_count_warning = (
-                    f" WARNING: You requested {target_rows} rows, but the table builder may "
-                    f"produce significantly more if it finds additional candidates — row count "
-                    f"is not strictly enforced by the backend. Cost is proportional to actual "
-                    f"rows built and is only visible at preview_complete. If this is a concern, "
-                    f"reconsider the request scope before the table builder finishes."
-                )
+
+    # Check trigger_execution directly from data — next_step.action may have been
+    # patched to "wait" by the MCP layer to resolve the submit_preview conflict,
+    # but data.trigger_execution is never mutated and is the authoritative signal.
+    trigger_execution = data.get("trigger_execution") or next_step.get("trigger_execution")
+
+    if trigger_execution:
+        if conv_id.startswith("refine_"):
+            # Config refinement complete — the table was already built.
+            # A new preview has been automatically queued with the refined config.
             return {
                 "summary": (
-                    "Table is being built. A preview validation job will start automatically "
-                    "once the table maker finishes (typically 3–10 minutes). "
-                    "Do NOT call create_job() — the preview is auto-queued. "
-                    "Use wait_for_job(session_id) — it detects the phase transition and "
-                    "tracks both the table-maker and preview phases with live progress."
-                    + row_count_warning
-                ),
-                "next_steps": [
-                    {
-                        "tool": "wait_for_job",
-                        "params": {"job_id": session_id},
-                        "note": (
-                            "Preferred: handles the table-maker → preview phase boundary "
-                            "automatically. Blocks until preview_complete, then call "
-                            "approve_validation."
-                        ),
-                    },
-                ],
-            }
-        else:
-            # Upload-interview flow: config is generated and a preview job is
-            # automatically queued for API sessions. Do NOT call create_job().
-            # Use wait_for_job to track the preview phase with live progress.
-            return {
-                "summary": (
-                    "Interview complete. The config has been generated and a preview job "
-                    "has been automatically queued. "
-                    "Do NOT call create_job() — the preview is already running. "
-                    "Use wait_for_job(session_id) to track it with live progress "
-                    "until preview_complete, then call approve_validation."
+                    "Config refinement complete. A new preview validation job has been "
+                    "automatically queued with the updated config. "
+                    "Do NOT call create_job(). "
+                    "Use wait_for_job(session_id) to track the preview with live progress."
                 ),
                 "next_steps": [
                     {
@@ -783,20 +753,85 @@ def _guidance_get_conversation(data: dict) -> dict:
                         "params": {"job_id": session_id},
                         "note": (
                             "Preferred: blocks until preview_complete with live progress. "
-                            "Returns the full status payload; then call approve_validation."
+                            "Then review cost_estimate and call approve_validation."
                         ),
-                    },
-                    {
-                        "tool": "refine_config",
-                        "params": {
-                            "conversation_id": conv_id,
-                            "session_id": session_id,
-                            "instructions": "<describe changes>",
-                        },
-                        "note": "Optional: refine the config before the preview completes.",
                     },
                 ],
             }
+        # The table maker is NOW RUNNING. Once complete, a preview validation
+        # job is automatically queued for API sessions — do NOT call create_job().
+        # wait_for_job handles the phase transition (table-maker → preview) automatically.
+        target_rows = data.get("target_row_count")
+        cost_hint = ""
+        if target_rows:
+            try:
+                rows = int(target_rows)
+                if rows > 0:
+                    # Rough cost range: $2 minimum; ~$0.05/cell standard, ~$0.25/cell advanced.
+                    # Assume 4–6 validated columns as a typical range.
+                    low = max(2.0, rows * 4 * 0.05)
+                    high = rows * 6 * 0.25
+                    cost_hint = (
+                        f" ESTIMATED COST: {rows} rows × 4–6 columns ≈ ${low:.0f}–${high:.0f} "
+                        f"(standard ~$0.05/cell; advanced up to ~$0.25/cell; $2 minimum). "
+                        f"Exact cost confirmed at preview_complete."
+                    )
+            except (ValueError, TypeError):
+                pass
+        return {
+            "summary": (
+                "Table is being built. A preview validation job will start automatically "
+                "once the table maker finishes (typically 3–10 minutes). "
+                "Do NOT call create_job() — the preview is auto-queued. "
+                "Use wait_for_job(session_id) — it detects the phase transition and "
+                "tracks both the table-maker and preview phases with live progress."
+                + cost_hint
+            ),
+            "next_steps": [
+                {
+                    "tool": "wait_for_job",
+                    "params": {"job_id": session_id},
+                    "note": (
+                        "Preferred: handles the table-maker → preview phase boundary "
+                        "automatically. Blocks until preview_complete, then call "
+                        "approve_validation."
+                    ),
+                },
+            ],
+        }
+
+    if action == "submit_preview":
+        # Upload-interview flow: config is generated and a preview job is
+        # automatically queued for API sessions. Do NOT call create_job().
+        # Use wait_for_job to track the preview phase with live progress.
+        return {
+            "summary": (
+                "Interview complete. The config has been generated and a preview job "
+                "has been automatically queued. "
+                "Do NOT call create_job() — the preview is already running. "
+                "Use wait_for_job(session_id) to track it with live progress "
+                "until preview_complete, then call approve_validation."
+            ),
+            "next_steps": [
+                {
+                    "tool": "wait_for_job",
+                    "params": {"job_id": session_id},
+                    "note": (
+                        "Preferred: blocks until preview_complete with live progress. "
+                        "Returns the full status payload; then call approve_validation."
+                    ),
+                },
+                {
+                    "tool": "refine_config",
+                    "params": {
+                        "conversation_id": conv_id,
+                        "session_id": session_id,
+                        "instructions": "<describe changes>",
+                    },
+                    "note": "Optional: refine the config before the preview completes.",
+                },
+            ],
+        }
 
     # Issue 7: execution_ready with an action other than submit_preview — handle explicitly.
     if status == "execution_ready":

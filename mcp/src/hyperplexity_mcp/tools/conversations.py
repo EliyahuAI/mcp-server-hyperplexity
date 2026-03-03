@@ -21,6 +21,26 @@ from hyperplexity_mcp.client import get_client
 from hyperplexity_mcp.guidance import build_guidance
 
 
+def _patch_next_step_if_needed(data: dict, conversation_id: str) -> None:
+    """Fix Issue #1: when trigger_execution=True for a table-maker session the
+    backend still returns next_step.action='submit_preview', which contradicts
+    the _guidance telling agents NOT to call create_job().  Override next_step
+    so the machine-readable field and _guidance agree."""
+    if not data.get("trigger_execution"):
+        return
+    if conversation_id.startswith("refine_"):
+        return  # refine sessions don't auto-queue; next_step is valid there
+    ns = data.get("next_step") or {}
+    if ns.get("action") == "submit_preview":
+        data["next_step"] = {
+            "action": "wait",
+            "description": (
+                "Preview is auto-queued — do NOT submit a job manually. "
+                "Call wait_for_job(session_id) to track progress."
+            ),
+        }
+
+
 def register(server):
     client = get_client()
 
@@ -51,6 +71,7 @@ def register(server):
         data = client.get(f"/conversations/{conversation_id}", params={"session_id": session_id})
         data.setdefault("conversation_id", conversation_id)
         data.setdefault("session_id", session_id)
+        _patch_next_step_if_needed(data, conversation_id)
         data["_guidance"] = build_guidance("get_conversation", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
@@ -173,6 +194,7 @@ def register(server):
                 if (user_reply_needed or trigger_execution
                         or status not in ("processing", "queued", "in_progress")):
                     await _report(100.0)
+                    _patch_next_step_if_needed(data, conversation_id)
                     data["_guidance"] = build_guidance("get_conversation", data)
                     return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
