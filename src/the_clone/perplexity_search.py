@@ -157,6 +157,32 @@ class PerplexitySearchClient:
                     raise ValueError(f"PERPLEXITY_API_KEY not set and failed to load from SSM: {e}")
 
         self.base_url = "https://api.perplexity.ai"
+        self._session: Optional[aiohttp.ClientSession] = None
+        self._session_loop_id: Optional[int] = None
+
+    def _get_session(self) -> aiohttp.ClientSession:
+        """Get or create a shared aiohttp.ClientSession for the current event loop.
+
+        A single session is reused across all concurrent searches in batch_search,
+        avoiding the per-request create/destroy that triggers aiohttp's internal
+        connector race (KeyError on loop id) under high concurrency.
+        Session is recreated if the event loop changes (Lambda warm-start).
+        """
+        try:
+            loop_id = id(asyncio.get_running_loop())
+        except RuntimeError:
+            loop_id = None
+
+        if self._session is None or self._session_loop_id != loop_id:
+            self._session = aiohttp.ClientSession(
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                }
+            )
+            self._session_loop_id = loop_id
+
+        return self._session
 
     async def search(
         self,
@@ -209,64 +235,61 @@ class PerplexitySearchClient:
         if max_tokens_per_page:
             payload["max_tokens_per_page"] = max_tokens_per_page
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
         url = f"{self.base_url}/search"
 
         last_error = None
+
+        # Reuse the shared session for this event loop (avoids aiohttp connector race).
+        session = self._get_session()
 
         # Use per-loop semaphore to limit concurrent requests
         search_start = time.time()
         async with _get_semaphore():
             for attempt in range(max_retries + 1):
                 try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                            response_text = await response.text()
+                    async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                        response_text = await response.text()
 
-                            # Success
-                            if response.status == 200:
-                                result = json.loads(response_text)
-                                RATE_METRICS.record_call()
-                                # Log slow searches (> 10 seconds)
-                                search_elapsed = time.time() - search_start
-                                if search_elapsed > 10:
-                                    query_preview = query[:50] if isinstance(query, str) else str(query)[:50]
-                                    logger.info(f"[PERPLEXITY_SLOW] Search took {search_elapsed:.1f}s: {query_preview}...")
-                                return result
+                        # Success
+                        if response.status == 200:
+                            result = json.loads(response_text)
+                            RATE_METRICS.record_call()
+                            # Log slow searches (> 10 seconds)
+                            search_elapsed = time.time() - search_start
+                            if search_elapsed > 10:
+                                query_preview = query[:50] if isinstance(query, str) else str(query)[:50]
+                                logger.info(f"[PERPLEXITY_SLOW] Search took {search_elapsed:.1f}s: {query_preview}...")
+                            return result
 
-                            # Rate limit hit
-                            elif response.status == 429:
-                                RATE_METRICS.record_rate_limit()
-                                if attempt < max_retries:
-                                    # Jittered exponential backoff: base * 2^attempt + random(0, 1)
-                                    delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
-                                    logger.warning(f"[PERPLEXITY] Rate limit 429, retry {attempt + 1}/{max_retries + 1} in {delay:.1f}s")
-                                    # Log rates every few retries
-                                    if attempt % 2 == 0:
-                                        RATE_METRICS.log_rates()
-                                    await asyncio.sleep(delay)
-                                    continue
-                                else:
-                                    RATE_METRICS.log_rates("[PERPLEXITY_EXHAUSTED]")
-                                    raise Exception(f"Rate limit exceeded after {max_retries + 1} attempts: {response_text}")
-
-                            # Server errors
-                            elif response.status in [502, 503, 529]:
-                                if attempt < max_retries:
-                                    delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
-                                    logger.warning(f"[PERPLEXITY] Server error {response.status}, retry {attempt + 1}/{max_retries + 1} in {delay:.1f}s")
-                                    await asyncio.sleep(delay)
-                                    continue
-                                else:
-                                    raise Exception(f"Server error ({response.status}) after {max_retries + 1} attempts")
-
-                            # Other errors
+                        # Rate limit hit
+                        elif response.status == 429:
+                            RATE_METRICS.record_rate_limit()
+                            if attempt < max_retries:
+                                # Jittered exponential backoff: base * 2^attempt + random(0, 1)
+                                delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                                logger.warning(f"[PERPLEXITY] Rate limit 429, retry {attempt + 1}/{max_retries + 1} in {delay:.1f}s")
+                                # Log rates every few retries
+                                if attempt % 2 == 0:
+                                    RATE_METRICS.log_rates()
+                                await asyncio.sleep(delay)
+                                continue
                             else:
-                                raise Exception(f"API error ({response.status}): {response_text}")
+                                RATE_METRICS.log_rates("[PERPLEXITY_EXHAUSTED]")
+                                raise Exception(f"Rate limit exceeded after {max_retries + 1} attempts: {response_text}")
+
+                        # Server errors
+                        elif response.status in [502, 503, 529]:
+                            if attempt < max_retries:
+                                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                                logger.warning(f"[PERPLEXITY] Server error {response.status}, retry {attempt + 1}/{max_retries + 1} in {delay:.1f}s")
+                                await asyncio.sleep(delay)
+                                continue
+                            else:
+                                raise Exception(f"Server error ({response.status}) after {max_retries + 1} attempts")
+
+                        # Other errors
+                        else:
+                            raise Exception(f"API error ({response.status}): {response_text}")
 
                 except aiohttp.ClientError as e:
                     last_error = e

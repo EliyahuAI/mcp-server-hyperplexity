@@ -216,35 +216,28 @@ search(query, recency_filter=None)     # All time
 
 ## Known Issues
 
-### `KeyError(<loop_id>)` — searches silently fail under concurrency
+### ~~`KeyError(<loop_id>)` — searches silently fail under concurrency~~ **FIXED 2026-03-03**
 
 **Symptom**: `[SEARCH_MANAGER] Search N failed: 139892102495248` (a large integer that looks
 like a memory address). All searches in a batch fail with the same number.
 
-**What it is**: `str(KeyError(id(loop)))` prints just the integer — no "KeyError:" prefix.
-The value is `id(asyncio.get_running_loop())`, i.e. the memory address of the event loop object.
-aiohttp's internal connector manages connections in a dict keyed by `id(loop)`, and when a
-`ClientSession` is created and destroyed rapidly (a new session per request, 15 concurrent),
-a race in that internal dict raises `KeyError(loop_id)`.
+Two independent bugs both produced this symptom:
 
-**Root cause**: `perplexity_search.py` creates a fresh `aiohttp.ClientSession` for every
-single search request inside `batch_search`. aiohttp recommends one long-lived session per
-application/batch; creating 15 sessions simultaneously against the same event loop triggers
-the internal connector race.
+**Bug 1 — aiohttp connector race (primary)**: `perplexity_search.py` created a fresh
+`aiohttp.ClientSession` for every search request. With 15 concurrent requests, simultaneous
+create/destroy cycles raced against aiohttp's internal connector dict (keyed by `id(loop)`),
+raising `KeyError(loop_id)`. **Fixed**: `PerplexitySearchClient` now holds a single
+`aiohttp.ClientSession` per event loop via `_get_session()`, reused across all concurrent
+requests in `batch_search`.
 
-**Current status**: Non-fatal — `asyncio.gather(return_exceptions=True)` catches the
-exceptions and returns them as result items; `search_manager` logs them and continues.
-Searches that fail this way return no results for those queries (the clone proceeds with
-whatever it has).
-
-**Proper fix**: Refactor `PerplexitySearchClient` to hold a single `aiohttp.ClientSession`
-created lazily on first use (keyed to the current event loop), reused across all requests in
-`batch_search`, and closed only at explicit teardown. The per-loop semaphore logic in
-`_get_semaphore()` already does the right thing; the session should follow the same pattern.
-
-**Related files**: `src/the_clone/perplexity_search.py` lines 152–270 (`search` method),
-`src/the_clone/search_manager.py` lines 287–328 (`execute_searches`).
+**Bug 2 — semaphore cleanup used `min()` on memory addresses**: `_get_semaphore()` used
+`min(keys)` to find the "oldest" loop entry to evict. Since `id()` returns a memory address
+(not a monotonic counter), a new loop could have a smaller address than existing entries,
+causing its freshly-added semaphore to be deleted immediately — then `_SEMAPHORE_BY_LOOP[loop_id]`
+raised `KeyError`. The same `min()` bug (with a partial guard) caused silent cleanup skips
+in `gemini.py` and `vertex.py`. **Fixed**: all three files now use insertion-order iteration
+(`next(k for k in dict.keys() if k != loop_id)`) to find the true oldest non-current entry.
 
 ---
 
-Last updated: 2026-02-23
+Last updated: 2026-03-03
