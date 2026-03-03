@@ -6411,10 +6411,24 @@ async def handle_config_generation_async(event, context):
                     # Get the actual model used from config lambda response
                     models = response.get('model_used', 'unknown')
                     
-                    # Get configuration ID  
+                    # Get configuration ID (storage_metadata is authoritative; generation_metadata is fallback)
                     configuration_id = "unknown"
                     if response.get('updated_config'):
-                        configuration_id = response['updated_config'].get('generation_metadata', {}).get('config_id', 'unknown')
+                        uc = response['updated_config']
+                        configuration_id = (
+                            uc.get('storage_metadata', {}).get('config_id')
+                            or uc.get('generation_metadata', {}).get('config_id')
+                            or 'unknown'
+                        )
+                    if not configuration_id or configuration_id == 'unknown':
+                        config_version_str = 'v1'
+                        if response.get('updated_config'):
+                            _v = response['updated_config'].get('generation_metadata', {}).get('version') \
+                                 or response['updated_config'].get('storage_metadata', {}).get('version')
+                            if _v:
+                                config_version_str = f"v{_v}" if not str(_v).startswith('v') else str(_v)
+                        configuration_id = f"{session_id}_{config_version_str}_config"
+                        logger.debug(f"[CONFIG_ID] Generated fallback configuration_id: {configuration_id}")
                     
                     # Extract config version from response
                     config_version = 1
