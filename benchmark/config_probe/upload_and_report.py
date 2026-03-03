@@ -41,6 +41,7 @@ TEST_FILES = [
     "test_07_oncology_trials.csv",
     "test_08_immunotherapy_os.csv",
     "test_09_mab_mechanisms.csv",
+    "test_10_brooklyn_pizza.csv",
 ]
 
 # ---------------------------------------------------------------------------
