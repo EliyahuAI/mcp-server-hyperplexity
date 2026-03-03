@@ -6661,7 +6661,26 @@ async def handle_config_generation_async(event, context):
                         source='ai_generated'
                     )
                     logger.info(f"Stored config in unified storage: {storage_result}")
-                    
+
+                    # Patch DynamoDB run record with the real config_id now that storage is done.
+                    # The update_run_status call above (line ~6542) ran before storage, so it had
+                    # no config_id yet. Pull it from storage_result and write it now.
+                    if storage_result.get('success') and storage_result.get('config_id') and DYNAMODB_AVAILABLE:
+                        try:
+                            real_config_id = storage_result['config_id']
+                            if real_config_id and real_config_id != 'unknown':
+                                update_run_status(
+                                    session_id=original_session_id,
+                                    run_key=run_key,
+                                    status='COMPLETED',
+                                    run_type="Config Generation",
+                                    configuration_id=real_config_id,
+                                    results_s3_key=storage_result.get('s3_key', config_s3_key),
+                                )
+                                logger.info(f"[CONFIG_ID] Patched DynamoDB run record with real config_id: {real_config_id}")
+                        except Exception as _patch_err:
+                            logger.warning(f"[CONFIG_ID] Failed to patch configuration_id in DynamoDB: {_patch_err}")
+
                     # If the config lambda didn't provide a working download URL, create one from unified storage
                     if not download_url and storage_result.get('success'):
                         try:
