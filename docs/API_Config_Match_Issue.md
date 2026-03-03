@@ -120,6 +120,27 @@ The probe uses `hyperplexity-storage-dev` → **dev environment** Lambdas.
 
 ---
 
+## Root Cause 4 — API Requests Not Reaching `api_handler` *(Fix 3 — interface_lambda_function.py)*
+
+**Finding:** No `[CONFIRM_UPLOAD]` or `[FIND_CONFIG]` CloudWatch logs exist, but Fix 2's `[CONFIG_ID] Patched DynamoDB run record` IS logged by the background Lambda. This proves `api_handler._handle_confirm_upload` is **never called**.
+
+**Why:** `src/interface_lambda_function.py` routes to `api_handler` only when `_is_external_api` is True:
+```python
+_is_external_api = (
+    'routeKey' in event or event.get('version') == '2.0'   # HTTP API v2 only
+    or (ext_api_id and event.get('requestContext', {}).get('apiId') == ext_api_id)
+)
+```
+The external API Gateway (`07w4n09m95`) is a **REST API v1** — its events have `httpMethod` but no `routeKey` and no `version=2.0`. The `API_GATEWAY_EXTERNAL_API_ID` env var defaults to `""` in `LAMBDA_CONFIG` (only populated when `--deploy-external-api` is run). So `_is_external_api` is always `False` → every request falls through to `http_handler`, which has no config matching.
+
+**Fix (line 84–88 and 113–117):** Added a third detection condition — stage name:
+```python
+or event.get('requestContext', {}).get('stage') == 'v1'  # REST API: external API uses /v1 stage
+```
+The external API uses stage `v1`; web UI uses `dev`/`prod`/`staging`/`test` — so this uniquely identifies external API events when `API_GATEWAY_EXTERNAL_API_ID` is blank.
+
+---
+
 ## Most Likely Remaining Issue
 
 If Fix 2 deployed correctly and the probe script envelope fix is in place, the most probable remaining problem is the **8-second timeout** in `_handle_confirm_upload`. On a cold Lambda start, the sequence of:

@@ -73,15 +73,18 @@ def lambda_handler(event, context):
 
         # Route to external API handler if request comes from the external API Gateway.
         # Detection strategy (in priority order):
-        #   1. HTTP API v2 event signature (routeKey present / version=="2.0") — the
-        #      external API uses HTTP API v2; the web UI uses REST API v1 which never
-        #      has routeKey.  This works even when API_GATEWAY_EXTERNAL_API_ID is blank
-        #      (e.g. immediately after a deployment clears env vars).
-        #   2. apiId match against the configured env var (belt-and-suspenders).
+        #   1. HTTP API v2 event signature (routeKey present / version=="2.0") — if the
+        #      external API is ever upgraded to HTTP API v2, this picks it up automatically.
+        #   2. apiId match against the configured env var (most precise for REST API v1).
+        #      API_GATEWAY_EXTERNAL_API_ID is set at deploy time; may be blank on first deploy.
+        #   3. Stage name fallback: external API always uses stage "v1"; web UI uses
+        #      "dev"/"prod"/"staging"/"test" — so stage=="v1" uniquely identifies REST API
+        #      external-API events when the env var is missing.
         ext_api_id = os.environ.get('API_GATEWAY_EXTERNAL_API_ID')
         _is_external_api = (
             'routeKey' in event or event.get('version') == '2.0'  # HTTP API v2 signature
             or (ext_api_id and event.get('requestContext', {}).get('apiId') == ext_api_id)
+            or event.get('requestContext', {}).get('stage') == 'v1'  # REST API: external API uses /v1 stage
         )
         if _is_external_api:
             logger.info("Execution mode: EXTERNAL_API_GATEWAY (lightweight)")
@@ -105,10 +108,12 @@ def lambda_handler(event, context):
 
     elif _is_http_event:
         # Route to external API handler if request comes from the external API Gateway.
+        # See lightweight block above for full detection strategy notes.
         ext_api_id = os.environ.get('API_GATEWAY_EXTERNAL_API_ID')
         _is_external_api = (
             'routeKey' in event or event.get('version') == '2.0'
             or (ext_api_id and event.get('requestContext', {}).get('apiId') == ext_api_id)
+            or event.get('requestContext', {}).get('stage') == 'v1'  # REST API: external API uses /v1 stage
         )
         if _is_external_api:
             logger.info("Execution mode: EXTERNAL_API_GATEWAY")
