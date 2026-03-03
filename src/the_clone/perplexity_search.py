@@ -46,8 +46,17 @@ def _get_semaphore() -> asyncio.Semaphore:
             _SEMAPHORE_BY_LOOP[loop_id] = asyncio.Semaphore(_SEMAPHORE_LIMIT)
             # Clean up old loop semaphores (keep only last 2 to prevent memory leak)
             if len(_SEMAPHORE_BY_LOOP) > 2:
-                oldest_key = min(_SEMAPHORE_BY_LOOP.keys())
-                del _SEMAPHORE_BY_LOOP[oldest_key]
+                # Delete the oldest entry that is NOT the current loop.
+                # Cannot use min() — id() values are memory addresses, not
+                # insertion-order counters; a new loop may have a smaller id
+                # than old entries, causing the freshly-added entry to be
+                # deleted and the subsequent dict lookup to raise KeyError.
+                # Python 3.7+ dicts maintain insertion order, so iterating
+                # gives us the true oldest key first.
+                for old_key in list(_SEMAPHORE_BY_LOOP.keys()):
+                    if old_key != loop_id:
+                        del _SEMAPHORE_BY_LOOP[old_key]
+                        break
         return _SEMAPHORE_BY_LOOP[loop_id]
 
 # Threshold for high 429 rate alerting (429s per second)
