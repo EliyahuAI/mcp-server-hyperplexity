@@ -1,7 +1,7 @@
 {
-  "max_tokens": 28000,
-  "max_tokens_default": 6000,
-  "tokens_per_validated_column_default": 4000,
+  "max_tokens": 64000,
+  "max_tokens_default": 16000,
+  "tokens_per_validated_column_default": 8000,
   "model": ["deepseek-v3.2", "gemini-3-flash-preview", "claude-sonnet-4-6"],
   "model_role": "config_gen_primary",
   "_note_model_role": "BACKUP VALUE — model[] is used only if model_config.csv is unavailable. At runtime, model_role resolves the actual model from model_config.csv. Edit the CSV to change the model, not this field.",
