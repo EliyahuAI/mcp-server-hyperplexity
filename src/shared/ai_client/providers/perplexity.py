@@ -29,7 +29,11 @@ class PerplexityProvider:
 
     def _effective_context_size(self, model: str, search_context_size: str) -> str:
         """Return search_context_size, forcing 'high' for sonar-family models."""
-        if model in self._HIGH_CONTEXT_MODELS:
+        if model in self._HIGH_CONTEXT_MODELS and search_context_size != 'high':
+            logger.warning(
+                f"[PERPLEXITY] search_context_size='{search_context_size}' overridden to 'high' "
+                f"for {model} — sonar models always use high context"
+            )
             return 'high'
         return search_context_size
 
