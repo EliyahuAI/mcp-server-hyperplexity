@@ -132,7 +132,8 @@ async def handle_upload_interview_start(event: Dict[str, Any], context: Any) -> 
             'interview_context': interview_handler.interview_context,
             'table_analysis': table_analysis,
             'mode': result['mode'],
-            'trigger_config_generation': result['trigger_config_generation']
+            'trigger_config_generation': result['trigger_config_generation'],
+            'via_api': bool(session_info.get('via_api')),
         }
 
         # Add confirmation response and config instructions if available
@@ -169,6 +170,22 @@ async def handle_upload_interview_start(event: Dict[str, Any], context: Any) -> 
                 email=email,
                 conversation_id=conversation_id,
                 config_instructions=result.get('config_instructions', ''),
+                inferred_context=result.get('inferred_context', {}),
+                conversation_messages=interview_handler.messages
+            )
+        elif result['mode'] == 2 and session_info.get('via_api') and result.get('confirmation_response'):
+            # API sessions: auto-confirm mode 2 — no human is present to click the button
+            logger.info("[UPLOAD_INTERVIEW] via_api session reached mode 2 — auto-confirming")
+            conversation_state['status'] = 'approved'
+            conversation_state['mode'] = 3
+            conversation_state['trigger_config_generation'] = True
+            _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
+            await _trigger_config_generation(
+                storage_manager=storage_manager,
+                session_id=session_id,
+                email=email,
+                conversation_id=conversation_id,
+                config_instructions=result['confirmation_response']['config_instructions'],
                 inferred_context=result.get('inferred_context', {}),
                 conversation_messages=interview_handler.messages
             )
@@ -366,6 +383,22 @@ async def handle_upload_interview_continue(event: Dict[str, Any], context: Any) 
                 email=email,
                 conversation_id=conversation_id,
                 config_instructions=result.get('config_instructions', ''),
+                inferred_context=result.get('inferred_context', {}),
+                conversation_messages=interview_handler.messages
+            )
+        elif result['mode'] == 2 and conversation_state.get('via_api') and result.get('confirmation_response'):
+            # API sessions: auto-confirm mode 2 — no human is present to click the button
+            logger.info("[UPLOAD_INTERVIEW] via_api session reached mode 2 in continue — auto-confirming")
+            conversation_state['status'] = 'approved'
+            conversation_state['mode'] = 3
+            conversation_state['trigger_config_generation'] = True
+            _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
+            await _trigger_config_generation(
+                storage_manager=storage_manager,
+                session_id=session_id,
+                email=email,
+                conversation_id=conversation_id,
+                config_instructions=result['confirmation_response']['config_instructions'],
                 inferred_context=result.get('inferred_context', {}),
                 conversation_messages=interview_handler.messages
             )
