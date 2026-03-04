@@ -820,46 +820,63 @@ Query: {query}
 
         return '\n'.join(formatted)
 
-    async def _llm_resolve_snippet(self, reference: str, snippet_map: dict, query: str = None) -> str | None:
-        """Use a small LLM to identify which snippet best matches an unresolvable reference.
+    async def _llm_resolve_snippets_batch(self, unresolved_items: List[str], snippet_map: dict, query: str = None) -> dict:
+        """Batch LLM resolution — resolve ALL unresolved citation references in one call.
 
-        Called as a last-resort fallback (Suggestion 2b) when exact/fuzzy/handle/sibling
-        matching all fail for a single-occurrence citation reference.
+        Called after all deterministic strategies (0-4) have been exhausted.
+        Uses numbered indices as JSON keys to avoid issues with complex reference strings.
 
-        Returns snippet_id string if a match is found, None otherwise.
+        Returns dict mapping reference_string → snippet_id for successful matches.
         """
-        candidates = sorted(snippet_map.values(), key=lambda s: s.get('p', 0), reverse=True)[:10]
-        if not candidates:
-            return None
+        if not unresolved_items or not snippet_map:
+            return {}
 
+        # Top candidates by p-score (cap at 20 to stay within token budget)
+        candidates = sorted(snippet_map.values(), key=lambda s: s.get('p', 0), reverse=True)[:20]
         candidate_lines = []
         for s in candidates:
             sid = s.get('id', '?')
             handle = s.get('verbal_handle', '?')
-            preview = (s.get('text') or '')[:120].replace('\n', ' ')
+            preview = (s.get('text') or '')[:100].replace('\n', ' ')
             candidate_lines.append(f"- {sid}  [{handle}]  {preview}")
 
+        refs_formatted = '\n'.join(f'{i+1}. "{ref}"' for i, ref in enumerate(unresolved_items))
+
         prompt = (
-            f'Which snippet best matches this unresolved citation reference: "{reference}"?\n'
-            + (f'Query context: {(query or "")[:100]}\n\n' if query else '\n')
+            f'Match each unresolved citation reference to the best available snippet.\n'
+            + (f'Query context: {(query or "")[:120]}\n\n' if query else '\n')
+            + f'Unresolved references:\n{refs_formatted}\n\n'
             + 'Available snippets:\n'
             + '\n'.join(candidate_lines)
-            + '\n\nReturn ONLY the snippet id (e.g. S1.2.3.0-p0.95) of the best match, '
-            + 'or exactly the word "none" if no snippet matches.'
+            + '\n\nReturn a JSON object mapping each reference number to its best matching snippet_id, '
+            + 'or "none" if no snippet matches.\n'
+            + 'Example: {"1": "S1.2.3.0-p0.95", "2": "none", "3": "S2.1.0.0-p0.85"}'
         )
         try:
             resp = await self.ai_client.query_async(
                 prompt=prompt,
                 model='gemini-3-flash-preview-low',
-                context='snippet_llm_resolve',
-                max_tokens=60
+                context='snippet_llm_resolve_batch',
+                max_tokens=max(200, len(unresolved_items) * 40)
             )
-            result = (resp.get('text') or '').strip().split('\n')[0].strip()
-            if result and result != 'none' and result in snippet_map:
-                return result
+            text = (resp.get('text') or '').strip()
+            # Strip markdown code fences if present
+            text = re.sub(r'^```(?:json)?\s*|\s*```$', '', text, flags=re.MULTILINE).strip()
+            result = json.loads(text)
+            if isinstance(result, dict):
+                # Map numbered keys back to original reference strings
+                matched = {}
+                for idx_str, sid in result.items():
+                    try:
+                        ref = unresolved_items[int(idx_str) - 1]
+                        if sid and sid != 'none' and sid in snippet_map:
+                            matched[ref] = sid
+                    except (ValueError, IndexError):
+                        pass
+                return matched
         except Exception as e:
-            logger.debug(f"[CITATIONS] LLM snippet resolve error: {e}")
-        return None
+            logger.debug(f"[CITATIONS] Batch LLM resolve error: {e}")
+        return {}
 
     async def _convert_snippet_ids_to_citations(
         self,
@@ -999,27 +1016,33 @@ Query: {query}
                                 logger.debug(f"[CITATIONS] Sibling fallback: [{item}] → {full_id}")
                                 break
 
-            # Strategy 5 (2b): LLM fallback — for single-occurrence unresolvable references,
-            # ask a small model which available snippet best matches the verbal handle.
-            if not matched and snippet_map:
-                ref_count = answer_str.count(item)
-                if ref_count <= 2:  # Single or double occurrence — worth the small LLM call
-                    resolved = await self._llm_resolve_snippet(item, snippet_map, query=query)
-                    if resolved and resolved not in seen:
-                        snippet_ids.append(resolved)
-                        seen.add(resolved)
-                        matched = True
-                        logger.debug(f"[CITATIONS] LLM fallback resolved: [{item}] → {resolved}")
-
             # Track failures for logging
             if not matched:
                 failed_items.append(item)
+
+        # Strategy 5: Batch LLM resolution for all items that survived strategies 0-4.
+        # One call covers all unresolved references; only runs on final citation conversion.
+        if failed_items and snippet_map:
+            logger.info(f"[CITATIONS] Attempting batch LLM resolution for {len(failed_items)} unresolved reference(s)")
+            llm_matches = await self._llm_resolve_snippets_batch(failed_items, snippet_map, query=query)
+            still_failed = []
+            for item in failed_items:
+                resolved = llm_matches.get(item)
+                if resolved and resolved not in seen:
+                    snippet_ids.append(resolved)
+                    seen.add(resolved)
+                    logger.debug(f"[CITATIONS] LLM batch resolved: [{item}] → {resolved}")
+                else:
+                    still_failed.append(item)
+            failed_items = still_failed
+            if llm_matches:
+                logger.info(f"[CITATIONS] LLM resolved {len(llm_matches)}/{len(failed_items) + len(llm_matches)}, {len(failed_items)} still unresolved")
 
         failure_records = []
         if failed_items:
             brief = failed_items[:5]
             more = f" ... +{len(failed_items)-5} more" if len(failed_items) > 5 else ""
-            logger.info(f"[CITATIONS] {len(failed_items)} unresolved reference(s): {brief}{more}")
+            logger.info(f"[CITATIONS] {len(failed_items)} unresolved reference(s) after all strategies: {brief}{more}")
 
             # 2c: Build structured resolution failure record for S3 upload via metadata.
             # Returned to caller instead of written to disk — avoids Lambda /tmp contention.
@@ -1030,7 +1053,7 @@ Query: {query}
                 "available_handles": {h: sid for h, sid in handle_to_id.items()},
                 "available_short_ids": {k: v for k, v in short_id_map.items()},
                 "snippet_count": len(snippets),
-                "resolution_strategies_tried": ["short_id", "direct_id", "fuzzy_handle", "super_fuzzy", "snippet_id", "prefix_id", "verbal_handle", "sibling", "llm"],
+                "resolution_strategies_tried": ["short_id", "direct_id", "fuzzy_handle", "super_fuzzy", "snippet_id", "prefix_id", "verbal_handle", "sibling", "llm_batch"],
             })
 
         logger.debug(f"[CITATIONS] Matched {len(snippet_ids)} snippet references from {len(all_brackets)} bracketed items ({len(failed_items)} unmatched)")
