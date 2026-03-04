@@ -4716,7 +4716,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             model=model,
                             schema=tool_schema,
                             tool_name="validate_data",
-                            use_cache=True,
+                            use_cache=False,  # Don't cache retry responses — bad retries would poison future runs
                             max_web_searches=max_web_searches,
                             search_context_size=search_context_size,
                             debug_name=retry_debug_name

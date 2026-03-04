@@ -647,7 +647,19 @@ class SimplifiedSchemaValidator:
         # Clean up multiple consecutive newlines
         while "\n\n\n" in prompt:
             prompt = prompt.replace("\n\n\n", "\n\n")
-        
+
+        # Inject completeness requirement for multi-field validation
+        # The synthesis model (especially inside the clone) sometimes omits array items.
+        # Explicitly listing all required column names reduces this stochastic failure.
+        if len(validation_targets) > 1:
+            col_list = ", ".join(f'"{t.column}"' for t in validation_targets)
+            prompt += (
+                f"\n\n**⚠️ COMPLETENESS REQUIRED**: Your JSON response array MUST contain EXACTLY "
+                f"{len(validation_targets)} entries — one for each field listed in FIELD DETAILS above. "
+                f"The required fields are: {col_list}. "
+                f"Do NOT skip any field. A missing field entry will cause a validation error."
+            )
+
         # LOG IF HISTORY IS IN THE PROMPT
         if validation_history:
             # Check for the actual strings used in prompt generation (lines 517, 543)
