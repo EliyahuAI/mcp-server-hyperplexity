@@ -11,6 +11,7 @@ import sys
 import os
 import json
 import re
+import time
 import logging
 from typing import Dict, Any, List
 
@@ -337,10 +338,11 @@ class UnifiedSynthesizer:
                     snippets_used = []
                     snippet_failures = []
                     llm_cite_cost = 0.0
+                    answer_pre_numeric = None
                     logger.debug(f"[UNIFIED] Preserving snippet IDs for intermediate refinement (iteration {iteration})")
                 else:
                     # Final iteration OR normal mode - convert snippet IDs to numeric citations
-                    answer_final, citations, snippets_used, snippet_failures, llm_cite_cost = await self._convert_snippet_ids_to_citations(
+                    answer_final, citations, snippets_used, snippet_failures, llm_cite_cost, answer_pre_numeric = await self._convert_snippet_ids_to_citations(
                         answer=answer_raw,
                         snippets=snippets,
                         schema=schema,
@@ -359,6 +361,7 @@ class UnifiedSynthesizer:
                 snippets_used = []
                 snippet_failures = []
                 llm_cite_cost = 0.0
+                answer_pre_numeric = None
 
             # Extract refinement info if available
             refinement_info = {}
@@ -376,7 +379,10 @@ class UnifiedSynthesizer:
                 "answer": answer_final,
                 # answer_pre_conversion: the raw LLM output with full [handle, SID] citations intact.
                 # Used by the self-correction loop so patches operate on real snippet IDs, not [1][2].
-                "answer_pre_conversion": answer_raw if answer_raw else {},
+                # answer_pre_numeric: answer_str after drops/resolutions but before [1][2] substitution.
+                # Falls back to answer_raw if parsing failed. Either way self-correction sees snippet IDs,
+                # and dropped unresolvable citations are already absent.
+                "answer_pre_conversion": answer_pre_numeric if answer_pre_numeric else (answer_raw if answer_raw else {}),
                 "citations": citations,
                 "snippets_used": snippets_used,
                 "snippet_failures": snippet_failures,  # Unresolved citation refs — uploaded to S3 via metadata
@@ -1057,13 +1063,19 @@ Query: {query}
         # Strategy 5: Batch LLM resolution for all items that survived strategies 0-4.
         # Shows each ref with surrounding answer context ("PROBLEMATIC SNIPPET N").
         # Drops citations the LLM can't confidently match — no citation is better than wrong.
+        # Logged as an independent step in the debug summary (start_step/record_step_metric/end_step).
         llm_resolution_cost = 0.0
-        llm_log_rows = []  # For clone_logger: [(ref, resolution, action)]
+        llm_log_rows = []  # [(ref, resolution, action)]
+        _llm_time = 0.0
         if failed_items and snippet_map:
             logger.info(f"[CITATIONS] Attempting batch LLM resolution for {len(failed_items)} unresolved reference(s)")
+            if clone_logger:
+                clone_logger.start_step("Citation LLM Resolution")
+            _llm_start = time.time()
             resolutions, llm_resolution_cost = await self._llm_resolve_snippets_batch(
                 failed_items, snippet_map, answer_str, query=query
             )
+            _llm_time = time.time() - _llm_start
             still_failed = []
             for item in failed_items:
                 resolution = resolutions.get(item)
@@ -1079,7 +1091,6 @@ Query: {query}
                 elif resolution == 'drop' or resolution is not None:
                     # Drop: remove the unresolvable citation bracket from the answer
                     answer_str = re.sub(r'\s*' + re.escape(f'[{item}]'), '', answer_str)
-                    answer_str = re.sub(re.escape(f'"{item}"'), '""', answer_str)
                     logger.info(f"[CITATIONS] LLM dropped unresolvable: [{item}]")
                     llm_log_rows.append((item, None, "DROPPED"))
                 else:
@@ -1088,26 +1099,37 @@ Query: {query}
                     llm_log_rows.append((item, None, "UNRESOLVED"))
             failed_items = still_failed
 
-        if clone_logger and llm_log_rows:
-            resolved_count = sum(1 for _, _, a in llm_log_rows if a == "RESOLVED")
-            dropped_count = sum(1 for _, _, a in llm_log_rows if a == "DROPPED")
-            unresolved_count = sum(1 for _, _, a in llm_log_rows if a == "UNRESOLVED")
-            rows_md = "\n".join(
-                f"| `{ref[:80]}` | {action} | `{sid or '—'}` |"
-                for ref, sid, action in llm_log_rows
-            )
-            clone_logger.log_section(
-                f"Citation LLM Resolution (${llm_resolution_cost:.4f})",
-                f"**{resolved_count} resolved, {dropped_count} dropped, {unresolved_count} unresolved**\n\n"
-                f"| Reference | Action | Resolved To |\n| :--- | :--- | :--- |\n{rows_md}",
-                level=4, collapse=False
-            )
+            if clone_logger:
+                resolved_count = sum(1 for _, _, a in llm_log_rows if a == "RESOLVED")
+                dropped_count = sum(1 for _, _, a in llm_log_rows if a == "DROPPED")
+                unresolved_count = sum(1 for _, _, a in llm_log_rows if a == "UNRESOLVED")
+                rows_md = "\n".join(
+                    f"| `{ref[:80]}` | {action} | `{sid or '—'}` |"
+                    for ref, sid, action in llm_log_rows
+                )
+                clone_logger.log_section(
+                    "Resolution Details",
+                    f"| Reference | Action | Resolved To |\n| :--- | :--- | :--- |\n{rows_md}",
+                    level=4, collapse=False
+                )
+                clone_logger.record_step_metric(
+                    "Citation LLM Resolution", "gemini", "gemini-3-flash-preview-low",
+                    llm_resolution_cost, _llm_time,
+                    f"{resolved_count} resolved, {dropped_count} dropped, {unresolved_count} unresolved"
+                )
+                clone_logger.end_step("Citation LLM Resolution")
 
         failure_records = []
         if failed_items:
             brief = failed_items[:5]
             more = f" ... +{len(failed_items)-5} more" if len(failed_items) > 5 else ""
             logger.info(f"[CITATIONS] {len(failed_items)} unresolved reference(s) after all strategies: {brief}{more}")
+
+            # Build dynamic strategy list — only include "llm_batch" when it was actually called.
+            strategies_tried = ["short_id", "direct_id", "fuzzy_handle", "super_fuzzy",
+                                 "snippet_id", "prefix_id", "verbal_handle", "sibling"]
+            if llm_log_rows:  # non-empty means the LLM batch was attempted
+                strategies_tried.append("llm_batch")
 
             # 2c: Build structured resolution failure record for S3 upload via metadata.
             # Returned to caller instead of written to disk — avoids Lambda /tmp contention.
@@ -1118,7 +1140,7 @@ Query: {query}
                 "available_handles": {h: sid for h, sid in handle_to_id.items()},
                 "available_short_ids": {k: v for k, v in short_id_map.items()},
                 "snippet_count": len(snippets),
-                "resolution_strategies_tried": ["short_id", "direct_id", "fuzzy_handle", "super_fuzzy", "snippet_id", "prefix_id", "verbal_handle", "sibling", "llm_batch"],
+                "resolution_strategies_tried": strategies_tried,
             })
 
         logger.debug(f"[CITATIONS] Matched {len(snippet_ids)} snippet references from {len(all_brackets)} bracketed items ({len(failed_items)} unmatched)")
@@ -1249,6 +1271,11 @@ Query: {query}
                 if handle:
                     handle_to_citation[handle] = citation_idx
 
+        # Snapshot answer_str BEFORE numeric substitution — used as answer_pre_conversion.
+        # Self-correction passes this to the next synthesis so it sees snippet IDs not [1][2].
+        # Capturing here (after drops) means dropped unresolvable refs don't re-appear next pass.
+        _answer_str_pre_numeric = answer_str
+
         # Replace all matched snippet IDs with citation numbers
         # We've already identified all valid snippet IDs above, now replace any occurrence
         for snippet_id, citation_idx in snippet_to_citation.items():
@@ -1302,7 +1329,13 @@ Query: {query}
 
         logger.debug(f"[UNIFIED] Converted {len(snippet_ids)} snippet IDs to {len(citations)} citations")
 
-        return answer_final, citations, list(snippet_ids), failure_records, llm_resolution_cost
+        # Parse the pre-numeric snapshot for answer_pre_conversion (post-drop, snippet IDs intact)
+        try:
+            answer_pre_numeric = json.loads(_answer_str_pre_numeric)
+        except Exception:
+            answer_pre_numeric = None  # fallback: caller uses answer_raw
+
+        return answer_final, citations, list(snippet_ids), failure_records, llm_resolution_cost, answer_pre_numeric
 
     def _is_validation_schema(self, schema: Dict) -> bool:
         """Check if a custom schema was provided (not Clone's default synthesis schema)."""

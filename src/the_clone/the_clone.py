@@ -190,7 +190,7 @@ class TheClone2Refined:
             }, level=2, collapse=False)
 
         # Cost tracking by stage
-        costs = {'initial': 0.0, 'recall': 0.0, 'search': 0.0, 'triage': 0.0, 'extraction': 0.0, 'synthesis': 0.0}
+        costs = {'initial': 0.0, 'recall': 0.0, 'search': 0.0, 'triage': 0.0, 'extraction': 0.0, 'synthesis': 0.0, 'citation_resolution': 0.0}
         
         # Stats tracking
         stats = {'schema_repairs': 0}
@@ -442,18 +442,20 @@ class TheClone2Refined:
                 synthesis_result.get('model_response', {}), clone_logger, stats
             )
             llm_cite_cost = synthesis_result.get('llm_cite_cost', 0.0)
-            costs['synthesis'] = synth_cost + llm_cite_cost
+            costs['synthesis'] = synth_cost
             costs_by_provider[synth_provider] = costs_by_provider.get(synth_provider, 0.0) + synth_cost
-            if llm_cite_cost:
-                costs_by_provider['gemini'] = costs_by_provider.get('gemini', 0.0) + llm_cite_cost
             calls_by_provider[synth_provider] = calls_by_provider.get(synth_provider, 0) + 1
+            if llm_cite_cost:
+                costs['citation_resolution'] = costs.get('citation_resolution', 0.0) + llm_cite_cost
+                costs_by_provider['gemini'] = costs_by_provider.get('gemini', 0.0) + llm_cite_cost
+                calls_by_provider['gemini'] = calls_by_provider.get('gemini', 0) + 1
             skip_snippet_failures = list(synthesis_result.get('snippet_failures', []))
 
             step_time_phase = time.time() - step_start_phase
             if clone_logger:
                 clone_logger.record_step_metric(
                     "Skip-to-Synthesis", synth_provider, models['synthesis'],
-                    synth_cost + llm_cite_cost, step_time_phase,
+                    synth_cost, step_time_phase,
                     f"URL sources: {len(url_snippets)}, Citations: {len(synthesis_result.get('citations', []))}"
                 )
                 clone_logger.end_step("Skip-to-Synthesis")
@@ -730,11 +732,13 @@ class TheClone2Refined:
 
                 tier4_cost, tier4_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}), clone_logger, stats)
                 llm_cite_cost = synthesis_result.get('llm_cite_cost', 0.0)
-                costs['synthesis'] += tier4_cost + llm_cite_cost
+                costs['synthesis'] += tier4_cost
                 costs_by_provider[tier4_provider] = costs_by_provider.get(tier4_provider, 0.0) + tier4_cost
-                if llm_cite_cost:
-                    costs_by_provider['gemini'] = costs_by_provider.get('gemini', 0.0) + llm_cite_cost
                 calls_by_provider[tier4_provider] = calls_by_provider.get(tier4_provider, 0) + 1
+                if llm_cite_cost:
+                    costs['citation_resolution'] = costs.get('citation_resolution', 0.0) + llm_cite_cost
+                    costs_by_provider['gemini'] = costs_by_provider.get('gemini', 0.0) + llm_cite_cost
+                    calls_by_provider['gemini'] = calls_by_provider.get('gemini', 0) + 1
                 skip_snippet_failures.extend(synthesis_result.get('snippet_failures', []))
 
                 step_time_phase = time.time() - step_start_phase
@@ -742,7 +746,7 @@ class TheClone2Refined:
                     model_resp = synthesis_result.get('model_response', {})
                     used_model = model_resp.get('model_used', target_model)
                     if model_resp.get('used_backup_model'): used_model += " (Backup)"
-                    clone_logger.record_step_metric(action_name, tier4_provider, used_model, tier4_cost + llm_cite_cost, step_time_phase, "Re-synthesized")
+                    clone_logger.record_step_metric(action_name, tier4_provider, used_model, tier4_cost, step_time_phase, "Re-synthesized")
                     clone_logger.end_step(action_name)
 
                 # Extract values for next iteration
@@ -1994,11 +1998,13 @@ class TheClone2Refined:
 
         synth_cost, synth_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}), clone_logger, stats)
         llm_cite_cost = synthesis_result.get('llm_cite_cost', 0.0)
-        costs['synthesis'] = synth_cost + llm_cite_cost
+        costs['synthesis'] = synth_cost
         costs_by_provider[synth_provider] = costs_by_provider.get(synth_provider, 0.0) + synth_cost
-        if llm_cite_cost:
-            costs_by_provider['gemini'] = costs_by_provider.get('gemini', 0.0) + llm_cite_cost
         calls_by_provider[synth_provider] = calls_by_provider.get(synth_provider, 0) + 1
+        if llm_cite_cost:
+            costs['citation_resolution'] = costs.get('citation_resolution', 0.0) + llm_cite_cost
+            costs_by_provider['gemini'] = costs_by_provider.get('gemini', 0.0) + llm_cite_cost
+            calls_by_provider['gemini'] = calls_by_provider.get('gemini', 0) + 1
         all_snippet_failures.extend(synthesis_result.get('snippet_failures', []))
 
         step_time_phase = time.time() - step_start_phase
@@ -2289,11 +2295,13 @@ class TheClone2Refined:
 
             tier4_cost, tier4_provider = self._extract_cost_and_provider(synthesis_result.get('model_response', {}), clone_logger, stats)
             llm_cite_cost = synthesis_result.get('llm_cite_cost', 0.0)
-            costs['synthesis'] += tier4_cost + llm_cite_cost
+            costs['synthesis'] += tier4_cost
             costs_by_provider[tier4_provider] = costs_by_provider.get(tier4_provider, 0.0) + tier4_cost
-            if llm_cite_cost:
-                costs_by_provider['gemini'] = costs_by_provider.get('gemini', 0.0) + llm_cite_cost
             calls_by_provider[tier4_provider] = calls_by_provider.get(tier4_provider, 0) + 1
+            if llm_cite_cost:
+                costs['citation_resolution'] = costs.get('citation_resolution', 0.0) + llm_cite_cost
+                costs_by_provider['gemini'] = costs_by_provider.get('gemini', 0.0) + llm_cite_cost
+                calls_by_provider['gemini'] = calls_by_provider.get('gemini', 0) + 1
             all_snippet_failures.extend(synthesis_result.get('snippet_failures', []))
 
             step_time_phase = time.time() - step_start_phase
@@ -2301,7 +2309,7 @@ class TheClone2Refined:
                 model_resp = synthesis_result.get('model_response', {})
                 used_model = model_resp.get('model_used', target_model)
                 if model_resp.get('used_backup_model'): used_model += " (Backup)"
-                clone_logger.record_step_metric(action_name, tier4_provider, used_model, tier4_cost + llm_cite_cost, step_time_phase, "Re-synthesized")
+                clone_logger.record_step_metric(action_name, tier4_provider, used_model, tier4_cost, step_time_phase, "Re-synthesized")
                 clone_logger.end_step(action_name)
 
             # Extract values for next iteration (if loop continues)
