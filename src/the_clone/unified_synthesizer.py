@@ -112,6 +112,7 @@ class UnifiedSynthesizer:
             snippets=snippets,
             context=context,
             is_last_iteration=is_last_iteration,
+            iteration=iteration,
             search_terms=search_terms,
             note_to_self=note_to_self,
             initial_decision=initial_decision,
@@ -325,6 +326,9 @@ class UnifiedSynthesizer:
             # Convert snippet IDs to citations if answer provided
             # Skip conversion for intermediate refinement iterations (preserves snippet IDs for AI context)
             # Always convert on FINAL iteration to get numeric citations for user output
+            # IMPORTANT: Always preserve answer_raw (pre-conversion, with full snippet IDs) separately.
+            # This is critical for self-correction: the next iteration's patches must receive full
+            # snippet IDs, not numbered [1][2] citations which the patch system cannot re-expand.
             if can_answer and answer_raw:
                 if used_refinement_data and not is_last_iteration:
                     # Intermediate refinement - keep snippet IDs so AI knows exact snippets for next iteration
@@ -365,6 +369,9 @@ class UnifiedSynthesizer:
                 "can_answer": can_answer,
                 "confidence": confidence,
                 "answer": answer_final,
+                # answer_pre_conversion: the raw LLM output with full [handle, SID] citations intact.
+                # Used by the self-correction loop so patches operate on real snippet IDs, not [1][2].
+                "answer_pre_conversion": answer_raw if answer_raw else {},
                 "citations": citations,
                 "snippets_used": snippets_used,
                 "missing_aspects": missing,
@@ -390,6 +397,7 @@ class UnifiedSynthesizer:
         snippets: List[Dict],
         context: str,
         is_last_iteration: bool,
+        iteration: int = 1,
         search_terms: List[str] = None,
         note_to_self: str = None,
         initial_decision: str = None,
@@ -402,8 +410,8 @@ class UnifiedSynthesizer:
         guidance = get_synthesis_guidance(context)
         current_date = datetime.now().strftime('%Y-%m-%d')
 
-        # Format snippets grouped by search term
-        formatted_snippets = self._format_snippets_by_search_term(snippets, search_terms)
+        # Format snippets grouped by search term, passing current iteration for NEW/PREV labels
+        formatted_snippets = self._format_snippets_by_search_term(snippets, search_terms, current_iteration=iteration)
 
         # Check for source mismatch: initial decision expected sources but we have none
         source_mismatch_warning = ""
@@ -506,9 +514,10 @@ Query: {query}
 {previous_iteration_section}
 ## Structure Legend
 
-- **Q1.{'{n}'}:** Query number in iteration 1 (search term used)
+- **Q{'{iter}'}.{'{n}'}:** Query from iteration {'{iter}'}, search {'{n}'} (search term used). [★ NEW] = added this pass; [◎ PREV] = from earlier pass.
 - **Snippet ID Format:** S{'{iter}'}.{'{search}'}.{'{source}'}.{'{snippet}'}-p{'{score}'}
   - Example: S1.2.3.0-p0.85 = Iteration 1, Search 2, Source 3, Snippet 0, p-score 0.85
+- **2-letter anchor (AA, AB…):** Short stable alias shown after the citation ref as (AA). You may cite using the 2-letter anchor alone: `[AA]` — it resolves to the full snippet. Use `[handle, snippet_id]` for clarity, `[AA]` as fallback if exact ID is hard to recall.
 - **p (probability):** Source-level quality score (0.05-0.95) - judge tests all atomic claims, p = expected pass-rate
   - 0.85-0.95: High confidence (PRIMARY/DOCUMENTED/ATTRIBUTED) - prefer these
   - 0.50-0.65: Medium confidence (OK quality)
@@ -630,9 +639,10 @@ Query: {query}
 
 ## Structure Legend
 
-- **Q1.{'{n}'}:** Query number in iteration 1 (search term used)
+- **Q{'{iter}'}.{'{n}'}:** Query from iteration {'{iter}'}, search {'{n}'}. [★ NEW] = added this pass; [◎ PREV] = from earlier pass.
 - **Snippet ID Format:** S{'{iter}'}.{'{search}'}.{'{source}'}.{'{snippet}'}-p{'{score}'}
   - Example: S1.2.3.0-p0.85 = Iteration 1, Search 2, Source 3, Snippet 0, p-score 0.85
+- **2-letter anchor (AA, AB…):** Short alias after citation ref as (AA). Cite using `[handle, snippet_id]` or bare `[AA]` if needed.
 - **p (probability):** Source-level quality score (0.05-0.95) - judge tests all atomic claims, p = expected pass-rate
   - 0.85-0.95: High confidence (PRIMARY/DOCUMENTED/ATTRIBUTED) - prefer these
   - 0.50-0.65: Medium confidence (OK quality)
@@ -691,97 +701,119 @@ Query: {query}
 
         return prompt
 
-    def _format_snippets_by_search_term(self, snippets: List[Dict], search_terms: List[str] = None) -> str:
+    def _format_snippets_by_search_term(self, snippets: List[Dict], search_terms: List[str] = None, current_iteration: int = 1) -> str:
         """
         Format snippets in nested structure:
-        Q1.1: "search query"
-          URL [RELIABILITY, DATE]
-            - [S1.1.0.0] "snippet"
+        Q{iter}.{search}: "query text"  [★ NEW] or [◎ PREV]
+          [S1.1.0] URL | Page Title [DATE]
+            - [handle, S1.1.0.0-p0.95] (AA) (p=0.95, c=H/P) "text"
+
+        Groups by (iteration, search) extracted from snippet ID so Q-labels always reflect
+        the iteration in which each search was executed (Q1.x = first pass, Q2.x = second).
         """
         if not snippets:
             return "(No quotes)"
 
-        # Group by search_ref
-        by_search = {}
-        search_queries = {}  # Map search_ref to query text
+        def _iter_search_from_id(sid: str):
+            """Extract (iter_num, search_num) from snippet ID like S1.2.3.0-p0.95."""
+            m = re.match(r'S(\d+)\.(\d+)\.', sid or '')
+            if m:
+                return int(m.group(1)), int(m.group(2))
+            return None, None
+
+        # Group by (iter_num, search_num) extracted from snippet ID
+        by_iter_search = {}
+        query_for_key = {}
 
         for snippet in snippets:
-            search_ref = snippet.get('search_ref', 1)
-            if search_ref not in by_search:
-                by_search[search_ref] = []
-                # Get search query from provided search_terms array (index is search_ref - 1)
-                if search_terms and len(search_terms) >= search_ref:
-                    search_queries[search_ref] = search_terms[search_ref - 1]
-                else:
-                    search_queries[search_ref] = snippet.get('_search_term', f'Search {search_ref}')
-            by_search[search_ref].append(snippet)
+            sid = snippet.get('id', '')
+            iter_num, search_num = _iter_search_from_id(sid)
+            if iter_num is None:
+                # Fallback: non-standard IDs (memory snippets SM.x, etc.)
+                iter_num = 1
+                search_num = snippet.get('search_ref', 1)
+
+            key = (iter_num, search_num)
+            if key not in by_iter_search:
+                by_iter_search[key] = []
+                # Best source for query text: _search_term on the snippet itself
+                query_for_key[key] = snippet.get('_search_term', '')
+
+            by_iter_search[key].append(snippet)
 
         # Format
         formatted = []
-        for search_num in sorted(by_search.keys()):
-            # Query header: Q1.1: "query text"
-            query_text = search_queries.get(search_num, f'Search {search_num}')
-            formatted.append(f"\nQ1.{search_num}: \"{query_text}\"")
+        for (iter_num, search_num) in sorted(by_iter_search.keys()):
+            query_text = query_for_key.get((iter_num, search_num), f'Search {search_num}')
 
-            # Group by source URL within search
+            # Mark new vs. previously seen snippets
+            if current_iteration > 1:
+                if iter_num == current_iteration:
+                    label_suffix = " [★ NEW]"
+                else:
+                    label_suffix = " [◎ PREV]"
+            else:
+                label_suffix = ""
+
+            formatted.append(f"\nQ{iter_num}.{search_num}:{label_suffix} \"{query_text}\"")
+
+            # Group by source URL within this (iter, search)
             by_url = {}
-            for snippet in by_search[search_num]:
+            for snippet in by_iter_search[(iter_num, search_num)]:
                 url = snippet.get('_source_url', 'Unknown URL')
-
                 if url not in by_url:
                     by_url[url] = {
                         'url': url,
+                        'title': snippet.get('_source_title', ''),
                         'date': snippet.get('_source_date', ''),
                         'snippets': []
                     }
-
                 by_url[url]['snippets'].append({
                     'id': snippet.get('id', ''),
+                    'short_id': snippet.get('short_id', ''),
                     'verbal_handle': snippet.get('verbal_handle', ''),
                     'text': snippet.get('text', ''),
                     'p': snippet.get('p', 0.50),
-                    'c': snippet.get('c', 'M/O'),  # Classification (H/M/L + quality codes)
-                    'reason': snippet.get('validation_reason', 'OK'),
+                    'c': snippet.get('c', 'M/O'),
                     '_is_lower_quality': snippet.get('_is_lower_quality', False)
                 })
 
             # Format sources under this query
             for url, data in by_url.items():
-                # Get source ID prefix from first snippet (e.g., S1.1.0 from S1.1.0.0-M)
                 first_snippet_id = data['snippets'][0]['id'] if data['snippets'] else ''
                 source_prefix = '.'.join(first_snippet_id.split('.')[:3]) if first_snippet_id else ''
-                
-                # Check for lower quality flag
+
                 is_lower_quality = any(s.get('_is_lower_quality', False) for s in data['snippets'])
 
-                # Source header: [S1.1.0] URL [DATE]
+                # Source header: [S1.1.0] URL | Title [DATE]
                 source_line = f"  [{source_prefix}] {data['url']}" if source_prefix else f"  {data['url']}"
+                if data.get('title'):
+                    source_line += f" | {data['title'][:80]}"
                 if data['date']:
                     source_line += f" [{data['date']}]"
-                
                 if is_lower_quality:
-                    # Get p score from the first snippet
-                    p_score = data['snippets'][0].get('p', 0.50) if data['snippets'] else 0.50
+                    p_score = data['snippets'][0].get('p', 0.50)
                     source_line += f" [WARNING: Lower Quality Source (p={p_score})]"
-                
+
                 formatted.append(source_line)
 
-                # Snippets under this source (with verbal handle, p-score, and classification)
+                # Snippets under this source: include 2-letter short_id anchor for reliable citation
                 for snip in data['snippets']:
                     handle = snip.get('verbal_handle', '')
                     snippet_id = snip['id']
+                    short_id = snip.get('short_id', '')
                     p_score = snip.get('p', 0.50)
                     c_class = snip.get('c', 'M/O')
 
-                    # Format: [handle, S1.1.0-p0.95] (p=0.95, c=H/P) "text"
+                    # Format: [handle, S1.1.0.0-p0.95] (AA) (p=0.95, c=H/P) "text"
                     if handle:
                         citation_ref = f"[{handle}, {snippet_id}]"
                     else:
                         citation_ref = f"[{snippet_id}]"
 
-                    # Show p and c metadata
+                    anchor_str = f" ({short_id})" if short_id else ""
                     metadata = f"(p={p_score}, c={c_class})"
-                    formatted.append(f"    - {citation_ref} {metadata} \"{snip['text']}\"")
+                    formatted.append(f"    - {citation_ref}{anchor_str} {metadata} \"{snip['text']}\"")
 
         return '\n'.join(formatted)
 

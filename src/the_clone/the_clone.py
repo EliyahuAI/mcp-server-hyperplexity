@@ -461,7 +461,8 @@ class TheClone2Refined:
             needs_expert   = synthesis_result.get('needs_expert', False)
             note_to_self = synthesis_result.get('note_to_self')
             original_note_to_self = note_to_self
-            previous_answer = synthesis_result.get('answer', {})
+            # Use pre-conversion answer (full snippet IDs) so refinement patches see [handle, SID] not [1][2]
+            previous_answer = synthesis_result.get('answer_pre_conversion') or synthesis_result.get('answer', {})
             upgraded = False
             iteration = 1
 
@@ -741,7 +742,7 @@ class TheClone2Refined:
                 suggested_search_terms = synthesis_result.get('suggested_search_terms', [])
                 needs_thinking = synthesis_result.get('needs_thinking', False)
                 needs_expert   = synthesis_result.get('needs_expert', False)
-                previous_answer = synthesis_result.get('answer', {})
+                previous_answer = synthesis_result.get('answer_pre_conversion') or synthesis_result.get('answer', {})
                 logger.debug(f"[CLONE] Skip-to-Synthesis self-correction {self_correction_count} complete: grade={self_assessment}, new_terms={len(suggested_search_terms)}")
 
             # Build final result
@@ -2002,7 +2003,8 @@ class TheClone2Refined:
         needs_search   = synthesis_result.get('needs_search', False)
         note_to_self = synthesis_result.get('note_to_self')
         original_note_to_self = note_to_self  # Preserve original before prefix is added
-        previous_answer = synthesis_result.get('answer', {})  # Capture for passing to next iteration
+        # Use pre-conversion answer (full snippet IDs) so refinement patches see [handle, SID] not [1][2]
+        previous_answer = synthesis_result.get('answer_pre_conversion') or synthesis_result.get('answer', {})
         upgraded = False
 
         # Track all search terms used across iterations (for deduplication)
@@ -2289,7 +2291,7 @@ class TheClone2Refined:
             suggested_search_terms = synthesis_result.get('suggested_search_terms', [])
             needs_thinking = synthesis_result.get('needs_thinking', False)
             needs_expert   = synthesis_result.get('needs_expert', False)
-            previous_answer = synthesis_result.get('answer', {})
+            previous_answer = synthesis_result.get('answer_pre_conversion') or synthesis_result.get('answer', {})
             logger.debug(f"[CLONE] Self-correction {self_correction_count} complete: grade={self_assessment}, new_terms={len(suggested_search_terms)}")
 
         # Warn if low grade but no self-correction was possible

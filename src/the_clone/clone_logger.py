@@ -1,6 +1,7 @@
 import logging
 import os
 import json
+import re
 import time
 import io
 from typing import Any, Dict, Optional, List
@@ -48,13 +49,18 @@ class CloneLogger:
             except Exception:
                 pass # Fail silently if file writing fails
 
+    @staticmethod
+    def _step_anchor(step_name: str) -> str:
+        """Convert step name to a valid HTML anchor id (lowercase, spaces→hyphens)."""
+        return "step-" + re.sub(r'[^a-z0-9-]', '-', step_name.lower()).strip('-')
+
     def start_step(self, step_name: str):
-        """Starts a top-level collapsible section for a major step."""
+        """Starts a top-level collapsible section with an HTML anchor id for deep-linking."""
         self.step_start_times[step_name] = time.time()
         timestamp = datetime.now().strftime('%H:%M:%S')
-        # Note: Status shown as [SUCCESS] initially, but this is just placeholder
-        # The actual step content should indicate success/failure
-        self._write(f"\n<details>\n<summary><b>[SUCCESS] Step: {step_name}</b> <small>({timestamp})</small></summary>\n\n")
+        anchor = self._step_anchor(step_name)
+        # id= attribute lets the summary table link directly to this section via #anchor
+        self._write(f"\n<details id=\"{anchor}\">\n<summary><b>[SUCCESS] Step: {step_name}</b> <small>({timestamp})</small></summary>\n\n")
 
     def end_step(self, step_name: str):
         """Closes the top-level collapsible section for a step."""
@@ -265,12 +271,15 @@ class CloneLogger:
         summary += f"| **Tier 4 Upgrade** | {'Yes' if m.get('upgraded_to_deepest') else 'No'} |\n"
 
         summary += "\n### 🔍 Process Breakdown\n\n| Step | Provider | Model | Cost | Time | Details |\n| :--- | :--- | :--- | :--- | :--- | :--- |\n"
-        
+
         for step in self.steps_data:
             provider = step['provider']
             if provider in ['unknown', 'mixed']: provider = f"⚠️ {provider}"
-            summary += f"| **{step['name']}** | {provider} | `{step['model']}` | ${step['cost']:.4f} | {step['time']:.2f}s | {step['details']} |\n"
-            
+            anchor = self._step_anchor(step['name'])
+            # Link step name to its collapsible section in the same document
+            step_link = f"[{step['name']}](#{anchor})"
+            summary += f"| **{step_link}** | {provider} | `{step['model']}` | ${step['cost']:.4f} | {step['time']:.2f}s | {step['details']} |\n"
+
         return summary + "\n"
 
     def _format_content(self, content: Any) -> str:
