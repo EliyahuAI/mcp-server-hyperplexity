@@ -26,13 +26,16 @@ class CloneLogger:
         self._step_call_counts: Dict[str, int] = {}
         self._last_step_anchor: Dict[str, str] = {}
 
+        # Character offset right after the header block; finalize() inserts summary here
+        self._header_end_pos: int = 0
+
         if debug_dir:
             try:
                 os.makedirs(debug_dir, exist_ok=True)
                 self.log_file = os.path.join(debug_dir, "FULL_LOG.md")
             except Exception:
                 self.log_file = None
-        
+
         self._write_header()
 
     def _write_header(self):
@@ -40,7 +43,9 @@ class CloneLogger:
         header += f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
         if self.debug_dir:
             header += f"**Debug Directory:** `{self.debug_dir}`\n"
-        self._write(header) # Write immediately
+        self._write(header)
+        # Record position so finalize() can insert the summary right after the header
+        self._header_end_pos = self.memory_buffer.tell()
 
     def _write(self, text: str):
         self.memory_buffer.write(text)
@@ -131,21 +136,17 @@ class CloneLogger:
 
         current_content = self.memory_buffer.getvalue()
 
-        # Find the end of the configuration section (look for the first <details> tag).
-        # Match "<details" (without closing >) to handle both bare <details> and <details id="...">
-        details_pos = current_content.find("\n<details")
-        if details_pos == -1:
-            # Fallback: insert after first ## heading
-            details_pos = current_content.find("\n##")
-        if details_pos == -1:
-            # Last fallback: insert at beginning
-            details_pos = len(current_content)
+        # Insert summary immediately after the header block (date/debug-dir lines).
+        # _header_end_pos was recorded in _write_header() right after those lines were written,
+        # so this reliably places the summary at the top regardless of what log_section calls
+        # have added since.
+        insert_pos = self._header_end_pos if self._header_end_pos > 0 else len(current_content)
 
-        header = current_content[:details_pos]
-        body = current_content[details_pos:]
+        header = current_content[:insert_pos]
+        body = current_content[insert_pos:]
 
         full_content = (
-            f"{header}\n\n{summary_section}\n{settings_section}\n{answer_section}\n---\n{body}"
+            f"{header}\n{summary_section}\n{settings_section}\n{answer_section}\n---\n{body}"
         )
 
         self.memory_buffer = io.StringIO(full_content)
