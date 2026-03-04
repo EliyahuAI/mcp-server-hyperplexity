@@ -55,7 +55,7 @@ def load_ground_truth(results_dir: Path) -> Dict[Tuple, str]:
     if not gt_path.exists():
         return {}
     gt = {}
-    with gt_path.open() as fh:
+    with gt_path.open(encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
             key = (row["test_id"], row["entity_id"], row["column"])
             gt[key] = row["ground_truth_value"]
