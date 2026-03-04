@@ -880,13 +880,16 @@ Query: {query}
             return {}, 0.0
 
         # Top candidates by p-score (cap at 20 to stay within token budget)
+        # Include short_id (2-letter anchor) so the LLM can match by anchor when present.
         candidates = sorted(snippet_map.values(), key=lambda s: s.get('p', 0), reverse=True)[:20]
         candidate_lines = []
         for s in candidates:
             sid = s.get('id', '?')
             handle = s.get('verbal_handle', '?')
+            short_id = s.get('short_id', '')
             preview = (s.get('text') or '')[:120].replace('\n', ' ')
-            candidate_lines.append(f"- {sid}  [{handle}]  {preview}")
+            anchor_str = f"  anchor={short_id}" if short_id else ""
+            candidate_lines.append(f"- {sid}  [{handle}]{anchor_str}  {preview}")
 
         # Build per-reference context blocks
         ref_blocks = []
@@ -896,16 +899,24 @@ Query: {query}
 
         prompt = (
             'You are resolving unresolved citation references in a research answer.\n\n'
+            'Citation format used in the answer: [verbal_handle, snippet_id, AA]\n'
+            '  - verbal_handle: descriptive text label (e.g. "mortality_rate_icu")\n'
+            '  - snippet_id: structured ID like S1.2.3.0-p0.85 (iteration.search.source.quote-pscore)\n'
+            '  - AA: optional 2-letter anchor (e.g. "AB", "AC") — uniquely identifies the snippet\n'
+            'These references failed automatic matching (wrong ID, stale iteration, typo, etc.).\n\n'
             + (f'Query: {(query or "")[:200]}\n\n' if query else '')
-            + 'The following references appear in the answer but could not be matched to any snippet.\n'
-            + 'For each one, you see the surrounding text context.\n\n'
+            + 'UNRESOLVED REFERENCES:\n\n'
             + '\n\n'.join(ref_blocks)
-            + '\n\nAvailable snippets (by quality score):\n'
+            + '\n\nAVAILABLE SNIPPETS (by quality score):\n'
             + '\n'.join(candidate_lines)
-            + '\n\nFor each PROBLEMATIC SNIPPET, return:\n'
-            + '- the snippet_id that best matches (semantic meaning + surrounding context)\n'
-            + '- "drop" if it looks like a citation but no snippet is a reasonable match\n'
-            + '- "restore" if it is NOT a citation reference at all (e.g. [Note: ...], [e.g. ...], [Source: ...], or any non-citation bracket)\n'
+            + '\n\nMatching priority for each reference:\n'
+            + '1. If a 2-letter anchor (AA/AB/…) is present in the reference, match it to the candidate with that anchor= value\n'
+            + '2. Otherwise match by snippet_id (exact or closest structural match)\n'
+            + '3. Otherwise match by verbal_handle + surrounding context semantics\n\n'
+            + 'For each PROBLEMATIC SNIPPET, return:\n'
+            + '- the snippet_id (from the list above) that best matches\n'
+            + '- "drop" if it is a citation but no snippet is a reasonable match\n'
+            + '- "restore" if it is NOT a citation at all (e.g. [Note: ...], [e.g. ...], [Source: ...], plain bracket text)\n'
             + 'If uncertain between "drop" and "restore", prefer "restore" to preserve original text.\n\n'
             + 'Return ONLY a JSON object with numbered keys:\n'
             + '{"1": "S1.2.3.0-p0.95", "2": "drop", "3": "restore"}'
