@@ -131,8 +131,9 @@ class CloneLogger:
 
         current_content = self.memory_buffer.getvalue()
 
-        # Find the end of the configuration section (look for the <details> tag)
-        details_pos = current_content.find("\n<details>")
+        # Find the end of the configuration section (look for the first <details> tag).
+        # Match "<details" (without closing >) to handle both bare <details> and <details id="...">
+        details_pos = current_content.find("\n<details")
         if details_pos == -1:
             # Fallback: insert after first ## heading
             details_pos = current_content.find("\n##")
