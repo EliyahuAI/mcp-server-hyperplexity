@@ -180,7 +180,8 @@ class CloneProvider:
                         )
                     except Exception as _fe:
                         logger.debug(f"[CLONE_PROVIDER] Could not upload snippet failure record {i}: {_fe}")
-                logger.warning(f"[CLONE_PROVIDER] {len(snippet_failures)} snippet resolution failure(s) uploaded to S3: debug/clone/snippet_failures/")
+                log_ref = f" | debug log: {debug_md_uri}" if debug_md_uri else ""
+                logger.warning(f"[CLONE_PROVIDER] {len(snippet_failures)} snippet resolution failure(s) uploaded to S3: debug/clone/snippet_failures/{log_ref}")
 
             # Generate enhanced metrics BEFORE caching (needed for time_estimated preservation)
             # We pass pre_extracted_token_usage because we constructed it manually
