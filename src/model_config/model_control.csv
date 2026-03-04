@@ -1,14 +1,14 @@
 role,context,model,fallback_1,fallback_2,description
-config_gen_primary,config_gen,gemini-3-flash-preview,openrouter/gemini-3-flash-preview,claude-sonnet-4-6,Primary model for config generation (upload-interview path)
-config_gen_qc_default,qc,gemini-3-flash-preview,openrouter/gemini-3-flash-preview,claude-sonnet-4-6,Default QC model used by config_settings.json
-table_maker_interview,table_maker,gemini-3-flash-preview,openrouter/gemini-3-flash-preview,claude-sonnet-4-6,Table maker interview phase model
+config_gen_primary,config_gen,gemini-3-flash-preview-low,openrouter/gemini-3-flash-preview-low,claude-sonnet-4-6,Primary model for config generation (upload-interview path)
+config_gen_qc_default,qc,gemini-3-flash-preview-low,openrouter/gemini-3-flash-preview-low,claude-sonnet-4-6,Default QC model used by config_settings.json
+table_maker_interview,table_maker,gemini-3-flash-preview-min,openrouter/gemini-3-flash-preview-min,claude-sonnet-4-6,Table maker interview phase model
 table_maker_background_research,table_maker,sonar-pro,,,Background research model (Step 0) — sonar-pro with high context
-table_maker_column_definition,table_maker,gemini-3-flash-preview,claude-sonnet-4-6,sonar-pro,Column definition model (Step 1) — medium thinking
+table_maker_column_definition,table_maker,gemini-3-flash-preview-min,claude-sonnet-4-6,sonar-pro,Column definition model (Step 1) — medium thinking
 table_maker_row_discovery_l1,table_maker,sonar,sonar-pro,the-clone-flash,Row discovery escalation level 1 (active)
 table_maker_row_discovery_l2,table_maker,sonar-pro,the-clone-flash,,Row discovery escalation level 2 (currently disabled)
 table_maker_row_discovery_l3,table_maker,claude-haiku-4-5,,,Row discovery escalation level 3 (currently disabled)
-table_maker_qc,table_maker,gemini-3-flash-preview-high,openrouter/gemini-3-flash-preview-high,claude-sonnet-4-6,QC review model for table maker (Step 3)
-upload_interview,interview,gemini-3-flash-preview,openrouter/gemini-3-flash-preview,claude-sonnet-4-6,Upload interview phase model — fast cheap model for dialog
+table_maker_qc,table_maker,gemini-3-flash-preview,openrouter/gemini-3-flash-preview,claude-sonnet-4-6,QC review model for table maker (Step 3)
+upload_interview,interview,gemini-3-flash-preview-min,openrouter/gemini-3-flash-preview-min,claude-sonnet-4-6,Upload interview phase model — fast cheap model for dialog
 validation_qc_default,qc,gemini-3-flash-preview,claude-sonnet-4-6,,Default QC model for validation runs
 clone_extraction_default,clone_deepseek,gemini-2.5-flash-lite,openrouter/gemini-3-flash-preview-min,gemini-3.0-flash-preview-min,Default extraction model across all clone providers
 clone_claude_t1,clone_claude,claude-haiku-4-5,claude-sonnet-4-5,,Clone/claude tier1 synthesis — fast
@@ -28,8 +28,8 @@ clone_baseten_t2,clone_baseten,deepseek-v3.2-baseten,openrouter/gemini-3-flash-p
 clone_baseten_t3,clone_baseten,claude-sonnet-4-5,claude-opus-4-6,gemini-3-flash-preview-high,Clone/baseten tier3 synthesis — strong reasoning
 clone_baseten_t4,clone_baseten,claude-opus-4-6,claude-sonnet-4-6,gemini-3-flash-preview-high,Clone/baseten tier4 synthesis — deepest
 table_extraction,table_maker,the-clone-flash,sonar,,Table extraction step 0b — clone for pagination support
-table_maker_table_population,table_maker,gemini-3-flash-preview,openrouter/gemini-3-flash-preview,claude-sonnet-4-6,Table population phase model
-table_maker_config_generation,table_maker,gemini-3-flash-preview,openrouter/gemini-3-flash-preview,claude-sonnet-4-6,Config generation within table maker pipeline
+table_maker_table_population,table_maker,gemini-3-flash-preview-low,openrouter/gemini-3-flash-preview-low,claude-sonnet-4-6,Table population phase model
+table_maker_config_generation,table_maker,gemini-3-flash-preview-low,openrouter/gemini-3-flash-preview-low,claude-sonnet-4-6,Config generation within table maker pipeline
 table_maker_validator_qc_primary,table_maker,gemini-3-flash-preview,openrouter/gemini-3-flash-preview,claude-sonnet-4-6,Validator QC primary model for table maker QC strategy=validator
 rumor_generation,table_maker,gemini-3-flash-preview,openrouter/gemini-3-flash-preview,claude-sonnet-4-6,Rumor generation model — broad entity knowledge required
 clone_deepseek_t1,clone_deepseek,gemini-2.5-flash-lite,openrouter/gemini-3-flash-preview-low,claude-haiku-4-5,Clone/deepseek tier1 synthesis — fast cost-effective
