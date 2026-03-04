@@ -1784,9 +1784,14 @@ def handle_main_processing(event, context):
                                 continue
 
                             # Always use QC entry and confidence when available (comprehensive QC)
-                            if qc_entry and str(qc_entry).strip():
+                            # Guard: skip "=" codeword variants that were not expanded (=, ==, =", =" , etc.)
+                            # Detection: strip whitespace+quotes; remaining chars must all be '='
+                            _qc_entry_is_codeword = qc_entry is not None and all(c == '=' for c in str(qc_entry).strip().strip('"\'').strip()) and bool(str(qc_entry).strip().strip('"\'').strip())
+                            if qc_entry and str(qc_entry).strip() and not _qc_entry_is_codeword:
                                 row_data[field_name]['value'] = qc_entry
                                 logger.debug(f"[QC_MERGE] {field_name}: Using QC entry value: {qc_entry}")
+                            elif _qc_entry_is_codeword:
+                                logger.warning(f"[QC_MERGE] {field_name}: Skipping unexpanded '=' codeword in qc_entry '{qc_entry}' — keeping validated value")
 
                             if qc_confidence and str(qc_confidence).strip():
                                 row_data[field_name]['confidence_level'] = qc_confidence
@@ -4147,9 +4152,13 @@ def handle_main_processing(event, context):
                                 logger.debug(f"[QC_MERGE_FULL_DEBUG] Field {field_name}: has qc_entry = {bool(qc_entry)}, has qc_confidence = {bool(qc_confidence)}")
 
                                 # Always use QC entry and confidence when available (comprehensive QC)
-                                if qc_entry and str(qc_entry).strip():
+                                # Guard: skip "=" codeword variants that were not expanded (=, ==, =", =" , etc.)
+                                _qc_entry_is_codeword = qc_entry is not None and all(c == '=' for c in str(qc_entry).strip().strip('"\'').strip()) and bool(str(qc_entry).strip().strip('"\'').strip())
+                                if qc_entry and str(qc_entry).strip() and not _qc_entry_is_codeword:
                                     real_results[row_key][field_name]['value'] = qc_entry
                                     logger.debug(f"[QC_MERGE_FULL] {field_name}: Using QC entry value: {qc_entry}")
+                                elif _qc_entry_is_codeword:
+                                    logger.warning(f"[QC_MERGE_FULL] {field_name}: Skipping unexpanded '=' codeword in qc_entry '{qc_entry}' — keeping validated value")
 
                                 if qc_confidence and str(qc_confidence).strip():
                                     real_results[row_key][field_name]['confidence_level'] = qc_confidence

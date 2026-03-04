@@ -21,6 +21,28 @@ from perplexity_schema import get_qc_response_format_schema, MULTIPLEX_RESPONSE_
 
 logger = logging.getLogger(__name__)
 
+
+def _is_equals_codeword(val) -> bool:
+    """Return True if *val* is a variant of the '=' keep-original codeword.
+
+    The QC model is instructed to output bare ``=`` when it accepts the
+    validated value unchanged.  In practice it sometimes emits malformed
+    variants such as ``="``, ``=" ``, ``==``, ``=="`` etc.
+
+    Detection rule: after stripping surrounding whitespace and quote
+    characters (``"`` and ``'``), the remaining string must be non-empty
+    and consist exclusively of ``=`` signs.
+
+    Examples that return True:  ``=``, ``==``, ``="`` , ``=" ``, ``=="``,
+    ``='``, ``= ``.
+    Examples that return False: ``5.76``, ``-91.8``, ``HIGH``, ``None``.
+    """
+    if val is None:
+        return False
+    normalized = str(val).strip().strip('"\'').strip()
+    return bool(normalized) and all(c == '=' for c in normalized)
+
+
 def find_similar_columns(expected_columns: List[str], actual_columns: List[str], similarity_threshold: float = 0.8) -> Dict[str, str]:
     """
     Find column mappings between expected and actual columns using string similarity.
@@ -1023,15 +1045,15 @@ class QCModule:
                 equals_expanded_reasoning = 0
                 for qc_result in qc_results:
                     column = qc_result.get('column', '')
-                    # Expand "=" in answer to actual updated value
-                    if qc_result.get('answer') == '=':
+                    # Expand "=" codeword in answer to actual updated value
+                    if _is_equals_codeword(qc_result.get('answer')):
                         if column in updated_values_lookup:
                             qc_result['answer'] = updated_values_lookup[column]
                             equals_expanded_answer += 1
                         else:
                             logger.warning(f"[QC_CODEWORD_EXPAND] {column}: Cannot expand answer '=' - column not in lookup")
-                    # Expand "=" in key_citation to first validation citation [V1]
-                    if qc_result.get('key_citation') == '=':
+                    # Expand "=" codeword in key_citation to first validation citation [V1]
+                    if _is_equals_codeword(qc_result.get('key_citation')):
                         if column in first_citations_lookup:
                             qc_result['key_citation'] = first_citations_lookup[column]
                             equals_expanded_citation += 1
@@ -1072,8 +1094,8 @@ class QCModule:
                                 # No citation available at all - leave empty
                                 qc_result['key_citation'] = ''
                                 logger.warning(f"[QC_CODEWORD_EXPAND] {column}: Cannot expand key_citation '=' - no citations available")
-                    # Clear "=" in qc_reasoning (means validator's explanation is adequate, no QC reasoning needed)
-                    if qc_result.get('qc_reasoning') == '=':
+                    # Clear "=" codeword in qc_reasoning (means validator's explanation is adequate, no QC reasoning needed)
+                    if _is_equals_codeword(qc_result.get('qc_reasoning')):
                         qc_result['qc_reasoning'] = ''
                         equals_expanded_reasoning += 1
                 if equals_expanded_answer > 0 or equals_expanded_citation > 0 or equals_expanded_reasoning > 0:
