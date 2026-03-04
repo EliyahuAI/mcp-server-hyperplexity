@@ -4,9 +4,9 @@
 
 ---
 
-## Get Your API Key ($20 Free)
+## Get Your API Key
 
-**[hyperplexity.ai/account](https://hyperplexity.ai/account)** — log in, click your email in the top right, and select **Add Credits** to claim your $20 free credit.
+Log in at **[hyperplexity.ai](https://hyperplexity.ai)** and click your email at the top of the first card to access account info and API keys. New accounts receive $20 in free credits.
 
 ---
 
@@ -19,7 +19,7 @@
 | `hyperplexity_client.py` | Shared REST client (required by all examples) | [download](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/hyperplexity_client.py) |
 | `01_validate_table.py` | Validate an existing table | [download](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/01_validate_table.py) |
 | `02_generate_table.py` | Generate a table from a prompt | [download](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/02_generate_table.py) |
-| `03_update_table.py` | Re-validate after analyst corrections | [download](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/03_update_table.py) |
+| `03_update_table.py` | Re-run validation on a completed job | [download](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/03_update_table.py) |
 | `04_reference_check.py` | Fact-check text or documents | [download](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/04_reference_check.py) |
 
 Or clone the full example set:
@@ -69,9 +69,9 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-### Team / project config
+### Project config (shared repo)
 
-Add `.mcp.json` to your repo root — every team member gets the server automatically:
+Add `.mcp.json` to your repo root so the server is available when anyone runs Claude Code in that directory. Each person must use their own API key — keys are tied to individual email accounts and should not be shared:
 
 ```json
 {
@@ -87,6 +87,8 @@ Add `.mcp.json` to your repo root — every team member gets the server automati
 }
 ```
 
+Each team member sets `HYPERPLEXITY_API_KEY` in their own shell profile. No key is committed to the repo.
+
 ---
 
 ## Using with Claude — What to Say
@@ -99,8 +101,8 @@ Once the MCP server is installed, describe your task in plain English. Claude dr
 **Generate a table:**
 > "Use Hyperplexity to generate a table of the top 20 US hedge funds with columns: fund name, AUM, primary strategy, founding year, and HQ city. Approve the full validation when the preview looks right."
 
-**Update after corrections:**
-> "I've corrected some cells in the enriched output from job `session_20260217_103045_abc123`. Run update_table to re-validate it."
+**Re-run validation on the same table:**
+> "Re-run update_table on job `session_20260217_103045_abc123` to get an updated validation pass."
 
 **Fact-check a document:**
 > "Use Hyperplexity to fact-check this analyst report." *(paste the text or share the file path)*
@@ -131,11 +133,11 @@ upload_file(path)
 
 > **Key behavior:** After the interview finishes (`trigger_execution=true`), the preview is auto-queued. Do **not** call `create_job()`. Call `wait_for_job(session_id)` directly — it detects the config-generation phase automatically.
 
-**Refine the config** before approving by calling `refine_config`:
+**Refine the config** before approving by calling `refine_config`. This adjusts how columns are validated (sources, strictness, interpretation) — it cannot add or remove columns:
 
 ```
 refine_config(conversation_id, session_id,
-  "Add a LinkedIn URL column. Remove the revenue column. Make email validation stricter.")
+  "Use SEC filings as the primary source for revenue. Require exact match for ticker symbols.")
 ```
 
 A new preview runs automatically after refinement.
@@ -177,12 +179,14 @@ python examples/02_generate_table.py --prompt-file my_spec.txt
 
 ---
 
-### 3. Update a Table (Re-validate After Corrections)
+### 3. Update a Table (Re-run Validation Pass)
 
-After downloading the enriched Excel, an analyst can correct cell values and re-run validation with the same config — no re-upload required.
+Re-run validation on a completed job — no re-upload or manual edits needed. The table iterates automatically, re-validating the same data with the same config to pick up any changes in source data.
+
+If you want to incorporate manual edits to the output file, re-upload the edited file via `upload_file` + `confirm_upload` — a matching config will be found automatically (score ≥ 0.85).
 
 ```
-update_table(source_job_id)           ← uses enriched output as new input
+update_table(source_job_id)           ← re-validates existing enriched output
   → wait_for_job(new_job_id)          ← blocks until preview_complete
     → approve_validation(new_job_id, cost_usd)
     → wait_for_job(new_job_id)

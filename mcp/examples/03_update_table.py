@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Example 3: Update Table — re-validate an enriched output after analyst corrections
+Example 3: Update Table — re-run validation on a completed job
 
 This is the equivalent of the "Update Table" button in the Hyperplexity viewer.
+No manual edits or re-upload required — the table iterates automatically,
+re-validating the existing data with the same config.
 
 Workflow:
-  1. An analyst downloads the enriched Excel from a completed job,
-     corrects some cell values, and saves the file.
-  2. Call update_table with the source job ID — Hyperplexity uses the
-     corrected enriched output as the new input, copying the original config.
+  1. Pass the source job ID of a completed validation.
+  2. Hyperplexity re-validates the enriched output with the same config.
   3. A new preview job is queued automatically.
   4. Review and approve as usual.
 
-This avoids re-uploading the file or reconfiguring validation — ideal for
-iterative refinement of already-validated data.
+If you want to incorporate manual edits to the output, re-upload the edited
+file via upload_file + confirm_upload — a matching config will be found.
 
 Usage:
     export HYPERPLEXITY_API_KEY=hpx_live_your_key_here

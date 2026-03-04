@@ -298,7 +298,7 @@ DOWNLOAD_SECTION = """\
 | `hyperplexity_client.py` | Shared REST client (required by all examples) | [download]({base}/examples/hyperplexity_client.py) |
 | `01_validate_table.py` | Validate an existing table | [download]({base}/examples/01_validate_table.py) |
 | `02_generate_table.py` | Generate a table from a prompt | [download]({base}/examples/02_generate_table.py) |
-| `03_update_table.py` | Re-validate after analyst corrections | [download]({base}/examples/03_update_table.py) |
+| `03_update_table.py` | Re-run validation on a completed job | [download]({base}/examples/03_update_table.py) |
 | `04_reference_check.py` | Fact-check text or documents | [download]({base}/examples/04_reference_check.py) |
 
 Or clone the full example set:
@@ -374,11 +374,13 @@ def upload_files_to_s3() -> None:
         else:
             content_type = "application/octet-stream"
 
+        filename = Path(local_path).name
         s3.put_object(
             Bucket=S3_BUCKET,
             Key=s3_key,
             Body=content,
             ContentType=content_type,
+            ContentDisposition=f'attachment; filename="{filename}"',
         )
         url = f"https://{S3_BUCKET}.s3.amazonaws.com/{s3_key}"
         print(f"  ✓ {local_path}")

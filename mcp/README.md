@@ -13,7 +13,7 @@ claude mcp add hyperplexity uvx mcp-server-hyperplexity \
   -e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
 ```
 
-**Get your API key at [hyperplexity.ai/account](https://hyperplexity.ai/account) — new accounts get $20 free credits.**
+**Get your API key:** log in at [hyperplexity.ai](https://hyperplexity.ai) and click your email at the top of the first card. New accounts receive $20 in free credits.
 
 > **Tip — store your key once, never re-enter it:**
 > Add `export HYPERPLEXITY_API_KEY=hpx_live_your_key_here` to `~/.bashrc` or `~/.zshrc`, then use `${HYPERPLEXITY_API_KEY}` everywhere (see [API Key Storage](#api-key-storage) below).
@@ -30,7 +30,7 @@ Describe the table you want — subject matter, columns, scope — and Hyperplex
 
 ### 2. Validate and update existing research tables
 
-Upload any Excel or CSV file. Hyperplexity inspects each column, validates every cell against live data and authoritative sources, and returns an enriched file with per-cell confidence scores, validator explanations, and citations. After an analyst reviews and corrects the output, the `update_table` tool re-runs validation on the corrected version for a refined second pass — no re-upload needed.
+Upload any Excel or CSV file. Hyperplexity inspects each column, validates every cell against live data and authoritative sources, and returns an enriched file with per-cell confidence scores, validator explanations, and citations. Use `update_table` to re-run validation automatically on the same data — no re-upload or edits needed. To incorporate manual changes to the output, re-upload the edited file and a matching config will be found automatically.
 
 *Example: Upload a company list; get back every website, LinkedIn URL, headcount, and funding round verified with citations.*
 
@@ -127,9 +127,9 @@ HYPERPLEXITY_API_KEY=$HYPERPLEXITY_API_KEY codex --mcp-server "hyperplexity:uvx 
 ### OpenClaw
 Tell your agent: *"Install the hyperplexity skill"*
 
-### Team / project-level config
+### Project-level config (shared repo)
 
-Add a `.mcp.json` to your project root — every team member gets the server automatically when they run Claude Code in that directory:
+Add a `.mcp.json` to your project root so the server is available when anyone runs Claude Code in that directory:
 
 ```json
 {
@@ -145,7 +145,7 @@ Add a `.mcp.json` to your project root — every team member gets the server aut
 }
 ```
 
-Each team member sets their own `HYPERPLEXITY_API_KEY` in their shell profile — no key is ever committed to the repo.
+**Note:** API keys are tied to individual email accounts — each person needs their own key and should set it in their own shell profile. Never share or commit a key.
 
 ---
 
@@ -191,14 +191,14 @@ Every tool response includes a `_guidance` block with a plain-English summary of
 |---|---|
 | `upload_file` | Upload an Excel or CSV file (handles presigned S3 upload automatically) |
 | `confirm_upload` | Verify upload, detect matching prior validation configs (reuse if score ≥ 0.85). When no strong match is found, an AI interview is automatically started and `conversation_id` is returned. |
-| `refine_config` | Refine the generated config with natural language instructions |
+| `refine_config` | Adjust how columns are validated (sources, strictness, interpretation) — cannot add or remove columns |
 | `create_job` | Submit a validation job (preview first, then approve for full run) — only needed when reusing a known `config_id`. Preview is auto-queued after interview or table-maker flows. |
 | `wait_for_job` | **Preferred progress tracker.** Blocks until a terminal state (`preview_complete`, `completed`, `failed`), emitting live MCP progress notifications. Drives from the messages endpoint (more reliable than status polling) and handles multi-phase pipelines (e.g. table-maker → preview) automatically. No extra token cost. |
 | `get_job_status` | One-shot status poll — fallback when `wait_for_job` is not suitable |
 | `get_job_messages` | Fetch live progress messages with native progress percentages (paginated by `since_seq`) |
 | `approve_validation` | Approve the preview and start full validation (credits are charged here) |
 | `get_results` | Fetch enriched results: Excel download URL, table metadata (inline), interactive viewer URL |
-| `update_table` | Re-validate the enriched output after analyst corrections — no re-upload needed |
+| `update_table` | Re-run validation on a completed job — iterates automatically, no re-upload or edits needed |
 
 ### Fact-check text
 
