@@ -48,13 +48,10 @@ CONFIDENCE_TIERS = ("HIGH", "MEDIUM", "LOW", "UNKNOWN")
 def load_ground_truth(results_dir: Path) -> Dict[Tuple, str]:
     """Returns {(test_id, entity_id, column): ground_truth_value}. Returns {} if file absent.
 
-    Lookup order:
-      1. <results_dir>/ground_truth_verified.csv  (run-specific override)
-      2. benchmark/ground_truth_verified.csv       (canonical shared file)
+    Always loads from the canonical master: benchmark/ground_truth_verified.csv.
+    Run-specific GT copies in results directories are ignored; update the master instead.
     """
-    gt_path = results_dir / "ground_truth_verified.csv"
-    if not gt_path.exists():
-        gt_path = BENCHMARK_DIR / "ground_truth_verified.csv"
+    gt_path = BENCHMARK_DIR / "ground_truth_verified.csv"
     if not gt_path.exists():
         return {}
     gt = {}

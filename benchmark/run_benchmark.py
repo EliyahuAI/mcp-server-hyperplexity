@@ -27,6 +27,7 @@ import csv
 import json
 import logging
 import os
+import shutil
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -644,6 +645,13 @@ def main():
     if not args.dry_run:
         results_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Results directory: {results_dir}")
+        # Snapshot reference files so the results directory is self-contained
+        for src in [
+            BENCHMARK_DIR / "ground_truth_verified.csv",
+            REPO_ROOT / "src" / "model_config" / "model_control.csv",
+        ]:
+            if src.exists():
+                shutil.copy2(src, results_dir / src.name)
 
     # Load and filter matrix
     if args.matrix:
