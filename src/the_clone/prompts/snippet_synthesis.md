@@ -23,6 +23,7 @@ Generate a **structured JSON response** that synthesizes an answer by REFERENCIN
 3. **Use ONLY the snippet IDs shown above** - Do not invent new IDs
 4. **Every factual claim must reference snippet ID(s)** - No unsourced claims
 5. **Multiple sources for same fact**: [S1.1.0-p0.95][S1.2.1-p0.85]
+6. **Square brackets are ONLY for snippet IDs** - Do NOT use `[...]` for notes, labels, or any non-citation purpose. Use plain text or `(...)` instead.
 
 ### Snippet ID Format and Quality Scores
 

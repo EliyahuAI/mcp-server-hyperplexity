@@ -563,6 +563,8 @@ Generate a structured comparison answering the query, then self-assess.
 
 **Citation Format:** Use [verbal_handle, snippet_id] format for all citations.
 
+**CRITICAL - Square brackets are ONLY for citations.** Do NOT use `[...]` for any other purpose — no editorial notes, no clarifications, no labels like `[Note: ...]`, `[e.g., ...]`, `[Source: ...]`. Plain text or parentheses `(...)` for everything that is not a snippet citation.
+
 **CRITICAL - COPY EXACT handles and IDs from snippets above:**
 - Format: `[handle, S1.1.5.6-p0.95]` - FULL 4-part ID
 - **DO NOT create your own handles** - COPY from snippet listings
@@ -891,11 +893,13 @@ Query: {query}
             + '\n\n'.join(ref_blocks)
             + '\n\nAvailable snippets (by quality score):\n'
             + '\n'.join(candidate_lines)
-            + '\n\nFor each PROBLEMATIC SNIPPET, return the snippet_id that best matches based on '
-            + 'semantic meaning and surrounding context, or "drop" if no snippet is a reasonable match.\n'
-            + 'If uncertain, prefer "drop" over a wrong citation.\n\n'
+            + '\n\nFor each PROBLEMATIC SNIPPET, return:\n'
+            + '- the snippet_id that best matches (semantic meaning + surrounding context)\n'
+            + '- "drop" if it looks like a citation but no snippet is a reasonable match\n'
+            + '- "restore" if it is NOT a citation reference at all (e.g. [Note: ...], [e.g. ...], [Source: ...], or any non-citation bracket)\n'
+            + 'If uncertain between "drop" and "restore", prefer "restore" to preserve original text.\n\n'
             + 'Return ONLY a JSON object with numbered keys:\n'
-            + '{"1": "S1.2.3.0-p0.95", "2": "drop", "3": "S2.1.0.0-p0.85"}'
+            + '{"1": "S1.2.3.0-p0.95", "2": "drop", "3": "restore"}'
         )
         try:
             resp = await self.ai_client.call_structured_api(
@@ -916,7 +920,7 @@ Query: {query}
             for idx_str, sid in result.items():
                 try:
                     ref = unresolved_items[int(idx_str) - 1]
-                    resolutions[ref] = sid if (sid == 'drop' or sid in snippet_map) else 'drop'
+                    resolutions[ref] = sid if (sid in ('drop', 'restore') or sid in snippet_map) else 'drop'
                 except (ValueError, IndexError):
                     pass
             return resolutions, cost
@@ -1095,6 +1099,10 @@ Query: {query}
                     answer_str = re.sub(re.escape(f'"{item}"'), f'"{resolution}"', answer_str)
                     logger.info(f"[CITATIONS] LLM resolved: [{item}] → {resolution}")
                     llm_log_rows.append((item, resolution, "RESOLVED"))
+                elif resolution == 'restore':
+                    # Restore: bracket is not a citation reference — leave original text unchanged
+                    logger.info(f"[CITATIONS] LLM restored non-citation bracket: [{item}]")
+                    llm_log_rows.append((item, None, "RESTORED"))
                 elif resolution == 'drop' or resolution is not None:
                     # Drop: remove the unresolvable citation bracket from the answer
                     answer_str = re.sub(r'\s*' + re.escape(f'[{item}]'), '', answer_str)
@@ -1109,6 +1117,7 @@ Query: {query}
             if clone_logger:
                 resolved_count = sum(1 for _, _, a in llm_log_rows if a == "RESOLVED")
                 dropped_count = sum(1 for _, _, a in llm_log_rows if a == "DROPPED")
+                restored_count = sum(1 for _, _, a in llm_log_rows if a == "RESTORED")
                 unresolved_count = sum(1 for _, _, a in llm_log_rows if a == "UNRESOLVED")
                 rows_md = "\n".join(
                     f"| `{ref[:80]}` | {action} | `{sid or '—'}` |"
@@ -1122,7 +1131,7 @@ Query: {query}
                 clone_logger.record_step_metric(
                     "Citation LLM Resolution", "gemini", "gemini-3-flash-preview-low",
                     llm_resolution_cost, _llm_time,
-                    f"{resolved_count} resolved, {dropped_count} dropped, {unresolved_count} unresolved"
+                    f"{resolved_count} resolved, {dropped_count} dropped, {restored_count} restored, {unresolved_count} unresolved"
                 )
                 clone_logger.end_step("Citation LLM Resolution")
 
