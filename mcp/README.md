@@ -15,6 +15,9 @@ claude mcp add hyperplexity uvx mcp-server-hyperplexity \
 
 **Get your API key at [hyperplexity.ai/account](https://hyperplexity.ai/account) — new accounts get $20 free credits.**
 
+> **Tip — store your key once, never re-enter it:**
+> Add `export HYPERPLEXITY_API_KEY=hpx_live_your_key_here` to `~/.bashrc` or `~/.zshrc`, then use `${HYPERPLEXITY_API_KEY}` everywhere (see [API Key Storage](#api-key-storage) below).
+
 ---
 
 ## What Hyperplexity does
@@ -39,13 +42,47 @@ Pass a paragraph, a report, or any block of text and Hyperplexity checks each fa
 
 ---
 
+## API Key Storage
+
+Store your key once in your shell profile so you never have to paste it again:
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc (then restart your terminal or run: source ~/.bashrc)
+export HYPERPLEXITY_API_KEY=hpx_live_your_key_here
+```
+
+All config examples below use `${HYPERPLEXITY_API_KEY}` — they will pick it up automatically.
+
+---
+
 ## Quickstart
 
 ### Claude Code
+
+**Install from PyPI (recommended):**
 ```bash
 claude mcp add hyperplexity uvx mcp-server-hyperplexity \
-  -e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
+  -e HYPERPLEXITY_API_KEY=${HYPERPLEXITY_API_KEY}
 ```
+
+**Install from the public GitHub repo (for testing the latest code):**
+```bash
+claude mcp add hyperplexity uvx \
+  --from git+https://github.com/EliyahuAI/mcp-server-hyperplexity \
+  mcp-server-hyperplexity \
+  -e HYPERPLEXITY_API_KEY=${HYPERPLEXITY_API_KEY}
+```
+
+**Verify the server is running:**
+```bash
+claude mcp list         # should show "hyperplexity"
+claude mcp get hyperplexity
+```
+
+**Basic test** — run this in Claude Code after installation:
+> "Use the hyperplexity get_balance tool to check my credit balance."
+
+Claude should call `get_balance` and return your current balance and this-month usage.
 
 ### Claude Desktop
 
@@ -57,7 +94,7 @@ Add to your `claude_desktop_config.json`:
       "command": "uvx",
       "args": ["mcp-server-hyperplexity"],
       "env": {
-        "HYPERPLEXITY_API_KEY": "hpx_live_your_key_here"
+        "HYPERPLEXITY_API_KEY": "${HYPERPLEXITY_API_KEY}"
       }
     }
   }
@@ -67,6 +104,25 @@ Add to your `claude_desktop_config.json`:
 **Config file locations:**
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+After saving, restart Claude Desktop. You should see "hyperplexity" listed in the MCP servers panel.
+
+### OpenAI Codex CLI
+
+Add to `~/.codex/config.toml`:
+```toml
+[mcp_servers.hyperplexity]
+command = "uvx"
+args = ["mcp-server-hyperplexity"]
+
+[mcp_servers.hyperplexity.env]
+HYPERPLEXITY_API_KEY = "${HYPERPLEXITY_API_KEY}"
+```
+
+Or pass inline when starting a session:
+```bash
+HYPERPLEXITY_API_KEY=$HYPERPLEXITY_API_KEY codex --mcp-server "hyperplexity:uvx mcp-server-hyperplexity"
+```
 
 ### OpenClaw
 Tell your agent: *"Install the hyperplexity skill"*
@@ -88,6 +144,23 @@ Add a `.mcp.json` to your project root — every team member gets the server aut
   }
 }
 ```
+
+Each team member sets their own `HYPERPLEXITY_API_KEY` in their shell profile — no key is ever committed to the repo.
+
+---
+
+## Testing the installation
+
+After installation, run these quick tests in order:
+
+**1. Check balance** (confirms auth + connectivity):
+> "Use hyperplexity get_balance to check my balance."
+
+**2. Generate a small table** (end-to-end test, ~$0.10–0.30):
+> "Use hyperplexity to generate a table of the 3 largest S&P 500 companies by market cap: company name, ticker, market cap, sector. Run the preview. If results look correct, approve full validation."
+
+**3. Validate an uploaded file** (if you have an Excel/CSV):
+> "Validate `companies.xlsx` with hyperplexity. Interview me about the columns, then run the preview. Abort before approving."
 
 ---
 
