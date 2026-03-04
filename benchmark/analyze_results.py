@@ -689,7 +689,9 @@ def generate_report(run_rows: List[Dict], cell_scores: List[Dict], results_dir: 
 def main():
     parser = argparse.ArgumentParser(description="Benchmark results analyzer")
     parser.add_argument("--results-dir", type=Path, required=True,
-                        help="Benchmark run directory containing run_id/ subdirs")
+                        help="Primary benchmark run directory (report written here)")
+    parser.add_argument("--merge-dirs", type=Path, nargs="+", metavar="DIR",
+                        help="Additional results directories to merge in (runs deduplicated by run_id, --results-dir wins)")
     args = parser.parse_args()
 
     results_dir = args.results_dir
@@ -711,6 +713,21 @@ def main():
 
     print("Loading run results...")
     runs = load_run_results(results_dir)
+    primary_run_ids = {r["meta"].get("run_id") for r in runs}
+
+    for extra_dir in (args.merge_dirs or []):
+        if not extra_dir.exists():
+            print(f"  Warning: --merge-dirs path not found, skipping: {extra_dir}", file=sys.stderr)
+            continue
+        extra_runs = load_run_results(extra_dir)
+        added = 0
+        for r in extra_runs:
+            if r["meta"].get("run_id") not in primary_run_ids:
+                runs.append(r)
+                primary_run_ids.add(r["meta"].get("run_id"))
+                added += 1
+        print(f"  Merged {added} runs from {extra_dir}")
+
     print(f"  {len(runs)} completed runs loaded")
 
     if not runs:

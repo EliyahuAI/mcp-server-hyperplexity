@@ -217,7 +217,8 @@ class HyperplexityClient:
 # ---------------------------------------------------------------------------
 # Config injection
 # ---------------------------------------------------------------------------
-def make_config(base_config: Dict, search_model: str, qc_model: str, web_searches: int) -> Dict:
+def make_config(base_config: Dict, search_model: str, qc_model: str, web_searches: int,
+                no_cache: bool = False) -> Dict:
     """Inject search_model + qc_model into a base config template."""
     config = copy.deepcopy(base_config)
 
@@ -242,6 +243,10 @@ def make_config(base_config: Dict, search_model: str, qc_model: str, web_searche
         qc["enable_qc"] = True
         qc["model"] = [qc_model]
     config["qc_settings"] = qc
+
+    # Force cache bypass (0-day TTL = always treat cached results as expired)
+    if no_cache:
+        config["cache_ttl_days"] = 0
 
     return config
 
@@ -294,6 +299,7 @@ def run_single(
     client: HyperplexityClient,
     results_dir: Path,
     resume: bool = False,
+    no_cache: bool = False,
 ) -> Dict:
     run_id = row["run_id"]
     test_id = row["test_id"]
@@ -325,7 +331,7 @@ def run_single(
     base_config = json.loads(config_path.read_text())
 
     # Build config
-    config = make_config(base_config, search_model, qc_model, web_searches)
+    config = make_config(base_config, search_model, qc_model, web_searches, no_cache=no_cache)
     (run_dir / "config_used.json").write_text(json.dumps(config, indent=2))
 
     run_result = {
@@ -618,6 +624,7 @@ def main():
     parser.add_argument("--results-dir", type=Path, help="Override results output directory")
     parser.add_argument("--matrix", type=Path, help="Override model matrix CSV (default: model_matrix.csv)")
     parser.add_argument("--dry-run", action="store_true", help="Print what would run, do not execute")
+    parser.add_argument("--no-cache", action="store_true", help="Bypass S3 cache (sets cache_ttl_days=0 in config)")
     args = parser.parse_args()
 
     # Resolve mode
@@ -651,7 +658,7 @@ def main():
             REPO_ROOT / "src" / "model_config" / "model_control.csv",
         ]:
             if src.exists():
-                shutil.copy2(src, results_dir / src.name)
+                shutil.copyfile(src, results_dir / src.name)
 
     # Load and filter matrix
     if args.matrix:
@@ -681,7 +688,7 @@ def main():
     def _run_and_save(run_row: Dict) -> Dict:
         """Run single benchmark and update the shared summary CSV."""
         thread_client = HyperplexityClient(api_url, api_key)
-        result = run_single(run_row, thread_client, results_dir, resume=args.resume)
+        result = run_single(run_row, thread_client, results_dir, resume=args.resume, no_cache=args.no_cache)
         with all_results_lock:
             all_results.append(result)
             _write_summary_csv(all_results, results_dir / "summary.csv")
@@ -715,7 +722,7 @@ def main():
     else:
         client = HyperplexityClient(api_url, api_key)
         for run_row in runs_to_execute:
-            result = run_single(run_row, client, results_dir, resume=args.resume)
+            result = run_single(run_row, client, results_dir, resume=args.resume, no_cache=args.no_cache)
             all_results.append(result)
             _write_summary_csv(all_results, results_dir / "summary.csv")
             # Brief pause between sequential runs to avoid rate-limiting
