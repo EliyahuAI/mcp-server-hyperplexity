@@ -156,8 +156,8 @@ After installation, run these quick tests in order:
 **1. Check balance** (confirms auth + connectivity):
 > "Use hyperplexity get_balance to check my balance."
 
-**2. Generate a small table** (end-to-end test, ~$0.10–0.30):
-> "Use hyperplexity to generate a table of the 3 largest S&P 500 companies by market cap: company name, ticker, market cap, sector. Run the preview. If results look correct, approve full validation."
+**2. Generate a small table** (free — preview only):
+> "Use hyperplexity to generate a table of the 3 largest S&P 500 companies by market cap: company name, ticker, market cap, sector. Run the preview. Do not approve full validation."
 
 **3. Validate an uploaded file** (if you have an Excel/CSV):
 > "Validate `companies.xlsx` with hyperplexity. Interview me about the columns, then run the preview. Abort before approving."
