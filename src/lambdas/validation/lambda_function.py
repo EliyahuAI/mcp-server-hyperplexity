@@ -4691,71 +4691,97 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     })
                     
                 else:
-                    # This was already a fresh API call - try flexible matching one more time
-                    if len(actual_columns) == len(expected_columns):
-                        logger.info(f"🔄 FRESH API CALL: Attempting flexible column matching for remaining missing columns")
-                        column_mappings = find_similar_columns(expected_columns, actual_columns, similarity_threshold=0.8)
-                        
-                        final_column_corrections = {}
-                        for actual_col, expected_col in column_mappings.items():
-                            if expected_col in missing_columns and actual_col != expected_col:
-                                final_column_corrections[actual_col] = expected_col
-                                logger.warning(f"⚠️ FINAL COLUMN CORRECTION: '{actual_col}' -> '{expected_col}' (similarity matching)")
-                        
-                        # Update parsed_results with corrected column names
-                        for actual_col, expected_col in final_column_corrections.items():
-                            parsed_results[expected_col] = parsed_results.pop(actual_col)
-                        
-                        # Recalculate missing columns after final corrections
-                        final_actual_columns = list(parsed_results.keys())
-                        remaining_missing_columns = set(expected_columns) - set(final_actual_columns)
-                        
-                        if remaining_missing_columns:
-                            logger.error(f"[MISSING_COLUMNS] {list(remaining_missing_columns)} not found despite flexible matching + parentheses stripping. Expected: {expected_columns}, Got: {final_actual_columns}. Creating error placeholders for {len(remaining_missing_columns)} columns, processing {len(parsed_results)} successful columns.")
+                    # This was already a fresh API call - retry with enhanced prompt before giving up
+                    logger.error(f"❌ MISSING COLUMNS IN FRESH RESPONSE: {list(missing_columns)}")
+                    logger.info(f"🔄 RETRY: Making second fresh API call with enhanced prompt for {len(missing_columns)} missing column(s)")
 
-                            # Create error placeholders for missing columns instead of failing the entire row
-                            for missing_col in remaining_missing_columns:
-                                parsed_results[missing_col] = (
-                                    "[ERROR: Column missing from AI response]",  # value
-                                    "LOW",  # confidence
-                                    [],  # sources
-                                    "LOW",  # confidence_level
-                                    f"This column was not returned by the AI model despite retries and enhanced prompts. Expected: '{missing_col}', Received: {', '.join(final_actual_columns)}",  # reasoning
-                                    "",  # main_source
-                                    None,  # original_confidence
-                                    f"Column validation failed - AI response missing required field '{missing_col}'",  # explanation
-                                    False  # consistent_with_model_knowledge
-                                )
+                    # Build enhanced prompt mentioning missing columns (same pattern as cached retry)
+                    missing_column_names_fresh = list(missing_columns)
+                    past_column_names_fresh = list(actual_columns)
+                    enhanced_prompt_fresh = prompt + f"\n\n**IMPORTANT RETRY INSTRUCTION:**\n"
+                    for missing_col in missing_column_names_fresh:
+                        enhanced_prompt_fresh += f"**Important! No field exactly matching '{missing_col}' was identified in your past output (past output columns: {', '.join(past_column_names_fresh)}). Make sure it is included this time!**\n"
 
-                            # Collect missing column info to return to caller
-                            for missing_col in remaining_missing_columns:
-                                missing_column_info[missing_col] = {
-                                    'past_columns': list(final_actual_columns)
-                                }
-                        else:
-                            logger.info(f"[SUCCESS] [FLEXIBLE_MATCH] All columns matched after similarity corrections")
+                    # Construct debug name for retry
+                    if group_name:
+                        safe_group_name = group_name.replace(' ', '_').replace('-', '_')[:20]
+                        retry_debug_name = f"validation_fresh_{safe_group_name}_retry_{len(missing_column_names_fresh)}missing"
                     else:
-                        logger.error(f"[MISSING_COLUMNS] {list(missing_columns)} missing (column count mismatch: expected {len(expected_columns)}, got {len(actual_columns)}). Expected: {expected_columns}, Got: {actual_columns}. Creating error placeholders for {len(missing_columns)} columns, processing {len(parsed_results)} successful columns.")
+                        retry_debug_name = f"validation_fresh_group_{group_str}_retry_{len(missing_column_names_fresh)}missing"
 
-                        # Create error placeholders for missing columns instead of failing the entire row
-                        for missing_col in missing_columns:
+                    remaining_after_retry = set(missing_columns)  # Assume all still missing until proven otherwise
+                    try:
+                        retry_client_result = await ai_client.call_structured_api(
+                            prompt=enhanced_prompt_fresh,
+                            model=model,
+                            schema=tool_schema,
+                            tool_name="validate_data",
+                            use_cache=True,
+                            max_web_searches=max_web_searches,
+                            search_context_size=search_context_size,
+                            debug_name=retry_debug_name
+                        )
+                        retry_api_response = retry_client_result['response']
+
+                        # Re-parse the retry response
+                        retry_parsed = validator.parse_multiplex_result(retry_api_response, row)
+                        retry_actual_columns = list(retry_parsed.keys())
+
+                        # Attempt flexible matching on retry response for any still-misnamed columns
+                        retry_exact_missing = set(expected_columns) - set(retry_actual_columns)
+                        if retry_exact_missing and len(retry_actual_columns) == len(expected_columns):
+                            retry_mappings = find_similar_columns(expected_columns, retry_actual_columns, similarity_threshold=0.8)
+                            for act_col, exp_col in retry_mappings.items():
+                                if exp_col in retry_exact_missing and act_col != exp_col:
+                                    logger.warning(f"⚠️ RETRY COLUMN CORRECTION: '{act_col}' -> '{exp_col}'")
+                                    retry_parsed[exp_col] = retry_parsed.pop(act_col)
+
+                        # Merge recovered columns into parsed_results
+                        remaining_after_retry = set()
+                        for col in missing_column_names_fresh:
+                            if col in retry_parsed:
+                                parsed_results[col] = retry_parsed[col]
+                                logger.info(f"✅ RETRY SUCCESS: Column '{col}' recovered")
+                            else:
+                                remaining_after_retry.add(col)
+
+                        # Update raw response store with retry info
+                        row_results['_raw_responses'][response_id].update({
+                            'response': retry_api_response,
+                            'is_cached': False,
+                            'token_usage': retry_client_result.get('token_usage', {}),
+                            'enhanced_data': retry_client_result.get('enhanced_data', {}),
+                            'citations': retry_client_result.get('citations', [])
+                        })
+
+                    except Exception as retry_exc:
+                        logger.error(f"[RETRY] Fresh retry call failed: {retry_exc}")
+                        # remaining_after_retry stays as set(missing_columns)
+
+                    # Insert error placeholders for any columns still missing after retry
+                    if remaining_after_retry:
+                        final_actual_columns = list(parsed_results.keys())
+                        logger.error(f"[MISSING_COLUMNS] {list(remaining_after_retry)} not found after retry + flexible matching. Expected: {expected_columns}, Got: {final_actual_columns}. Creating error placeholders for {len(remaining_after_retry)} columns.")
+
+                        for missing_col in remaining_after_retry:
                             parsed_results[missing_col] = (
                                 "[ERROR: Column missing from AI response]",  # value
                                 "LOW",  # confidence
                                 [],  # sources
                                 "LOW",  # confidence_level
-                                f"This column was not returned by the AI model despite retries and enhanced prompts. Expected: '{missing_col}', Received: {', '.join(actual_columns)}. Column count mismatch: expected {len(expected_columns)}, got {len(actual_columns)}.",  # reasoning
+                                f"This column was not returned by the AI model despite retries and enhanced prompts. Expected: '{missing_col}', Received: {', '.join(final_actual_columns)}",  # reasoning
                                 "",  # main_source
                                 None,  # original_confidence
                                 f"Column validation failed - AI response missing required field '{missing_col}'",  # explanation
                                 False  # consistent_with_model_knowledge
                             )
 
-                        # Collect missing column info to return to caller
-                        for missing_col in missing_columns:
+                        for missing_col in remaining_after_retry:
                             missing_column_info[missing_col] = {
-                                'past_columns': list(actual_columns)
+                                'past_columns': list(final_actual_columns)
                             }
+                    else:
+                        logger.info(f"✅ RETRY COMPLETE: All missing columns recovered for this row")
 
             # Check for unexpected columns (warning only) - use current parsed_results keys
             current_actual_columns = list(parsed_results.keys())
