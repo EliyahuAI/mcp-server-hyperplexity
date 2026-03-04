@@ -336,15 +336,17 @@ class UnifiedSynthesizer:
                     citations = []  # Citations will be generated on final iteration
                     snippets_used = []
                     snippet_failures = []
+                    llm_cite_cost = 0.0
                     logger.debug(f"[UNIFIED] Preserving snippet IDs for intermediate refinement (iteration {iteration})")
                 else:
                     # Final iteration OR normal mode - convert snippet IDs to numeric citations
-                    answer_final, citations, snippets_used, snippet_failures = await self._convert_snippet_ids_to_citations(
+                    answer_final, citations, snippets_used, snippet_failures, llm_cite_cost = await self._convert_snippet_ids_to_citations(
                         answer=answer_raw,
                         snippets=snippets,
                         schema=schema,
                         debug_dir=debug_dir,
-                        query=query
+                        query=query,
+                        clone_logger=clone_logger
                     )
                     logger.debug(f"[UNIFIED] Converting snippet IDs to citations (final={is_last_iteration})")
 
@@ -356,6 +358,7 @@ class UnifiedSynthesizer:
                 citations = []
                 snippets_used = []
                 snippet_failures = []
+                llm_cite_cost = 0.0
 
             # Extract refinement info if available
             refinement_info = {}
@@ -377,6 +380,7 @@ class UnifiedSynthesizer:
                 "citations": citations,
                 "snippets_used": snippets_used,
                 "snippet_failures": snippet_failures,  # Unresolved citation refs — uploaded to S3 via metadata
+                "llm_cite_cost": llm_cite_cost,  # Cost of batch LLM citation resolution (may be 0)
                 "missing_aspects": missing,
                 "suggested_search_terms": suggested,
                 "needs_thinking": needs_thinking,
@@ -820,16 +824,36 @@ Query: {query}
 
         return '\n'.join(formatted)
 
-    async def _llm_resolve_snippets_batch(self, unresolved_items: List[str], snippet_map: dict, query: str = None) -> dict:
+    @staticmethod
+    def _context_window(answer_str: str, ref_str: str, chars: int = 250) -> str:
+        """Extract text context around a citation reference for LLM prompting."""
+        pos = answer_str.find(ref_str)
+        if pos == -1:
+            return "(not found in answer)"
+        start = max(0, pos - chars)
+        end = min(len(answer_str), pos + len(ref_str) + chars)
+        ctx = answer_str[start:end].replace('\n', ' ')
+        if start > 0:
+            ctx = "…" + ctx
+        if end < len(answer_str):
+            ctx = ctx + "…"
+        return ctx
+
+    async def _llm_resolve_snippets_batch(
+        self, unresolved_items: List[str], snippet_map: dict,
+        answer_str: str, query: str = None
+    ) -> tuple:
         """Batch LLM resolution — resolve ALL unresolved citation references in one call.
 
-        Called after all deterministic strategies (0-4) have been exhausted.
-        Uses numbered indices as JSON keys to avoid issues with complex reference strings.
+        Shows each problematic reference with surrounding answer context so the model
+        can use semantic meaning to find the intended snippet.
 
-        Returns dict mapping reference_string → snippet_id for successful matches.
+        Returns:
+            (resolutions_dict, cost_float)
+            resolutions_dict maps reference_string → snippet_id (match) or 'drop'
         """
         if not unresolved_items or not snippet_map:
-            return {}
+            return {}, 0.0
 
         # Top candidates by p-score (cap at 20 to stay within token budget)
         candidates = sorted(snippet_map.values(), key=lambda s: s.get('p', 0), reverse=True)[:20]
@@ -837,46 +861,55 @@ Query: {query}
         for s in candidates:
             sid = s.get('id', '?')
             handle = s.get('verbal_handle', '?')
-            preview = (s.get('text') or '')[:100].replace('\n', ' ')
+            preview = (s.get('text') or '')[:120].replace('\n', ' ')
             candidate_lines.append(f"- {sid}  [{handle}]  {preview}")
 
-        refs_formatted = '\n'.join(f'{i+1}. "{ref}"' for i, ref in enumerate(unresolved_items))
+        # Build per-reference context blocks
+        ref_blocks = []
+        for i, ref in enumerate(unresolved_items):
+            ctx = self._context_window(answer_str, f'[{ref}]')
+            ref_blocks.append(f"PROBLEMATIC SNIPPET {i+1}: \"{ref}\"\nContext: {ctx}")
 
         prompt = (
-            f'Match each unresolved citation reference to the best available snippet.\n'
-            + (f'Query context: {(query or "")[:120]}\n\n' if query else '\n')
-            + f'Unresolved references:\n{refs_formatted}\n\n'
-            + 'Available snippets:\n'
+            'You are resolving unresolved citation references in a research answer.\n\n'
+            + (f'Query: {(query or "")[:200]}\n\n' if query else '')
+            + 'The following references appear in the answer but could not be matched to any snippet.\n'
+            + 'For each one, you see the surrounding text context.\n\n'
+            + '\n\n'.join(ref_blocks)
+            + '\n\nAvailable snippets (by quality score):\n'
             + '\n'.join(candidate_lines)
-            + '\n\nReturn a JSON object mapping each reference number to its best matching snippet_id, '
-            + 'or "none" if no snippet matches.\n'
-            + 'Example: {"1": "S1.2.3.0-p0.95", "2": "none", "3": "S2.1.0.0-p0.85"}'
+            + '\n\nFor each PROBLEMATIC SNIPPET, return the snippet_id that best matches based on '
+            + 'semantic meaning and surrounding context, or "drop" if no snippet is a reasonable match.\n'
+            + 'If uncertain, prefer "drop" over a wrong citation.\n\n'
+            + 'Return ONLY a JSON object with numbered keys:\n'
+            + '{"1": "S1.2.3.0-p0.95", "2": "drop", "3": "S2.1.0.0-p0.85"}'
         )
         try:
-            resp = await self.ai_client.query_async(
+            resp = await self.ai_client.call_structured_api(
                 prompt=prompt,
+                schema={"type": "object", "additionalProperties": {"type": "string"}},
                 model='gemini-3-flash-preview-low',
+                use_cache=False,
+                max_web_searches=0,
                 context='snippet_llm_resolve_batch',
-                max_tokens=max(200, len(unresolved_items) * 40)
+                soft_schema=True,
+                max_tokens=max(200, len(unresolved_items) * 50)
             )
-            text = (resp.get('text') or '').strip()
-            # Strip markdown code fences if present
-            text = re.sub(r'^```(?:json)?\s*|\s*```$', '', text, flags=re.MULTILINE).strip()
-            result = json.loads(text)
-            if isinstance(result, dict):
-                # Map numbered keys back to original reference strings
-                matched = {}
-                for idx_str, sid in result.items():
-                    try:
-                        ref = unresolved_items[int(idx_str) - 1]
-                        if sid and sid != 'none' and sid in snippet_map:
-                            matched[ref] = sid
-                    except (ValueError, IndexError):
-                        pass
-                return matched
+            cost = resp.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+            data = self.ai_client.extract_structured_response(resp.get('response', {}), 'snippet_llm_resolve_batch')
+            result = data if isinstance(data, dict) else {}
+            # Map numbered keys back to original reference strings
+            resolutions = {}
+            for idx_str, sid in result.items():
+                try:
+                    ref = unresolved_items[int(idx_str) - 1]
+                    resolutions[ref] = sid if (sid == 'drop' or sid in snippet_map) else 'drop'
+                except (ValueError, IndexError):
+                    pass
+            return resolutions, cost
         except Exception as e:
-            logger.debug(f"[CITATIONS] Batch LLM resolve error: {e}")
-        return {}
+            logger.warning(f"[CITATIONS] Batch LLM resolve error: {e}")
+        return {}, 0.0
 
     async def _convert_snippet_ids_to_citations(
         self,
@@ -884,7 +917,8 @@ Query: {query}
         snippets: List[Dict],
         schema: Dict = None,
         debug_dir: str = None,
-        query: str = None
+        query: str = None,
+        clone_logger=None
     ) -> tuple:
         """Convert snippet IDs to citation numbers."""
         answer_str = json.dumps(answer)
@@ -1021,22 +1055,53 @@ Query: {query}
                 failed_items.append(item)
 
         # Strategy 5: Batch LLM resolution for all items that survived strategies 0-4.
-        # One call covers all unresolved references; only runs on final citation conversion.
+        # Shows each ref with surrounding answer context ("PROBLEMATIC SNIPPET N").
+        # Drops citations the LLM can't confidently match — no citation is better than wrong.
+        llm_resolution_cost = 0.0
+        llm_log_rows = []  # For clone_logger: [(ref, resolution, action)]
         if failed_items and snippet_map:
             logger.info(f"[CITATIONS] Attempting batch LLM resolution for {len(failed_items)} unresolved reference(s)")
-            llm_matches = await self._llm_resolve_snippets_batch(failed_items, snippet_map, query=query)
+            resolutions, llm_resolution_cost = await self._llm_resolve_snippets_batch(
+                failed_items, snippet_map, answer_str, query=query
+            )
             still_failed = []
             for item in failed_items:
-                resolved = llm_matches.get(item)
-                if resolved and resolved not in seen:
-                    snippet_ids.append(resolved)
-                    seen.add(resolved)
-                    logger.debug(f"[CITATIONS] LLM batch resolved: [{item}] → {resolved}")
+                resolution = resolutions.get(item)
+                if resolution and resolution != 'drop' and resolution in snippet_map:
+                    # Match: add snippet, replace reference in answer_str for downstream pipeline
+                    if resolution not in seen:
+                        snippet_ids.append(resolution)
+                        seen.add(resolution)
+                    answer_str = re.sub(re.escape(f'[{item}]'), f'[{resolution}]', answer_str)
+                    answer_str = re.sub(re.escape(f'"{item}"'), f'"{resolution}"', answer_str)
+                    logger.info(f"[CITATIONS] LLM resolved: [{item}] → {resolution}")
+                    llm_log_rows.append((item, resolution, "RESOLVED"))
+                elif resolution == 'drop' or resolution is not None:
+                    # Drop: remove the unresolvable citation bracket from the answer
+                    answer_str = re.sub(r'\s*' + re.escape(f'[{item}]'), '', answer_str)
+                    answer_str = re.sub(re.escape(f'"{item}"'), '""', answer_str)
+                    logger.info(f"[CITATIONS] LLM dropped unresolvable: [{item}]")
+                    llm_log_rows.append((item, None, "DROPPED"))
                 else:
+                    # LLM returned no answer for this ref — treat as failed
                     still_failed.append(item)
+                    llm_log_rows.append((item, None, "UNRESOLVED"))
             failed_items = still_failed
-            if llm_matches:
-                logger.info(f"[CITATIONS] LLM resolved {len(llm_matches)}/{len(failed_items) + len(llm_matches)}, {len(failed_items)} still unresolved")
+
+        if clone_logger and llm_log_rows:
+            resolved_count = sum(1 for _, _, a in llm_log_rows if a == "RESOLVED")
+            dropped_count = sum(1 for _, _, a in llm_log_rows if a == "DROPPED")
+            unresolved_count = sum(1 for _, _, a in llm_log_rows if a == "UNRESOLVED")
+            rows_md = "\n".join(
+                f"| `{ref[:80]}` | {action} | `{sid or '—'}` |"
+                for ref, sid, action in llm_log_rows
+            )
+            clone_logger.log_section(
+                f"Citation LLM Resolution (${llm_resolution_cost:.4f})",
+                f"**{resolved_count} resolved, {dropped_count} dropped, {unresolved_count} unresolved**\n\n"
+                f"| Reference | Action | Resolved To |\n| :--- | :--- | :--- |\n{rows_md}",
+                level=4, collapse=False
+            )
 
         failure_records = []
         if failed_items:
@@ -1237,7 +1302,7 @@ Query: {query}
 
         logger.debug(f"[UNIFIED] Converted {len(snippet_ids)} snippet IDs to {len(citations)} citations")
 
-        return answer_final, citations, list(snippet_ids), failure_records
+        return answer_final, citations, list(snippet_ids), failure_records, llm_resolution_cost
 
     def _is_validation_schema(self, schema: Dict) -> bool:
         """Check if a custom schema was provided (not Clone's default synthesis schema)."""
