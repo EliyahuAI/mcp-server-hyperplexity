@@ -22,6 +22,9 @@ class CloneLogger:
         self.memory_buffer = io.StringIO()
         self.steps_data: List[Dict[str, Any]] = []
         self.step_start_times: Dict[str, float] = {}
+        # Track call counts per step name to make HTML anchor IDs unique across repeated steps
+        self._step_call_counts: Dict[str, int] = {}
+        self._last_step_anchor: Dict[str, str] = {}
 
         if debug_dir:
             try:
@@ -55,10 +58,18 @@ class CloneLogger:
         return "step-" + re.sub(r'[^a-z0-9-]', '-', step_name.lower()).strip('-')
 
     def start_step(self, step_name: str):
-        """Starts a top-level collapsible section with an HTML anchor id for deep-linking."""
+        """Starts a top-level collapsible section with an HTML anchor id for deep-linking.
+
+        Anchor IDs are made unique when the same step name is used multiple times
+        (e.g., repeated self-correction passes) by appending -2, -3, etc.
+        """
         self.step_start_times[step_name] = time.time()
         timestamp = datetime.now().strftime('%H:%M:%S')
-        anchor = self._step_anchor(step_name)
+        count = self._step_call_counts.get(step_name, 0) + 1
+        self._step_call_counts[step_name] = count
+        base_anchor = self._step_anchor(step_name)
+        anchor = base_anchor if count == 1 else f"{base_anchor}-{count}"
+        self._last_step_anchor[step_name] = anchor
         # id= attribute lets the summary table link directly to this section via #anchor
         self._write(f"\n<details id=\"{anchor}\">\n<summary><b>[SUCCESS] Step: {step_name}</b> <small>({timestamp})</small></summary>\n\n")
 
@@ -69,8 +80,10 @@ class CloneLogger:
         self._write("</details>\n")
 
     def record_step_metric(self, name: str, provider: str, model: str, cost: float, time_taken: float, details: str = ""):
+        # Use the most recently opened anchor for this step name (handles repeated steps correctly)
+        anchor = self._last_step_anchor.get(name, self._step_anchor(name))
         self.steps_data.append({
-            "name": name, "provider": provider, "model": model,
+            "name": name, "anchor": anchor, "provider": provider, "model": model,
             "cost": cost, "time": time_taken, "details": details
         })
 
@@ -275,8 +288,8 @@ class CloneLogger:
         for step in self.steps_data:
             provider = step['provider']
             if provider in ['unknown', 'mixed']: provider = f"⚠️ {provider}"
-            anchor = self._step_anchor(step['name'])
-            # Link step name to its collapsible section in the same document
+            # Use stored anchor (unique per step instance) so repeated steps link to the right section
+            anchor = step.get('anchor', self._step_anchor(step['name']))
             step_link = f"[{step['name']}](#{anchor})"
             summary += f"| **{step_link}** | {provider} | `{step['model']}` | ${step['cost']:.4f} | {step['time']:.2f}s | {step['details']} |\n"
 

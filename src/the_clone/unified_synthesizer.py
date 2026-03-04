@@ -32,10 +32,17 @@ _SHORT_ID_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 
 def _make_short_id(index: int) -> str:
-    """Generate a two-letter snippet anchor (AA, AB, ..., ZZ) from a zero-based index."""
-    a = (index // 26) % 26
-    b = index % 26
-    return _SHORT_ID_ALPHABET[a] + _SHORT_ID_ALPHABET[b]
+    """Generate a two-letter snippet anchor (AA, AB, ..., ZZ) from a zero-based index.
+
+    Supports 676 unique IDs (26×26). Beyond that, wraps rather than silently colliding:
+    index 676 → AA2, 677 → AB2, etc. (appends generation counter as digit suffix).
+    """
+    generation = index // 676  # 0 for first 676, 1 for next, etc.
+    idx = index % 676
+    a = idx // 26
+    b = idx % 26
+    suffix = str(generation + 1) if generation > 0 else ""
+    return _SHORT_ID_ALPHABET[a] + _SHORT_ID_ALPHABET[b] + suffix
 
 
 def _query_slug(query: str, max_len: int = 40) -> str:
