@@ -422,6 +422,9 @@ class TheClone2Refined:
                         models['synthesis'] = dynamic_model
 
             step_start_phase = time.time()
+            # Reserve summary-table slot before calling evaluate_and_synthesize so that any
+            # nested steps it records (e.g. Citation LLM Resolution) appear after Skip-to-Synthesis.
+            skip_synth_slot = clone_logger.reserve_step_index() if clone_logger else 0
             synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
                 query=prompt,
                 snippets=url_snippets,
@@ -456,7 +459,8 @@ class TheClone2Refined:
                 clone_logger.record_step_metric(
                     "Skip-to-Synthesis", synth_provider, models['synthesis'],
                     synth_cost, step_time_phase,
-                    f"URL sources: {len(url_snippets)}, Citations: {len(synthesis_result.get('citations', []))}"
+                    f"URL sources: {len(url_snippets)}, Citations: {len(synthesis_result.get('citations', []))}",
+                    position=skip_synth_slot
                 )
                 clone_logger.end_step("Skip-to-Synthesis")
 
@@ -712,6 +716,10 @@ class TheClone2Refined:
                     'search_terms': list(all_search_terms_used)
                 }
 
+                # Reserve summary-table slot before calling evaluate_and_synthesize so that any
+                # nested steps it records (e.g. Citation LLM Resolution) appear after Re-Synthesis.
+                skip_resynth_slot = clone_logger.reserve_step_index() if clone_logger else 0
+
                 synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
                     query=prompt,
                     snippets=url_snippets,
@@ -746,7 +754,7 @@ class TheClone2Refined:
                     model_resp = synthesis_result.get('model_response', {})
                     used_model = model_resp.get('model_used', target_model)
                     if model_resp.get('used_backup_model'): used_model += " (Backup)"
-                    clone_logger.record_step_metric(action_name, tier4_provider, used_model, tier4_cost, step_time_phase, "Re-synthesized")
+                    clone_logger.record_step_metric(action_name, tier4_provider, used_model, tier4_cost, step_time_phase, "Re-synthesized", position=skip_resynth_slot)
                     clone_logger.end_step(action_name)
 
                 # Extract values for next iteration
@@ -1980,6 +1988,10 @@ class TheClone2Refined:
                              f"(snippets={len(all_snippets)}, ctx={synthesis_context})")
                 models['synthesis'] = dynamic_model
 
+        # Reserve summary-table slot before calling evaluate_and_synthesize so that any
+        # nested steps it records (e.g. Citation LLM Resolution) appear after Synthesis.
+        synth_slot = clone_logger.reserve_step_index() if clone_logger else 0
+
         synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
             query=prompt,
             snippets=all_snippets,
@@ -2012,7 +2024,7 @@ class TheClone2Refined:
             model_resp = synthesis_result.get('model_response', {})
             used_model = model_resp.get('model_used', models['synthesis'])
             if model_resp.get('used_backup_model'): used_model += " (Backup)"
-            clone_logger.record_step_metric("Synthesis", synth_provider, used_model, synth_cost, step_time_phase, f"Generated {len(synthesis_result.get('citations', []))} citations")
+            clone_logger.record_step_metric("Synthesis", synth_provider, used_model, synth_cost, step_time_phase, f"Generated {len(synthesis_result.get('citations', []))} citations", position=synth_slot)
             clone_logger.end_step("Synthesis")
 
         # Extract self-assessment signals
@@ -2275,6 +2287,10 @@ class TheClone2Refined:
                 'search_terms': list(all_search_terms_used)  # All search terms used across iterations
             }
 
+            # Reserve summary-table slot before calling evaluate_and_synthesize so that any
+            # nested steps it records (e.g. Citation LLM Resolution) appear after Re-Synthesis.
+            resynth_slot = clone_logger.reserve_step_index() if clone_logger else 0
+
             synthesis_result = await self.unified_synthesizer.evaluate_and_synthesize(
                 query=prompt,
                 snippets=all_snippets,
@@ -2309,7 +2325,7 @@ class TheClone2Refined:
                 model_resp = synthesis_result.get('model_response', {})
                 used_model = model_resp.get('model_used', target_model)
                 if model_resp.get('used_backup_model'): used_model += " (Backup)"
-                clone_logger.record_step_metric(action_name, tier4_provider, used_model, tier4_cost, step_time_phase, "Re-synthesized")
+                clone_logger.record_step_metric(action_name, tier4_provider, used_model, tier4_cost, step_time_phase, "Re-synthesized", position=resynth_slot)
                 clone_logger.end_step(action_name)
 
             # Extract values for next iteration (if loop continues)

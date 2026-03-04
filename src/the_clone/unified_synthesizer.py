@@ -77,7 +77,8 @@ class UnifiedSynthesizer:
         note_to_self: str = None,
         initial_decision: str = None,
         sources_examined: List[Dict] = None,
-        previous_iteration_data: Dict = None
+        previous_iteration_data: Dict = None,
+        skip_citation_resolution: bool = False
     ) -> Dict[str, Any]:
         """
         Unified evaluation + synthesis call.
@@ -331,22 +332,26 @@ class UnifiedSynthesizer:
                 except:
                     pass
 
-            # Convert snippet IDs to citations if answer provided
-            # Skip conversion for intermediate refinement iterations (preserves snippet IDs for AI context)
-            # Always convert on FINAL iteration to get numeric citations for user output
+            # Convert snippet IDs to citations if answer provided.
+            # skip_citation_resolution=True defers this to the caller (saves cost on intermediate
+            # synthesis passes that will be discarded by self-correction anyway).
+            # Skip conversion also for intermediate refinement iterations (preserves snippet IDs for AI context)
+            # Always convert on FINAL iteration to get numeric citations for user output.
             # IMPORTANT: Always preserve answer_raw (pre-conversion, with full snippet IDs) separately.
             # This is critical for self-correction: the next iteration's patches must receive full
             # snippet IDs, not numbered [1][2] citations which the patch system cannot re-expand.
             if can_answer and answer_raw:
-                if used_refinement_data and not is_last_iteration:
-                    # Intermediate refinement - keep snippet IDs so AI knows exact snippets for next iteration
+                if skip_citation_resolution or (used_refinement_data and not is_last_iteration):
+                    # Intermediate pass — keep snippet IDs for the next iteration.
+                    # Either caller requested skip (skip_citation_resolution=True) or this is an
+                    # intermediate refinement pass.  Citations will be resolved on the final pass.
                     answer_final = answer_raw
                     citations = []  # Citations will be generated on final iteration
                     snippets_used = []
                     snippet_failures = []
                     llm_cite_cost = 0.0
                     answer_pre_numeric = None
-                    logger.debug(f"[UNIFIED] Preserving snippet IDs for intermediate refinement (iteration {iteration})")
+                    logger.debug(f"[UNIFIED] Skipping citation resolution (skip={skip_citation_resolution}, refinement={used_refinement_data}, iteration={iteration})")
                 else:
                     # Final iteration OR normal mode - convert snippet IDs to numeric citations
                     answer_final, citations, snippets_used, snippet_failures, llm_cite_cost, answer_pre_numeric = await self._convert_snippet_ids_to_citations(
@@ -537,7 +542,7 @@ Query: {query}
 - **Q{'{iter}'}.{'{n}'}:** Query from iteration {'{iter}'}, search {'{n}'} (search term used). [★ NEW] = added this pass; [◎ PREV] = from earlier pass.
 - **Snippet ID Format:** S{'{iter}'}.{'{search}'}.{'{source}'}.{'{snippet}'}-p{'{score}'}
   - Example: S1.2.3.0-p0.85 = Iteration 1, Search 2, Source 3, Snippet 0, p-score 0.85
-- **2-letter anchor (AA, AB…):** Internal resolution alias shown after citation refs as `(AA)`. Do NOT cite with bare `[AA]` — always use `[handle, snippet_id]` format. The anchor is for system resolution only.
+- **2-letter anchor (AA, AB…):** Short alias that is the **last comma-element inside the citation bracket**. Copy the full bracket `[handle, snippet_id, AA]` verbatim from the snippet listings below.
 - **p (probability):** Source-level quality score (0.05-0.95) - judge tests all atomic claims, p = expected pass-rate
   - 0.85-0.95: High confidence (PRIMARY/DOCUMENTED/ATTRIBUTED) - prefer these
   - 0.50-0.65: Medium confidence (OK quality)
@@ -561,18 +566,18 @@ Query: {query}
 
 Generate a structured comparison answering the query, then self-assess.
 
-**Citation Format:** Use [verbal_handle, snippet_id] format for all citations.
+**Citation Format:** Use `[handle, snippet_id, AA]` — copy the full bracket verbatim from snippet listings.
 
 **CRITICAL - Square brackets are ONLY for citations.** Do NOT use `[...]` for any other purpose — no editorial notes, no clarifications, no labels like `[Note: ...]`, `[e.g., ...]`, `[Source: ...]`. Plain text or parentheses `(...)` for everything that is not a snippet citation.
 
-**CRITICAL - COPY EXACT handles and IDs from snippets above:**
-- Format: `[handle, S1.1.5.6-p0.95]` - FULL 4-part ID
+**CRITICAL - COPY EXACT citation brackets from snippets above:**
+- Format: `[handle, S1.1.5.6-p0.95, AA]` — full 4-part ID plus 2-letter anchor
 - **DO NOT create your own handles** - COPY from snippet listings
-- **DO NOT shorten IDs** - Use full 4-part format
-- Example from listings: `[intermittent_fasting_weight_2, S1.1.1.0-p0.95]`
-  - ❌ WRONG: `[if_weight, S1.1.1-p0.95]` - made up handle, shortened ID
-  - ✅ CORRECT: `[intermittent_fasting_weight_2, S1.1.1.0-p0.95]` - exact copy
-- **Look up the snippet in listings above, copy its [handle, ID] exactly**
+- **DO NOT shorten IDs or omit the anchor** - Copy the full 3-element bracket
+- Example from listings: `[intermittent_fasting_weight_2, S1.1.1.0-p0.95, AB]`
+  - ❌ WRONG: `[if_weight, S1.1.1-p0.95]` — made up handle, shortened ID, missing anchor
+  - ✅ CORRECT: `[intermittent_fasting_weight_2, S1.1.1.0-p0.95, AB]` — exact copy
+- **Look up the snippet in listings above, copy its full `[handle, ID, AA]` bracket exactly**
 - **REQUIRED:** Every factual claim must have citations
 
 **Output Structure:** Use nested objects to avoid repetition.
@@ -580,20 +585,20 @@ Generate a structured comparison answering the query, then self-assess.
 **CRITICAL - Citation Placement:**
 - **INLINE ONLY**: Citations must be embedded DIRECTLY in the text
 - **NO separate citation fields**: Do NOT create fields like "citations": [...]
-- **Format**: Include [handle, ID] at the END of each claim within the text itself
+- **Format**: Include `[handle, ID, AA]` at the END of each claim within the text itself
 
 Example structure:
 ```json
 {{
   "comparison": {{
-    "current_value": "6.21% [mortgage_rate_dec2025, S1.1.1.0-p0.95]",
-    "trend": "decreased from prior week [rate_change, S1.1.2.1-p0.85]"
+    "current_value": "6.21% [mortgage_rate_dec2025, S1.1.1.0-p0.95, AA]",
+    "trend": "decreased from prior week [rate_change, S1.1.2.1-p0.85, AB]"
   }},
   "self_assessment": "A"
 }}
 ```
 
-❌ WRONG - Separate citation fields:
+❌ WRONG - Separate citation fields or missing anchor:
 ```json
 {{
   "feature": {{
@@ -603,14 +608,14 @@ Example structure:
 }}
 ```
 
-✅ CORRECT - Inline citations:
+✅ CORRECT - Inline citations with full 3-element bracket:
 ```json
 {{
-  "feature": "Feature description here [handle1, S1.1.1.0-p0.95]"
+  "feature": "Feature description here [handle1, S1.1.1.0-p0.95, AA]"
 }}
 ```
 
-Note: Use FULL 4-part IDs exactly as shown in snippets above.
+Note: Copy the full `[handle, ID, AA]` bracket verbatim from snippet listings above.
 
 ## Self-Assessment
 
@@ -664,7 +669,7 @@ Query: {query}
 - **Q{'{iter}'}.{'{n}'}:** Query from iteration {'{iter}'}, search {'{n}'}. [★ NEW] = added this pass; [◎ PREV] = from earlier pass.
 - **Snippet ID Format:** S{'{iter}'}.{'{search}'}.{'{source}'}.{'{snippet}'}-p{'{score}'}
   - Example: S1.2.3.0-p0.85 = Iteration 1, Search 2, Source 3, Snippet 0, p-score 0.85
-- **2-letter anchor (AA, AB…):** Internal resolution alias shown after citation refs as `(AA)`. Always cite using `[handle, snippet_id]` — the anchor is for system resolution only.
+- **2-letter anchor (AA, AB…):** Short alias that is the **last comma-element inside the citation bracket**. Copy the full bracket `[handle, snippet_id, AA]` verbatim from the snippet listings below.
 - **p (probability):** Source-level quality score (0.05-0.95) - judge tests all atomic claims, p = expected pass-rate
   - 0.85-0.95: High confidence (PRIMARY/DOCUMENTED/ATTRIBUTED) - prefer these
   - 0.50-0.65: Medium confidence (OK quality)
@@ -697,12 +702,12 @@ Query: {query}
    - List missing_aspects
    - Suggest search_terms to fill gaps
 
-**Citation Format:** Use [verbal_handle, snippet_id] format for all citations.
+**Citation Format:** Use `[handle, snippet_id, AA]` — copy the full bracket verbatim from snippet listings.
 
-**CRITICAL - Use EXACT IDs from snippets above:**
-- Format: `[handle, S1.1.5.6-p0.95]` - FULL 4-part ID
-- ❌ WRONG: `[handle, S1.1.5-p0.95]` - shortened ID
-- ✅ CORRECT: Copy exact IDs and handles from snippet listings
+**CRITICAL - Use EXACT brackets from snippets above:**
+- Format: `[handle, S1.1.5.6-p0.95, AA]` — full 4-part ID plus 2-letter anchor
+- ❌ WRONG: `[handle, S1.1.5-p0.95]` — shortened ID, missing anchor
+- ✅ CORRECT: Copy exact `[handle, ID, AA]` brackets from snippet listings
 - **REQUIRED:** Always include citations when providing answers
 
 **⚠️ RESPONSE LENGTH LIMIT: Keep your total response under 24000 words.{' Be terse - validation will expand details later.' if context == 'findall' else ''}**
@@ -728,7 +733,7 @@ Query: {query}
         Format snippets in nested structure:
         Q{iter}.{search}: "query text"  [★ NEW] or [◎ PREV]
           [S1.1.0] URL | Page Title [DATE]
-            - [handle, S1.1.0.0-p0.95] (AA) (p=0.95, c=H/P) "text"
+            - [handle, S1.1.0.0-p0.95, AA] (p=0.95, c=H/P) "text"
 
         Groups by (iteration, search) extracted from snippet ID so Q-labels always reflect
         the iteration in which each search was executed (Q1.x = first pass, Q2.x = second).
@@ -819,7 +824,9 @@ Query: {query}
 
                 formatted.append(source_line)
 
-                # Snippets under this source: include 2-letter short_id anchor for reliable citation
+                # Snippets under this source: 2-letter short_id anchor is the LAST comma-element
+                # inside the bracket so the LLM can copy the whole thing verbatim.
+                # Format: [handle, S1.1.0.0-p0.95, AA] (p=0.95, c=H/P) "text"
                 for snip in data['snippets']:
                     handle = snip.get('verbal_handle', '')
                     snippet_id = snip['id']
@@ -827,15 +834,17 @@ Query: {query}
                     p_score = snip.get('p', 0.50)
                     c_class = snip.get('c', 'M/O')
 
-                    # Format: [handle, S1.1.0.0-p0.95] (AA) (p=0.95, c=H/P) "text"
-                    if handle:
+                    if handle and short_id:
+                        citation_ref = f"[{handle}, {snippet_id}, {short_id}]"
+                    elif handle:
                         citation_ref = f"[{handle}, {snippet_id}]"
+                    elif short_id:
+                        citation_ref = f"[{snippet_id}, {short_id}]"
                     else:
                         citation_ref = f"[{snippet_id}]"
 
-                    anchor_str = f" ({short_id})" if short_id else ""
                     metadata = f"(p={p_score}, c={c_class})"
-                    formatted.append(f"    - {citation_ref}{anchor_str} {metadata} \"{snip['text']}\"")
+                    formatted.append(f"    - {citation_ref} {metadata} \"{snip['text']}\"")
 
         return '\n'.join(formatted)
 
@@ -959,6 +968,15 @@ Query: {query}
 
             # Skip if already a citation number
             if item.isdigit():
+                continue
+
+            # Skip JSON array element content: items starting with '"' or '[' are values
+            # inside data arrays (e.g. validation_results rows like ["ΔH°rxn", "-46.0", ...]),
+            # not citation references.  Treating them as failed citations causes the LLM to
+            # "drop" them, which removes the inner-array text from answer_str and corrupts the
+            # JSON structure — the specific rows that break shift non-deterministically because
+            # different explanation texts alter the regex match boundaries.
+            if item.startswith('"') or item.startswith('['):
                 continue
 
             matched = False

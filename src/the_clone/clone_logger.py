@@ -84,13 +84,26 @@ class CloneLogger:
         self._write(f"<p align='right'><small>Step duration: {duration:.2f}s</small></p>\n")
         self._write("</details>\n")
 
-    def record_step_metric(self, name: str, provider: str, model: str, cost: float, time_taken: float, details: str = ""):
+    def reserve_step_index(self) -> int:
+        """Return the index where the next record_step_metric call would insert.
+
+        Call this before evaluate_and_synthesize (or any sub-call that may record
+        its own nested metrics) so the outer step metric can be inserted at the
+        correct position in the summary table afterwards via position=.
+        """
+        return len(self.steps_data)
+
+    def record_step_metric(self, name: str, provider: str, model: str, cost: float, time_taken: float, details: str = "", position: Optional[int] = None):
         # Use the most recently opened anchor for this step name (handles repeated steps correctly)
         anchor = self._last_step_anchor.get(name, self._step_anchor(name))
-        self.steps_data.append({
+        entry = {
             "name": name, "anchor": anchor, "provider": provider, "model": model,
             "cost": cost, "time": time_taken, "details": details
-        })
+        }
+        if position is not None:
+            self.steps_data.insert(position, entry)
+        else:
+            self.steps_data.append(entry)
 
     def log_model_attempts(self, attempted_models: List[Dict], step_name: str = ""):
         """Log model attempts including failures for transparency."""
