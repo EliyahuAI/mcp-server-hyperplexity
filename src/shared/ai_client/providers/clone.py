@@ -2,9 +2,6 @@
 import logging
 import json
 import asyncio
-import os
-import glob as _glob
-import shutil
 import uuid
 from datetime import datetime
 from typing import Dict, Any, List
@@ -32,7 +29,7 @@ class CloneProvider:
                 src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
                 if src_path not in sys.path:
                     sys.path.append(src_path)
-                
+
                 from the_clone.the_clone import TheClone2Refined
                 self._clone_instance = TheClone2Refined(ai_client=self.ai_client)
             except ImportError as e:
@@ -44,7 +41,7 @@ class CloneProvider:
     async def make_structured_call(self, prompt: str, model: str, use_cache: bool, cache_key: str, start_time: datetime, schema: Dict = None, soft_schema: bool = False, debug_name: str = None, include_domains: List[str] = None, exclude_domains: List[str] = None, use_code_extraction: bool = False, findall: bool = False, extraction: bool = False, findall_iterations: int = 1, row_context: dict = None) -> Dict:
         """
         Execute a call to 'The Clone' agentic pipeline.
-        
+
         Args:
             prompt: The user query
             model: 'the-clone', 'the-clone-claude', or 'the-clone-baseten'
@@ -52,10 +49,10 @@ class CloneProvider:
         """
         try:
             clone = self._get_clone_instance()
-            
+
             # Determine provider based on model name
             provider = 'deepseek' # Default
-            
+
             if model == 'the-clone-claude':
                 provider = 'claude'
             elif model == 'the-clone-baseten':
@@ -66,15 +63,14 @@ class CloneProvider:
                 provider = 'flash'
             elif model == 'the-clone':
                 provider = 'deepseek'
-            
+
+            # Per-call ID for debug naming (no temp dir needed — FULL_LOG from in-memory buffer,
+            # snippet failures passed through metadata)
+            call_id = uuid.uuid4().hex[:8]
+
             # Execute query with session context from ai_client (set via set_session_context)
             logger.info(f"[CLONE_PROVIDER] Executing agentic pipeline for model: {model} (provider={provider}, findall={findall}, extraction={extraction})")
             logger.info(f"[CLONE_PROVIDER] Using ai_client instance {id(self.ai_client)}: session_id={self.ai_client.session_id}, email={self.ai_client.email}, s3_manager={type(self.ai_client.s3_manager).__name__ if self.ai_client.s3_manager else 'None'}")
-
-            # Use a per-call temp dir so snippet_resolution_failures/ are always captured locally
-            # and can be uploaded to S3 for diagnosis, even on Lambda where /tmp is ephemeral.
-            call_id = uuid.uuid4().hex[:8]
-            _tmp_debug_dir = f"/tmp/clone_debug_{call_id}"
 
             # Wrap clone.query() with timeout to prevent Lambda hangs
             CLONE_TIMEOUT_SECONDS = 500  # ~8 minutes
@@ -84,7 +80,7 @@ class CloneProvider:
                         prompt=prompt,
                         provider=provider,
                         schema=schema,  # Pass schema to Clone for structured output
-                        debug_dir=_tmp_debug_dir,  # Enable local file capture for S3 upload
+                        debug_dir=None,  # No temp dir; FULL_LOG in-memory, failures via metadata
                         include_domains=include_domains,
                         exclude_domains=exclude_domains,
                         use_code_extraction=use_code_extraction,
@@ -101,9 +97,9 @@ class CloneProvider:
             except asyncio.TimeoutError:
                 logger.error(f"[CLONE_PROVIDER] Clone query timed out after {CLONE_TIMEOUT_SECONDS}s - possible resource exhaustion or network hang")
                 raise Exception(f"Clone query timed out after {CLONE_TIMEOUT_SECONDS} seconds. This may indicate connection pool exhaustion or network issues.")
-            
+
             processing_time = (datetime.now() - start_time).total_seconds()
-            
+
             # Extract result and metadata
             answer = result.get('answer', {})
             citations = result.get('citations', [])
@@ -138,9 +134,9 @@ class CloneProvider:
                     'tokens': 0,  # Token count not available from Clone
                     'cache_efficiency_percent': 0.0
                 }
-            
+
             # Normalize response structure
-            # The Clone returns an 'answer' dict. 
+            # The Clone returns an 'answer' dict.
             # We wrap it in the standard chat completion format
             response_json = {
                 'choices': [{
@@ -153,7 +149,7 @@ class CloneProvider:
                 'model': model,
                 'stop_reason': 'stop'
             }
-            
+
             # Save debug data and capture S3 URIs
             debug_json_uri = None
             debug_md_uri = None
@@ -168,33 +164,23 @@ class CloneProvider:
                 debug_md_uri = await self.cache_handler.save_markdown_log('clone', model, debug_log, debug_name=_dn)
                 logger.info(f"[CLONE_PROVIDER] Debug log uploaded: {debug_md_uri}")
 
-            # Upload snippet resolution failure records from the temp debug dir to S3.
-            # These are written by unified_synthesizer when citations can't be resolved.
-            # Under normal operation there are none; failures indicate prompt/extraction issues.
-            try:
-                failure_dir = os.path.join(_tmp_debug_dir, 'snippet_resolution_failures')
-                failure_files = _glob.glob(os.path.join(failure_dir, '*.json')) if os.path.isdir(failure_dir) else []
-                if failure_files and self.ai_client.s3_manager:
-                    for fpath in failure_files:
-                        fname = os.path.basename(fpath)
-                        s3_key = f"debug/clone/snippet_failures/{fname}"
-                        with open(fpath, 'r', encoding='utf-8') as f:
-                            content = f.read()
+            # Upload snippet resolution failure records to S3.
+            # Failures are passed through metadata (not written to disk) to avoid Lambda /tmp contention.
+            snippet_failures = metadata.get('snippet_failures', [])
+            if snippet_failures and self.ai_client.s3_manager:
+                for i, failure in enumerate(snippet_failures):
+                    try:
+                        slug = (failure.get('query', 'unknown') or 'unknown')[:40].replace(' ', '_').replace('/', '_')
+                        s3_key = f"debug/clone/snippet_failures/{call_id}_{i}_{slug}.json"
+                        failure_json = json.dumps(failure, indent=2)
                         await asyncio.get_event_loop().run_in_executor(
-                            None, lambda k=s3_key, c=content: self.ai_client.s3_manager.put_object(
+                            None, lambda k=s3_key, c=failure_json: self.ai_client.s3_manager.put_object(
                                 Body=c.encode('utf-8'), Key=k, ContentType='application/json'
                             )
                         )
-                    logger.warning(f"[CLONE_PROVIDER] {len(failure_files)} snippet resolution failure(s) uploaded to S3: debug/clone/snippet_failures/")
-            except Exception as _fe:
-                logger.debug(f"[CLONE_PROVIDER] Could not upload snippet resolution failures: {_fe}")
-
-            # Clean up temp debug dir to free /tmp space
-            try:
-                if os.path.isdir(_tmp_debug_dir):
-                    shutil.rmtree(_tmp_debug_dir, ignore_errors=True)
-            except Exception:
-                pass
+                    except Exception as _fe:
+                        logger.debug(f"[CLONE_PROVIDER] Could not upload snippet failure record {i}: {_fe}")
+                logger.warning(f"[CLONE_PROVIDER] {len(snippet_failures)} snippet resolution failure(s) uploaded to S3: debug/clone/snippet_failures/")
 
             # Generate enhanced metrics BEFORE caching (needed for time_estimated preservation)
             # We pass pre_extracted_token_usage because we constructed it manually
@@ -213,7 +199,7 @@ class CloneProvider:
             # Inject provider-level metrics for DynamoDB aggregation
             enhanced_data['provider_metrics'] = provider_metrics
             enhanced_data['api_provider'] = 'clone'  # Top-level provider is 'clone'
-            
+
             return {
                 'response': response_json,
                 'token_usage': token_usage,

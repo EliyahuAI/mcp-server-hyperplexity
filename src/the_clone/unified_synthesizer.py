@@ -335,10 +335,11 @@ class UnifiedSynthesizer:
                     answer_final = answer_raw
                     citations = []  # Citations will be generated on final iteration
                     snippets_used = []
+                    snippet_failures = []
                     logger.debug(f"[UNIFIED] Preserving snippet IDs for intermediate refinement (iteration {iteration})")
                 else:
                     # Final iteration OR normal mode - convert snippet IDs to numeric citations
-                    answer_final, citations, snippets_used = await self._convert_snippet_ids_to_citations(
+                    answer_final, citations, snippets_used, snippet_failures = await self._convert_snippet_ids_to_citations(
                         answer=answer_raw,
                         snippets=snippets,
                         schema=schema,
@@ -354,6 +355,7 @@ class UnifiedSynthesizer:
                 answer_final = {}
                 citations = []
                 snippets_used = []
+                snippet_failures = []
 
             # Extract refinement info if available
             refinement_info = {}
@@ -374,6 +376,7 @@ class UnifiedSynthesizer:
                 "answer_pre_conversion": answer_raw if answer_raw else {},
                 "citations": citations,
                 "snippets_used": snippets_used,
+                "snippet_failures": snippet_failures,  # Unresolved citation refs — uploaded to S3 via metadata
                 "missing_aspects": missing,
                 "suggested_search_terms": suggested,
                 "needs_thinking": needs_thinking,
@@ -517,7 +520,7 @@ Query: {query}
 - **Q{'{iter}'}.{'{n}'}:** Query from iteration {'{iter}'}, search {'{n}'} (search term used). [★ NEW] = added this pass; [◎ PREV] = from earlier pass.
 - **Snippet ID Format:** S{'{iter}'}.{'{search}'}.{'{source}'}.{'{snippet}'}-p{'{score}'}
   - Example: S1.2.3.0-p0.85 = Iteration 1, Search 2, Source 3, Snippet 0, p-score 0.85
-- **2-letter anchor (AA, AB…):** Short stable alias shown after the citation ref as (AA). You may cite using the 2-letter anchor alone: `[AA]` — it resolves to the full snippet. Use `[handle, snippet_id]` for clarity, `[AA]` as fallback if exact ID is hard to recall.
+- **2-letter anchor (AA, AB…):** Internal resolution alias shown after citation refs as `(AA)`. Do NOT cite with bare `[AA]` — always use `[handle, snippet_id]` format. The anchor is for system resolution only.
 - **p (probability):** Source-level quality score (0.05-0.95) - judge tests all atomic claims, p = expected pass-rate
   - 0.85-0.95: High confidence (PRIMARY/DOCUMENTED/ATTRIBUTED) - prefer these
   - 0.50-0.65: Medium confidence (OK quality)
@@ -642,7 +645,7 @@ Query: {query}
 - **Q{'{iter}'}.{'{n}'}:** Query from iteration {'{iter}'}, search {'{n}'}. [★ NEW] = added this pass; [◎ PREV] = from earlier pass.
 - **Snippet ID Format:** S{'{iter}'}.{'{search}'}.{'{source}'}.{'{snippet}'}-p{'{score}'}
   - Example: S1.2.3.0-p0.85 = Iteration 1, Search 2, Source 3, Snippet 0, p-score 0.85
-- **2-letter anchor (AA, AB…):** Short alias after citation ref as (AA). Cite using `[handle, snippet_id]` or bare `[AA]` if needed.
+- **2-letter anchor (AA, AB…):** Internal resolution alias shown after citation refs as `(AA)`. Always cite using `[handle, snippet_id]` — the anchor is for system resolution only.
 - **p (probability):** Source-level quality score (0.05-0.95) - judge tests all atomic claims, p = expected pass-rate
   - 0.85-0.95: High confidence (PRIMARY/DOCUMENTED/ATTRIBUTED) - prefer these
   - 0.50-0.65: Medium confidence (OK quality)
@@ -1012,39 +1015,23 @@ Query: {query}
             if not matched:
                 failed_items.append(item)
 
+        failure_records = []
         if failed_items:
-            logger.warning(f"[CITATIONS] Could not match {len(failed_items)} items: {failed_items}")
+            brief = failed_items[:5]
+            more = f" ... +{len(failed_items)-5} more" if len(failed_items) > 5 else ""
+            logger.info(f"[CITATIONS] {len(failed_items)} unresolved reference(s): {brief}{more}")
 
-            # 2c: Log structured resolution failure record for systematic diagnosis.
-            try:
-                failure_record = {
-                    "query": (query or '')[:200],
-                    "failed_references": failed_items,
-                    "available_snippet_ids": list(snippet_map.keys()),
-                    "available_handles": {h: sid for h, sid in handle_to_id.items()},
-                    "available_short_ids": {k: v for k, v in short_id_map.items()},
-                    "snippet_count": len(snippets),
-                    "resolution_strategies_tried": ["short_id", "direct_id", "fuzzy_handle", "super_fuzzy", "snippet_id", "prefix_id", "verbal_handle", "sibling", "llm"],
-                }
-                failure_json = json.dumps(failure_record, indent=2)
-
-                # Prefer the caller-supplied debug_dir; fall back to /tmp or local test_results
-                _debug_base = debug_dir
-                if not _debug_base:
-                    if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
-                        _debug_base = '/tmp'
-                    else:
-                        _debug_base = os.path.join(os.path.dirname(__file__), 'test_results')
-
-                failure_dir = os.path.join(_debug_base, 'snippet_resolution_failures')
-                os.makedirs(failure_dir, exist_ok=True)
-                slug = _query_slug(query)
-                failure_file = os.path.join(failure_dir, f'{slug}.json')
-                with open(failure_file, 'w', encoding='utf-8') as f:
-                    f.write(failure_json)
-                logger.debug(f"[CITATIONS] Resolution failure log saved to {failure_file}")
-            except Exception as e:
-                logger.debug(f"[CITATIONS] Could not save resolution failure log: {e}")
+            # 2c: Build structured resolution failure record for S3 upload via metadata.
+            # Returned to caller instead of written to disk — avoids Lambda /tmp contention.
+            failure_records.append({
+                "query": (query or '')[:200],
+                "failed_references": failed_items,
+                "available_snippet_ids": list(snippet_map.keys()),
+                "available_handles": {h: sid for h, sid in handle_to_id.items()},
+                "available_short_ids": {k: v for k, v in short_id_map.items()},
+                "snippet_count": len(snippets),
+                "resolution_strategies_tried": ["short_id", "direct_id", "fuzzy_handle", "super_fuzzy", "snippet_id", "prefix_id", "verbal_handle", "sibling", "llm"],
+            })
 
         logger.debug(f"[CITATIONS] Matched {len(snippet_ids)} snippet references from {len(all_brackets)} bracketed items ({len(failed_items)} unmatched)")
 
@@ -1227,7 +1214,7 @@ Query: {query}
 
         logger.debug(f"[UNIFIED] Converted {len(snippet_ids)} snippet IDs to {len(citations)} citations")
 
-        return answer_final, citations, list(snippet_ids)
+        return answer_final, citations, list(snippet_ids), failure_records
 
     def _is_validation_schema(self, schema: Dict) -> bool:
         """Check if a custom schema was provided (not Clone's default synthesis schema)."""

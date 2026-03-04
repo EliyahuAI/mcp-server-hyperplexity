@@ -444,6 +444,7 @@ class TheClone2Refined:
             costs['synthesis'] = synth_cost
             costs_by_provider[synth_provider] = costs_by_provider.get(synth_provider, 0.0) + synth_cost
             calls_by_provider[synth_provider] = calls_by_provider.get(synth_provider, 0) + 1
+            skip_snippet_failures = list(synthesis_result.get('snippet_failures', []))
 
             step_time_phase = time.time() - step_start_phase
             if clone_logger:
@@ -728,6 +729,7 @@ class TheClone2Refined:
                 costs['synthesis'] += tier4_cost
                 costs_by_provider[tier4_provider] = costs_by_provider.get(tier4_provider, 0.0) + tier4_cost
                 calls_by_provider[tier4_provider] = calls_by_provider.get(tier4_provider, 0) + 1
+                skip_snippet_failures.extend(synthesis_result.get('snippet_failures', []))
 
                 step_time_phase = time.time() - step_start_phase
                 if clone_logger:
@@ -775,7 +777,8 @@ class TheClone2Refined:
                 "schema_provided": bool(schema),
                 "use_code_extraction": use_code_extraction,
                 "academic": academic,
-                "url_sources_used": len(url_snippets)
+                "url_sources_used": len(url_snippets),
+                "snippet_failures": skip_snippet_failures  # Unresolved citation refs for S3 upload
             }
 
             if clone_logger:
@@ -1652,6 +1655,7 @@ class TheClone2Refined:
         sources_pulled = 0
         first_extraction_prompt_logged = False
         iteration = 0
+        all_snippet_failures = []  # Collect citation resolution failures across all synthesis passes
 
         # Skip extraction if no search sources (memory snippets already extracted)
         if len(ranked_sources) == 0:
@@ -1986,7 +1990,8 @@ class TheClone2Refined:
         costs['synthesis'] = synth_cost
         costs_by_provider[synth_provider] = costs_by_provider.get(synth_provider, 0.0) + synth_cost
         calls_by_provider[synth_provider] = calls_by_provider.get(synth_provider, 0) + 1
-        
+        all_snippet_failures.extend(synthesis_result.get('snippet_failures', []))
+
         step_time_phase = time.time() - step_start_phase
         if clone_logger:
             model_resp = synthesis_result.get('model_response', {})
@@ -2277,6 +2282,7 @@ class TheClone2Refined:
             costs['synthesis'] += tier4_cost
             costs_by_provider[tier4_provider] = costs_by_provider.get(tier4_provider, 0.0) + tier4_cost
             calls_by_provider[tier4_provider] = calls_by_provider.get(tier4_provider, 0) + 1
+            all_snippet_failures.extend(synthesis_result.get('snippet_failures', []))
 
             step_time_phase = time.time() - step_start_phase
             if clone_logger:
@@ -2346,7 +2352,8 @@ class TheClone2Refined:
             "model_override": model_override,
             "schema_provided": bool(schema),
             "use_code_extraction": use_code_extraction,
-            "academic": academic
+            "academic": academic,
+            "snippet_failures": all_snippet_failures  # Unresolved citation refs for S3 upload
         }
 
         # Add memory stats if memory was used
