@@ -185,7 +185,13 @@ def extract_structured_response(response: Dict, tool_name: str = "structured_res
                     return extracted
                 logger.warning(f"Failed to extract JSON from unified format, trying fallback")
 
-        # Vertex AI format (DeepSeek, etc.)
+        # Claude tool use format — check FIRST before text extraction to prevent web search
+        # result snippets (embedded in text blocks) from being mistakenly parsed as the answer.
+        for content_item in response.get('content', []):
+            if content_item.get('type') == 'tool_use' and content_item.get('name') == tool_name:
+                return content_item.get('input', {})
+
+        # Vertex AI format (DeepSeek, etc.) — only reached if no matching tool_use block found
         if 'content' in response and isinstance(response['content'], list):
             for content_item in response['content']:
                 if content_item.get('type') == 'text':
@@ -198,11 +204,6 @@ def extract_structured_response(response: Dict, tool_name: str = "structured_res
                         # Log preview of text to help debug extraction failures
                         text_preview = text[:200].replace('\n', ' ')
                         logger.warning(f"Failed to extract JSON from Vertex AI format. Text preview: {text_preview}...")
-
-        # Original Claude tool use format
-        for content_item in response.get('content', []):
-            if content_item.get('type') == 'tool_use' and content_item.get('name') == tool_name:
-                return content_item.get('input', {})
 
         # Fallback: extract from text content (original Claude format)
         for content_item in response.get('content', []):

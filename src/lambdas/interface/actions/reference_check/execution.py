@@ -1388,13 +1388,41 @@ async def execute_reference_check(
         _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
 
         # ======================================================================
-        # STEP 1: Generate CSV with ID Columns Only (No Validation Yet)
+        # STEP 1: Validate claims against authoritative sources
         # ======================================================================
-        logger.info("[EXECUTION] Step 1/1: Generate CSV with extracted claims")
+        logger.info(f"[EXECUTION] Step 1: Validating {len(claims)} claims...")
+
+        validation_results = await _validate_claims(
+            claims=claims,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            config=config,
+        )
+
+        if not validation_results:
+            logger.warning("[EXECUTION] _validate_claims returned empty results")
+
+        # Track progress after validation
+        _add_api_call_to_runs(
+            session_id=session_id,
+            run_key=run_key,
+            api_response={},
+            model='',
+            processing_time=0.0,
+            call_type='claim_validation',
+            status='IN_PROGRESS',
+            verbose_status=f'Validated {len(claims)} claims',
+            percent_complete=75
+        )
+
+        # ======================================================================
+        # STEP 2: Compile results CSV
+        # ======================================================================
+        logger.info("[EXECUTION] Step 2: Compiling results CSV")
 
         # Create CSV with ID columns populated, RESEARCH columns empty
         compilation_result = await _compile_results(
-            validation_results=[],  # Empty - no validation done yet
+            validation_results=validation_results,
             session_id=session_id,
             conversation_id=conversation_id,
             email=email,
@@ -1415,7 +1443,7 @@ async def execute_reference_check(
             logger.error(f"[EXECUTION] {result['error']}")
             return result
 
-        logger.info(f"[EXECUTION] Step 2 complete: CSV generated")
+        logger.info(f"[EXECUTION] Step 3 complete: CSV generated")
 
         # Update result
         result['success'] = True

@@ -101,25 +101,18 @@ def main(text: str = "", file_path: str = "") -> None:
     print("\n[4/4] Fetching results...")
     results = hpx.get(f"/jobs/{job_id}/reference-results")
 
-    # Print structured report
-    report = results.get("report") or results.get("results") or results
-    if isinstance(report, dict):
-        import json
-        print("\n=== Reference Check Report ===")
-        print(json.dumps(report, indent=2))
-    else:
-        print("\n=== Reference Check Report ===")
-        print(report)
+    results_data = results.get("results", {})
+    download_url = results_data.get("download_url") or results.get("download_url")
+    viewer_url = results_data.get("interactive_viewer_url") or results.get("interactive_viewer_url")
 
-    download_url = results.get("download_url") or (
-        results.get("results", {}).get("download_url")
-    )
+    print("\n=== Reference Check Complete ===")
     if download_url:
-        print(f"\n  Download URL: {download_url}")
+        print(f"  Download CSV: {download_url}")
+        print(f"  (Columns: Claim ID, Statement, Reference, Supporting Data, Support Level, Validation Notes)")
+    else:
+        import json
+        print(json.dumps(results, indent=2))
 
-    viewer_url = results.get("interactive_viewer_url") or (
-        results.get("results", {}).get("interactive_viewer_url")
-    )
     if viewer_url:
         print(f"  Viewer URL:   {viewer_url}")
 
