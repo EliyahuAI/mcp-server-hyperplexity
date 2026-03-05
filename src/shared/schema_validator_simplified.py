@@ -653,11 +653,15 @@ class SimplifiedSchemaValidator:
         # Explicitly listing all required column names reduces this stochastic failure.
         if len(validation_targets) > 1:
             col_list = ", ".join(f'"{t.column}"' for t in validation_targets)
+            first_col = validation_targets[0].column
             prompt += (
-                f"\n\n**⚠️ COMPLETENESS REQUIRED**: Your JSON response array MUST contain EXACTLY "
-                f"{len(validation_targets)} entries — one for each field listed in FIELD DETAILS above. "
-                f"The required fields are: {col_list}. "
-                f"Do NOT skip any field. A missing field entry will cause a validation error."
+                f"\n\n**⚠️ COMPLETENESS REQUIRED**: Your JSON response MUST contain EXACTLY "
+                f"{len(validation_targets)} 6-element arrays — one per field. "
+                f"Every array MUST follow this exact format: "
+                f'["{first_col}", "answer", "H/M/L", "H/M/L", "T/F/null", "explanation"]. '
+                f"Required column names (use exactly): {col_list}. "
+                f"Do NOT number your entries. Do NOT write prose. Do NOT combine fields. "
+                f"A missing or malformed array causes a validation error."
             )
 
         # LOG IF HISTORY IS IN THE PROMPT
