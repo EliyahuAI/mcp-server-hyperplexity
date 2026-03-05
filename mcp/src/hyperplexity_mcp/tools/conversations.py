@@ -45,14 +45,25 @@ def register(server):
     client = get_client()
 
     @server.tool()
-    def start_table_maker(message: str) -> list[types.TextContent]:
+    def start_table_maker(
+        message: str,
+        auto_start: bool = False,
+    ) -> list[types.TextContent]:
         """Start a Table Maker conversation to generate a research table.
 
         Describe the table you want in natural language, e.g.:
         'Create a table of AI startups that raised Series A in 2024 with columns:
         company name, funding amount, investors, product description.'
+
+        auto_start: When True, the AI skips the confirmation step and generates
+          the table immediately from the message alone, without asking clarifying
+          questions or showing a structure for approval. Use when the message fully
+          describes the desired table and no back-and-forth is needed.
         """
-        data = client.post("/conversations/table-maker", json={"message": message})
+        payload: dict = {"message": message}
+        if auto_start:
+            payload["auto_start"] = True
+        data = client.post("/conversations/table-maker", json=payload)
         data["_guidance"] = build_guidance("start_table_maker", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 

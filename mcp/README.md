@@ -204,8 +204,8 @@ Every tool response includes a `_guidance` block with a plain-English summary of
 
 | Tool | Description |
 |---|---|
-| `reference_check` | Submit text or a file for claim and citation verification |
-| `get_reference_results` | Fetch the reference-check report for a completed job |
+| `reference_check` | Submit text or a file for claim and citation verification — fire-and-forget, no approval gate |
+| `get_reference_results` | Fetch the reference-check report for a completed job. Returns a presigned CSV download URL |
 
 ### Account
 

@@ -114,7 +114,8 @@ class UploadInterviewHandler:
         table_analysis: Dict[str, Any],
         user_message: str = "",
         model: str = None,
-        max_tokens: int = None
+        max_tokens: int = None,
+        skip_interview: bool = False,
     ) -> Dict[str, Any]:
         """
         Start a new interview with table analysis.
@@ -162,6 +163,20 @@ class UploadInterviewHandler:
             prompt = prompt.replace('{{TABLE_ANALYSIS}}', table_analysis_str)
             prompt = prompt.replace('{{CONVERSATION_HISTORY}}', conversation_history)
             prompt = prompt.replace('{{USER_MESSAGE}}', user_message if user_message else "(No message - this is the initial analysis)")
+            if skip_interview:
+                directive = (
+                    "## ⚡ INSTRUCTIONS MODE — Skip Interview\n\n"
+                    "The user has provided explicit instructions via the API. "
+                    "Do NOT ask questions (skip Mode 1). "
+                    "Do NOT show a structure for confirmation (skip Mode 2).\n\n"
+                    "**Output Mode 3 directly** (`trigger_config_generation: true`) using your best "
+                    "interpretation of the table structure and the user's instructions above. "
+                    "Fill `inferred_context` and `config_instructions` with your best inferences — "
+                    "this is an automated API session with no human present to answer follow-up questions.\n\n"
+                )
+                prompt = prompt.replace('{{INSTRUCTIONS_MODE_DIRECTIVE}}', directive)
+            else:
+                prompt = prompt.replace('{{INSTRUCTIONS_MODE_DIRECTIVE}}', '')
 
             # Add user message to history if provided
             if user_message:

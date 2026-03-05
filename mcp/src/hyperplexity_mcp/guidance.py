@@ -61,9 +61,56 @@ def _guidance_confirm_upload(data: dict) -> dict:
     matches = data.get("matches") or data.get("config_matches") or []
     best_score = matches[0].get("match_score", 0) if matches else 0
 
+    s3_key = data.get("s3_key", "")
+    reference_check_option = {
+        "tool": "reference_check",
+        "params": {"s3_key": s3_key} if s3_key else {"text": "<inline text>"},
+        "note": (
+            "ALTERNATIVE PATH — if you want to fact-check/verify claims in this document: "
+            "call reference_check directly. There is NO interview, NO config, NO preview step. "
+            "The job runs fully automatically; poll with wait_for_job, then get_reference_results."
+        ),
+    }
+
     # Server auto-started an upload interview (API session, no strong match).
     # conversation_id is present in the response — just poll it.
     if conv_id and data.get("interview_auto_started"):
+        instructions_mode = bool(data.get("instructions_mode"))
+
+        if instructions_mode:
+            # instructions= was passed: AI skips Q&A and generates config directly.
+            # Preview is auto-triggered after config generation.
+            # Use wait_for_job — no conversation polling needed.
+            return {
+                "summary": (
+                    "Upload confirmed. instructions= provided — the AI is generating the "
+                    "validation config directly from the table structure and your instructions "
+                    "(no clarifying questions). Preview will auto-trigger after config "
+                    f"generation. conversation_id: {conv_id}"
+                ),
+                "next_steps": [
+                    {
+                        "tool": "wait_for_job",
+                        "params": {
+                            "job_id": session_id,
+                            "timeout_seconds": 600,
+                            "warmup_seconds": 300,
+                        },
+                        "note": (
+                            "Config is being generated automatically (~2–3 min), then preview "
+                            "runs (~3–5 min). timeout_seconds=600 covers both phases. "
+                            "warmup_seconds=300 shows synthetic progress during the initial "
+                            "silent phase (internal interview + config gen produce no messages). "
+                            "wait_for_job tracks the config-generation intermediate step then "
+                            "the preview automatically. Do NOT call create_job() or "
+                            "wait_for_conversation."
+                        ),
+                    },
+                    reference_check_option,
+                ],
+            }
+
+        # No instructions: normal interactive interview — AI may ask questions.
         return {
             "summary": (
                 "Upload confirmed. No strong config match found — an AI interview has been "
@@ -92,6 +139,7 @@ def _guidance_confirm_upload(data: dict) -> dict:
                     "params": {"conversation_id": conv_id, "session_id": session_id},
                     "note": "Fallback: one-shot poll — re-call every 15s manually.",
                 },
+                reference_check_option,
             ],
         }
 
@@ -108,6 +156,7 @@ def _guidance_confirm_upload(data: dict) -> dict:
                     "params": {"session_id": session_id, "config_id": config_id},
                     "note": "Creates a preview job using the matched config. Fastest path.",
                 },
+                reference_check_option,
             ],
         }
     else:
@@ -125,6 +174,7 @@ def _guidance_confirm_upload(data: dict) -> dict:
                     },
                     "note": "Supply your own config JSON directly.",
                 },
+                reference_check_option,
             ],
         }
 
@@ -327,6 +377,11 @@ def _guidance_get_job_status(data: dict) -> dict:
         return {
             "summary": summary,
             "next_steps": next_steps,
+            "no_approval_gate": True,
+            "agent_note": (
+                "The agent can review the preview_table (included inline) and call "
+                "approve_validation directly — no human approval is required unless you want it."
+            ),
         }
 
     if status == "completed":
@@ -383,6 +438,11 @@ def _guidance_get_job_status(data: dict) -> dict:
                     "note": "Optional: fetch reference-check sub-results if applicable.",
                 },
             ],
+            "output_files": {
+                "preview_md": "Markdown preview table — human-readable summary of validated rows.",
+                "excel_file": "Excel file with sources and citations embedded in cell comments — ideal for sharing with humans.",
+                "metadata_json": "Complete metadata JSON including _row_key column for drilling into specific rows, per-cell confidence, citations, and validator reasoning.",
+            },
         }
 
     if status == "failed":
@@ -580,12 +640,20 @@ def _guidance_get_results(data: dict) -> dict:
                 "metadata":           metadata_url,
             }.items() if v
         },
+        "output_files": {
+            "preview_md": "Markdown preview table — human-readable summary of validated rows.",
+            "excel_file": "Excel file with sources and citations embedded in cell comments — ideal for sharing with humans.",
+            "metadata_json": "Complete metadata JSON including _row_key column for drilling into specific rows, per-cell confidence, citations, and validator reasoning.",
+        },
     }
 
 
 def _guidance_get_reference_results(data: dict) -> dict:
+    download_url = (data.get("results") or {}).get("download_url", "")
     return {
-        "summary": "Reference results fetched. Workflow complete.",
+        "summary": "Reference check complete. Results are a presigned CSV download URL.",
+        "result_format": "CSV file with columns: Claim ID, Claim Order, Statement, Context, Text Location, Claim Criticality, Qualified Fact, Reference, Supporting Data, Reference Description, What Reference Says, Support Level (SUPPORTED/PARTIAL/UNSUPPORTED/UNVERIFIABLE), Validation Notes",
+        "download_url": download_url,
         "next_steps": [],
     }
 
@@ -611,7 +679,13 @@ def _guidance_update_table(data: dict) -> dict:
 def _guidance_reference_check(data: dict) -> dict:
     job_id = data.get("job_id", "")
     return {
-        "summary": "Reference-check job started. Use wait_for_job to track completion.",
+        "summary": (
+            "Reference-check job started. This workflow is fully automatic — "
+            "there is NO preview phase and NO approval step. "
+            "Poll until completed, then call get_reference_results."
+        ),
+        "no_approval_gate": True,
+        "messages_note": "get_job_messages returns empty for reference-check jobs — use get_job_status for progress tracking instead.",
         "next_steps": [
             {
                 "tool": "wait_for_job",
@@ -643,21 +717,49 @@ def _guidance_start_table_maker(data: dict) -> dict:
             ],
         }
 
+    auto_start = bool(data.get("auto_start"))
+
     # Default: still processing (status == "processing" or unknown)
+    if auto_start:
+        conv_summary = (
+            "Table-maker started with auto_start=True — the AI skips questions and "
+            "structure-confirmation, outputting trigger_execution=true directly. "
+            "One wait_for_conversation call is all that's needed before switching to wait_for_job."
+        )
+        conv_expected = 90   # single direct mode-3 turn; no multi-turn Q&A
+        conv_note = (
+            "With auto_start=True there is exactly ONE conversation turn. "
+            "The AI skips questions and structure-confirmation and returns "
+            "trigger_execution=true immediately. Expected ~60–90s. "
+            "After this call returns, switch to wait_for_job(session_id)."
+        )
+    else:
+        conv_summary = "Table-maker conversation started. Wait for the AI's response."
+        conv_expected = 150  # may ask questions + present structure
+        conv_note = (
+            "Preferred: blocks with synthetic progress until the AI presents a table "
+            "structure or asks a clarifying question. First turn typically takes 2–3 min."
+        )
+
+    cost_note = (
+        "Table building and the 3-row preview are free. Full validation is charged "
+        "at approve_validation — you see the cost estimate at preview_complete "
+        "before anything is billed. If balance is insufficient, approve_validation "
+        "returns an insufficient_balance error with the required amount."
+    )
+
     return {
-        "summary": "Table-maker conversation started. Wait for the AI's response.",
+        "summary": conv_summary,
+        "cost_note": cost_note,
         "next_steps": [
             {
                 "tool": "wait_for_conversation",
                 "params": {
                     "conversation_id": conv_id,
                     "session_id": session_id,
-                    "expected_seconds": 150,
+                    "expected_seconds": conv_expected,
                 },
-                "note": (
-                    "Preferred: blocks with synthetic progress until the AI presents a table "
-                    "structure or asks a clarifying question. First turn typically takes 2–3 min."
-                ),
+                "note": conv_note,
             },
             {
                 "tool": "get_conversation",
@@ -673,6 +775,14 @@ def _guidance_start_table_maker(data: dict) -> dict:
             "the conversation, or use refine_config after the preview to adjust column selection "
             "before approving. Exact cost is confirmed at preview_complete."
         ),
+        "workflow": {
+            "fire_and_forget_capable": True,
+            "note": (
+                "After preview completes, the agent can auto-approve and proceed to full "
+                "validation without human intervention. Review the inline preview_table in "
+                "the preview_complete response."
+            ),
+        },
     }
 
 

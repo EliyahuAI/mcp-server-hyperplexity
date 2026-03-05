@@ -16,6 +16,9 @@ Usage:
     # Or with a longer description piped from stdin:
     python 02_generate_table.py --prompt-file my_table_spec.txt
 
+    # Fire-and-forget: skip all AI questions and generate immediately from the prompt
+    python 02_generate_table.py --auto-start "Top 10 US hedge funds: fund name, AUM, strategy, HQ city"
+
 Requirements: pip install requests
 """
 
@@ -26,15 +29,20 @@ sys.path.insert(0, os.path.dirname(__file__))
 import hyperplexity_client as hpx
 
 
-def main(prompt: str) -> None:
+def main(prompt: str, auto_start: bool = False) -> None:
     print("\n=== Hyperplexity: Generate Table ===")
     print(f"Prompt: {prompt[:120]}{'...' if len(prompt) > 120 else ''}\n")
+    if auto_start:
+        print("Auto-start mode: skipping Q&A, generating table directly\n")
 
     # ------------------------------------------------------------------
     # Step 1: Start the Table Maker conversation
     # ------------------------------------------------------------------
     print("[1/4] Starting Table Maker...")
-    data = hpx.post("/conversations/table-maker", json={"message": prompt})
+    body: dict = {"message": prompt}
+    if auto_start:
+        body["auto_start"] = True
+    data = hpx.post("/conversations/table-maker", json=body)
     conversation_id = data.get("conversation_id")
     session_id = data.get("session_id")
     print(f"  Conversation: {conversation_id}")
@@ -45,9 +53,14 @@ def main(prompt: str) -> None:
 
     # ------------------------------------------------------------------
     # Step 2: Drive the conversation (answer AI questions)
+    # With auto_start=True the AI outputs trigger_execution immediately —
+    # the first poll returns trigger_execution=True and the loop exits.
     # ------------------------------------------------------------------
-    print("\n[2/4] Building table — answer any AI questions below.")
-    print("  (The AI may ask about scope, data sources, or column details)\n")
+    if auto_start:
+        print("\n[2/4] Waiting for table generation (auto-start, no Q&A)...")
+    else:
+        print("\n[2/4] Building table — answer any AI questions below.")
+        print("  (The AI may ask about scope, data sources, or column details)\n")
 
     while True:
         conv = hpx.poll_conversation(conversation_id, session_id, timeout=900)
@@ -57,6 +70,14 @@ def main(prompt: str) -> None:
             break
 
         if conv.get("user_reply_needed"):
+            if auto_start:
+                # Shouldn't happen with auto_start, but handle gracefully
+                print("  (Unexpected question in auto-start mode — skipping with best-judgment)")
+                hpx.post(f"/conversations/{conversation_id}/message", json={
+                    "session_id": session_id,
+                    "message": "Please proceed with your best judgment.",
+                })
+                continue
             ai_msg = conv.get("last_ai_message", "")
             # last_ai_message may be a JSON string
             if isinstance(ai_msg, str) and ai_msg.startswith("{"):
@@ -151,6 +172,13 @@ if __name__ == "__main__":
         metavar="FILE",
         help="Path to a text file containing the table description",
     )
+    parser.add_argument(
+        "--auto-start",
+        action="store_true",
+        default=False,
+        help="Skip clarifying Q&A and generate the table directly from the prompt. "
+             "The AI uses its best judgment for any unspecified details.",
+    )
     args = parser.parse_args()
 
     if args.prompt_file:
@@ -159,4 +187,4 @@ if __name__ == "__main__":
     else:
         prompt = args.prompt
 
-    main(prompt)
+    main(prompt, auto_start=args.auto_start)

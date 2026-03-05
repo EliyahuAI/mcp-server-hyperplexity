@@ -80,7 +80,8 @@ class TableInterviewHandler:
         self,
         user_message: str,
         model: str = "claude-sonnet-4-6",
-        max_tokens: int = 8000
+        max_tokens: int = 8000,
+        skip_confirmation: bool = False,
     ) -> Dict[str, Any]:
         """
         Start a new interview with the user's initial message.
@@ -109,6 +110,20 @@ class TableInterviewHandler:
             today_date = datetime.utcnow().strftime('%B %d, %Y')
             prompt = self.interview_prompt.replace('{{TODAY_DATE}}', today_date)
             prompt = prompt.replace('{{USER_MESSAGE}}', user_message)
+            if skip_confirmation:
+                directive = (
+                    "## ⚡ AUTO-START MODE — Skip Confirmation\n\n"
+                    "The user has provided complete instructions. "
+                    "This is all the information available — no more context will be provided.\n\n"
+                    "**Output Mode 3 directly** (`trigger_execution: true`). "
+                    "Do NOT ask questions (skip Mode 1). "
+                    "Do NOT show a structure for confirmation (skip Mode 2). "
+                    "Generate the best table you can from the user's message alone. "
+                    "Make reasonable decisions on columns, row count, and scope without asking.\n\n"
+                )
+                prompt = prompt.replace('{{INSTRUCTIONS_MODE_DIRECTIVE}}', directive)
+            else:
+                prompt = prompt.replace('{{INSTRUCTIONS_MODE_DIRECTIVE}}', '')
 
             # Add user message to history
             self.messages.append({
@@ -171,25 +186,33 @@ class TableInterviewHandler:
             trigger_execution = structured_data.get('trigger_execution', structured_data.get('trigger_preview', False))
             target_row_count = structured_data.get('target_row_count', -1)
 
-            # Guard: minimum 4 rows required. If the user approved a plan with fewer
-            # rows, block execution and offer to proceed with 4 instead.
+            # Guard: minimum 4 rows required.
             if trigger_execution and isinstance(target_row_count, int) and 0 < target_row_count < 4:
-                table_name = (structured_data.get('table_name') or '').strip()
-                friendly_subject = f"of {table_name}" if table_name else ""
-                structured_data['trigger_execution'] = False
-                structured_data['mode'] = 1  # clarification turn
-                structured_data['show_structure'] = False  # no structure preview during clarification
-                structured_data['ai_message'] = (
-                    f"I need at least 4 rows to work my magic! "
-                    f"You asked for {target_row_count} — can I make it 4{(' ' + friendly_subject) if friendly_subject else ''} instead? "
-                    "Just say \"yes\" and I'll get started right away!"
-                )
-                trigger_execution = False
-                target_row_count = 4  # store the offered minimum, not the user's bad count
-                logger.info(
-                    f"[INTERVIEW] Blocked execution: target_row_count adjusted to 4 minimum. "
-                    "Offering 4 rows instead."
-                )
+                if skip_confirmation:
+                    # Auto-start mode: silently clamp to minimum — do NOT block execution.
+                    structured_data['target_row_count'] = 4
+                    target_row_count = 4
+                    logger.info(
+                        f"[INTERVIEW] auto_start: target_row_count clamped to 4 minimum."
+                    )
+                else:
+                    # Normal interactive flow: block and ask user to confirm minimum.
+                    table_name = (structured_data.get('table_name') or '').strip()
+                    friendly_subject = f"of {table_name}" if table_name else ""
+                    structured_data['trigger_execution'] = False
+                    structured_data['mode'] = 1  # clarification turn
+                    structured_data['show_structure'] = False
+                    structured_data['ai_message'] = (
+                        f"I need at least 4 rows to work my magic! "
+                        f"You asked for {target_row_count} — can I make it 4{(' ' + friendly_subject) if friendly_subject else ''} instead? "
+                        "Just say \"yes\" and I'll get started right away!"
+                    )
+                    trigger_execution = False
+                    target_row_count = 4
+                    logger.info(
+                        f"[INTERVIEW] Blocked execution: target_row_count adjusted to 4 minimum. "
+                        "Offering 4 rows instead."
+                    )
 
             self.interview_context = {
                 'mode': structured_data.get('mode', 0),

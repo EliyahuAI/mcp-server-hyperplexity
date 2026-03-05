@@ -6,6 +6,7 @@ Today is {{TODAY_DATE}}. Use this as your reference for "current", "recent", "la
 ## User's Message
 {{USER_MESSAGE}}
 
+{{INSTRUCTIONS_MODE_DIRECTIVE}}
 ---
 
 ## Conversation Continuity

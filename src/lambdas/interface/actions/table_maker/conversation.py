@@ -372,6 +372,7 @@ def handle_table_conversation_start_async(request_data, context):
         email = request_data.get('email')
         session_id = request_data.get('session_id')
         user_message = request_data.get('user_message', '')
+        auto_start = bool(request_data.get('auto_start', False))
 
         if not email:
             return create_response(400, {'error': 'Missing email'})
@@ -397,6 +398,7 @@ def handle_table_conversation_start_async(request_data, context):
             'email': email,
             'session_id': session_id,
             'user_message': user_message,
+            'auto_start': auto_start,
             'conversation_id': conversation_id,
             'timestamp': datetime.now().isoformat()
         }
@@ -420,8 +422,10 @@ def handle_table_conversation_start_async(request_data, context):
             'success': True,
             'status': 'processing',
             'conversation_id': conversation_id,
-            'session_id': session_id  # Return session_id for frontend tracking
+            'session_id': session_id,  # Return session_id for frontend tracking
         }
+        if auto_start:
+            response_body['auto_start'] = True
 
         logger.info(f"✅ ASYNC TABLE CONVERSATION RESPONSE (WebSocket-only): {response_body}")
         return create_response(200, response_body)
@@ -1037,6 +1041,7 @@ async def handle_table_conversation_start(request_data, context):
         email = request_data.get('email')
         session_id = request_data.get('session_id')
         user_message = request_data.get('user_message', '')
+        auto_start = bool(request_data.get('auto_start', False))
 
         if not email or not session_id:
             result['error'] = 'Missing email or session_id'
@@ -1119,7 +1124,8 @@ async def handle_table_conversation_start(request_data, context):
         interview_result = await interview_handler.start_interview(
             user_message=user_message,
             model=model,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
+            skip_confirmation=auto_start,
         )
 
         if not interview_result['success']:

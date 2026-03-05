@@ -116,17 +116,27 @@ def upload_file(file_path: str, file_type: str, session_id: Optional[str] = None
     }
 
 
-def confirm_upload(session_id: str, s3_key: str, filename: str) -> dict:
+def confirm_upload(
+    session_id: str,
+    s3_key: str,
+    filename: str,
+    instructions: str = "",
+) -> dict:
     """Verify the upload and detect any matching prior configs.
 
     If no strong config match is found (score < 0.85) an AI interview is
     auto-started and conversation_id is included in the response.
+
+    instructions: Optional natural-language description of what to validate.
+      When provided, the AI reads the table + instructions and generates a
+      config directly (no Q&A). Response includes instructions_mode=True.
+      Config generation and the 3-row preview are free; full validation is
+      charged at approve_validation.
     """
-    return post("/uploads/confirm", json={
-        "session_id": session_id,
-        "s3_key": s3_key,
-        "filename": filename,
-    })
+    payload: dict = {"session_id": session_id, "s3_key": s3_key, "filename": filename}
+    if instructions:
+        payload["instructions"] = instructions
+    return post("/uploads/confirm", json=payload)
 
 
 # ---------------------------------------------------------------------------

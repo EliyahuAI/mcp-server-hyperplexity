@@ -1,16 +1,56 @@
-# Hyperplexity — MCP & API Guide
+## Hyperplexity — MCP & API Guide
 
 > Generate, validate, and fact-check research tables using AI — via Claude, any MCP-compatible agent, or direct REST API.
 
+[Get Markdown version of this guide](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/API_GUIDE.md)
+
 ---
 
-## Get Your API Key
+### Who Should Use What
+
+| You want to… | Use |
+|---|---|
+| Let Claude do everything autonomously | **MCP server** — install once, describe your task |
+| Run automated pipelines or batch jobs | **REST API** + example scripts |
+| One-off validation without writing code | **MCP server** via Claude Code or Claude Desktop |
+| Integrate into a product or SaaS | **REST API** directly |
+| Fact-check a document or paste of text | **MCP `reference_check`** or `04_reference_check.py` |
+| Generate a research table from a description | **MCP `start_table_maker`** or `02_generate_table.py` |
+| Re-validate after manual edits | **MCP `update_table`** or `03_update_table.py` |
+
+---
+
+### Table of Contents
+
+- [Get Your API Key](#get-your-api-key)
+- [Download Examples](#download-examples)
+- [Quick Start: MCP (Claude)](#quick-start-mcp-claude)
+  - [Claude Code](#claude-code-one-liner)
+  - [Claude Desktop](#claude-desktop)
+  - [Project config](#project-config-shared-repo)
+  - [Using with Claude — What to Say](#using-with-claude--what-to-say)
+- [Workflows](#workflows)
+  - [1. Validate an Existing Table](#1-validate-an-existing-table)
+  - [2. Generate a Table from a Prompt](#2-generate-a-table-from-a-prompt)
+  - [3. Update a Table](#3-update-a-table-re-run-validation-pass)
+  - [4. Fact-Check Text or Documents](#4-fact-check-text-or-documents-chex)
+- [Environment Variables](#environment-variables)
+- [Direct REST API](#direct-rest-api)
+  - [API Endpoint Reference](#api-endpoint-reference)
+- [MCP Tool Reference](#mcp-tool-reference)
+- [Key Behaviors](#key-behaviors)
+- [Pricing](#pricing)
+- [Links](#links)
+
+---
+
+### Get Your API Key
 
 Log in at **[hyperplexity.ai](https://hyperplexity.ai)** and click your email at the top of the first card to access account info and API keys. New accounts receive $20 in free credits.
 
 ---
 
-## Download Examples
+### Download Examples
 
 > All scripts require Python 3.10+ and `pip install requests`.
 
@@ -25,7 +65,7 @@ Log in at **[hyperplexity.ai](https://hyperplexity.ai)** and click your email at
 Or clone the full example set:
 
 ```bash
-# Download all examples at once
+## Download all examples at once
 curl -O https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/hyperplexity_client.py \
      -O https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/01_validate_table.py \
      -O https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/02_generate_table.py \
@@ -37,18 +77,18 @@ export HYPERPLEXITY_API_KEY=hpx_live_...
 
 ---
 
-## Quick Start: MCP (Claude)
+### Quick Start: MCP (Claude)
 
 The MCP server lets Claude drive the full Hyperplexity workflow autonomously — no scripting required.
 
-### Claude Code (one-liner)
+#### Claude Code (one-liner)
 
 ```bash
 claude mcp add hyperplexity uvx mcp-server-hyperplexity \
   -e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
 ```
 
-### Claude Desktop
+#### Claude Desktop
 
 Add to `claude_desktop_config.json`:
 
@@ -69,7 +109,7 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-### Project config (shared repo)
+#### Project config (shared repo)
 
 Add `.mcp.json` to your repo root so the server is available when anyone runs Claude Code in that directory. Each person must use their own API key — keys are tied to individual email accounts and should not be shared:
 
@@ -91,7 +131,7 @@ Each team member sets `HYPERPLEXITY_API_KEY` in their own shell profile. No key 
 
 ---
 
-## Using with Claude — What to Say
+### Using with Claude — What to Say
 
 Once the MCP server is installed, describe your task in plain English. Claude drives the full workflow, pausing only when user input is genuinely needed.
 
@@ -109,9 +149,9 @@ Once the MCP server is installed, describe your task in plain English. Claude dr
 
 ---
 
-## Workflows
+### Workflows
 
-### 1. Validate an Existing Table
+#### 1. Validate an Existing Table
 
 **Full flow: upload → interview → preview → refine → approve → download**
 
@@ -133,6 +173,22 @@ upload_file(path)
 
 > **Key behavior:** After the interview finishes (`trigger_execution=true`), the preview is auto-queued. Do **not** call `create_job()`. Call `wait_for_job(session_id)` directly — it detects the config-generation phase automatically.
 
+**Skip the interview with `instructions` (fire-and-forget config generation):**
+
+Pass `instructions` to `confirm_upload` to bypass the interactive interview. The AI reads the table structure + your instructions and generates a config directly, then auto-triggers the preview — no clarifying questions needed.
+
+```
+confirm_upload(session_id, s3_key, filename,
+  instructions="This table lists hedge funds. Validate AUM, strategy, and HQ city. Use Bloomberg and SEC filings.")
+  → response includes instructions_mode=true
+  → wait_for_job(session_id)          ← config generation + preview tracked automatically
+  → approve_validation(job_id, cost_usd)
+  → wait_for_job(job_id)
+  → get_results(job_id)
+```
+
+> **Cost gate:** Config generation and the 3-row preview are **free**. Full validation is charged at `approve_validation` — you always see the cost estimate at `preview_complete` before anything is billed. If your balance is insufficient, `approve_validation` returns an `insufficient_balance` error with the required amount.
+
 **Refine the config** before approving by calling `refine_config`. This adjusts how columns are validated (sources, strictness, interpretation) — it cannot add or remove columns:
 
 ```
@@ -148,11 +204,15 @@ A new preview runs automatically after refinement.
 export HYPERPLEXITY_API_KEY=hpx_live_...
 python examples/01_validate_table.py companies.xlsx
 python examples/01_validate_table.py companies.xlsx --refine "Add LinkedIn URL column"
+
+# Fire-and-forget: provide instructions to skip the interview entirely
+python examples/01_validate_table.py companies.xlsx \
+    --instructions "This table lists hedge funds. Validate AUM, strategy, and HQ city."
 ```
 
 ---
 
-### 2. Generate a Table from a Prompt
+#### 2. Generate a Table from a Prompt
 
 Describe the table you want — rows, columns, scope — and Hyperplexity builds and validates it from scratch.
 
@@ -168,18 +228,41 @@ start_table_maker("Top 20 US biotech companies: name, ticker, market cap, lead d
     → get_results(job_id)
 ```
 
+> **Auto-approve:** The agent can auto-approve the preview and proceed to full validation without human intervention. The preview table is included inline in the `preview_complete` response.
+
 > **Cost:** ~$0.05/cell (standard), up to ~$0.25/cell (advanced). $2 minimum per run.
+
+**Skip confirmation with `auto_start=True` (fire-and-forget generation):**
+
+Pass `auto_start=True` to skip the AI's clarifying questions and structure-confirmation step. The AI generates the table immediately from the message alone. Use when your message fully describes the desired table.
+
+```
+start_table_maker(
+  "Top 20 US hedge funds: fund name, AUM, primary strategy, founding year, HQ city",
+  auto_start=True)
+  → wait_for_conversation(conversation_id, session_id)
+      ← returns trigger_execution=true on first response (no Q&A)
+  → wait_for_job(session_id)          ← table building + preview
+  → approve_validation(job_id, cost_usd)
+  → wait_for_job(job_id)
+  → get_results(job_id)
+```
+
+> **Cost gate:** Table building and the 3-row preview are **free**. Full validation is charged at `approve_validation` — you always see the cost estimate at `preview_complete` before anything is billed. If your balance is insufficient, `approve_validation` returns an `insufficient_balance` error with the required amount.
 
 **Python script:** [`examples/02_generate_table.py`](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/02_generate_table.py)
 
 ```bash
 python examples/02_generate_table.py "Top 10 US hedge funds: fund name, AUM, strategy, HQ city"
 python examples/02_generate_table.py --prompt-file my_spec.txt
+
+# Fire-and-forget: skip clarifying Q&A and generate immediately from the prompt
+python examples/02_generate_table.py --auto-start "Top 10 US hedge funds: fund name, AUM, strategy, HQ city"
 ```
 
 ---
 
-### 3. Update a Table (Re-run Validation Pass)
+#### 3. Update a Table (Re-run Validation Pass)
 
 Re-run validation on a completed job — no re-upload or manual edits needed. The table iterates automatically, re-validating the same data with the same config to pick up any changes in source data.
 
@@ -202,7 +285,7 @@ python examples/03_update_table.py session_20260217_103045_abc123 --version 2
 
 ---
 
-### 4. Fact-Check Text or Documents (Chex)
+#### 4. Fact-Check Text or Documents (Chex)
 
 Submit any text, report, or document. Hyperplexity checks each factual claim against authoritative sources and returns a structured confidence report.
 
@@ -216,22 +299,39 @@ upload_file(path, "pdf")              ← upload PDF/document first
   → get_reference_results(job_id)
 ```
 
+> **Key behavior:** No preview or approval step. Submit and poll until `completed`, then fetch results via `get_reference_results`. The result is a presigned S3 CSV URL, not inline JSON.
+
+> **Progress tracking:** `get_job_messages` always returns empty for reference-check jobs. Use `get_job_status` (`current_step`, `progress_percent`) to track progress.
+
+**CSV output columns:** Claim ID, Claim Order, Statement, Context, Text Location, Claim Criticality, Qualified Fact, Reference, Supporting Data, Reference Description, What Reference Says, Support Level (SUPPORTED/PARTIAL/UNSUPPORTED/UNVERIFIABLE), Validation Notes
+
 **Python script:** [`examples/04_reference_check.py`](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/04_reference_check.py)
 
 ```bash
-# Fact-check inline text
+## Fact-check inline text
 python examples/04_reference_check.py --text "Bitcoin was created by Satoshi Nakamoto in 2009."
 
-# Fact-check a PDF
+## Fact-check a PDF
 python examples/04_reference_check.py --file analyst_report.pdf
 
-# Fact-check multiple documents concatenated
+## Fact-check multiple documents concatenated
 cat doc1.txt doc2.txt | python examples/04_reference_check.py --stdin
 ```
 
+> **--stdin:** Concatenates all piped content as a single inline text payload. All claims are attributed to the combined document.
+
 ---
 
-## Direct REST API
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `HYPERPLEXITY_API_KEY` | API key from [hyperplexity.ai/account](https://hyperplexity.ai/account). Required. New accounts get $20 free. |
+| `HYPERPLEXITY_API_URL` | Override the API base URL (useful for dev/staging environments). |
+
+---
+
+### Direct REST API
 
 All tools in the MCP server are thin wrappers over the REST API. You can call it directly from any language.
 
@@ -249,7 +349,7 @@ All tools in the MCP server are thin wrappers over the REST API. You can call it
 }
 ```
 
-### Python client (minimal)
+#### Python client (minimal)
 
 ```python
 import os, requests
@@ -272,9 +372,9 @@ A full standalone client module is in [`examples/hyperplexity_client.py`](https:
 
 ---
 
-## API Endpoint Reference
+### API Endpoint Reference
 
-### Uploads
+#### Uploads
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -295,9 +395,22 @@ A full standalone client module is in [`examples/hyperplexity_client.py`](https:
 
 Content types: `excel` → `.xlsx`, `csv` → `.csv`, `pdf` → `.pdf`
 
+**Confirm upload request** (optional fields):
+
+```json
+{
+  "session_id": "session_20260305_...",
+  "s3_key": "results/.../file.xlsx",
+  "filename": "companies.xlsx",
+  "instructions": "Validate AUM, strategy, and HQ city. Use Bloomberg and SEC filings as sources."
+}
+```
+
+`instructions` — if provided, bypasses the interactive upload interview. The AI generates the config directly from the table structure + instructions. Response includes `instructions_mode: true` and `conversation_id`. Use `wait_for_job(session_id)` to track progress — do NOT poll the conversation.
+
 ---
 
-### Conversations
+#### Conversations
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -306,9 +419,20 @@ Content types: `excel` → `.xlsx`, `csv` → `.csv`, `pdf` → `.pdf`
 | `POST` | `/conversations/{id}/message` | Send a reply to the AI |
 | `POST` | `/conversations/{id}/refine-config` | Refine the config with natural language instructions |
 
+**Table Maker request body:**
+
+```json
+{
+  "message": "Top 20 US hedge funds: fund name, AUM, primary strategy, founding year, HQ city",
+  "auto_start": true
+}
+```
+
+`auto_start` — if `true`, the AI skips clarifying questions and the structure-confirmation step, proceeding directly to table generation. The first `get_conversation` response will have `trigger_execution: true`. Use when your message fully describes the desired table.
+
 ---
 
-### Jobs
+#### Jobs
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -333,7 +457,7 @@ Content types: `excel` → `.xlsx`, `csv` → `.csv`, `pdf` → `.pdf`
 
 ---
 
-### Account
+#### Account
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -342,7 +466,7 @@ Content types: `excel` → `.xlsx`, `csv` → `.csv`, `pdf` → `.pdf`
 
 ---
 
-## MCP Tool Reference
+### MCP Tool Reference
 
 Every tool response includes a `_guidance` block with a plain-English summary and the exact next tool call(s) — enabling fully autonomous agent workflows.
 
@@ -369,23 +493,48 @@ Every tool response includes a `_guidance` block with a plain-English summary an
 
 ---
 
-## Key Behaviors
+### Key Behaviors
 
-### Auto-queued preview
+#### Auto-queued preview
 
 After the **upload interview** finishes (`trigger_execution=true` and `status=approved`) or after a **Table Maker** session completes, the preview is **automatically queued**. Do not call `create_job()`. Call `wait_for_job(session_id)` — it detects the intermediate config-generation or table-making phase automatically.
 
 Only call `create_job()` when you already have a `config_id` from a prior run.
 
-### Config reuse
+#### Config reuse
 
 If `confirm_upload` returns a match with `match_score ≥ 0.85`, skip the interview and call `create_job(session_id, config_id=...)` directly. The `configuration_id` from any completed job's `get_results` response can be reused on future uploads.
 
-### Cost confirmation gate
+#### Cost confirmation gate
 
 `approve_validation` requires `approved_cost_usd` matching the preview estimate. This prevents surprise charges. The estimate is in the `preview_complete` job status response under `cost_estimate.estimated_total_cost_usd`.
 
-### Consuming results: humans vs AI agents
+This gate applies regardless of whether `instructions` or `auto_start` was used — both only skip the *interview/confirmation conversation*, not the cost approval step. If your balance is insufficient when `approve_validation` is called, the API returns:
+
+```json
+{ "error": "insufficient_balance", "required_usd": 4.20, "current_balance_usd": 1.50 }
+```
+
+#### Fire-and-forget shortcuts
+
+Two optional flags let fully automated pipelines skip interactive steps:
+
+| Flag | Tool | Skips | Next step |
+|------|------|-------|-----------|
+| `instructions="..."` | `confirm_upload` | Upload interview Q&A | `wait_for_job(session_id)` |
+| `auto_start=True` | `start_table_maker` | Structure confirmation | `wait_for_conversation` → `wait_for_job` |
+
+Both flags cause `interview_auto_started: true` / `trigger_execution: true` on the first response. The `preview_complete` cost gate and `approve_validation` still apply.
+
+#### Consuming results: humans vs AI agents
+
+**Output files generated per run:**
+
+| File | Format | Description |
+|------|--------|-------------|
+| Preview table | Markdown (`.md`) | Human-readable table of the first 3 rows; included inline in the `preview_complete` response |
+| Enriched results | Excel (`.xlsx`) | Ideal for sharing with humans; sources and citations are embedded in cell comments |
+| Full metadata | `metadata.json` | Complete per-cell detail for every row; use the `_row_key` column to drill into specific rows programmatically |
 
 `get_results` returns:
 
@@ -397,7 +546,7 @@ If `confirm_upload` returns a match with `match_score ≥ 0.85`, skip the interv
 
 **Recommended AI agent workflow:**
 
-1. At `preview_complete`: read the inline `preview_table` (markdown, 3 rows) from `GET /jobs/{id}` to survey the table structure and spot-check values.
+1. At `preview_complete`: read the inline `preview_table` (markdown, 3 rows) from `GET /jobs/{id}` to survey the table structure and spot-check values. The AI agent can review this inline table and call `approve_validation` directly — no human approval step is required.
 2. After full validation: fetch `results.metadata_url` → `table_metadata.json`. This contains every validated row.
 3. Use `rows[].row_key` (stable SHA-256) to cross-reference rows between the markdown summary and the detailed JSON.
 4. Per-cell fields in `table_metadata.json`:
@@ -409,7 +558,7 @@ If `confirm_upload` returns a match with `match_score ≥ 0.85`, skip the interv
 
 ---
 
-## Pricing
+### Pricing
 
 | Mode | Cost |
 |------|------|
@@ -417,12 +566,13 @@ If `confirm_upload` returns a match with `match_score ≥ 0.85`, skip the interv
 | Standard validation | ~$0.05 / cell |
 | Advanced validation | up to ~$0.25 / cell |
 | Minimum per run | $2.00 |
+| Reference check | TBD — contact support |
 
 Credits are prepaid. Get $20 free at **[hyperplexity.ai/account](https://hyperplexity.ai/account)**.
 
 ---
 
-## Links
+### Links
 
 - **MCP server (PyPI):** `pip install mcp-server-hyperplexity`
 - **Source:** [github.com/EliyahuAI/mcp-server-hyperplexity](https://github.com/EliyahuAI/mcp-server-hyperplexity)

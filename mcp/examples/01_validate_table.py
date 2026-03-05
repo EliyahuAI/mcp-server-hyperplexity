@@ -16,6 +16,10 @@ Usage:
     export HYPERPLEXITY_API_KEY=hpx_live_your_key_here
     python 01_validate_table.py path/to/your_table.xlsx
 
+    # Fire-and-forget: skip the interview by providing instructions up front
+    python 01_validate_table.py path/to/your_table.xlsx \\
+        --instructions "This table lists clinical trials. Validate trial IDs, phase, and endpoints."
+
 Requirements: pip install requests
 """
 
@@ -27,9 +31,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 import hyperplexity_client as hpx
 
 
-def main(file_path: str, refine_instructions: str = "") -> None:
+def main(file_path: str, refine_instructions: str = "", instructions: str = "") -> None:
     print(f"\n=== Hyperplexity: Validate Table ===")
     print(f"File: {file_path}\n")
+    if instructions:
+        print(f"Instructions mode: config will be auto-generated (no interview)\n")
 
     # Detect file type
     ext = os.path.splitext(file_path)[1].lower()
@@ -48,10 +54,11 @@ def main(file_path: str, refine_instructions: str = "") -> None:
     # Step 2: Confirm upload — check for existing config matches
     # ------------------------------------------------------------------
     print("\n[2/6] Confirming upload and checking for matching configs...")
-    confirm = hpx.confirm_upload(session_id, s3_key, filename)
+    confirm = hpx.confirm_upload(session_id, s3_key, filename, instructions=instructions)
 
     config_id = None
     conversation_id = confirm.get("conversation_id")
+    instructions_mode = bool(confirm.get("instructions_mode"))
     matches = confirm.get("matches") or confirm.get("config_matches") or []
 
     if matches:
@@ -63,12 +70,12 @@ def main(file_path: str, refine_instructions: str = "") -> None:
         else:
             print(f"  Best config match score {score:.2f} < 0.85 — proceeding with AI interview")
 
-    if not config_id and not conversation_id:
+    if not config_id and not conversation_id and not instructions_mode:
         # Shouldn't happen — confirm always returns one or the other
         raise RuntimeError("No config match and no conversation_id returned from confirm_upload")
 
     # ------------------------------------------------------------------
-    # Step 3: If no config match, drive the AI interview
+    # Step 3: If no config match, drive the AI interview (or skip if instructions provided)
     # ------------------------------------------------------------------
     if config_id:
         # Reuse existing config — create preview job directly
@@ -80,6 +87,12 @@ def main(file_path: str, refine_instructions: str = "") -> None:
         })
         job_id = job_data.get("job_id", session_id)
         print(f"  Preview job queued: {job_id}")
+    elif instructions_mode:
+        # Instructions provided — AI generates config automatically, preview auto-queued.
+        # No interview needed; poll_job below handles both config-gen and preview phases.
+        print(f"\n[3/6] Instructions mode — config is being generated automatically...")
+        print("  (No interview required — waiting for config generation + preview)")
+        job_id = session_id
     else:
         # Drive the upload interview
         print(f"\n[3/6] Starting AI interview (conversation: {conversation_id})...")
@@ -113,7 +126,7 @@ def main(file_path: str, refine_instructions: str = "") -> None:
     refine_conv_id = (
         preview.get("conversation_id")
         or preview.get("refine_session")
-        or conversation_id
+        or (conversation_id if not instructions_mode else None)
     )
 
     # ------------------------------------------------------------------
@@ -198,5 +211,13 @@ if __name__ == "__main__":
         help="Natural language config refinement after preview "
              "(e.g. 'Add LinkedIn URL column. Remove revenue.')",
     )
+    parser.add_argument(
+        "--instructions",
+        default="",
+        metavar="INSTRUCTIONS",
+        help="Skip the AI interview by describing what to validate up front. "
+             "Example: 'This table lists clinical trials. Validate trial IDs and endpoints.' "
+             "Config is auto-generated and preview queued immediately.",
+    )
     args = parser.parse_args()
-    main(args.file, args.refine)
+    main(args.file, args.refine, args.instructions)

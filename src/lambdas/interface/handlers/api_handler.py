@@ -472,6 +472,7 @@ def _handle_confirm_upload(body, email, meta):
         # 29-second API Gateway limit.
         _best_score = matches[0].get("match_score", 0) if matches else 0
         _auto_interview_conv_id = None
+        _instructions = (body.get("instructions") or "").strip()
         if sess_info.get("via_api") and not body.get("skip_interview") and (not matches or _best_score < 0.85):
             try:
                 _conv_id = f"upload_conv_{uuid.uuid4().hex[:12]}"
@@ -479,7 +480,7 @@ def _handle_confirm_upload(body, email, meta):
                     session_id=session_id,
                     email=email,
                     conversation_id=_conv_id,
-                    user_message="",
+                    user_message=_instructions,
                     action="startUploadInterview",
                 ))
                 if _sqs_resp.get("success"):
@@ -642,6 +643,11 @@ def _handle_confirm_upload(body, email, meta):
         if _auto_interview_conv_id:
             response_data["conversation_id"] = _auto_interview_conv_id
             response_data["interview_auto_started"] = True
+            if _instructions:
+                # Signal that instructions were provided — AI will skip Q&A and go
+                # directly to config generation.  Guidance uses this to recommend
+                # wait_for_job instead of wait_for_conversation.
+                response_data["instructions_mode"] = True
 
         return _success_response(200, response_data, meta)
 
@@ -1274,6 +1280,7 @@ def _handle_start_table_maker(body, email, meta):
             "email": email,
             "session_id": session_id,
             "user_message": body.get("message", ""),
+            "auto_start": bool(body.get("auto_start", False)),
         },
         None,
     )

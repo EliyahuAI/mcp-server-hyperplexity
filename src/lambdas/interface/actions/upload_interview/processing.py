@@ -99,10 +99,11 @@ async def handle_upload_interview_start(event: Dict[str, Any], context: Any) -> 
             interview_handler.interview_context = conversation_state.get('interview_context', {})
             logger.info(f"[UPLOAD_INTERVIEW] Restored conversation state with {len(interview_handler.messages)} messages")
 
-        # Start interview
+        # Start interview — skip interactive modes when caller provided instructions
         result = await interview_handler.start_interview(
             table_analysis=table_analysis,
-            user_message=user_message
+            user_message=user_message,
+            skip_interview=bool(user_message),
         )
 
         if not result['success']:

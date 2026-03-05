@@ -12,6 +12,7 @@ Today is {{TODAY_DATE}}. Use this as your reference for "current", "recent", "la
 ## User's Latest Message
 {{USER_MESSAGE}}
 
+{{INSTRUCTIONS_MODE_DIRECTIVE}}
 ---
 
 ## Your Job: Choose ONE of Three Modes

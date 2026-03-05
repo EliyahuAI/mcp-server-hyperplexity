@@ -83,13 +83,28 @@ def register(server):
         session_id: str,
         s3_key: str,
         filename: str,
+        instructions: Optional[str] = None,
     ) -> list[types.TextContent]:
         """Confirm the upload and detect matching prior configs.
 
         Call this immediately after upload_file. Returns config_matches with
         match_score — if score >= 0.85 a prior config can be reused directly.
+
+        instructions: Optional natural-language description of what to validate
+          and how (e.g. "This table lists clinical trials — validate that trial IDs,
+          phase, and primary endpoints are accurate"). When provided, the upload
+          interview is bypassed: the AI reads the table structure + instructions
+          and generates a config directly without asking clarifying questions.
+          Preview is auto-triggered immediately after.
+
+          Config generation and the 3-row preview are free. Full validation is
+          charged at approve_validation — you still see the cost at preview_complete
+          before anything is billed. If balance is insufficient at that point,
+          approve_validation returns an insufficient_balance error.
         """
         payload = {"session_id": session_id, "s3_key": s3_key, "filename": filename}
+        if instructions:
+            payload["instructions"] = instructions
         data = client.post("/uploads/confirm", json=payload)
         data["_guidance"] = build_guidance("confirm_upload", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
