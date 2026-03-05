@@ -1324,11 +1324,12 @@ Query: {query}
         # Replace all matched snippet IDs with citation numbers
         # We've already identified all valid snippet IDs above, now replace any occurrence
         for snippet_id, citation_idx in snippet_to_citation.items():
-            # Replace [handle, snippet_id] format (raw JSON arrays)
-            answer_str = re.sub(rf'\[[^,\]]+,\s*{re.escape(snippet_id)}\]', f'[{citation_idx}]', answer_str)
-            # Replace "handle, snippet_id" format (strings in JSON arrays)
+            # Replace [handle, snippet_id] and [handle, snippet_id, anchor] formats (raw JSON arrays)
+            # The synthesis prompt uses 3-element format [handle, id, AA] where AA is the 2-letter anchor.
+            answer_str = re.sub(rf'\[[^,\]]+,\s*{re.escape(snippet_id)}(?:,\s*[A-Z]{{2}})?\]', f'[{citation_idx}]', answer_str)
+            # Replace "handle, snippet_id" and "handle, snippet_id, anchor" formats (strings in JSON arrays)
             # Keep as string to maintain valid JSON structure
-            answer_str = re.sub(rf'"[^"]*,\s*{re.escape(snippet_id)}"', f'"{citation_idx}"', answer_str)
+            answer_str = re.sub(rf'"[^"]*,\s*{re.escape(snippet_id)}(?:,\s*[A-Z]{{2}})?"', f'"{citation_idx}"', answer_str)
             # Replace [snippet_id] format
             answer_str = answer_str.replace(f'[{snippet_id}]', f'[{citation_idx}]')
             # Replace "snippet_id" format (strings) - keep as string

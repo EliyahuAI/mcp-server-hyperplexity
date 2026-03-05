@@ -169,8 +169,10 @@ import re as _re
 
 def _strip_citations(s: str) -> str:
     """Remove trailing citation markers like [1], [2], [1,2], (1), etc.
-    Also strips a leading '=' (spreadsheet formula prefix) that some QC models output."""
-    s = _re.sub(r'(\s*\[\d+(?:,\s*\d+)*\]|\s*\(\d+\))+\s*$', '', s).strip()
+    Also strips clone-style inline citations like [pdg_kstar892-mass_2024, S1.1.1.13-p0.95, AA]
+    and a leading '=' (spreadsheet formula prefix) that some QC models output."""
+    # Strip any trailing [...] or (...) blocks (numeric or clone-style) repeatedly
+    s = _re.sub(r'(\s*\[[^\]]*\]|\s*\(\d+\))+\s*$', '', s).strip()
     if s.startswith('='):
         s = s[1:].strip()
     return s
