@@ -431,6 +431,7 @@ def _queue_validate_reference_check(session_id: str, email: str, conversation_id
         'session_id': session_id,
         'email': email,
         'conversation_id': conversation_id,
+        'deployment_environment': os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod'),
     }
     message_body_cleaned = {k: v for k, v in message.items() if v is not None}
     _send_sqs_message(STANDARD_QUEUE_URL, message_body_cleaned)
