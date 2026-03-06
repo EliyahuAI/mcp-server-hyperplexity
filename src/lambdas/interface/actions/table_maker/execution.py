@@ -1044,6 +1044,45 @@ def _write_qc_section(
     _append_md_tables(storage_manager, email, session_id, conversation_id, "\n".join(sections))
 
 
+def _write_intermediate_qc_section(
+    storage_manager,
+    email: str,
+    session_id: str,
+    conversation_id: str,
+    qc_result: Dict,
+    round_label: str,
+) -> None:
+    """Write a compact QC summary for an intermediate (non-final) QC round to md_tables.md."""
+    if not qc_result:
+        return
+    qc_summary = qc_result.get('qc_summary', {})
+    action = qc_summary.get('action', qc_result.get('action', 'unknown'))
+    score = qc_summary.get('overall_score', 'N/A')
+    kept = qc_summary.get('kept', 0)
+    rejected = qc_summary.get('rejected', 0)
+    reasoning = qc_summary.get('reasoning', '')
+
+    sections = [f"\n### QC ({round_label}) — action: {action}, score: {score}, kept: {kept}, rejected: {rejected}\n"]
+    if reasoning:
+        sections.append(f"*{reasoning}*\n")
+
+    removal_reasons = qc_result.get('removal_reasons', {})
+    if not removal_reasons:
+        removal_reasons = {
+            r.get('row_id', '?'): r.get('rejection_reason', 'Removed by QC')
+            for r in qc_result.get('rejected_rows', [])
+            if r.get('row_id')
+        }
+    if removal_reasons:
+        sections.append("| Row ID | Reason |")
+        sections.append("|--------|--------|")
+        for row_id, reason in removal_reasons.items():
+            sections.append(f"| {row_id} | {reason} |")
+        sections.append("")
+
+    _append_md_tables(storage_manager, email, session_id, conversation_id, "\n".join(sections))
+
+
 def _generate_md_tables_content(
     background_research_result: Dict,
     column_definition_result: Dict,
@@ -3272,6 +3311,15 @@ async def execute_full_table_generation(
                                 f"Remaining: {timeout_guard.remaining():.0f}s, needed: {MIN_TIME_FOR_DISCOVERY_QC}s"
                             )
 
+                        # Write intermediate QC summary to md_tables before the next discovery round
+                        try:
+                            _write_intermediate_qc_section(
+                                storage_manager, email, session_id, conversation_id,
+                                qc_result, f"Round {retry_count}"
+                            )
+                        except Exception as md_err:
+                            logger.warning(f"[MD_TABLES] Failed to write intermediate QC section: {md_err}")
+
                         # Continue to re-run QC with merged results
                         logger.info(f"[RETRIGGER] Re-running QC with merged results (retrigger_allowed={retrigger_allowed})")
                         continue
@@ -3391,11 +3439,17 @@ async def execute_full_table_generation(
         #   * Retrigger (2 rounds): Simplified to show rejection_rate and note '2 rounds of search and QC'
         # - QC summary display: "QC Review: +X promoted, -Y rejected" (single) or "Y% rejected (2 rounds)" (retrigger)
 
+        # Use QC-reviewed count as denominator so "approved + rejected = total" math holds.
+        # original_discovered_count spans all rounds and includes deduped rows that never reach QC.
+        qc_total_reviewed = qc_summary.get('total_reviewed', 0) if qc_summary else 0
+        total_for_display = qc_total_reviewed if qc_total_reviewed > 0 else original_discovered_count
+
         # Build kwargs for additional fields
         additional_fields = {
             'approved_rows': approved_rows_preview,  # First 15 rows for display
             'total_approved': len(approved_rows),
-            'total_discovered': original_discovered_count,  # Use tracked count (includes retrigger rows, doesn't shrink)
+            'total_discovered': total_for_display,  # QC-reviewed count so math holds (approved + rejected = total)
+            'total_discovered_all_rounds': original_discovered_count,  # Full cumulative count across all rounds
             'qc_summary': qc_summary  # QC summary with promoted/demoted/rejected counts
         }
 

@@ -111,7 +111,7 @@ Use `retrigger_discovery` (if allowed and domain is not exhausted) to find more 
 
 ### Action: "filter"
 **When:** Need to remove some rows (from either set) OR reorder discovered rows
-**Output:** `keep_row_ids_in_order` (discovered rows to KEEP in order), `remove_prepopulated_row_ids` (pre-existing rows to remove), `overall_score`, optionally `removal_reasons`
+**Output:** `keep_row_ids_in_order` (discovered rows to KEEP in order), `remove_prepopulated_row_ids` (pre-existing rows to remove), `overall_score`, **`removal_reasons` (required — one entry per removed row explaining why)**
 
 ### Action: "retrigger_discovery"
 **When:** BOTH conditions must be true:
@@ -144,6 +144,8 @@ Use `retrigger_discovery` (if allowed and domain is not exhausted) to find more 
 **Use `keep_row_ids_in_order` for discovered rows and `remove_prepopulated_row_ids` for pre-existing rows.**
 
 **All fields must be present. Use null for fields not applicable to your action.**
+
+**`removal_reasons` values must be 1–4 words max.** Examples: `"duplicate"`, `"missing NCT"`, `"Phase 1 only"`, `"not oncology"`, `"low quality"`, `"off-topic"`. No sentences.
 
 ```json
 {
@@ -259,7 +261,7 @@ This keeps only these 4 discovered rows, in this exact order. Rows 3 and 5 are r
 | Action | keep_row_ids_in_order | remove_prepopulated_row_ids | removal_reasons | overall_score | discovery_guidance | new_subdomains | restructuring_guidance | user_message |
 |--------|----------------------|---------------------------|-----------------|---------------|-------------------|----------------|----------------------|--------------|
 | pass | null (keep all) | null (keep all) | null | number | null | null | null | null |
-| filter | array OR null | array OR null | optional object | number | null | null | null | null |
+| filter | array OR null | array OR null | **required object** | number | null | null | null | null |
 | retrigger_discovery | null | array OR null | null | number | string | array | null | null |
 | restructure | null | null | null | null | null | null | object | string |
 
