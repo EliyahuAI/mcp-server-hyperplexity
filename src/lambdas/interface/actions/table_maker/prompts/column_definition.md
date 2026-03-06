@@ -268,6 +268,7 @@ If background_research has `extracted_tables`:
 - Set `importance: "ID"` and `validation_strategy: ""`
 - Examples: ✅ Company Name, Paper Title, Headline,  ❌ "Story Description"
 - Should uniquely define the entity in the row without further columns
+- **⚠️ Soft requirements must NEVER become ID columns.** A soft requirement like "Prefers companies with 50+ employees" or "Prefers trials with active enrollment" describes a property to validate, not an identifier. Never encode soft requirements as ID column values or use them to restrict what counts as a valid entity. If a soft requirement can be validated per row, make it a RESEARCH column instead.
 
 **Research Columns (Validated Data):**
 - Complex information requiring validation
@@ -278,7 +279,7 @@ If background_research has `extracted_tables`:
 
 **For each hard requirement, add a corresponding research column — unless that criterion is already obviously captured by an existing column.**
 
-- **Hard requirements only** (soft requirements don't need columns — they are preferences, not gates)
+- **Hard requirements only** (soft requirements don't need columns — they are preferences, not gates; if a soft requirement can be validated per row, add a RESEARCH column for it)
 - **Place these columns first** among the research columns, before any other research columns
 - This lets the validator verify rows actually meet the hard requirements, and row expansion can filter on these criteria later
 

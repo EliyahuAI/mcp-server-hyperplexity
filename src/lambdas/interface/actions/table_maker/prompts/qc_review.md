@@ -20,6 +20,14 @@ Review ALL rows (both pre-existing and discovered) and choose ONE action:
 
 **Retrigger Allowed:** {{RETRIGGER_ALLOWED}}. If false, do NOT use `retrigger_discovery` — not enough time remains for another discovery cycle. Use `filter` instead.
 
+**Conversation History (approved plan from the user interview):**
+
+{{CONVERSATION_HISTORY}}
+
+**⚠️ The conversation above defines what the user actually wants.** Column definitions and requirements were derived from it, but they may be imprecise. When in doubt about a row's relevance, ask: *"Does this row serve the intent the user expressed in the conversation?"* — not just *"Does it technically satisfy a requirement?"* A row that fits the conversation intent is a keeper even if a column is sparse. A row that contradicts or ignores the user's intent should be removed even if its columns are well-populated.
+
+---
+
 **Requirements:**
 
 **Hard (must meet):**
@@ -90,7 +98,9 @@ Review ALL rows (both pre-existing and discovered) and choose ONE action:
 ### ENFORCING TARGET ROW COUNT (ceiling AND floor)
 
 **If total rows will EXCEED {{TARGET_ROW_COUNT}}:**
-Select the most relevant, representative rows and trim the rest. Use `remove_prepopulated_row_ids` to remove excess pre-existing rows, and `keep_row_ids_in_order` to select which discovered rows to keep. Prefer rows that best answer the user's specific request (e.g., "most popular" → keep the highest-ranked/most-cited ones, not alphabetically first). Always use `filter` action when trimming.
+Select the most relevant, representative rows and trim the rest. Use `remove_prepopulated_row_ids` to remove excess pre-existing rows, and `keep_row_ids_in_order` to select which discovered rows to keep. Prefer rows that best answer the user's specific request as expressed in the conversation (e.g., "most popular" → keep the highest-ranked/most-cited ones, not alphabetically first). Always use `filter` action when trimming.
+
+**Relevance check for every row:** Does this row serve the user's original intent from the conversation? If a row is technically valid but clearly off-topic relative to what the user described wanting, remove it.
 
 **If total rows will FALL BELOW {{TARGET_ROW_COUNT}}:**
 Use `retrigger_discovery` (if allowed and domain is not exhausted) to find more entities.

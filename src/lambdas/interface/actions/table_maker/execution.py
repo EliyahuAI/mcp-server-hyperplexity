@@ -948,12 +948,14 @@ def _write_qc_section(
     conversation_id: str,
     qc_result: Dict,
     approved_rows: List[Dict],
-    columns: List[Dict]
+    columns: List[Dict],
+    retrigger_attempt: int = 0
 ) -> None:
     """Write Section 3: Final Approved Table to md_tables.md."""
     sections = []
     sections.append("\n---\n")
-    sections.append("## 3. Final Approved Table (Post-QC)\n")
+    section_label = f"## 3. Final Approved Table (Post-QC)" + (f" — After Retrigger {retrigger_attempt}" if retrigger_attempt else "")
+    sections.append(section_label + "\n")
 
     if approved_rows:
         # Get column names
@@ -1015,6 +1017,16 @@ def _write_qc_section(
         sections.append(f"- Demoted: {qc_summary.get('demoted', 0)}")
         sections.append(f"- Rejected: {qc_summary.get('rejected', 0)}")
         sections.append(f"- Overall Score: {qc_summary.get('overall_score', 'N/A')}\n")
+
+        # Show per-row removal reasons so it's clear why rows were removed
+        removal_reasons = qc_result.get('removal_reasons', {})
+        if removal_reasons:
+            sections.append("\n### Rejected Rows\n")
+            sections.append("| Row ID | Reason |")
+            sections.append("|--------|--------|")
+            for row_id, reason in removal_reasons.items():
+                sections.append(f"| {row_id} | {reason} |")
+            sections.append("")
 
     _append_md_tables(storage_manager, email, session_id, conversation_id, "\n".join(sections))
 
@@ -2763,7 +2775,8 @@ async def execute_full_table_generation(
                         discovery_result=discovery_result,
                         retrigger_allowed=retrigger_allowed,
                         column_result=column_result,  # Pass column_definition result for prepopulated rows
-                        target_row_count=qc_target
+                        target_row_count=qc_target,
+                        conversation_history=conversation_state.get('messages', [])
                     )
 
                     if not qc_result.get('success'):
@@ -3121,9 +3134,17 @@ async def execute_full_table_generation(
                         new_rows = retrigger_discovery_result.get('final_rows', [])
                         logger.info(f"[RETRIGGER] Re-discovery found {len(new_rows)} new rows")
 
-                        # Track retrigger discovery API calls
+                        # Track retrigger discovery API calls + write to md_tables.md
                         retrigger_stream_results = retrigger_discovery_result.get('stream_results', [])
-                        for stream_result in retrigger_stream_results:
+                        try:
+                            _append_md_tables(
+                                storage_manager, email, session_id, conversation_id,
+                                f"\n---\n\n## 2b. Row Discovery (Retrigger {retry_count})\n"
+                            )
+                        except Exception as md_err:
+                            logger.warning(f"[MD_TABLES] Failed to write retrigger header: {md_err}")
+
+                        for stream_idx, stream_result in enumerate(retrigger_stream_results, 1):
                             subdomain_name = stream_result.get('subdomain', 'Unknown')
                             all_rounds = stream_result.get('all_rounds', [])
 
@@ -3142,6 +3163,19 @@ async def execute_full_table_generation(
                                     status='IN_PROGRESS',
                                     verbose_status=f'Retrigger discovery: {subdomain_name} round {round_num}'
                                 )
+
+                            try:
+                                _write_discovery_subdomain_header(
+                                    storage_manager, email, session_id, conversation_id,
+                                    subdomain_name, stream_idx, is_first=False
+                                )
+                                for round_data in all_rounds:
+                                    _write_discovery_round_section(
+                                        storage_manager, email, session_id, conversation_id,
+                                        subdomain_name, round_data
+                                    )
+                            except Exception as md_err:
+                                logger.warning(f"[MD_TABLES] Failed to write retrigger rounds for {subdomain_name}: {md_err}")
 
                         # Merge new rows with existing approved rows (deduplicate by ID values)
                         # IMPORTANT: Reset final_rows to only contain approved rows from first QC
@@ -3278,7 +3312,8 @@ async def execute_full_table_generation(
             qc_res = qc_result if 'qc_result' in locals() else {}
             _write_qc_section(
                 storage_manager, email, session_id, conversation_id,
-                qc_res, approved_rows, columns
+                qc_res, approved_rows, columns,
+                retrigger_attempt=retry_count
             )
             logger.info("[MD_TABLES] Wrote QC section to md_tables.md")
 

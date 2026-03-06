@@ -52,7 +52,8 @@ class QCReviewer:
         discovery_result: Dict = None,
         retrigger_allowed: bool = True,
         column_result: Dict = None,
-        target_row_count: int = 0
+        target_row_count: int = 0,
+        conversation_history: List[Dict] = None
     ) -> Dict[str, Any]:
         """
         Review and filter discovered rows using QC criteria.
@@ -155,6 +156,7 @@ class QCReviewer:
                 'USER_CONTEXT': user_context,  # Full user request
                 'TABLE_PURPOSE': table_purpose,  # What the table is for
                 'USER_REQUIREMENTS': user_requirements,  # Structured requirements
+                'CONVERSATION_HISTORY': self._format_conversation_history(conversation_history),
                 'ID_COLUMNS': self._format_id_columns(columns),  # ID fields with descriptions
                 'COLUMN_DEFINITIONS': self._format_columns(columns),  # All columns
                 'TABLEWIDE_RESEARCH': tablewide_research,  # Research context
@@ -522,6 +524,7 @@ class QCReviewer:
             result['reviewed_rows'] = reviewed_rows
             result['prepopulated_row_count'] = pre_row_count  # For execution to know total
             result['remove_prepopulated_row_ids'] = remove_prepopulated_row_ids  # For execution to filter initial_rows
+            result['removal_reasons'] = ai_response.get('removal_reasons', {}) or {}  # {row_id: reason}
 
             # Add insufficient rows details if applicable
             if insufficient_rows:
@@ -705,6 +708,22 @@ class QCReviewer:
                 raise ValueError("user_message required for restructure action")
 
         logger.info(f"[QC] Action-specific validation passed for action: {action}")
+
+    def _format_conversation_history(self, conversation_history: List[Dict]) -> str:
+        """Format conversation history for prompt injection."""
+        if not conversation_history:
+            return "(No conversation history available)"
+        lines = []
+        for msg in conversation_history:
+            role = msg.get('role', 'unknown').upper()
+            content = msg.get('content', '')
+            if isinstance(content, list):
+                # Handle multi-part content blocks
+                content = ' '.join(
+                    part.get('text', '') for part in content if isinstance(part, dict)
+                )
+            lines.append(f"**{role}:** {content}")
+        return '\n\n'.join(lines)
 
     def _format_requirements_for_prompt(self, search_strategy: Dict, type_filter: str) -> str:
         """
