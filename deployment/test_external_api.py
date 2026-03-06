@@ -64,7 +64,7 @@ PREVIEW_TIMEOUT = 900    # 15 minutes
 FULL_TIMEOUT = 3600      # 60 minutes
 
 # Hardcoded dev URL — use this by default so the test runs without AWS credentials.
-DEV_URL = "https://07w4n09m95.execute-api.us-east-1.amazonaws.com/v1"
+DEV_URL = "https://07w4n09m95.execute-api.us-east-1.amazonaws.com"
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +175,10 @@ def delete_api_key(key_hash: str) -> None:
 
 class APIClient:
     def __init__(self, base_url: str, api_key: str):
+        # Strip trailing /v1 so all call paths (which include /v1/...) don't double up
         self.base_url = base_url.rstrip("/")
+        if self.base_url.endswith("/v1"):
+            self.base_url = self.base_url[:-3]
         self.headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
