@@ -2112,7 +2112,10 @@ def generate_table_preview_metadata(
     validation_results: dict,
     config_data: dict,
     preview_row_count: int = 3,
-    table_name: str = None
+    table_name: str = None,
+    session_id: str = None,
+    viewer_url: str = None,
+    validated_at: str = None,
 ) -> dict:
     """
     Generate JSON metadata for interactive table preview.
@@ -2231,18 +2234,42 @@ def generate_table_preview_metadata(
             'cells': cells
         })
 
-    # Build schema_markdown — a self-contained markdown document for LLM consumption.
-    # Includes title, subtitle, config notes, confidence key, and column schema table.
+    # Build markdown_table — a self-contained markdown document for LLM consumption.
+    # Includes title, metadata, config notes, confidence key, column schema, and full data table.
     title = table_name or 'Validation Results'
     total_rows = len(validation_results)
-    subtitle = f'AI-validated table · {total_rows} row{"s" if total_rows != 1 else ""} × {len(columns)} column{"s" if len(columns) != 1 else ""}'
     general_notes = config_data.get('general_notes', '')
+    is_full_validation = (preview_row_count is None)
 
-    md_parts = [f'# {title}', '', subtitle]
+    md_parts = [f'# {title}']
+    md_parts.append('')
 
+    # --- Header metadata ---
+    if validated_at:
+        md_parts.append(f'**Validated:** {validated_at}')
+    md_parts.append(f'**Rows:** {total_rows} · **Columns:** {len(columns)}')
+    if viewer_url:
+        md_parts.append(f'**Interactive Viewer:** {viewer_url}')
+    if session_id:
+        md_parts.append(
+            f'**Download XLSX:** GET /v1/jobs/{session_id}/results → results.download_url'
+        )
+    if not is_full_validation:
+        md_parts.append(f'*(Preview — showing first {preview_row_count or 3} rows)*')
+
+    # --- Configuration notes ---
     if general_notes:
         md_parts += ['', '## Configuration Notes', '', general_notes.strip()]
 
+    # --- Refine configuration note ---
+    if viewer_url:
+        md_parts += [
+            '',
+            '> Column definitions and validation approaches can be refined via the '
+            '**Refine Configuration** option in the Interactive Viewer.',
+        ]
+
+    # --- Confidence key ---
     md_parts += [
         '',
         '## Confidence Key',
@@ -2254,31 +2281,76 @@ def generate_table_preview_metadata(
         '| 🔴 | LOW | Could not be verified or may be incorrect |',
         '| 🔵 | ID / Ignored | Not validated — identity or pass-through column |',
         '| ⭕ | Blank | Validation was attempted but no helpful information found |',
+    ]
+
+    # --- Column schema ---
+    md_parts += [
         '',
         '## Column Schema',
         '',
         '| Column | Importance | Description |',
         '|--------|-----------|-------------|',
-        '| _row_key | ID | Stable SHA-256 row identifier. '
-        'Use this key to look up the full validation detail for this row in `rows[]`: '
-        'each entry in `rows[].cells` contains `original_value` (the input before validation), '
-        '`validator_explanation` (why the AI chose the validated value), '
-        '`qc_reasoning` (quality-control reasoning), '
-        '`key_citation` (primary citation), and '
-        '`sources[]` (list of {title, url, snippet} references). |',
     ]
     for col in columns:
         desc = (col.get('description') or '').replace('|', '\\|').replace('\n', ' ')
         md_parts.append(f"| {col['name']} | {col['importance']} | {desc} |")
+    md_parts.append(
+        '| _row_key | ID | Stable SHA-256 row identifier (last column). '
+        'Use this key to look up full validation detail for any row in this JSON: '
+        '`rows[].cells[column_name]` contains `original_value`, '
+        '`validator_explanation`, `qc_reasoning`, `key_citation`, and `sources[]`. |'
+    )
 
-    schema_markdown = '\n'.join(md_parts)
+    # --- Full data table ---
+    # For full validation (preview_row_count=None): all rows.
+    # For preview: first N rows with a note.
+    all_row_keys = list(validation_results.keys())
+    col_names = [col['name'] for col in columns]
+
+    header = '| ' + ' | '.join(col_names) + ' | _row_key |'
+    separator = '|' + '|'.join(['---'] * (len(col_names) + 1)) + '|'
+    md_parts += ['', '## Validation Results', '', header, separator]
+
+    for rk in all_row_keys:
+        row_data = validation_results.get(rk, {})
+        if not isinstance(row_data, dict):
+            continue
+        cells_md = []
+        for cn in col_names:
+            field = row_data.get(cn, {})
+            if isinstance(field, dict):
+                val = str(field.get('value', ''))
+            else:
+                val = str(field) if field else ''
+            # Confidence icon prefix for non-ID columns
+            col_cfg = column_config_map.get(cn, {})
+            imp = col_cfg.get('importance', '').upper()
+            if imp not in ('ID', 'IGNORED'):
+                conf = field.get('confidence_level', '') if isinstance(field, dict) else ''
+                icon = {'HIGH': '🟢', 'MEDIUM': '🟡', 'LOW': '🔴'}.get(conf, '⭕') if conf else ''
+                val_display = f'{icon} {val}'.strip() if icon else val
+            else:
+                val_display = val
+            cells_md.append(val_display.replace('|', '\\|').replace('\n', ' '))
+        cells_md.append(rk)  # _row_key is last column
+        md_parts.append('| ' + ' | '.join(cells_md) + ' |')
+
+    md_parts += [
+        '',
+        '> **Finding citations:** To access sources, citations, and validator reasoning for any '
+        'cell, find the row\'s `_row_key` in `rows[]` within this JSON and inspect '
+        '`rows[].cells[column_name].comment` — it contains `validator_explanation`, '
+        '`key_citation`, and `sources[]` (list of {title, url, snippet}).',
+    ]
+
+    markdown_table = '\n'.join(md_parts)
 
     llm_hint = (
-        'START HERE: read `schema_markdown` before processing this file. '
-        'It contains the table title, configuration notes, a confidence key, '
-        'and the complete column schema in one readable block. '
-        'Each entry in `rows[]` is identified by `row_key`. '
-        'For any row, look up `rows[].cells[column_name]` to find: '
+        'START HERE: read `markdown_table` before processing this file. '
+        'It contains the table title, validation timestamp, viewer and download links, '
+        'configuration notes, a confidence key, column schema, and the complete validated '
+        'data table with _row_key as the last column. '
+        'Use _row_key to look up full cell detail in rows[]: '
         '`original_value` (input before validation), '
         '`validator_explanation` (why the AI chose the validated value), '
         '`qc_reasoning` (quality-control reasoning), '
@@ -2287,8 +2359,8 @@ def generate_table_preview_metadata(
     )
 
     return {
+        'markdown_table': markdown_table,
         '_llm_hint': llm_hint,
-        'schema_markdown': schema_markdown,
         'table_name': table_name,
         'columns': columns,
         'rows': rows,

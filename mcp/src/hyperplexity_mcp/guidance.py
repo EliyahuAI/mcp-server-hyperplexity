@@ -481,9 +481,9 @@ def _guidance_get_job_status(data: dict) -> dict:
                 },
             ],
             "output_files": {
-                "preview_md": "Markdown preview table — human-readable summary of validated rows.",
-                "excel_file": "Excel file with sources and citations embedded in cell comments — ideal for sharing with humans.",
-                "metadata_json": "Complete metadata JSON including _row_key column for drilling into specific rows, per-cell confidence, citations, and validator reasoning.",
+                "markdown_table": "Self-contained markdown in metadata.markdown_table — full data table with _row_key column, confidence icons, viewer URL, and citation navigation guide. Read this first.",
+                "excel_file": "XLSX file with sources and citations embedded in cell comments — ideal for sharing with humans.",
+                "metadata_json": "Complete table_metadata.json — per-cell confidence, citations, sources, and validator reasoning, keyed by row_key.",
             },
         }
 
@@ -636,33 +636,27 @@ def _guidance_get_results(data: dict) -> dict:
     has_metadata = bool(result_info.get("metadata"))
     notes = [
         "HOW TO READ THE RESULTS:",
-        "1. results.metadata is the full table_metadata.json — already embedded inline in "
-        "this response. It is your primary machine-readable source of truth for every "
-        "validated cell." if has_metadata else
-        "1. results.metadata_url (presigned S3 URL) points to table_metadata.json — the "
-        "structured JSON file containing every validated cell's full detail. "
-        "Download it to access per-cell validation details.",
-        "2. results.metadata structure:",
-        "   • table_name  — display name of the validated table",
-        "   • columns[]   — list of validated columns with importance, description, notes",
-        "   • rows[]      — one entry per row. Each row has cells[] array (positional, aligned to columns[]):",
-        "       cells[i].display_value      — formatted value with confidence emoji prefix",
-        "       cells[i].full_value         — raw validated/corrected value",
-        "       cells[i].confidence         — HIGH / MEDIUM / LOW / ID",
-        "       cells[i].comment.validator_explanation — why the value was accepted/changed",
-        "       cells[i].comment.qc_reasoning          — QC layer reasoning",
-        "       cells[i].comment.key_citation          — the single most important citation",
-        "       cells[i].comment.sources[]             — [{title, url, snippet}] supporting sources",
-        "   jq extraction: .results.metadata | {cols: (.columns | map(.name)), rows: (.rows | map(.cells | map(.display_value)))}",
-        "3. results.download_url is the enriched Excel file — every cell has the same "
-        "validation detail embedded as hyperlinks and comments. Use it when you need "
-        "a self-contained file to share or analyse offline.",
+        "1. START HERE — results.metadata_url → table_metadata.json → read metadata.markdown_table "
+        "first. It is a self-contained markdown document with: the full validated data table "
+        "(all rows, full values, _row_key as the last column), configuration notes, "
+        "confidence key, viewer/download links, and instructions for navigating citations. "
+        "It is designed to be read directly without parsing JSON." if not has_metadata else
+        "1. START HERE — results.metadata.markdown_table is a self-contained markdown document "
+        "with the full validated data table (all rows, full values, _row_key as last column), "
+        "configuration notes, confidence key, viewer/download links, and citation navigation guide. "
+        "Read it first.",
+        "2. To look up sources, citations, and validator reasoning for any cell: take the row's "
+        "_row_key from the markdown table and find that row in metadata.rows[] — "
+        "rows[].cells[column_name].comment contains validator_explanation, qc_reasoning, "
+        "key_citation, and sources[] ({title, url, snippet}).",
+        "3. results.download_url is the enriched Excel file with validation detail in cell comments. "
+        "Use it when you need a file to share with humans offline.",
         "4. Always share results.interactive_viewer_url with human stakeholders — "
         "it renders sources, citations, and confidence scores in a clean UI that is "
         "far easier to navigate than raw JSON or spreadsheet formulas.",
-        "5. If the response was too large and saved to a file, use jq to extract key fields: "
-        "jq '.result[0].text | fromjson | .results.metadata | "
-        "{cols: (.columns | map(.name)), rows: (.rows | map(.cells | map(.display_value)))}' <file>",
+        "5. Column definitions and validation approaches can be refined — share "
+        "results.interactive_viewer_url and ask the human to use Refine Configuration, "
+        "or call refine_config with updated instructions.",
     ]
 
     return {
@@ -683,9 +677,9 @@ def _guidance_get_results(data: dict) -> dict:
             }.items() if v
         },
         "output_files": {
-            "preview_md": "Markdown preview table — human-readable summary of validated rows.",
-            "excel_file": "Excel file with sources and citations embedded in cell comments — ideal for sharing with humans.",
-            "metadata_json": "Complete metadata JSON including _row_key column for drilling into specific rows, per-cell confidence, citations, and validator reasoning.",
+            "markdown_table": "Self-contained markdown in metadata.markdown_table — full data table with _row_key column, confidence icons, viewer URL, and citation navigation guide. Read this first.",
+            "excel_file": "XLSX file with sources and citations embedded in cell comments — ideal for sharing with humans.",
+            "metadata_json": "Complete table_metadata.json — per-cell confidence, citations, sources, and validator reasoning, keyed by row_key.",
         },
     }
 

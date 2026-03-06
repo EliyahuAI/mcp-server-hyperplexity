@@ -5068,11 +5068,18 @@ def handle_main_processing(event, context):
                                     from excel_report_qc_unified import generate_table_preview_metadata
                                     # Get clean table name from session_info if available
                                     full_clean_table_name = (session_info.get('clean_table_name') if session_info else None) or config_data.get('table_name')
+                                    # Build permanent viewer URL for the markdown_table header
+                                    _viewer_base = os.environ.get('VIEWER_BASE_URL', 'https://eliyahu.ai/hyperplexity')
+                                    _viewer_url = f"{_viewer_base}?mode=viewer&session={clean_session_id}&version={config_version}"
+                                    _validated_at = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
                                     full_table_metadata = generate_table_preview_metadata(
                                         validation_results=real_results,
                                         config_data=config_data,
                                         preview_row_count=None,  # None = include ALL rows
-                                        table_name=full_clean_table_name
+                                        table_name=full_clean_table_name,
+                                        session_id=clean_session_id,
+                                        viewer_url=_viewer_url,
+                                        validated_at=_validated_at,
                                     )
                                     if full_table_metadata:
                                         session_path = storage_manager.get_session_path(email, clean_session_id)
