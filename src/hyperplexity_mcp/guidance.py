@@ -61,9 +61,58 @@ def _guidance_confirm_upload(data: dict) -> dict:
     matches = data.get("matches") or data.get("config_matches") or []
     best_score = matches[0].get("match_score", 0) if matches else 0
 
+    s3_key = data.get("s3_key", "")
+    reference_check_option = {
+        "tool": "reference_check",
+        "params": {"s3_key": s3_key} if s3_key else {"text": "<inline text>"},
+        "note": (
+            "ALTERNATIVE PATH — if you want to fact-check/verify claims in this document: "
+            "call reference_check directly. There is NO interview, NO config step. "
+            "Phase 1 (extraction, free) runs automatically; poll with wait_for_job until "
+            "preview_complete, then call approve_validation to start Phase 2 (validation, charged). "
+            "Pass auto_approve=True to skip the approval gate and run straight through."
+        ),
+    }
+
     # Server auto-started an upload interview (API session, no strong match).
     # conversation_id is present in the response — just poll it.
     if conv_id and data.get("interview_auto_started"):
+        instructions_mode = bool(data.get("instructions_mode"))
+
+        if instructions_mode:
+            # instructions= was passed: AI skips Q&A and generates config directly.
+            # Preview is auto-triggered after config generation.
+            # Use wait_for_job — no conversation polling needed.
+            return {
+                "summary": (
+                    "Upload confirmed. instructions= provided — the AI is generating the "
+                    "validation config directly from the table structure and your instructions "
+                    "(no clarifying questions). Preview will auto-trigger after config "
+                    f"generation. conversation_id: {conv_id}"
+                ),
+                "next_steps": [
+                    {
+                        "tool": "wait_for_job",
+                        "params": {
+                            "job_id": session_id,
+                            "timeout_seconds": 600,
+                            "warmup_seconds": 300,
+                        },
+                        "note": (
+                            "Config is being generated automatically (~2–3 min), then preview "
+                            "runs (~3–5 min). timeout_seconds=600 covers both phases. "
+                            "warmup_seconds=300 shows synthetic progress during the initial "
+                            "silent phase (internal interview + config gen produce no messages). "
+                            "wait_for_job tracks the config-generation intermediate step then "
+                            "the preview automatically. Do NOT call create_job() or "
+                            "wait_for_conversation."
+                        ),
+                    },
+                    reference_check_option,
+                ],
+            }
+
+        # No instructions: normal interactive interview — AI may ask questions.
         return {
             "summary": (
                 "Upload confirmed. No strong config match found — an AI interview has been "
@@ -92,6 +141,7 @@ def _guidance_confirm_upload(data: dict) -> dict:
                     "params": {"conversation_id": conv_id, "session_id": session_id},
                     "note": "Fallback: one-shot poll — re-call every 15s manually.",
                 },
+                reference_check_option,
             ],
         }
 
@@ -108,6 +158,7 @@ def _guidance_confirm_upload(data: dict) -> dict:
                     "params": {"session_id": session_id, "config_id": config_id},
                     "note": "Creates a preview job using the matched config. Fastest path.",
                 },
+                reference_check_option,
             ],
         }
     else:
@@ -125,6 +176,7 @@ def _guidance_confirm_upload(data: dict) -> dict:
                     },
                     "note": "Supply your own config JSON directly.",
                 },
+                reference_check_option,
             ],
         }
 
@@ -222,6 +274,46 @@ def _guidance_get_job_status(data: dict) -> dict:
                 "session_id and job_id are the same value — this is by design. "
                 "The status endpoint always reflects the most recent run for this session "
                 "(config-gen → preview → validation as the pipeline advances)."
+            ],
+        }
+
+    if status == "preview_complete" and data.get("claims_summary"):
+        # Reference-check preview_complete: extraction done, waiting for approval
+        claims = data.get("claims_summary") or {}
+        cost_est = data.get("cost_estimate") or {}
+        cost = cost_est.get("estimated_total_cost_usd") or 0
+        est_time_s = cost_est.get("estimated_validation_time_seconds")
+        time_label = (
+            f"~{round(int(est_time_s) / 60)} min" if est_time_s and int(est_time_s) >= 60
+            else (f"~{est_time_s}s" if est_time_s else "")
+        )
+        return {
+            "summary": (
+                f"Reference-check extraction complete. "
+                f"{claims.get('total', '?')} claims found "
+                f"({claims.get('with_references', '?')} with citations, "
+                f"{claims.get('without_references', '?')} without). "
+                f"Estimated validation cost: ${cost}."
+                + (f" Estimated time: {time_label}." if time_label else "")
+            ),
+            "claims_summary": claims,
+            "cost_estimate": cost_est,
+            "next_steps": [
+                {
+                    "tool": "approve_validation",
+                    "params": {"job_id": job_id, "approved_cost_usd": cost},
+                    "note": (
+                        f"Approve to run Phase 2 (claim validation). "
+                        f"Cost: ${cost}."
+                        + (f" Estimated time: {time_label}." if time_label else "")
+                    ),
+                },
+                {
+                    "tool": "get_reference_results",
+                    "params": {"job_id": job_id},
+                    "note": "After validation completes, fetch the CSV results here.",
+                    "when": "after validation completes (status=completed)",
+                },
             ],
         }
 
@@ -327,6 +419,11 @@ def _guidance_get_job_status(data: dict) -> dict:
         return {
             "summary": summary,
             "next_steps": next_steps,
+            "no_approval_gate": True,
+            "agent_note": (
+                "The agent can review the preview_table (included inline) and call "
+                "approve_validation directly — no human approval is required unless you want it."
+            ),
         }
 
     if status == "completed":
@@ -383,6 +480,11 @@ def _guidance_get_job_status(data: dict) -> dict:
                     "note": "Optional: fetch reference-check sub-results if applicable.",
                 },
             ],
+            "output_files": {
+                "preview_md": "Markdown preview table — human-readable summary of validated rows.",
+                "excel_file": "Excel file with sources and citations embedded in cell comments — ideal for sharing with humans.",
+                "metadata_json": "Complete metadata JSON including _row_key column for drilling into specific rows, per-cell confidence, citations, and validator reasoning.",
+            },
         }
 
     if status == "failed":
@@ -580,12 +682,20 @@ def _guidance_get_results(data: dict) -> dict:
                 "metadata":           metadata_url,
             }.items() if v
         },
+        "output_files": {
+            "preview_md": "Markdown preview table — human-readable summary of validated rows.",
+            "excel_file": "Excel file with sources and citations embedded in cell comments — ideal for sharing with humans.",
+            "metadata_json": "Complete metadata JSON including _row_key column for drilling into specific rows, per-cell confidence, citations, and validator reasoning.",
+        },
     }
 
 
 def _guidance_get_reference_results(data: dict) -> dict:
+    download_url = (data.get("results") or {}).get("download_url", "")
     return {
-        "summary": "Reference results fetched. Workflow complete.",
+        "summary": "Reference check complete. Results are a presigned CSV download URL.",
+        "result_format": "CSV file with columns: Claim ID, Claim Order, Statement, Context, Text Location, Claim Criticality, Qualified Fact, Reference, Supporting Data, Reference Description, What Reference Says, Support Level (SUPPORTED/PARTIAL/UNSUPPORTED/UNVERIFIABLE), Validation Notes",
+        "download_url": download_url,
         "next_steps": [],
     }
 
@@ -610,13 +720,43 @@ def _guidance_update_table(data: dict) -> dict:
 
 def _guidance_reference_check(data: dict) -> dict:
     job_id = data.get("job_id", "")
+    auto_approve = bool(data.get("auto_approve", False))
+
+    if auto_approve:
+        return {
+            "summary": (
+                "Reference-check job started with auto_approve=True. "
+                "Phase 1 (claim extraction) runs first, then Phase 2 (validation) is "
+                "queued automatically — no approval step needed. "
+                "Poll with wait_for_job until status=completed, then call get_results "
+                "or get_reference_results."
+            ),
+            "phases": ["extraction (free)", "validation (charged, auto-approved)"],
+            "messages_note": "get_job_messages is empty for reference checks — use wait_for_job or get_job_status.",
+            "next_steps": [
+                {
+                    "tool": "wait_for_job",
+                    "params": {"job_id": job_id, "timeout_seconds": 900},
+                    "note": "Waits for completed. Then call get_results (CSV + interactive viewer).",
+                }
+            ],
+        }
+
     return {
-        "summary": "Reference-check job started. Use wait_for_job to track completion.",
+        "summary": (
+            "Reference-check extraction started (Phase 1, free). "
+            "Poll with wait_for_job until preview_complete — then review claims_summary + "
+            "cost_estimate and call approve_validation to run full claim validation "
+            "(Phase 2, charged)."
+        ),
+        "phases": ["extraction (free)", "approval gate", "validation (charged)"],
+        "auto_approve_note": "Pass auto_approve=True to run straight through without the gate.",
+        "messages_note": "get_job_messages is empty for reference checks — use wait_for_job or get_job_status.",
         "next_steps": [
             {
                 "tool": "wait_for_job",
                 "params": {"job_id": job_id},
-                "note": "Blocks until completed with live progress. Then call get_reference_results.",
+                "note": "Waits for preview_complete. Then call approve_validation.",
             }
         ],
     }
@@ -643,21 +783,49 @@ def _guidance_start_table_maker(data: dict) -> dict:
             ],
         }
 
+    auto_start = bool(data.get("auto_start"))
+
     # Default: still processing (status == "processing" or unknown)
+    if auto_start:
+        conv_summary = (
+            "Table-maker started with auto_start=True — the AI skips questions and "
+            "structure-confirmation, outputting trigger_execution=true directly. "
+            "One wait_for_conversation call is all that's needed before switching to wait_for_job."
+        )
+        conv_expected = 90   # single direct mode-3 turn; no multi-turn Q&A
+        conv_note = (
+            "With auto_start=True there is exactly ONE conversation turn. "
+            "The AI skips questions and structure-confirmation and returns "
+            "trigger_execution=true immediately. Expected ~60–90s. "
+            "After this call returns, switch to wait_for_job(session_id)."
+        )
+    else:
+        conv_summary = "Table-maker conversation started. Wait for the AI's response."
+        conv_expected = 150  # may ask questions + present structure
+        conv_note = (
+            "Preferred: blocks with synthetic progress until the AI presents a table "
+            "structure or asks a clarifying question. First turn typically takes 2–3 min."
+        )
+
+    cost_note = (
+        "Table building and the 3-row preview are free. Full validation is charged "
+        "at approve_validation — you see the cost estimate at preview_complete "
+        "before anything is billed. If balance is insufficient, approve_validation "
+        "returns an insufficient_balance error with the required amount."
+    )
+
     return {
-        "summary": "Table-maker conversation started. Wait for the AI's response.",
+        "summary": conv_summary,
+        "cost_note": cost_note,
         "next_steps": [
             {
                 "tool": "wait_for_conversation",
                 "params": {
                     "conversation_id": conv_id,
                     "session_id": session_id,
-                    "expected_seconds": 150,
+                    "expected_seconds": conv_expected,
                 },
-                "note": (
-                    "Preferred: blocks with synthetic progress until the AI presents a table "
-                    "structure or asks a clarifying question. First turn typically takes 2–3 min."
-                ),
+                "note": conv_note,
             },
             {
                 "tool": "get_conversation",
@@ -673,6 +841,14 @@ def _guidance_start_table_maker(data: dict) -> dict:
             "the conversation, or use refine_config after the preview to adjust column selection "
             "before approving. Exact cost is confirmed at preview_complete."
         ),
+        "workflow": {
+            "fire_and_forget_capable": True,
+            "note": (
+                "After preview completes, the agent can auto-approve and proceed to full "
+                "validation without human intervention. Review the inline preview_table in "
+                "the preview_complete response."
+            ),
+        },
     }
 
 

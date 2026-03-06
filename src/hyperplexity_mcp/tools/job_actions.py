@@ -35,10 +35,19 @@ def register(server):
     def reference_check(
         text: Optional[str] = None,
         s3_key: Optional[str] = None,
+        auto_approve: bool = False,
     ) -> list[types.TextContent]:
         """Submit a reference-check job for a text snippet or uploaded file.
 
         Provide either text (inline) or s3_key (already-uploaded file).
+
+        The job runs in two phases:
+        - Phase 1 (free): claim extraction. Poll with wait_for_job until
+          status=preview_complete, then review claims_summary + cost_estimate.
+        - Phase 2 (charged): claim validation. Triggered by approve_validation.
+
+        Set auto_approve=True to skip the approval gate and run straight through
+        to completion automatically.
         """
         if not text and not s3_key:
             raise ValueError("Provide either 'text' or 's3_key'.")
@@ -48,6 +57,8 @@ def register(server):
             payload["text"] = text
         if s3_key:
             payload["s3_key"] = s3_key
+        if auto_approve:
+            payload["auto_approve"] = True
 
         data = client.post("/jobs/reference-check", json=payload)
         data["_guidance"] = build_guidance("reference_check", data)
