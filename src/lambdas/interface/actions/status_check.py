@@ -269,38 +269,56 @@ def handle_get_reference_results(request_data, context=None):
                 },
             })
 
-        # Load conversation state from S3 to get the CSV key
-        conversation_id = status_record.get('conversation_id')
-        csv_url = None
-        if conversation_id and email:
-            try:
-                from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
-                mgr = UnifiedS3Manager()
-                state_key = (
-                    f"reference_checks/{email}/{base_session_id}/"
-                    f"{conversation_id}/conversation_state.json"
-                )
-                state_obj = mgr.s3_client.get_object(
-                    Bucket=mgr.bucket_name, Key=state_key
-                )
-                state = json.loads(state_obj['Body'].read())
-                csv_s3_key = state.get('csv_s3_key')
-                if csv_s3_key:
-                    csv_url = generate_presigned_url(S3_RESULTS_BUCKET, csv_s3_key)
-            except Exception as e:
-                logger.warning(f"[REF_RESULTS] Could not load conversation state: {e}")
+        # Primary: results_s3_key on run record (XLSX output from validation pipeline)
+        results_s3_key = status_record.get('results_s3_key')
+        download_url = None
+        metadata_url = None
+        file_format = 'xlsx'
+        if results_s3_key:
+            download_url = generate_presigned_url(S3_RESULTS_BUCKET, results_s3_key)
+            file_format = 'xlsx' if results_s3_key.endswith('.xlsx') else (
+                'csv' if results_s3_key.endswith('.csv') else 'xlsx'
+            )
+            results_dir = results_s3_key.rsplit('/', 1)[0]
+            metadata_url = generate_presigned_url(
+                S3_RESULTS_BUCKET, f"{results_dir}/table_metadata.json"
+            )
 
-        # Fall back to results_s3_key on the run record
-        if not csv_url and status_record.get('results_s3_key'):
-            csv_url = generate_presigned_url(S3_RESULTS_BUCKET, status_record['results_s3_key'])
+        # Fallback: csv_s3_key in conversation state (for older runs without results_s3_key)
+        if not download_url:
+            conversation_id = status_record.get('conversation_id')
+            if conversation_id and email:
+                try:
+                    from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+                    mgr = UnifiedS3Manager()
+                    state_key = (
+                        f"reference_checks/{email}/{base_session_id}/"
+                        f"{conversation_id}/conversation_state.json"
+                    )
+                    state_obj = mgr.s3_client.get_object(
+                        Bucket=mgr.bucket_name, Key=state_key
+                    )
+                    state = json.loads(state_obj['Body'].read())
+                    fallback_key = state.get('results_s3_key') or state.get('csv_s3_key')
+                    if fallback_key:
+                        download_url = generate_presigned_url(S3_RESULTS_BUCKET, fallback_key)
+                        file_format = 'xlsx' if fallback_key.endswith('.xlsx') else 'csv'
+                except Exception as e:
+                    logger.warning(f"[REF_RESULTS] Could not load conversation state: {e}")
+
+        import os as _os
+        viewer_base = _os.environ.get('VIEWER_BASE_URL', 'https://eliyahu.ai/viewer')
+        viewer_url = f"{viewer_base}?session={base_session_id}"
 
         return create_response(200, {
             'success': True,
             'job_id': job_id,
             'status': 'completed',
             'results': {
-                'download_url': csv_url,
-                'file_format': 'csv',
+                'download_url': download_url,
+                'file_format': file_format,
+                'interactive_viewer_url': viewer_url,
+                'metadata_url': metadata_url,
             },
         })
 

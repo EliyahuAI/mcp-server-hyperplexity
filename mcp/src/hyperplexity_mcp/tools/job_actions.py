@@ -40,11 +40,14 @@ def register(server):
         """Submit a reference-check job for a text snippet or uploaded file.
 
         Provide either text (inline) or s3_key (already-uploaded file).
+        Designed for text with 4 or more factual claims; fewer claims may produce
+        low-quality results.
 
         The job runs in two phases:
         - Phase 1 (free): claim extraction. Poll with wait_for_job until
           status=preview_complete, then review claims_summary + cost_estimate.
         - Phase 2 (charged): claim validation. Triggered by approve_validation.
+          Returns XLSX file, interactive viewer URL, and metadata JSON.
 
         Set auto_approve=True to skip the approval gate and run straight through
         to completion automatically.

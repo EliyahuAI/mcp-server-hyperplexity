@@ -1158,7 +1158,7 @@ def _handle_approve_validation(job_id, body, email, meta):
 
 def _handle_get_results(job_id, email, meta):
     """GET /v1/jobs/{job_id}/results"""
-    # ---- Reference-check: return CSV download URL + interactive viewer ----
+    # ---- Reference-check: return XLSX download URL + interactive viewer + metadata ----
     try:
         from dynamodb_schemas import find_run_key_by_type, get_run_status as _grs
         rc_key = find_run_key_by_type(job_id, "ReferenceCheck")
@@ -1166,12 +1166,29 @@ def _handle_get_results(job_id, email, meta):
             rc_record = _grs(job_id, rc_key)
             rc_status = str(rc_record.get("status") or "").upper() if rc_record else ""
             if rc_status in ("COMPLETED", "COMPLETE"):
-                conv_state = _load_rc_conversation_state(job_id, email)
-                csv_s3_key = conv_state.get("csv_s3_key") or (rc_record.get("results_s3_key") if rc_record else None)
+                # Primary: results_s3_key on run record (XLSX output from validation pipeline)
+                results_s3_key = rc_record.get("results_s3_key") if rc_record else None
                 download_url = None
-                if csv_s3_key:
+                metadata_url = None
+                file_format = "xlsx"
+                if results_s3_key:
                     from interface_lambda.core.s3_manager import generate_presigned_url, S3_RESULTS_BUCKET
-                    download_url = generate_presigned_url(S3_RESULTS_BUCKET, csv_s3_key)
+                    download_url = generate_presigned_url(S3_RESULTS_BUCKET, results_s3_key)
+                    file_format = "xlsx" if results_s3_key.endswith(".xlsx") else (
+                        "csv" if results_s3_key.endswith(".csv") else "xlsx"
+                    )
+                    results_dir = results_s3_key.rsplit("/", 1)[0]
+                    metadata_url = generate_presigned_url(
+                        S3_RESULTS_BUCKET, f"{results_dir}/table_metadata.json"
+                    )
+                else:
+                    # Fallback: load from conversation state
+                    from interface_lambda.core.s3_manager import generate_presigned_url, S3_RESULTS_BUCKET
+                    conv_state = _load_rc_conversation_state(job_id, email)
+                    fallback_key = (conv_state or {}).get("results_s3_key") or (conv_state or {}).get("csv_s3_key")
+                    if fallback_key:
+                        download_url = generate_presigned_url(S3_RESULTS_BUCKET, fallback_key)
+                        file_format = "xlsx" if fallback_key.endswith(".xlsx") else "csv"
                 import os as _os
                 viewer_base = _os.environ.get('VIEWER_BASE_URL', 'https://eliyahu.ai/viewer')
                 viewer_url = f"{viewer_base}?session={job_id}"
@@ -1180,8 +1197,9 @@ def _handle_get_results(job_id, email, meta):
                     "status": "completed",
                     "results": {
                         "download_url": download_url,
-                        "file_format": "csv",
+                        "file_format": file_format,
                         "interactive_viewer_url": viewer_url,
+                        "metadata_url": metadata_url,
                     },
                 }, meta)
             # RC job exists but not complete

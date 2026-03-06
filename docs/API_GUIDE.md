@@ -153,6 +153,8 @@ Once the MCP server is installed, describe your task in plain English. Claude dr
 
 #### 1. Validate an Existing Table
 
+> **Minimum rows:** Hyperplexity is designed for tables with **4 or more data rows**. Fewer rows may produce low-quality results.
+
 **Full flow: upload → interview → preview → refine → approve → download**
 
 ```
@@ -214,7 +216,7 @@ python examples/01_validate_table.py companies.xlsx \
 
 #### 2. Generate a Table from a Prompt
 
-Describe the table you want — rows, columns, scope — and Hyperplexity builds and validates it from scratch.
+Describe the table you want — rows, columns, scope — and Hyperplexity builds and validates it from scratch. Designed for tables with **4 or more rows**.
 
 ```
 start_table_maker("Top 20 US biotech companies: name, ticker, market cap, lead drug, phase")
@@ -287,7 +289,9 @@ python examples/03_update_table.py session_20260217_103045_abc123 --version 2
 
 #### 4. Fact-Check Text or Documents (Chex)
 
-Submit any text, report, or document. Hyperplexity checks each factual claim against authoritative sources and returns a structured confidence report.
+Submit any text, report, or document. Hyperplexity checks each factual claim against authoritative sources and returns the same output format as standard table validation: an Excel (XLSX) file, an interactive viewer URL, and a metadata JSON.
+
+> **Minimum claims:** Hyperplexity is designed for text with **4 or more factual claims**. Fewer claims may produce low-quality results.
 
 ```
 reference_check(text="...")           ← inline text (or auto_approve=True to skip the gate)
@@ -299,16 +303,16 @@ upload_file(path, "pdf")              ← upload PDF/document first
   → claims_summary + cost_estimate shown in response
   → approve_validation(job_id, approved_cost_usd=X)   ← triggers Phase 2
   → wait_for_job(job_id)              ← waits for completed
-  → get_results(job_id)               ← CSV download_url + interactive_viewer_url
+  → get_results(job_id)               ← download_url (XLSX) + interactive_viewer_url + metadata_url
 ```
 
 > **Two-phase flow:** Phase 1 (extraction, free) runs automatically and pauses at `status=preview_complete` with `claims_summary` and `cost_estimate`. Call `approve_validation` to start Phase 2 (validation, charged). Pass `auto_approve=True` to skip the gate and run straight through.
 
 > **Progress tracking:** `get_job_messages` always returns empty for reference-check jobs. Use `get_job_status` (`current_step`, `progress_percent`) to track progress.
 
-**CSV output columns:** Claim ID, Claim Order, Statement, Context, Text Location, Claim Criticality, Qualified Fact, Reference, Supporting Data, Reference Description, What Reference Says, Support Level (SUPPORTED/PARTIAL/UNSUPPORTED/UNVERIFIABLE), Validation Notes
+**Output:** Excel (XLSX) file with per-claim rows. Support levels: SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIABLE. Share `interactive_viewer_url` with human stakeholders — it renders sources and confidence scores in a clean UI.
 
-**Python script:** [`examples/04_reference_check.py`](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/04_reference_check.py)
+**Python script:** [`examples/04_reference_check.py`](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/04_reference_check.py) | **Sample output:** [`sample_outputs/reference_check_output.json`](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/sample_outputs/reference_check_output.json)
 
 ```bash
 ## Fact-check inline text

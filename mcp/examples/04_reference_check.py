@@ -3,8 +3,11 @@
 Example 4: Fact-check text or a document corpus with Chex (reference_check)
 
 Checks factual claims and citations against authoritative sources.
-Returns a structured report of what checks out, what doesn't, and with
-what confidence.
+Returns an Excel (XLSX) file, an interactive viewer URL, and a metadata JSON —
+the same output format as standard Hyperplexity table validation.
+
+Designed for text with 4 or more factual claims. Fewer claims may produce
+low-quality results.
 
 Accepts:
   - Inline text (single claim, paragraph, or full report)
@@ -71,9 +74,17 @@ def main(text: str = "", file_path: str = "") -> None:
 
     # ------------------------------------------------------------------
     # Step 2: Submit reference check job
+    #
+    # The reference check runs in two phases:
+    #   Phase 1 (free):    claim extraction — pauses at status=preview_complete
+    #   Phase 2 (charged): claim validation — triggered by POST /jobs/{id}/validate
+    #
+    # Pass auto_approve=True (used below) to skip the approval gate and run
+    # straight through. Remove it if you want to review claims_summary and
+    # cost_estimate before being charged.
     # ------------------------------------------------------------------
     print("\n[2/4] Submitting reference check job...")
-    payload: dict = {}
+    payload: dict = {"auto_approve": True}
     if text:
         payload["text"] = text
     if s3_key:
@@ -87,6 +98,9 @@ def main(text: str = "", file_path: str = "") -> None:
 
     # ------------------------------------------------------------------
     # Step 3: Wait for completion
+    # (auto_approve=True means we go straight to completed;
+    #  without it, poll would stop at preview_complete — then call
+    #  hpx.approve_and_wait(job_id, cost) to trigger Phase 2)
     # ------------------------------------------------------------------
     print("\n[3/4] Processing claims...")
     completed = hpx.poll_job(job_id, terminal=("completed", "failed"), timeout=1800)
@@ -96,10 +110,10 @@ def main(text: str = "", file_path: str = "") -> None:
         sys.exit(1)
 
     # ------------------------------------------------------------------
-    # Results
+    # Results — available via /results (CSV + viewer) or /reference-results
     # ------------------------------------------------------------------
     print("\n[4/4] Fetching results...")
-    results = hpx.get(f"/jobs/{job_id}/reference-results")
+    results = hpx.get(f"/jobs/{job_id}/results")
 
     results_data = results.get("results", {})
     download_url = results_data.get("download_url") or results.get("download_url")
@@ -107,14 +121,18 @@ def main(text: str = "", file_path: str = "") -> None:
 
     print("\n=== Reference Check Complete ===")
     if download_url:
-        print(f"  Download CSV: {download_url}")
-        print(f"  (Columns: Claim ID, Statement, Reference, Supporting Data, Support Level, Validation Notes)")
+        print(f"  Download XLSX: {download_url}")
+        print(f"  (Support levels: SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIABLE)")
     else:
         import json
         print(json.dumps(results, indent=2))
 
     if viewer_url:
-        print(f"  Viewer URL:   {viewer_url}")
+        print(f"  Viewer URL:    {viewer_url}")
+
+    metadata_url = results_data.get("metadata_url") or results.get("metadata_url")
+    if metadata_url:
+        print(f"  Metadata JSON: {metadata_url}")
 
 
 if __name__ == "__main__":

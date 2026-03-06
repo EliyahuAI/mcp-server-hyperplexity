@@ -50,12 +50,13 @@ SSM_PARAM = "/perplexity-validator/api-key-hmac-secret"
 DISPLAY_PREFIX_LEN = 18
 
 FILES_TO_UPLOAD = [
-    ("mcp/examples/hyperplexity_client.py", "website_downloads/examples/hyperplexity_client.py"),
-    ("mcp/examples/01_validate_table.py",   "website_downloads/examples/01_validate_table.py"),
-    ("mcp/examples/02_generate_table.py",   "website_downloads/examples/02_generate_table.py"),
-    ("mcp/examples/03_update_table.py",     "website_downloads/examples/03_update_table.py"),
-    ("mcp/examples/04_reference_check.py",  "website_downloads/examples/04_reference_check.py"),
-    ("docs/API_GUIDE.md",                   "website_downloads/API_GUIDE.md"),
+    ("mcp/examples/hyperplexity_client.py",                       "website_downloads/examples/hyperplexity_client.py"),
+    ("mcp/examples/01_validate_table.py",                         "website_downloads/examples/01_validate_table.py"),
+    ("mcp/examples/02_generate_table.py",                         "website_downloads/examples/02_generate_table.py"),
+    ("mcp/examples/03_update_table.py",                           "website_downloads/examples/03_update_table.py"),
+    ("mcp/examples/04_reference_check.py",                        "website_downloads/examples/04_reference_check.py"),
+    ("mcp/examples/sample_outputs/reference_check_output.json",   "website_downloads/examples/sample_outputs/reference_check_output.json"),
+    ("docs/API_GUIDE.md",                                         "website_downloads/API_GUIDE.md"),
 ]
 
 
