@@ -1021,6 +1021,353 @@ async def _compile_results(
         }
 
 
+async def execute_reference_check_phase1(
+    email: str,
+    session_id: str,
+    conversation_id: str,
+    run_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Phase 1: Extract claims only (Step 0). Free operation.
+
+    Runs reference parsing + claim extraction, saves claims and cost estimate
+    to conversation_state, marks the run COMPLETED.
+
+    Returns:
+        {
+            'success': bool,
+            'claims_summary': {'total', 'with_references', 'without_references'},
+            'cost_estimate_usd': float,
+            'estimated_time_seconds': int,
+        }
+    """
+    result = {
+        'success': False,
+        'conversation_id': conversation_id,
+        'claims_summary': None,
+        'cost_estimate_usd': None,
+        'estimated_time_seconds': None,
+        'error': None
+    }
+
+    try:
+        logger.info(f"[PHASE1] Starting claim extraction for {conversation_id}")
+
+        storage_manager = UnifiedS3Manager()
+        conversation_state = _load_conversation_state(
+            storage_manager, email, session_id, conversation_id
+        )
+
+        if not conversation_state:
+            result['error'] = f'Conversation {conversation_id} not found'
+            logger.error(f"[PHASE1] {result['error']}")
+            return result
+
+        submitted_text = conversation_state.get('submitted_text', '')
+        if not submitted_text:
+            result['error'] = 'No submitted text found in conversation state'
+            logger.error(f"[PHASE1] {result['error']}")
+            return result
+
+        config = _load_config()
+
+        if run_key:
+            try:
+                update_run_status(
+                    session_id=session_id,
+                    run_key=run_key,
+                    status='IN_PROGRESS',
+                    run_type='Reference Check Preview',
+                    verbose_status='Extracting claims...',
+                    percent_complete=5
+                )
+            except Exception as e:
+                logger.warning(f"[PHASE1] Failed to update run status: {e}")
+
+        # ---- Reference parsing (Step 0a) ----
+        from .reference_check_lib.reference_parser import ReferenceParser
+        parser = ReferenceParser()
+        parsed_reference_map = parser.extract_reference_list(submitted_text)
+        path_type, confidence = parser.detect_reference_format(submitted_text, parsed_reference_map)
+        content_type = parser.detect_content_type(submitted_text)
+        source_guess = parser.guess_source_type(submitted_text, parsed_reference_map, content_type, path_type)
+
+        confirmed_reference_map = parsed_reference_map
+
+        ref_extraction_config = config.get('reference_extraction', {})
+        ref_extraction_enabled = ref_extraction_config.get('enabled', True)
+
+        if ref_extraction_enabled and path_type == "needs_parsing":
+            is_good, failure_reason = parser.check_reference_quality(parsed_reference_map)
+            if not is_good:
+                from .reference_check_lib.reference_extractor import extract_references
+                ref_result = await extract_references(text=submitted_text, config=config, parsed_refs=parsed_reference_map)
+                if ref_result.get('success') and ref_result.get('references'):
+                    confirmed_reference_map = {r['ref_id']: r['full_citation'] for r in ref_result['references']}
+        elif ref_extraction_enabled and path_type == "not_found":
+            from .reference_check_lib.reference_extractor import extract_references
+            ref_result = await extract_references(text=submitted_text, config=config, parsed_refs=None)
+            if ref_result.get('success') and ref_result.get('references'):
+                confirmed_reference_map = {r['ref_id']: r['full_citation'] for r in ref_result['references']}
+
+        enriched_text = parser.build_enriched_text(submitted_text, confirmed_reference_map, path_type, source_guess)
+
+        # ---- Claim extraction (Step 0b) ----
+        extraction_result = await _extract_claims(
+            submitted_text=enriched_text,
+            conversation_id=conversation_id,
+            session_id=session_id,
+            config=config
+        )
+
+        if not extraction_result.get('success'):
+            result['error'] = extraction_result.get('reason') or extraction_result.get('error') or 'Claim extraction failed'
+            if run_key:
+                update_run_status(session_id=session_id, run_key=run_key, status='FAILED',
+                                  verbose_status=result['error'], percent_complete=0)
+            return result
+
+        claims = extraction_result.get('claims', [])
+        if not claims:
+            result['error'] = 'No verifiable claims found in the submitted text'
+            if run_key:
+                update_run_status(session_id=session_id, run_key=run_key, status='FAILED',
+                                  verbose_status=result['error'], percent_complete=0)
+            return result
+
+        total = len(claims)
+        with_refs = sum(1 for c in claims if c.get('reference') not in [None, '', []])
+        without_refs = total - with_refs
+
+        # Cost estimate: $0.05/claim, min $2.00; time: 4s/claim
+        cost_est = max(total * 0.05, 2.00)
+        time_est = total * 4
+
+        claims_summary = {
+            'total': total,
+            'with_references': with_refs,
+            'without_references': without_refs,
+        }
+        ref_check_cost_estimate = {
+            'estimated_total_cost_usd': round(cost_est, 2),
+            'estimated_validation_time_seconds': time_est,
+            'claims_to_validate': total,
+        }
+
+        # Save everything needed for phase 2
+        conversation_state['reference_map'] = confirmed_reference_map
+        conversation_state['reference_path'] = path_type
+        conversation_state['extraction_result'] = extraction_result
+        conversation_state['claims'] = claims
+        conversation_state['claims_summary'] = claims_summary
+        conversation_state['ref_check_cost_estimate'] = ref_check_cost_estimate
+        conversation_state['source_guess'] = source_guess
+        conversation_state['ai_source_guess'] = extraction_result.get('source_type_guess', 'Unknown')
+        conversation_state['ai_source_confidence'] = extraction_result.get('source_confidence', 0.0)
+        conversation_state['path_type'] = path_type
+        _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
+
+        if run_key:
+            update_run_status(
+                session_id=session_id,
+                run_key=run_key,
+                status='COMPLETED',
+                run_type='Reference Check Preview',
+                verbose_status=f'Extracted {total} claims',
+                percent_complete=100
+            )
+
+        result.update({
+            'success': True,
+            'claims_summary': claims_summary,
+            'cost_estimate_usd': ref_check_cost_estimate['estimated_total_cost_usd'],
+            'estimated_time_seconds': time_est,
+        })
+        logger.info(f"[PHASE1] Complete: {total} claims extracted")
+        return result
+
+    except Exception as e:
+        result['error'] = f'Phase 1 error: {str(e)}'
+        logger.error(f"[PHASE1] {result['error']}", exc_info=True)
+        if run_key:
+            try:
+                update_run_status(session_id=session_id, run_key=run_key, status='FAILED',
+                                  verbose_status=f'Error: {str(e)[:100]}', percent_complete=0)
+            except Exception:
+                pass
+        return result
+
+
+async def execute_reference_check_phase2(
+    email: str,
+    session_id: str,
+    conversation_id: str,
+    run_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Phase 2: Validate claims and compile results (Steps 1+2). Charged operation.
+
+    Loads claims from conversation_state (saved by phase 1), runs validation
+    and result compilation.
+
+    Returns:
+        {
+            'success': bool,
+            'csv_s3_key': str,
+            'csv_filename': str,
+            'summary': Dict,
+        }
+    """
+    result = {
+        'success': False,
+        'conversation_id': conversation_id,
+        'csv_s3_key': None,
+        'csv_filename': None,
+        'summary': None,
+        'error': None
+    }
+
+    try:
+        logger.info(f"[PHASE2] Starting claim validation for {conversation_id}")
+
+        storage_manager = UnifiedS3Manager()
+        conversation_state = _load_conversation_state(
+            storage_manager, email, session_id, conversation_id
+        )
+
+        if not conversation_state:
+            result['error'] = f'Conversation {conversation_id} not found'
+            logger.error(f"[PHASE2] {result['error']}")
+            return result
+
+        claims = conversation_state.get('claims')
+        if not claims:
+            result['error'] = 'No claims found in conversation state — phase 1 must complete first'
+            logger.error(f"[PHASE2] {result['error']}")
+            return result
+
+        submitted_text = conversation_state.get('submitted_text', '')
+        config = _load_config()
+
+        if run_key:
+            try:
+                update_run_status(
+                    session_id=session_id,
+                    run_key=run_key,
+                    status='IN_PROGRESS',
+                    run_type='Reference Check',
+                    verbose_status=f'Validating {len(claims)} claims...',
+                    percent_complete=5
+                )
+            except Exception as e:
+                logger.warning(f"[PHASE2] Failed to update run status: {e}")
+
+        # ---- Step 1: Validate claims ----
+        logger.info(f"[PHASE2] Step 1: Validating {len(claims)} claims")
+        validation_results = await _validate_claims(
+            claims=claims,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            config=config
+        )
+
+        # ---- Step 2: Compile results ----
+        logger.info(f"[PHASE2] Step 2: Compiling results")
+        final_reference_map = conversation_state.get('reference_map', {})
+        source_guess = conversation_state.get('source_guess', 'Unknown')
+        ai_source_guess = conversation_state.get('ai_source_guess', 'Unknown')
+        ai_source_confidence = conversation_state.get('ai_source_confidence', 0.0)
+        path_type = conversation_state.get('path_type', 'unknown')
+
+        compilation_result = await _compile_results(
+            validation_results=validation_results,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            email=email,
+            storage_manager=storage_manager,
+            config=config,
+            claims=claims,
+            submitted_text=submitted_text,
+            source_guess=source_guess,
+            ai_source_guess=ai_source_guess,
+            ai_source_confidence=ai_source_confidence,
+            path_type=path_type,
+            final_reference_map=final_reference_map,
+            conversation_state=conversation_state
+        )
+
+        if not compilation_result.get('success'):
+            result['error'] = f"Result compilation failed: {compilation_result.get('error')}"
+            logger.error(f"[PHASE2] {result['error']}")
+            return result
+
+        # Update conversation state
+        conversation_state['csv_s3_key'] = compilation_result.get('csv_s3_key')
+        conversation_state['config_s3_key'] = compilation_result.get('config_s3_key')
+        conversation_state['summary'] = compilation_result.get('summary')
+        conversation_state['status'] = 'complete'
+        conversation_state['completed_at'] = datetime.now().isoformat()
+        _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
+
+        # Send completion WebSocket message
+        ws_client = _get_websocket_client()
+        if ws_client:
+            ws_client.send_to_session(session_id, {
+                'type': 'reference_check_complete',
+                'conversation_id': conversation_id,
+                'status': 'complete',
+                'csv_s3_key': compilation_result.get('csv_s3_key'),
+                'csv_filename': compilation_result.get('csv_filename'),
+                'table_name': compilation_result.get('table_name', 'Reference Check'),
+                'session_id': session_id,
+                'summary': compilation_result.get('summary'),
+            })
+
+        if run_key:
+            try:
+                update_run_status(
+                    session_id=session_id,
+                    run_key=run_key,
+                    status='COMPLETED',
+                    verbose_status=f"Completed: {compilation_result['summary'].get('total_claims', len(claims))} claims validated",
+                    percent_complete=100,
+                    results_s3_key=compilation_result.get('csv_s3_key'),
+                )
+            except Exception as e:
+                logger.warning(f"[PHASE2] Failed to update run status: {e}")
+
+        result.update({
+            'success': True,
+            'csv_s3_key': compilation_result.get('csv_s3_key'),
+            'csv_filename': compilation_result.get('csv_filename'),
+            'table_name': compilation_result.get('table_name'),
+            'config_s3_key': compilation_result.get('config_s3_key'),
+            'summary': compilation_result.get('summary'),
+            'session_id': session_id,
+        })
+        logger.info(f"[PHASE2] Pipeline complete")
+        return result
+
+    except Exception as e:
+        result['error'] = f'Phase 2 error: {str(e)}'
+        logger.error(f"[PHASE2] {result['error']}", exc_info=True)
+        if run_key:
+            try:
+                update_run_status(session_id=session_id, run_key=run_key, status='FAILED',
+                                  verbose_status=f'Error: {str(e)[:100]}', percent_complete=0)
+            except Exception:
+                pass
+        ws_client = _get_websocket_client()
+        if ws_client:
+            ws_client.send_to_session(session_id, {
+                'type': 'reference_check_error',
+                'conversation_id': conversation_id,
+                'status': 'error',
+                'message': 'An error occurred during reference check validation. Please try again.'
+            })
+        return result
+
+
 async def execute_reference_check(
     email: str,
     session_id: str,

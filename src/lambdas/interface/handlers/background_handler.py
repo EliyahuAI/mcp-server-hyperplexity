@@ -7105,7 +7105,8 @@ def handle_reference_check(event, context):
     """
     import asyncio
     from interface_lambda.actions.reference_check.conversation import (
-        handle_reference_check_start
+        handle_reference_check_start,
+        handle_reference_check_validate,
     )
 
     try:
@@ -7127,6 +7128,8 @@ def handle_reference_check(event, context):
             except RuntimeError:
                 # No running loop, use asyncio.run
                 result = asyncio.run(handle_reference_check_start(event, context))
+        elif action == 'validateReferenceCheck':
+            result = asyncio.run(handle_reference_check_validate(event, context))
         else:
             logger.error(f"Unknown reference check action: {action}")
             return {

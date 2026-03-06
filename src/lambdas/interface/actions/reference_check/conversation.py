@@ -148,6 +148,9 @@ async def handle_reference_check_start_async(request_data: Dict[str, Any], conte
         # Generate conversation ID
         conversation_id = f"refcheck_{uuid.uuid4().hex[:12]}"
 
+        # Read optional auto_approve flag
+        auto_approve = bool(request_data.get('auto_approve', False))
+
         # Prepare message for SQS
         conversation_request = {
             'request_type': 'reference_check',  # Important: Different from table_conversation
@@ -157,6 +160,7 @@ async def handle_reference_check_start_async(request_data: Dict[str, Any], conte
             'conversation_id': conversation_id,
             'submitted_text': submitted_text,
             'text_stats': size_details,
+            'auto_approve': auto_approve,
             'created_at': datetime.now(timezone.utc).isoformat(),
             'deployment_environment': os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod')
         }
@@ -208,22 +212,10 @@ async def handle_reference_check_start_async(request_data: Dict[str, Any], conte
 
 async def handle_reference_check_start(request_data: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    Background processor - executes the reference check pipeline.
+    Background processor - Phase 1 (extraction only).
 
-    This is the sync handler that runs in the background after being queued from SQS.
-    It:
-    1. Creates run record in DynamoDB
-    2. Initializes conversation state
-    3. Saves state to S3
-    4. Triggers execution pipeline
-    5. Sends progress updates via WebSocket
-
-    Args:
-        request_data: SQS message payload
-        context: Lambda context
-
-    Returns:
-        Result dict with status
+    Creates run record, saves conversation state, runs phase 1 (claim extraction).
+    If auto_approve=True and balance is sufficient, immediately queues phase 2.
     """
     try:
         # Extract fields
@@ -232,28 +224,28 @@ async def handle_reference_check_start(request_data: Dict[str, Any], context: An
         conversation_id = request_data['conversation_id']
         submitted_text = request_data['submitted_text']
         text_stats = request_data.get('text_stats', {})
+        auto_approve = bool(request_data.get('auto_approve', False))
 
         logger.info(
             f"[REFERENCE CHECK START] conversation_id={conversation_id}, "
             f"session={session_id}, email={email}, "
-            f"text_length={len(submitted_text)} chars"
+            f"text_length={len(submitted_text)} chars, auto_approve={auto_approve}"
         )
 
-        # Create run record in DynamoDB
+        # Create run record for Phase 1
         run_key = create_run_record(
             session_id=session_id,
             email=email,
-            total_rows=0,  # Not applicable for reference check
-            run_type="Reference Check"
+            total_rows=0,
+            run_type="Reference Check Preview"
         )
 
-        # Update run status
         update_run_status(
             session_id=session_id,
             run_key=run_key,
             status='IN_PROGRESS',
-            run_type="Reference Check",
-            verbose_status="Starting reference validation...",
+            run_type="Reference Check Preview",
+            verbose_status="Extracting claims...",
             percent_complete=5
         )
 
@@ -269,12 +261,12 @@ async def handle_reference_check_start(request_data: Dict[str, Any], context: An
             'submitted_text': submitted_text,
             'text_length': len(submitted_text),
             'text_stats': text_stats,
+            'auto_approve': auto_approve,
             'extraction_result': None,
             'validation_results': None,
             'csv_s3_key': None
         }
 
-        # Save conversation state to S3
         storage_manager = UnifiedS3Manager()
         _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
 
@@ -291,37 +283,41 @@ async def handle_reference_check_start(request_data: Dict[str, Any], context: An
             'text_stats': text_stats
         })
 
-        # Import and trigger execution pipeline
-        logger.info(f"[REFERENCE CHECK] About to call execute_reference_check")
-        from .execution import execute_reference_check
-
-        logger.info(f"[REFERENCE CHECK] Calling execute_reference_check with email={email}, session={session_id}, conv={conversation_id}")
-        result = await execute_reference_check(
+        # Run Phase 1 (extraction only)
+        from .execution import execute_reference_check_phase1
+        result = await execute_reference_check_phase1(
             email=email,
             session_id=session_id,
             conversation_id=conversation_id,
             run_key=run_key
         )
 
-        logger.info(f"[REFERENCE CHECK COMPLETE] conversation_id={conversation_id}, status={result.get('status')}, success={result.get('success')}")
+        logger.info(f"[REFERENCE CHECK PHASE1 COMPLETE] conversation_id={conversation_id}, success={result.get('success')}")
+
+        # If auto_approve, queue Phase 2 immediately
+        if result.get('success') and auto_approve:
+            logger.info(f"[REFERENCE CHECK] auto_approve=True, queuing Phase 2 for {conversation_id}")
+            try:
+                _queue_validate_reference_check(session_id, email, conversation_id)
+                logger.info(f"[REFERENCE CHECK] Phase 2 queued for {conversation_id}")
+            except Exception as e:
+                logger.error(f"[REFERENCE CHECK] Failed to queue Phase 2: {e}", exc_info=True)
 
         return result
 
     except Exception as e:
         logger.error(f"Error in handle_reference_check_start: {str(e)}", exc_info=True)
 
-        # Update run status to failed
         if 'run_key' in locals():
             update_run_status(
                 session_id=session_id,
                 run_key=run_key,
                 status='FAILED',
-                run_type="Reference Check",
+                run_type="Reference Check Preview",
                 verbose_status=f"Error: {str(e)}",
                 percent_complete=0
             )
 
-        # Send error via WebSocket
         if 'session_id' in locals() and 'conversation_id' in locals():
             ws_client = WebSocketClient()
             ws_client.send_to_session(session_id, {
@@ -335,6 +331,110 @@ async def handle_reference_check_start(request_data: Dict[str, Any], context: An
             'status': 'error',
             'message': str(e)
         }
+
+
+async def handle_reference_check_validate(request_data: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """
+    Background processor - Phase 2 (validation + compilation). Queued after approval.
+    """
+    try:
+        email = request_data['email']
+        session_id = request_data['session_id']
+        conversation_id = request_data['conversation_id']
+
+        logger.info(
+            f"[REFERENCE CHECK VALIDATE] conversation_id={conversation_id}, "
+            f"session={session_id}, email={email}"
+        )
+
+        # Create a new run record for Phase 2
+        run_key = create_run_record(
+            session_id=session_id,
+            email=email,
+            total_rows=0,
+            run_type="Reference Check"
+        )
+
+        update_run_status(
+            session_id=session_id,
+            run_key=run_key,
+            status='IN_PROGRESS',
+            run_type="Reference Check",
+            verbose_status="Validating claims...",
+            percent_complete=5
+        )
+
+        # Send progress update
+        try:
+            ws_client = WebSocketClient()
+            ws_client.send_to_session(session_id, {
+                'type': 'reference_check_progress',
+                'conversation_id': conversation_id,
+                'current_step': 1,
+                'total_steps': 2,
+                'status': 'Validating claims...',
+                'progress_percent': 10,
+                'phase': 'validation',
+            })
+        except Exception:
+            pass
+
+        from .execution import execute_reference_check_phase2
+        result = await execute_reference_check_phase2(
+            email=email,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            run_key=run_key
+        )
+
+        logger.info(f"[REFERENCE CHECK VALIDATE COMPLETE] conversation_id={conversation_id}, success={result.get('success')}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in handle_reference_check_validate: {str(e)}", exc_info=True)
+
+        if 'run_key' in locals():
+            update_run_status(
+                session_id=session_id,
+                run_key=run_key,
+                status='FAILED',
+                run_type="Reference Check",
+                verbose_status=f"Error: {str(e)}",
+                percent_complete=0
+            )
+
+        if 'session_id' in locals() and 'conversation_id' in locals():
+            try:
+                ws_client = WebSocketClient()
+                ws_client.send_to_session(session_id, {
+                    'type': 'reference_check_error',
+                    'conversation_id': conversation_id,
+                    'status': 'error',
+                    'message': 'An error occurred during reference check validation. Please try again.'
+                })
+            except Exception:
+                pass
+
+        return {
+            'status': 'error',
+            'message': str(e)
+        }
+
+
+def _queue_validate_reference_check(session_id: str, email: str, conversation_id: str) -> None:
+    """Queue Phase 2 (validateReferenceCheck) to SQS."""
+    if not STANDARD_QUEUE_URL:
+        raise Exception("STANDARD_QUEUE_URL not configured — cannot queue Phase 2 validation")
+    message = {
+        'request_type': 'reference_check',
+        'action': 'validateReferenceCheck',
+        'session_id': session_id,
+        'email': email,
+        'conversation_id': conversation_id,
+    }
+    message_body_cleaned = {k: v for k, v in message.items() if v is not None}
+    _send_sqs_message(STANDARD_QUEUE_URL, message_body_cleaned)
+    logger.info(f"[REFERENCE CHECK] Queued validateReferenceCheck for session={session_id}, conv={conversation_id}")
 
 
 def _save_conversation_state(storage_manager: UnifiedS3Manager, email: str, session_id: str,

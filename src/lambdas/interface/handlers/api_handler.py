@@ -838,6 +838,74 @@ def _handle_get_job_status(job_id, email, query_params, meta):
     try:
         from dynamodb_schemas import find_run_key_by_type, find_existing_run_key, get_run_status
 
+        # ---- Reference-check two-phase detection (before generic Preview check) ----
+        rc_key = find_run_key_by_type(job_id, "ReferenceCheck")
+        rc_preview_key = find_run_key_by_type(job_id, "ReferenceCheckPreview")
+
+        if rc_key:
+            rc_record = get_run_status(job_id, rc_key)
+            rc_db_status = str(rc_record.get("status") or "PROCESSING").upper() if rc_record else "PROCESSING"
+            if rc_db_status in ("COMPLETED", "COMPLETE"):
+                conv_state = _load_rc_conversation_state(job_id, email)
+                pct_done = int(rc_record.get("percent_complete") or 100) if rc_record else 100
+                _t = rc_record.get("start_time") or rc_record.get("created_at") if rc_record else None
+                return _success_response(200, {
+                    "job_id": job_id,
+                    "status": "completed",
+                    "current_step": "Reference Check",
+                    "progress_percent": pct_done,
+                    "submitted_at": str(_t) if _t else None,
+                    "conversation_id": conv_state.get("conversation_id"),
+                }, meta)
+            # Phase 2 in progress/queued
+            pct = int(rc_record.get("percent_complete") or 5) if rc_record else 5
+            _t = rc_record.get("start_time") or rc_record.get("created_at") if rc_record else None
+            return _success_response(200, {
+                "job_id": job_id,
+                "status": "processing",
+                "current_step": "Claim Validation",
+                "progress_percent": pct,
+                "submitted_at": str(_t) if _t else None,
+            }, meta, extra_headers={"Retry-After": "20"})
+
+        if rc_preview_key:
+            rc_prev_record = get_run_status(job_id, rc_preview_key)
+            rc_prev_status = str(rc_prev_record.get("status") or "PROCESSING").upper() if rc_prev_record else "PROCESSING"
+            if rc_prev_status in ("COMPLETED", "COMPLETE"):
+                conv_state = _load_rc_conversation_state(job_id, email)
+                cost_est = conv_state.get("ref_check_cost_estimate", {})
+                _t = rc_prev_record.get("start_time") or rc_prev_record.get("created_at") if rc_prev_record else None
+                data = {
+                    "job_id": job_id,
+                    "status": "preview_complete",
+                    "current_step": "Reference Check Preview",
+                    "progress_percent": 100,
+                    "submitted_at": str(_t) if _t else None,
+                    "conversation_id": conv_state.get("conversation_id"),
+                    "claims_summary": conv_state.get("claims_summary"),
+                    "cost_estimate": {
+                        "estimated_total_cost_usd": cost_est.get("estimated_total_cost_usd"),
+                        "estimated_validation_time_seconds": cost_est.get("estimated_validation_time_seconds"),
+                        "claims_to_validate": cost_est.get("claims_to_validate"),
+                    },
+                    "next_steps": {
+                        "approve_url": f"/v1/jobs/{job_id}/validate",
+                        "requires_approval": True,
+                    },
+                }
+                return _success_response(200, data, meta)
+            # Phase 1 still running
+            pct = int(rc_prev_record.get("percent_complete") or 5) if rc_prev_record else 5
+            _t = rc_prev_record.get("start_time") or rc_prev_record.get("created_at") if rc_prev_record else None
+            return _success_response(200, {
+                "job_id": job_id,
+                "status": "processing",
+                "current_step": "Claim Extraction",
+                "progress_percent": pct,
+                "submitted_at": str(_t) if _t else None,
+            }, meta, extra_headers={"Retry-After": "20"})
+        # ---- End reference-check detection ----
+
         # Prefer Validation run if one exists; then Preview (to surface preview_complete
         # correctly when config-gen and preview run records both exist for the same
         # session — find_existing_run_key might return the config-gen record instead
@@ -1049,6 +1117,32 @@ def _handle_update_table(body, email, meta):
 
 def _handle_approve_validation(job_id, body, email, meta):
     """POST /v1/jobs/{job_id}/validate"""
+    # ---- Reference-check approval: queue Phase 2 ----
+    try:
+        from dynamodb_schemas import find_run_key_by_type
+        rc_preview_key = find_run_key_by_type(job_id, "ReferenceCheckPreview")
+        rc_key = find_run_key_by_type(job_id, "ReferenceCheck")
+        if rc_preview_key and not rc_key:
+            conv_state = _load_rc_conversation_state(job_id, email)
+            conversation_id = conv_state.get("conversation_id")
+            if not conversation_id:
+                return _error_response(404, "not_found",
+                    "Reference check conversation not found for this job.", meta)
+            from interface_lambda.actions.reference_check.conversation import _queue_validate_reference_check
+            _queue_validate_reference_check(job_id, email, conversation_id)
+            return _success_response(202, {
+                "job_id": job_id,
+                "status": "queued",
+                "message": "Reference check validation queued.",
+                "urls": {
+                    "status": f"/v1/jobs/{job_id}",
+                    "results": f"/v1/jobs/{job_id}/results",
+                },
+            }, meta)
+    except Exception as e:
+        logger.error(f"[API_HANDLER] RC approval check failed: {e}", exc_info=True)
+    # ---- End reference-check approval ----
+
     request_data = {
         "_api_email": email,
         "_verified_email": email,
@@ -1064,6 +1158,39 @@ def _handle_approve_validation(job_id, body, email, meta):
 
 def _handle_get_results(job_id, email, meta):
     """GET /v1/jobs/{job_id}/results"""
+    # ---- Reference-check: return CSV download URL + interactive viewer ----
+    try:
+        from dynamodb_schemas import find_run_key_by_type, get_run_status as _grs
+        rc_key = find_run_key_by_type(job_id, "ReferenceCheck")
+        if rc_key:
+            rc_record = _grs(job_id, rc_key)
+            rc_status = str(rc_record.get("status") or "").upper() if rc_record else ""
+            if rc_status in ("COMPLETED", "COMPLETE"):
+                conv_state = _load_rc_conversation_state(job_id, email)
+                csv_s3_key = conv_state.get("csv_s3_key") or (rc_record.get("results_s3_key") if rc_record else None)
+                download_url = None
+                if csv_s3_key:
+                    from interface_lambda.core.s3_manager import generate_presigned_url, S3_RESULTS_BUCKET
+                    download_url = generate_presigned_url(S3_RESULTS_BUCKET, csv_s3_key)
+                import os as _os
+                viewer_base = _os.environ.get('VIEWER_BASE_URL', 'https://eliyahu.ai/viewer')
+                viewer_url = f"{viewer_base}?session={job_id}"
+                return _success_response(200, {
+                    "job_id": job_id,
+                    "status": "completed",
+                    "results": {
+                        "download_url": download_url,
+                        "file_format": "csv",
+                        "interactive_viewer_url": viewer_url,
+                    },
+                }, meta)
+            # RC job exists but not complete
+            return _error_response(409, "not_ready",
+                "Reference check validation is not yet complete. Poll GET /v1/jobs/{id} until status=completed.", meta)
+    except Exception as e:
+        logger.error(f"[API_HANDLER] RC results check failed: {e}", exc_info=True)
+    # ---- End reference-check results ----
+
     request_data = {
         "_api_email": email,
         "_verified_email": email,
@@ -1162,10 +1289,13 @@ def _handle_reference_check(body, email, meta):
     if not text:
         return _error_response(400, "empty_text", "No text could be extracted from the provided file.", meta)
 
+    auto_approve = bool(body.get("auto_approve", False))
+
     try:
         from interface_lambda.actions.reference_check.conversation import handle_reference_check_start_async
         resp = asyncio.run(handle_reference_check_start_async(
-            {"email": email, "session_id": session_id, "submitted_text": text},
+            {"email": email, "session_id": session_id, "submitted_text": text,
+             "auto_approve": auto_approve},
             None,
         ))
     except Exception as e:
@@ -1187,13 +1317,15 @@ def _handle_reference_check(body, email, meta):
         "job_id": session_id,
         "conversation_id": body_data.get("conversation_id"),
         "status": "processing",
+        "auto_approve": auto_approve,
         "urls": {
             "status": f"/v1/jobs/{session_id}",
-            "results": f"/v1/jobs/{session_id}/reference-results",
+            "results": f"/v1/jobs/{session_id}/results",
+            "reference_results": f"/v1/jobs/{session_id}/reference-results",
         },
         "polling": {
             "recommended_interval_seconds": 20,
-            "max_wait_seconds": 300,
+            "max_wait_seconds": 600,
         },
     }, meta)
 
@@ -1401,6 +1533,41 @@ def _conv_state_key(conv_id, email, session_id):
     if conv_id.startswith("refine_"):
         return f"refine/{email}/{session_id}/{conv_id}/conversation_state.json"
     return None
+
+
+def _load_rc_conversation_state(session_id: str, email: str):
+    """Load the reference-check conversation_state.json for a session.
+
+    The conversation_id is embedded in the S3 key.  We scan the
+    reference_checks/{email}/{session_id}/ prefix looking for
+    conversation_state.json files and return the most recent one.
+    Returns the parsed state dict, or {} on any error.
+    """
+    try:
+        from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+        import json as _json
+        mgr = UnifiedS3Manager()
+        prefix = f"reference_checks/{email}/{session_id}/"
+        resp = mgr.s3_client.list_objects_v2(
+            Bucket=mgr.bucket_name,
+            Prefix=prefix,
+        )
+        keys = [
+            obj["Key"] for obj in resp.get("Contents", [])
+            if obj["Key"].endswith("/conversation_state.json")
+        ]
+        if not keys:
+            return {}
+        # Pick the most recently modified
+        if len(keys) > 1:
+            details = mgr.s3_client.list_objects_v2(Bucket=mgr.bucket_name, Prefix=prefix)
+            by_key = {o["Key"]: o["LastModified"] for o in details.get("Contents", [])}
+            keys.sort(key=lambda k: by_key.get(k, ""), reverse=True)
+        obj = mgr.s3_client.get_object(Bucket=mgr.bucket_name, Key=keys[0])
+        return _json.loads(obj["Body"].read())
+    except Exception as e:
+        logger.warning(f"[API_HANDLER] Could not load RC conversation state for {session_id}: {e}")
+        return {}
 
 
 def _write_processing_state(conv_id, email, session_id, existing_state=None):
