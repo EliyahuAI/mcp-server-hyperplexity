@@ -409,11 +409,14 @@ Content types: `excel` → `.xlsx`, `csv` → `.csv`, `pdf` → `.pdf`
   "session_id": "session_20260305_...",
   "s3_key": "results/.../file.xlsx",
   "filename": "companies.xlsx",
-  "instructions": "Validate AUM, strategy, and HQ city. Use Bloomberg and SEC filings as sources."
+  "instructions": "Validate AUM, strategy, and HQ city. Use Bloomberg and SEC filings as sources.",
+  "config_id": "session_20260217_103045_abc123_config_v1_..."
 }
 ```
 
 `instructions` — if provided, bypasses the interactive upload interview. The AI generates the config directly from the table structure + instructions. Response includes `instructions_mode: true` and `conversation_id`. Use `wait_for_job(session_id)` to track progress — do NOT poll the conversation.
+
+`config_id` — if provided, skips matching and the interview entirely. The specified config is applied immediately and the preview is auto-queued. Response includes `preview_queued: true` and `job_id`. Use `wait_for_job(job_id)` to track progress. The `configuration_id` for any completed job is returned by `GET /jobs/{id}/results` under `job_info.configuration_id`.
 
 ---
 

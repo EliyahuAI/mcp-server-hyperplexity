@@ -74,6 +74,25 @@ def _guidance_confirm_upload(data: dict) -> dict:
         ),
     }
 
+    # Explicit config_id provided OR strong auto-match found — preview already queued.
+    if data.get("preview_queued"):
+        job_id = data.get("job_id", session_id)
+        config_id_used = data.get("config_id_used", "")
+        return {
+            "summary": (
+                f"Upload confirmed. Preview auto-queued using config {config_id_used}. "
+                "Call wait_for_job to track progress."
+            ),
+            "next_steps": [
+                {
+                    "tool": "wait_for_job",
+                    "params": {"job_id": job_id, "timeout_seconds": 600},
+                    "note": "Preview is queued. Do NOT call create_job — it was already done.",
+                },
+                reference_check_option,
+            ],
+        }
+
     # Server auto-started an upload interview (API session, no strong match).
     # conversation_id is present in the response — just poll it.
     if conv_id and data.get("interview_auto_started"):
@@ -147,27 +166,9 @@ def _guidance_confirm_upload(data: dict) -> dict:
 
     if best_score >= 0.85:
         config_id = matches[0].get("config_id", "")
-        job_id = data.get("job_id", session_id)
-
-        if data.get("preview_queued"):
-            # API auto-applied the config and queued the preview — just wait.
-            return {
-                "summary": (
-                    f"Upload confirmed. Config match (score {best_score:.2f}) found — "
-                    f"preview auto-queued using config {config_id}. "
-                    "Call wait_for_job to track progress."
-                ),
-                "next_steps": [
-                    {
-                        "tool": "wait_for_job",
-                        "params": {"job_id": job_id, "timeout_seconds": 600},
-                        "note": "Preview is queued. Do NOT call create_job — it was already done.",
-                    },
-                    reference_check_option,
-                ],
-            }
 
         # Non-API path (human/app) — present the option to reuse the matched config.
+        # (API path with preview_queued=True is handled above.)
         return {
             "summary": (
                 f"Upload confirmed. A prior config matches with score {best_score:.2f}. "

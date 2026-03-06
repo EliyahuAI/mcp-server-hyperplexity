@@ -339,6 +339,7 @@ def _handle_confirm_upload(body, email, meta):
     session_id = body.get("session_id")
     upload_id = body.get("upload_id", "")
     filename = body.get("filename", "")
+    explicit_config_id = (body.get("config_id") or "").strip() or None
 
     if not s3_key or not session_id:
         return _error_response(400, "missing_fields", "s3_key and session_id are required.", meta)
@@ -495,17 +496,19 @@ def _handle_confirm_upload(body, email, meta):
             except Exception as _ie:
                 logger.warning(f"[CONFIRM_UPLOAD] Could not queue upload interview: {_ie}")
 
-        # Auto-create preview job for API sessions with a strong config match.
+        # Auto-create preview job for API sessions with a strong config match,
+        # OR when an explicit config_id was provided in the request body.
         # Human users (app) still see the match list and choose manually.
         _auto_preview_queued = False
         _auto_preview_job_id = None
-        if sess_info.get("via_api") and _best_score >= 0.85 and top_config_id and not _auto_interview_conv_id:
+        _effective_config_id = explicit_config_id or (top_config_id if _best_score >= 0.85 else None)
+        if sess_info.get("via_api") and _effective_config_id and not _auto_interview_conv_id:
             try:
                 from interface_lambda.actions.use_config_by_id import handle_use_config_by_id
                 from interface_lambda.actions import start_preview as _start_preview_mod
                 _use_result = handle_use_config_by_id(
                     {"email": email, "_verified_email": email,
-                     "session_id": session_id, "config_id": top_config_id},
+                     "session_id": session_id, "config_id": _effective_config_id},
                     None,
                 )
                 _parsed_use = _parse_handler_response(_use_result)
@@ -686,7 +689,7 @@ def _handle_confirm_upload(body, email, meta):
         if _auto_preview_queued:
             response_data["preview_queued"] = True
             response_data["job_id"] = _auto_preview_job_id or session_id
-            response_data["config_id_used"] = top_config_id
+            response_data["config_id_used"] = _effective_config_id
 
         return _success_response(200, response_data, meta)
 

@@ -459,6 +459,7 @@ def test_confirm_upload_auto_match(client: APIClient, completed_job_id: str) -> 
     config_id = (results_data.get("data") or {}).get("job_info", {}).get("configuration_id")
     print(f"[TEST] confirm_upload auto-match — config_id from completed job: {config_id}")
 
+    # Phase 1: test auto-match (server detects config from completed job)
     presigned = _presign_and_upload(client, DEMO_FILE, "csv", "text/csv")
     confirm = client.post("/v1/uploads/confirm", {
         "session_id": presigned["session_id"],
@@ -471,30 +472,32 @@ def test_confirm_upload_auto_match(client: APIClient, completed_job_id: str) -> 
     job_id = confirm.get("job_id", presigned["session_id"])
 
     if preview_queued:
-        print(f"[TEST] confirm_upload auto-match — [SUCCESS] "
+        print(f"[TEST] confirm_upload auto-match — [SUCCESS auto] "
               f"preview_queued=True, match_score={best_score:.2f}, job_id={job_id}")
-        return
+    else:
+        print(f"[TEST] confirm_upload auto-match — no auto-match (best_score={best_score:.2f}); "
+              f"GSI may not have indexed yet")
 
-    # No auto-match — report and test config_id reuse via POST /v1/jobs directly
-    print(f"[TEST] confirm_upload auto-match — no match found (best_score={best_score:.2f}); "
-          f"config not yet indexed for auto-match. "
-          f"Testing POST /v1/jobs with config_id as fallback...")
-
+    # Phase 2: test explicit config_id path — always runs, deterministic
     if not config_id:
-        print(f"[TEST] confirm_upload auto-match — [SKIP] no config_id available for fallback")
+        print(f"[TEST] confirm_upload auto-match — [SKIP explicit] no config_id from completed job")
         return
 
-    resp = client.post("/v1/jobs", {
-        "session_id": presigned["session_id"],
-        "s3_key": presigned["s3_key"],
+    presigned2 = _presign_and_upload(client, DEMO_FILE, "csv", "text/csv")
+    confirm2 = client.post("/v1/uploads/confirm", {
+        "session_id": presigned2["session_id"],
+        "s3_key": presigned2["s3_key"],
+        "filename": DEMO_FILE.name,
         "config_id": config_id,
-        "preview_rows": 3,
-    })
-    assert resp["data"]["status"] == "queued", (
-        f"Expected status=queued from POST /v1/jobs, got: {resp['data'].get('status')}"
+    })["data"]
+
+    assert confirm2.get("preview_queued"), (
+        f"Expected preview_queued=True when config_id explicitly provided. "
+        f"Response: {json.dumps(confirm2, indent=2)[:400]}"
     )
-    print(f"[TEST] confirm_upload auto-match — [SUCCESS (fallback)] "
-          f"POST /v1/jobs with config_id={config_id} queued OK")
+    job_id2 = confirm2.get("job_id", presigned2["session_id"])
+    print(f"[TEST] confirm_upload auto-match — [SUCCESS explicit] "
+          f"preview_queued=True with config_id={config_id}, job_id={job_id2}")
 
 
 def test_reference_check_text(client: APIClient) -> None:

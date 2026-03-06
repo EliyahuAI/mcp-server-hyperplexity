@@ -84,6 +84,7 @@ def register(server):
         s3_key: str,
         filename: str,
         instructions: Optional[str] = None,
+        config_id: Optional[str] = None,
     ) -> list[types.TextContent]:
         """Confirm the upload and detect matching prior configs.
 
@@ -97,6 +98,12 @@ def register(server):
           and generates a config directly without asking clarifying questions.
           Preview is auto-triggered immediately after.
 
+        config_id: Optional ID of a known prior configuration to reuse directly.
+          When provided, skips matching and the interview entirely — applies the
+          config and queues the preview immediately. Response includes
+          preview_queued=true and job_id. Use when you already know the config_id
+          (e.g. from a previous job's get_results response).
+
           Config generation and the 3-row preview are free. Full validation is
           charged at approve_validation — you still see the cost at preview_complete
           before anything is billed. If balance is insufficient at that point,
@@ -105,6 +112,8 @@ def register(server):
         payload = {"session_id": session_id, "s3_key": s3_key, "filename": filename}
         if instructions:
             payload["instructions"] = instructions
+        if config_id:
+            payload["config_id"] = config_id
         data = client.post("/uploads/confirm", json=payload)
         data["_guidance"] = build_guidance("confirm_upload", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]

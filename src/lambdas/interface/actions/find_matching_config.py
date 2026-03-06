@@ -1070,13 +1070,14 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
         logger.debug(f"[FIND_CONFIG] Whitelist first 5: {successfully_used_configs[:5]}")
 
         if not successfully_used_configs:
-            return {
-                'success': True,
-                'matches': [],
-                'table_columns': table_columns,
-                'total_configs_searched': 0,
-                'message': 'No successfully used configurations found for this user'
-            }
+            # DynamoDB whitelist is empty — likely a timing issue (GSI eventual consistency
+            # means a just-completed run's configuration_id may not be queryable yet).
+            # Fall back to the legacy direct S3 scan so freshly generated configs are found.
+            logger.info(
+                "[FIND_CONFIG] No successfully used configs in DynamoDB whitelist — "
+                "falling back to direct S3 scan (find_matching_configs_legacy)"
+            )
+            return find_matching_configs_legacy(email, session_id, limit)
 
         logger.info(f"[FIND_CONFIG] Starting interleaved qc_by_column filtering + S3 analysis")
 
