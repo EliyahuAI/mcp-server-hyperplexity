@@ -75,6 +75,7 @@ function detectEnvironmentFromPageName() {
 // Method 3: Check URL parameters
 function getEnvironmentFromURL() {
     const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('dev')) return 'dev';
     return urlParams.get('env') || urlParams.get('environment');
 }
 
@@ -202,7 +203,12 @@ function handleAuthError() {
         hideSignedInBadge();
     }
     if (typeof createEmailValidationCard === 'function') {
-        createEmailValidationCard();
+        // Don't add another card if the email verification UI is already on screen
+        // (e.g., user is mid-verification when a background 401 fires)
+        const alreadyVerifying = !!document.querySelector('input[type="email"]');
+        if (!alreadyVerifying) {
+            createEmailValidationCard();
+        }
     }
 }
 window.handleAuthError = handleAuthError;
@@ -398,7 +404,7 @@ function detectPageType() {
     }
 
     // Check for viewer mode (results viewer)
-    if (urlParams.get('mode') === 'viewer' || urlParams.get('page') === 'viewer') {
+    if (urlParams.has('viewer') || urlParams.get('mode') === 'viewer' || urlParams.get('page') === 'viewer') {
         return 'viewer';
     }
     if (window.location.pathname.includes('/viewer')) {
@@ -423,7 +429,7 @@ function detectPageType() {
     }
 
     // Check for account management page
-    if (window.location.pathname.includes('/account') || window.location.hash === '#account') {
+    if (window.location.pathname.includes('account') || window.location.hash === '#account' || new URLSearchParams(window.location.search).has('account')) {
         return 'account';
     }
 

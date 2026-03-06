@@ -822,7 +822,12 @@ window.refreshCurrentBalance = async function refreshCurrentBalance() {
         });
 
         if (response.status === 401) {
-            handleAuthError();
+            // Only treat as auth error if we actually sent a session token.
+            // During email verification the user has no token yet — a 401 is
+            // expected and should NOT wipe state or spawn a second login card.
+            if (globalState.sessionToken) {
+                handleAuthError();
+            }
             return;
         }
 
