@@ -474,7 +474,7 @@ def _handle_confirm_upload(body, email, meta):
         _best_score = matches[0].get("match_score", 0) if matches else 0
         _auto_interview_conv_id = None
         _instructions = (body.get("instructions") or "").strip()
-        if sess_info.get("via_api") and not body.get("skip_interview") and (not matches or _best_score < 0.85):
+        if sess_info.get("via_api") and not body.get("skip_interview") and not explicit_config_id and (not matches or _best_score < 0.85):
             try:
                 _conv_id = f"upload_conv_{uuid.uuid4().hex[:12]}"
                 _sqs_resp = _asyncio_pre.run(_sqs_send_interview(
@@ -899,6 +899,16 @@ def _handle_get_job_status(job_id, email, query_params, meta):
                     "submitted_at": str(_t) if _t else None,
                     "conversation_id": conv_state.get("conversation_id"),
                 }, meta)
+            if rc_db_status in ("FAILED", "ERROR"):
+                _t = rc_record.get("start_time") or rc_record.get("created_at") if rc_record else None
+                return _success_response(200, {
+                    "job_id": job_id,
+                    "status": "failed",
+                    "current_step": "Claim Validation",
+                    "progress_percent": 0,
+                    "submitted_at": str(_t) if _t else None,
+                    "error": {"message": rc_record.get("verbose_status") or "Validation failed"},
+                }, meta)
             # Phase 2 in progress/queued
             pct = int(rc_record.get("percent_complete") or 5) if rc_record else 5
             _t = rc_record.get("start_time") or rc_record.get("created_at") if rc_record else None
@@ -936,6 +946,16 @@ def _handle_get_job_status(job_id, email, query_params, meta):
                     },
                 }
                 return _success_response(200, data, meta)
+            if rc_prev_status in ("FAILED", "ERROR"):
+                _t = rc_prev_record.get("start_time") or rc_prev_record.get("created_at") if rc_prev_record else None
+                return _success_response(200, {
+                    "job_id": job_id,
+                    "status": "failed",
+                    "current_step": "Claim Extraction",
+                    "progress_percent": 0,
+                    "submitted_at": str(_t) if _t else None,
+                    "error": {"message": rc_prev_record.get("verbose_status") or "Claim extraction failed"},
+                }, meta)
             # Phase 1 still running
             pct = int(rc_prev_record.get("percent_complete") or 5) if rc_prev_record else 5
             _t = rc_prev_record.get("start_time") or rc_prev_record.get("created_at") if rc_prev_record else None
