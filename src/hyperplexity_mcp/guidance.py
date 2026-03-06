@@ -691,12 +691,28 @@ def _guidance_get_results(data: dict) -> dict:
 
 
 def _guidance_get_reference_results(data: dict) -> dict:
-    download_url = (data.get("results") or {}).get("download_url", "")
+    results = data.get("results") or {}
+    download_url      = results.get("download_url", "")
+    viewer_url        = results.get("interactive_viewer_url", "")
+    metadata_url      = results.get("metadata_url", "")
     return {
-        "summary": "Reference check complete. Results are a presigned CSV download URL.",
-        "result_format": "CSV file with columns: Claim ID, Claim Order, Statement, Context, Text Location, Claim Criticality, Qualified Fact, Reference, Supporting Data, Reference Description, What Reference Says, Support Level (SUPPORTED/PARTIAL/UNSUPPORTED/UNVERIFIABLE), Validation Notes",
-        "download_url": download_url,
-        "next_steps": [],
+        "summary": (
+            "Reference check complete. Results match the standard Hyperplexity output format: "
+            "Excel file (XLSX) with per-claim validation, interactive viewer, and metadata JSON."
+        ),
+        "output_files": {
+            "excel_file":    "XLSX file — each claim row has support level, validation notes, and citations.",
+            "metadata_json": "Complete metadata JSON with per-claim confidence, citations, and validator reasoning.",
+        },
+        "key_urls": {k: v for k, v in {
+            "download_excel":     download_url,
+            "interactive_viewer": viewer_url,
+            "metadata":           metadata_url,
+        }.items() if v},
+        "support_levels": "SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIABLE",
+        "next_steps": [
+            {"note": "Share interactive_viewer_url with human stakeholders — it renders sources and confidence scores in a clean UI."}
+        ] if viewer_url else [],
     }
 
 
@@ -722,6 +738,8 @@ def _guidance_reference_check(data: dict) -> dict:
     job_id = data.get("job_id", "")
     auto_approve = bool(data.get("auto_approve", False))
 
+    min_claims_note = "Hyperplexity is designed for text with 4 or more factual claims. Fewer claims may produce low-quality results."
+
     if auto_approve:
         return {
             "summary": (
@@ -732,12 +750,13 @@ def _guidance_reference_check(data: dict) -> dict:
                 "or get_reference_results."
             ),
             "phases": ["extraction (free)", "validation (charged, auto-approved)"],
+            "min_claims_note": min_claims_note,
             "messages_note": "get_job_messages is empty for reference checks — use wait_for_job or get_job_status.",
             "next_steps": [
                 {
                     "tool": "wait_for_job",
                     "params": {"job_id": job_id, "timeout_seconds": 900},
-                    "note": "Waits for completed. Then call get_results (CSV + interactive viewer).",
+                    "note": "Waits for completed. Then call get_results (XLSX + interactive viewer + metadata).",
                 }
             ],
         }
@@ -750,6 +769,7 @@ def _guidance_reference_check(data: dict) -> dict:
             "(Phase 2, charged)."
         ),
         "phases": ["extraction (free)", "approval gate", "validation (charged)"],
+        "min_claims_note": min_claims_note,
         "auto_approve_note": "Pass auto_approve=True to run straight through without the gate.",
         "messages_note": "get_job_messages is empty for reference checks — use wait_for_job or get_job_status.",
         "next_steps": [
