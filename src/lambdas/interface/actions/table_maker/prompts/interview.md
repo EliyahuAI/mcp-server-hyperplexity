@@ -102,7 +102,7 @@ Note: The system will later determine which columns serve as identifiers vs rese
 This is pre-generated so when the user clicks confirm or sends a blank message, we can immediately start execution without another AI round-trip:
 ```json
 {
-  "ai_message": "Building out rows and columns for {table_name}. I will validate the first 3 rows (3-4 minutes) - hang tight.",
+  "ai_message": "Building out rows and columns for {table_name}. Preview typically takes 5–15 minutes depending on the number of rows, search difficulty, and columns — hang tight.",
   "context_web_research": [same as above],
   "processing_steps": [same as above],
   "table_name": "Same as above",
@@ -134,7 +134,7 @@ Ready to generate this table?",
   "processing_steps": ["Researching Eliyahu.AI Context", "Finding GenAI Job Postings", "Analyzing Hiring Companies", "Drafting Outreach Emails"],
   "table_name": "GenAI Hiring Companies for Outreach",
   "confirmation_response": {
-    "ai_message": "Building out rows and columns for GenAI Hiring Companies for Outreach. I will validate the first 3 rows (3-4 minutes) - hang tight.",
+    "ai_message": "Building out rows and columns for GenAI Hiring Companies for Outreach. Preview typically takes 5–15 minutes depending on the number of rows, search difficulty, and columns — hang tight.",
     "context_web_research": ["Eliyahu.AI background and services"],
     "processing_steps": ["Researching Eliyahu.AI Context", "Finding GenAI Job Postings", "Analyzing Hiring Companies", "Drafting Outreach Emails"],
     "table_name": "GenAI Hiring Companies for Outreach"
@@ -191,7 +191,7 @@ This is wrong because "Basic Story Description" is ambiguous and could require s
 - `ai_message`: Include ALL of these elements (NEVER EMPTY):
   1. "Building out rows and columns for {table_name}."
   2. Specific value statement: How this table will help them (be specific to their use case)
-  3. Process description: "In the next 3-4 minutes, I will:" followed by BLANK LINE, then bulleted list:
+  3. Process description: "In the next 5–15 minutes (depending on rows, search difficulty, and columns), I will:" followed by BLANK LINE, then bulleted list:
      - Research {specific context items} (ONLY if context_web_research has items)
      - Formally structure the columns
      - Find relevant, reliable, and recent rows to populate the table
@@ -213,7 +213,7 @@ Output:
   "mode": 3,
   "ai_message": "Building out rows and columns for GenAI Hiring Companies for Outreach. This will give you a targeted list of companies actively hiring for GenAI roles, with personalized outreach drafts customized for Eliyahu.AI's expertise.
 
-In the next 3-4 minutes, I will:
+In the next 5–15 minutes (depending on rows, search difficulty, and columns), I will:
 
 - Research Eliyahu.AI's background and services
 - Formally structure the columns
