@@ -290,16 +290,19 @@ python examples/03_update_table.py session_20260217_103045_abc123 --version 2
 Submit any text, report, or document. Hyperplexity checks each factual claim against authoritative sources and returns a structured confidence report.
 
 ```
-reference_check(text="...")           ← inline text
+reference_check(text="...")           ← inline text (or auto_approve=True to skip the gate)
   or
 upload_file(path, "pdf")              ← upload PDF/document first
   → reference_check(s3_key=s3_key)
 
-→ wait_for_job(job_id)
-  → get_reference_results(job_id)
+→ wait_for_job(job_id)                ← stops at preview_complete
+  → claims_summary + cost_estimate shown in response
+  → approve_validation(job_id, approved_cost_usd=X)   ← triggers Phase 2
+  → wait_for_job(job_id)              ← waits for completed
+  → get_results(job_id)               ← CSV download_url + interactive_viewer_url
 ```
 
-> **Key behavior:** No preview or approval step. Submit and poll until `completed`, then fetch results via `get_reference_results`. The result is a presigned S3 CSV URL, not inline JSON.
+> **Two-phase flow:** Phase 1 (extraction, free) runs automatically and pauses at `status=preview_complete` with `claims_summary` and `cost_estimate`. Call `approve_validation` to start Phase 2 (validation, charged). Pass `auto_approve=True` to skip the gate and run straight through.
 
 > **Progress tracking:** `get_job_messages` always returns empty for reference-check jobs. Use `get_job_status` (`current_step`, `progress_percent`) to track progress.
 
