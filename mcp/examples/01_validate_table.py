@@ -59,6 +59,7 @@ def main(file_path: str, refine_instructions: str = "", instructions: str = "") 
     config_id = None
     conversation_id = confirm.get("conversation_id")
     instructions_mode = bool(confirm.get("instructions_mode"))
+    preview_queued = bool(confirm.get("preview_queued"))
     matches = confirm.get("matches") or confirm.get("config_matches") or []
 
     if matches:
@@ -66,19 +67,26 @@ def main(file_path: str, refine_instructions: str = "", instructions: str = "") 
         score = best.get("match_score", 0)
         if score >= 0.85:
             config_id = best.get("config_id")
-            print(f"  Found matching config (score={score:.2f}): {config_id}")
+            if preview_queued:
+                print(f"  Found matching config (score={score:.2f}) — preview auto-queued")
+            else:
+                print(f"  Found matching config (score={score:.2f}): {config_id}")
         else:
             print(f"  Best config match score {score:.2f} < 0.85 — proceeding with AI interview")
 
-    if not config_id and not conversation_id and not instructions_mode:
+    if not preview_queued and not config_id and not conversation_id and not instructions_mode:
         # Shouldn't happen — confirm always returns one or the other
         raise RuntimeError("No config match and no conversation_id returned from confirm_upload")
 
     # ------------------------------------------------------------------
     # Step 3: If no config match, drive the AI interview (or skip if instructions provided)
     # ------------------------------------------------------------------
-    if config_id:
-        # Reuse existing config — create preview job directly
+    if preview_queued:
+        # API auto-applied the matched config and queued the preview — go straight to waiting
+        print(f"\n[3/6] Preview auto-queued with matched config — skipping interview...")
+        job_id = confirm.get("job_id", session_id)
+    elif config_id:
+        # Non-API path: reuse existing config — create preview job directly
         print(f"\n[3/6] Using existing config {config_id} — creating preview job...")
         job_data = hpx.post("/jobs", json={
             "session_id": session_id,
@@ -181,7 +189,7 @@ def main(file_path: str, refine_instructions: str = "", instructions: str = "") 
     print(f"  [Human] Download Excel     : {r.get('download_url', 'N/A')}")
 
     # For AI agents — survey the preview_table markdown first (available at preview_complete),
-    # then use metadata.json for per-cell details with _row_key cross-references.
+    # then use metadata.json for per-cell details with row_key cross-references.
     metadata_url = r.get("metadata_url")
     if metadata_url:
         print(f"\n  [AI]    metadata_url: {metadata_url}")

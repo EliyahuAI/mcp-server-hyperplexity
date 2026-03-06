@@ -495,6 +495,41 @@ def _handle_confirm_upload(body, email, meta):
             except Exception as _ie:
                 logger.warning(f"[CONFIRM_UPLOAD] Could not queue upload interview: {_ie}")
 
+        # Auto-create preview job for API sessions with a strong config match.
+        # Human users (app) still see the match list and choose manually.
+        _auto_preview_queued = False
+        _auto_preview_job_id = None
+        if sess_info.get("via_api") and _best_score >= 0.85 and top_config_id and not _auto_interview_conv_id:
+            try:
+                from interface_lambda.actions.use_config_by_id import handle_use_config_by_id
+                from interface_lambda.actions import start_preview as _start_preview_mod
+                _use_result = handle_use_config_by_id(
+                    {"email": email, "_verified_email": email,
+                     "session_id": session_id, "config_id": top_config_id},
+                    None,
+                )
+                _parsed_use = _parse_handler_response(_use_result)
+                if _parsed_use["status_code"] < 400:
+                    _preview_resp = _start_preview_mod.handle_start_preview(
+                        {"_verified_email": email, "_api_email": email,
+                         "session_id": session_id, "preview_max_rows": 3},
+                        None,
+                    )
+                    _parsed_preview = _parse_handler_response(_preview_resp)
+                    if _parsed_preview["status_code"] < 400:
+                        _auto_preview_queued = True
+                        _auto_preview_job_id = _parsed_preview["body"].get("session_id", session_id)
+                        logger.info(
+                            f"[CONFIRM_UPLOAD] Auto-queued preview for API session {session_id} "
+                            f"using config {top_config_id}"
+                        )
+                    else:
+                        logger.warning(f"[CONFIRM_UPLOAD] Auto-preview failed: {_parsed_preview['body']}")
+                else:
+                    logger.warning(f"[CONFIRM_UPLOAD] Auto config apply failed: {_parsed_use['body']}")
+            except Exception as _ae:
+                logger.warning(f"[CONFIRM_UPLOAD] Could not auto-queue preview: {_ae}")
+
         # 6. Build next_steps — spell out every option with ready-to-execute calls
         options = []
 
@@ -648,6 +683,10 @@ def _handle_confirm_upload(body, email, meta):
                 # directly to config generation.  Guidance uses this to recommend
                 # wait_for_job instead of wait_for_conversation.
                 response_data["instructions_mode"] = True
+        if _auto_preview_queued:
+            response_data["preview_queued"] = True
+            response_data["job_id"] = _auto_preview_job_id or session_id
+            response_data["config_id_used"] = top_config_id
 
         return _success_response(200, response_data, meta)
 

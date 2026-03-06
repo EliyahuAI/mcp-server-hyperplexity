@@ -160,16 +160,16 @@ Once the MCP server is installed, describe your task in plain English. Claude dr
 ```
 upload_file(path)
   → confirm_upload(session_id, s3_key, filename)
-      ┌── match found (score ≥ 0.85) → create_job(session_id, config_id)
+      ┌── match found (score ≥ 0.85) → [preview auto-queued; response has preview_queued=true + job_id]
       └── no match → interview auto-started
             → wait_for_conversation / poll get_conversation
               → send_conversation_reply  (if AI asks questions)
               → [interview complete → preview auto-queued]
 
-  → wait_for_job(session_id)          ← blocks until preview_complete
+  → wait_for_job(job_id or session_id)  ← blocks until preview_complete
       → [optional] refine_config(conv_id, session_id, instructions)
       → approve_validation(job_id, cost_usd)
-      → wait_for_job(job_id)          ← blocks until completed
+      → wait_for_job(job_id)            ← blocks until completed
       → get_results(job_id)
 ```
 
@@ -504,13 +504,21 @@ Every tool response includes a `_guidance` block with a plain-English summary an
 
 #### Auto-queued preview
 
-After the **upload interview** finishes (`trigger_execution=true` and `status=approved`) or after a **Table Maker** session completes, the preview is **automatically queued**. Do not call `create_job()`. Call `wait_for_job(session_id)` — it detects the intermediate config-generation or table-making phase automatically.
+The preview is **automatically queued** in all three paths after `confirm_upload` — you never need to call `create_job()`:
 
-**Exception — config reuse:** If `confirm_upload` returns `match_score ≥ 0.85` (no interview needed), call `create_job(session_id, config_id=...)` directly. This is the only case where `create_job()` is required.
+| Path | Trigger | What to call next |
+|------|---------|-------------------|
+| Config match (score ≥ 0.85) | `preview_queued: true` in response | `wait_for_job(job_id)` |
+| `instructions=` provided | `instructions_mode: true` in response | `wait_for_job(session_id)` |
+| Interview ran | `trigger_execution=true` from conversation | `wait_for_job(session_id)` |
+
+`create_job()` is only needed if you want to use a specific `config_id` that was **not** auto-detected — for example, re-using a config from a completely different session.
 
 #### Config reuse
 
-If `confirm_upload` returns a match with `match_score ≥ 0.85`, skip the interview and call `create_job(session_id, config_id=...)` directly — no interview runs. The `configuration_id` from any completed job's `get_results` response can be reused on future uploads of similar tables.
+If `confirm_upload` returns `match_score ≥ 0.85`, the preview is automatically queued using the matched config. The response includes `preview_queued: true` and `job_id` — call `wait_for_job(job_id)` directly, no interview and no `create_job()` call needed.
+
+The `configuration_id` from any completed job's `get_results` response can be reused on future uploads of similar tables.
 
 #### Cost confirmation gate
 
