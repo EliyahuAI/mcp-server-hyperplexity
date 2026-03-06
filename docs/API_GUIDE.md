@@ -173,7 +173,7 @@ upload_file(path)
       → get_results(job_id)
 ```
 
-> **Key behavior:** After the interview finishes (`trigger_execution=true`), the preview is auto-queued. Do **not** call `create_job()`. Call `wait_for_job(session_id)` directly — it detects the config-generation phase automatically.
+> **Key behavior:** After the interview finishes (`trigger_execution=true`), the preview is auto-queued. Do **not** call `create_job()` — call `wait_for_job(session_id)` directly. The same applies when a config match is found: if `confirm_upload` returns `match_score ≥ 0.85`, the preview is also auto-queued — the response includes `preview_queued: true` and `job_id`. Call `wait_for_job(job_id)` directly (see [Config reuse](#config-reuse)).
 
 **Skip the interview with `instructions` (fire-and-forget config generation):**
 
@@ -506,11 +506,11 @@ Every tool response includes a `_guidance` block with a plain-English summary an
 
 After the **upload interview** finishes (`trigger_execution=true` and `status=approved`) or after a **Table Maker** session completes, the preview is **automatically queued**. Do not call `create_job()`. Call `wait_for_job(session_id)` — it detects the intermediate config-generation or table-making phase automatically.
 
-Only call `create_job()` when you already have a `config_id` from a prior run.
+**Exception — config reuse:** If `confirm_upload` returns `match_score ≥ 0.85` (no interview needed), call `create_job(session_id, config_id=...)` directly. This is the only case where `create_job()` is required.
 
 #### Config reuse
 
-If `confirm_upload` returns a match with `match_score ≥ 0.85`, skip the interview and call `create_job(session_id, config_id=...)` directly. The `configuration_id` from any completed job's `get_results` response can be reused on future uploads.
+If `confirm_upload` returns a match with `match_score ≥ 0.85`, skip the interview and call `create_job(session_id, config_id=...)` directly — no interview runs. The `configuration_id` from any completed job's `get_results` response can be reused on future uploads of similar tables.
 
 #### Cost confirmation gate
 
@@ -539,15 +539,15 @@ Both flags cause `interview_auto_started: true` / `trigger_execution: true` on t
 
 | File | Format | Description |
 |------|--------|-------------|
-| Preview table | Markdown (`.md`) | Human-readable table of the first 3 rows; included inline in the `preview_complete` response |
+| Preview table | Markdown (inline) | First 3 rows as markdown text; returned inline in the `preview_complete` job status response (not a separate download). Also available in `metadata.json` under `markdown_table`. |
 | Enriched results | Excel (`.xlsx`) | Ideal for sharing with humans; sources and citations are embedded in cell comments |
-| Full metadata | `metadata.json` | Complete per-cell detail for every row; use the `_row_key` column to drill into specific rows programmatically |
+| Full metadata | `metadata.json` | Complete per-cell detail for every row; use the `row_key` field to drill into specific rows programmatically |
 
 `get_results` returns:
 
 | Field | Type | Best for |
 |-------|------|----------|
-| `results.interactive_viewer_url` | URL | **Humans** — web viewer with confidence indicators (requires login with the account email) |
+| `results.interactive_viewer_url` | URL | **Humans** — web viewer with confidence indicators (requires login at hyperplexity.ai with the same email as your API key) |
 | `results.download_url` | Presigned URL | **Humans** — download the enriched Excel (.xlsx) directly |
 | `results.metadata_url` | Presigned URL | **AI agents** — JSON file with all rows, per-cell details, and source citations |
 
