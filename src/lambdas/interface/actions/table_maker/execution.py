@@ -1013,13 +1013,26 @@ def _write_qc_section(
     if qc_result:
         qc_summary = qc_result.get('qc_summary', {})
         sections.append("\n### QC Summary\n")
+        sections.append(f"- Action: {qc_summary.get('action', 'unknown')}")
+        sections.append(f"- Overall Score: {qc_summary.get('overall_score', 'N/A')}")
+        sections.append(f"- Kept: {qc_summary.get('kept', 0)}")
+        sections.append(f"- Rejected: {qc_summary.get('rejected', 0)}")
         sections.append(f"- Promoted: {qc_summary.get('promoted', 0)}")
         sections.append(f"- Demoted: {qc_summary.get('demoted', 0)}")
-        sections.append(f"- Rejected: {qc_summary.get('rejected', 0)}")
-        sections.append(f"- Overall Score: {qc_summary.get('overall_score', 'N/A')}\n")
+        reasoning = qc_summary.get('reasoning', '')
+        if reasoning:
+            sections.append(f"- Reasoning: {reasoning}")
+        sections.append("")
 
-        # Show per-row removal reasons so it's clear why rows were removed
+        # Show per-row removal reasons — use removal_reasons dict; fall back to rejected_rows list
         removal_reasons = qc_result.get('removal_reasons', {})
+        if not removal_reasons:
+            # Build from rejected_rows list (each has row_id + rejection_reason)
+            removal_reasons = {
+                r.get('row_id', '?'): r.get('rejection_reason', r.get('qc_rationale', 'Removed by QC'))
+                for r in qc_result.get('rejected_rows', [])
+                if r.get('row_id')
+            }
         if removal_reasons:
             sections.append("\n### Rejected Rows\n")
             sections.append("| Row ID | Reason |")

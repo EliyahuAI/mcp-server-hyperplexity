@@ -1396,8 +1396,19 @@ class QCReviewer:
             'rejected': len(rejected_rows),
             'promoted': 0,
             'demoted': 0,
+            'overall_score': overall_score,
+            'action': action,
             'reasoning': f'QC {action}: {kept_count} rows kept, {len(rejected_rows)} removed'
         }
+
+        # Build removal_reasons from rejected_rows (each has rejection_reason) merged with
+        # any explicit reasons provided by the model in the simplified response.
+        combined_removal_reasons = {
+            r['row_id']: r.get('rejection_reason', 'Removed by QC')
+            for r in rejected_rows if r.get('row_id')
+        }
+        if removal_reasons:
+            combined_removal_reasons.update(removal_reasons)
 
         # Build old format response
         # IMPORTANT: Preserve action, overall_score, and action-specific fields for schema validation
@@ -1406,7 +1417,8 @@ class QCReviewer:
             'overall_score': overall_score,  # Required by schema (except restructure)
             'reviewed_rows': reviewed_rows,
             'rejected_rows': rejected_rows,
-            'qc_summary': qc_summary
+            'qc_summary': qc_summary,
+            'removal_reasons': combined_removal_reasons,
         }
 
         # Preserve keep_row_ids_in_order if provided (for explicit row filtering and ordering)
