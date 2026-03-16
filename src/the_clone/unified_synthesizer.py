@@ -966,8 +966,12 @@ Query: {query}
         # 2d: two-letter short_id map (stable anchor; assigned in evaluate_and_synthesize)
         short_id_map = {s.get('short_id'): s.get('id') for s in snippets if s.get('short_id')}
 
-        # Pull ALL bracketed items and try strategies on each
-        all_brackets = re.findall(r'\[([^\]]+)\]', answer_str)
+        # Pull ALL bracketed items and try strategies on each.
+        # IMPORTANT: exclude newlines from bracket content ([^\]\n]+) so that JSON array
+        # brackets (which span multiple lines due to formatting) don't greedily consume the
+        # first citation bracket inside them.  Citation brackets are always single-line;
+        # array-of-array brackets in validation_results always contain newlines.
+        all_brackets = re.findall(r'\[([^\]\n]+)\]', answer_str)
 
         snippet_ids = []
         seen = set()
@@ -1100,7 +1104,29 @@ Query: {query}
             if not matched:
                 failed_items.append(item)
 
-        # Strategy 5: Batch LLM resolution for all items that survived strategies 0-4.
+        # Strategy 5 (Backup anchor sweep): catch any citations that the primary
+        # re.findall scan missed.  The primary pattern [^\]\n]+ skips array brackets
+        # (which contain newlines) but edge cases still slip through — e.g. minified
+        # JSON, unusual LLM formatting, or citations nested inside outer brackets.
+        # Since every citation now ends with ", XX]" (2-letter anchor), we can sweep
+        # the raw answer_str directly for that unambiguous pattern and resolve via
+        # short_id_map — no strategy guessing needed.
+        # [^\[\]\n]* — no nested brackets, no newlines → immune to array-bracket eating
+        _backup_anchor_re = re.compile(r'\[[^\[\]\n]*,\s*([A-Z]{2})\]')
+        _backup_found = 0
+        for _bm in _backup_anchor_re.finditer(answer_str):
+            _anchor = _bm.group(1)
+            if _anchor in short_id_map:
+                _sid = short_id_map[_anchor]
+                if _sid not in seen:
+                    snippet_ids.append(_sid)
+                    seen.add(_sid)
+                    _backup_found += 1
+                    logger.debug(f"[CITATIONS] Backup anchor sweep: [{_anchor}] → {_sid}")
+        if _backup_found:
+            logger.info(f"[CITATIONS] Backup anchor sweep recovered {_backup_found} missed citation(s)")
+
+        # Strategy 6: Batch LLM resolution for all items that survived strategies 0-5.
         # Shows each ref with surrounding answer context ("PROBLEMATIC SNIPPET N").
         # Drops citations the LLM can't confidently match — no citation is better than wrong.
         # Logged as an independent step in the debug summary (start_step/record_step_metric/end_step).
