@@ -495,8 +495,8 @@ const InteractiveTable = (function() {
                         </button>
                     </div>
                     <div class="cell-detail-title">
-                        <h3>${escapeHtml(columnName)}</h3>
                         <span class="cell-detail-row-id">${escapeHtml(rowId)}</span>
+                        <h3>${escapeHtml(columnName)}</h3>
                     </div>
                     <div class="cell-detail-actions">
                         <button class="modal-nav-btn" onclick="InteractiveTable.navigateNext()" ${!hasNext ? 'disabled' : ''} title="Next cell (→)">

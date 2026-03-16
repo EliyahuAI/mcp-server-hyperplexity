@@ -593,14 +593,16 @@
 
 .cell-detail-title h3 {
     margin: 0;
-    font-size: 1.1rem;
-    font-weight: 600;
+    font-size: 0.9rem;
+    font-weight: 400;
+    color: var(--text-secondary);
 }
 
 .cell-detail-row-id {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    font-weight: 400;
+    font-size: 1.05rem;
+    color: var(--text-color);
+    font-weight: 700;
+    letter-spacing: 0.01em;
 }
 
 /* Confidence badge (square style - kept for backwards compatibility) */
