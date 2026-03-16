@@ -224,12 +224,20 @@ class RumorGenerator:
                     + '\n'.join(existing_values[:50])  # cap at 50 to avoid prompt bloat
                 )
 
+        # Build output format example with real column names
+        col_headers = id_col_names + ['Confidence Score']
+        header_row = '| ' + ' | '.join(col_headers) + ' |'
+        sep_row = '| ' + ' | '.join('-' * max(len(c), 3) for c in col_headers) + ' |'
+        example_row = '| ' + ' | '.join(['...' for _ in id_col_names] + ['0.85']) + ' |'
+        output_format_example = '\n'.join([header_row, sep_row, example_row])
+
         # Fill prompt template
         filled_prompt = prompt_template.replace('{{SEARCH_STRATEGY}}', strategy_desc)
         filled_prompt = filled_prompt.replace('{{ID_COLUMNS}}', id_columns_str)
         filled_prompt = filled_prompt.replace('{{TARGET_COUNT}}', str(target_count))
         filled_prompt = filled_prompt.replace('{{EXAMPLES_SECTION}}', examples_section)
         filled_prompt = filled_prompt.replace('{{EXISTING_ROWS_SECTION}}', existing_rows_section)
+        filled_prompt = filled_prompt.replace('{{OUTPUT_FORMAT_EXAMPLE}}', output_format_example)
 
         # Load schema
         schema = self.schema_validator.load_schema('rumor_candidate')

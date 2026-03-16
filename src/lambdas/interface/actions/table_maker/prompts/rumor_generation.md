@@ -8,8 +8,8 @@ You are tasked with recalling entities that match the search strategy below. You
 
 ### Requirement Types
 
-- **[HARD]** — Inclusion gate. Only include entities you believe satisfy this requirement. If you are unsure whether an entity meets a HARD requirement, leave it out.
-- **[SOFT]** — Prioritization signal. Prefer entities that satisfy this, but do not exclude ones that don't.
+- **[HARD]** — Must be met for inclusion. Your confidence score should reflect both existence *and* whether this entity meets the hard requirements. An entity that exists but clearly fails a HARD requirement should not be included.
+- **[SOFT]** — Prioritization only. Prefer entities that satisfy this, but do not exclude ones that don't.
 
 ## Task
 
@@ -24,22 +24,16 @@ Generate **{{TARGET_COUNT}}** entities that match this search strategy. For each
 
 ### Confidence Score Guidelines
 
-The bar is not public verifiability — it is whether **you genuinely know this entity exists**. A good row is one where you can recall specific details about it beyond just the name (e.g. who founded it, when it launched, what it does). A domain expert with deep insider knowledge should look at your list and recognize the entries as real.
+The confidence score is the probability (0–1) that **a domain expert with perfect knowledge** would confirm this entity exists *and* meets the HARD requirements. Think of it as: if that expert reviewed your list, what fraction of the time would they say "yes, this is a valid entry"?
 
-- **0.9-1.0**: You recall specific details — this entity is real and matches
-- **0.7-0.9**: You are fairly sure it exists and matches, though details are hazy
-- **0.5-0.7**: Plausible — you believe it exists but are genuinely uncertain
-- **below 0.5**: Do not include — you are guessing
+Only include entities where you can recall specific details beyond the name. If you are purely guessing, leave it out.
 
 ## Output Format
 
-Provide your results as a **markdown table** with the following structure:
+Provide your results as a **markdown table** with this exact structure:
 
 ```markdown
-| [ID Column 1] | [ID Column 2] | ... | Confidence Score |
-|---------------|---------------|-----|------------------|
-| value1        | value2        | ... | 0.85             |
-| value3        | value4        | ... | 0.72             |
+{{OUTPUT_FORMAT_EXAMPLE}}
 ```
 
 ## Important Guidelines
@@ -47,7 +41,7 @@ Provide your results as a **markdown table** with the following structure:
 1. **Draw on real knowledge** - Only include entities you genuinely recall, not plausible-sounding inventions
 2. **Prioritize diversity** - Include entities from different subcategories, sizes, regions, etc.
 3. **Go beyond the obvious** - Surface niche, emerging, or lesser-known entities a non-expert might miss
-4. **Honest scoring** - If you can recall specific details, score high. If only the name feels familiar, score low or omit.
+4. **Honest scoring** - Score = probability an expert with perfect knowledge confirms this entry. Recall specific details to justify a high score.
 5. **No explanations** - Just provide the markdown table (no rationale or commentary)
 6. **Exact format** - Use the exact column names provided above in the table header
 
