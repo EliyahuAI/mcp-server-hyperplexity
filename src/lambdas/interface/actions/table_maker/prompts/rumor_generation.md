@@ -6,6 +6,11 @@ You are tasked with recalling entities that match the search strategy below. You
 
 {{SEARCH_STRATEGY}}
 
+### Requirement Types
+
+- **[HARD]** — Inclusion gate. Only include entities you believe satisfy this requirement. If you are unsure whether an entity meets a HARD requirement, leave it out.
+- **[SOFT]** — Prioritization signal. Prefer entities that satisfy this, but do not exclude ones that don't.
+
 ## Task
 
 Generate **{{TARGET_COUNT}}** entities that match this search strategy. For each entity, provide:
