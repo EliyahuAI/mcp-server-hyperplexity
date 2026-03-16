@@ -13,7 +13,10 @@ claude mcp add hyperplexity uvx mcp-server-hyperplexity \
   -e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
 ```
 
-**Get your API key at [hyperplexity.ai/account](https://hyperplexity.ai/account) — new accounts get $20 free credits.**
+**Get your API key:** log in at [hyperplexity.ai](https://hyperplexity.ai) and click your email at the top of the first card. New accounts receive $20 in free credits.
+
+> **Tip — store your key once, never re-enter it:**
+> Add `export HYPERPLEXITY_API_KEY=hpx_live_your_key_here` to `~/.bashrc` or `~/.zshrc`, then use `${HYPERPLEXITY_API_KEY}` everywhere (see [API Key Storage](#api-key-storage) below).
 
 ---
 
@@ -27,7 +30,7 @@ Describe the table you want — subject matter, columns, scope — and Hyperplex
 
 ### 2. Validate and update existing research tables
 
-Upload any Excel or CSV file. Hyperplexity inspects each column, validates every cell against live data and authoritative sources, and returns an enriched file with per-cell confidence scores, validator explanations, and citations. After an analyst reviews and corrects the output, the `update_table` tool re-runs validation on the corrected version for a refined second pass — no re-upload needed.
+Upload any Excel or CSV file. Hyperplexity inspects each column, validates every cell against live data and authoritative sources, and returns an enriched file with per-cell confidence scores, validator explanations, and citations. Use `update_table` to re-run validation automatically on the same data — no re-upload or edits needed. To incorporate manual changes to the output, re-upload the edited file and a matching config will be found automatically.
 
 *Example: Upload a company list; get back every website, LinkedIn URL, headcount, and funding round verified with citations.*
 
@@ -39,13 +42,47 @@ Pass a paragraph, a report, or any block of text and Hyperplexity checks each fa
 
 ---
 
+## API Key Storage
+
+Store your key once in your shell profile so you never have to paste it again:
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc (then restart your terminal or run: source ~/.bashrc)
+export HYPERPLEXITY_API_KEY=hpx_live_your_key_here
+```
+
+All config examples below use `${HYPERPLEXITY_API_KEY}` — they will pick it up automatically.
+
+---
+
 ## Quickstart
 
 ### Claude Code
+
+**Install from PyPI (recommended):**
 ```bash
 claude mcp add hyperplexity uvx mcp-server-hyperplexity \
-  -e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
+  -e HYPERPLEXITY_API_KEY=${HYPERPLEXITY_API_KEY}
 ```
+
+**Install from the public GitHub repo (for testing the latest code):**
+```bash
+claude mcp add hyperplexity uvx \
+  --from git+https://github.com/EliyahuAI/mcp-server-hyperplexity \
+  mcp-server-hyperplexity \
+  -e HYPERPLEXITY_API_KEY=${HYPERPLEXITY_API_KEY}
+```
+
+**Verify the server is running:**
+```bash
+claude mcp list         # should show "hyperplexity"
+claude mcp get hyperplexity
+```
+
+**Basic test** — run this in Claude Code after installation:
+> "Use the hyperplexity get_balance tool to check my credit balance."
+
+Claude should call `get_balance` and return your current balance and this-month usage.
 
 ### Claude Desktop
 
@@ -57,7 +94,7 @@ Add to your `claude_desktop_config.json`:
       "command": "uvx",
       "args": ["mcp-server-hyperplexity"],
       "env": {
-        "HYPERPLEXITY_API_KEY": "hpx_live_your_key_here"
+        "HYPERPLEXITY_API_KEY": "${HYPERPLEXITY_API_KEY}"
       }
     }
   }
@@ -68,12 +105,31 @@ Add to your `claude_desktop_config.json`:
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
+After saving, restart Claude Desktop. You should see "hyperplexity" listed in the MCP servers panel.
+
+### OpenAI Codex CLI
+
+Add to `~/.codex/config.toml`:
+```toml
+[mcp_servers.hyperplexity]
+command = "uvx"
+args = ["mcp-server-hyperplexity"]
+
+[mcp_servers.hyperplexity.env]
+HYPERPLEXITY_API_KEY = "${HYPERPLEXITY_API_KEY}"
+```
+
+Or pass inline when starting a session:
+```bash
+HYPERPLEXITY_API_KEY=$HYPERPLEXITY_API_KEY codex --mcp-server "hyperplexity:uvx mcp-server-hyperplexity"
+```
+
 ### OpenClaw
 Tell your agent: *"Install the hyperplexity skill"*
 
-### Team / project-level config
+### Project-level config (shared repo)
 
-Add a `.mcp.json` to your project root — every team member gets the server automatically when they run Claude Code in that directory:
+Add a `.mcp.json` to your project root so the server is available when anyone runs Claude Code in that directory:
 
 ```json
 {
@@ -88,6 +144,23 @@ Add a `.mcp.json` to your project root — every team member gets the server aut
   }
 }
 ```
+
+**Note:** API keys are tied to individual email accounts — each person needs their own key and should set it in their own shell profile. Never share or commit a key.
+
+---
+
+## Testing the installation
+
+After installation, run these quick tests in order:
+
+**1. Check balance** (confirms auth + connectivity):
+> "Use hyperplexity get_balance to check my balance."
+
+**2. Generate a small table** (free — preview only):
+> "Use hyperplexity to generate a table of the 3 largest S&P 500 companies by market cap: company name, ticker, market cap, sector. Run the preview. Do not approve full validation."
+
+**3. Validate an uploaded file** (if you have an Excel/CSV):
+> "Validate `companies.xlsx` with hyperplexity. Interview me about the columns, then run the preview. Abort before approving."
 
 ---
 
@@ -118,21 +191,21 @@ Every tool response includes a `_guidance` block with a plain-English summary of
 |---|---|
 | `upload_file` | Upload an Excel or CSV file (handles presigned S3 upload automatically) |
 | `confirm_upload` | Verify upload, detect matching prior validation configs (reuse if score ≥ 0.85). When no strong match is found, an AI interview is automatically started and `conversation_id` is returned. |
-| `refine_config` | Refine the generated config with natural language instructions |
+| `refine_config` | Adjust how columns are validated (sources, strictness, interpretation) — cannot add or remove columns |
 | `create_job` | Submit a validation job (preview first, then approve for full run) — only needed when reusing a known `config_id`. Preview is auto-queued after interview or table-maker flows. |
 | `wait_for_job` | **Preferred progress tracker.** Blocks until a terminal state (`preview_complete`, `completed`, `failed`), emitting live MCP progress notifications. Drives from the messages endpoint (more reliable than status polling) and handles multi-phase pipelines (e.g. table-maker → preview) automatically. No extra token cost. |
 | `get_job_status` | One-shot status poll — fallback when `wait_for_job` is not suitable |
 | `get_job_messages` | Fetch live progress messages with native progress percentages (paginated by `since_seq`) |
 | `approve_validation` | Approve the preview and start full validation (credits are charged here) |
 | `get_results` | Fetch enriched results: Excel download URL, table metadata (inline), interactive viewer URL |
-| `update_table` | Re-validate the enriched output after analyst corrections — no re-upload needed |
+| `update_table` | Re-run validation on a completed job — iterates automatically, no re-upload or edits needed |
 
 ### Fact-check text
 
 | Tool | Description |
 |---|---|
-| `reference_check` | Submit text or a file for claim and citation verification |
-| `get_reference_results` | Fetch the reference-check report for a completed job |
+| `reference_check` | Submit text or a file for claim and citation verification — fire-and-forget, no approval gate |
+| `get_reference_results` | Fetch the reference-check report for a completed job. Returns a presigned CSV download URL |
 
 ### Account
 

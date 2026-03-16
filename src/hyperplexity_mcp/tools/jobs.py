@@ -137,6 +137,7 @@ def register(server):
         ctx: Context,
         timeout_seconds: int = 900,
         poll_interval: int = 10,
+        warmup_seconds: int = 0,
     ) -> list[types.TextContent]:
         """Wait for a job to reach a terminal state, emitting live MCP progress notifications.
 
@@ -181,6 +182,13 @@ def register(server):
           Upload-interview + config-gen phases and large table previews can take up
           to 15 minutes — set timeout_seconds=900 or higher for long-running jobs.
         poll_interval:   seconds between poll cycles (default 10)
+        warmup_seconds:  when > 0, applies synthetic sqrt-curve progress from 0→70%
+          over this many seconds during the pre-message phase (before the first
+          progress message or intermediate step arrives). Use this when the pipeline
+          has a silent setup phase (e.g. instructions= mode where the backend runs
+          an internal AI interview + config generation before preview messages begin).
+          The warmup is automatically disabled once the first intermediate step
+          completes (phase-split takes over). For instructions= mode, pass 300.
         """
         # ── Helpers: phase and terminal classification ────────────────────────
 
@@ -298,6 +306,7 @@ def register(server):
         # ── Main loop state ───────────────────────────────────────────────────
 
         deadline = time.monotonic() + timeout_seconds
+        _warmup_start: float = time.monotonic()
         msg_progress: float = 2.0  # latest within-phase progress % from messages
         last_emitted: float = 0.0  # monotonic floor — never report below this
         data: dict = {}
@@ -317,6 +326,20 @@ def register(server):
             # Within a phase, msg_progress can dip (e.g. QC restarts row
             # discovery in the table-maker).  last_emitted ensures the bar never
             # visually regresses.
+            #
+            # Synthetic warmup: when warmup_seconds > 0 and no intermediate
+            # phase has completed yet (_pf[0] still at 0), advance msg_progress
+            # along a sqrt curve toward 70% over warmup_seconds.  This covers
+            # silent setup phases (internal AI interview + config generation)
+            # where no progress messages arrive for several minutes.  Once the
+            # first intermediate step completes and the phase-split kicks in
+            # (_pf[0] > 0), warmup is disabled and real message tracking takes over.
+            if warmup_seconds > 0 and _pf[0] < 1.0:
+                elapsed_w = time.monotonic() - _warmup_start
+                warmup_pct = min(70.0, (elapsed_w / warmup_seconds) ** 0.5 * 70.0)
+                if warmup_pct > msg_progress:
+                    msg_progress = warmup_pct
+
             candidate = _scale_to_range(max(msg_progress, 2.0))
             emit_pct = max(candidate, last_emitted)
             last_emitted = emit_pct
