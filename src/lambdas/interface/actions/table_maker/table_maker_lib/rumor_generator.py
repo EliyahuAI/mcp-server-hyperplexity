@@ -40,7 +40,8 @@ class RumorGenerator:
         target_candidate_count: int = 30,
         models: Optional[List[str]] = None,
         per_model_count: int = 10,
-        realness_threshold: float = 0.6
+        realness_threshold: float = 0.6,
+        existing_rows: Optional[List[Dict]] = None
     ) -> Dict[str, Any]:
         """
         Generate candidate rows using multiple AI models in parallel.
@@ -96,7 +97,8 @@ class RumorGenerator:
                 model=model,
                 search_strategy=search_strategy,
                 id_columns=id_columns,
-                target_count=per_model_count
+                target_count=per_model_count,
+                existing_rows=existing_rows or []
             )
             generation_tasks.append(task)
 
@@ -155,7 +157,8 @@ class RumorGenerator:
         model: str,
         search_strategy: Dict[str, Any],
         id_columns: List[Dict[str, Any]],
-        target_count: int
+        target_count: int,
+        existing_rows: Optional[List[Dict]] = None
     ) -> Dict[str, Any]:
         """
         Generate candidates using a single AI model.
@@ -204,11 +207,29 @@ class RumorGenerator:
             for subdomain in subdomains[:5]:  # Limit to 5 examples
                 examples_section += f"- {subdomain.get('subdomain', '')}: {subdomain.get('description', '')}\n"
 
+        # Build existing rows exclusion section
+        existing_rows_section = ""
+        if existing_rows:
+            id_col_names = [col.get('name', '') for col in id_columns]
+            existing_values = []
+            for row in existing_rows:
+                id_vals = row.get('id_values', {})
+                label = ', '.join(str(id_vals.get(c, '')) for c in id_col_names if id_vals.get(c))
+                if label:
+                    existing_values.append(f"- {label}")
+            if existing_values:
+                existing_rows_section = (
+                    "\n## Already Found — Do Not Repeat\n\n"
+                    "The following entities have already been identified. Do not include them or close variants:\n\n"
+                    + '\n'.join(existing_values[:50])  # cap at 50 to avoid prompt bloat
+                )
+
         # Fill prompt template
         filled_prompt = prompt_template.replace('{{SEARCH_STRATEGY}}', strategy_desc)
         filled_prompt = filled_prompt.replace('{{ID_COLUMNS}}', id_columns_str)
         filled_prompt = filled_prompt.replace('{{TARGET_COUNT}}', str(target_count))
         filled_prompt = filled_prompt.replace('{{EXAMPLES_SECTION}}', examples_section)
+        filled_prompt = filled_prompt.replace('{{EXISTING_ROWS_SECTION}}', existing_rows_section)
 
         # Load schema
         schema = self.schema_validator.load_schema('rumor_candidate')
@@ -223,11 +244,14 @@ class RumorGenerator:
                 max_web_searches=0
             )
 
-            if not response or 'structured_output' not in response:
+            raw_response = response.get('response', {}) if response else {}
+            choices = raw_response.get('choices', []) if raw_response else []
+            if not choices:
                 logger.warning(f"[RUMOR] Model {model} returned no structured output")
                 return {'candidates': []}
 
-            structured_output = response['structured_output']
+            content = choices[0]['message']['content']
+            structured_output = json.loads(content) if isinstance(content, str) else content
             candidates_markdown = structured_output.get('candidates_markdown', '')
 
             # Parse markdown table to extract candidates
@@ -283,10 +307,10 @@ class RumorGenerator:
         # Parse headers
         headers = [h.strip() for h in header_line.split('|') if h.strip()]
 
-        # Find Realness Score column index
+        # Find score column index (handles both old and new column name)
         realness_idx = None
         for i, h in enumerate(headers):
-            if h.lower() in ['realness score', 'realness', 'score']:
+            if h.lower() in ['realness score', 'realness', 'confidence score', 'confidence', 'score']:
                 realness_idx = i
                 break
 

@@ -1,6 +1,6 @@
-# Rumor Generation: Candidate Entity Discovery
+# Entity Discovery: Candidate Generation
 
-You are tasked with generating a list of plausible candidate entities that **might exist** based on the search strategy below. Your goal is to produce creative, diverse candidates that could potentially be real, along with a confidence score for each.
+You are tasked with recalling entities that match the search strategy below. Your goal is to draw on your training knowledge to surface real, specific entities — including lesser-known ones that would impress a domain expert.
 
 ## Search Strategy
 
@@ -8,44 +8,48 @@ You are tasked with generating a list of plausible candidate entities that **mig
 
 ## Task
 
-Generate **{{TARGET_COUNT}}** candidate entities that might match this search strategy. For each candidate, provide:
+Generate **{{TARGET_COUNT}}** entities that match this search strategy. For each entity, provide:
 
 1. **ID Column Values** - The identifying information for each entity (specified below)
-2. **Realness Score** - Your confidence (0-1) that this entity actually exists
+2. **Confidence Score** - Your confidence (0-1) that this entity is real and matches the criteria
 
 ### ID Columns to Populate
 
 {{ID_COLUMNS}}
 
-### Realness Score Guidelines
+### Confidence Score Guidelines
 
-- **0.0-0.3**: Low confidence - entity might be fictional or very uncertain
-- **0.4-0.6**: Medium confidence - plausible but unverified
-- **0.7-0.9**: High confidence - likely exists based on patterns/knowledge
-- **0.9-1.0**: Very high confidence - almost certainly real
+The bar is not public verifiability — it is whether **you genuinely know this entity exists**. A good row is one where you can recall specific details about it beyond just the name (e.g. who founded it, when it launched, what it does). A domain expert with deep insider knowledge should look at your list and recognize the entries as real.
+
+- **0.9-1.0**: You recall specific details — this entity is real and matches
+- **0.7-0.9**: You are fairly sure it exists and matches, though details are hazy
+- **0.5-0.7**: Plausible — you believe it exists but are genuinely uncertain
+- **below 0.5**: Do not include — you are guessing
 
 ## Output Format
 
 Provide your results as a **markdown table** with the following structure:
 
 ```markdown
-| [ID Column 1] | [ID Column 2] | ... | Realness Score |
-|---------------|---------------|-----|----------------|
-| value1        | value2        | ... | 0.85           |
-| value3        | value4        | ... | 0.72           |
+| [ID Column 1] | [ID Column 2] | ... | Confidence Score |
+|---------------|---------------|-----|------------------|
+| value1        | value2        | ... | 0.85             |
+| value3        | value4        | ... | 0.72             |
 ```
 
 ## Important Guidelines
 
-1. **Prioritize diversity** - Include entities from different subcategories, sizes, regions, etc.
-2. **Be creative** - Think beyond the most obvious/popular entities
-3. **Consider edge cases** - Include emerging, niche, or lesser-known entities that might exist
-4. **Honest scoring** - If you're uncertain an entity exists, give it a lower realness score
+1. **Draw on real knowledge** - Only include entities you genuinely recall, not plausible-sounding inventions
+2. **Prioritize diversity** - Include entities from different subcategories, sizes, regions, etc.
+3. **Go beyond the obvious** - Surface niche, emerging, or lesser-known entities a non-expert might miss
+4. **Honest scoring** - If you can recall specific details, score high. If only the name feels familiar, score low or omit.
 5. **No explanations** - Just provide the markdown table (no rationale or commentary)
 6. **Exact format** - Use the exact column names provided above in the table header
 
 {{EXAMPLES_SECTION}}
 
+{{EXISTING_ROWS_SECTION}}
+
 ## Generate Your Candidates
 
-Provide {{TARGET_COUNT}} diverse candidate entities in the markdown table format specified above.
+Provide {{TARGET_COUNT}} diverse entities in the markdown table format specified above.

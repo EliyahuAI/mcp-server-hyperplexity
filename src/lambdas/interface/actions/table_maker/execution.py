@@ -2563,54 +2563,63 @@ async def execute_full_table_generation(
 
                     if rumor_enabled or rumor_triggered_by_keyword:
                         trigger_reason = "config" if rumor_enabled else "trigger '...' in conversation"
-                        logger.info(f"[RUMOR] Rumor generation triggered by {trigger_reason}")
-                        try:
-                            from .table_maker_lib.rumor_generator import RumorGenerator
-                            rumor_generator = RumorGenerator(
-                                ai_client=ai_client,
-                                prompt_loader=prompt_loader,
-                                schema_validator=schema_validator
-                            )
-                            rumor_result = await rumor_generator.generate_candidates(
-                                search_strategy=search_strategy,
-                                columns=columns,
-                                per_model_count=rumor_config.get('per_model_count', 20),
-                                models=[rumor_config.get('model', 'claude-opus-4-6')],
-                                realness_threshold=rumor_config.get('realness_threshold', 0.6)
-                            )
-                            rumor_candidates = rumor_result.get('candidates', [])
-                            logger.info(f"[RUMOR] Generated {len(rumor_candidates)} candidates after dedup/filter")
-
-                            # Validate rumor candidates via validator lambda
-                            if rumor_candidates:
-                                from .table_maker_lib.rumor_validator import RumorValidator
-                                rumor_validator = RumorValidator(
+                        rows_so_far = len(initial_rows) + len(discovery_only_rows)
+                        if user_target != -1 and rows_so_far >= user_target:
+                            logger.info(f"[RUMOR] Skipping — already have {rows_so_far} rows, target {user_target}")
+                        else:
+                            logger.info(f"[RUMOR] Rumor generation triggered by {trigger_reason}")
+                            gap = (user_target - rows_so_far) if user_target != -1 else 100
+                            rows_needed = max(int(gap * 1.5), 5)
+                            logger.info(f"[RUMOR] Need {rows_needed} candidates (gap={gap}, 50% overshoot, have {rows_so_far}, target {user_target})")
+                            try:
+                                from .table_maker_lib.rumor_generator import RumorGenerator
+                                rumor_generator = RumorGenerator(
                                     ai_client=ai_client,
-                                    session_id=session_id,
-                                    email=email,
-                                    s3_manager=storage_manager,
-                                    validation_model=rumor_config.get('validation_model', 'sonar'),
-                                    context_size=rumor_config.get('context_size', 'low'),
-                                    confidence_threshold=rumor_config.get('realness_threshold', 0.6)
+                                    prompt_loader=prompt_loader,
+                                    schema_validator=schema_validator
                                 )
-                                validation_result = await rumor_validator.validate_candidates(
-                                    candidates=rumor_candidates,
+                                existing_rows = initial_rows + discovery_only_rows
+                                rumor_result = await rumor_generator.generate_candidates(
+                                    search_strategy=search_strategy,
                                     columns=columns,
-                                    requirements=search_strategy.get('requirements', []),
-                                    table_context=conversation_state.get('user_request', '')
+                                    per_model_count=rows_needed,
+                                    models=[rumor_config.get('model', 'claude-opus-4-6')],
+                                    realness_threshold=rumor_config.get('realness_threshold', 0.6),
+                                    existing_rows=existing_rows
                                 )
-                                validated_rumor_rows = validation_result.get('filtered_rows', [])
-                                logger.info(
-                                    f"[RUMOR] Validator confirmed {len(validated_rumor_rows)}/{len(rumor_candidates)} candidates"
-                                )
+                                rumor_candidates = rumor_result.get('candidates', [])
+                                logger.info(f"[RUMOR] Generated {len(rumor_candidates)} candidates after dedup/filter")
 
-                                # Merge validated rumor rows into discovery rows
-                                if validated_rumor_rows:
-                                    discovery_only_rows = discovery_only_rows + validated_rumor_rows
-                                    logger.info(f"[RUMOR] Merged: {len(discovery_only_rows)} total rows (search + rumor)")
-                        except Exception as e:
-                            logger.error(f"[RUMOR] Rumor generation/validation failed (non-fatal): {e}")
-                            # Non-fatal: continue without rumor candidates
+                                # Validate rumor candidates via validator lambda
+                                if rumor_candidates:
+                                    from .table_maker_lib.rumor_validator import RumorValidator
+                                    rumor_validator = RumorValidator(
+                                        ai_client=ai_client,
+                                        session_id=session_id,
+                                        email=email,
+                                        s3_manager=storage_manager,
+                                        validation_model=rumor_config.get('validation_model', 'sonar'),
+                                        context_size=rumor_config.get('context_size', 'low'),
+                                        confidence_threshold=rumor_config.get('realness_threshold', 0.6)
+                                    )
+                                    validation_result = await rumor_validator.validate_candidates(
+                                        candidates=rumor_candidates,
+                                        columns=columns,
+                                        requirements=search_strategy.get('requirements', []),
+                                        table_context=conversation_state.get('user_request', '')
+                                    )
+                                    validated_rumor_rows = validation_result.get('filtered_rows', [])
+                                    logger.info(
+                                        f"[RUMOR] Validator confirmed {len(validated_rumor_rows)}/{len(rumor_candidates)} candidates"
+                                    )
+
+                                    # Merge validated rumor rows into discovery rows
+                                    if validated_rumor_rows:
+                                        discovery_only_rows = discovery_only_rows + validated_rumor_rows
+                                        logger.info(f"[RUMOR] Merged: {len(discovery_only_rows)} total rows (search + rumor)")
+                            except Exception as e:
+                                logger.error(f"[RUMOR] Rumor generation/validation failed (non-fatal): {e}")
+                                # Non-fatal: continue without rumor candidates
 
                     # Merge initial_rows from column definition with discovered rows for final output
                     if initial_rows:
