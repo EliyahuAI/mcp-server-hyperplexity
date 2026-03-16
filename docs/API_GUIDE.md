@@ -173,7 +173,9 @@ upload_file(path)
       → get_results(job_id)
 ```
 
-> **Key behavior:** After the interview finishes (`trigger_execution=true`), the preview is auto-queued. Do **not** call `create_job()` — call `wait_for_job(session_id)` directly. The same applies when a config match is found: if `confirm_upload` returns `match_score ≥ 0.85`, the preview is also auto-queued — the response includes `preview_queued: true` and `job_id`. Call `wait_for_job(job_id)` directly (see [Config reuse](#config-reuse)).
+> **Key behavior:** After the interview finishes (`trigger_config_generation=true`), the preview is auto-queued. Do **not** call `create_job()` — call `wait_for_job(session_id)` directly. The same applies when a config match is found: if `confirm_upload` returns `match_score ≥ 0.85`, the preview is also auto-queued — the response includes `preview_queued: true` and `job_id`. Call `wait_for_job(job_id)` directly (see [Config reuse](#config-reuse)).
+
+> **Upload interview auto-approval:** The interview may auto-approve in a single turn. If the conversation response has `user_reply_needed: false` and `status: approved`, proceed to `wait_for_job(session_id)` immediately — no reply is needed, even if the AI's message appears to ask for confirmation.
 
 **Skip the interview with `instructions` (fire-and-forget config generation):**
 
@@ -249,6 +251,8 @@ start_table_maker(
   → wait_for_job(job_id)
   → get_results(job_id)
 ```
+
+> **Why `wait_for_conversation` with `auto_start=True`?** Even though there is no Q&A, `wait_for_conversation` is still required — it returns `trigger_execution: true` in a single blocking call (no reply needed), signaling that the table-maker has started. Calling `wait_for_job` before this call returns would be premature, as the table-maker may not have been triggered yet.
 
 > **Cost gate:** Table building and the 3-row preview are **free**. Full validation is charged at `approve_validation` — you always see the cost estimate at `preview_complete` before anything is billed. If your balance is insufficient, `approve_validation` returns an `insufficient_balance` error with the required amount.
 
@@ -488,7 +492,7 @@ Every tool response includes a `_guidance` block with a plain-English summary an
 | `get_conversation` | Poll a conversation for AI responses or status changes |
 | `send_conversation_reply` | Reply to AI questions during an interview or table-maker session |
 | `wait_for_conversation` | Block until conversation needs input or finishes (emits live progress) |
-| `refine_config` | Refine the validation config with natural language instructions |
+| `refine_config` | Refine the validation config with natural language instructions (adjusts sources, strictness, interpretation — cannot add or remove columns) |
 | `create_job` | Submit a preview job — **only when reusing a known `config_id`** |
 | `wait_for_job` | Block until `preview_complete`, `completed`, or `failed` (preferred progress tracker) |
 | `get_job_status` | One-shot status poll |
@@ -513,7 +517,7 @@ The preview is **automatically queued** in all three paths after `confirm_upload
 |------|---------|-------------------|
 | Config match (score ≥ 0.85) | `preview_queued: true` in response | `wait_for_job(job_id)` |
 | `instructions=` provided | `instructions_mode: true` in response | `wait_for_job(session_id)` |
-| Interview ran | `trigger_execution=true` from conversation | `wait_for_job(session_id)` |
+| Interview ran | `trigger_config_generation=true` from conversation | `wait_for_job(session_id)` |
 
 `create_job()` is only needed if you want to use a specific `config_id` that was **not** auto-detected — for example, re-using a config from a completely different session.
 
@@ -542,7 +546,7 @@ Two optional flags let fully automated pipelines skip interactive steps:
 | `instructions="..."` | `confirm_upload` | Upload interview Q&A | `wait_for_job(session_id)` |
 | `auto_start=True` | `start_table_maker` | Structure confirmation | `wait_for_conversation` → `wait_for_job` |
 
-Both flags cause `interview_auto_started: true` / `trigger_execution: true` on the first response. The `preview_complete` cost gate and `approve_validation` still apply.
+These flags use different terminal signals: `instructions=` (a config-gen flow) causes `trigger_config_generation: true` on the conversation response; `auto_start=True` (a table-maker flow) causes `trigger_execution: true`. Both skip interactive Q&A but produce different fields — do not wait for `trigger_execution` when using the `instructions=` upload path. The `preview_complete` cost gate and `approve_validation` still apply.
 
 #### Consuming results: humans vs AI agents
 
@@ -588,11 +592,13 @@ Both flags cause `interview_auto_started: true` / `trigger_execution: true` on t
 
 Credits are prepaid. Get $20 free at **[hyperplexity.ai/account](https://hyperplexity.ai/account)**.
 
+Standard validation is used for most tables. Advanced validation is selected automatically when the table requires more sophisticated reasoning (e.g., scientific data, complex financial metrics, or cells with high ambiguity).
+
 ---
 
 ### Links
 
-- **MCP server (PyPI):** `pip install mcp-server-hyperplexity`
+- **MCP server (PyPI):** `pip install mcp-server-hyperplexity` (or `uvx mcp-server-hyperplexity` to run on-demand without a persistent install — recommended for Claude Desktop/Code)
 - **Source:** [github.com/EliyahuAI/mcp-server-hyperplexity](https://github.com/EliyahuAI/mcp-server-hyperplexity)
 - **Documentation:** [hyperplexity.ai/mcp](https://hyperplexity.ai/mcp)
 - **API reference:** [hyperplexity.ai/api](https://hyperplexity.ai/api)
