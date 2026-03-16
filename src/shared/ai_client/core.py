@@ -177,7 +177,7 @@ class AIAPIClient:
     async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-sonnet-4-6",
                                  tool_name: str = "structured_response", use_cache: bool = True,
                                  context: str = "", max_tokens: int = None, max_web_searches: int = 3,
-                                 search_context_size: str = "low", debug_name: str = None, soft_schema: bool = False,
+                                 search_context_size: str = "high", debug_name: str = None, soft_schema: bool = False,
                                  include_domains: Optional[List[str]] = None, exclude_domains: Optional[List[str]] = None,
                                  use_code_extraction: bool = None, findall: bool = False, extraction: bool = False,
                                  findall_iterations: int = 1, timeout: Optional[int] = None,
