@@ -922,11 +922,16 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
         is_complete = research_result.get('is_complete_enumeration', False)
 
         if starting_markdown:
+            # Count entities from starting_markdown for the instruction label
+            starting_rows = [line for line in starting_markdown.split('\n')
+                             if line.strip().startswith('|') and not line.strip().startswith('|-')]
+            entity_count = max(0, len(starting_rows) - 1)  # -1 for header row
+
             output.append("\n### Starting Entities from Research\n")
             if is_complete:
                 output.append("**COMPLETE ENUMERATION: This is an exhaustive list - ALL entities are included.**\n")
             else:
-                output.append(f"**Include as many of these {total_entities} entities as possible in prepopulated_rows_markdown — at minimum include all that clearly meet the table requirements. Do NOT arbitrarily limit to a small sample.**\n")
+                output.append(f"**Include as many of these {entity_count} entities as possible in prepopulated_rows_markdown — at minimum include all that clearly meet the table requirements. Do NOT arbitrarily limit to a small sample.**\n")
             output.append(starting_markdown)
             output.append("")
 
