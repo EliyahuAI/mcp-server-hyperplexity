@@ -191,13 +191,21 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             # Calculate word limit: max_tokens * 0.75 (words/token) * 0.5 (aggressive buffer to prevent max token issues)
             word_limit = int(max_tokens * 0.75 * 0.5)
 
+            # Resolve target row count for prompt
+            raw_target = conversation_context.get('target_row_count', -1)
+            if raw_target == -1 or raw_target is None:
+                target_row_count_str = "as many as possible (find-all mode — exhaustive list requested)"
+            else:
+                target_row_count_str = str(raw_target)
+
             # Build prompt with variables
             variables = {
                 'CONVERSATION_CONTEXT': conversation_history,
                 'USER_REQUIREMENTS': user_requirements,
                 'BACKGROUND_RESEARCH': formatted_research,
                 'RESTRUCTURING_SECTION': restructuring_section,
-                'WORD_LIMIT': str(word_limit)
+                'WORD_LIMIT': str(word_limit),
+                'TARGET_ROW_COUNT': target_row_count_str
             }
 
             logger.debug(f"Loading prompt template with {len(variables)} variables (restructure={is_restructure})")
@@ -881,7 +889,16 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
                         output.append(markdown)
                         output.append("```")
 
-                    output.append("\n**Parse this markdown to define columns and extract rows.**")
+                    # Surface low-yield warning when extraction couldn't parse structured rows
+                    low_yield_warning = table.get('low_yield_warning')
+                    estimated_in_content = table.get('estimated_rows_in_content')
+                    if low_yield_warning:
+                        output.append(f"\n🚨 **PARSING REQUIRED — ~{estimated_in_content} items in content above:**")
+                        output.append(f"**{low_yield_warning}**")
+                        output.append(f"**Extract ALL ~{estimated_in_content} items from the raw text into prepopulated_rows_markdown.**")
+                        output.append("**Prioritise ID columns first — include every item's identifier even if research columns are blank.**")
+                    else:
+                        output.append("\n**Parse this markdown to define columns and extract rows.**")
                     output.append(f"**For each row you extract, populate source_urls with: {source_urls}**")
 
                 # Handle OLD structured extraction format (backward compatibility)
@@ -909,7 +926,7 @@ Apply QC's guidance above to create a MORE DISCOVERABLE table:
             if is_complete:
                 output.append("**COMPLETE ENUMERATION: This is an exhaustive list - ALL entities are included.**\n")
             else:
-                output.append("**Use these entities as reference when designing ID columns. Add to prepopulated_rows_markdown.**\n")
+                output.append(f"**Include as many of these {total_entities} entities as possible in prepopulated_rows_markdown — at minimum include all that clearly meet the table requirements. Do NOT arbitrarily limit to a small sample.**\n")
             output.append(starting_markdown)
             output.append("")
 

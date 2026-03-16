@@ -182,8 +182,8 @@
 
     "_retrigger_settings": "Retrigger allows QC to request additional discovery round with completely new subdomains if results insufficient",
     "allow_retrigger": true,
-    "max_retriggers": 2,
-    "_note_retrigger": "Increased to 2 to give the system more chances to find enough rows. QC with claude-opus-4-6 guides retrigger with specific missing entities."
+    "max_retriggers": 3,
+    "_note_retrigger": "Increased to 3 to give the system more chances for large find-all requests. QC with claude-opus-4-6 guides retrigger with specific missing entities."
   },
 
   "table_population": {

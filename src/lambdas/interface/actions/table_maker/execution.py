@@ -588,17 +588,25 @@ def _load_conversation_state(
 
 
 def _conversation_has_generation_trigger(conversation_state: Dict) -> bool:
-    """Return True if '...' appears in any conversation message (code trigger for candidate generation)."""
+    """Return True if '...' (three ASCII dots) appears in any conversation message."""
     messages = conversation_state.get('messages', [])
     for msg in messages:
         content = msg.get('content', '')
         if isinstance(content, str) and '...' in content:
+            idx = content.index('...')
+            snippet = content[max(0, idx - 30):idx + 33].replace('\n', ' ')
+            logger.info(f"[RUMOR_TRIGGER] ACTIVE — '...' found in {msg.get('role','?')} message: «{snippet}»")
             return True
         elif isinstance(content, list):
-            # Handle multi-part content blocks
             for block in content:
-                if isinstance(block, dict) and '...' in str(block.get('text', '')):
+                text = str(block.get('text', '')) if isinstance(block, dict) else ''
+                if '...' in text:
+                    logger.info(f"[RUMOR_TRIGGER] ACTIVE — '...' found in multi-part {msg.get('role','?')} block")
                     return True
+    logger.info(
+        f"[RUMOR_TRIGGER] INACTIVE — '...' (three ASCII dots) not found in any of {len(messages)} messages. "
+        f"Note: Unicode ellipsis (…) does NOT trigger this; message must contain exactly three period characters."
+    )
     return False
 
 

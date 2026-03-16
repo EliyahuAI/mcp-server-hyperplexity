@@ -247,6 +247,25 @@ class TableExtractionHandler:
                 logger.info(f"  Note: target_rows filter '{target_rows}' will be applied by column definition")
                 structured_response['target_rows_filter'] = target_rows
 
+            # Quality check: did we extract enough structured rows vs estimated?
+            # search_api_source_selection returns source-count not row-count — flag low-yield cases
+            if estimated_rows and estimated_rows > 0:
+                detected = extraction_result.get('rows_count', 0)
+                coverage = detected / float(estimated_rows)
+                if coverage < 0.90:
+                    logger.warning(
+                        f"  [EXTRACTION_QUALITY] Low yield: detected {detected} items vs "
+                        f"estimated {estimated_rows} ({coverage*100:.1f}%). "
+                        f"Flagging for column_definition to parse raw content directly."
+                    )
+                    structured_response['estimated_rows_in_content'] = estimated_rows
+                    structured_response['low_yield_warning'] = (
+                        f"Simple extraction detected only {detected} structured items but source "
+                        f"is estimated to contain ~{estimated_rows} rows. "
+                        f"The raw content above likely contains all rows as prose or a list — "
+                        f"column_definition must parse them directly."
+                    )
+
             # Create enhanced_data for tracking (format for usage tracking system)
             cost_by_provider = extraction_metadata.get('cost_by_provider', {})
             total_cost = extraction_metadata.get('total_cost', 0.0)

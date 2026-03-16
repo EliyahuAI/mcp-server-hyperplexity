@@ -57,6 +57,10 @@ IF any answer is NO (need more entities):
 
 **Design the table and generate as many rows as you can from available data.**
 
+**Target row count: {{TARGET_ROW_COUNT}}** — Use this to gauge how exhaustively to populate rows. If "find-all mode", include every qualifying entity you can identify.
+
+**⚠️ Response length limit: {{WORD_LIMIT}} words. If approaching the limit, prioritise ID column values over research column data — a row with only the ID column populated is far more valuable than a truncated list.**
+
 **ALWAYS OUTPUT:**
 1. **columns** (ID + research columns)
 2. **search_strategy** object with:
@@ -95,8 +99,8 @@ If background_research has `extracted_tables`:
 
 ### Source 2: starting_tables_markdown
 - Parse the markdown table with citations
-- If `is_complete_enumeration: true` → Use ALL rows
-- Otherwise → Use sample rows for ID column reference
+- If `is_complete_enumeration: true` → Use ALL rows (skip discovery)
+- Otherwise → Copy ALL rows into prepopulated_rows_markdown (discovery will append more on top)
 - Preserve citations [1] [2] from the markdown
 
 ### Source 3: Conversation
@@ -559,6 +563,6 @@ if trigger_row_discovery == true AND len(subdomains) == 0:
 - [ ] Mark populated_columns and missing_columns
 - [ ] Design for discoverability (if triggering discovery)
 
-**⚠️ RESPONSE LENGTH LIMIT: Keep your total response under {{WORD_LIMIT}} words.**
+**⚠️ RESPONSE LENGTH LIMIT: {{WORD_LIMIT}} words max. If nearing the limit, drop research column data and keep ID column values — a stub row with only the term name is better than a truncated table.**
 
 **Return your response as valid JSON matching the format above.**
