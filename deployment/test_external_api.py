@@ -250,7 +250,14 @@ def poll_until(client: APIClient, job_id: str, target_statuses: list[str],
     deadline = time.time() + timeout
 
     while time.time() < deadline:
-        data = client.get(f"/v1/jobs/{job_id}")
+        for _attempt in range(3):
+            try:
+                data = client.get(f"/v1/jobs/{job_id}")
+                break
+            except requests.exceptions.ConnectionError:
+                if _attempt == 2:
+                    raise
+                time.sleep(2)
         status_data = data["data"]
         status = status_data.get("status", "unknown")
         step = status_data.get("current_step", "")

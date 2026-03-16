@@ -1888,7 +1888,8 @@ async def execute_full_table_generation(
                 processing_time=background_research_result.get('processing_time', 0.0),
                 call_type='background_research',
                 status='IN_PROGRESS',
-                verbose_status='Background research complete'
+                verbose_status='Background research complete',
+                percent_complete=10
             )
 
             # Send completion update
@@ -2101,7 +2102,8 @@ async def execute_full_table_generation(
                                 api_response={'enhanced_data': enhanced_data_item},
                                 model=extraction_model,
                                 processing_time=table_extraction_result.get('processing_time', 0.0),
-                                call_type='table_extraction'
+                                call_type='table_extraction',
+                                percent_complete=30
                             )
                     else:
                         logger.warning(
@@ -2666,7 +2668,8 @@ async def execute_full_table_generation(
                             processing_time=processing_time,
                             call_type='row_discovery',
                             status='IN_PROGRESS',
-                            verbose_status=f'Row discovery: {subdomain_name} round {round_num}'
+                            verbose_status=f'Row discovery: {subdomain_name} round {round_num}',
+                            percent_complete=60
                         )
 
                         # Write round to md_tables.md
@@ -3230,7 +3233,8 @@ async def execute_full_table_generation(
                                     processing_time=processing_time,
                                     call_type='row_discovery_retrigger',
                                     status='IN_PROGRESS',
-                                    verbose_status=f'Retrigger discovery: {subdomain_name} round {round_num}'
+                                    verbose_status=f'Retrigger discovery: {subdomain_name} round {round_num}',
+                                    percent_complete=65
                                 )
 
                             try:

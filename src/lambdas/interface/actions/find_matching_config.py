@@ -249,7 +249,8 @@ def batch_get_columns_from_dynamodb(email: str, session_ids: List[str]) -> Dict[
                 IndexName='EmailStartTimeIndex',
                 KeyConditionExpression=Key('email').eq(email),
                 FilterExpression=Attr('qc_metrics').exists() & Attr('qc_metrics.qc_by_column').exists(),
-                ScanIndexForward=False  # Most recent first
+                ScanIndexForward=False,  # Most recent first
+                Limit=500,  # Cap pre-filter scan to avoid timeout on large accounts
             )
 
             all_runs = response.get('Items', [])
@@ -261,7 +262,8 @@ def batch_get_columns_from_dynamodb(email: str, session_ids: List[str]) -> Dict[
                     KeyConditionExpression=Key('email').eq(email),
                     FilterExpression=Attr('qc_metrics').exists() & Attr('qc_metrics.qc_by_column').exists(),
                     ScanIndexForward=False,
-                    ExclusiveStartKey=response['LastEvaluatedKey']
+                    ExclusiveStartKey=response['LastEvaluatedKey'],
+                    Limit=500,  # Cap pre-filter scan to avoid timeout on large accounts
                 )
                 all_runs.extend(response.get('Items', []))
 
@@ -500,7 +502,8 @@ def get_successfully_used_config_ids(email: str) -> List[str]:
                 IndexName='EmailStartTimeIndex',
                 KeyConditionExpression=Key('email').eq(email),
                 FilterExpression=Attr('status').eq('COMPLETED') & Attr('configuration_id').exists(),
-                ScanIndexForward=False  # Most recent first
+                ScanIndexForward=False,  # Most recent first
+                Limit=500,  # Cap pre-filter scan to avoid 8s timeout on large accounts
             )
         except Exception as e:
             # Do NOT fall back to a full table scan — it times out on large tables.
@@ -527,7 +530,8 @@ def get_successfully_used_config_ids(email: str) -> List[str]:
                     KeyConditionExpression=Key('email').eq(email),
                     FilterExpression=Attr('status').eq('COMPLETED') & Attr('configuration_id').exists(),
                     ScanIndexForward=False,
-                    ExclusiveStartKey=response['LastEvaluatedKey']
+                    ExclusiveStartKey=response['LastEvaluatedKey'],
+                    Limit=500,  # Cap pre-filter scan to avoid 8s timeout on large accounts
                 )
             except:
                 break  # Stop pagination on error
