@@ -29,6 +29,18 @@ class ClaimExtractor:
         self.config = config
         self.ai_client = ai_client
 
+        # Apply model_role override from ModelConfig CSV if available
+        extraction_cfg = self.config.get('extraction', {})
+        model_role = extraction_cfg.get('model_role')
+        if model_role:
+            try:
+                from model_config_loader import ModelConfig
+                resolved = ModelConfig.get_with_fallbacks(model_role)
+                if resolved:
+                    self.config['extraction']['model'] = resolved
+            except Exception as e:
+                logger.warning(f"ModelConfig override skipped for claim extraction: {e}")
+
         # Load prompt template
         prompt_path = os.path.join(
             os.path.dirname(os.path.dirname(__file__)),

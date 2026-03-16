@@ -20,6 +20,7 @@
         "enabled": true
     },
     "extraction": {
+        "model_role": "reference_check_extraction",
         "model": "deepseek-v3.2",
         "max_tokens": 64000,
         "temperature": 0.3,
