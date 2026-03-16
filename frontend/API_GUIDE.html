@@ -1,0 +1,2607 @@
+<html>
+ <head>
+  <meta charset="utf-8"/>
+  <style>
+   @import url('https://fonts.googleapis.com/css2?family=Open+Sans&display=swap');body { font-family: 'Calibri', 'Open Sans', sans-serif; font-size: 15px; max-width: 960px; margin: 0 auto; padding: 2em; }.highlight { color: #08BD2E; font-size: 1.4em; }.md-heading1, .md-heading2, .md-heading3, .md-heading4, .md-heading5 { color: #08BD2E; display: block; margin-top: 1.2em; margin-bottom: 0.4em; font-weight: bold; }.md-heading1 { font-size: 2em; } .md-heading2 { font-size: 1.65em; } .md-heading3 { font-size: 1.35em; }.md-heading4 { font-size: 1.15em; } .md-heading5 { font-size: 1.05em; }table { border-collapse: collapse; vertical-align: top; width: 100%; table-layout: fixed; }th, td { border: 2px solid #CED0CE; padding: 8px; text-align: left; vertical-align: top; overflow-wrap: break-word; font-size: 1em; }thead th { background-color:#DDFFDD; border-bottom: 2px solid #000; }pre { background-color: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #f36d33; color: #444; page-break-inside: avoid; font-family: monospace; font-size: 0.88em; line-height: 1.4; margin-bottom: 1.6em; max-width: 100%; overflow: auto; padding: 1em 1.5em; display: block; word-wrap: break-word; white-space: pre-wrap; }code { background-color: #f4f4f4; padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.9em; }blockquote { border-left: 4px solid #CED0CE; margin: 0.5em 0; padding: 0.5em 1em; background: #f9f9f9; color: #555; }a { color: #0066cc; }
+  </style>
+ </head>
+ <body>
+  <span class="md-heading1">
+   Hyperplexity
+  </span>
+  <p>
+   <strong>
+    Verified Research Engine
+   </strong>
+   ·
+   <a href="https://hyperplexity.ai">
+    hyperplexity.ai
+   </a>
+   ·
+   <a href="https://hyperplexity.ai/app">
+    Launch App
+   </a>
+  </p>
+  <p>
+   Hyperplexity generates, validates, and updates research tables by synthesizing hundreds of calls to Perplexity and Claude. Give it a prompt or an existing table and it returns structured, verified answers across an entire research domain — not just a single query, but a complete field of questions answered at once.
+  </p>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      What you want to do
+     </th>
+     <th>
+      How
+     </th>
+     <th>
+      Live example
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      <strong>
+       Gather everything
+      </strong>
+      — survey a complete research domain at once
+     </td>
+     <td>
+      Prompt → structured verified table
+     </td>
+     <td>
+      <a href="https://eliyahu.ai/viewer?demo=phase-3-oncology-drug-trials-9383b5">
+       50+ Phase 3 oncology trials
+      </a>
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <strong>
+       Monitor anything
+      </strong>
+      — news, analyst projections, time-sensitive data
+     </td>
+     <td>
+      Upload or generate → keep current
+     </td>
+     <td>
+      <a href="https://eliyahu.ai/viewer?demo=investmentresearch-779dfe">
+       Market info for 10 stocks
+      </a>
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <strong>
+       See everywhere
+      </strong>
+      — run the same questions across many entities
+     </td>
+     <td>
+      One table, many subjects
+     </td>
+     <td>
+      <a href="https://eliyahu.ai/viewer?demo=fortune-500-genai-deployment-and-upskilling-0c5503">
+       GenAI adoption across Fortune 500
+      </a>
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <span class="md-heading2">
+   How to Access
+  </span>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      You want to…
+     </th>
+     <th>
+      Use
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      Try it out or iron out your use case
+     </td>
+     <td>
+      <strong>
+       <a href="https://hyperplexity.ai/app">
+        hyperplexity.ai/app
+       </a>
+      </strong>
+      — web GUI for table validation and generation
+     </td>
+    </tr>
+    <tr>
+     <td>
+      Fact-check text or documents interactively
+     </td>
+     <td>
+      <strong>
+       <a href="https://hyperplexity.ai/chex">
+        hyperplexity.ai/chex
+       </a>
+      </strong>
+      — web GUI for reference checks
+     </td>
+    </tr>
+    <tr>
+     <td>
+      Let Claude drive a workflow autonomously
+     </td>
+     <td>
+      <strong>
+       MCP server
+      </strong>
+      — install once, describe your task in plain English
+     </td>
+    </tr>
+    <tr>
+     <td>
+      One-off automation without writing code
+     </td>
+     <td>
+      <strong>
+       MCP server
+      </strong>
+      via Claude Code or Claude Desktop
+     </td>
+    </tr>
+    <tr>
+     <td>
+      Run repeatable pipelines or batch jobs
+     </td>
+     <td>
+      <strong>
+       REST API
+      </strong>
+      + example scripts
+     </td>
+    </tr>
+    <tr>
+     <td>
+      Integrate into a product or SaaS
+     </td>
+     <td>
+      <strong>
+       REST API
+      </strong>
+      directly
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <blockquote>
+   <p>
+    <strong>
+     GUI → API:
+    </strong>
+    The web GUIs are ideal for exploring and refining your use case. Once you know what you want, the MCP server or REST API is the better path — faster, repeatable, and fully automatable.
+   </p>
+  </blockquote>
+  <span class="md-heading2">
+   Table of Contents
+  </span>
+  <ul>
+   <li>
+    <a href="#get-your-api-key">
+     Get Your API Key
+    </a>
+   </li>
+   <li>
+    <a href="#download-examples">
+     Download Examples
+    </a>
+   </li>
+   <li>
+    <a href="#quick-start-mcp-claude">
+     Quick Start: MCP (Claude)
+    </a>
+    <ul>
+     <li>
+      <a href="#claude-code-one-liner">
+       Claude Code
+      </a>
+     </li>
+     <li>
+      <a href="#claude-desktop">
+       Claude Desktop
+      </a>
+     </li>
+     <li>
+      <a href="#project-config-shared-repo">
+       Project config
+      </a>
+     </li>
+     <li>
+      <a href="#using-with-claude--what-to-say">
+       Using with Claude — What to Say
+      </a>
+     </li>
+    </ul>
+   </li>
+   <li>
+    <a href="#workflows">
+     Workflows
+    </a>
+    <ul>
+     <li>
+      <a href="#1-validate-an-existing-table">
+       1. Validate an Existing Table
+      </a>
+     </li>
+     <li>
+      <a href="#2-generate-a-table-from-a-prompt">
+       2. Generate a Table from a Prompt
+      </a>
+     </li>
+     <li>
+      <a href="#3-update-a-table-re-run-validation-pass">
+       3. Update a Table
+      </a>
+     </li>
+     <li>
+      <a href="#4-fact-check-text-or-documents-chex">
+       4. Fact-Check Text or Documents
+      </a>
+     </li>
+    </ul>
+   </li>
+   <li>
+    <a href="#environment-variables">
+     Environment Variables
+    </a>
+   </li>
+   <li>
+    <a href="#direct-rest-api">
+     Direct REST API
+    </a>
+    <ul>
+     <li>
+      <a href="#api-endpoint-reference">
+       API Endpoint Reference
+      </a>
+     </li>
+    </ul>
+   </li>
+   <li>
+    <a href="#mcp-tool-reference">
+     MCP Tool Reference
+    </a>
+   </li>
+   <li>
+    <a href="#key-behaviors">
+     Key Behaviors
+    </a>
+   </li>
+   <li>
+    <a href="#pricing">
+     Pricing
+    </a>
+   </li>
+   <li>
+    <a href="#links">
+     Links
+    </a>
+   </li>
+  </ul>
+  <span class="md-heading2">
+   Get Your API Key
+  </span>
+  <p>
+   Log in at
+   <strong>
+    <a href="https://hyperplexity.ai">
+     hyperplexity.ai
+    </a>
+   </strong>
+   and click your email at the top of the first card to access account info and API keys. New accounts receive $20 in free credits.
+  </p>
+  <span class="md-heading2">
+   Download Examples
+  </span>
+  <blockquote>
+   <p>
+    All scripts require Python 3.10+ and
+    <code>
+     pip install requests
+    </code>
+    .
+   </p>
+  </blockquote>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      Script
+     </th>
+     <th>
+      Description
+     </th>
+     <th>
+      Download
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      <code>
+       hyperplexity_client.py
+      </code>
+     </td>
+     <td>
+      Shared REST client (required by all examples)
+     </td>
+     <td>
+      <a href="https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/hyperplexity_client.py">
+       download
+      </a>
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       01_validate_table.py
+      </code>
+     </td>
+     <td>
+      Validate an existing table
+     </td>
+     <td>
+      <a href="https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/01_validate_table.py">
+       download
+      </a>
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       02_generate_table.py
+      </code>
+     </td>
+     <td>
+      Generate a table from a prompt
+     </td>
+     <td>
+      <a href="https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/02_generate_table.py">
+       download
+      </a>
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       03_update_table.py
+      </code>
+     </td>
+     <td>
+      Re-run validation on a completed job
+     </td>
+     <td>
+      <a href="https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/03_update_table.py">
+       download
+      </a>
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       04_reference_check.py
+      </code>
+     </td>
+     <td>
+      Fact-check text or documents
+     </td>
+     <td>
+      <a href="https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/04_reference_check.py">
+       download
+      </a>
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <p>
+   Or clone the full example set:
+  </p>
+  <pre><code class="language-bash"># Download all examples at once
+curl - O https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/hyperplexity_client.py \
+     - O https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/01_validate_table.py \
+     - O https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/02_generate_table.py \
+     - O https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/03_update_table.py \
+     - O https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/04_reference_check.py
+pip install requests
+export HYPERPLEXITY_API_KEY=hpx_live_...
+</code></pre>
+  <span class="md-heading2">
+   Quick Start: MCP (Claude)
+  </span>
+  <p>
+   The MCP server lets Claude drive the full Hyperplexity workflow autonomously — no scripting required.
+  </p>
+  <span class="md-heading3">
+   Claude Code (one-liner)
+  </span>
+  <pre><code class="language-bash">claude mcp add hyperplexity uvx mcp-server-hyperplexity \
+  - e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
+</code></pre>
+  <span class="md-heading3">
+   Claude Desktop
+  </span>
+  <p>
+   Add to
+   <code>
+    claude_desktop_config.json
+   </code>
+   :
+  </p>
+  <ul>
+   <li>
+    <strong>
+     macOS:
+    </strong>
+    <code>
+     ~/Library/Application Support/Claude/claude_desktop_config.json
+    </code>
+   </li>
+   <li>
+    <strong>
+     Windows:
+    </strong>
+    <code>
+     %APPDATA%\Claude\claude_desktop_config.json
+    </code>
+   </li>
+  </ul>
+  <pre><code class="language-json">{
+  "mcpServers": {
+    "hyperplexity": {
+      "command": "uvx",
+      "args": ["mcp-server-hyperplexity"],
+      "env": {
+        "HYPERPLEXITY_API_KEY": "hpx_live_your_key_here"
+      }
+    }
+  }
+}
+</code></pre>
+  <span class="md-heading3">
+   Project config (shared repo)
+  </span>
+  <p>
+   Add
+   <code>
+    .mcp.json
+   </code>
+   to your repo root so the server is available when anyone runs Claude Code in that directory. Each person must use their own API key — keys are tied to individual email accounts and should not be shared:
+  </p>
+  <pre><code class="language-json">{
+  "mcpServers": {
+    "hyperplexity": {
+      "command": "uvx",
+      "args": ["mcp-server-hyperplexity"],
+      "env": {
+        "HYPERPLEXITY_API_KEY": "${HYPERPLEXITY_API_KEY}"
+      }
+    }
+  }
+}
+</code></pre>
+  <p>
+   Each team member sets
+   <code>
+    HYPERPLEXITY_API_KEY
+   </code>
+   in their own shell profile. No key is committed to the repo.
+  </p>
+  <span class="md-heading2">
+   Using with Claude — What to Say
+  </span>
+  <p>
+   Once the MCP server is installed, describe your task in plain English. Claude drives the full workflow, pausing only when user input is genuinely needed.
+  </p>
+  <p>
+   <strong>
+    Validate a table:
+   </strong>
+  </p>
+  <blockquote>
+   <p>
+    "Validate
+    <code>
+     companies.xlsx
+    </code>
+    using Hyperplexity. Interview me about what each column means, then run the preview. If the results look good, approve the full validation."
+   </p>
+  </blockquote>
+  <p>
+   <strong>
+    Generate a table:
+   </strong>
+  </p>
+  <blockquote>
+   <p>
+    "Use Hyperplexity to generate a table of the top 20 US hedge funds with columns: fund name, AUM, primary strategy, founding year, and HQ city. Approve the full validation when the preview looks right."
+   </p>
+  </blockquote>
+  <p>
+   <strong>
+    Re-run validation on the same table:
+   </strong>
+  </p>
+  <blockquote>
+   <p>
+    "Re-run update_table on job
+    <code>
+     session_20260217_103045_abc123
+    </code>
+    to get an updated validation pass."
+   </p>
+  </blockquote>
+  <p>
+   <strong>
+    Fact-check a document:
+   </strong>
+  </p>
+  <blockquote>
+   <p>
+    "Use Hyperplexity to fact-check this analyst report."
+    <em>
+     (paste the text or share the file path)
+    </em>
+   </p>
+  </blockquote>
+  <span class="md-heading2">
+   Workflows
+  </span>
+  <span class="md-heading3">
+   1. Validate an Existing Table
+  </span>
+  <blockquote>
+   <p>
+    <strong>
+     Minimum rows:
+    </strong>
+    Hyperplexity is designed for tables with
+    <strong>
+     4 or more data rows
+    </strong>
+    . Fewer rows may produce low-quality results.
+   </p>
+  </blockquote>
+  <p>
+   <strong>
+    Full flow: upload → interview → preview → refine → approve → download
+   </strong>
+  </p>
+  <pre><code>upload_file(path)
+  → confirm_upload(session_id, s3_key, filename)
+      ┌── match found (score ≥ 0.85) → [preview auto-queued; response has preview_queued=true + job_id]
+      └── no match → interview auto-started
+            → wait_for_conversation / poll get_conversation
+              → send_conversation_reply  (if AI asks questions)
+              → [interview complete → preview auto-queued]
+
+  → wait_for_job(job_id or session_id)  ← blocks until preview_complete
+      → [optional] refine_config(conv_id, session_id, instructions)
+      → approve_validation(job_id, cost_usd)
+      → wait_for_job(job_id)            ← blocks until completed
+      → get_results(job_id)
+</code></pre>
+  <blockquote>
+   <p>
+    <strong>
+     Key behavior:
+    </strong>
+    After the interview finishes (
+    <code>
+     trigger_config_generation=true
+    </code>
+    ), the preview is auto-queued. Do
+    <strong>
+     not
+    </strong>
+    call
+    <code>
+     create_job()
+    </code>
+    — call
+    <code>
+     wait_for_job(session_id)
+    </code>
+    directly. The same applies when a config match is found: if
+    <code>
+     confirm_upload
+    </code>
+    returns
+    <code>
+     match_score ≥ 0.85
+    </code>
+    , the preview is also auto-queued — the response includes
+    <code>
+     preview_queued: true
+    </code>
+    and
+    <code>
+     job_id
+    </code>
+    . Call
+    <code>
+     wait_for_job(job_id)
+    </code>
+    directly (see
+    <a href="#config-reuse">
+     Config reuse
+    </a>
+    ).
+   </p>
+  </blockquote>
+  <blockquote>
+   <p>
+    <strong>
+     Upload interview auto-approval:
+    </strong>
+    The interview may auto-approve in a single turn. If the conversation response has
+    <code>
+     user_reply_needed: false
+    </code>
+    and
+    <code>
+     status: approved
+    </code>
+    , proceed to
+    <code>
+     wait_for_job(session_id)
+    </code>
+    immediately — no reply is needed, even if the AI's message appears to ask for confirmation.
+   </p>
+  </blockquote>
+  <p>
+   <strong>
+    Skip the interview with
+    <code>
+     instructions
+    </code>
+    (fire-and-forget config generation):
+   </strong>
+  </p>
+  <p>
+   Pass
+   <code>
+    instructions
+   </code>
+   to
+   <code>
+    confirm_upload
+   </code>
+   to bypass the interactive interview. The AI reads the table structure + your instructions and generates a config directly, then auto-triggers the preview — no clarifying questions needed.
+  </p>
+  <pre><code>confirm_upload(session_id, s3_key, filename,
+  instructions="This table lists hedge funds. Validate AUM, strategy, and HQ city. Use Bloomberg and SEC filings.")
+  → response includes instructions_mode=true
+  → wait_for_job(session_id)          ← config generation + preview tracked automatically
+  → approve_validation(job_id, cost_usd)
+  → wait_for_job(job_id)
+  → get_results(job_id)
+</code></pre>
+  <blockquote>
+   <p>
+    <strong>
+     Cost gate:
+    </strong>
+    Config generation and the 3-row preview are
+    <strong>
+     free
+    </strong>
+    . Full validation is charged at
+    <code>
+     approve_validation
+    </code>
+    — you always see the cost estimate at
+    <code>
+     preview_complete
+    </code>
+    before anything is billed. If your balance is insufficient,
+    <code>
+     approve_validation
+    </code>
+    returns an
+    <code>
+     insufficient_balance
+    </code>
+    error with the required amount.
+   </p>
+  </blockquote>
+  <p>
+   <strong>
+    Refine the config
+   </strong>
+   before approving by calling
+   <code>
+    refine_config
+   </code>
+   . This adjusts how columns are validated (sources, strictness, interpretation) — it cannot add or remove columns:
+  </p>
+  <pre><code>refine_config(conversation_id, session_id,
+  "Use SEC filings as the primary source for revenue. Require exact match for ticker symbols.")
+</code></pre>
+  <p>
+   A new preview runs automatically after refinement.
+  </p>
+  <p>
+   <strong>
+    Python script:
+   </strong>
+   <a href="https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/01_validate_table.py">
+    <code>
+     examples/01_validate_table.py
+    </code>
+   </a>
+  </p>
+  <pre><code class="language-bash">export HYPERPLEXITY_API_KEY=hpx_live_...
+python examples/01_validate_table.py companies.xlsx
+python examples/01_validate_table.py companies.xlsx --refine "Add LinkedIn URL column"
+
+ Fire-and-forget: provide instructions to skip the interview entirely
+python examples/01_validate_table.py companies.xlsx \
+    --instructions "This table lists hedge funds. Validate AUM, strategy, and HQ city."
+</code></pre>
+  <span class="md-heading3">
+   2. Generate a Table from a Prompt
+  </span>
+  <p>
+   Describe the table you want — rows, columns, scope — and Hyperplexity builds and validates it from scratch. Designed for tables with
+   <strong>
+    4 or more rows
+   </strong>
+   .
+  </p>
+  <pre><code>start_table_maker("Top 20 US biotech companies: name, ticker, market cap, lead drug, phase")
+  → wait_for_conversation / poll get_conversation
+    → send_conversation_reply  (if AI asks clarifying questions)
+    → [table builds → preview auto-queued, do NOT call create_job()]
+
+  → wait_for_job(session_id)          ← spans table-maker + preview phases
+    → approve_validation(job_id, cost_usd)
+    → wait_for_job(job_id)
+    → get_results(job_id)
+</code></pre>
+  <blockquote>
+   <p>
+    <strong>
+     Auto-approve:
+    </strong>
+    The agent can auto-approve the preview and proceed to full validation without human intervention. The preview table is included inline in the
+    <code>
+     preview_complete
+    </code>
+    response.
+   </p>
+  </blockquote>
+  <blockquote>
+   <p>
+    <strong>
+     Cost:
+    </strong>
+    ~$0.05/cell (standard), up to ~$0.25/cell (advanced). $2 minimum per run.
+   </p>
+  </blockquote>
+  <p>
+   <strong>
+    Skip confirmation with
+    <code>
+     auto_start=True
+    </code>
+    (fire-and-forget generation):
+   </strong>
+  </p>
+  <p>
+   Pass
+   <code>
+    auto_start=True
+   </code>
+   to skip the AI's clarifying questions and structure-confirmation step. The AI generates the table immediately from the message alone. Use when your message fully describes the desired table.
+  </p>
+  <pre><code>start_table_maker(
+  "Top 20 US hedge funds: fund name, AUM, primary strategy, founding year, HQ city",
+  auto_start=True)
+  → wait_for_conversation(conversation_id, session_id)
+      ← returns trigger_execution=true on first response (no Q&amp;A)
+  → wait_for_job(session_id)          ← table building + preview
+  → approve_validation(job_id, cost_usd)
+  → wait_for_job(job_id)
+  → get_results(job_id)
+</code></pre>
+  <blockquote>
+   <p>
+    <strong>
+     Why
+     <code>
+      wait_for_conversation
+     </code>
+     with
+     <code>
+      auto_start=True
+     </code>
+     ?
+    </strong>
+    Even though there is no Q&amp;A,
+    <code>
+     wait_for_conversation
+    </code>
+    is still required — it returns
+    <code>
+     trigger_execution: true
+    </code>
+    in a single blocking call (no reply needed), signaling that the table-maker has started. Calling
+    <code>
+     wait_for_job
+    </code>
+    before this call returns would be premature, as the table-maker may not have been triggered yet.
+   </p>
+  </blockquote>
+  <blockquote>
+   <p>
+    <strong>
+     Cost gate:
+    </strong>
+    Table building and the 3-row preview are
+    <strong>
+     free
+    </strong>
+    . Full validation is charged at
+    <code>
+     approve_validation
+    </code>
+    — you always see the cost estimate at
+    <code>
+     preview_complete
+    </code>
+    before anything is billed. If your balance is insufficient,
+    <code>
+     approve_validation
+    </code>
+    returns an
+    <code>
+     insufficient_balance
+    </code>
+    error with the required amount.
+   </p>
+  </blockquote>
+  <p>
+   <strong>
+    Python script:
+   </strong>
+   <a href="https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/02_generate_table.py">
+    <code>
+     examples/02_generate_table.py
+    </code>
+   </a>
+  </p>
+  <pre><code class="language-bash">python examples/02_generate_table.py "Top 10 US hedge funds: fund name, AUM, strategy, HQ city"
+python examples/02_generate_table.py --prompt-file my_spec.txt
+
+ Fire-and-forget: skip clarifying Q&amp;A and generate immediately from the prompt
+python examples/02_generate_table.py --auto-start "Top 10 US hedge funds: fund name, AUM, strategy, HQ city"
+</code></pre>
+  <span class="md-heading3">
+   3. Update a Table (Re-run Validation Pass)
+  </span>
+  <p>
+   Re-run validation on a completed job — no re-upload or manual edits needed. The table iterates automatically, re-validating the same data with the same config to pick up any changes in source data.
+  </p>
+  <p>
+   If you want to incorporate manual edits to the output file, re-upload the edited file via
+   <code>
+    upload_file
+   </code>
+   +
+   <code>
+    confirm_upload
+   </code>
+   — a matching config will be found automatically (score ≥ 0.85).
+  </p>
+  <pre><code>update_table(source_job_id)           ← re-validates existing enriched output
+  → wait_for_job(new_job_id)          ← blocks until preview_complete
+    → approve_validation(new_job_id, cost_usd)
+    → wait_for_job(new_job_id)
+    → get_results(new_job_id)
+</code></pre>
+  <p>
+   <strong>
+    Python script:
+   </strong>
+   <a href="https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/03_update_table.py">
+    <code>
+     examples/03_update_table.py
+    </code>
+   </a>
+  </p>
+  <pre><code class="language-bash">python examples/03_update_table.py session_20260217_103045_abc123
+python examples/03_update_table.py session_20260217_103045_abc123 --version 2
+</code></pre>
+  <span class="md-heading3">
+   4. Fact-Check Text or Documents (Chex)
+  </span>
+  <p>
+   Submit any text, report, or document. Hyperplexity checks each factual claim against authoritative sources and returns the same output format as standard table validation: an Excel (XLSX) file, an interactive viewer URL, and a metadata JSON.
+  </p>
+  <blockquote>
+   <p>
+    <strong>
+     Minimum claims:
+    </strong>
+    Hyperplexity is designed for text with
+    <strong>
+     4 or more factual claims
+    </strong>
+    . Fewer claims may produce low-quality results.
+   </p>
+  </blockquote>
+  <pre><code>reference_check(text="...")           ← inline text (or auto_approve=True to skip the gate)
+  or
+upload_file(path, "pdf")              ← upload PDF/document first
+  → reference_check(s3_key=s3_key)
+
+→ wait_for_job(job_id)                ← stops at preview_complete
+  → claims_summary + cost_estimate shown in response
+  → approve_validation(job_id, approved_cost_usd=X)   ← triggers Phase 2
+  → wait_for_job(job_id)              ← waits for completed
+  → get_results(job_id)               ← download_url (XLSX) + interactive_viewer_url + metadata_url
+</code></pre>
+  <blockquote>
+   <p>
+    <strong>
+     Two-phase flow:
+    </strong>
+    Phase 1 (extraction, free) runs automatically and pauses at
+    <code>
+     status=preview_complete
+    </code>
+    with
+    <code>
+     claims_summary
+    </code>
+    and
+    <code>
+     cost_estimate
+    </code>
+    . Call
+    <code>
+     approve_validation
+    </code>
+    to start Phase 2 (validation, charged). Pass
+    <code>
+     auto_approve=True
+    </code>
+    to skip the gate and run straight through.
+   </p>
+  </blockquote>
+  <blockquote>
+   <p>
+    <strong>
+     Progress tracking:
+    </strong>
+    <code>
+     get_job_messages
+    </code>
+    always returns empty for reference-check jobs. Use
+    <code>
+     get_job_status
+    </code>
+    (
+    <code>
+     current_step
+    </code>
+    ,
+    <code>
+     progress_percent
+    </code>
+    ) to track progress.
+   </p>
+  </blockquote>
+  <p>
+   <strong>
+    Output:
+   </strong>
+   Excel (XLSX) file with per-claim rows. Support levels: SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIABLE. Share
+   <code>
+    interactive_viewer_url
+   </code>
+   with human stakeholders — it renders sources and confidence scores in a clean UI.
+  </p>
+  <p>
+   <strong>
+    Python script:
+   </strong>
+   <a href="https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/04_reference_check.py">
+    <code>
+     examples/04_reference_check.py
+    </code>
+   </a>
+   |
+   <strong>
+    Sample output:
+   </strong>
+   <a href="https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/sample_outputs/reference_check_output.json">
+    <code>
+     sample_outputs/reference_check_output.json
+    </code>
+   </a>
+  </p>
+  <pre><code class="language-bash"># Fact-check inline text
+python examples/04_reference_check.py --text "Bitcoin was created by Satoshi Nakamoto in 2009."
+
+# Fact-check a PDF
+python examples/04_reference_check.py --file analyst_report.pdf
+
+# Fact-check multiple documents concatenated
+cat doc1.txt doc2.txt | python examples/04_reference_check.py --stdin
+</code></pre>
+  <blockquote>
+   <p>
+    <strong>
+     --stdin:
+    </strong>
+    Concatenates all piped content as a single inline text payload. All claims are attributed to the combined document.
+   </p>
+  </blockquote>
+  <span class="md-heading2">
+   Environment Variables
+  </span>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      Variable
+     </th>
+     <th>
+      Description
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      <code>
+       HYPERPLEXITY_API_KEY
+      </code>
+     </td>
+     <td>
+      API key from
+      <a href="https://hyperplexity.ai/account">
+       hyperplexity.ai/account
+      </a>
+      . Required. New accounts get $20 free.
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       HYPERPLEXITY_API_URL
+      </code>
+     </td>
+     <td>
+      Override the API base URL (useful for dev/staging environments).
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <span class="md-heading2">
+   Direct REST API
+  </span>
+  <p>
+   All tools in the MCP server are thin wrappers over the REST API. You can call it directly from any language.
+  </p>
+  <p>
+   <strong>
+    Base URL:
+   </strong>
+   <code>
+    https://api.hyperplexity.ai/v1
+   </code>
+  </p>
+  <p>
+   <strong>
+    Auth:
+   </strong>
+   <code>
+    Authorization: Bearer hpx_live_your_key_here
+   </code>
+  </p>
+  <p>
+   <strong>
+    Response envelope:
+   </strong>
+  </p>
+  <pre><code class="language-json">{
+  "success": true,
+  "data": { ... },
+  "meta": { "request_id": "...", "timestamp": "..." }
+}
+</code></pre>
+  <span class="md-heading3">
+   Python client (minimal)
+  </span>
+  <pre><code class="language-python">import os, requests
+
+BASE_URL = "https://api.hyperplexity.ai/v1"
+HEADERS  = {"Authorization": f"Bearer {os.environ['HYPERPLEXITY_API_KEY']}"}
+
+def api_get(path, **kwargs):
+    r = requests.get(f"{BASE_URL}{path}", headers=HEADERS, **kwargs)
+    r.raise_for_status()
+    return r.json()["data"]
+
+def api_post(path, **kwargs):
+    r = requests.post(f"{BASE_URL}{path}", headers=HEADERS, **kwargs)
+    r.raise_for_status()
+    return r.json()["data"]
+</code></pre>
+  <p>
+   A full standalone client module is in
+   <a href="https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/hyperplexity_client.py">
+    <code>
+     examples/hyperplexity_client.py
+    </code>
+   </a>
+   .
+  </p>
+  <span class="md-heading2">
+   API Endpoint Reference
+  </span>
+  <span class="md-heading3">
+   Uploads
+  </span>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      Method
+     </th>
+     <th>
+      Path
+     </th>
+     <th>
+      Description
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      <code>
+       POST
+      </code>
+     </td>
+     <td>
+      <code>
+       /uploads/presigned
+      </code>
+     </td>
+     <td>
+      Get a presigned S3 URL to upload a file
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       PUT
+      </code>
+     </td>
+     <td>
+      <code>
+       &lt;presigned_url&gt;
+      </code>
+     </td>
+     <td>
+      Upload file bytes directly to S3 (no auth header)
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       POST
+      </code>
+     </td>
+     <td>
+      <code>
+       /uploads/confirm
+      </code>
+     </td>
+     <td>
+      Confirm upload; detect config matches; auto-start interview if no match
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <p>
+   <strong>
+    Presigned upload request:
+   </strong>
+  </p>
+  <pre><code class="language-json">{
+  "filename": "companies.xlsx",
+  "file_size": 2048000,
+  "file_type": "excel",
+  "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+}
+</code></pre>
+  <p>
+   Content types:
+   <code>
+    excel
+   </code>
+   →
+   <code>
+    .xlsx
+   </code>
+   ,
+   <code>
+    csv
+   </code>
+   →
+   <code>
+    .csv
+   </code>
+   ,
+   <code>
+    pdf
+   </code>
+   →
+   <code>
+    .pdf
+   </code>
+  </p>
+  <p>
+   <strong>
+    Confirm upload request
+   </strong>
+   (optional fields):
+  </p>
+  <pre><code class="language-json">{
+  "session_id": "session_20260305_...",
+  "s3_key": "results/.../file.xlsx",
+  "filename": "companies.xlsx",
+  "instructions": "Validate AUM, strategy, and HQ city. Use Bloomberg and SEC filings as sources.",
+  "config_id": "session_20260217_103045_abc123_config_v1_..."
+}
+</code></pre>
+  <p>
+   <code>
+    instructions
+   </code>
+   — if provided, bypasses the interactive upload interview. The AI generates the config directly from the table structure + instructions. Response includes
+   <code>
+    instructions_mode: true
+   </code>
+   and
+   <code>
+    conversation_id
+   </code>
+   . Use
+   <code>
+    wait_for_job(session_id)
+   </code>
+   to track progress — do NOT poll the conversation.
+  </p>
+  <p>
+   <code>
+    config_id
+   </code>
+   — if provided, skips matching and the interview entirely. The specified config is applied immediately and the preview is auto-queued. Response includes
+   <code>
+    preview_queued: true
+   </code>
+   and
+   <code>
+    job_id
+   </code>
+   . Use
+   <code>
+    wait_for_job(job_id)
+   </code>
+   to track progress. The
+   <code>
+    configuration_id
+   </code>
+   for any completed job is returned by
+   <code>
+    GET /jobs/{id}/results
+   </code>
+   under
+   <code>
+    job_info.configuration_id
+   </code>
+   .
+  </p>
+  <span class="md-heading3">
+   Conversations
+  </span>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      Method
+     </th>
+     <th>
+      Path
+     </th>
+     <th>
+      Description
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      <code>
+       POST
+      </code>
+     </td>
+     <td>
+      <code>
+       /conversations/table-maker
+      </code>
+     </td>
+     <td>
+      Start a Table Maker session with a natural language prompt
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       GET
+      </code>
+     </td>
+     <td>
+      <code>
+       /conversations/{id}?session_id=
+      </code>
+     </td>
+     <td>
+      Poll conversation for status / AI messages
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       POST
+      </code>
+     </td>
+     <td>
+      <code>
+       /conversations/{id}/message
+      </code>
+     </td>
+     <td>
+      Send a reply to the AI
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       POST
+      </code>
+     </td>
+     <td>
+      <code>
+       /conversations/{id}/refine-config
+      </code>
+     </td>
+     <td>
+      Refine the config with natural language instructions
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <p>
+   <strong>
+    Table Maker request body:
+   </strong>
+  </p>
+  <pre><code class="language-json">{
+  "message": "Top 20 US hedge funds: fund name, AUM, primary strategy, founding year, HQ city",
+  "auto_start": true
+}
+</code></pre>
+  <p>
+   <code>
+    auto_start
+   </code>
+   — if
+   <code>
+    true
+   </code>
+   , the AI skips clarifying questions and the structure-confirmation step, proceeding directly to table generation. The first
+   <code>
+    get_conversation
+   </code>
+   response will have
+   <code>
+    trigger_execution: true
+   </code>
+   . Use when your message fully describes the desired table.
+  </p>
+  <span class="md-heading3">
+   Jobs
+  </span>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      Method
+     </th>
+     <th>
+      Path
+     </th>
+     <th>
+      Description
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      <code>
+       POST
+      </code>
+     </td>
+     <td>
+      <code>
+       /jobs
+      </code>
+     </td>
+     <td>
+      Create a preview validation job (only when reusing a
+      <code>
+       config_id
+      </code>
+      )
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       GET
+      </code>
+     </td>
+     <td>
+      <code>
+       /jobs/{id}
+      </code>
+     </td>
+     <td>
+      Get job status and progress
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       GET
+      </code>
+     </td>
+     <td>
+      <code>
+       /jobs/{id}/messages
+      </code>
+     </td>
+     <td>
+      Fetch live progress messages (paginated by
+      <code>
+       since_seq
+      </code>
+      )
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       POST
+      </code>
+     </td>
+     <td>
+      <code>
+       /jobs/{id}/validate
+      </code>
+     </td>
+     <td>
+      Approve full validation — credits charged here
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       GET
+      </code>
+     </td>
+     <td>
+      <code>
+       /jobs/{id}/results
+      </code>
+     </td>
+     <td>
+      Fetch download URL, metadata, viewer URL
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       POST
+      </code>
+     </td>
+     <td>
+      <code>
+       /jobs/update-table
+      </code>
+     </td>
+     <td>
+      Re-validate enriched output after corrections
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       POST
+      </code>
+     </td>
+     <td>
+      <code>
+       /jobs/reference-check
+      </code>
+     </td>
+     <td>
+      Submit text or file for claim verification
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       GET
+      </code>
+     </td>
+     <td>
+      <code>
+       /jobs/{id}/reference-results
+      </code>
+     </td>
+     <td>
+      Fetch completed reference-check report
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <p>
+   <strong>
+    Job status values:
+   </strong>
+  </p>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      Status
+     </th>
+     <th>
+      Meaning
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      <code>
+       queued
+      </code>
+     </td>
+     <td>
+      Accepted, waiting to start
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       processing
+      </code>
+     </td>
+     <td>
+      Actively running
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       preview_complete
+      </code>
+     </td>
+     <td>
+      Free preview done — review results and approve full run
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       completed
+      </code>
+     </td>
+     <td>
+      Full validation complete, results ready
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       failed
+      </code>
+     </td>
+     <td>
+      Error — check
+      <code>
+       error.message
+      </code>
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <span class="md-heading3">
+   Account
+  </span>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      Method
+     </th>
+     <th>
+      Path
+     </th>
+     <th>
+      Description
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      <code>
+       GET
+      </code>
+     </td>
+     <td>
+      <code>
+       /account/balance
+      </code>
+     </td>
+     <td>
+      Current credit balance and this-month usage
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       GET
+      </code>
+     </td>
+     <td>
+      <code>
+       /account/usage
+      </code>
+     </td>
+     <td>
+      Billing history (supports
+      <code>
+       start_date
+      </code>
+      ,
+      <code>
+       end_date
+      </code>
+      ,
+      <code>
+       limit
+      </code>
+      ,
+      <code>
+       offset
+      </code>
+      )
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <span class="md-heading2">
+   MCP Tool Reference
+  </span>
+  <p>
+   Every tool response includes a
+   <code>
+    _guidance
+   </code>
+   block with a plain-English summary and the exact next tool call(s) — enabling fully autonomous agent workflows.
+  </p>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      Tool
+     </th>
+     <th>
+      Description
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      <code>
+       upload_file
+      </code>
+     </td>
+     <td>
+      Upload Excel, CSV, or PDF (handles presigned S3 automatically)
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       confirm_upload
+      </code>
+     </td>
+     <td>
+      Confirm upload; detect config matches; auto-start interview if needed
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       start_table_maker
+      </code>
+     </td>
+     <td>
+      Start an AI conversation to generate a table from a prompt
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       get_conversation
+      </code>
+     </td>
+     <td>
+      Poll a conversation for AI responses or status changes
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       send_conversation_reply
+      </code>
+     </td>
+     <td>
+      Reply to AI questions during an interview or table-maker session
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       wait_for_conversation
+      </code>
+     </td>
+     <td>
+      Block until conversation needs input or finishes (emits live progress)
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       refine_config
+      </code>
+     </td>
+     <td>
+      Refine the validation config with natural language instructions (adjusts sources, strictness, interpretation — cannot add or remove columns)
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       create_job
+      </code>
+     </td>
+     <td>
+      Submit a preview job —
+      <strong>
+       only when reusing a known
+       <code>
+        config_id
+       </code>
+      </strong>
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       wait_for_job
+      </code>
+     </td>
+     <td>
+      Block until
+      <code>
+       preview_complete
+      </code>
+      ,
+      <code>
+       completed
+      </code>
+      , or
+      <code>
+       failed
+      </code>
+      (preferred progress tracker)
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       get_job_status
+      </code>
+     </td>
+     <td>
+      One-shot status poll
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       get_job_messages
+      </code>
+     </td>
+     <td>
+      Fetch progress messages with native percentages (paginated)
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       approve_validation
+      </code>
+     </td>
+     <td>
+      Approve preview → start full validation (credits charged here)
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       get_results
+      </code>
+     </td>
+     <td>
+      Download URL, inline metadata, interactive viewer URL
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       update_table
+      </code>
+     </td>
+     <td>
+      Re-validate enriched output after analyst corrections
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       reference_check
+      </code>
+     </td>
+     <td>
+      Submit text or file for claim and citation verification
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       get_reference_results
+      </code>
+     </td>
+     <td>
+      Fetch the reference-check report
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       get_balance
+      </code>
+     </td>
+     <td>
+      Check credit balance
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       get_usage
+      </code>
+     </td>
+     <td>
+      Review billing history
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <span class="md-heading2">
+   Key Behaviors
+  </span>
+  <span class="md-heading3">
+   Auto-queued preview
+  </span>
+  <p>
+   The preview is
+   <strong>
+    automatically queued
+   </strong>
+   in all three paths after
+   <code>
+    confirm_upload
+   </code>
+   — you never need to call
+   <code>
+    create_job()
+   </code>
+   :
+  </p>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      Path
+     </th>
+     <th>
+      Trigger
+     </th>
+     <th>
+      What to call next
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      Config match (score ≥ 0.85)
+     </td>
+     <td>
+      <code>
+       preview_queued: true
+      </code>
+      in response
+     </td>
+     <td>
+      <code>
+       wait_for_job(job_id)
+      </code>
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       instructions=
+      </code>
+      provided
+     </td>
+     <td>
+      <code>
+       instructions_mode: true
+      </code>
+      in response
+     </td>
+     <td>
+      <code>
+       wait_for_job(session_id)
+      </code>
+     </td>
+    </tr>
+    <tr>
+     <td>
+      Interview ran
+     </td>
+     <td>
+      <code>
+       trigger_config_generation=true
+      </code>
+      from conversation
+     </td>
+     <td>
+      <code>
+       wait_for_job(session_id)
+      </code>
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <p>
+   <code>
+    create_job()
+   </code>
+   is only needed if you want to use a specific
+   <code>
+    config_id
+   </code>
+   that was
+   <strong>
+    not
+   </strong>
+   auto-detected — for example, re-using a config from a completely different session.
+  </p>
+  <span class="md-heading3">
+   Config reuse
+  </span>
+  <p>
+   If
+   <code>
+    confirm_upload
+   </code>
+   returns
+   <code>
+    match_score ≥ 0.85
+   </code>
+   , the preview is automatically queued using the matched config. The response includes
+   <code>
+    preview_queued: true
+   </code>
+   and
+   <code>
+    job_id
+   </code>
+   — call
+   <code>
+    wait_for_job(job_id)
+   </code>
+   directly, no interview and no
+   <code>
+    create_job()
+   </code>
+   call needed.
+  </p>
+  <p>
+   The
+   <code>
+    configuration_id
+   </code>
+   from any completed job's
+   <code>
+    get_results
+   </code>
+   response can be reused on future uploads of similar tables.
+  </p>
+  <span class="md-heading3">
+   Cost confirmation gate
+  </span>
+  <p>
+   <code>
+    approve_validation
+   </code>
+   requires
+   <code>
+    approved_cost_usd
+   </code>
+   matching the preview estimate. This prevents surprise charges. The estimate is in the
+   <code>
+    preview_complete
+   </code>
+   job status response under
+   <code>
+    cost_estimate.estimated_total_cost_usd
+   </code>
+   .
+  </p>
+  <p>
+   This gate applies regardless of whether
+   <code>
+    instructions
+   </code>
+   or
+   <code>
+    auto_start
+   </code>
+   was used — both only skip the
+   <em>
+    interview/confirmation conversation
+   </em>
+   , not the cost approval step. If your balance is insufficient when
+   <code>
+    approve_validation
+   </code>
+   is called, the API returns:
+  </p>
+  <pre><code class="language-json">{ "error": "insufficient_balance", "required_usd": 4.20, "current_balance_usd": 1.50 }
+</code></pre>
+  <span class="md-heading3">
+   Fire-and-forget shortcuts
+  </span>
+  <p>
+   Two optional flags let fully automated pipelines skip interactive steps:
+  </p>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      Flag
+     </th>
+     <th>
+      Tool
+     </th>
+     <th>
+      Skips
+     </th>
+     <th>
+      Next step
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      <code>
+       instructions="..."
+      </code>
+     </td>
+     <td>
+      <code>
+       confirm_upload
+      </code>
+     </td>
+     <td>
+      Upload interview Q&amp;A
+     </td>
+     <td>
+      <code>
+       wait_for_job(session_id)
+      </code>
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       auto_start=True
+      </code>
+     </td>
+     <td>
+      <code>
+       start_table_maker
+      </code>
+     </td>
+     <td>
+      Structure confirmation
+     </td>
+     <td>
+      <code>
+       wait_for_conversation
+      </code>
+      →
+      <code>
+       wait_for_job
+      </code>
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <p>
+   These flags use different terminal signals:
+   <code>
+    instructions=
+   </code>
+   (a config-gen flow) causes
+   <code>
+    trigger_config_generation: true
+   </code>
+   on the conversation response;
+   <code>
+    auto_start=True
+   </code>
+   (a table-maker flow) causes
+   <code>
+    trigger_execution: true
+   </code>
+   . Both skip interactive Q&amp;A but produce different fields — do not wait for
+   <code>
+    trigger_execution
+   </code>
+   when using the
+   <code>
+    instructions=
+   </code>
+   upload path. The
+   <code>
+    preview_complete
+   </code>
+   cost gate and
+   <code>
+    approve_validation
+   </code>
+   still apply.
+  </p>
+  <span class="md-heading3">
+   Consuming results: humans vs AI agents
+  </span>
+  <p>
+   <strong>
+    Output files generated per run:
+   </strong>
+  </p>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      File
+     </th>
+     <th>
+      Format
+     </th>
+     <th>
+      Description
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      Preview table
+     </td>
+     <td>
+      Markdown (inline)
+     </td>
+     <td>
+      First 3 rows as markdown text; returned inline in the
+      <code>
+       preview_complete
+      </code>
+      job status response (not a separate download). Also available in
+      <code>
+       metadata.json
+      </code>
+      under
+      <code>
+       markdown_table
+      </code>
+      .
+     </td>
+    </tr>
+    <tr>
+     <td>
+      Enriched results
+     </td>
+     <td>
+      Excel (
+      <code>
+       .xlsx
+      </code>
+      )
+     </td>
+     <td>
+      Ideal for sharing with humans; sources and citations are embedded in cell comments
+     </td>
+    </tr>
+    <tr>
+     <td>
+      Full metadata
+     </td>
+     <td>
+      <code>
+       metadata.json
+      </code>
+     </td>
+     <td>
+      Complete per-cell detail for every row; use the
+      <code>
+       row_key
+      </code>
+      field to drill into specific rows programmatically
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <p>
+   <code>
+    get_results
+   </code>
+   returns:
+  </p>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      Field
+     </th>
+     <th>
+      Type
+     </th>
+     <th>
+      Best for
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      <code>
+       results.interactive_viewer_url
+      </code>
+     </td>
+     <td>
+      URL
+     </td>
+     <td>
+      <strong>
+       Humans
+      </strong>
+      — web viewer with confidence indicators (requires login at hyperplexity.ai with the same email as your API key)
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       results.download_url
+      </code>
+     </td>
+     <td>
+      Presigned URL
+     </td>
+     <td>
+      <strong>
+       Humans
+      </strong>
+      — download the enriched Excel (.xlsx) directly
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       results.metadata_url
+      </code>
+     </td>
+     <td>
+      Presigned URL
+     </td>
+     <td>
+      <strong>
+       AI agents
+      </strong>
+      — JSON file with all rows, per-cell details, and source citations
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <p>
+   <strong>
+    Recommended AI agent workflow:
+   </strong>
+  </p>
+  <ol>
+   <li>
+    At
+    <code>
+     preview_complete
+    </code>
+    : read the inline
+    <code>
+     preview_table
+    </code>
+    (markdown, 3 rows) from
+    <code>
+     GET /jobs/{id}
+    </code>
+    to survey the table structure and spot-check values. The AI agent can review this inline table and call
+    <code>
+     approve_validation
+    </code>
+    directly — no human approval step is required.
+   </li>
+   <li>
+    After full validation: fetch
+    <code>
+     results.metadata_url
+    </code>
+    →
+    <code>
+     table_metadata.json
+    </code>
+    . This contains every validated row.
+   </li>
+   <li>
+    Use
+    <code>
+     rows[].row_key
+    </code>
+    (stable SHA-256) to cross-reference rows between the markdown summary and the detailed JSON.
+   </li>
+   <li>
+    Per-cell fields in
+    <code>
+     table_metadata.json
+    </code>
+    :
+    <ul>
+     <li>
+      <code>
+       cells[col].full_value
+      </code>
+      — validated value
+     </li>
+     <li>
+      <code>
+       cells[col].confidence
+      </code>
+      —
+      <code>
+       HIGH
+      </code>
+      /
+      <code>
+       MEDIUM
+      </code>
+      /
+      <code>
+       LOW
+      </code>
+      /
+      <code>
+       ID
+      </code>
+     </li>
+     <li>
+      <code>
+       cells[col].comment.validator_explanation
+      </code>
+      — reasoning
+     </li>
+     <li>
+      <code>
+       cells[col].comment.key_citation
+      </code>
+      — top authoritative source
+     </li>
+     <li>
+      <code>
+       cells[col].comment.sources[]
+      </code>
+      — all sources with
+      <code>
+       url
+      </code>
+      and
+      <code>
+       snippet
+      </code>
+     </li>
+    </ul>
+   </li>
+  </ol>
+  <span class="md-heading2">
+   Pricing
+  </span>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      Mode
+     </th>
+     <th>
+      Cost
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      Preview (first 3 rows)
+     </td>
+     <td>
+      Free
+     </td>
+    </tr>
+    <tr>
+     <td>
+      Standard validation
+     </td>
+     <td>
+      ~$0.05 / cell
+     </td>
+    </tr>
+    <tr>
+     <td>
+      Advanced validation
+     </td>
+     <td>
+      up to ~$0.25 / cell
+     </td>
+    </tr>
+    <tr>
+     <td>
+      Minimum per run
+     </td>
+     <td>
+      $2.00
+     </td>
+    </tr>
+    <tr>
+     <td>
+      Reference check
+     </td>
+     <td>
+      TBD — contact support
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <p>
+   Credits are prepaid. Get $20 free at
+   <strong>
+    <a href="https://hyperplexity.ai/account">
+     hyperplexity.ai/account
+    </a>
+   </strong>
+   .
+  </p>
+  <p>
+   Standard validation is used for most tables. Advanced validation is selected automatically when the table requires more sophisticated reasoning (e.g., scientific data, complex financial metrics, or cells with high ambiguity).
+  </p>
+  <span class="md-heading2">
+   Links
+  </span>
+  <ul>
+   <li>
+    <strong>
+     MCP server (PyPI):
+    </strong>
+    <code>
+     pip install mcp-server-hyperplexity
+    </code>
+    (or
+    <code>
+     uvx mcp-server-hyperplexity
+    </code>
+    to run on-demand without a persistent install — recommended for Claude Desktop/Code)
+   </li>
+   <li>
+    <strong>
+     Source:
+    </strong>
+    <a href="https://github.com/EliyahuAI/mcp-server-hyperplexity">
+     github.com/EliyahuAI/mcp-server-hyperplexity
+    </a>
+   </li>
+   <li>
+    <strong>
+     Documentation:
+    </strong>
+    <a href="https://hyperplexity.ai/mcp">
+     hyperplexity.ai/mcp
+    </a>
+   </li>
+   <li>
+    <strong>
+     API reference:
+    </strong>
+    <a href="https://hyperplexity.ai/api">
+     hyperplexity.ai/api
+    </a>
+   </li>
+   <li>
+    <strong>
+     Account &amp; credits:
+    </strong>
+    <a href="https://hyperplexity.ai/account">
+     hyperplexity.ai/account
+    </a>
+   </li>
+  </ul>
+ </body>
+</html>
