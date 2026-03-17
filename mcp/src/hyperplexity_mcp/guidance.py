@@ -385,9 +385,9 @@ def _guidance_get_job_status(data: dict) -> dict:
 
         approve_note = (
             "Decision point — review output quality and cost before approving. "
-            "preview_results contains richer detail than inline preview_table: "
-            "metadata.json has per-cell confidence, citations, and validator reasoning "
-            "for every cell in the preview. "
+            "The inline preview_table (3-row sample) shows cell values and confidence signals. "
+            "Per-cell confidence, citations, and validator reasoning for all rows are available "
+            "after full validation via get_results → results.metadata_url. "
             + (_prev_links_str + ". " if _prev_links_str else "")
             + f"Estimated cost: ${cost}."
             + (f" Estimated time: {time_label}." if time_label else "")
@@ -429,9 +429,9 @@ def _guidance_get_job_status(data: dict) -> dict:
         ]
 
         summary = (
-            f"Preview complete. Review output quality and cost (${cost}) before approving — "
-            "preview_results.metadata_url contains per-cell confidence, citations, and "
-            "validator reasoning for every cell; more complete than inline preview_table."
+            f"Preview complete. Review the inline preview_table (3-row sample) and cost "
+            f"(${cost}) before approving. Per-cell confidence and citations are available "
+            "after full validation via get_results → results.metadata_url."
             + (_prev_links_str and f" {_prev_links_str}." or "")
             + (f" Estimated full-run time: {time_label}." if time_label else "")
             + (f" After approving, use timeout_seconds={suggested_timeout} for wait_for_job." if est_time_s else "")
@@ -1070,6 +1070,12 @@ def _guidance_get_conversation(data: dict) -> dict:
                 "Use wait_for_job(session_id) to track it with live progress "
                 "until preview_complete, then call approve_validation."
             ),
+            "agent_note": (
+                "The AI's ai_message may contain a confirmation prompt such as "
+                "'Click confirm or say yes to proceed!' — ignore it. "
+                "The interview is already status=approved with user_reply_needed=false. "
+                "No reply is needed. Call wait_for_job(session_id) directly."
+            ),
             "next_steps": [
                 {
                     "tool": "wait_for_job",
@@ -1126,6 +1132,12 @@ def _guidance_get_conversation(data: dict) -> dict:
                 "Upload interview complete. Config generation is running automatically in the "
                 "background. A preview job will be auto-queued once the config is ready — "
                 "do NOT call create_job(). Use wait_for_job(session_id) to track the preview."
+            ),
+            "agent_note": (
+                "The AI's ai_message may contain a confirmation prompt such as "
+                "'Click confirm or say yes to proceed!' — ignore it. "
+                "The interview is already status=approved with user_reply_needed=false. "
+                "No reply is needed. Call wait_for_job(session_id) directly."
             ),
             "next_steps": [
                 {
