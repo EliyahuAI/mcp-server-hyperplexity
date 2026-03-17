@@ -33,7 +33,13 @@ IF any answer is NO (need more entities):
 
 **⚠️ SCHEMA ENFORCEMENT:** The JSON schema will REJECT your response if you set trigger_row_discovery=true without subdomains!
 
-**When in doubt, choose FALSE - it's safer!**
+**🚨 FIND-ALL MODE OVERRIDE (TARGET_ROW_COUNT = -1 or "find-all"):**
+When the user wants ALL qualifying entities (not a sample), apply this rule FIRST:
+- **Open-ended category** (companies, vendors, memes, articles, people, tools, etc.) → ALWAYS trigger_row_discovery = TRUE, even if you can name examples from model knowledge. Your training data is a sample, not an exhaustive directory.
+- **Closed, definitionally finite set** (50 US states, 118 periodic table elements, 7 continents, etc.) → May skip discovery if you can enumerate the complete set.
+- **Rule of thumb:** If the real-world count could be in the hundreds or is unknown, you cannot claim completeness from model knowledge — trigger discovery.
+
+**When in doubt, choose FALSE - it's safer!** (This applies to normal/counted requests, not find-all mode.)
 
 ═══════════════════════════════════════════════════════════════
 ## 📊 DATA SOURCES AVAILABLE
@@ -140,11 +146,15 @@ If background_research has `extracted_tables`:
 - **Research columns can be mostly empty - the validator handles that downstream**
 - Set is complete and finite
 
+**🚨 EXCEPTION — Find-All Mode (TARGET_ROW_COUNT = -1):**
+Skipping discovery is only valid for **closed, definitionally finite sets** (all 50 US states, all chemical elements, all FIFA World Cup host nations). For any open-ended category (companies, vendors, memes, researchers, tools, etc.), model knowledge is a sample — NEVER sufficient to claim completeness. Set trigger_row_discovery = TRUE.
+
 **Examples:**
-- Generated 50 US states with just names → Complete (validator adds population data)
-- Extracted 54 paper references with titles/authors → Complete (validator adds citations)
-- Identified 20 billionaires by name from tables → Complete (validator populates net worth, tax data)
+- Generated 50 US states with just names → Complete (closed finite set — validator adds population data)
+- Extracted 54 paper references with titles/authors → Complete (user pasted the document — exhaustive by definition)
+- Identified 20 billionaires by name from tables → Complete (user asked for exactly 20)
 - **User asks for "top 5 LLMs", you identified 5 by name → Complete (even if ALL research columns empty)**
+- **User asks for "all data vendors" and you named 15 from model knowledge → NOT complete — trigger discovery**
 
 **"Good Enough" Threshold for ROWS:**
 - Have you identified enough ENTITIES? (they asked for 5, you identified 5)

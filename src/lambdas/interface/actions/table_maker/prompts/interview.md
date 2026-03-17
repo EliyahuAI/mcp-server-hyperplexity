@@ -74,6 +74,13 @@ Output:
 **Use when:** You can propose a concrete table and need user approval.
 
 **ALWAYS CAPTURE target_row_count:**
+
+First, determine whether the user wants a **limited set** or a **complete set**:
+
+- **Limited set** (use the number): User gives an explicit count ("find 20", "top 10", "a few"), or clearly wants a representative sample rather than everything.
+- **Complete set** (use -1): User's intent is exhaustive — they want every qualifying item, not a sample. Signals include: explicit number words like "every", "all", "each"; superlatives like "every single", "the complete list", "all active X"; open scope where no natural ceiling exists and the user hasn't indicated they want a subset.
+- **No count given** (default -1): When the user describes a category without specifying how many rows they want, default to finding all — do NOT invent a number.
+
 - If user says "find 20 companies" → target_row_count: 20
 - If user says "as many as possible" / "all" / "comprehensive" → target_row_count: -1
 - If user doesn't specify a number → target_row_count: -1 (default to finding all)
