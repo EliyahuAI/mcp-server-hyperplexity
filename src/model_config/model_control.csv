@@ -8,9 +8,9 @@ table_maker_row_discovery_l1,table_maker,sonar,sonar-pro,the-clone-flash,Row dis
 table_maker_row_discovery_l2,table_maker,sonar-pro,the-clone-flash,,Row discovery escalation level 2 (currently disabled)
 table_maker_row_discovery_l3,table_maker,claude-haiku-4-5,,,Row discovery escalation level 3 (currently disabled)
 table_maker_qc,table_maker,openrouter/gemini-3-flash-preview,gemini-3-flash-preview,claude-sonnet-4-6,QC review model for table maker (Step 3)
-upload_interview,interview,openrouter/gemini-3-flash-preview-min,openrouter/gemini-3-flash-preview-min,claude-sonnet-4-6,Upload interview phase model — fast cheap model for dialog
+upload_interview,interview,openrouter/gemini-3-flash-preview-min,gemini-3-flash-preview-min,claude-sonnet-4-6,Upload interview phase model — fast cheap model for dialog
 validation_qc_default,qc,openrouter/gemini-3-flash-preview,claude-sonnet-4-6,,Default QC model for validation runs
-clone_extraction_default,clone_deepseek,openrouter/gemini-3.1-flash-lite-preview-min,openrouter/gemini-3-flash-preview-min,gemini-3.0-flash-preview-min,Default extraction model across all clone providers
+clone_extraction_default,clone_deepseek,openrouter/gemini-3.1-flash-lite-preview-min,openrouter/gemini-3-flash-preview-min,gemini-3-flash-preview-min,Default extraction model across all clone providers
 clone_claude_t1,clone_claude,claude-haiku-4-5,claude-sonnet-4.6,,Clone/claude tier1 synthesis — fast
 clone_claude_t2,clone_claude,claude-sonnet-4.6,claude-haiku-4-5,,Clone/claude tier2 synthesis — balanced
 clone_claude_t3,clone_claude,claude-sonnet-4.6,claude-opus-4-6,,Clone/claude tier3 synthesis — strong
@@ -33,7 +33,7 @@ table_maker_config_generation,table_maker,openrouter/gemini-3-flash-preview-low,
 table_maker_validator_qc_primary,table_maker,openrouter/gemini-3-flash-preview,gemini-3-flash-preview,claude-sonnet-4-6,Validator QC primary model for table maker QC strategy=validator
 rumor_generation,table_maker,openrouter/gemini-3-flash-preview-min,gemini-3-flash-preview-min,claude-haiku-4-5,Rumor generation model — broad entity knowledge required
 clone_deepseek_t1,clone_deepseek,openrouter/gemini-3-flash-preview-low,gemini-2.5-flash-lite,claude-haiku-4-5,Clone/deepseek tier1 synthesis — fast cost-effective
-clone_deepseek_t2,clone_deepseek,openrouter/gemini-3-flash-preview,,claude-sonnet-4-6,Clone/deepseek tier2 synthesis — balanced (default)
+clone_deepseek_t2,clone_deepseek,openrouter/gemini-3-flash-preview,gemini-3-flash-preview,claude-sonnet-4-6,Clone/deepseek tier2 synthesis — balanced (default)
 clone_deepseek_t3,clone_deepseek,claude-sonnet-4.6,claude-opus-4-6,gemini-3-flash-preview-high,Clone/deepseek tier3 synthesis — strong reasoning
 clone_deepseek_t4,clone_deepseek,claude-opus-4-6,claude-sonnet-4-6,gemini-3-flash-preview-high,Clone/deepseek tier4 synthesis — deepest (auto-upgrade)
 reference_check_extraction,reference_check,gemini-3-flash-preview,openrouter/gemini-3-flash-preview,claude-sonnet-4-6,Claim extraction model for reference check pipeline
