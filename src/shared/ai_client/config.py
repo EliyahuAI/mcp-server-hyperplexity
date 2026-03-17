@@ -46,6 +46,11 @@ MODEL_TIMEOUTS: Dict[str, int] = {
     'gemini-3-flash-preview-low': TIMEOUT_SLOW,
     'gemini-3-flash-preview-high': TIMEOUT_SLOW,
     'gemini-3-flash-preview-min': TIMEOUT_SLOW,
+    # Gemini 3.1 Flash Lite Preview (cost-optimized thinking model)
+    'gemini-3.1-flash-lite-preview': TIMEOUT_SLOW,
+    'gemini-3.1-flash-lite-preview-low': TIMEOUT_SLOW,
+    'gemini-3.1-flash-lite-preview-high': TIMEOUT_SLOW,
+    'gemini-3.1-flash-lite-preview-min': TIMEOUT_SLOW,
 
     # Very slow models (8 mins) — slow on large prompts via OpenRouter
     'moonshotai/kimi-k2.5': TIMEOUT_VERY_SLOW,
@@ -169,6 +174,16 @@ MODEL_BACKUPS: Dict[str, List[str]] = {
     "deepseek-v3.2-exp":     ["deepseek-v3.2", "deepseek-v3.2-baseten"],
 
     # ── STACK 3: Extraction / Cost-Optimized ─────────────────────────────────
+    # Gemini 3.1 Flash Lite Preview (successor to 2.5 Flash Lite — thinking support, same cost tier)
+    "gemini-3.1-flash-lite-preview":            ["openrouter/gemini-3.1-flash-lite-preview", "gemini-2.5-flash-lite"],
+    "openrouter/gemini-3.1-flash-lite-preview": ["gemini-3.1-flash-lite-preview", "gemini-2.5-flash-lite"],
+    "gemini-3.1-flash-lite-preview-min":            ["openrouter/gemini-3.1-flash-lite-preview-min", "gemini-2.5-flash-lite"],
+    "openrouter/gemini-3.1-flash-lite-preview-min": ["gemini-3.1-flash-lite-preview-min", "gemini-2.5-flash-lite"],
+    "gemini-3.1-flash-lite-preview-low":            ["openrouter/gemini-3.1-flash-lite-preview-low", "gemini-2.5-flash-lite"],
+    "openrouter/gemini-3.1-flash-lite-preview-low": ["gemini-3.1-flash-lite-preview-low", "gemini-2.5-flash-lite"],
+    "gemini-3.1-flash-lite-preview-high":            ["openrouter/gemini-3.1-flash-lite-preview-high", "claude-sonnet-4-6"],
+    "openrouter/gemini-3.1-flash-lite-preview-high": ["gemini-3.1-flash-lite-preview-high", "claude-sonnet-4-6"],
+
     # Gemini 2.5 Flash Lite (primary extraction model — fast and cheap)
     "gemini-2.5-flash-lite":            ["openrouter/gemini-2.5-flash-lite", "deepseek-v3.2"],
     "openrouter/gemini-2.5-flash-lite": ["gemini-2.5-flash-lite", "deepseek-v3.2"],

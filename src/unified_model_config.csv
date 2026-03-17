@@ -16,6 +16,8 @@ gemini-3-flash-preview-high*,gemini,0,true,50,150,100,1.5,0.6,5,2,0.50,3.00,6553
 gemini-3-flash-preview-low*,gemini,0,true,50,150,100,1.5,0.6,5,2,0.50,3.00,65535,Tier 0: Gemini 3 Flash Preview LOW thinking (budget=1024; thinking tokens billed at output rate)
 gemini-3-flash-preview-min*,gemini,0,true,50,150,100,1.5,0.6,5,2,0.50,3.00,65535,Tier 0: Gemini 3 Flash Preview thinking disabled (budget=0; 65K output, 1M context)
 gemini-3-flash-preview*,gemini,0,true,50,150,100,1.5,0.6,5,2,0.50,3.00,65535,Tier 0: Gemini 3 Flash Preview MEDIUM thinking (budget=8192; thinking tokens billed at output rate)
+# TIER 0: Gemini 3.1 Flash Lite Preview (AI Studio native — cost-optimized thinking model; -min/-low/-high suffix sets thinkingBudget)
+gemini-3.1-flash-lite-preview*,gemini,0,true,50,180,120,1.6,0.65,5,2,0.25,1.50,65536,Tier 0: Gemini 3.1 Flash Lite Preview — thinking support (-min/-low/bare/-high); successor to 2.5-flash-lite
 # TIER 1 OPTIMIZED: Gemini Flash (2.5 Flash 65K output, 2.0 Flash 8K output)
 gemini-2.5-flash*,gemini,1,true,50,150,100,1.5,0.6,5,2,0.30,2.50,65535,Tier 1: Gemini 2.5 Flash - Latest flagship (65K output limit)
 gemini-2-5-flash*,gemini,1,true,50,150,100,1.5,0.6,5,2,0.30,2.50,65535,Tier 1: Gemini 2.5 Flash - Alternate naming (65K output limit)
@@ -110,6 +112,8 @@ openrouter/gemini-3-flash-preview*,openrouter,1,true,50,150,100,1.5,0.6,5,2,0.50
 # OpenRouter: Gemini 2.5 Flash variants (IMPORTANT: -lite before bare flash* to prevent mismatch)
 openrouter/gemini-2.5-flash-lite*,openrouter,1,true,50,180,120,1.6,0.65,5,2,0.10,0.40,65535,OpenRouter: Gemini 2.5 Flash Lite via OpenRouter (google/gemini-2.5-flash-lite)
 openrouter/gemini-2.5-flash*,openrouter,1,true,50,150,100,1.5,0.6,5,2,0.30,2.50,65535,OpenRouter: Gemini 2.5 Flash via OpenRouter (google/gemini-2.5-flash)
+# OpenRouter: Gemini 3.1 Flash Lite Preview (routes to google/gemini-3.1-flash-lite-preview via OpenRouter)
+openrouter/gemini-3.1-flash-lite-preview*,openrouter,1,true,50,180,120,1.6,0.65,5,2,0.25,1.50,65536,OpenRouter: Gemini 3.1 Flash Lite Preview — thinking support (-min/-low/bare/-high) via OpenRouter
 
 # TIER 3 OPTIMIZED: Perplexity sonar-deep-research (40 RPM - SEVERELY CONSTRAINED + $5/1000 searches)
 sonar-deep-research*,perplexity,1,true,3,10,5,0.8,0.5,3,2,2.00,8.00,32000,Tier 3: Deep research - 40 RPM + $5/1000 searches

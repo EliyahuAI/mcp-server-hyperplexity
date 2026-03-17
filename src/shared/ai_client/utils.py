@@ -113,7 +113,7 @@ def parse_gemini_thinking_suffix(model: str):
     Returns:
         Tuple of (base_model_name: str, thinking_budget: int | None)
     """
-    if 'gemini-3-flash-preview' not in model:
+    if 'gemini-3-flash-preview' not in model and 'gemini-3.1-flash-lite-preview' not in model:
         return model, None
 
     for suffix, budget in _GEMINI_THINKING_BUDGETS.items():
