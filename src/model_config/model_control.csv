@@ -3,7 +3,7 @@ config_gen_primary,config_gen,openrouter/gemini-3-flash-preview-low,gemini-3-fla
 config_gen_qc_default,qc,openrouter/gemini-3-flash-preview-low,gemini-3-flash-preview-low,claude-sonnet-4-6,Default QC model used by config_settings.json
 table_maker_interview,table_maker,openrouter/gemini-3-flash-preview-min,gemini-3-flash-preview-min,claude-sonnet-4-6,Table maker interview phase model
 table_maker_background_research,table_maker,sonar-pro,sonar,the-clone-flash,Background research model (Step 0) — sonar-pro with high context
-table_maker_column_definition,table_maker,openrouter/gemini-3-flash-lite-preview-low,openrouter/gemini-3.1-flash-lite-preview-min,sonar-pro,Column definition model (Step 1) — medium thinking
+table_maker_column_definition,table_maker,openrouter/gemini-3.1-flash-lite-preview-low,openrouter/gemini-3.1-flash-lite-preview-min,sonar-pro,Column definition model (Step 1) — medium thinking
 table_maker_row_discovery_l1,table_maker,sonar,sonar-pro,the-clone-flash,Row discovery escalation level 1 (active)
 table_maker_row_discovery_l2,table_maker,sonar-pro,the-clone-flash,,Row discovery escalation level 2 (currently disabled)
 table_maker_row_discovery_l3,table_maker,claude-haiku-4-5,,,Row discovery escalation level 3 (currently disabled)
