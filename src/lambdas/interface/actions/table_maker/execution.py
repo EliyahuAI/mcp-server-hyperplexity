@@ -2623,6 +2623,18 @@ async def execute_full_table_generation(
                                         f"[RUMOR] Validator confirmed {len(validated_rumor_rows)}/{len(rumor_candidates)} candidates"
                                     )
 
+                                    # Track rumor validation costs in the runs DB
+                                    rumor_val_enhanced = validation_result.get('enhanced_data')
+                                    if rumor_val_enhanced:
+                                        _add_api_call_to_runs(
+                                            session_id=session_id,
+                                            run_key=run_key,
+                                            api_response={'enhanced_data': rumor_val_enhanced},
+                                            model=rumor_config.get('validation_model', 'sonar'),
+                                            processing_time=validation_result.get('stats', {}).get('validation_time_seconds', 0.0),
+                                            call_type='rumor_validation'
+                                        )
+
                                     # Save rumor validation results to table_maker folder
                                     _save_to_s3(
                                         storage_manager=storage_manager,

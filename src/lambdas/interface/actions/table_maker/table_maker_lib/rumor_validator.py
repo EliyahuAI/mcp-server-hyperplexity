@@ -143,14 +143,20 @@ class RumorValidator:
 
         validation_time = time.time() - start_time
 
+        # Build enhanced_data for cost tracking by caller
+        enhanced_data = self._build_enhanced_data(validation_results, validation_time)
+        cost_usd = enhanced_data.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+
         return {
             'validated_rows': validated_rows,
             'filtered_rows': filtered_rows,
+            'enhanced_data': enhanced_data,
             'stats': {
                 'total_candidates': len(candidates),
                 'validation_passed': len(filtered_rows),
                 'validation_failed': len(validated_rows) - len(filtered_rows),
-                'validation_time_seconds': round(validation_time, 2)
+                'validation_time_seconds': round(validation_time, 2),
+                'cost_usd': cost_usd,
             }
         }
 
@@ -437,3 +443,77 @@ class RumorValidator:
         soft_score = validation_result.get('soft_requirements_score', 0)
 
         return True, f"Passed (realness: {entity_confidence:.2f}, soft avg: {soft_score:.2f})"
+
+    def _build_enhanced_data(self, validation_results: Dict[str, Any], processing_time: float) -> Dict[str, Any]:
+        """
+        Convert validator lambda metadata into the enhanced_data format expected by
+        _add_api_call_to_runs so rumor validation costs are tracked in the runs DB.
+        """
+        from datetime import datetime, timezone
+
+        token_usage = validation_results.get('metadata', {}).get('token_usage', {})
+        total_cost = token_usage.get('total_cost', 0.0)
+        total_tokens = token_usage.get('total_tokens', 0)
+
+        # Build provider_metrics from by_provider breakdown
+        provider_metrics = {}
+        for provider, pdata in token_usage.get('by_provider', {}).items():
+            pcost = pdata.get('total_cost', 0.0)
+            ptokens = pdata.get('total_tokens', 0)
+            pcalls = pdata.get('calls', 0)
+            if pcost > 0 or ptokens > 0:
+                provider_metrics[provider] = {
+                    'calls': pcalls,
+                    'tokens': ptokens,
+                    'cost_actual': pcost,
+                    'cost_estimated': pcost,
+                    'time_actual': processing_time,
+                    'time_estimated': processing_time,
+                    'cache_hit_tokens': 0,
+                }
+
+        if not provider_metrics:
+            # Fallback: attribute to the configured validation model's provider
+            provider_metrics['perplexity'] = {
+                'calls': token_usage.get('api_calls', 1),
+                'tokens': total_tokens,
+                'cost_actual': total_cost,
+                'cost_estimated': total_cost,
+                'time_actual': processing_time,
+                'time_estimated': processing_time,
+                'cache_hit_tokens': 0,
+            }
+
+        cost_entry = {'total_cost': total_cost, 'input_cost': 0.0, 'output_cost': total_cost}
+
+        return {
+            'call_info': {
+                'model': self.validation_model,
+                'api_provider': next(iter(provider_metrics), 'perplexity'),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'search_context_size': self.context_size,
+                'max_web_searches': token_usage.get('api_calls', 0),
+            },
+            'tokens': {
+                'input_tokens': 0,
+                'output_tokens': 0,
+                'total_tokens': total_tokens,
+                'cache_creation_tokens': 0,
+                'cache_read_tokens': token_usage.get('cached_calls', 0),
+                'thoughts_token_count': 0,
+                'candidates_token_count': 0,
+            },
+            'costs': {
+                'actual': cost_entry,
+                'estimated': cost_entry,
+                'cache_savings': {'absolute_savings': 0.0, 'percentage_savings': 0.0},
+            },
+            'timing': {
+                'time_actual_seconds': processing_time,
+                'time_estimated_seconds': processing_time,
+            },
+            'caching': {},
+            'per_row': {},
+            'is_top_level_call': True,
+            'provider_metrics': provider_metrics,
+        }
