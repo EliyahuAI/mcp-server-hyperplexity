@@ -286,8 +286,8 @@ class RumorValidator:
             excel_s3_key = f"{self.email}/rumor_validation/{self.session_id}/validation.xlsx"
             config_s3_key = f"{self.email}/rumor_validation/{self.session_id}/config.json"
 
-            self.s3_manager.upload_file(excel_temp_path, excel_s3_key)
-            self.s3_manager.upload_file(config_temp_path, config_s3_key)
+            self.s3_manager.s3_client.upload_file(excel_temp_path, self.s3_manager.bucket_name, excel_s3_key)
+            self.s3_manager.s3_client.upload_file(config_temp_path, self.s3_manager.bucket_name, config_s3_key)
 
             logger.info(f"[RUMOR_VAL] Uploaded Excel to {excel_s3_key}")
             logger.info(f"[RUMOR_VAL] Uploaded config to {config_s3_key}")

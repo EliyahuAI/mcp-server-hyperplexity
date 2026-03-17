@@ -2623,6 +2623,21 @@ async def execute_full_table_generation(
                                         f"[RUMOR] Validator confirmed {len(validated_rumor_rows)}/{len(rumor_candidates)} candidates"
                                     )
 
+                                    # Save rumor validation results to table_maker folder
+                                    _save_to_s3(
+                                        storage_manager=storage_manager,
+                                        email=email,
+                                        session_id=session_id,
+                                        conversation_id=conversation_id,
+                                        file_name='rumor_result.json',
+                                        data={
+                                            'candidates': rumor_candidates,
+                                            'validated_rows': validation_result.get('validated_rows', []),
+                                            'filtered_rows': validated_rumor_rows,
+                                            'stats': validation_result.get('stats', {})
+                                        }
+                                    )
+
                                     # Merge validated rumor rows into discovery rows
                                     if validated_rumor_rows:
                                         discovery_only_rows = discovery_only_rows + validated_rumor_rows
