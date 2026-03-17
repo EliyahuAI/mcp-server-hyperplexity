@@ -144,6 +144,7 @@ QC is derived automatically from capability codes — **do not set `qc_settings`
 - **QC enabled** (standard): 2+ search groups with capability codes
 - **QC elevated**: any group uses `C` or `U` — triggers the stronger QC tier automatically
 - **Token Allocation**: Default 8K base + 4K per validated column (excluding ID fields)
+- **Cost impact**: Elevated QC (triggered by `C` or `U` on any group) uses a claude-class model and is significantly more expensive than standard QC (gemini-flash). To reduce cost, remove `C`/`U` flags or consolidate to 1 search group.
 
 ## Search Group Requirements (MANDATORY)
 Search groups are **REQUIRED** for every configuration - they are essential for building an effective search strategy and cannot be omitted.

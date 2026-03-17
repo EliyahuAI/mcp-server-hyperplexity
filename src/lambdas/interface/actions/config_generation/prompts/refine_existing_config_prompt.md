@@ -95,6 +95,19 @@ This conversation context is essential for making informed refinements that buil
 - **general_notes**: Clear, business-focused guidance without technical implementation details. This is a great way to foundationally direct all of the research. 
 - **column notes**: Utilize column notes to add nuance to the requirements. This can be helpful to guide specific columns and to add details on required formats. When a user specifically mentions an issue with a column - this detail must be explicit in the notes. 
 
+### 6. Cost Reduction Strategies
+When the user asks to make a run cheaper or faster, pull these levers in order (highest impact first):
+
+1. **Remove `C` and `U` flags** — these are 2–5× more expensive and also trigger elevated QC (claude-class QC model). Removing them drops QC to standard flash tier automatically.
+2. **Remove `P` flag** — if exact text citation isn't required, removing `P` switches from the-clone models to cheaper search models.
+3. **Consolidate search groups** — fewer groups = fewer AI calls per row. Merge groups whose sources naturally overlap.
+4. **Reduce to 1 search group** — eliminates QC entirely (QC only activates with ≥2 groups). Maximum cost reduction but loses cross-check accuracy.
+
+**QC is fully automatic** — you cannot set it directly. The tier is determined by group count and model tier:
+- 1 group → QC off
+- 2+ groups, no C/U → standard QC (cheap flash model)
+- 2+ groups, any C/U → elevated QC (claude-class model, expensive)
+
 ## Common Refinement Scenarios
 - **Restructure search groups** to better reflect where information appears in sources
 - **Escalate underperforming search groups** by adding `U` to the group (previous results wrong) or `C` (needs deep synthesis)
@@ -102,6 +115,7 @@ This conversation context is essential for making informed refinements that buil
 - **Refine general and column notes descriptions** for clarity and business relevance
 - **Add unit requirements** to notes for measurement columns (weights, volumes, temperatures, etc.)
 - **Adjust importance levels** based on business priorities and user feedback
+- **Make the run cheaper** by removing C/U/P flags, consolidating search groups, or reducing to 1 group
 
 {{TABLE_ANALYSIS}}
 
