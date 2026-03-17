@@ -365,14 +365,18 @@ class RumorValidator:
 
             # Extract Realness Score validation
             realness_data = validation_result.get('Realness Score', {})
-            entity_exists = float(realness_data.get('answer', 0)) >= self.confidence_threshold
-            entity_confidence = float(realness_data.get('answer', 0))
+            try:
+                entity_confidence = float(realness_data.get('value', 0))
+            except (ValueError, TypeError):
+                entity_confidence = 0.0
+            entity_exists = entity_confidence >= self.confidence_threshold
 
-            # Extract hard requirement scores
+            # Extract hard requirement scores (values are "Yes"/"No" strings)
             hard_req_scores = []
             for col_name, col_result in validation_result.items():
                 if col_name.startswith('Hard: '):
-                    score = float(col_result.get('answer', -999))
+                    val = str(col_result.get('value', '')).strip().lower()
+                    score = 1.0 if val in ('yes', 'true', '1', 'pass', 'passed') else 0.0
                     hard_req_scores.append(score)
 
             hard_requirements_met = all(
@@ -380,11 +384,12 @@ class RumorValidator:
                 for score in hard_req_scores
             )
 
-            # Extract soft requirement scores
+            # Extract soft requirement scores (values are "Yes"/"No" strings)
             soft_req_scores = []
             for col_name, col_result in validation_result.items():
                 if col_name.startswith('Soft: '):
-                    score = float(col_result.get('answer', 0))
+                    val = str(col_result.get('value', '')).strip().lower()
+                    score = 1.0 if val in ('yes', 'true', '1', 'pass', 'passed') else 0.0
                     soft_req_scores.append(score)
 
             avg_soft_score = sum(soft_req_scores) / len(soft_req_scores) if soft_req_scores else 0
