@@ -12705,16 +12705,7 @@ function handleTableExecutionComplete(message) {
             }
 
             // Add a success message to the card
-            const messagesDiv = document.getElementById(`${tableMakerCardId}-messages`);
-            if (messagesDiv) {
-                const successMsg = document.createElement('div');
-                successMsg.className = 'message message-success';
-                successMsg.innerHTML = `
-                    <span class="message-icon">[SUCCESS]</span>
-                    <div>Table generation complete! ${message.row_count} rows ready for validation.</div>
-                `;
-                messagesDiv.appendChild(successMsg);
-            }
+            showMessage(`${tableMakerCardId}-messages`, `Table generation complete! ${message.row_count} rows ready for validation.`, 'success');
         }
     }
 
@@ -12800,19 +12791,7 @@ function handleTableExecutionUnrecoverable(message) {
     console.log('[UNRECOVERABLE] Request is impossible');
     completeThinkingInCard(tableMakerCardId, 'Unable to discover rows');
 
-    const card = document.getElementById(tableMakerCardId);
-    if (card) {
-        const messagesDiv = document.getElementById(`${tableMakerCardId}-messages`);
-        if (messagesDiv) {
-            const apologyMsg = document.createElement('div');
-            apologyMsg.className = 'message message-error';
-            apologyMsg.innerHTML = `
-                <span class="message-icon">[NOTICE]</span>
-                <div>${message.user_facing_apology || "I wasn't able to find rows for this table."}</div>
-            `;
-            messagesDiv.appendChild(apologyMsg);
-        }
-    }
+    showMessage(`${tableMakerCardId}-messages`, message.user_facing_apology || "I wasn't able to find rows for this table.", 'error');
 
     if (message.show_new_table_card) {
         setTimeout(() => showGetStartedCard(), 1500);
@@ -13284,7 +13263,6 @@ const initialPrompt = `<div class="chat-message ai">
 
 const content = `
     ${initialPrompt}
-    <div id="${cardId}-messages"></div>
     <div id="${cardId}-chat" style="margin-bottom: 16px;"></div>
     <div id="${cardId}-input-container">
         <textarea id="${cardId}-input" class="table-maker-textarea"
@@ -13292,6 +13270,7 @@ const content = `
             style="width: 100%; min-height: 100px; resize: vertical;"
             onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();const btn=document.querySelector('#${cardId}-buttons button.primary');if(btn){btn.focus();btn.classList.add('hover');setTimeout(()=>btn.classList.remove('hover'),1500);}}"></textarea>
     </div>
+    <div id="${cardId}-messages"></div>
 `;
 
 const card = createCard({
