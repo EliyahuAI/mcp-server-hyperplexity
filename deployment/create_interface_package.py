@@ -1829,9 +1829,34 @@ def configure_sqs_mappings_for_mode(mode, lambda_client, function_name, region):
         configure_sqs_event_source_mappings(lambda_client, function_name, region)
 
     else:  # unified
-        # Legacy behavior - configure mappings
-        logger.info("[MAPPINGS] Unified mode: Configuring SQS event source mappings (legacy)")
+        # Configure mappings for unified lambda
+        logger.info("[MAPPINGS] Unified mode: Configuring SQS event source mappings")
         configure_sqs_event_source_mappings(lambda_client, function_name, region)
+
+        # Remove SQS mappings from background lambdas so they don't compete with the unified lambda
+        base_name = function_name
+        background_candidates = []
+        if 'interface' in base_name.lower():
+            background_candidates.append(base_name.lower().replace('interface', 'background'))
+            background_candidates.append(base_name.lower().replace('interface', 'background') + '-dev')
+        else:
+            background_candidates.append(base_name + '-background')
+            background_candidates.append(base_name + '-background-dev')
+
+        for bg_name in background_candidates:
+            try:
+                existing = lambda_client.list_event_source_mappings(FunctionName=bg_name).get('EventSourceMappings', [])
+                sqs_mappings = [m for m in existing if 'sqs' in m['EventSourceArn'].lower()]
+                if not sqs_mappings:
+                    continue
+                logger.info(f"[MAPPINGS] Removing {len(sqs_mappings)} SQS mapping(s) from background lambda: {bg_name}")
+                for m in sqs_mappings:
+                    lambda_client.delete_event_source_mapping(UUID=m['UUID'])
+                    logger.info(f"[MAPPINGS] Deleted mapping {m['EventSourceArn'].split(':')[-1]} (UUID: {m['UUID']}) from {bg_name}")
+            except lambda_client.exceptions.ResourceNotFoundException:
+                logger.info(f"[MAPPINGS] Background lambda {bg_name} not found, skipping")
+            except Exception as e:
+                logger.warning(f"[MAPPINGS] Could not clean up SQS mappings from {bg_name}: {e}")
 
 def main():
     """Main function."""
