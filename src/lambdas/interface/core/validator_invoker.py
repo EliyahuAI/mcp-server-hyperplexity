@@ -813,3 +813,88 @@ def _handle_special_request(special_request, excel_s3_key, S3_CACHE_BUCKET, VALI
             'success': False,
             'error': f'Unknown special request action: {action}'
         }
+
+
+def invoke_validator_lambda_with_rows(
+    rows: list,
+    config_s3_key: str,
+    S3_CACHE_BUCKET: str,
+    VALIDATOR_LAMBDA_NAME: str,
+    session_id: str = None,
+    email: str = None
+) -> dict:
+    """
+    Invoke validator lambda with rows passed directly in the payload.
+
+    Bypasses Excel/S3 file creation and parsing — config is already uploaded
+    to S3; rows are passed inline. Reuses all existing retry and parse logic.
+
+    Args:
+        rows: List of row dicts, each must already contain a '_row_key' field.
+        config_s3_key: S3 key of the config JSON (already uploaded).
+        S3_CACHE_BUCKET: S3 bucket name containing the config.
+        VALIDATOR_LAMBDA_NAME: Name of the validator Lambda function.
+        session_id: Session ID for memory storage (optional).
+        email: User email for memory storage (optional).
+
+    Returns:
+        Dict matching the shape returned by invoke_validator_lambda:
+        {
+            'validation_results': {row_key: {col: {value: ...}, ...}, ...},
+            'metadata': {...},
+            ...
+        }
+    """
+    logger.info(
+        f"[DIRECT_ROWS] invoke_validator_lambda_with_rows called "
+        f"for {len(rows)} rows, session={session_id}"
+    )
+
+    payload = {
+        "test_mode": False,
+        "config_s3_key": config_s3_key,
+        "config_s3_bucket": S3_CACHE_BUCKET,
+        "validation_data": {
+            "rows": rows,
+            "max_rows": len(rows),
+            "batch_size": len(rows),
+            "total_dataset_size": len(rows)
+        },
+        "validation_history": {},
+        "session_id": session_id,
+        "email": email
+    }
+
+    logger.info(
+        f"[DIRECT_ROWS] Invoking {VALIDATOR_LAMBDA_NAME} with "
+        f"{len(rows)} rows and config_s3_key={config_s3_key}"
+    )
+
+    response = _invoke_validator_with_retry(lambda_client, VALIDATOR_LAMBDA_NAME, payload, logger)
+    response_payload = json.loads(response['Payload'].read().decode('utf-8'))
+
+    # Extract validation results from standard response shape
+    validation_results = None
+    metadata = {}
+
+    if isinstance(response_payload, dict):
+        body = response_payload.get('body', {})
+        if isinstance(body, dict):
+            data = body.get('data', {})
+            validation_results = data.get('rows')
+            metadata = body.get('metadata', {})
+        if 'validation_results' in response_payload and not validation_results:
+            validation_results = response_payload['validation_results']
+
+    if validation_results is None:
+        logger.warning("[DIRECT_ROWS] No validation results in response")
+        validation_results = {}
+
+    logger.info(f"[DIRECT_ROWS] Got results for {len(validation_results)} rows")
+
+    return {
+        'validation_results': validation_results,
+        'metadata': metadata,
+        'total_rows': len(rows),
+        'total_processed_rows': len(validation_results),
+    }

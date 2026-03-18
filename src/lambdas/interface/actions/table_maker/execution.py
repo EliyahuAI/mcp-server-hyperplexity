@@ -2593,34 +2593,73 @@ async def execute_full_table_generation(
                                     search_strategy=search_strategy,
                                     columns=columns,
                                     per_model_count=rows_needed,
-                                    models=[rumor_config.get('model', 'claude-opus-4-6')],
+                                    models=([rumor_config['model']] if rumor_config.get('model') else None),
                                     realness_threshold=rumor_config.get('realness_threshold', 0.6),
                                     existing_rows=existing_rows
                                 )
-                                rumor_candidates = rumor_result.get('candidates', [])
-                                logger.info(f"[RUMOR] Generated {len(rumor_candidates)} candidates after dedup/filter")
+                                keep_candidates = rumor_result.get('keep_candidates', [])
+                                validate_candidates = rumor_result.get('validate_candidates', [])
+                                rumor_stats = rumor_result.get('stats', {})
+                                logger.info(
+                                    f"[RUMOR] Generated: K={len(keep_candidates)}, "
+                                    f"V={len(validate_candidates)}, "
+                                    f"R={rumor_stats.get('reject_count', 0)} candidates"
+                                )
 
-                                # Validate rumor candidates via validator lambda
-                                if rumor_candidates:
+                                # Save pre-validation candidates to table maker folder
+                                _save_to_s3(
+                                    storage_manager=storage_manager,
+                                    email=email,
+                                    session_id=session_id,
+                                    conversation_id=conversation_id,
+                                    file_name='rumor_candidates_raw.json',
+                                    data={
+                                        'keep_candidates': keep_candidates,
+                                        'validate_candidates': validate_candidates,
+                                        'reject_count': rumor_stats.get('reject_count', 0),
+                                        'stats': rumor_stats,
+                                        'candidates_markdown': rumor_result.get('candidates_markdown', '')
+                                    }
+                                )
+
+                                # K rows: bypass validation — mark as pre-screened
+                                keep_rows = [
+                                    {
+                                        **c,
+                                        'validation_passed': True,
+                                        'entity_exists': True,
+                                        'validation_reasoning': 'Pre-screened K by generation model'
+                                    }
+                                    for c in keep_candidates
+                                ]
+
+                                # V rows: send to validator lambda
+                                validated_rumor_rows = list(keep_rows)  # start with K rows
+
+                                if validate_candidates:
                                     from .table_maker_lib.rumor_validator import RumorValidator
                                     rumor_validator = RumorValidator(
                                         ai_client=ai_client,
                                         session_id=session_id,
                                         email=email,
                                         s3_manager=storage_manager,
+                                        conversation_id=conversation_id,
                                         validation_model=rumor_config.get('validation_model', 'sonar'),
                                         context_size=rumor_config.get('context_size', 'low'),
                                         confidence_threshold=rumor_config.get('realness_threshold', 0.6)
                                     )
                                     validation_result = await rumor_validator.validate_candidates(
-                                        candidates=rumor_candidates,
+                                        validate_candidates=validate_candidates,
                                         columns=columns,
                                         requirements=search_strategy.get('requirements', []),
                                         table_context=conversation_state.get('user_request', '')
                                     )
-                                    validated_rumor_rows = validation_result.get('filtered_rows', [])
+                                    v_filtered = validation_result.get('filtered_rows', [])
+                                    validated_rumor_rows = keep_rows + v_filtered
                                     logger.info(
-                                        f"[RUMOR] Validator confirmed {len(validated_rumor_rows)}/{len(rumor_candidates)} candidates"
+                                        f"[RUMOR] Validator confirmed {len(v_filtered)}/{len(validate_candidates)} V candidates; "
+                                        f"{len(keep_rows)} K rows bypass validation; "
+                                        f"total={len(validated_rumor_rows)}"
                                     )
 
                                     # Track rumor validation costs in the runs DB
@@ -2634,26 +2673,33 @@ async def execute_full_table_generation(
                                             processing_time=validation_result.get('stats', {}).get('validation_time_seconds', 0.0),
                                             call_type='rumor_validation'
                                         )
+                                else:
+                                    validation_result = {'validated_rows': [], 'filtered_rows': [], 'stats': {}}
+                                    logger.info(f"[RUMOR] No V candidates — skipping validator lambda")
 
-                                    # Save rumor validation results to table_maker folder
-                                    _save_to_s3(
-                                        storage_manager=storage_manager,
-                                        email=email,
-                                        session_id=session_id,
-                                        conversation_id=conversation_id,
-                                        file_name='rumor_result.json',
-                                        data={
-                                            'candidates': rumor_candidates,
-                                            'validated_rows': validation_result.get('validated_rows', []),
-                                            'filtered_rows': validated_rumor_rows,
-                                            'stats': validation_result.get('stats', {})
+                                # Save rumor results to table_maker folder
+                                _save_to_s3(
+                                    storage_manager=storage_manager,
+                                    email=email,
+                                    session_id=session_id,
+                                    conversation_id=conversation_id,
+                                    file_name='rumor_result.json',
+                                    data={
+                                        'keep_candidates': keep_candidates,
+                                        'validate_candidates': validate_candidates,
+                                        'validated_rows': validation_result.get('validated_rows', []),
+                                        'filtered_rows': validated_rumor_rows,
+                                        'stats': {
+                                            **rumor_stats,
+                                            **validation_result.get('stats', {})
                                         }
-                                    )
+                                    }
+                                )
 
-                                    # Merge validated rumor rows into discovery rows
-                                    if validated_rumor_rows:
-                                        discovery_only_rows = discovery_only_rows + validated_rumor_rows
-                                        logger.info(f"[RUMOR] Merged: {len(discovery_only_rows)} total rows (search + rumor)")
+                                # Merge validated rumor rows into discovery rows
+                                if validated_rumor_rows:
+                                    discovery_only_rows = discovery_only_rows + validated_rumor_rows
+                                    logger.info(f"[RUMOR] Merged: {len(discovery_only_rows)} total rows (search + rumor)")
                             except Exception as e:
                                 logger.error(f"[RUMOR] Rumor generation/validation failed (non-fatal): {e}")
                                 # Non-fatal: continue without rumor candidates

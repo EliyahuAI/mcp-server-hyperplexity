@@ -10,7 +10,6 @@ import asyncio
 import json
 import logging
 import re
-import hashlib
 from typing import Dict, Any, List, Optional
 from difflib import SequenceMatcher
 
@@ -40,35 +39,24 @@ class RumorGenerator:
         target_candidate_count: int = 30,
         models: Optional[List[str]] = None,
         per_model_count: int = 10,
-        realness_threshold: float = 0.6,
+        realness_threshold: float = 0.6,  # kept for backward compat, no longer used for filtering
         existing_rows: Optional[List[Dict]] = None
     ) -> Dict[str, Any]:
         """
         Generate candidate rows using multiple AI models in parallel.
 
-        Args:
-            search_strategy: Search strategy from column_definition (description, requirements, etc.)
-            columns: Column definitions (ID columns only - importance='ID')
-            target_candidate_count: Target number of candidates to generate
-            models: List of model names to use (default: haiku, gemini, deepseek)
-            per_model_count: Number of candidates per model
-            realness_threshold: Minimum realness score to include candidate
-
         Returns:
             {
-                "candidates": [
-                    {
-                        "id_values": {"Company Name": "Anthropic", "Website": "anthropic.com"},
-                        "realness_score": 0.95,
-                        "source_models": ["haiku", "gemini"],
-                        "match_score": 0.95  # Mapped from realness_score for consolidation
-                    }
-                ],
-                "candidates_markdown": "| Company Name | Website | Realness Score | ...",
+                "keep_candidates": [...],     # K-disposition rows — include directly
+                "validate_candidates": [...], # V-disposition rows — need validation
+                "candidates_markdown": "...",
                 "stats": {
                     "total_generated": 30,
                     "post_dedup_count": 25,
-                    "models_used": ["haiku", "gemini", "deepseek"],
+                    "keep_count": 10,
+                    "validate_count": 12,
+                    "reject_count": 3,
+                    "models_used": [...],
                     "generation_time_seconds": 2.5
                 }
             }
@@ -76,9 +64,18 @@ class RumorGenerator:
         import time
         start_time = time.time()
 
-        # Default model (Opus for broad entity knowledge)
+        # Resolve default model via ModelConfig
         if models is None:
-            models = ["claude-opus-4-6"]
+            try:
+                from model_config_loader import ModelConfig
+                model_name = ModelConfig.get('rumor_generation')
+                if not model_name:
+                    raise ValueError("Empty model name")
+                models = [model_name]
+                logger.info(f"[RUMOR] Using model from ModelConfig: {model_name}")
+            except Exception as e:
+                logger.warning(f"[RUMOR] ModelConfig unavailable ({e}), falling back to claude-opus-4-6")
+                models = ["claude-opus-4-6"]
 
         logger.info(f"[RUMOR] Starting rumor generation with {len(models)} models, {per_model_count} candidates each")
 
@@ -87,6 +84,10 @@ class RumorGenerator:
         if not id_columns:
             logger.warning("[RUMOR] No ID columns found, using all columns")
             id_columns = columns
+
+        # Extract hard requirements for column generation
+        requirements = search_strategy.get('requirements', [])
+        hard_requirements = [r for r in requirements if r.get('type', '').lower() == 'hard']
 
         # Execute parallel generation across models
         all_candidates = []
@@ -98,7 +99,8 @@ class RumorGenerator:
                 search_strategy=search_strategy,
                 id_columns=id_columns,
                 target_count=per_model_count,
-                existing_rows=existing_rows or []
+                existing_rows=existing_rows or [],
+                hard_requirements=hard_requirements
             )
             generation_tasks.append(task)
 
@@ -127,26 +129,47 @@ class RumorGenerator:
         deduplicated = self._deduplicate_candidates(all_candidates, id_columns)
         logger.info(f"[RUMOR] Deduplication: {len(all_candidates)} → {len(deduplicated)} candidates")
 
-        # Filter by realness threshold
-        filtered = [c for c in deduplicated if c.get('realness_score', 0) >= realness_threshold]
-        logger.info(f"[RUMOR] Filtered by realness ≥ {realness_threshold}: {len(deduplicated)} → {len(filtered)} candidates")
+        # Split by disposition: K / V / R
+        keep_candidates = []
+        validate_candidates = []
+        reject_count = 0
 
-        # Map realness_score to match_score for consolidation compatibility
-        for candidate in filtered:
+        for candidate in deduplicated:
+            disposition = candidate.get('disposition', 'V').upper()
+            # Map realness_score → match_score for consolidation compatibility
             candidate['match_score'] = candidate.get('realness_score', 0.7)
 
-        # Format as markdown table
-        markdown_table = self._format_markdown_table(filtered, id_columns)
+            if disposition == 'K':
+                keep_candidates.append(candidate)
+            elif disposition == 'R':
+                reject_count += 1
+            else:
+                # V or anything else → validate
+                validate_candidates.append(candidate)
+
+        logger.info(
+            f"[RUMOR] Disposition split: K={len(keep_candidates)}, "
+            f"V={len(validate_candidates)}, R={reject_count}"
+        )
+
+        # Format as markdown table (all non-rejected)
+        all_non_rejected = keep_candidates + validate_candidates
+        markdown_table = self._format_markdown_table(all_non_rejected, id_columns, hard_requirements)
 
         generation_time = time.time() - start_time
 
         return {
-            'candidates': filtered,
+            'keep_candidates': keep_candidates,
+            'validate_candidates': validate_candidates,
+            # Legacy key for backward compat
+            'candidates': all_non_rejected,
             'candidates_markdown': markdown_table,
             'stats': {
                 'total_generated': len(all_candidates),
                 'post_dedup_count': len(deduplicated),
-                'post_filter_count': len(filtered),
+                'keep_count': len(keep_candidates),
+                'validate_count': len(validate_candidates),
+                'reject_count': reject_count,
                 'models_used': models,
                 'generation_time_seconds': round(generation_time, 2)
             }
@@ -158,27 +181,13 @@ class RumorGenerator:
         search_strategy: Dict[str, Any],
         id_columns: List[Dict[str, Any]],
         target_count: int,
-        existing_rows: Optional[List[Dict]] = None
+        existing_rows: Optional[List[Dict]] = None,
+        hard_requirements: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
-        """
-        Generate candidates using a single AI model.
+        """Generate candidates using a single AI model."""
+        if hard_requirements is None:
+            hard_requirements = []
 
-        Args:
-            model: Model name (e.g., "claude-haiku-4-5")
-            search_strategy: Search strategy with description, requirements
-            id_columns: ID column definitions
-            target_count: Number of candidates to generate
-
-        Returns:
-            {
-                "candidates": [
-                    {
-                        "id_values": {"Company Name": "Anthropic"},
-                        "realness_score": 0.95
-                    }
-                ]
-            }
-        """
         # Load prompt template
         prompt_template = self.prompt_loader.load_prompt('rumor_generation')
 
@@ -225,10 +234,14 @@ class RumorGenerator:
                 )
 
         # Build output format example with real column names
-        col_headers = id_col_names + ['Confidence Score']
+        # Columns: ID cols + Disposition + one [HARD] col per hard requirement
+        hard_col_names = [f"[HARD] {r.get('requirement', '')[:40]}" for r in hard_requirements]
+        col_headers = id_column_names + ['Disposition'] + hard_col_names
         header_row = '| ' + ' | '.join(col_headers) + ' |'
         sep_row = '| ' + ' | '.join('-' * max(len(c), 3) for c in col_headers) + ' |'
-        example_row = '| ' + ' | '.join(['...' for _ in id_col_names] + ['0.85']) + ' |'
+        # Example data row
+        example_values = ['...' for _ in id_column_names] + ['V'] + ['?' for _ in hard_col_names]
+        example_row = '| ' + ' | '.join(example_values) + ' |'
         output_format_example = '\n'.join([header_row, sep_row, example_row])
 
         # Fill prompt template
@@ -263,7 +276,9 @@ class RumorGenerator:
             candidates_markdown = structured_output.get('candidates_markdown', '')
 
             # Parse markdown table to extract candidates
-            candidates = self._parse_markdown_to_rows(candidates_markdown, id_column_names)
+            candidates = self._parse_markdown_to_rows(
+                candidates_markdown, id_column_names, hard_requirements
+            )
 
             logger.info(f"[RUMOR] Model {model} parsed {len(candidates)} candidates from markdown")
 
@@ -276,25 +291,22 @@ class RumorGenerator:
     def _parse_markdown_to_rows(
         self,
         markdown_str: str,
-        id_column_names: List[str]
+        id_column_names: List[str],
+        hard_requirements: Optional[List[Dict[str, Any]]] = None
     ) -> List[Dict[str, Any]]:
         """
-        Parse markdown table to extract id_values + realness_score.
+        Parse markdown table to extract id_values + disposition + hard_req_prereqs.
 
         Expected format:
-        | Company Name | Website | Realness Score |
-        |--------------|---------|----------------|
-        | Anthropic | anthropic.com | 0.95 |
-
-        Args:
-            markdown_str: Markdown table string
-            id_column_names: Expected ID column names
-
-        Returns:
-            List of candidates with id_values and realness_score
+        | Company Name | Website | Disposition | [HARD] Revenue > $10M |
+        |---|---|---|---|
+        | Anthropic | anthropic.com | K | T |
         """
         if not markdown_str or not isinstance(markdown_str, str):
             return []
+
+        if hard_requirements is None:
+            hard_requirements = []
 
         candidates = []
         lines = markdown_str.strip().split('\n')
@@ -315,12 +327,26 @@ class RumorGenerator:
         # Parse headers
         headers = [h.strip() for h in header_line.split('|') if h.strip()]
 
-        # Find score column index (handles both old and new column name)
-        realness_idx = None
+        # Find disposition column index
+        disposition_idx = None
         for i, h in enumerate(headers):
-            if h.lower() in ['realness score', 'realness', 'confidence score', 'confidence', 'score']:
-                realness_idx = i
+            if h.lower() == 'disposition':
+                disposition_idx = i
                 break
+
+        # Find [HARD] column indices
+        hard_col_indices = {}  # header_text → column_index
+        for i, h in enumerate(headers):
+            if h.startswith('[HARD]') or h.startswith('[hard]'):
+                hard_col_indices[h] = i
+
+        # Also support legacy "Confidence Score" / "Realness Score" for backward compat
+        legacy_score_idx = None
+        if disposition_idx is None:
+            for i, h in enumerate(headers):
+                if h.lower() in ['realness score', 'realness', 'confidence score', 'confidence', 'score']:
+                    legacy_score_idx = i
+                    break
 
         # Parse data rows
         for line in lines[header_idx + 1:]:
@@ -343,7 +369,9 @@ class RumorGenerator:
 
             # Extract ID values
             id_values = {}
-            realness_score = 0.7  # Default
+            disposition = 'V'  # Default
+            realness_score = 0.7  # Default (used for legacy compat)
+            hard_req_prereqs = {}  # {req_text: T/F/?}
 
             for col_idx, header in enumerate(headers):
                 if col_idx >= len(values):
@@ -351,16 +379,42 @@ class RumorGenerator:
 
                 cell_value = values[col_idx]
 
-                # Check if this is the Realness Score column
-                if col_idx == realness_idx:
-                    try:
-                        realness_score = float(cell_value)
-                    except ValueError:
-                        logger.warning(f"[RUMOR] Invalid realness score: {cell_value}")
-                        realness_score = 0.7
+                # Disposition column
+                if col_idx == disposition_idx:
+                    disp = cell_value.strip().upper()
+                    if disp in ('K', 'R', 'V'):
+                        disposition = disp
+                    else:
+                        disposition = 'V'  # Invalid → validate
                     continue
 
-                # Check if this is an ID column (case-insensitive match)
+                # Legacy score column
+                if col_idx == legacy_score_idx:
+                    try:
+                        score = float(cell_value)
+                        realness_score = score
+                        # Map legacy score to disposition
+                        if score >= 0.85:
+                            disposition = 'K'
+                        elif score < 0.5:
+                            disposition = 'R'
+                        else:
+                            disposition = 'V'
+                    except ValueError:
+                        disposition = 'V'
+                    continue
+
+                # [HARD] column
+                if header in hard_col_indices:
+                    val = cell_value.strip().upper()
+                    if val not in ('T', 'F', '?'):
+                        val = '?'
+                    # Extract short requirement text from header
+                    req_short = header.replace('[HARD]', '').replace('[hard]', '').strip()
+                    hard_req_prereqs[req_short] = val
+                    continue
+
+                # ID column (case-insensitive match)
                 matched = False
                 for id_col_name in id_column_names:
                     if header.lower() == id_col_name.lower():
@@ -369,14 +423,21 @@ class RumorGenerator:
                         break
 
                 if not matched:
-                    # If not found in expected ID columns, still include it
+                    # Include unknown columns in id_values anyway
                     id_values[header] = cell_value
 
             # Only add if we have at least one ID value
             if id_values:
+                # If any [HARD] is F, override disposition toward R
+                if any(v == 'F' for v in hard_req_prereqs.values()):
+                    if disposition == 'K':
+                        disposition = 'R'  # K with a failing HARD is a contradiction → reject
+
                 candidates.append({
                     'id_values': id_values,
-                    'realness_score': realness_score
+                    'disposition': disposition,
+                    'realness_score': realness_score,
+                    'hard_req_prereqs': hard_req_prereqs
                 })
 
         return candidates
@@ -393,20 +454,13 @@ class RumorGenerator:
         Reuses RowConsolidator logic:
         - Fuzzy match on ID column values
         - Merge source_models from duplicates
-        - Keep highest realness_score
-
-        Args:
-            candidates: List of candidates to deduplicate
-            id_columns: ID column definitions
-            similarity_threshold: Fuzzy matching threshold (default 0.85)
-
-        Returns:
-            Deduplicated list of candidates
+        - Keep higher disposition priority (K > V > R) and higher realness_score
         """
         if not candidates:
             return []
 
-        # Track unique candidates by composite key
+        _DISPOSITION_PRIORITY = {'K': 2, 'V': 1, 'R': 0}
+
         unique_candidates = []
         id_column_names = [col.get('name', '') for col in id_columns]
 
@@ -433,14 +487,19 @@ class RumorGenerator:
                     if existing_id_values.get(col_name)
                 ])
 
-                # Fuzzy match using SequenceMatcher
                 similarity = SequenceMatcher(None, composite_key, existing_composite_key).ratio()
 
                 if similarity >= similarity_threshold:
-                    # Found duplicate - merge source_models and keep higher realness_score
+                    # Found duplicate — merge source_models
                     existing_models = set(existing.get('source_models', []))
                     candidate_models = set(candidate.get('source_models', []))
                     existing['source_models'] = list(existing_models | candidate_models)
+
+                    # Keep higher disposition (K > V > R)
+                    existing_disp = existing.get('disposition', 'V')
+                    candidate_disp = candidate.get('disposition', 'V')
+                    if _DISPOSITION_PRIORITY.get(candidate_disp, 1) > _DISPOSITION_PRIORITY.get(existing_disp, 1):
+                        existing['disposition'] = candidate_disp
 
                     # Keep higher realness_score
                     if candidate.get('realness_score', 0) > existing.get('realness_score', 0):
@@ -457,25 +516,21 @@ class RumorGenerator:
     def _format_markdown_table(
         self,
         candidates: List[Dict[str, Any]],
-        id_columns: List[Dict[str, Any]]
+        id_columns: List[Dict[str, Any]],
+        hard_requirements: Optional[List[Dict[str, Any]]] = None
     ) -> str:
-        """
-        Format candidates as markdown table.
-
-        Args:
-            candidates: List of candidates
-            id_columns: ID column definitions
-
-        Returns:
-            Markdown table string
-        """
+        """Format candidates as markdown table with Disposition + T/F/? columns."""
         if not candidates:
             return ""
 
+        if hard_requirements is None:
+            hard_requirements = []
+
         id_column_names = [col.get('name', '') for col in id_columns]
+        hard_col_names = [f"[HARD] {r.get('requirement', '')[:40]}" for r in hard_requirements]
 
         # Build header
-        headers = id_column_names + ['Realness Score', 'Source Models']
+        headers = id_column_names + ['Disposition'] + hard_col_names + ['Source Models']
         header_line = '| ' + ' | '.join(headers) + ' |'
         separator_line = '|' + '|'.join(['---' for _ in headers]) + '|'
 
@@ -483,19 +538,24 @@ class RumorGenerator:
         rows = []
         for candidate in candidates:
             id_values = candidate.get('id_values', {})
-            realness = candidate.get('realness_score', 0.7)
+            disposition = candidate.get('disposition', 'V')
+            hard_prereqs = candidate.get('hard_req_prereqs', {})
             models = ', '.join(candidate.get('source_models', []))
 
             row_values = []
             for col_name in id_column_names:
                 row_values.append(str(id_values.get(col_name, '')))
 
-            row_values.append(f"{realness:.2f}")
+            row_values.append(disposition)
+
+            for hard_req in hard_requirements:
+                req_short = hard_req.get('requirement', '')[:40]
+                row_values.append(hard_prereqs.get(req_short, '?'))
+
             row_values.append(models)
 
             row_line = '| ' + ' | '.join(row_values) + ' |'
             rows.append(row_line)
 
-        # Combine all lines
         markdown_lines = [header_line, separator_line] + rows
         return '\n'.join(markdown_lines)

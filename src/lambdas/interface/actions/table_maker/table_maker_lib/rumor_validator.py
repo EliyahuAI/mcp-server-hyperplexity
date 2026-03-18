@@ -2,18 +2,15 @@
 """
 Rumor Validator for table_maker row discovery.
 
-Validates candidates using existing validation system to filter by entity existence
-and requirement compliance. Stores validation searches to agent_memory.json for recall
-during full validation.
+Validates V-disposition candidates using existing validation system to filter by entity existence
+and requirement compliance. K-disposition candidates bypass validation entirely.
+Stores validation searches to agent_memory.json for recall during full validation.
 """
 
 import json
 import logging
-import hashlib
-import tempfile
 import os
 from typing import Dict, Any, List, Optional
-from openpyxl import Workbook
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +24,7 @@ class RumorValidator:
         session_id: str,
         email: str,
         s3_manager,
+        conversation_id: str = "",
         validation_model: str = "sonar",
         context_size: str = "low",
         confidence_threshold: float = 0.7,
@@ -40,15 +38,17 @@ class RumorValidator:
             session_id: Session ID for memory storage
             email: User email
             s3_manager: S3 manager for file operations
+            conversation_id: Conversation ID (used for S3 config path)
             validation_model: Model to use for validation (default: sonar)
             context_size: Search context size (default: low)
-            confidence_threshold: Minimum realness score to pass (default: 0.7)
+            confidence_threshold: Minimum entity-exists score to pass (default: 0.7)
             hard_requirement_threshold: Minimum score for hard requirements (default: 0.0)
         """
         self.ai_client = ai_client
         self.session_id = session_id
         self.email = email
         self.s3_manager = s3_manager
+        self.conversation_id = conversation_id
         self.validation_model = validation_model
         self.context_size = context_size
         self.confidence_threshold = confidence_threshold
@@ -56,48 +56,36 @@ class RumorValidator:
 
     async def validate_candidates(
         self,
-        candidates: List[Dict[str, Any]],
+        validate_candidates: List[Dict[str, Any]],
         columns: List[Dict[str, Any]],
         requirements: List[Dict[str, Any]],
         table_context: str
     ) -> Dict[str, Any]:
         """
-        Validate candidates using the validation system.
+        Validate V-disposition candidates using the validation system.
+
+        K-disposition candidates should be passed via keep_candidates in execution.py
+        and merged after this call — they are NOT passed here.
 
         Args:
-            candidates: List of candidates to validate (rumor or search candidates)
+            validate_candidates: V-disposition candidates to validate
             columns: Column definitions (ID columns)
             requirements: Hard/soft requirements from search_strategy
             table_context: User context for the table
 
         Returns:
             {
-                "validated_rows": [
-                    {
-                        # Original candidate fields +
-                        "entity_exists": True,
-                        "entity_confidence": 0.95,
-                        "hard_requirements_met": True,
-                        "soft_requirements_score": 0.8,
-                        "validation_passed": True,
-                        "validation_reasoning": "..."
-                    }
-                ],
-                "filtered_rows": [...],  # Only rows that passed
-                "stats": {
-                    "total_candidates": 30,
-                    "validation_passed": 25,
-                    "validation_failed": 5,
-                    "validation_time_seconds": 3.5
-                }
+                "validated_rows": [...],  # All V candidates with validation data
+                "filtered_rows": [...],   # Only rows that passed validation
+                "stats": {...}
             }
         """
         import time
         start_time = time.time()
 
-        logger.info(f"[RUMOR_VAL] Starting validation of {len(candidates)} candidates")
+        logger.info(f"[RUMOR_VAL] Starting validation of {len(validate_candidates)} V-disposition candidates")
 
-        if not candidates:
+        if not validate_candidates:
             return {
                 'validated_rows': [],
                 'filtered_rows': [],
@@ -112,14 +100,14 @@ class RumorValidator:
         # Step 1: Create validation config programmatically (NO AI)
         validation_config = self._create_validation_config(columns, requirements, table_context)
 
-        # Step 2: Prepare validation rows (add Realness Score column from candidate data)
-        validation_rows = self._prepare_validation_rows(candidates, columns)
+        # Step 2: Prepare validation rows
+        validation_rows = self._prepare_validation_rows(validate_candidates, columns)
 
-        # Step 3: Validate batch via validator_invoker
+        # Step 3: Validate batch via direct payload (no Excel)
         validation_results = await self._validate_batch(validation_config, validation_rows)
 
         # Step 4: Parse validation results
-        parsed_results = self._parse_validation_results(validation_results, candidates)
+        parsed_results = self._parse_validation_results(validation_results, validate_candidates)
 
         # Step 5: Apply filtering logic
         validated_rows = []
@@ -135,10 +123,8 @@ class RumorValidator:
             if passed:
                 filtered_rows.append(result)
 
-        # Step 6: Store validation searches to agent_memory (handled by validator lambda)
-        # The validator lambda automatically stores searches if session_id is provided
         logger.info(
-            f"[RUMOR_VAL] Validation complete: {len(filtered_rows)}/{len(candidates)} passed"
+            f"[RUMOR_VAL] Validation complete: {len(filtered_rows)}/{len(validate_candidates)} passed"
         )
 
         validation_time = time.time() - start_time
@@ -152,7 +138,7 @@ class RumorValidator:
             'filtered_rows': filtered_rows,
             'enhanced_data': enhanced_data,
             'stats': {
-                'total_candidates': len(candidates),
+                'total_candidates': len(validate_candidates),
                 'validation_passed': len(filtered_rows),
                 'validation_failed': len(validated_rows) - len(filtered_rows),
                 'validation_time_seconds': round(validation_time, 2),
@@ -168,16 +154,7 @@ class RumorValidator:
     ) -> Dict[str, Any]:
         """
         Create validation config programmatically using ValidationConfigBuilder.
-
         NO AI CALLS - pure Python config generation.
-
-        Args:
-            columns: Column definitions (ID columns)
-            requirements: Hard/soft requirements
-            table_context: User context for the table
-
-        Returns:
-            Complete validation config dict
         """
         from .validation_config_builder import ValidationConfigBuilder
 
@@ -204,18 +181,11 @@ class RumorValidator:
         columns: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
-        Prepare candidates for validation.
+        Prepare V-disposition candidates as flat row dicts (ID column values only).
 
-        Converts candidates to validation format:
-        - Extract ID column values
-        - Add Realness Score column from candidate's realness_score field
-
-        Args:
-            candidates: List of candidates
-            columns: Column definitions
-
-        Returns:
-            List of rows ready for validation
+        Row keys are NOT added here — they are generated by S3TableParser after
+        the rows are written to CSV and parsed back, ensuring consistency with the
+        rest of the validation system.
         """
         id_column_names = [
             col.get('name', '')
@@ -227,21 +197,12 @@ class RumorValidator:
 
         for candidate in candidates:
             id_values = candidate.get('id_values', {})
-            realness_score = candidate.get('realness_score', 0.7)
-
-            # Build row dict with ID columns + Realness Score
             row = {}
-
-            # Add ID column values
             for col_name in id_column_names:
                 row[col_name] = id_values.get(col_name, '')
-
-            # Add Realness Score as a column (will be validated by validator)
-            row['Realness Score'] = realness_score
-
             validation_rows.append(row)
 
-        logger.info(f"[RUMOR_VAL] Prepared {len(validation_rows)} rows for validation")
+        logger.info(f"[RUMOR_VAL] Prepared {len(validation_rows)} flat rows for CSV write")
 
         return validation_rows
 
@@ -251,84 +212,89 @@ class RumorValidator:
         validation_rows: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
-        Validate batch using existing validator lambda.
+        Validate batch using direct payload to validator lambda.
 
-        Creates temporary Excel + config files, calls validator_invoker,
-        returns validation results.
-
-        Args:
-            validation_config: Validation config dict
-            validation_rows: Rows to validate
-
-        Returns:
-            Validation results from validator lambda
+        Steps:
+        1. Write V-candidate rows as CSV to table maker S3 path
+           (results/.../table_maker/{conv_id}/rumor_validate_candidates.csv)
+        2. Parse with S3TableParser to get rows with _row_key (same code path
+           as the rest of the validation system)
+        3. Write config JSON beside the CSV in the table maker folder
+           (results/.../table_maker/{conv_id}/rumor_validation_config.json)
+        4. Invoke validator lambda with rows passed directly in payload (no Excel)
         """
-        from interface_lambda.core.validator_invoker import invoke_validator_lambda
+        import csv
+        import io
+        from interface_lambda.core.validator_invoker import invoke_validator_lambda_with_rows
+        from shared_table_parser import S3TableParser
 
-        # Create temporary Excel file with validation rows
-        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False, mode='wb') as excel_file:
-            wb = Workbook()
-            ws = wb.active
+        VALIDATOR_LAMBDA_NAME = os.environ.get('VALIDATOR_LAMBDA_NAME')
+        main_bucket = self.s3_manager.bucket_name
 
-            # Write header
-            if validation_rows:
-                headers = list(validation_rows[0].keys())
-                ws.append(headers)
+        # Step 1: Write V-candidates as CSV into table maker results folder
+        if not validation_rows:
+            return {'validation_results': {}, 'metadata': {}}
 
-                # Write data rows
-                for row in validation_rows:
-                    ws.append([row.get(col, '') for col in headers])
+        col_names = [k for k in validation_rows[0].keys() if not k.startswith('_')]
+        csv_buffer = io.StringIO()
+        writer = csv.DictWriter(csv_buffer, fieldnames=col_names)
+        writer.writeheader()
+        for row in validation_rows:
+            writer.writerow({k: row.get(k, '') for k in col_names})
 
-            wb.save(excel_file.name)
-            excel_temp_path = excel_file.name
+        csv_s3_key = self.s3_manager.get_table_maker_path(
+            email=self.email,
+            session_id=self.session_id,
+            conversation_id=self.conversation_id or 'default',
+            file_name='rumor_validate_candidates.csv'
+        )
+        self.s3_manager.s3_client.put_object(
+            Bucket=main_bucket,
+            Key=csv_s3_key,
+            Body=csv_buffer.getvalue().encode('utf-8'),
+            ContentType='text/csv'
+        )
+        logger.info(f"[RUMOR_VAL] Wrote {len(validation_rows)} V-candidates to s3://{main_bucket}/{csv_s3_key}")
 
-        # Create temporary config file
-        with tempfile.NamedTemporaryFile(suffix='.json', delete=False, mode='w') as config_file:
-            json.dump(validation_config, config_file, indent=2)
-            config_temp_path = config_file.name
+        # Step 2: Parse CSV with S3TableParser to get consistent _row_key values
+        table_parser = S3TableParser()
+        parsed_data = table_parser.parse_s3_table(main_bucket, csv_s3_key)
+        rows_with_keys = parsed_data.get('data', [])
+        logger.info(f"[RUMOR_VAL] S3TableParser returned {len(rows_with_keys)} rows with _row_key")
 
-        try:
-            # Upload to S3
-            excel_s3_key = f"{self.email}/rumor_validation/{self.session_id}/validation.xlsx"
-            config_s3_key = f"{self.email}/rumor_validation/{self.session_id}/config.json"
+        # Step 3: Write config JSON beside the V-candidates CSV in the table maker folder.
+        # Pass main_bucket + this key to the validator lambda — no separate cache bucket needed.
+        config_bytes = json.dumps(validation_config, indent=2).encode('utf-8')
 
-            self.s3_manager.s3_client.upload_file(excel_temp_path, self.s3_manager.bucket_name, excel_s3_key)
-            self.s3_manager.s3_client.upload_file(config_temp_path, self.s3_manager.bucket_name, config_s3_key)
+        config_s3_key = self.s3_manager.get_table_maker_path(
+            email=self.email,
+            session_id=self.session_id,
+            conversation_id=self.conversation_id or 'default',
+            file_name='rumor_validation_config.json'
+        )
+        self.s3_manager.s3_client.put_object(
+            Bucket=main_bucket,
+            Key=config_s3_key,
+            Body=config_bytes,
+            ContentType='application/json'
+        )
+        logger.info(f"[RUMOR_VAL] Wrote config to s3://{main_bucket}/{config_s3_key}")
 
-            logger.info(f"[RUMOR_VAL] Uploaded Excel to {excel_s3_key}")
-            logger.info(f"[RUMOR_VAL] Uploaded config to {config_s3_key}")
+        # Step 4: Invoke validator lambda with rows inline (no Excel)
+        logger.info(f"[RUMOR_VAL] Invoking validator lambda for {len(rows_with_keys)} V-disposition rows")
 
-            # Get S3 bucket and lambda name from environment
-            S3_CACHE_BUCKET = os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache')
-            VALIDATOR_LAMBDA_NAME = os.environ.get('VALIDATOR_LAMBDA_NAME')
+        validation_results = invoke_validator_lambda_with_rows(
+            rows=rows_with_keys,
+            config_s3_key=config_s3_key,
+            S3_CACHE_BUCKET=main_bucket,
+            VALIDATOR_LAMBDA_NAME=VALIDATOR_LAMBDA_NAME,
+            session_id=self.session_id,
+            email=self.email
+        )
 
-            # Invoke validator lambda
-            logger.info(f"[RUMOR_VAL] Invoking validator lambda for {len(validation_rows)} rows")
+        logger.info(f"[RUMOR_VAL] Validator lambda completed")
 
-            validation_results = invoke_validator_lambda(
-                excel_s3_key=excel_s3_key,
-                config_s3_key=config_s3_key,
-                max_rows=len(validation_rows),
-                batch_size=len(validation_rows),
-                S3_CACHE_BUCKET=S3_CACHE_BUCKET,
-                VALIDATOR_LAMBDA_NAME=VALIDATOR_LAMBDA_NAME,
-                preview_first_row=False,
-                preview_max_rows=None,
-                session_id=self.session_id,  # CRITICAL: Pass session_id for memory storage
-                email=self.email
-            )
-
-            logger.info(f"[RUMOR_VAL] Validator lambda completed")
-
-            return validation_results
-
-        finally:
-            # Clean up temporary files
-            try:
-                os.unlink(excel_temp_path)
-                os.unlink(config_temp_path)
-            except Exception as e:
-                logger.warning(f"[RUMOR_VAL] Failed to clean up temp files: {e}")
+        return validation_results
 
     def _parse_validation_results(
         self,
@@ -338,14 +304,8 @@ class RumorValidator:
         """
         Parse validation results from validator lambda.
 
-        Extracts Realness Score + requirement scores for each row.
-
-        Args:
-            validation_results: Results from validator lambda
-            candidates: Original candidates
-
-        Returns:
-            List of parsed results with validation data merged into candidates
+        Extracts Entity Exists score + requirement scores for each row.
+        Falls back to parsing the old "Realness Score" column name if present.
         """
         if not validation_results or 'validation_results' not in validation_results:
             logger.warning("[RUMOR_VAL] No validation results found")
@@ -356,9 +316,6 @@ class RumorValidator:
         parsed_results = []
 
         for i, candidate in enumerate(candidates):
-            # Find validation result for this candidate by index
-            # Validator results are keyed by row_key (hash of ID values)
-            # We'll match by position since we sent them in order
             row_keys = list(rows_dict.keys())
 
             if i >= len(row_keys):
@@ -369,15 +326,24 @@ class RumorValidator:
             row_key = row_keys[i]
             validation_result = rows_dict[row_key]
 
-            # Extract Realness Score validation
-            realness_data = validation_result.get('Realness Score', {})
-            try:
-                entity_confidence = float(realness_data.get('value', 0))
-            except (ValueError, TypeError):
-                entity_confidence = 0.0
+            # Extract Entity Exists score (new, -2..+2 scale) or Realness Score (legacy, 0-1)
+            # Detect by column name to avoid ambiguity — values 0 and 1 are valid on both scales
+            if 'Entity Exists' in validation_result:
+                entity_data = validation_result['Entity Exists']
+                try:
+                    # -2..+2 → normalize to 0-1: (-2→0.0, -1→0.25, 0→0.5, 1→0.75, 2→1.0)
+                    entity_confidence = (float(entity_data.get('value', -2)) + 2) / 4.0
+                except (ValueError, TypeError):
+                    entity_confidence = 0.0
+            else:
+                entity_data = validation_result.get('Realness Score', {})
+                try:
+                    entity_confidence = float(entity_data.get('value', 0))
+                except (ValueError, TypeError):
+                    entity_confidence = 0.0
             entity_exists = entity_confidence >= self.confidence_threshold
 
-            # Extract hard requirement scores (values are "Yes"/"No" strings)
+            # Extract hard requirement scores
             hard_req_scores = []
             for col_name, col_result in validation_result.items():
                 if col_name.startswith('Hard: '):
@@ -390,7 +356,7 @@ class RumorValidator:
                 for score in hard_req_scores
             )
 
-            # Extract soft requirement scores (values are "Yes"/"No" strings)
+            # Extract soft requirement scores
             soft_req_scores = []
             for col_name, col_result in validation_result.items():
                 if col_name.startswith('Soft: '):
@@ -400,7 +366,6 @@ class RumorValidator:
 
             avg_soft_score = sum(soft_req_scores) / len(soft_req_scores) if soft_req_scores else 0
 
-            # Merge validation data into candidate
             result = {**candidate}
             result['entity_exists'] = entity_exists
             result['entity_confidence'] = entity_confidence
@@ -416,33 +381,24 @@ class RumorValidator:
         Apply filtering logic to determine pass/fail.
 
         Rules:
-        1. Entity must exist (Realness Score ≥ threshold)
-        2. All hard requirements must pass (score ≥ 0)
+        1. Entity must exist (Entity Exists score ≥ threshold)
+        2. All hard requirements must pass
         3. Soft requirements tracked but not required
-
-        Args:
-            validation_result: Parsed validation result
-
-        Returns:
-            (passed: bool, reasoning: str)
         """
-        # Rule 1: Entity must exist
         entity_exists = validation_result.get('entity_exists', False)
         entity_confidence = validation_result.get('entity_confidence', 0)
 
         if not entity_exists:
-            return False, f"Low realness score ({entity_confidence:.2f} < {self.confidence_threshold})"
+            return False, f"Entity not confirmed ({entity_confidence:.2f} < {self.confidence_threshold})"
 
-        # Rule 2: All hard requirements must pass
         hard_requirements_met = validation_result.get('hard_requirements_met', False)
 
         if not hard_requirements_met:
             return False, "Failed one or more hard requirements"
 
-        # Soft requirements tracked but not required
         soft_score = validation_result.get('soft_requirements_score', 0)
 
-        return True, f"Passed (realness: {entity_confidence:.2f}, soft avg: {soft_score:.2f})"
+        return True, f"Passed (entity_confidence: {entity_confidence:.2f}, soft avg: {soft_score:.2f})"
 
     def _build_enhanced_data(self, validation_results: Dict[str, Any], processing_time: float) -> Dict[str, Any]:
         """
@@ -473,7 +429,6 @@ class RumorValidator:
                 }
 
         if not provider_metrics:
-            # Fallback: attribute to the configured validation model's provider
             provider_metrics['perplexity'] = {
                 'calls': token_usage.get('api_calls', 1),
                 'tokens': total_tokens,

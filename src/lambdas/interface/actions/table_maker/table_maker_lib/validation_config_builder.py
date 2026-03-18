@@ -62,7 +62,7 @@ class ValidationConfigBuilder:
         Process:
         1. Start with CONFIG_TEMPLATE (static Python dict)
         2. Insert ID columns into validation_targets (importance='ID', search_group=0)
-        3. Insert Realness Score column (type='scale', range 0-1, search_group=1)
+        3. Insert Entity Exists column (type='scale', range -2..+2, search_group=1)
         4. Insert hard requirements as scale columns (search_group=1)
         5. Insert soft requirements as scale columns (search_group=1)
         6. Return complete config dict
@@ -102,21 +102,24 @@ class ValidationConfigBuilder:
 
         logger.info(f"[CONFIG_BUILDER] Added {id_columns_added} ID columns")
 
-        # Step 2: Add Realness Score (validates entity existence)
+        # Step 2: Add Entity Exists (validates entity existence — binary Yes/No/Uncertain)
         validation_targets.append({
-            "column": "Realness Score",
+            "column": "Entity Exists",
             "type": "scale",
-            "scale_definition": "0 (does not exist / fictional / hallucinated) to 1 (definitely exists / verified real entity)",
+            "scale_definition": "-2 (definitely does not exist / fictional) to +2 (definitely exists / verified)",
             "importance": "RESEARCH",
             "search_group": 1,
             "instruction": (
-                "Does this entity actually exist? "
-                "0 = fictional/hallucinated entity with no evidence of existence, "
-                "1 = verified real entity with multiple reliable sources confirming existence. "
-                "Use web search to verify existence and find supporting evidence."
+                "Does this entity actually exist? Search for it and determine:\n"
+                "+2 = definitely exists — multiple reliable sources confirm it\n"
+                "+1 = probably exists — some evidence found\n"
+                "0 = uncertain — insufficient evidence\n"
+                "-1 = probably fictional — no credible sources found\n"
+                "-2 = definitely does not exist / hallucinated — confirmed non-existent\n"
+                "Use web search to verify existence."
             )
         })
-        logger.info("[CONFIG_BUILDER] Added Realness Score column")
+        logger.info("[CONFIG_BUILDER] Added Entity Exists column")
 
         # Step 3: Add hard requirements (must all pass with score ≥ 0)
         hard_req_count = 0
@@ -181,7 +184,7 @@ class ValidationConfigBuilder:
 
         logger.info(
             f"[CONFIG_BUILDER] Config built successfully: "
-            f"{id_columns_added} ID cols, 1 realness col, "
+            f"{id_columns_added} ID cols, 1 entity-exists col, "
             f"{hard_req_count} hard reqs, {soft_req_count} soft reqs"
         )
 
