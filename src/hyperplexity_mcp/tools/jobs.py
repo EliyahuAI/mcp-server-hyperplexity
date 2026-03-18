@@ -178,6 +178,9 @@ def register(server):
         Returns the same payload shape as get_job_status so downstream tools
         (approve_validation, get_results, etc.) apply directly.
 
+        job_id: the session_id value returned by upload_file / confirm_upload /
+          start_table_maker. "job_id" and "session_id" are the same string — every
+          workflow uses session_id as its job identifier throughout the pipeline.
         timeout_seconds: max wall time before returning last known state (default 900).
           Upload-interview + config-gen phases and large table previews can take up
           to 15 minutes — set timeout_seconds=900 or higher for long-running jobs.

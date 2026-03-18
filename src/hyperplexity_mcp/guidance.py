@@ -658,15 +658,15 @@ def _guidance_get_results(data: dict) -> dict:
     has_metadata = bool(result_info.get("metadata"))
     notes = [
         "HOW TO READ THE RESULTS:",
-        "1. START HERE — results.metadata_url → table_metadata.json → read metadata.markdown_table "
-        "first. It is a self-contained markdown document with: the full validated data table "
+        "1. START HERE — read results.markdown_table (lifted directly into this response). "
+        "It is a self-contained markdown document with: the full validated data table "
         "(all rows, full values, _row_key as the last column), configuration notes, "
         "confidence key, viewer/download links, and instructions for navigating citations. "
-        "It is designed to be read directly without parsing JSON." if not has_metadata else
-        "1. START HERE — results.metadata.markdown_table is a self-contained markdown document "
-        "with the full validated data table (all rows, full values, _row_key as last column), "
-        "configuration notes, confidence key, viewer/download links, and citation navigation guide. "
-        "Read it first.",
+        "Designed to be read directly — no JSON parsing required." if not has_metadata else
+        "1. START HERE — results.markdown_table is already embedded in this response. "
+        "It is a self-contained markdown document with the full validated data table "
+        "(all rows, full values, _row_key as last column), configuration notes, "
+        "confidence key, viewer/download links, and citation navigation guide. Read it first.",
         "2. To look up sources, citations, and validator reasoning for any cell: take the row's "
         "_row_key from the markdown table and find that row in metadata.rows[] — "
         "rows[].cells[column_name].comment contains validator_explanation, qc_reasoning, "
