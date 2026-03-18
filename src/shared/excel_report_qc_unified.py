@@ -2359,9 +2359,9 @@ def generate_table_preview_metadata(
     )
 
     return {
-        'markdown_table': markdown_table,
-        '_llm_hint': llm_hint,
         'table_name': table_name,
+        '_llm_hint': llm_hint,
+        'markdown_table': markdown_table,
         'columns': columns,
         'rows': rows,
         'is_transposed': True,
