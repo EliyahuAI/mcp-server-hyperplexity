@@ -2,14 +2,14 @@
 """
 Hyperplexity MCP Server — entry point.
 
-Registers all 18 tools across 6 modules and runs a stdio-based MCP server
-via FastMCP (the high-level MCP Python SDK).
+Registers all 18 tools across 6 modules. Supports two transports:
 
-Usage (after pip install):
+  stdio (default) — for Claude Code / Claude Desktop / local MCP clients
     HYPERPLEXITY_API_KEY=hpx_live_... mcp-server-hyperplexity
 
-Usage (development):
-    HYPERPLEXITY_API_KEY=hpx_live_... python3 -m hyperplexity_mcp.server
+  streamable-http — for Smithery and remote HTTP clients
+    MCP_TRANSPORT=http HYPERPLEXITY_API_KEY=hpx_live_... mcp-server-hyperplexity
+    Listens on 0.0.0.0:$PORT (default 8000), path /mcp
 
 Claude Code (one-liner):
     claude mcp add hyperplexity uvx mcp-server-hyperplexity \\
@@ -28,6 +28,8 @@ Claude Desktop config:
 
 Get your API key at hyperplexity.ai/account — new accounts get $20 free credits.
 """
+
+import os
 
 from mcp.server.fastmcp import FastMCP
 
@@ -54,8 +56,12 @@ conversations.register(server)
 # ---------------------------------------------------------------------------
 
 def main():
-    # FastMCP defaults to stdio transport, which is what MCP clients expect.
-    server.run()
+    transport = os.getenv("MCP_TRANSPORT", "stdio")
+    if transport == "http":
+        port = int(os.getenv("PORT", "8000"))
+        server.run(transport="streamable-http", host="0.0.0.0", port=port, path="/mcp")
+    else:
+        server.run()
 
 
 if __name__ == "__main__":
