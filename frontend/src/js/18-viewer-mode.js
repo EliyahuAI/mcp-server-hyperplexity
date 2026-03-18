@@ -364,6 +364,16 @@ function _renderViewerButtons(cardId, data) {
             }
         },
         {
+            text: 'Transpose',
+            icon: '⊞',
+            variant: 'quinary',
+            callback: () => {
+                if (data.table_metadata && typeof InteractiveTable !== 'undefined') {
+                    InteractiveTable.transposeInCard(cardId, data.table_metadata);
+                }
+            }
+        },
+        {
             text: 'Share Table',
             icon: '🔗',
             variant: 'quaternary',
@@ -709,6 +719,17 @@ async function displayDemoResultsInCard(cardId, data, tableName) {
         callback: (e) => {
             const button = e.target.closest('button');
             downloadJsonMetadata(data.table_metadata, button);
+        }
+    });
+
+    buttons.push({
+        text: 'Transpose',
+        icon: '⊞',
+        variant: 'tertiary',
+        callback: () => {
+            if (data.table_metadata && typeof InteractiveTable !== 'undefined') {
+                InteractiveTable.transposeInCard(cardId, data.table_metadata);
+            }
         }
     });
 

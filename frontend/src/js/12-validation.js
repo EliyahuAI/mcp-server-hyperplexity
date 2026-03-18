@@ -192,7 +192,7 @@ function handleProcessingWebSocketMessage(data, cardId) {
                     <span class="message-icon">🎉</span>
                     <div style="line-height: 1.6;">
                         <div style="margin-bottom: 8px;">
-                            • The interactive table below is the best way to review your results. Note: rows are displayed as columns for easier reading.
+                            • The interactive table below is the best way to review your results.
                         </div>
                         <div style="margin-bottom: 8px;">
                             • Your Excel results have been emailed - check the Updated and Original sheets for color-coded confidence (Green=High, Yellow=Medium, Red=Low), and hover cells to see citations in the comments.
@@ -205,7 +205,7 @@ function handleProcessingWebSocketMessage(data, cardId) {
                 </div>
                 <div id="${actualCardId}-table-info" class="message message-info" style="display: flex; margin-top: 1rem;">
                     <span class="message-icon">ℹ️</span>
-                    <span>Rows are displayed as columns below. Hover cells for quick info, click for full details. Use the buttons to download, refine, or start fresh.</span>
+                    <span id="${actualCardId}-layout-hint">Loading table...</span>
                 </div>
                 <div id="${actualCardId}-table-container" style="margin: 1rem 0;"></div>
                 <div style="display: flex; gap: 10px; margin-top: 1rem; flex-wrap: wrap;">
@@ -214,6 +214,9 @@ function handleProcessingWebSocketMessage(data, cardId) {
                     </button>
                     <button class="std-button quaternary" id="${actualCardId}-json-btn" style="flex: 1; min-width: 150px;">
                         <span class="button-text">📋 Download JSON (for AI)</span>
+                    </button>
+                    <button class="std-button tertiary" id="${actualCardId}-transpose-btn" style="flex: 1; min-width: 120px;">
+                        <span class="button-text">⊞ Transpose</span>
                     </button>
                     ${refineButtonHtml}
                 </div>
@@ -232,6 +235,7 @@ function handleProcessingWebSocketMessage(data, cardId) {
             setTimeout(() => {
                 const downloadBtn = document.getElementById(`${actualCardId}-download-btn`);
                 const jsonBtn = document.getElementById(`${actualCardId}-json-btn`);
+                const transposeBtn = document.getElementById(`${actualCardId}-transpose-btn`);
                 const refineBtn = document.getElementById(`${actualCardId}-refine-btn`);
                 const revertBtn = document.getElementById(`${actualCardId}-revert-btn`);
                 const shareBtn = document.getElementById(`${actualCardId}-share-btn`);
@@ -269,6 +273,15 @@ function handleProcessingWebSocketMessage(data, cardId) {
                 if (shareBtn) {
                     shareBtn.addEventListener('click', async () => {
                         await handleShareTable(actualCardId, shareBtn, data);
+                    });
+                }
+
+                // Transpose button handler
+                if (transposeBtn) {
+                    transposeBtn.addEventListener('click', () => {
+                        if (globalState.validationTableMetadata && typeof InteractiveTable !== 'undefined') {
+                            InteractiveTable.transposeInCard(actualCardId, globalState.validationTableMetadata);
+                        }
                     });
                 }
 
@@ -593,13 +606,21 @@ async function fetchAndRenderValidationTable(cardId, sessionId) {
             globalState.validationTableMetadata = data.table_metadata;
             globalState.validationJsonUrl = data.json_download_url;
 
-            // Render table with all rows
+            // Render table with all rows (render() auto-sets is_transposed if undefined)
             const tableHtml = InteractiveTable.render(data.table_metadata, {
                 showGeneralNotes: true,
                 showLegend: true
             });
             container.innerHTML = tableHtml;
             InteractiveTable.init();
+
+            // Update layout hint based on actual render mode
+            const hintEl = document.getElementById(`${cardId}-layout-hint`);
+            if (hintEl) {
+                hintEl.textContent = data.table_metadata.is_transposed
+                    ? 'Rows are shown as columns for easier reading. Click Transpose to switch to standard view.'
+                    : 'Hover cells for quick info, click for full details. Use the buttons to download, refine, or start fresh.';
+            }
 
             console.log('[VALIDATION] Interactive table rendered successfully');
         } else {

@@ -2455,9 +2455,22 @@ body.viewer-mode .validator-container {
     background: #fff;
 }
 
+/* Non-transposed: sticky column width matches regular cells (override desktop wider rule) */
+.interactive-table-container.non-transposed .interactive-table .sticky-column {
+    min-width: 140px;
+    max-width: 180px;
+}
+@media (min-width: 768px) {
+    .interactive-table-container.non-transposed .interactive-table .sticky-column {
+        min-width: 140px;
+        max-width: 180px;
+    }
+}
+
 /* Visible scrollbar styling */
 .interactive-table-container::-webkit-scrollbar {
     height: 10px;
+    width: 10px;
 }
 
 .interactive-table-container::-webkit-scrollbar-track {
@@ -2694,6 +2707,11 @@ body.viewer-mode .validator-container {
     position: relative;
     cursor: pointer;
     transition: background-color 0.15s ease;
+}
+
+/* Sticky column must override position:relative from .table-cell (same specificity, later rule wins) */
+.interactive-table td.sticky-column {
+    position: sticky;
 }
 
 .interactive-table .table-cell:hover {
@@ -15633,7 +15651,7 @@ function handleProcessingWebSocketMessage(data, cardId) {
                     <span class="message-icon">🎉</span>
                     <div style="line-height: 1.6;">
                         <div style="margin-bottom: 8px;">
-                            • The interactive table below is the best way to review your results. Note: rows are displayed as columns for easier reading.
+                            • The interactive table below is the best way to review your results.
                         </div>
                         <div style="margin-bottom: 8px;">
                             • Your Excel results have been emailed - check the Updated and Original sheets for color-coded confidence (Green=High, Yellow=Medium, Red=Low), and hover cells to see citations in the comments.
@@ -15646,7 +15664,7 @@ function handleProcessingWebSocketMessage(data, cardId) {
                 </div>
                 <div id="${actualCardId}-table-info" class="message message-info" style="display: flex; margin-top: 1rem;">
                     <span class="message-icon">ℹ️</span>
-                    <span>Rows are displayed as columns below. Hover cells for quick info, click for full details. Use the buttons to download, refine, or start fresh.</span>
+                    <span id="${actualCardId}-layout-hint">Loading table...</span>
                 </div>
                 <div id="${actualCardId}-table-container" style="margin: 1rem 0;"></div>
                 <div style="display: flex; gap: 10px; margin-top: 1rem; flex-wrap: wrap;">
@@ -15655,6 +15673,9 @@ function handleProcessingWebSocketMessage(data, cardId) {
                     </button>
                     <button class="std-button quaternary" id="${actualCardId}-json-btn" style="flex: 1; min-width: 150px;">
                         <span class="button-text">📋 Download JSON (for AI)</span>
+                    </button>
+                    <button class="std-button tertiary" id="${actualCardId}-transpose-btn" style="flex: 1; min-width: 120px;">
+                        <span class="button-text">⊞ Transpose</span>
                     </button>
                     ${refineButtonHtml}
                 </div>
@@ -15673,6 +15694,7 @@ function handleProcessingWebSocketMessage(data, cardId) {
             setTimeout(() => {
                 const downloadBtn = document.getElementById(`${actualCardId}-download-btn`);
                 const jsonBtn = document.getElementById(`${actualCardId}-json-btn`);
+                const transposeBtn = document.getElementById(`${actualCardId}-transpose-btn`);
                 const refineBtn = document.getElementById(`${actualCardId}-refine-btn`);
                 const revertBtn = document.getElementById(`${actualCardId}-revert-btn`);
                 const shareBtn = document.getElementById(`${actualCardId}-share-btn`);
@@ -15710,6 +15732,15 @@ function handleProcessingWebSocketMessage(data, cardId) {
                 if (shareBtn) {
                     shareBtn.addEventListener('click', async () => {
                         await handleShareTable(actualCardId, shareBtn, data);
+                    });
+                }
+
+                // Transpose button handler
+                if (transposeBtn) {
+                    transposeBtn.addEventListener('click', () => {
+                        if (globalState.validationTableMetadata && typeof InteractiveTable !== 'undefined') {
+                            InteractiveTable.transposeInCard(actualCardId, globalState.validationTableMetadata);
+                        }
                     });
                 }
 
@@ -16034,13 +16065,21 @@ async function fetchAndRenderValidationTable(cardId, sessionId) {
             globalState.validationTableMetadata = data.table_metadata;
             globalState.validationJsonUrl = data.json_download_url;
 
-            // Render table with all rows
+            // Render table with all rows (render() auto-sets is_transposed if undefined)
             const tableHtml = InteractiveTable.render(data.table_metadata, {
                 showGeneralNotes: true,
                 showLegend: true
             });
             container.innerHTML = tableHtml;
             InteractiveTable.init();
+
+            // Update layout hint based on actual render mode
+            const hintEl = document.getElementById(`${cardId}-layout-hint`);
+            if (hintEl) {
+                hintEl.textContent = data.table_metadata.is_transposed
+                    ? 'Rows are shown as columns for easier reading. Click Transpose to switch to standard view.'
+                    : 'Hover cells for quick info, click for full details. Use the buttons to download, refine, or start fresh.';
+            }
 
             console.log('[VALIDATION] Interactive table rendered successfully');
         } else {
@@ -16105,7 +16144,7 @@ function showPreviewResults(cardId, previewData) {
         const headerHtml = `
             <div class="message message-info">
                 <span class="message-icon">ℹ️</span>
-                <span>Preview of first 3 rows (displayed as columns). Hover cells for quick info, click for full details. Use the buttons below to download, refine, or process the full table.</span>
+                <span id="${cardId}-layout-hint">Loading preview table...</span>
             </div>
         `;
 
@@ -16137,6 +16176,9 @@ function showPreviewResults(cardId, previewData) {
                 </button>
                 <button type="button" class="std-button quaternary" data-action="download-json">
                     📋 Download JSON (for AI)
+                </button>
+                <button type="button" class="std-button tertiary" data-action="transpose-table">
+                    ⊞ Transpose
                 </button>
                 ${refineButtonHtml}
             </div>
@@ -16270,6 +16312,15 @@ function showPreviewResults(cardId, previewData) {
                     downloadJsonMetadata(globalState.previewTableMetadata, jsonBtn);
                 } else {
                     showMessage(`${cardId}-messages`, 'JSON metadata still loading. Please wait a moment and try again.', 'info');
+                }
+            });
+        }
+
+        const transposeBtn = card.querySelector('[data-action="transpose-table"]');
+        if (transposeBtn) {
+            transposeBtn.addEventListener('click', () => {
+                if (globalState.previewTableMetadata && typeof InteractiveTable !== 'undefined') {
+                    InteractiveTable.transposeInCard(cardId, globalState.previewTableMetadata);
                 }
             });
         }
@@ -16464,13 +16515,24 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
             // Store for JSON download
             globalState.previewTableMetadata = data.table_metadata;
 
-            // Render interactive table
+            // Render interactive table (render() auto-sets is_transposed if undefined)
             if (typeof InteractiveTable !== 'undefined') {
                 container.innerHTML = InteractiveTable.render(data.table_metadata, {
                     showGeneralNotes: true,
                     showLegend: true
                 });
                 InteractiveTable.init();
+
+                // Update layout hint based on actual render mode
+                // containerId is e.g. "card-123-table-container"; cardId is the prefix
+                const cardId = containerId.replace('-table-container', '');
+                const hintEl = document.getElementById(`${cardId}-layout-hint`);
+                if (hintEl) {
+                    hintEl.textContent = data.table_metadata.is_transposed
+                        ? 'Preview of first 3 rows (shown as columns). Click Transpose for standard view.'
+                        : 'Preview of first 3 rows. Hover cells for quick info, click for full details.';
+                }
+
                 console.log('[PREVIEW] Interactive table rendered successfully');
             } else {
                 console.warn('[PREVIEW] InteractiveTable not available, using markdown fallback');
@@ -19282,99 +19344,215 @@ const InteractiveTable = (function() {
             </div>`;
         }
 
-        html += '<div class="interactive-table-container">';
+        // Auto-compute default: transposed when >5 columns (avoids horizontal overflow)
+        if (tableMetadata.is_transposed === undefined || tableMetadata.is_transposed === null) {
+            tableMetadata.is_transposed = columns.length > 5;
+        }
+        const transposed = tableMetadata.is_transposed !== false;
+        html += `<div class="interactive-table-container${transposed ? '' : ' non-transposed'}">`;
         html += '<table class="interactive-table">';
 
-        // Transposed format: columns as rows, data rows as columns
-        // Header row: Column | Row 1 | Row 2 | Row 3
-        html += '<thead><tr>';
-        html += '<th class="sticky-column" data-col-index="0">Column</th>';
-        rows.forEach((_, i) => {
-            html += `<th data-col-index="${i + 1}">Row ${i + 1}</th>`;
-        });
-        html += '</tr></thead>';
+        if (transposed) {
+            // Transposed format: columns as rows, data rows as columns
+            // Header row: Column | Row 1 | Row 2 | Row 3
+            html += '<thead><tr>';
+            html += '<th class="sticky-column" data-col-index="0">Column</th>';
+            rows.forEach((_, i) => {
+                html += `<th data-col-index="${i + 1}">Row ${i + 1}</th>`;
+            });
+            html += '</tr></thead>';
 
-        // Data rows: one row per column
-        html += '<tbody>';
-        columns.forEach(col => {
-            // Both ID and IGNORED columns should show as ID style
-            const importance = col.importance ? col.importance.toUpperCase() : '';
-            const isIdColumn = importance === 'ID' || importance === 'IGNORED';
+            // Data rows: one row per column
+            html += '<tbody>';
+            columns.forEach(col => {
+                // Both ID and IGNORED columns should show as ID style
+                const importance = col.importance ? col.importance.toUpperCase() : '';
+                const isIdColumn = importance === 'ID' || importance === 'IGNORED';
 
-            // Build column header tooltip from description and notes
-            const colTooltip = buildColumnTooltip(col.description, col.notes);
-            const hasTooltip = colTooltip && colTooltip.length > 0;
+                // Build column header tooltip from description and notes
+                const colTooltip = buildColumnTooltip(col.description, col.notes);
+                const hasTooltip = colTooltip && colTooltip.length > 0;
 
-            html += '<tr>';
-            html += `<td class="sticky-column ${isIdColumn ? 'id-column' : ''}${hasTooltip ? ' has-column-info' : ''}" data-col-index="0"`;
-            if (hasTooltip) {
-                html += ` data-tooltip-html="${colTooltip.replace(/"/g, '&quot;')}"`;
-                html += ` onmouseenter="InteractiveTable.showTooltip(event, this)"`;
-                html += ` onmouseleave="InteractiveTable.hideTooltip()"`;
-            }
-            html += '>';
-            html += `<strong>${escapeHtml(col.name)}</strong>`;
-            html += '</td>';
+                html += `<tr${isIdColumn ? ' class="id-row"' : ''}>`;
+                html += `<td class="sticky-column ${isIdColumn ? 'id-column' : ''}${hasTooltip ? ' has-column-info' : ''}" data-col-index="0"`;
+                if (hasTooltip) {
+                    html += ` data-tooltip-html="${colTooltip.replace(/"/g, '&quot;')}"`;
+                    html += ` onmouseenter="InteractiveTable.showTooltip(event, this)"`;
+                    html += ` onmouseleave="InteractiveTable.hideTooltip()"`;
+                }
+                html += '>';
+                html += `<strong>${escapeHtml(col.name)}</strong>`;
+                html += '</td>';
 
-            rows.forEach((row, colIdx) => {
-                const cellData = row.cells[col.name] || {};
-                const confidence = (cellData.confidence || '').toUpperCase();
-                const displayValue = cellData.display_value || '';
-                const fullValue = cellData.full_value || displayValue;
-                const comment = cellData.comment || {};
+                rows.forEach((row, colIdx) => {
+                    const cellData = row.cells[col.name] || {};
+                    const confidence = (cellData.confidence || '').toUpperCase();
+                    const displayValue = cellData.display_value || '';
+                    const fullValue = cellData.full_value || displayValue;
+                    const comment = cellData.comment || {};
 
-                // Add column name and row ID info to cell data for modal display
-                // Get ID values from cells marked as ID columns
-                const idColumns = columns.filter(c => c.importance && c.importance.toUpperCase() === 'ID');
+                    // Add column name and row ID info to cell data for modal display
+                    // Get ID values from cells marked as ID columns
+                    const idColumns = columns.filter(c => c.importance && c.importance.toUpperCase() === 'ID');
+                    let rowIdValues = '';
+                    if (idColumns.length > 0) {
+                        // Use explicitly marked ID columns
+                        rowIdValues = idColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
+                    } else {
+                        // Fallback: use first 2 columns as ID when none are marked
+                        const fallbackIdColumns = columns.slice(0, 2);
+                        rowIdValues = fallbackIdColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
+                    }
+                    cellData._columnName = col.name;
+                    cellData._rowId = rowIdValues || `Row ${colIdx + 1}`;
+
+                    // Build tooltip content
+                    const tooltipContent = buildTooltipContent(comment, fullValue, displayValue);
+
+                    // Determine confidence class
+                    let confidenceClass = '';
+                    if (confidence === 'HIGH') confidenceClass = 'confidence-high';
+                    else if (confidence === 'MEDIUM') confidenceClass = 'confidence-medium';
+                    else if (confidence === 'LOW') confidenceClass = 'confidence-low';
+                    else if (confidence === 'ID') confidenceClass = 'confidence-id';
+
+                    // Properly escape JSON for HTML attribute
+                    const cellDataJson = JSON.stringify(cellData)
+                        .replace(/&/g, '&amp;')
+                        .replace(/'/g, '&#39;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+
+                    html += `<td
+                        class="table-cell ${confidenceClass}"
+                        data-col-index="${colIdx + 1}"
+                        data-tooltip-html="${tooltipContent ? tooltipContent.replace(/"/g, '&quot;') : ''}"
+                        data-cell-data="${cellDataJson}"
+                        onclick="InteractiveTable.showCellModal(this)"
+                        onmouseenter="InteractiveTable.showTooltip(event, this); InteractiveTable.highlightColumn(${colIdx + 1})"
+                        onmouseleave="InteractiveTable.hideTooltip(); InteractiveTable.clearColumnHighlight()"
+                    >`;
+                    html += `<span class="cell-value">${escapeHtml(displayValue)}</span>`;
+                    html += '</td>';
+                });
+
+                html += '</tr>';
+            });
+            html += '</tbody>';
+        } else {
+            // Standard (non-transposed) format: rows as rows, columns as columns
+            // Header row: Col1 | Col2 | Col3 | ...
+            // Sticky column = first ID-typed column, or col 0 if none
+            const stickyColIdx = 0;
+
+            html += '<thead><tr>';
+            columns.forEach((col, i) => {
+                const colTooltip = buildColumnTooltip(col.description, col.notes);
+                const hasTooltip = colTooltip && colTooltip.length > 0;
+                const thClasses = [];
+                if (i === stickyColIdx) thClasses.push('sticky-column');
+                if (hasTooltip) thClasses.push('has-column-info');
+                const classAttr = thClasses.length ? ` class="${thClasses.join(' ')}"` : '';
+                html += `<th${classAttr} data-col-index="${i}"`;
+                if (hasTooltip) {
+                    html += ` data-tooltip-html="${colTooltip.replace(/"/g, '&quot;')}"`;
+                    html += ` onmouseenter="InteractiveTable.showTooltip(event, this)"`;
+                    html += ` onmouseleave="InteractiveTable.hideTooltip()"`;
+                }
+                html += `>${escapeHtml(col.name)}</th>`;
+            });
+            html += '</tr></thead>';
+
+            // Data rows: one row per data row
+            html += '<tbody>';
+            const idColumnsNT = columns.filter(c => c.importance && c.importance.toUpperCase() === 'ID');
+            rows.forEach((row, rowIdx) => {
+                /* stickyColIdx defined in thead block above */
+                // Compute row ID for modal display
                 let rowIdValues = '';
-                if (idColumns.length > 0) {
-                    // Use explicitly marked ID columns
-                    rowIdValues = idColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
+                if (idColumnsNT.length > 0) {
+                    rowIdValues = idColumnsNT.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
                 } else {
-                    // Fallback: use first 2 columns as ID when none are marked
                     const fallbackIdColumns = columns.slice(0, 2);
                     rowIdValues = fallbackIdColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
                 }
-                cellData._columnName = col.name;
-                cellData._rowId = rowIdValues || `Row ${colIdx + 1}`;
+                const rowLabel = rowIdValues || `Row ${rowIdx + 1}`;
 
-                // Build tooltip content
-                const tooltipContent = buildTooltipContent(comment, fullValue, displayValue);
+                html += '<tr>';
+                columns.forEach((col, colIdx) => {
+                    const cellData = { ...(row.cells[col.name] || {}) };
+                    const confidence = (cellData.confidence || '').toUpperCase();
+                    const displayValue = cellData.display_value || '';
+                    const fullValue = cellData.full_value || displayValue;
+                    const comment = cellData.comment || {};
 
-                // Determine confidence class
-                let confidenceClass = '';
-                if (confidence === 'HIGH') confidenceClass = 'confidence-high';
-                else if (confidence === 'MEDIUM') confidenceClass = 'confidence-medium';
-                else if (confidence === 'LOW') confidenceClass = 'confidence-low';
-                else if (confidence === 'ID') confidenceClass = 'confidence-id';
+                    cellData._columnName = col.name;
+                    cellData._rowId = rowLabel;
 
-                // Properly escape JSON for HTML attribute
-                const cellDataJson = JSON.stringify(cellData)
-                    .replace(/&/g, '&amp;')
-                    .replace(/'/g, '&#39;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;');
+                    const tooltipContent = buildTooltipContent(comment, fullValue, displayValue);
 
-                html += `<td
-                    class="table-cell ${confidenceClass}"
-                    data-col-index="${colIdx + 1}"
-                    data-tooltip-html="${tooltipContent ? tooltipContent.replace(/"/g, '&quot;') : ''}"
-                    data-cell-data="${cellDataJson}"
-                    onclick="InteractiveTable.showCellModal(this)"
-                    onmouseenter="InteractiveTable.showTooltip(event, this); InteractiveTable.highlightColumn(${colIdx + 1})"
-                    onmouseleave="InteractiveTable.hideTooltip(); InteractiveTable.clearColumnHighlight()"
-                >`;
-                html += `<span class="cell-value">${escapeHtml(displayValue)}</span>`;
-                html += '</td>';
+                    let confidenceClass = '';
+                    if (confidence === 'HIGH') confidenceClass = 'confidence-high';
+                    else if (confidence === 'MEDIUM') confidenceClass = 'confidence-medium';
+                    else if (confidence === 'LOW') confidenceClass = 'confidence-low';
+                    else if (confidence === 'ID') confidenceClass = 'confidence-id';
+
+                    const cellDataJson = JSON.stringify(cellData)
+                        .replace(/&/g, '&amp;')
+                        .replace(/'/g, '&#39;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+
+                    const importance = (col.importance || '').toUpperCase();
+                    const isIdCol = importance === 'ID' || importance === 'IGNORED';
+                    const tdClasses = ['table-cell'];
+                    if (colIdx === stickyColIdx) tdClasses.unshift('sticky-column');
+                    if (isIdCol) tdClasses.push('id-column');
+                    if (confidenceClass) tdClasses.push(confidenceClass);
+
+                    html += `<td
+                        class="${tdClasses.join(' ')}"
+                        data-col-index="${colIdx}"
+                        data-tooltip-html="${tooltipContent ? tooltipContent.replace(/"/g, '&quot;') : ''}"
+                        data-cell-data="${cellDataJson}"
+                        onclick="InteractiveTable.showCellModal(this)"
+                        onmouseenter="InteractiveTable.showTooltip(event, this); InteractiveTable.highlightColumn(${colIdx})"
+                        onmouseleave="InteractiveTable.hideTooltip(); InteractiveTable.clearColumnHighlight()"
+                    >`;
+                    html += `<span class="cell-value">${escapeHtml(displayValue)}</span>`;
+                    html += '</td>';
+                });
+                html += '</tr>';
             });
-
-            html += '</tr>';
-        });
-        html += '</tbody>';
+            html += '</tbody>';
+        }
 
         html += '</table></div>';
         return html;
+    }
+
+    /**
+     * Toggle transposed/standard layout and re-render the table in place.
+     * @param {string} cardId - Card ID (table container is `${cardId}-table-container`)
+     * @param {Object} metadata - Table metadata object (mutated in place)
+     * @param {Object} [opts] - Render options (defaults to showGeneralNotes+showLegend)
+     */
+    function transposeInCard(cardId, metadata, opts) {
+        if (!metadata) return null;
+        metadata.is_transposed = metadata.is_transposed !== false ? false : true;
+        const el = document.getElementById(`${cardId}-table-container`);
+        if (!el) return null;
+        el.innerHTML = render(metadata, opts || { showGeneralNotes: true, showLegend: true });
+        // Update layout hint if present
+        const hintEl = document.getElementById(`${cardId}-layout-hint`);
+        if (hintEl) {
+            hintEl.textContent = metadata.is_transposed
+                ? 'Rows are shown as columns. Click Transpose to switch back to standard view.'
+                : 'Hover cells for quick info, click for full details.';
+        }
+        return metadata.is_transposed;
     }
 
     /* ========================================
@@ -19446,7 +19624,7 @@ const InteractiveTable = (function() {
         // Immediately show cell saturation and column highlights (skip for sticky column headers)
         // Note: Highlighting works even on touch devices, only the tooltip popup is disabled
         const colIndex = cell.dataset.colIndex;
-        const isColumnHeader = colIndex === '0' || cell.classList.contains('sticky-column');
+        const isColumnHeader = colIndex === '0' || cell.classList.contains('sticky-column') || cell.closest('tr.id-row') !== null;
 
         if (!isColumnHeader) {
             cell.classList.add('cell-hover-active');
@@ -19818,11 +19996,18 @@ const InteractiveTable = (function() {
                 const cellRect = targetCell.getBoundingClientRect();
                 const containerRect = container.getBoundingClientRect();
 
+                let scrollLeft = container.scrollLeft;
+                let scrollTop = container.scrollTop;
+
                 // Check if cell is outside visible area horizontally
                 if (cellRect.left < containerRect.left || cellRect.right > containerRect.right) {
-                    const scrollLeft = targetCell.offsetLeft - container.offsetWidth / 2 + targetCell.offsetWidth / 2;
-                    container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+                    scrollLeft = targetCell.offsetLeft - container.offsetWidth / 2 + targetCell.offsetWidth / 2;
                 }
+                // Check if cell is outside visible area vertically (non-transposed mode)
+                if (cellRect.top < containerRect.top || cellRect.bottom > containerRect.bottom) {
+                    scrollTop = targetCell.offsetTop - container.offsetHeight / 2 + targetCell.offsetHeight / 2;
+                }
+                container.scrollTo({ left: scrollLeft, top: scrollTop, behavior: 'smooth' });
             }
 
             // Clear previous highlights
@@ -19975,7 +20160,9 @@ const InteractiveTable = (function() {
         toggleGeneralNotes: toggleGeneralNotes,
         toggleSnippet: toggleSnippet,
         // Utility
-        escapeHtml: escapeHtml
+        escapeHtml: escapeHtml,
+        // Transpose toggle
+        transposeInCard: transposeInCard
     };
 })();
 
@@ -20639,6 +20826,16 @@ function _renderViewerButtons(cardId, data) {
             }
         },
         {
+            text: 'Transpose',
+            icon: '⊞',
+            variant: 'quinary',
+            callback: () => {
+                if (data.table_metadata && typeof InteractiveTable !== 'undefined') {
+                    InteractiveTable.transposeInCard(cardId, data.table_metadata);
+                }
+            }
+        },
+        {
             text: 'Share Table',
             icon: '🔗',
             variant: 'quaternary',
@@ -20984,6 +21181,17 @@ async function displayDemoResultsInCard(cardId, data, tableName) {
         callback: (e) => {
             const button = e.target.closest('button');
             downloadJsonMetadata(data.table_metadata, button);
+        }
+    });
+
+    buttons.push({
+        text: 'Transpose',
+        icon: '⊞',
+        variant: 'tertiary',
+        callback: () => {
+            if (data.table_metadata && typeof InteractiveTable !== 'undefined') {
+                InteractiveTable.transposeInCard(cardId, data.table_metadata);
+            }
         }
     });
 

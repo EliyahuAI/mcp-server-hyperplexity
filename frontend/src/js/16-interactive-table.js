@@ -153,99 +153,215 @@ const InteractiveTable = (function() {
             </div>`;
         }
 
-        html += '<div class="interactive-table-container">';
+        // Auto-compute default: transposed when >5 columns (avoids horizontal overflow)
+        if (tableMetadata.is_transposed === undefined || tableMetadata.is_transposed === null) {
+            tableMetadata.is_transposed = columns.length > 5;
+        }
+        const transposed = tableMetadata.is_transposed !== false;
+        html += `<div class="interactive-table-container${transposed ? '' : ' non-transposed'}">`;
         html += '<table class="interactive-table">';
 
-        // Transposed format: columns as rows, data rows as columns
-        // Header row: Column | Row 1 | Row 2 | Row 3
-        html += '<thead><tr>';
-        html += '<th class="sticky-column" data-col-index="0">Column</th>';
-        rows.forEach((_, i) => {
-            html += `<th data-col-index="${i + 1}">Row ${i + 1}</th>`;
-        });
-        html += '</tr></thead>';
+        if (transposed) {
+            // Transposed format: columns as rows, data rows as columns
+            // Header row: Column | Row 1 | Row 2 | Row 3
+            html += '<thead><tr>';
+            html += '<th class="sticky-column" data-col-index="0">Column</th>';
+            rows.forEach((_, i) => {
+                html += `<th data-col-index="${i + 1}">Row ${i + 1}</th>`;
+            });
+            html += '</tr></thead>';
 
-        // Data rows: one row per column
-        html += '<tbody>';
-        columns.forEach(col => {
-            // Both ID and IGNORED columns should show as ID style
-            const importance = col.importance ? col.importance.toUpperCase() : '';
-            const isIdColumn = importance === 'ID' || importance === 'IGNORED';
+            // Data rows: one row per column
+            html += '<tbody>';
+            columns.forEach(col => {
+                // Both ID and IGNORED columns should show as ID style
+                const importance = col.importance ? col.importance.toUpperCase() : '';
+                const isIdColumn = importance === 'ID' || importance === 'IGNORED';
 
-            // Build column header tooltip from description and notes
-            const colTooltip = buildColumnTooltip(col.description, col.notes);
-            const hasTooltip = colTooltip && colTooltip.length > 0;
+                // Build column header tooltip from description and notes
+                const colTooltip = buildColumnTooltip(col.description, col.notes);
+                const hasTooltip = colTooltip && colTooltip.length > 0;
 
-            html += '<tr>';
-            html += `<td class="sticky-column ${isIdColumn ? 'id-column' : ''}${hasTooltip ? ' has-column-info' : ''}" data-col-index="0"`;
-            if (hasTooltip) {
-                html += ` data-tooltip-html="${colTooltip.replace(/"/g, '&quot;')}"`;
-                html += ` onmouseenter="InteractiveTable.showTooltip(event, this)"`;
-                html += ` onmouseleave="InteractiveTable.hideTooltip()"`;
-            }
-            html += '>';
-            html += `<strong>${escapeHtml(col.name)}</strong>`;
-            html += '</td>';
+                html += `<tr${isIdColumn ? ' class="id-row"' : ''}>`;
+                html += `<td class="sticky-column ${isIdColumn ? 'id-column' : ''}${hasTooltip ? ' has-column-info' : ''}" data-col-index="0"`;
+                if (hasTooltip) {
+                    html += ` data-tooltip-html="${colTooltip.replace(/"/g, '&quot;')}"`;
+                    html += ` onmouseenter="InteractiveTable.showTooltip(event, this)"`;
+                    html += ` onmouseleave="InteractiveTable.hideTooltip()"`;
+                }
+                html += '>';
+                html += `<strong>${escapeHtml(col.name)}</strong>`;
+                html += '</td>';
 
-            rows.forEach((row, colIdx) => {
-                const cellData = row.cells[col.name] || {};
-                const confidence = (cellData.confidence || '').toUpperCase();
-                const displayValue = cellData.display_value || '';
-                const fullValue = cellData.full_value || displayValue;
-                const comment = cellData.comment || {};
+                rows.forEach((row, colIdx) => {
+                    const cellData = row.cells[col.name] || {};
+                    const confidence = (cellData.confidence || '').toUpperCase();
+                    const displayValue = cellData.display_value || '';
+                    const fullValue = cellData.full_value || displayValue;
+                    const comment = cellData.comment || {};
 
-                // Add column name and row ID info to cell data for modal display
-                // Get ID values from cells marked as ID columns
-                const idColumns = columns.filter(c => c.importance && c.importance.toUpperCase() === 'ID');
+                    // Add column name and row ID info to cell data for modal display
+                    // Get ID values from cells marked as ID columns
+                    const idColumns = columns.filter(c => c.importance && c.importance.toUpperCase() === 'ID');
+                    let rowIdValues = '';
+                    if (idColumns.length > 0) {
+                        // Use explicitly marked ID columns
+                        rowIdValues = idColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
+                    } else {
+                        // Fallback: use first 2 columns as ID when none are marked
+                        const fallbackIdColumns = columns.slice(0, 2);
+                        rowIdValues = fallbackIdColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
+                    }
+                    cellData._columnName = col.name;
+                    cellData._rowId = rowIdValues || `Row ${colIdx + 1}`;
+
+                    // Build tooltip content
+                    const tooltipContent = buildTooltipContent(comment, fullValue, displayValue);
+
+                    // Determine confidence class
+                    let confidenceClass = '';
+                    if (confidence === 'HIGH') confidenceClass = 'confidence-high';
+                    else if (confidence === 'MEDIUM') confidenceClass = 'confidence-medium';
+                    else if (confidence === 'LOW') confidenceClass = 'confidence-low';
+                    else if (confidence === 'ID') confidenceClass = 'confidence-id';
+
+                    // Properly escape JSON for HTML attribute
+                    const cellDataJson = JSON.stringify(cellData)
+                        .replace(/&/g, '&amp;')
+                        .replace(/'/g, '&#39;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+
+                    html += `<td
+                        class="table-cell ${confidenceClass}"
+                        data-col-index="${colIdx + 1}"
+                        data-tooltip-html="${tooltipContent ? tooltipContent.replace(/"/g, '&quot;') : ''}"
+                        data-cell-data="${cellDataJson}"
+                        onclick="InteractiveTable.showCellModal(this)"
+                        onmouseenter="InteractiveTable.showTooltip(event, this); InteractiveTable.highlightColumn(${colIdx + 1})"
+                        onmouseleave="InteractiveTable.hideTooltip(); InteractiveTable.clearColumnHighlight()"
+                    >`;
+                    html += `<span class="cell-value">${escapeHtml(displayValue)}</span>`;
+                    html += '</td>';
+                });
+
+                html += '</tr>';
+            });
+            html += '</tbody>';
+        } else {
+            // Standard (non-transposed) format: rows as rows, columns as columns
+            // Header row: Col1 | Col2 | Col3 | ...
+            // Sticky column = first ID-typed column, or col 0 if none
+            const stickyColIdx = 0;
+
+            html += '<thead><tr>';
+            columns.forEach((col, i) => {
+                const colTooltip = buildColumnTooltip(col.description, col.notes);
+                const hasTooltip = colTooltip && colTooltip.length > 0;
+                const thClasses = [];
+                if (i === stickyColIdx) thClasses.push('sticky-column');
+                if (hasTooltip) thClasses.push('has-column-info');
+                const classAttr = thClasses.length ? ` class="${thClasses.join(' ')}"` : '';
+                html += `<th${classAttr} data-col-index="${i}"`;
+                if (hasTooltip) {
+                    html += ` data-tooltip-html="${colTooltip.replace(/"/g, '&quot;')}"`;
+                    html += ` onmouseenter="InteractiveTable.showTooltip(event, this)"`;
+                    html += ` onmouseleave="InteractiveTable.hideTooltip()"`;
+                }
+                html += `>${escapeHtml(col.name)}</th>`;
+            });
+            html += '</tr></thead>';
+
+            // Data rows: one row per data row
+            html += '<tbody>';
+            const idColumnsNT = columns.filter(c => c.importance && c.importance.toUpperCase() === 'ID');
+            rows.forEach((row, rowIdx) => {
+                /* stickyColIdx defined in thead block above */
+                // Compute row ID for modal display
                 let rowIdValues = '';
-                if (idColumns.length > 0) {
-                    // Use explicitly marked ID columns
-                    rowIdValues = idColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
+                if (idColumnsNT.length > 0) {
+                    rowIdValues = idColumnsNT.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
                 } else {
-                    // Fallback: use first 2 columns as ID when none are marked
                     const fallbackIdColumns = columns.slice(0, 2);
                     rowIdValues = fallbackIdColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
                 }
-                cellData._columnName = col.name;
-                cellData._rowId = rowIdValues || `Row ${colIdx + 1}`;
+                const rowLabel = rowIdValues || `Row ${rowIdx + 1}`;
 
-                // Build tooltip content
-                const tooltipContent = buildTooltipContent(comment, fullValue, displayValue);
+                html += '<tr>';
+                columns.forEach((col, colIdx) => {
+                    const cellData = { ...(row.cells[col.name] || {}) };
+                    const confidence = (cellData.confidence || '').toUpperCase();
+                    const displayValue = cellData.display_value || '';
+                    const fullValue = cellData.full_value || displayValue;
+                    const comment = cellData.comment || {};
 
-                // Determine confidence class
-                let confidenceClass = '';
-                if (confidence === 'HIGH') confidenceClass = 'confidence-high';
-                else if (confidence === 'MEDIUM') confidenceClass = 'confidence-medium';
-                else if (confidence === 'LOW') confidenceClass = 'confidence-low';
-                else if (confidence === 'ID') confidenceClass = 'confidence-id';
+                    cellData._columnName = col.name;
+                    cellData._rowId = rowLabel;
 
-                // Properly escape JSON for HTML attribute
-                const cellDataJson = JSON.stringify(cellData)
-                    .replace(/&/g, '&amp;')
-                    .replace(/'/g, '&#39;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;');
+                    const tooltipContent = buildTooltipContent(comment, fullValue, displayValue);
 
-                html += `<td
-                    class="table-cell ${confidenceClass}"
-                    data-col-index="${colIdx + 1}"
-                    data-tooltip-html="${tooltipContent ? tooltipContent.replace(/"/g, '&quot;') : ''}"
-                    data-cell-data="${cellDataJson}"
-                    onclick="InteractiveTable.showCellModal(this)"
-                    onmouseenter="InteractiveTable.showTooltip(event, this); InteractiveTable.highlightColumn(${colIdx + 1})"
-                    onmouseleave="InteractiveTable.hideTooltip(); InteractiveTable.clearColumnHighlight()"
-                >`;
-                html += `<span class="cell-value">${escapeHtml(displayValue)}</span>`;
-                html += '</td>';
+                    let confidenceClass = '';
+                    if (confidence === 'HIGH') confidenceClass = 'confidence-high';
+                    else if (confidence === 'MEDIUM') confidenceClass = 'confidence-medium';
+                    else if (confidence === 'LOW') confidenceClass = 'confidence-low';
+                    else if (confidence === 'ID') confidenceClass = 'confidence-id';
+
+                    const cellDataJson = JSON.stringify(cellData)
+                        .replace(/&/g, '&amp;')
+                        .replace(/'/g, '&#39;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+
+                    const importance = (col.importance || '').toUpperCase();
+                    const isIdCol = importance === 'ID' || importance === 'IGNORED';
+                    const tdClasses = ['table-cell'];
+                    if (colIdx === stickyColIdx) tdClasses.unshift('sticky-column');
+                    if (isIdCol) tdClasses.push('id-column');
+                    if (confidenceClass) tdClasses.push(confidenceClass);
+
+                    html += `<td
+                        class="${tdClasses.join(' ')}"
+                        data-col-index="${colIdx}"
+                        data-tooltip-html="${tooltipContent ? tooltipContent.replace(/"/g, '&quot;') : ''}"
+                        data-cell-data="${cellDataJson}"
+                        onclick="InteractiveTable.showCellModal(this)"
+                        onmouseenter="InteractiveTable.showTooltip(event, this); InteractiveTable.highlightColumn(${colIdx})"
+                        onmouseleave="InteractiveTable.hideTooltip(); InteractiveTable.clearColumnHighlight()"
+                    >`;
+                    html += `<span class="cell-value">${escapeHtml(displayValue)}</span>`;
+                    html += '</td>';
+                });
+                html += '</tr>';
             });
-
-            html += '</tr>';
-        });
-        html += '</tbody>';
+            html += '</tbody>';
+        }
 
         html += '</table></div>';
         return html;
+    }
+
+    /**
+     * Toggle transposed/standard layout and re-render the table in place.
+     * @param {string} cardId - Card ID (table container is `${cardId}-table-container`)
+     * @param {Object} metadata - Table metadata object (mutated in place)
+     * @param {Object} [opts] - Render options (defaults to showGeneralNotes+showLegend)
+     */
+    function transposeInCard(cardId, metadata, opts) {
+        if (!metadata) return null;
+        metadata.is_transposed = metadata.is_transposed !== false ? false : true;
+        const el = document.getElementById(`${cardId}-table-container`);
+        if (!el) return null;
+        el.innerHTML = render(metadata, opts || { showGeneralNotes: true, showLegend: true });
+        // Update layout hint if present
+        const hintEl = document.getElementById(`${cardId}-layout-hint`);
+        if (hintEl) {
+            hintEl.textContent = metadata.is_transposed
+                ? 'Rows are shown as columns. Click Transpose to switch back to standard view.'
+                : 'Hover cells for quick info, click for full details.';
+        }
+        return metadata.is_transposed;
     }
 
     /* ========================================
@@ -317,7 +433,7 @@ const InteractiveTable = (function() {
         // Immediately show cell saturation and column highlights (skip for sticky column headers)
         // Note: Highlighting works even on touch devices, only the tooltip popup is disabled
         const colIndex = cell.dataset.colIndex;
-        const isColumnHeader = colIndex === '0' || cell.classList.contains('sticky-column');
+        const isColumnHeader = colIndex === '0' || cell.classList.contains('sticky-column') || cell.closest('tr.id-row') !== null;
 
         if (!isColumnHeader) {
             cell.classList.add('cell-hover-active');
@@ -689,11 +805,18 @@ const InteractiveTable = (function() {
                 const cellRect = targetCell.getBoundingClientRect();
                 const containerRect = container.getBoundingClientRect();
 
+                let scrollLeft = container.scrollLeft;
+                let scrollTop = container.scrollTop;
+
                 // Check if cell is outside visible area horizontally
                 if (cellRect.left < containerRect.left || cellRect.right > containerRect.right) {
-                    const scrollLeft = targetCell.offsetLeft - container.offsetWidth / 2 + targetCell.offsetWidth / 2;
-                    container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+                    scrollLeft = targetCell.offsetLeft - container.offsetWidth / 2 + targetCell.offsetWidth / 2;
                 }
+                // Check if cell is outside visible area vertically (non-transposed mode)
+                if (cellRect.top < containerRect.top || cellRect.bottom > containerRect.bottom) {
+                    scrollTop = targetCell.offsetTop - container.offsetHeight / 2 + targetCell.offsetHeight / 2;
+                }
+                container.scrollTo({ left: scrollLeft, top: scrollTop, behavior: 'smooth' });
             }
 
             // Clear previous highlights
@@ -846,7 +969,9 @@ const InteractiveTable = (function() {
         toggleGeneralNotes: toggleGeneralNotes,
         toggleSnippet: toggleSnippet,
         // Utility
-        escapeHtml: escapeHtml
+        escapeHtml: escapeHtml,
+        // Transpose toggle
+        transposeInCard: transposeInCard
     };
 })();
 

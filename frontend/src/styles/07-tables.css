@@ -119,9 +119,22 @@
     background: #fff;
 }
 
+/* Non-transposed: sticky column width matches regular cells (override desktop wider rule) */
+.interactive-table-container.non-transposed .interactive-table .sticky-column {
+    min-width: 140px;
+    max-width: 180px;
+}
+@media (min-width: 768px) {
+    .interactive-table-container.non-transposed .interactive-table .sticky-column {
+        min-width: 140px;
+        max-width: 180px;
+    }
+}
+
 /* Visible scrollbar styling */
 .interactive-table-container::-webkit-scrollbar {
     height: 10px;
+    width: 10px;
 }
 
 .interactive-table-container::-webkit-scrollbar-track {
@@ -358,6 +371,11 @@
     position: relative;
     cursor: pointer;
     transition: background-color 0.15s ease;
+}
+
+/* Sticky column must override position:relative from .table-cell (same specificity, later rule wins) */
+.interactive-table td.sticky-column {
+    position: sticky;
 }
 
 .interactive-table .table-cell:hover {

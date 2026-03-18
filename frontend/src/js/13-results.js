@@ -40,7 +40,7 @@ function showPreviewResults(cardId, previewData) {
         const headerHtml = `
             <div class="message message-info">
                 <span class="message-icon">ℹ️</span>
-                <span>Preview of first 3 rows (displayed as columns). Hover cells for quick info, click for full details. Use the buttons below to download, refine, or process the full table.</span>
+                <span id="${cardId}-layout-hint">Loading preview table...</span>
             </div>
         `;
 
@@ -72,6 +72,9 @@ function showPreviewResults(cardId, previewData) {
                 </button>
                 <button type="button" class="std-button quaternary" data-action="download-json">
                     📋 Download JSON (for AI)
+                </button>
+                <button type="button" class="std-button tertiary" data-action="transpose-table">
+                    ⊞ Transpose
                 </button>
                 ${refineButtonHtml}
             </div>
@@ -205,6 +208,15 @@ function showPreviewResults(cardId, previewData) {
                     downloadJsonMetadata(globalState.previewTableMetadata, jsonBtn);
                 } else {
                     showMessage(`${cardId}-messages`, 'JSON metadata still loading. Please wait a moment and try again.', 'info');
+                }
+            });
+        }
+
+        const transposeBtn = card.querySelector('[data-action="transpose-table"]');
+        if (transposeBtn) {
+            transposeBtn.addEventListener('click', () => {
+                if (globalState.previewTableMetadata && typeof InteractiveTable !== 'undefined') {
+                    InteractiveTable.transposeInCard(cardId, globalState.previewTableMetadata);
                 }
             });
         }
@@ -399,13 +411,24 @@ async function fetchAndRenderPreviewTable(containerId, sessionId, fallbackMarkdo
             // Store for JSON download
             globalState.previewTableMetadata = data.table_metadata;
 
-            // Render interactive table
+            // Render interactive table (render() auto-sets is_transposed if undefined)
             if (typeof InteractiveTable !== 'undefined') {
                 container.innerHTML = InteractiveTable.render(data.table_metadata, {
                     showGeneralNotes: true,
                     showLegend: true
                 });
                 InteractiveTable.init();
+
+                // Update layout hint based on actual render mode
+                // containerId is e.g. "card-123-table-container"; cardId is the prefix
+                const cardId = containerId.replace('-table-container', '');
+                const hintEl = document.getElementById(`${cardId}-layout-hint`);
+                if (hintEl) {
+                    hintEl.textContent = data.table_metadata.is_transposed
+                        ? 'Preview of first 3 rows (shown as columns). Click Transpose for standard view.'
+                        : 'Preview of first 3 rows. Hover cells for quick info, click for full details.';
+                }
+
                 console.log('[PREVIEW] Interactive table rendered successfully');
             } else {
                 console.warn('[PREVIEW] InteractiveTable not available, using markdown fallback');
