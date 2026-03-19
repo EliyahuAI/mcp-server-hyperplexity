@@ -58,33 +58,63 @@ conversations.register(server)
 def main():
     transport = os.getenv("MCP_TRANSPORT", "stdio")
     if transport == "http":
+        import json
         import uvicorn
-        from starlette.middleware.base import BaseHTTPMiddleware
+        from starlette.applications import Starlette
+        from starlette.requests import Request
+        from starlette.responses import JSONResponse, Response
+        from starlette.routing import Mount, Route
         from hyperplexity_mcp.client import _request_api_key
 
-        class _ApiKeyMiddleware(BaseHTTPMiddleware):
-            """Extract API key from Authorization: Bearer header and store in contextvar.
+        # Pure-ASGI middleware — avoids BaseHTTPMiddleware breaking SSE/streaming.
+        class _ApiKeyMiddleware:
+            """Extract HYPERPLEXITY_API_KEY from Authorization: Bearer or X-Api-Key header."""
+            def __init__(self, app):
+                self.app = app
 
-            This lets each Smithery user supply their own HYPERPLEXITY_API_KEY per
-            request rather than requiring a single server-level env var.
-            """
-            async def dispatch(self, request, call_next):
-                auth = request.headers.get("authorization", "")
-                key = ""
-                if auth.lower().startswith("bearer "):
-                    key = auth[7:].strip()
-                if not key:
-                    key = request.headers.get("x-api-key", "").strip()
-                token = _request_api_key.set(key) if key else None
-                try:
-                    return await call_next(request)
-                finally:
-                    if token is not None:
-                        _request_api_key.reset(token)
+            async def __call__(self, scope, receive, send):
+                if scope["type"] in ("http", "websocket"):
+                    headers = dict(scope.get("headers", []))
+                    auth = headers.get(b"authorization", b"").decode()
+                    key = ""
+                    if auth.lower().startswith("bearer "):
+                        key = auth[7:].strip()
+                    if not key:
+                        key = headers.get(b"x-api-key", b"").decode().strip()
+                    token = _request_api_key.set(key) if key else None
+                    try:
+                        await self.app(scope, receive, send)
+                    finally:
+                        if token is not None:
+                            _request_api_key.reset(token)
+                else:
+                    await self.app(scope, receive, send)
+
+        # /.well-known/mcp/server-card.json — lets Smithery skip auto-scanning.
+        async def server_card(request: Request) -> JSONResponse:
+            return JSONResponse({
+                "name": "hyperplexity",
+                "version": "1.0.3",
+                "description": (
+                    "Generate, validate, and fact-check research tables with "
+                    "AI-sourced citations and per-cell confidence scores."
+                ),
+                "mcp_endpoint": "/mcp",
+            })
+
+        # Health check for Railway / load balancers.
+        async def health(request: Request) -> Response:
+            return Response("ok")
 
         port = int(os.getenv("PORT", "8000"))
-        app = server.streamable_http_app()
-        app.add_middleware(_ApiKeyMiddleware)
+        mcp_app = server.streamable_http_app()
+
+        app = Starlette(routes=[
+            Route("/.well-known/mcp/server-card.json", server_card),
+            Route("/health", health),
+            Mount("/", app=mcp_app),
+        ])
+        app = _ApiKeyMiddleware(app)
         uvicorn.run(app, host="0.0.0.0", port=port)
     else:
         server.run()
