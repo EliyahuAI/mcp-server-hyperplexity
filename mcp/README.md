@@ -30,10 +30,9 @@ Hyperplexity generates, validates, and updates research tables by synthesizing h
 - [Get Your API Key](#get-your-api-key)
 - [Download Examples](#download-examples)
 - [Quick Start: MCP](#quick-start-mcp)
-  - [Option A: Smithery (recommended)](#option-a--smithery-recommended)
-  - [Option B: Direct install (Claude Code)](#option-b--direct-install-claude-code)
-  - [Option B: Direct install (Claude Desktop)](#option-b--direct-install-claude-desktop)
-  - [Project config](#project-config-shared-repo)
+  - [Option A: Direct install via uvx (recommended)](#option-a--direct-install-via-uvx-recommended)
+  - [Option B: Direct HTTP connection to Railway](#option-b--direct-http-connection-to-railway)
+  - [Option C: Smithery](#option-c--smithery)
   - [What to Ask Your Agent](#what-to-ask-your-agent)
 - [Workflows](#workflows)
   - [1. Validate an Existing Table](#1-validate-an-existing-table)
@@ -88,28 +87,17 @@ export HYPERPLEXITY_API_KEY=hpx_live_...
 
 The MCP server lets any AI agent drive the full Hyperplexity workflow autonomously — no scripting required.
 
-### Option A — Smithery (recommended)
+### Option A — Direct install via uvx (recommended)
 
-[Smithery](https://smithery.ai) is an MCP server registry. It handles the connection automatically — no environment variable setup needed.
+The simplest path. Runs the server locally on your machine using `uvx` — no separate install needed.
 
-```bash
-smithery mcp add hyperplexity/production
-```
-
-Smithery will prompt you for your API key and wire everything up. Works with Claude Code and Claude Desktop.
-
-> **Don't have the `smithery` CLI?** Install it with `npm install -g @smithery/cli`, or connect directly from the [Smithery web UI](https://smithery.ai/server/hyperplexity/production).
-
-### Option B — Direct install (Claude Code)
-
+**Claude Code:**
 ```bash
 claude mcp add hyperplexity uvx mcp-server-hyperplexity \
   -e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
 ```
 
-### Option B — Direct install (Claude Desktop)
-
-Add to `claude_desktop_config.json`:
+**Claude Desktop** — add to `claude_desktop_config.json`:
 
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
@@ -128,9 +116,7 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-### Project config (shared repo)
-
-Add `.mcp.json` to your repo root so the server is available when anyone runs Claude Code in that directory. Each person must use their own API key — keys are tied to individual email accounts and should not be shared:
+**Project config (shared repo)** — add `.mcp.json` to your repo root. Each person uses their own key; no key is committed to the repo:
 
 ```json
 {
@@ -146,7 +132,48 @@ Add `.mcp.json` to your repo root so the server is available when anyone runs Cl
 }
 ```
 
-Each team member sets `HYPERPLEXITY_API_KEY` in their own shell profile. No key is committed to the repo.
+### Option B — Direct HTTP connection to Railway
+
+Connects your agent directly to the hosted Hyperplexity server over HTTP. No local process required.
+
+**Claude Code:**
+```bash
+claude mcp add hyperplexity \
+  --transport http \
+  https://mcp-server-hyperplexity-production.up.railway.app/ \
+  --header "X-Api-Key: hpx_live_your_key_here"
+```
+
+**Via config file** (`.mcp.json` or `claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "hyperplexity": {
+      "type": "http",
+      "url": "https://mcp-server-hyperplexity-production.up.railway.app/",
+      "headers": {
+        "X-Api-Key": "hpx_live_your_key_here"
+      }
+    }
+  }
+}
+```
+
+### Option C — Smithery
+
+[Smithery](https://smithery.ai) is an MCP registry that works with Claude Code and other MCP-compatible clients including OpenClaw.
+
+**Step 1 — Install and log in:**
+```bash
+npx -y @smithery/cli@latest login
+npx -y @smithery/cli@latest mcp add hyperplexity/hyperplexity --client claude-code
+```
+
+**Step 2 — Authenticate with your API key:**
+
+Open your MCP client (e.g. Claude Code), go to `/mcp`, click **hyperplexity → Authenticate**, and enter your Hyperplexity API key in the Smithery page that opens.
+
+> Smithery login is a one-time step. You must log in before adding servers, or authentication will not be set up correctly.
 
 ---
 

@@ -205,23 +205,18 @@
     </a>
     <ul>
      <li>
-      <a href="#option-a--smithery-recommended">
-       Option A: Smithery (recommended)
+      <a href="#option-a--direct-install-via-uvx-recommended">
+       Option A: Direct install via uvx (recommended)
       </a>
      </li>
      <li>
-      <a href="#option-b--direct-install-claude-code">
-       Option B: Direct install (Claude Code)
+      <a href="#option-b--direct-http-connection-to-railway">
+       Option B: Direct HTTP connection to Railway
       </a>
      </li>
      <li>
-      <a href="#option-b--direct-install-claude-desktop">
-       Option B: Direct install (Claude Desktop)
-      </a>
-     </li>
-     <li>
-      <a href="#project-config-shared-repo">
-       Project config
+      <a href="#option-c--smithery">
+       Option C: Smithery
       </a>
      </li>
      <li>
@@ -436,50 +431,28 @@ export HYPERPLEXITY_API_KEY=hpx_live_...
    The MCP server lets any AI agent drive the full Hyperplexity workflow autonomously — no scripting required.
   </p>
   <span class="md-heading3">
-   Option A — Smithery (recommended)
+   Option A — Direct install via uvx (recommended)
   </span>
   <p>
-   <a href="https://smithery.ai">
-    Smithery
-   </a>
-   is an MCP server registry. It handles the connection automatically — no environment variable setup needed.
+   The simplest path. Runs the server locally on your machine using
+   <code>
+    uvx
+   </code>
+   — no separate install needed.
   </p>
-  <pre><code class="language-bash">smithery mcp add hyperplexity/production
-</code></pre>
   <p>
-   Smithery will prompt you for your API key and wire everything up. Works with Claude Code and Claude Desktop.
+   <strong>
+    Claude Code:
+   </strong>
   </p>
-  <blockquote>
-   <p>
-    <strong>
-     Don't have the
-     <code>
-      smithery
-     </code>
-     CLI?
-    </strong>
-    Install it with
-    <code>
-     npm install - g @smithery/cli
-    </code>
-    , or connect directly from the
-    <a href="https://smithery.ai/server/hyperplexity/production">
-     Smithery web UI
-    </a>
-    .
-   </p>
-  </blockquote>
-  <span class="md-heading3">
-   Option B — Direct install (Claude Code)
-  </span>
   <pre><code class="language-bash">claude mcp add hyperplexity uvx mcp-server-hyperplexity \
   - e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
 </code></pre>
-  <span class="md-heading3">
-   Option B — Direct install (Claude Desktop)
-  </span>
   <p>
-   Add to
+   <strong>
+    Claude Desktop
+   </strong>
+   — add to
    <code>
     claude_desktop_config.json
    </code>
@@ -515,15 +488,15 @@ export HYPERPLEXITY_API_KEY=hpx_live_...
   }
 }
 </code></pre>
-  <span class="md-heading3">
-   Project config (shared repo)
-  </span>
   <p>
-   Add
+   <strong>
+    Project config (shared repo)
+   </strong>
+   — add
    <code>
     .mcp.json
    </code>
-   to your repo root so the server is available when anyone runs Claude Code in that directory. Each person must use their own API key — keys are tied to individual email accounts and should not be shared:
+   to your repo root. Each person uses their own key; no key is committed to the repo:
   </p>
   <pre><code class="language-json">{
   "mcpServers": {
@@ -537,13 +510,86 @@ export HYPERPLEXITY_API_KEY=hpx_live_...
   }
 }
 </code></pre>
+  <span class="md-heading3">
+   Option B — Direct HTTP connection to Railway
+  </span>
   <p>
-   Each team member sets
-   <code>
-    HYPERPLEXITY_API_KEY
-   </code>
-   in their own shell profile. No key is committed to the repo.
+   Connects your agent directly to the hosted Hyperplexity server over HTTP. No local process required.
   </p>
+  <p>
+   <strong>
+    Claude Code:
+   </strong>
+  </p>
+  <pre><code class="language-bash">claude mcp add hyperplexity \
+  --transport http \
+  https://mcp-server-hyperplexity-production.up.railway.app/ \
+  --header "X-Api-Key: hpx_live_your_key_here"
+</code></pre>
+  <p>
+   <strong>
+    Via config file
+   </strong>
+   (
+   <code>
+    .mcp.json
+   </code>
+   or
+   <code>
+    claude_desktop_config.json
+   </code>
+   ):
+  </p>
+  <pre><code class="language-json">{
+  "mcpServers": {
+    "hyperplexity": {
+      "type": "http",
+      "url": "https://mcp-server-hyperplexity-production.up.railway.app/",
+      "headers": {
+        "X-Api-Key": "hpx_live_your_key_here"
+      }
+    }
+  }
+}
+</code></pre>
+  <span class="md-heading3">
+   Option C — Smithery
+  </span>
+  <p>
+   <a href="https://smithery.ai">
+    Smithery
+   </a>
+   is an MCP registry that works with Claude Code and other MCP-compatible clients including OpenClaw.
+  </p>
+  <p>
+   <strong>
+    Step 1 — Install and log in:
+   </strong>
+  </p>
+  <pre><code class="language-bash">npx - y @smithery/cli@latest login
+npx - y @smithery/cli@latest mcp add hyperplexity/hyperplexity --client claude-code
+</code></pre>
+  <p>
+   <strong>
+    Step 2 — Authenticate with your API key:
+   </strong>
+  </p>
+  <p>
+   Open your MCP client (e.g. Claude Code), go to
+   <code>
+    /mcp
+   </code>
+   , click
+   <strong>
+    hyperplexity → Authenticate
+   </strong>
+   , and enter your Hyperplexity API key in the Smithery page that opens.
+  </p>
+  <blockquote>
+   <p>
+    Smithery login is a one-time step. You must log in before adding servers, or authentication will not be set up correctly.
+   </p>
+  </blockquote>
   <span class="md-heading2">
    What to Ask Your Agent
   </span>
