@@ -30,8 +30,9 @@ Hyperplexity generates, validates, and updates research tables by synthesizing h
 - [Get Your API Key](#get-your-api-key)
 - [Download Examples](#download-examples)
 - [Quick Start: MCP (Claude)](#quick-start-mcp-claude)
-  - [Claude Code](#claude-code-one-liner)
-  - [Claude Desktop](#claude-desktop)
+  - [Option A: Smithery (recommended)](#option-a--smithery-recommended)
+  - [Option B: Direct install (Claude Code)](#option-b--direct-install-claude-code)
+  - [Option B: Direct install (Claude Desktop)](#option-b--direct-install-claude-desktop)
   - [Project config](#project-config-shared-repo)
   - [Using with Claude — What to Say](#using-with-claude--what-to-say)
 - [Workflows](#workflows)
@@ -87,14 +88,26 @@ export HYPERPLEXITY_API_KEY=hpx_live_...
 
 The MCP server lets Claude drive the full Hyperplexity workflow autonomously — no scripting required.
 
-### Claude Code (one-liner)
+### Option A — Smithery (recommended)
+
+[Smithery](https://smithery.ai) is an MCP server registry. It handles the connection automatically — no environment variable setup needed.
+
+```bash
+smithery mcp add hyperplexity/production
+```
+
+Smithery will prompt you for your API key and wire everything up. Works with Claude Code and Claude Desktop.
+
+> **Don't have the `smithery` CLI?** Install it with `npm install -g @smithery/cli`, or connect directly from the [Smithery web UI](https://smithery.ai/server/hyperplexity/production).
+
+### Option B — Direct install (Claude Code)
 
 ```bash
 claude mcp add hyperplexity uvx mcp-server-hyperplexity \
   -e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
 ```
 
-### Claude Desktop
+### Option B — Direct install (Claude Desktop)
 
 Add to `claude_desktop_config.json`:
 
