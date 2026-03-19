@@ -12,7 +12,6 @@ from hyperplexity_mcp.guidance import build_guidance
 
 
 def register(server):
-    client = get_client()
 
     @server.tool()
     def update_table(
@@ -23,6 +22,7 @@ def register(server):
 
         source_version can pin a specific prior result version; omit for latest.
         """
+        client = get_client()
         payload: dict = {"source_job_id": source_job_id}
         if source_version:
             payload["source_version"] = source_version
@@ -52,6 +52,7 @@ def register(server):
         Set auto_approve=True to skip the approval gate and run straight through
         to completion automatically.
         """
+        client = get_client()
         if not text and not s3_key:
             raise ValueError("Provide either 'text' or 's3_key'.")
 

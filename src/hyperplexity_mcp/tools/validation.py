@@ -13,7 +13,6 @@ from hyperplexity_mcp.guidance import build_guidance
 
 
 def register(server):
-    client = get_client()
 
     @server.tool()
     def approve_validation(
@@ -36,6 +35,7 @@ def register(server):
         # Issue 4: refuse to approve without an explicit cost confirmation.
         # This prevents the agent from silently triggering full validation before
         # reviewing the preview rows and cost estimate.
+        client = get_client()
         if approved_cost_usd is None:
             result = {
                 "error": "cost_approval_required",
@@ -119,6 +119,7 @@ def register(server):
           results.interactive_viewer_url — share with humans; renders sources + confidence.
           results.download_url          — enriched Excel file for offline sharing.
         """
+        client = get_client()
         try:
             data = client.get(f"/jobs/{job_id}/results")
         except APIError as exc:
@@ -182,6 +183,7 @@ def register(server):
     @server.tool()
     def get_reference_results(job_id: str) -> list[types.TextContent]:
         """Fetch reference-check sub-results for a completed job (if applicable)."""
+        client = get_client()
         data = client.get(f"/jobs/{job_id}/reference-results")
         data["_guidance"] = build_guidance("get_reference_results", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]

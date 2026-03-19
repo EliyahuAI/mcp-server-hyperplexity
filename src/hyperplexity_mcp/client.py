@@ -18,10 +18,18 @@ Usage:
 
 from __future__ import annotations
 
+import contextvars
 import os
 import requests
 
 _DEFAULT_URL = "https://api.hyperplexity.ai/v1"
+
+# Per-request API key — set by HTTP middleware when Authorization: Bearer is present.
+# Takes priority over HYPERPLEXITY_API_KEY env var so each HTTP user can supply
+# their own key without a server-level env var being required.
+_request_api_key: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "hyperplexity_request_api_key", default=""
+)
 
 
 class APIError(RuntimeError):
@@ -104,12 +112,17 @@ class HyperplexityClient:
 
 
 def get_client() -> HyperplexityClient:
-    """Build a client from the HYPERPLEXITY_API_KEY environment variable."""
-    api_key = os.environ.get("HYPERPLEXITY_API_KEY", "")
+    """Build a client from the per-request key (HTTP mode) or env var (stdio mode).
+
+    Resolution order:
+      1. _request_api_key contextvar — set by HTTP middleware from Authorization: Bearer
+      2. HYPERPLEXITY_API_KEY environment variable
+    """
+    api_key = _request_api_key.get() or os.environ.get("HYPERPLEXITY_API_KEY", "")
     if not api_key:
         raise RuntimeError(
-            "HYPERPLEXITY_API_KEY environment variable is not set. "
-            "Get your API key at hyperplexity.ai/account and add it to your "
-            "Claude Desktop MCP config or export it in your shell."
+            "HYPERPLEXITY_API_KEY is not set. "
+            "For Claude Code / Desktop: add it to your MCP config env block. "
+            "For HTTP / Smithery: pass it as 'Authorization: Bearer hpx_live_...' header."
         )
     return HyperplexityClient(api_key)
