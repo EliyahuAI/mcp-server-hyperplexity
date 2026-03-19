@@ -32,6 +32,7 @@ Get your API key at hyperplexity.ai/account — new accounts get $20 free credit
 import os
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 # ---- Tool modules ----
 from hyperplexity_mcp.tools import account, uploads, jobs, validation, job_actions, conversations
@@ -40,7 +41,12 @@ from hyperplexity_mcp.tools import account, uploads, jobs, validation, job_actio
 # Server + tool registration
 # ---------------------------------------------------------------------------
 
-server = FastMCP("hyperplexity")
+# Disable DNS-rebinding protection so the server is reachable from Railway /
+# Smithery (non-localhost hosts). stdio mode ignores this setting entirely.
+server = FastMCP(
+    "hyperplexity",
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+)
 
 # Each module's register() calls @server.tool() decorators, adding tools to
 # the FastMCP instance.
@@ -95,7 +101,7 @@ def main():
         async def server_card(request: Request) -> JSONResponse:
             return JSONResponse({
                 "name": "hyperplexity",
-                "version": "1.0.4",
+                "version": "1.0.5",
                 "description": (
                     "Generate, validate, and fact-check research tables with "
                     "AI-sourced citations and per-cell confidence scores."
