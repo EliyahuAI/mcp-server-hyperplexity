@@ -72,6 +72,61 @@ job_actions.register(server)
 conversations.register(server)
 
 # ---------------------------------------------------------------------------
+# Prompts — workflow starters surfaced in Smithery's Capabilities section
+# ---------------------------------------------------------------------------
+
+@server.prompt()
+def generate_table(description: str, columns: str = "") -> str:
+    """Generate a new research table from a natural language description.
+
+    description: What the table should cover (topic, entities, scope).
+    columns: Optional comma-separated list of columns to include.
+    """
+    col_hint = f" Include these columns: {columns}." if columns else ""
+    return (
+        f"Use start_table_maker to create a research table with this description: "
+        f"{description}.{col_hint} "
+        f"Once the conversation starts, answer any clarifying questions, then "
+        f"call wait_for_conversation (expected_seconds=120) until trigger_execution=True. "
+        f"Then call wait_for_job to track the preview, review the preview_table and "
+        f"cost_estimate, and call approve_validation to run the full table. "
+        f"Finally call wait_for_job again and get_results to retrieve the finished table."
+    )
+
+
+@server.prompt()
+def validate_file(file_path: str, instructions: str = "") -> str:
+    """Validate an existing Excel or CSV file with AI fact-checking.
+
+    file_path: Absolute path to the local .xlsx or .csv file.
+    instructions: Optional description of what to validate (bypasses the interview).
+    """
+    file_type = "excel" if file_path.lower().endswith((".xlsx", ".xls")) else "csv"
+    instr_hint = f' Pass instructions="{instructions}" to confirm_upload to skip the interview.' if instructions else ""
+    return (
+        f"Validate the file at {file_path}. "
+        f"1. Call upload_file(file_path='{file_path}', file_type='{file_type}'). "
+        f"2. Call confirm_upload with the returned session_id, s3_key, and filename.{instr_hint} "
+        f"3. Call wait_for_job (timeout_seconds=900) until preview_complete. "
+        f"4. Review the preview_table and cost_estimate, then call approve_validation. "
+        f"5. Call wait_for_job again until completed, then get_results."
+    )
+
+
+@server.prompt()
+def fact_check_text(text: str) -> str:
+    """Fact-check a text passage by extracting and verifying its claims.
+
+    text: The text to fact-check (works best with 4+ factual claims).
+    """
+    return (
+        f"Run a reference check on the following text using reference_check(text=...). "
+        f"After the preview completes (wait_for_job until preview_complete), review "
+        f"the claims_summary and cost_estimate, then call approve_validation to verify "
+        f"all claims. Retrieve final results with get_reference_results.\n\nText:\n{text}"
+    )
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -115,7 +170,7 @@ def main():
         async def server_card(request: Request) -> JSONResponse:
             return JSONResponse({
                 "name": "hyperplexity",
-                "version": "1.0.7",
+                "version": "1.0.8",
                 "description": (
                     "Generate, validate, and fact-check research tables with "
                     "AI-sourced citations and per-cell confidence scores."
