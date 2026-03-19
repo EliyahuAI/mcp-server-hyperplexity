@@ -58,12 +58,9 @@ conversations.register(server)
 def main():
     transport = os.getenv("MCP_TRANSPORT", "stdio")
     if transport == "http":
-        import json
         import uvicorn
-        from starlette.applications import Starlette
         from starlette.requests import Request
         from starlette.responses import JSONResponse, Response
-        from starlette.routing import Mount, Route
         from hyperplexity_mcp.client import _request_api_key
 
         # Pure-ASGI middleware — avoids BaseHTTPMiddleware breaking SSE/streaming.
@@ -91,10 +88,14 @@ def main():
                     await self.app(scope, receive, send)
 
         # /.well-known/mcp/server-card.json — lets Smithery skip auto-scanning.
+        # /.health — health check for Railway / load balancers.
+        # Registered via server.custom_route so they're included inside the
+        # streamable_http_app() Starlette instance (preserving its lifespan).
+        @server.custom_route("/.well-known/mcp/server-card.json", methods=["GET"])
         async def server_card(request: Request) -> JSONResponse:
             return JSONResponse({
                 "name": "hyperplexity",
-                "version": "1.0.3",
+                "version": "1.0.4",
                 "description": (
                     "Generate, validate, and fact-check research tables with "
                     "AI-sourced citations and per-cell confidence scores."
@@ -102,18 +103,12 @@ def main():
                 "mcp_endpoint": "/mcp",
             })
 
-        # Health check for Railway / load balancers.
+        @server.custom_route("/health", methods=["GET"])
         async def health(request: Request) -> Response:
             return Response("ok")
 
         port = int(os.getenv("PORT", "8000"))
-        mcp_app = server.streamable_http_app()
-
-        app = Starlette(routes=[
-            Route("/.well-known/mcp/server-card.json", server_card),
-            Route("/health", health),
-            Mount("/", app=mcp_app),
-        ])
+        app = server.streamable_http_app()
         app = _ApiKeyMiddleware(app)
         uvicorn.run(app, host="0.0.0.0", port=port)
     else:
