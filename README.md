@@ -16,8 +16,8 @@ Hyperplexity generates, validates, and updates research tables by synthesizing h
 |---|---|
 | Try it out or iron out your use case | **[hyperplexity.ai/app](https://hyperplexity.ai/app)** — web GUI for table validation and generation |
 | Fact-check text or documents interactively | **[hyperplexity.ai/chex](https://hyperplexity.ai/chex)** — web GUI for reference checks |
-| Let Claude drive a workflow autonomously | **MCP server** — install once, describe your task in plain English |
-| One-off automation without writing code | **MCP server** via Claude Code or Claude Desktop |
+| Let an AI agent drive a workflow autonomously | **MCP server** — install once, describe your task in plain English |
+| One-off automation without writing code | **MCP server** via Claude Code, Claude Desktop, or any MCP-compatible client |
 | Run repeatable pipelines or batch jobs | **REST API** + example scripts |
 | Integrate into a product or SaaS | **REST API** directly |
 
@@ -25,31 +25,16 @@ Hyperplexity generates, validates, and updates research tables by synthesizing h
 
 ---
 
-## Three Entry Points for MCP (Claude)
-
-Once the MCP server is installed, describe your goal in plain English. These are the three things you can ask Claude to do:
-
-| What you want | Say to Claude |
-|---|---|
-| **Generate a table from a prompt** | *"Use Hyperplexity to create a table of the top 20 US biotech companies with columns: company, market cap, lead drug, and phase."* |
-| **Validate an existing Excel/CSV** | *"Use Hyperplexity to validate `companies.xlsx`. Interview me about what each column means, then run the preview."* |
-| **Fact-check a document or text** | *"Use Hyperplexity to fact-check this analyst report."* *(paste text or share a file path)* |
-
-Claude drives the full workflow — upload, configure, preview, approve, download — pausing only when a decision genuinely requires your input.
-
----
-
 ## Table of Contents
 
-- [Three Entry Points for MCP (Claude)](#three-entry-points-for-mcp-claude)
 - [Get Your API Key](#get-your-api-key)
 - [Download Examples](#download-examples)
-- [Quick Start: MCP (Claude)](#quick-start-mcp-claude)
+- [Quick Start: MCP](#quick-start-mcp)
   - [Option A: Smithery (recommended)](#option-a--smithery-recommended)
   - [Option B: Direct install (Claude Code)](#option-b--direct-install-claude-code)
   - [Option B: Direct install (Claude Desktop)](#option-b--direct-install-claude-desktop)
   - [Project config](#project-config-shared-repo)
-  - [Using with Claude — What to Say](#using-with-claude--what-to-say)
+  - [What to Ask Your Agent](#what-to-ask-your-agent)
 - [Workflows](#workflows)
   - [1. Validate an Existing Table](#1-validate-an-existing-table)
   - [2. Generate a Table from a Prompt](#2-generate-a-table-from-a-prompt)
@@ -99,9 +84,9 @@ export HYPERPLEXITY_API_KEY=hpx_live_...
 
 ---
 
-## Quick Start: MCP (Claude)
+## Quick Start: MCP
 
-The MCP server lets Claude drive the full Hyperplexity workflow autonomously — no scripting required.
+The MCP server lets any AI agent drive the full Hyperplexity workflow autonomously — no scripting required.
 
 ### Option A — Smithery (recommended)
 
@@ -165,9 +150,9 @@ Each team member sets `HYPERPLEXITY_API_KEY` in their own shell profile. No key 
 
 ---
 
-## Using with Claude — What to Say
+## What to Ask Your Agent
 
-Once the MCP server is installed, describe your task in plain English. Claude drives the full workflow, pausing only when user input is genuinely needed.
+Once the MCP server is installed, describe your task in plain English. The agent drives the full workflow, pausing only when your input is genuinely needed.
 
 **Validate a table:**
 > "Validate `companies.xlsx` using Hyperplexity. Interview me about what each column means, then run the preview. If the results look good, approve the full validation."
