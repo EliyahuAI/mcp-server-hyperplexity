@@ -72,19 +72,29 @@ New accounts get **$20 in free credits** — enough for several full tables.
 ## Get started
 
 1. Get your API key at [hyperplexity.ai/account](https://hyperplexity.ai/account)
-2. Install the MCP server — pick whichever method you prefer:
+2. Install the MCP server:
 
-**Option A — Smithery (recommended, no env var setup needed):**
-```bash
-smithery mcp add hyperplexity/production
-```
-
-**Option B — Direct (Claude Code):**
+**Option A — uvx (recommended):**
 ```bash
 claude mcp add hyperplexity uvx mcp-server-hyperplexity \
   -e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
 ```
 
-3. Ask Claude: *"Use Hyperplexity to generate a table of…"*
+**Option B — Direct HTTP to Railway:**
+```bash
+claude mcp add hyperplexity \
+  --transport http \
+  https://mcp-server-hyperplexity-production.up.railway.app/ \
+  --header "X-Api-Key: hpx_live_your_key_here"
+```
+
+**Option C — Smithery** (for OpenClaw and other Smithery-compatible clients):
+```bash
+npx -y @smithery/cli@latest login
+npx -y @smithery/cli@latest mcp add hyperplexity/hyperplexity --client claude-code
+```
+Then open your client → `/mcp` → **hyperplexity → Authenticate** → enter your API key.
+
+3. Ask your agent: *"Use Hyperplexity to generate a table of…"*
 
 Full documentation: [eliyahu.ai/api-guide](https://eliyahu.ai/api-guide)
