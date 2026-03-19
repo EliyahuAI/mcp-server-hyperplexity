@@ -5,7 +5,7 @@ description: >-
   plain language — Hyperplexity researches every cell, scores confidence, and
   links citations. Supports table generation, validation, reference checking,
   and result export.
-homepage: https://hyperplexity.ai
+homepage: https://eliyahu.ai/api-guide
 
 startCommand:
   type: stdio
