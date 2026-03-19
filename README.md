@@ -132,6 +132,22 @@ claude mcp add hyperplexity uvx mcp-server-hyperplexity \
 }
 ```
 
+**OpenAI Codex CLI** — add to `~/.codex/config.toml` (Windows: `C:\Users\<you>\.codex\config.toml`):
+
+```toml
+[mcp_servers.hyperplexity]
+command = "uvx"
+args = ["mcp-server-hyperplexity"]
+
+[mcp_servers.hyperplexity.env]
+HYPERPLEXITY_API_KEY = "hpx_live_your_key_here"
+```
+
+Then restart Codex and verify:
+```bash
+codex mcp list
+```
+
 ### Option B — Direct HTTP connection to Railway
 
 Connects your agent directly to the hosted Hyperplexity server over HTTP. No local process required.
