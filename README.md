@@ -132,7 +132,7 @@ claude mcp add hyperplexity uvx mcp-server-hyperplexity \
 }
 ```
 
-**OpenAI Codex CLI** — add to `~/.codex/config.toml` (Windows: `C:\Users\<you>\.codex\config.toml`):
+**OpenAI Codex CLI** — add to your Codex config file (`~/.codex/config.toml` on macOS/Linux, `%USERPROFILE%\.codex\config.toml` on Windows):
 
 ```toml
 [mcp_servers.hyperplexity]
