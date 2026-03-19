@@ -43,9 +43,11 @@ from hyperplexity_mcp.tools import account, uploads, jobs, validation, job_actio
 
 # Disable DNS-rebinding protection so the server is reachable from Railway /
 # Smithery (non-localhost hosts). stdio mode ignores this setting entirely.
+# Mount at "/" so the Railway base URL works without requiring a "/mcp" suffix.
 server = FastMCP(
     "hyperplexity",
     transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    streamable_http_path="/",
 )
 
 # Each module's register() calls @server.tool() decorators, adding tools to
@@ -101,12 +103,12 @@ def main():
         async def server_card(request: Request) -> JSONResponse:
             return JSONResponse({
                 "name": "hyperplexity",
-                "version": "1.0.5",
+                "version": "1.0.6",
                 "description": (
                     "Generate, validate, and fact-check research tables with "
                     "AI-sourced citations and per-cell confidence scores."
                 ),
-                "mcp_endpoint": "/mcp",
+                "mcp_endpoint": "/",
             })
 
         @server.custom_route("/health", methods=["GET"])
