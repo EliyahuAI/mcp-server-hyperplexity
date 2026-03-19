@@ -42,6 +42,7 @@ Hyperplexity generates, validates, and updates research tables by synthesizing h
 - [Environment Variables](#environment-variables)
 - [Direct REST API](#direct-rest-api)
   - [API Endpoint Reference](#api-endpoint-reference)
+- [MCP Prompts](#mcp-prompts)
 - [MCP Tool Reference](#mcp-tool-reference)
 - [Key Behaviors](#key-behaviors)
 - [Pricing](#pricing)
@@ -482,6 +483,18 @@ Content types: `excel` → `.xlsx`, `csv` → `.csv`, `pdf` → `.pdf`
 |--------|------|-------------|
 | `GET`  | `/account/balance` | Current credit balance and this-month usage |
 | `GET`  | `/account/usage` | Billing history (supports `start_date`, `end_date`, `limit`, `offset`) |
+
+---
+
+## MCP Prompts
+
+Three built-in prompts act as workflow starters — select them from the prompt picker in your MCP client (Claude Code: `/` menu; Claude Desktop: the prompt icon) and fill in the arguments.
+
+| Prompt | Arguments | What it does |
+|--------|-----------|--------------|
+| `generate_table` | `description` (required), `columns` (optional) | Builds a step-by-step instruction for creating a new research table from a natural language description |
+| `validate_file` | `file_path` (required), `instructions` (optional) | Generates the full validation workflow for an existing Excel or CSV file |
+| `fact_check_text` | `text` (required) | Generates the reference-check workflow for fact-checking a text passage |
 
 ---
 

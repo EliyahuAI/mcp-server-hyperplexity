@@ -1,3 +1,12 @@
+name: Hyperplexity
+description: >-
+  Generate, validate, and fact-check research tables with AI-sourced citations
+  and per-cell confidence scores. Upload an Excel/CSV or describe a table in
+  plain language — Hyperplexity researches every cell, scores confidence, and
+  links citations. Supports table generation, validation, reference checking,
+  and result export.
+homepage: https://eliyahu.ai/api-guide
+
 startCommand:
   type: stdio
   configSchema:
@@ -11,11 +20,18 @@ startCommand:
         description: >-
           Your Hyperplexity API key. Get one (with $20 free credits) at
           https://hyperplexity.ai/account
+      logLevel:
+        type: string
+        title: Log Level
+        description: Log verbosity level (DEBUG, INFO, WARNING, ERROR). Defaults to INFO.
+        enum: [DEBUG, INFO, WARNING, ERROR]
+        default: INFO
   commandFunction: |-
     (config) => ({
       command: "uvx",
       args: ["mcp-server-hyperplexity"],
       env: {
-        HYPERPLEXITY_API_KEY: config.apiKey
+        HYPERPLEXITY_API_KEY: config.apiKey,
+        ...(config.logLevel ? { LOG_LEVEL: config.logLevel } : {}),
       }
     })

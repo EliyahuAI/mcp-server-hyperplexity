@@ -12,10 +12,12 @@ import asyncio
 import json
 import math
 import time
-from typing import Optional
+from typing import Annotated, Optional
 
 from mcp import types
 from mcp.server.fastmcp import Context
+from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from hyperplexity_mcp.client import get_client
 from hyperplexity_mcp.guidance import build_guidance
@@ -43,10 +45,10 @@ def _patch_next_step_if_needed(data: dict, conversation_id: str) -> None:
 
 def register(server):
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
     def start_table_maker(
-        message: str,
-        auto_start: bool = False,
+        message: Annotated[str, Field(description="Natural-language description of the table to generate, including desired columns and subject matter.")],
+        auto_start: Annotated[bool, Field(description="When True, skip clarifying questions and generate the table immediately from the message alone.")] = False,
     ) -> list[types.TextContent]:
         """Start a Table Maker conversation to generate a research table.
 
@@ -67,10 +69,10 @@ def register(server):
         data["_guidance"] = build_guidance("start_table_maker", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def get_conversation(
-        conversation_id: str,
-        session_id: str,
+        conversation_id: Annotated[str, Field(description="Conversation ID returned by start_table_maker or confirm_upload.")],
+        session_id: Annotated[str, Field(description="Session ID associated with the conversation.")],
     ) -> list[types.TextContent]:
         """Poll a conversation for new messages or a status change.
 
@@ -87,11 +89,11 @@ def register(server):
         data["_guidance"] = build_guidance("get_conversation", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
     def send_conversation_reply(
-        conversation_id: str,
-        session_id: str,
-        message: str,
+        conversation_id: Annotated[str, Field(description="Conversation ID to send the reply to.")],
+        session_id: Annotated[str, Field(description="Session ID associated with the conversation.")],
+        message: Annotated[str, Field(description="Reply message text to send to the AI.")],
     ) -> list[types.TextContent]:
         """Send a user reply in an ongoing conversation (interview or table-maker).
 
@@ -105,11 +107,11 @@ def register(server):
         data["_guidance"] = build_guidance("send_conversation_reply", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
     def refine_config(
-        conversation_id: str,
-        session_id: str,
-        instructions: str,
+        conversation_id: Annotated[str, Field(description="Conversation ID of the refine session.")],
+        session_id: Annotated[str, Field(description="Session ID associated with the conversation.")],
+        instructions: Annotated[str, Field(description="Natural-language instructions describing the config changes to make.")],
     ) -> list[types.TextContent]:
         """Refine the generated validation config using natural language instructions.
 
@@ -124,14 +126,14 @@ def register(server):
         data["_guidance"] = build_guidance("refine_config", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
     async def wait_for_conversation(
-        conversation_id: str,
-        session_id: str,
+        conversation_id: Annotated[str, Field(description="Conversation ID to wait on.")],
+        session_id: Annotated[str, Field(description="Session ID associated with the conversation.")],
         ctx: Context,
-        expected_seconds: int = 120,
-        timeout_seconds: int = 900,
-        poll_interval: int = 8,
+        expected_seconds: Annotated[int, Field(description="Expected AI response time in seconds — used to shape synthetic progress curve (default 120).")] = 120,
+        timeout_seconds: Annotated[int, Field(description="Maximum wall-clock seconds to wait before returning last known state (default 900).")] = 900,
+        poll_interval: Annotated[int, Field(description="Seconds between status poll cycles (default 8).")] = 8,
     ) -> list[types.TextContent]:
         """Wait for a conversation turn to complete, emitting live synthetic progress.
 

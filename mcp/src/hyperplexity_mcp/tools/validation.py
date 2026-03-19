@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import Optional
+from typing import Annotated, Optional
 
 import requests as _requests
 from mcp import types
+from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from hyperplexity_mcp.client import APIError, get_client
 from hyperplexity_mcp.guidance import build_guidance
@@ -14,10 +16,10 @@ from hyperplexity_mcp.guidance import build_guidance
 
 def register(server):
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True))
     def approve_validation(
-        job_id: str,
-        approved_cost_usd: Optional[float] = None,
+        job_id: Annotated[str, Field(description="Session ID / job ID in preview_complete state to approve for full validation.")],
+        approved_cost_usd: Annotated[Optional[float], Field(description="The estimated cost from the preview_complete response — must match exactly to confirm you reviewed the cost before billing.")] = None,
     ) -> list[types.TextContent]:
         """Approve a preview and start full validation processing.
 
@@ -101,8 +103,8 @@ def register(server):
         data["_guidance"] = build_guidance("approve_validation", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
-    @server.tool()
-    def get_results(job_id: str) -> list[types.TextContent]:
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    def get_results(job_id: Annotated[str, Field(description="Session ID / job ID of a completed validation job.")]) -> list[types.TextContent]:
         """Fetch the final validated/enriched results for a completed job.
 
         job_id: the session_id value — "job_id" and "session_id" are the same string.
@@ -180,8 +182,8 @@ def register(server):
         data["_guidance"] = build_guidance("get_results", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
-    @server.tool()
-    def get_reference_results(job_id: str) -> list[types.TextContent]:
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    def get_reference_results(job_id: Annotated[str, Field(description="Session ID / job ID of a completed reference-check job.")]) -> list[types.TextContent]:
         """Fetch reference-check sub-results for a completed job (if applicable)."""
         client = get_client()
         data = client.get(f"/jobs/{job_id}/reference-results")

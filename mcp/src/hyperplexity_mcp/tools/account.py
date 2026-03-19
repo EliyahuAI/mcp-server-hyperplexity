@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
-from typing import Optional
+from typing import Annotated, Optional
 
 from mcp import types
+from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from hyperplexity_mcp.client import get_client
 from hyperplexity_mcp.guidance import build_guidance
@@ -13,7 +15,7 @@ from hyperplexity_mcp.guidance import build_guidance
 
 def register(server):
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def get_balance() -> list[types.TextContent]:
         """Return the current account credit balance in USD."""
         client = get_client()
@@ -21,12 +23,12 @@ def register(server):
         data["_guidance"] = build_guidance("get_balance", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def get_usage(
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        limit: Optional[int] = None,
-        offset: Optional[int] = None,
+        start_date: Annotated[Optional[str], Field(description="Filter start date in YYYY-MM-DD format.")] = None,
+        end_date: Annotated[Optional[str], Field(description="Filter end date in YYYY-MM-DD format.")] = None,
+        limit: Annotated[Optional[int], Field(description="Maximum number of records to return.")] = None,
+        offset: Annotated[Optional[int], Field(description="Number of records to skip for pagination.")] = None,
     ) -> list[types.TextContent]:
         """Return API usage history. Dates in YYYY-MM-DD format."""
         client = get_client()

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
-from typing import Optional
+from typing import Annotated, Optional
 
 from mcp import types
+from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from hyperplexity_mcp.client import get_client
 from hyperplexity_mcp.guidance import build_guidance
@@ -13,10 +15,10 @@ from hyperplexity_mcp.guidance import build_guidance
 
 def register(server):
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
     def update_table(
-        source_job_id: str,
-        source_version: Optional[str] = None,
+        source_job_id: Annotated[str, Field(description="Job ID of the previously processed table to re-run validation on.")],
+        source_version: Annotated[Optional[str], Field(description="Specific prior result version to pin; omit to use the latest version.")] = None,
     ) -> list[types.TextContent]:
         """Re-run validation on a previously processed table (update in place).
 
@@ -31,11 +33,11 @@ def register(server):
         data["_guidance"] = build_guidance("update_table", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
     def reference_check(
-        text: Optional[str] = None,
-        s3_key: Optional[str] = None,
-        auto_approve: bool = False,
+        text: Annotated[Optional[str], Field(description="Inline text to fact-check (provide either text or s3_key, not both).")] = None,
+        s3_key: Annotated[Optional[str], Field(description="S3 key of an already-uploaded file to fact-check (provide either text or s3_key).")] = None,
+        auto_approve: Annotated[bool, Field(description="Skip the preview approval gate and run straight through to full validation automatically.")] = False,
     ) -> list[types.TextContent]:
         """Submit a reference-check job for a text snippet or uploaded file.
 

@@ -271,6 +271,11 @@
     </ul>
    </li>
    <li>
+    <a href="#mcp-prompts">
+     MCP Prompts
+    </a>
+   </li>
+   <li>
     <a href="#mcp-tool-reference">
      MCP Tool Reference
     </a>
@@ -1711,6 +1716,89 @@ def api_post(path, **kwargs):
        offset
       </code>
       )
+     </td>
+    </tr>
+   </tbody>
+  </table>
+  <span class="md-heading2">
+   MCP Prompts
+  </span>
+  <p>
+   Three built-in prompts act as workflow starters — select them from the prompt picker in your MCP client (Claude Code:
+   <code>
+    /
+   </code>
+   menu; Claude Desktop: the prompt icon) and fill in the arguments.
+  </p>
+  <table>
+   <thead>
+    <tr>
+     <th>
+      Prompt
+     </th>
+     <th>
+      Arguments
+     </th>
+     <th>
+      What it does
+     </th>
+    </tr>
+   </thead>
+   <tbody>
+    <tr>
+     <td>
+      <code>
+       generate_table
+      </code>
+     </td>
+     <td>
+      <code>
+       description
+      </code>
+      (required),
+      <code>
+       columns
+      </code>
+      (optional)
+     </td>
+     <td>
+      Builds a step-by-step instruction for creating a new research table from a natural language description
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       validate_file
+      </code>
+     </td>
+     <td>
+      <code>
+       file_path
+      </code>
+      (required),
+      <code>
+       instructions
+      </code>
+      (optional)
+     </td>
+     <td>
+      Generates the full validation workflow for an existing Excel or CSV file
+     </td>
+    </tr>
+    <tr>
+     <td>
+      <code>
+       fact_check_text
+      </code>
+     </td>
+     <td>
+      <code>
+       text
+      </code>
+      (required)
+     </td>
+     <td>
+      Generates the reference-check workflow for fact-checking a text passage
      </td>
     </tr>
    </tbody>
