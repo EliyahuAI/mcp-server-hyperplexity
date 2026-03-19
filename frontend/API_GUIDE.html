@@ -133,7 +133,7 @@
     </tr>
     <tr>
      <td>
-      Let Claude drive a workflow autonomously
+      Let an AI agent drive a workflow autonomously
      </td>
      <td>
       <strong>
@@ -150,7 +150,7 @@
       <strong>
        MCP server
       </strong>
-      via Claude Code or Claude Desktop
+      via Claude Code, Claude Desktop, or any MCP-compatible client
      </td>
     </tr>
     <tr>
@@ -200,18 +200,23 @@
     </a>
    </li>
    <li>
-    <a href="#quick-start-mcp-claude">
-     Quick Start: MCP (Claude)
+    <a href="#quick-start-mcp">
+     Quick Start: MCP
     </a>
     <ul>
      <li>
-      <a href="#claude-code-one-liner">
-       Claude Code
+      <a href="#option-a--smithery-recommended">
+       Option A: Smithery (recommended)
       </a>
      </li>
      <li>
-      <a href="#claude-desktop">
-       Claude Desktop
+      <a href="#option-b--direct-install-claude-code">
+       Option B: Direct install (Claude Code)
+      </a>
+     </li>
+     <li>
+      <a href="#option-b--direct-install-claude-desktop">
+       Option B: Direct install (Claude Desktop)
       </a>
      </li>
      <li>
@@ -220,8 +225,8 @@
       </a>
      </li>
      <li>
-      <a href="#using-with-claude--what-to-say">
-       Using with Claude — What to Say
+      <a href="#what-to-ask-your-agent">
+       What to Ask Your Agent
       </a>
      </li>
     </ul>
@@ -425,19 +430,53 @@ pip install requests
 export HYPERPLEXITY_API_KEY=hpx_live_...
 </code></pre>
   <span class="md-heading2">
-   Quick Start: MCP (Claude)
+   Quick Start: MCP
   </span>
   <p>
-   The MCP server lets Claude drive the full Hyperplexity workflow autonomously — no scripting required.
+   The MCP server lets any AI agent drive the full Hyperplexity workflow autonomously — no scripting required.
   </p>
   <span class="md-heading3">
-   Claude Code (one-liner)
+   Option A — Smithery (recommended)
+  </span>
+  <p>
+   <a href="https://smithery.ai">
+    Smithery
+   </a>
+   is an MCP server registry. It handles the connection automatically — no environment variable setup needed.
+  </p>
+  <pre><code class="language-bash">smithery mcp add hyperplexity/production
+</code></pre>
+  <p>
+   Smithery will prompt you for your API key and wire everything up. Works with Claude Code and Claude Desktop.
+  </p>
+  <blockquote>
+   <p>
+    <strong>
+     Don't have the
+     <code>
+      smithery
+     </code>
+     CLI?
+    </strong>
+    Install it with
+    <code>
+     npm install - g @smithery/cli
+    </code>
+    , or connect directly from the
+    <a href="https://smithery.ai/server/hyperplexity/production">
+     Smithery web UI
+    </a>
+    .
+   </p>
+  </blockquote>
+  <span class="md-heading3">
+   Option B — Direct install (Claude Code)
   </span>
   <pre><code class="language-bash">claude mcp add hyperplexity uvx mcp-server-hyperplexity \
   - e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
 </code></pre>
   <span class="md-heading3">
-   Claude Desktop
+   Option B — Direct install (Claude Desktop)
   </span>
   <p>
    Add to
@@ -506,10 +545,10 @@ export HYPERPLEXITY_API_KEY=hpx_live_...
    in their own shell profile. No key is committed to the repo.
   </p>
   <span class="md-heading2">
-   Using with Claude — What to Say
+   What to Ask Your Agent
   </span>
   <p>
-   Once the MCP server is installed, describe your task in plain English. Claude drives the full workflow, pausing only when user input is genuinely needed.
+   Once the MCP server is installed, describe your task in plain English. The agent drives the full workflow, pausing only when your input is genuinely needed.
   </p>
   <p>
    <strong>

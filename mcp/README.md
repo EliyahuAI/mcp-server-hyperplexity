@@ -16,8 +16,8 @@ Hyperplexity generates, validates, and updates research tables by synthesizing h
 |---|---|
 | Try it out or iron out your use case | **[hyperplexity.ai/app](https://hyperplexity.ai/app)** — web GUI for table validation and generation |
 | Fact-check text or documents interactively | **[hyperplexity.ai/chex](https://hyperplexity.ai/chex)** — web GUI for reference checks |
-| Let Claude drive a workflow autonomously | **MCP server** — install once, describe your task in plain English |
-| One-off automation without writing code | **MCP server** via Claude Code or Claude Desktop |
+| Let an AI agent drive a workflow autonomously | **MCP server** — install once, describe your task in plain English |
+| One-off automation without writing code | **MCP server** via Claude Code, Claude Desktop, or any MCP-compatible client |
 | Run repeatable pipelines or batch jobs | **REST API** + example scripts |
 | Integrate into a product or SaaS | **REST API** directly |
 
@@ -29,11 +29,12 @@ Hyperplexity generates, validates, and updates research tables by synthesizing h
 
 - [Get Your API Key](#get-your-api-key)
 - [Download Examples](#download-examples)
-- [Quick Start: MCP (Claude)](#quick-start-mcp-claude)
-  - [Claude Code](#claude-code-one-liner)
-  - [Claude Desktop](#claude-desktop)
+- [Quick Start: MCP](#quick-start-mcp)
+  - [Option A: Smithery (recommended)](#option-a--smithery-recommended)
+  - [Option B: Direct install (Claude Code)](#option-b--direct-install-claude-code)
+  - [Option B: Direct install (Claude Desktop)](#option-b--direct-install-claude-desktop)
   - [Project config](#project-config-shared-repo)
-  - [Using with Claude — What to Say](#using-with-claude--what-to-say)
+  - [What to Ask Your Agent](#what-to-ask-your-agent)
 - [Workflows](#workflows)
   - [1. Validate an Existing Table](#1-validate-an-existing-table)
   - [2. Generate a Table from a Prompt](#2-generate-a-table-from-a-prompt)
@@ -83,18 +84,30 @@ export HYPERPLEXITY_API_KEY=hpx_live_...
 
 ---
 
-## Quick Start: MCP (Claude)
+## Quick Start: MCP
 
-The MCP server lets Claude drive the full Hyperplexity workflow autonomously — no scripting required.
+The MCP server lets any AI agent drive the full Hyperplexity workflow autonomously — no scripting required.
 
-### Claude Code (one-liner)
+### Option A — Smithery (recommended)
+
+[Smithery](https://smithery.ai) is an MCP server registry. It handles the connection automatically — no environment variable setup needed.
+
+```bash
+smithery mcp add hyperplexity/production
+```
+
+Smithery will prompt you for your API key and wire everything up. Works with Claude Code and Claude Desktop.
+
+> **Don't have the `smithery` CLI?** Install it with `npm install -g @smithery/cli`, or connect directly from the [Smithery web UI](https://smithery.ai/server/hyperplexity/production).
+
+### Option B — Direct install (Claude Code)
 
 ```bash
 claude mcp add hyperplexity uvx mcp-server-hyperplexity \
   -e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
 ```
 
-### Claude Desktop
+### Option B — Direct install (Claude Desktop)
 
 Add to `claude_desktop_config.json`:
 
@@ -137,9 +150,9 @@ Each team member sets `HYPERPLEXITY_API_KEY` in their own shell profile. No key 
 
 ---
 
-## Using with Claude — What to Say
+## What to Ask Your Agent
 
-Once the MCP server is installed, describe your task in plain English. Claude drives the full workflow, pausing only when user input is genuinely needed.
+Once the MCP server is installed, describe your task in plain English. The agent drives the full workflow, pausing only when your input is genuinely needed.
 
 **Validate a table:**
 > "Validate `companies.xlsx` using Hyperplexity. Interview me about what each column means, then run the preview. If the results look good, approve the full validation."
