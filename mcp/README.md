@@ -52,7 +52,7 @@ Hyperplexity generates, validates, and updates research tables by synthesizing h
 
 ## Get Your API Key
 
-Log in at **[hyperplexity.ai](https://hyperplexity.ai)** and click your email at the top of the first card to access account info and API keys. New accounts receive $20 in free credits.
+Get your API key at **[hyperplexity.ai/account](https://hyperplexity.ai/account)**. New accounts receive $20 in free credits.
 
 ---
 
