@@ -1212,6 +1212,7 @@ def _handle_approve_validation(job_id, body, email, meta):
         "approved_cost_usd": body.get("approved_cost_usd"),
         "webhook_url": body.get("webhook_url"),
         "webhook_secret": body.get("webhook_secret"),
+        "validation_mode": body.get("validation_mode"),
     }
     from interface_lambda.actions import start_preview
     resp = start_preview.handle_approve_validation(request_data, None)

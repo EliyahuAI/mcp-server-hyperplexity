@@ -294,7 +294,7 @@ class SimplifiedSchemaValidator:
             model_usage[model].append(target.column)
         return model_usage
     
-    def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None, validation_history: Dict[str, Dict[str, Any]] = None, has_web_search: bool = True) -> str:
+    def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None, validation_history: Dict[str, Dict[str, Any]] = None, has_web_search: bool = True, validation_mode: str = 'standard') -> str:
         """Generate a validation prompt for multiple targets (multiplex) using markdown prompt template.
 
         Args:
@@ -317,14 +317,18 @@ class SimplifiedSchemaValidator:
             logger.info("[PROMPT_GEN] No validation history provided")
         
         # Load multiplex validation prompt from markdown file
-        prompts_file = Path(__file__).parent / "prompts" / "multiplex_validation.md"
+        is_lightweight = validation_mode == 'lightweight'
+        prompt_filename = "multiplex_validation_lightweight.md" if is_lightweight else "multiplex_validation.md"
+        prompts_file = Path(__file__).parent / "prompts" / prompt_filename
         try:
             with open(prompts_file, 'r', encoding='utf-8') as f:
                 multiplex_prompt_template = f.read()
         except Exception as e:
-            logger.error(f"Failed to load multiplex_validation.md: {e}")
+            logger.error(f"Failed to load {prompt_filename}: {e}")
             # Fallback to a basic prompt
             return "Please validate the provided fields and return results in JSON format."
+        if is_lightweight:
+            logger.info("[LIGHTWEIGHT] Using lightweight validation prompt")
         
         # Get general notes from config
         general_notes = self.config.get('general_notes', '')
@@ -467,9 +471,12 @@ class SimplifiedSchemaValidator:
         else:
             logger.debug("No additional original row context fields to add")
 
-        # Build previous validation results
+        # Build previous validation results (skipped in lightweight mode)
         previous_results_text = ""
-        if previous_results and len(previous_results) > 0:
+        if is_lightweight:
+            previous_results_text = ""
+            validation_history = None  # Don't inject history in lightweight mode
+        elif previous_results and len(previous_results) > 0:
             prev_lines = []
             for col, result in previous_results.items():
                 confidence_level = result.get('confidence_level', 'UNKNOWN')
@@ -638,8 +645,8 @@ class SimplifiedSchemaValidator:
             )
 
         except KeyError as e:
-            logger.error(f"Missing template key in multiplex_validation.md: {e}")
-            return "Template error - please check multiplex_validation.md configuration."
+            logger.error(f"Missing template key in {prompt_filename}: {e}")
+            return f"Template error - please check {prompt_filename} configuration."
         except Exception as e:
             logger.error(f"Error formatting prompt template: {e}")
             return "Prompt formatting error."
@@ -797,6 +804,10 @@ class SimplifiedSchemaValidator:
                     # Expand compact values to full format (handles "null" string -> None)
                     confidence_str = self._expand_confidence(confidence)
                     original_confidence_str = self._expand_confidence(original_confidence)
+                    # Lightweight mode: force all confidences to MEDIUM regardless of model output
+                    if getattr(self, '_validation_mode', 'standard') == 'lightweight':
+                        confidence_str = 'MEDIUM'
+                        original_confidence_str = 'MEDIUM'
                     consistent_with_model_knowledge = self._expand_consistent(consistent) or ''
 
                     # Cell array format: sources come from citations metadata, not response

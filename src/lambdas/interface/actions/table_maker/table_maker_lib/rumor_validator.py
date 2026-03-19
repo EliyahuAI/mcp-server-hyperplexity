@@ -289,7 +289,8 @@ class RumorValidator:
             S3_CACHE_BUCKET=main_bucket,
             VALIDATOR_LAMBDA_NAME=VALIDATOR_LAMBDA_NAME,
             session_id=self.session_id,
-            email=self.email
+            email=self.email,
+            validation_mode='lightweight',
         )
 
         logger.info(f"[RUMOR_VAL] Validator lambda completed")

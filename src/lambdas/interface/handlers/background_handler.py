@@ -1399,6 +1399,7 @@ def handle_main_processing(event, context):
             batch_size = None  # Let enhanced batch manager determine optimal size
 
         run_key = event.get('run_key')  # Extract run_key from SQS message
+        validation_mode = event.get('validation_mode', 'standard')  # 'standard' or 'lightweight'
         
         # Handle case where run_key is missing (backward compatibility)
         if not run_key:
@@ -3462,7 +3463,8 @@ def handle_main_processing(event, context):
                     },
                     "validation_history": validation_history,  # Properly loaded validation history
                     "session_id": session_id,
-                    "email": email  # Add email for memory system support
+                    "email": email,  # Add email for memory system support
+                    "validation_mode": validation_mode,
                 }
 
                 # Check payload size and trigger delegation if > 5MB (below AWS 6MB limit with safety margin)

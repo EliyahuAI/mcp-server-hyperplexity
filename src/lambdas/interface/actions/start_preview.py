@@ -246,7 +246,8 @@ def handle_approve_validation(request_data, context=None):
             config_s3_key=config_s3_key,
             email=email,
             reference_pin=reference_pin,
-            run_key=run_key
+            run_key=run_key,
+            validation_mode=request_data.get("validation_mode"),
         )
 
         logger.info(f"[APPROVE_VALIDATION] Queued full validation for {base_session_id}, MessageId: {message_id}")

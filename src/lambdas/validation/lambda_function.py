@@ -2443,6 +2443,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         is_async_request = event.get('async_delegation_request', False)
         session_id = event.get('session_id', 'unknown')
         email = event.get('email', event.get('email_address', ''))
+        validation_mode = event.get('validation_mode', 'standard')
 
         # Debug: Check what email value we got
         logger.info(f"[EMAIL_DEBUG] email='{email}', event.email='{event.get('email')}', event.email_address='{event.get('email_address')}'")
@@ -2973,6 +2974,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 print(f"LAMBDA_HANDLER: First validation target: {first_target}")
         
         validator = SimplifiedSchemaValidator(config)
+        validator._validation_mode = validation_mode
 
         # Initialize QC manager if available
         qc_manager = None
@@ -4381,7 +4383,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             has_web_search = api_provider == 'perplexity' or (api_provider == 'anthropic' and max_web_searches > 0)
             logger.debug(f"Web search available: {has_web_search}")
 
-            prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history, has_web_search=has_web_search)
+            prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history, has_web_search=has_web_search, validation_mode=validation_mode)
 
             # Append proactive guidance if provided
             if proactive_guidance:

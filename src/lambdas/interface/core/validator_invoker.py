@@ -821,7 +821,8 @@ def invoke_validator_lambda_with_rows(
     S3_CACHE_BUCKET: str,
     VALIDATOR_LAMBDA_NAME: str,
     session_id: str = None,
-    email: str = None
+    email: str = None,
+    validation_mode: str = None,
 ) -> dict:
     """
     Invoke validator lambda with rows passed directly in the payload.
@@ -836,6 +837,7 @@ def invoke_validator_lambda_with_rows(
         VALIDATOR_LAMBDA_NAME: Name of the validator Lambda function.
         session_id: Session ID for memory storage (optional).
         email: User email for memory storage (optional).
+        validation_mode: 'lightweight' for minimal prompt + forced MEDIUM confidence (optional).
 
     Returns:
         Dict matching the shape returned by invoke_validator_lambda:
@@ -862,7 +864,8 @@ def invoke_validator_lambda_with_rows(
         },
         "validation_history": {},
         "session_id": session_id,
-        "email": email
+        "email": email,
+        **({"validation_mode": validation_mode} if validation_mode else {}),
     }
 
     logger.info(
