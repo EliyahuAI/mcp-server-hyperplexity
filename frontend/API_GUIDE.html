@@ -510,6 +510,32 @@ export HYPERPLEXITY_API_KEY=hpx_live_...
   }
 }
 </code></pre>
+  <p>
+   <strong>
+    OpenAI Codex CLI
+   </strong>
+   — add to
+   <code>
+    ~/.codex/config.toml
+   </code>
+   (Windows:
+   <code>
+    C:\Users\&lt;you&gt;\.codex\config.toml
+   </code>
+   ):
+  </p>
+  <pre><code class="language-toml">[mcp_servers.hyperplexity]
+command = "uvx"
+args = ["mcp-server-hyperplexity"]
+
+[mcp_servers.hyperplexity.env]
+HYPERPLEXITY_API_KEY = "hpx_live_your_key_here"
+</code></pre>
+  <p>
+   Then restart Codex and verify:
+  </p>
+  <pre><code class="language-bash">codex mcp list
+</code></pre>
   <span class="md-heading3">
    Option B — Direct HTTP connection to Railway
   </span>
