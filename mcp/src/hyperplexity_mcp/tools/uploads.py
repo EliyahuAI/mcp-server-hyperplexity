@@ -19,7 +19,6 @@ _CONTENT_TYPES = {
 
 
 def register(server):
-    client = get_client()
 
     @server.tool()
     def upload_file(
@@ -35,6 +34,7 @@ def register(server):
 
         file_type must be one of: "excel", "csv", "pdf"
         """
+        client = get_client()
         if file_type not in _CONTENT_TYPES:
             raise ValueError(f"file_type must be one of {list(_CONTENT_TYPES)}; got '{file_type}'")
 
@@ -109,6 +109,7 @@ def register(server):
           before anything is billed. If balance is insufficient at that point,
           approve_validation returns an insufficient_balance error.
         """
+        client = get_client()
         payload = {"session_id": session_id, "s3_key": s3_key, "filename": filename}
         if instructions:
             payload["instructions"] = instructions

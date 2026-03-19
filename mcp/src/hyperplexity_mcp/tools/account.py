@@ -12,11 +12,11 @@ from hyperplexity_mcp.guidance import build_guidance
 
 
 def register(server):
-    client = get_client()
 
     @server.tool()
     def get_balance() -> list[types.TextContent]:
         """Return the current account credit balance in USD."""
+        client = get_client()
         data = client.get("/account/balance")
         data["_guidance"] = build_guidance("get_balance", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
@@ -29,6 +29,7 @@ def register(server):
         offset: Optional[int] = None,
     ) -> list[types.TextContent]:
         """Return API usage history. Dates in YYYY-MM-DD format."""
+        client = get_client()
         params = {}
         if start_date:
             params["start_date"] = start_date

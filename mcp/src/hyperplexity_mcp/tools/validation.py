@@ -13,7 +13,6 @@ from hyperplexity_mcp.guidance import build_guidance
 
 
 def register(server):
-    client = get_client()
 
     @server.tool()
     def approve_validation(
@@ -22,18 +21,21 @@ def register(server):
     ) -> list[types.TextContent]:
         """Approve a preview and start full validation processing.
 
+        job_id: the session_id value — "job_id" and "session_id" are the same string.
+
         approved_cost_usd MUST be provided and must match the estimated cost from
-        get_job_status (preview_complete state). This prevents accidental billing
-        without first reviewing preview results and the cost estimate.
+        the preview_complete response. This prevents accidental billing without first
+        reviewing preview results and the cost estimate.
 
         Workflow:
-          1. Call get_job_status to reach preview_complete and read preview_results.download_url
-          2. Review the estimated cost in cost_estimate.estimated_total_cost_usd
-          3. Call approve_validation(job_id, approved_cost_usd=<that value>)
+          1. Call wait_for_job to reach preview_complete — read the inline preview_table
+             (3-row sample) and cost_estimate.estimated_total_cost_usd from the response
+          2. Call approve_validation(job_id=<session_id>, approved_cost_usd=<that value>)
         """
         # Issue 4: refuse to approve without an explicit cost confirmation.
         # This prevents the agent from silently triggering full validation before
         # reviewing the preview rows and cost estimate.
+        client = get_client()
         if approved_cost_usd is None:
             result = {
                 "error": "cost_approval_required",
@@ -103,10 +105,21 @@ def register(server):
     def get_results(job_id: str) -> list[types.TextContent]:
         """Fetch the final validated/enriched results for a completed job.
 
-        Automatically downloads table_metadata.json and embeds it inline as
-        results.metadata — no extra tool call needed. The metadata contains
-        per-cell confidence scores, validator explanations, and sources/citations.
+        job_id: the session_id value — "job_id" and "session_id" are the same string.
+
+        Automatically downloads table_metadata.json and embeds it inline so no
+        separate HTTP fetch is needed. Key fields in the response:
+
+          results.markdown_table        — START HERE. Self-contained markdown document:
+                                          full validated table (all rows, all values),
+                                          confidence icons, viewer/download links, and
+                                          a guide to navigating citations. Read this first.
+          results.metadata.rows[]       — per-row data keyed by row_key; each cell has
+                                          full_value, confidence, comment (with citations).
+          results.interactive_viewer_url — share with humans; renders sources + confidence.
+          results.download_url          — enriched Excel file for offline sharing.
         """
+        client = get_client()
         try:
             data = client.get(f"/jobs/{job_id}/results")
         except APIError as exc:
@@ -144,6 +157,12 @@ def register(server):
                 metadata = resp.json()
                 data.setdefault("results", {})["metadata"] = metadata
 
+                # Lift markdown_table to results.markdown_table so agents find it
+                # immediately without navigating the nested metadata structure.
+                markdown_table = metadata.get("markdown_table")
+                if markdown_table:
+                    data["results"]["markdown_table"] = markdown_table
+
                 # Issue 5: warn when the embedded metadata is very large so the
                 # agent knows to use jq rather than trying to parse the raw JSON.
                 metadata_size = len(json.dumps(metadata))
@@ -164,6 +183,7 @@ def register(server):
     @server.tool()
     def get_reference_results(job_id: str) -> list[types.TextContent]:
         """Fetch reference-check sub-results for a completed job (if applicable)."""
+        client = get_client()
         data = client.get(f"/jobs/{job_id}/reference-results")
         data["_guidance"] = build_guidance("get_reference_results", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]

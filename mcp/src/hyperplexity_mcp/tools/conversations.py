@@ -42,7 +42,6 @@ def _patch_next_step_if_needed(data: dict, conversation_id: str) -> None:
 
 
 def register(server):
-    client = get_client()
 
     @server.tool()
     def start_table_maker(
@@ -60,6 +59,7 @@ def register(server):
           questions or showing a structure for approval. Use when the message fully
           describes the desired table and no back-and-forth is needed.
         """
+        client = get_client()
         payload: dict = {"message": message}
         if auto_start:
             payload["auto_start"] = True
@@ -79,6 +79,7 @@ def register(server):
           user_reply_needed  → send_conversation_reply
           trigger_execution  → preview is auto-queued; switch to get_job_status
         """
+        client = get_client()
         data = client.get(f"/conversations/{conversation_id}", params={"session_id": session_id})
         data.setdefault("conversation_id", conversation_id)
         data.setdefault("session_id", session_id)
@@ -96,6 +97,7 @@ def register(server):
 
         After sending, poll get_conversation for the AI's next response.
         """
+        client = get_client()
         payload = {"session_id": session_id, "message": message}
         data = client.post(f"/conversations/{conversation_id}/message", json=payload)
         data.setdefault("conversation_id", conversation_id)
@@ -114,6 +116,7 @@ def register(server):
         Example instructions:
         'Add a column for LinkedIn URL. Remove the revenue column. Make email validation stricter.'
         """
+        client = get_client()
         payload = {"session_id": session_id, "instructions": instructions}
         data = client.post(f"/conversations/{conversation_id}/refine-config", json=payload)
         data.setdefault("conversation_id", conversation_id)
@@ -156,6 +159,8 @@ def register(server):
         timeout_seconds:  max wall time before returning (default 900).
           Upload interview turns can take up to 15 minutes — set accordingly.
         """
+
+        client = get_client()
 
         def _synthetic_progress(elapsed: float, expected: float) -> float:
             """Advance quickly within the expected window (sqrt curve → 90% at

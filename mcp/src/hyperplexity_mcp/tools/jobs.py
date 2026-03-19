@@ -15,7 +15,6 @@ from hyperplexity_mcp.guidance import build_guidance
 
 
 def register(server):
-    client = get_client()
 
     @server.tool()
     def create_job(
@@ -40,6 +39,7 @@ def register(server):
         upload_id comes from the upload_file response.
         notify_method: "poll" (default) or "webhook".
         """
+        client = get_client()
         payload: dict = {"session_id": session_id, "preview_rows": 3}
         if upload_id:
             payload["upload_id"] = upload_id
@@ -110,6 +110,7 @@ def register(server):
           completed            → get_results
           failed               → check error field
         """
+        client = get_client()
         data = client.get(f"/jobs/{job_id}")
         data["_guidance"] = build_guidance("get_job_status", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
@@ -123,6 +124,7 @@ def register(server):
 
         Pass since_seq from the last message to receive only new messages.
         """
+        client = get_client()
         params = {}
         if since_seq is not None:
             params["since_seq"] = since_seq
@@ -178,6 +180,9 @@ def register(server):
         Returns the same payload shape as get_job_status so downstream tools
         (approve_validation, get_results, etc.) apply directly.
 
+        job_id: the session_id value returned by upload_file / confirm_upload /
+          start_table_maker. "job_id" and "session_id" are the same string — every
+          workflow uses session_id as its job identifier throughout the pipeline.
         timeout_seconds: max wall time before returning last known state (default 900).
           Upload-interview + config-gen phases and large table previews can take up
           to 15 minutes — set timeout_seconds=900 or higher for long-running jobs.
@@ -190,6 +195,7 @@ def register(server):
           The warmup is automatically disabled once the first intermediate step
           completes (phase-split takes over). For instructions= mode, pass 300.
         """
+        client = get_client()
         # ── Helpers: phase and terminal classification ────────────────────────
 
         # Step names (lowercased) embedded in current_step that mark an

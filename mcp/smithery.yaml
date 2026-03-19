@@ -1,0 +1,21 @@
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    required:
+      - apiKey
+    properties:
+      apiKey:
+        type: string
+        title: Hyperplexity API Key
+        description: >-
+          Your Hyperplexity API key. Get one (with $20 free credits) at
+          https://hyperplexity.ai/account
+  commandFunction: |-
+    (config) => ({
+      command: "uvx",
+      args: ["mcp-server-hyperplexity"],
+      env: {
+        HYPERPLEXITY_API_KEY: config.apiKey
+      }
+    })
