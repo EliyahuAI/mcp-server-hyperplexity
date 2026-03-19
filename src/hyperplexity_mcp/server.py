@@ -140,7 +140,7 @@ def main():
 
         # Pure-ASGI middleware — avoids BaseHTTPMiddleware breaking SSE/streaming.
         class _ApiKeyMiddleware:
-            """Extract HYPERPLEXITY_API_KEY from Authorization: Bearer or X-Api-Key header."""
+            """Extract API key from Authorization: Bearer, X-Api-Key header, or ?api_key= query param."""
             def __init__(self, app):
                 self.app = app
 
@@ -153,6 +153,10 @@ def main():
                         key = auth[7:].strip()
                     if not key:
                         key = headers.get(b"x-api-key", b"").decode().strip()
+                    if not key:
+                        from urllib.parse import parse_qs
+                        qs = parse_qs(scope.get("query_string", b"").decode())
+                        key = (qs.get("api_key", [""])[0] or qs.get("apiKey", [""])[0]).strip()
                     token = _request_api_key.set(key) if key else None
                     try:
                         await self.app(scope, receive, send)
@@ -170,7 +174,7 @@ def main():
         async def server_card(request: Request) -> JSONResponse:
             return JSONResponse({
                 "name": "hyperplexity",
-                "version": "1.0.8",
+                "version": "1.0.9",
                 "description": (
                     "Generate, validate, and fact-check research tables with "
                     "AI-sourced citations and per-cell confidence scores."
