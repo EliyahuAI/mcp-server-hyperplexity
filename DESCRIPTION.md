@@ -18,20 +18,32 @@ The output is an Excel file and a shareable interactive viewer. Claude drives th
 
 ---
 
-## Four things you can do
+## Three ways to start
 
-### 1. Generate a research table from a prompt
-> *"Create a table of the top 20 US biotech companies with columns: company, market cap, lead drug, phase, and primary indication."*
+Once installed, tell Claude what you want in plain English — it drives everything from there.
 
+| Goal | What to say to Claude |
+|------|----------------------|
+| **Generate a table from a prompt** | *"Use Hyperplexity to create a table of the top 20 US biotech companies with columns: company, market cap, lead drug, and phase."* |
+| **Validate an existing Excel or CSV** | *"Use Hyperplexity to validate `companies.xlsx`. Interview me about what each column means, then run the preview."* |
+| **Fact-check a document or passage** | *"Use Hyperplexity to fact-check this analyst report."* *(paste text or share a file path)* |
+
+Claude handles the full workflow — upload, configure, preview, approve — pausing only when a decision genuinely needs you.
+
+---
+
+## What each workflow does
+
+### Generate a table from a prompt
 Claude starts a table-maker session, clarifies the structure if needed, builds the table, runs a free 3-row preview, and waits for your approval before billing.
 
-### 2. Validate an existing Excel or CSV file
+### Validate an existing Excel or CSV file
 Upload any table and Hyperplexity fact-checks every cell against live sources. It learns the meaning of your columns through a short interview (or you can skip the interview entirely with a one-line description), then runs the same preview-then-approve flow.
 
-### 3. Fact-check a document or text passage
+### Fact-check a document or text passage
 Paste an analyst report, a research abstract, or any text with factual claims. Hyperplexity extracts each claim, verifies it independently, and returns support levels: **SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIABLE** — with the source for every verdict.
 
-### 4. Refresh a table you already ran
+### Refresh a table you already ran
 Re-run validation on any prior job to pick up changes in source data. No re-upload or configuration needed.
 
 ---

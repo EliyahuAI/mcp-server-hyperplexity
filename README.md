@@ -25,8 +25,23 @@ Hyperplexity generates, validates, and updates research tables by synthesizing h
 
 ---
 
+## Three Entry Points for MCP (Claude)
+
+Once the MCP server is installed, describe your goal in plain English. These are the three things you can ask Claude to do:
+
+| What you want | Say to Claude |
+|---|---|
+| **Generate a table from a prompt** | *"Use Hyperplexity to create a table of the top 20 US biotech companies with columns: company, market cap, lead drug, and phase."* |
+| **Validate an existing Excel/CSV** | *"Use Hyperplexity to validate `companies.xlsx`. Interview me about what each column means, then run the preview."* |
+| **Fact-check a document or text** | *"Use Hyperplexity to fact-check this analyst report."* *(paste text or share a file path)* |
+
+Claude drives the full workflow — upload, configure, preview, approve, download — pausing only when a decision genuinely requires your input.
+
+---
+
 ## Table of Contents
 
+- [Three Entry Points for MCP (Claude)](#three-entry-points-for-mcp-claude)
 - [Get Your API Key](#get-your-api-key)
 - [Download Examples](#download-examples)
 - [Quick Start: MCP (Claude)](#quick-start-mcp-claude)
