@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Optional
+from typing import Annotated, Optional
 
 from mcp import types
+from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from hyperplexity_mcp.client import get_client
 from hyperplexity_mcp.guidance import build_guidance
@@ -20,11 +22,11 @@ _CONTENT_TYPES = {
 
 def register(server):
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
     def upload_file(
-        file_path: str,
-        file_type: str,
-        session_id: Optional[str] = None,
+        file_path: Annotated[str, Field(description="Absolute or relative path to the local file to upload.")],
+        file_type: Annotated[str, Field(description='File format — must be one of: "excel", "csv", "pdf".')],
+        session_id: Annotated[Optional[str], Field(description="Optional existing session ID to associate this upload with.")] = None,
     ) -> list[types.TextContent]:
         """Upload a local file to Hyperplexity.
 
@@ -78,13 +80,13 @@ def register(server):
         result["_guidance"] = build_guidance("upload_file", result)
         return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
     def confirm_upload(
-        session_id: str,
-        s3_key: str,
-        filename: str,
-        instructions: Optional[str] = None,
-        config_id: Optional[str] = None,
+        session_id: Annotated[str, Field(description="Session ID returned by upload_file.")],
+        s3_key: Annotated[str, Field(description="S3 key returned by upload_file identifying the uploaded file.")],
+        filename: Annotated[str, Field(description="Original filename of the uploaded file.")],
+        instructions: Annotated[Optional[str], Field(description="Optional natural-language description of what to validate; bypasses the upload interview when provided.")] = None,
+        config_id: Annotated[Optional[str], Field(description="Optional ID of a prior configuration to reuse; skips the interview and queues the preview immediately.")] = None,
     ) -> list[types.TextContent]:
         """Confirm the upload and detect matching prior configs.
 

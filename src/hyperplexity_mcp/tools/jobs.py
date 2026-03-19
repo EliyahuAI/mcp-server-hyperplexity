@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from typing import Optional
+from typing import Annotated, Optional
 
 from mcp import types
 from mcp.server.fastmcp import Context
+from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from hyperplexity_mcp.client import APIError, get_client
 from hyperplexity_mcp.guidance import build_guidance
@@ -16,15 +18,15 @@ from hyperplexity_mcp.guidance import build_guidance
 
 def register(server):
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
     def create_job(
-        session_id: str,
-        upload_id: Optional[str] = None,
-        config_id: Optional[str] = None,
-        config: Optional[dict] = None,
-        s3_key: Optional[str] = None,
-        notify_method: Optional[str] = None,
-        webhook_url: Optional[str] = None,
+        session_id: Annotated[str, Field(description="Session ID from upload_file or confirm_upload identifying the upload session.")],
+        upload_id: Annotated[Optional[str], Field(description="Upload ID from upload_file (optional if session already holds the upload).")] = None,
+        config_id: Annotated[Optional[str], Field(description="ID of a known prior configuration to reuse directly.")] = None,
+        config: Annotated[Optional[dict], Field(description="Validation configuration dict to apply directly.")] = None,
+        s3_key: Annotated[Optional[str], Field(description="S3 key of the uploaded file.")] = None,
+        notify_method: Annotated[Optional[str], Field(description='Notification method: "poll" (default) or "webhook".')] = None,
+        webhook_url: Annotated[Optional[str], Field(description="Webhook URL to notify when the job completes (requires notify_method=webhook).")] = None,
     ) -> list[types.TextContent]:
         """Create a validation job.
 
@@ -95,8 +97,8 @@ def register(server):
         data["_guidance"] = build_guidance("create_job", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
-    @server.tool()
-    def get_job_status(job_id: str) -> list[types.TextContent]:
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    def get_job_status(job_id: Annotated[str, Field(description="Session ID / job ID returned by upload_file, confirm_upload, or start_table_maker.")]) -> list[types.TextContent]:
         """One-shot job status check. Prefer wait_for_job for tracking long-running jobs.
 
         Use this for quick status inspections or as a fallback when wait_for_job
@@ -115,10 +117,10 @@ def register(server):
         data["_guidance"] = build_guidance("get_job_status", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def get_job_messages(
-        job_id: str,
-        since_seq: Optional[int] = None,
+        job_id: Annotated[str, Field(description="Session ID / job ID to fetch progress messages for.")],
+        since_seq: Annotated[Optional[int], Field(description="Return only messages with sequence number greater than this value.")] = None,
     ) -> list[types.TextContent]:
         """Fetch live progress messages for a running job.
 
@@ -133,13 +135,13 @@ def register(server):
         data["_guidance"] = build_guidance("get_job_messages", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
     async def wait_for_job(
-        job_id: str,
+        job_id: Annotated[str, Field(description="Session ID returned by upload_file, confirm_upload, or start_table_maker.")],
         ctx: Context,
-        timeout_seconds: int = 900,
-        poll_interval: int = 10,
-        warmup_seconds: int = 0,
+        timeout_seconds: Annotated[int, Field(description="Maximum wall-clock seconds to wait before returning last known state (default 900).")] = 900,
+        poll_interval: Annotated[int, Field(description="Seconds between status poll cycles (default 10).")] = 10,
+        warmup_seconds: Annotated[int, Field(description="Seconds of synthetic sqrt-curve progress during silent setup phases (default 0; use 300 for instructions= mode).")] = 0,
     ) -> list[types.TextContent]:
         """Wait for a job to reach a terminal state, emitting live MCP progress notifications.
 

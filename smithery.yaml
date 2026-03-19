@@ -11,11 +11,18 @@ startCommand:
         description: >-
           Your Hyperplexity API key. Get one (with $20 free credits) at
           https://hyperplexity.ai/account
+      logLevel:
+        type: string
+        title: Log Level
+        description: Log verbosity level (DEBUG, INFO, WARNING, ERROR). Defaults to INFO.
+        enum: [DEBUG, INFO, WARNING, ERROR]
+        default: INFO
   commandFunction: |-
     (config) => ({
       command: "uvx",
       args: ["mcp-server-hyperplexity"],
       env: {
-        HYPERPLEXITY_API_KEY: config.apiKey
+        HYPERPLEXITY_API_KEY: config.apiKey,
+        ...(config.logLevel ? { LOG_LEVEL: config.logLevel } : {}),
       }
     })

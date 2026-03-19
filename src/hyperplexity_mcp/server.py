@@ -32,6 +32,7 @@ Get your API key at hyperplexity.ai/account — new accounts get $20 free credit
 import os
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.server import Icon
 from mcp.server.transport_security import TransportSecuritySettings
 
 # ---- Tool modules ----
@@ -48,6 +49,17 @@ server = FastMCP(
     "hyperplexity",
     transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     streamable_http_path="/",
+    instructions=(
+        "Hyperplexity lets you generate, validate, and fact-check research tables with "
+        "AI-sourced citations and per-cell confidence scores. "
+        "Use start_table_maker to create a new table from a natural language description, "
+        "or upload_file + confirm_upload to validate an existing Excel/CSV file. "
+        "Every cell in the output table has a confidence score and citation links. "
+        "Full workflow: start_table_maker → wait_for_conversation → wait_for_job → "
+        "approve_validation → wait_for_job → get_results."
+    ),
+    website_url="https://hyperplexity.ai",
+    icons=[Icon(src="https://hyperplexity.ai/favicon.ico", mimeType="image/x-icon")],
 )
 
 # Each module's register() calls @server.tool() decorators, adding tools to
@@ -103,7 +115,7 @@ def main():
         async def server_card(request: Request) -> JSONResponse:
             return JSONResponse({
                 "name": "hyperplexity",
-                "version": "1.0.6",
+                "version": "1.0.7",
                 "description": (
                     "Generate, validate, and fact-check research tables with "
                     "AI-sourced citations and per-cell confidence scores."
