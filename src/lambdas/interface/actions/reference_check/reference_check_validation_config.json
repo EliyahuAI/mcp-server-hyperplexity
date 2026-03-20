@@ -1,225 +1,215 @@
-{
-  "general_notes": "This table contains extracted claims that need validation. The ID columns are pre-populated from extraction. The RESEARCH columns must be validated using the following logic:\n\n**VALIDATION LOGIC**:\n1. **If Reference is provided** (external citation):\n   - Access the cited reference via web search\n   - Verify how well it supports the claim\n   - Do NOT use the paper itself as validation source\n\n2. **If Supporting Data is provided** (paper's own results):\n   - Evaluate whether the stated measurements/data actually support the claim\n   - Check if other data in the original text (see below) corroborates or contradicts\n   - Do NOT use the paper's own assertions as proof - check if measurements logically support the claim\n   - If claim needs external validation, use web search to check acceptance of the statement (excluding this paper)\n\n3. **If neither Reference nor Supporting Data**:\n   - Use web search to assess how accepted/verified this statement is\n   - Search for authoritative sources on the topic\n   - EXCLUDE this paper from validation sources (cannot self-reference)\n\n**CRITICAL**: The paper being analyzed cannot validate its own claims. Supporting Data shows what the paper claims - you must evaluate if those measurements actually support the claim or if external verification is needed.",
-  "default_model": "the-clone",
-  "default_search_context_size": "high",
-  "anthropic_max_web_searches_default": 0,
-  "qc_settings": {
-    "enable_qc": false,
-    "model": "deepseek-v3.2",
-    "max_tokens_default": 8000,
-    "tokens_per_validated_column_default": 3000,
-    "anthropic_max_web_searches": 0
-  },
-  "search_groups": [
-    {
-      "group_id": 0,
-      "group_name": "Claim Identifiers",
-      "description": "Claim identifiers and extracted text - already populated, used for context only",
-      "model": "the-clone",
-      "search_context": "low"
-    },
-    {
-      "group_id": 1,
-      "group_name": "Reference Validation",
-      "description": "Comprehensive validation of all research columns in a single pass - access the reference, assess support level, determine confidence, and provide detailed notes",
-      "model": "the-clone",
-      "search_context": "high"
+  {
+    "general_notes": "This table contains extracted claims that need validation. The ID columns are pre-populated from extraction. The RESEARCH columns must be validated using the following logic:\n\n**VALIDATION LOGIC**:\n1. **If Reference is provided** (external citation):\n   - Access the cited reference via web search\n   - Verify how well it supports the claim\n   - Do NOT use the paper itself as validation source\n\n2. **If Supporting Data is provided** (paper's own results):\n   - Evaluate whether the stated measurements/data actually support the claim\n   - Check if other data in the original text (see below) corroborates or contradicts\n   - Do NOT use the paper's own assertions as proof - check if measurements logically support the claim\n   - If claim needs external validation, use web search to check acceptance of the statement (excluding this paper)\n\n3. **If neither Reference nor Supporting Data**:\n   - Use web search to assess how accepted/verified this statement is\n   - Search for authoritative sources on the topic\n   - EXCLUDE this paper from validation sources (cannot self-reference)\n\n**CRITICAL**: The paper being analyzed cannot validate its own claims. Supporting Data shows what the paper claims - you must evaluate if those measurements actually support the claim or if external verification is needed.",
+    "default_model": "the-clone-flash",
+    "model_role": "reference_check_validation",
+    "qc_settings": { "enable_qc": false },
+    "default_search_context_size": "high",
+    "search_groups": [
+      {
+        "group_id": 0,
+        "group_name": "Claim Identifiers",
+        "description": "Claim identifiers and extracted text - already populated, used for context only"
+      },
+      {
+        "group_id": 1,
+        "group_name": "Reference Validation",
+        "description": "Comprehensive validation of all research columns in a single pass - access the reference, assess support level, determine confidence, and provide detailed notes"
+      }
+    ],
+    "validation_targets": [
+      {
+        "column": "Claim ID",
+        "description": "Unique identifier for each claim",
+        "importance": "IGNORED",
+        "format": "String (e.g., claim_001, claim_002)",
+        "examples": [
+          "claim_001",
+          "claim_002",
+          "claim_003"
+        ],
+        "search_group": 0,
+        "notes": "Auto-generated identifier for tracking claims. No validation needed."
+      },
+      {
+        "column": "Claim Order",
+        "description": "Sequential order as claim appears in original document",
+        "importance": "ID",
+        "format": "Integer (1, 2, 3, etc.)",
+        "examples": [
+          "1",
+          "2",
+          "15"
+        ],
+        "search_group": 0,
+        "notes": "Preserves the claim's position in the original document before criticality sorting. No validation needed."
+      },
+      {
+        "column": "Statement",
+        "description": "The factual claim being made",
+        "importance": "ID",
+        "format": "String (complete sentence or claim)",
+        "examples": [
+          "The Earth's average temperature has increased by 1.1°C since pre-industrial times",
+          "Python was first released in 1991",
+          "Large language models can hallucinate facts in 15-20% of responses"
+        ],
+        "search_group": 0,
+        "notes": "The claim that needs to be verified against the provided reference. No validation needed - used as context."
+      },
+      {
+        "column": "Context",
+        "description": "Additional context surrounding the claim from the original text",
+        "importance": "IGNORED",
+        "format": "String (surrounding text or context)",
+        "examples": [
+          "According to the IPCC report, climate data shows significant warming trends.",
+          "In the Python documentation and historical records.",
+          "Recent research has examined the accuracy of AI models."
+        ],
+        "search_group": 0,
+        "notes": "Provides context for understanding the claim's intended meaning. No validation needed - used as context."
+      },
+      {
+        "column": "Text Location",
+        "description": "Location of the claim in the original text",
+        "importance": "ID",
+        "format": "String (semicolon-delimited format: Section: X; Para: Y; Sentence: Z; Words: A-B; Chars: C-D)",
+        "examples": [
+          "Section: Introduction; Para: 2; Sentence: 3; Words: 45-67; Chars: 234-456",
+          "Para: 2; Sentence: 3; Words: 45-67; Chars: 234-456",
+          "Para: 1; Sentence: 1; Words: 1-15; Chars: 0-89"
+        ],
+        "search_group": 0,
+        "notes": "Human-readable location of the claim in the original text. Uses semicolon delimiter (not pipe or comma - semicolon is safe for markdown and CSV). Character positions from document start (0-indexed). Section name is optional. Paragraph, sentence, and word indices are 0-based. No validation needed - used for reference only to locate claim in original text."
+      },
+      {
+        "column": "Reference",
+        "description": "The citation or source provided to support the claim",
+        "importance": "IGNORED",
+        "format": "String (full citation format: [#] Complete citation text)",
+        "examples": [
+          "[1] Smith, J. et al. (2023). Understanding AI hallucinations. Nature, 5(2), 123-145.",
+          "[2] Johnson, A. (2024). Machine learning basics. arXiv:2401.12345",
+          "[1] Firth et al. (2019). The online brain..., [2] Satici et al. (2023). Doomscrolling scale..."
+        ],
+        "search_group": 0,
+        "notes": "Full citation(s) supporting the claim, expanded from reference numbers. Multiple references are comma-separated. Can be null if claim is unreferenced (fact-check mode). No validation needed - used as context for accessing the source."
+      },
+      {
+        "column": "Supporting Data",
+        "description": "Explicit measurements or data from THIS paper's original results (not external references)",
+        "importance": "ID",
+        "format": "String (explicit measurements with sample sizes, statistics, table/figure references, section name)",
+        "examples": [
+          "Model achieved 92% accuracy on benchmark dataset (n=10,000 samples, 15% improvement over baseline, Table 2, Results section)",
+          "Survey results: 78% of 500 participants reported daily usage averaging 3.2 hours (SD=1.1, Figure 1, Methods section)",
+          "Experimental measurements showed 30% improvement (p<0.05, n=100 trials, Table 3)"
+        ],
+        "search_group": 0,
+        "notes": "Contains the paper's own experimental results, measurements, or survey data that support this claim. Only populated when claim describes original findings from THIS paper (not citations to other papers). No validation needed - informational only."
+      },
+      {
+        "column": "Claim Criticality",
+        "description": "How critical is this claim to the document's central thesis? If false, how much damage does it do?",
+        "importance": "ID",
+        "format": "String (format: {level} - {level_name}: {brief reason})",
+        "examples": [
+          "5 - Critical: Central thesis claim about vaccine effectiveness",
+          "4 - Major: Key supporting evidence from primary study",
+          "3 - Supporting: Additional corroborating data point",
+          "2 - Minor: Peripheral historical context",
+          "1 - Minimal: Background information on methodology"
+        ],
+        "search_group": 0,
+        "notes": "Criticality assessment on 1-5 scale (5=Critical, 1=Minimal) indicating how central this claim is to the document's main argument. Level 5 (Critical) means the entire thesis depends on this claim; if false, the conclusion collapses. Level 1 (Minimal) means background information with no impact on the central thesis. Format must include numeric level, level name, and brief reason. No validation needed - extracted during claim identification."
+      },
+      {
+        "column": "Reference Description",
+        "description": "What the cited references and validation sources say about the claim/topic",
+        "importance": "RESEARCH",
+        "format": "String (summary of what sources say about this claim)",
+        "examples": [
+          "IPCC AR6 Report states global temperature increased 1.1°C since pre-industrial baseline with high confidence",
+          "Chen et al. (2024) reports 15-20% hallucination rates in LLMs for open-ended generation tasks",
+          "Paper's Table 2 shows 92% accuracy with n=10,000 samples; external benchmarks confirm 85-95% is typical for this task",
+          "NASA and NOAA climate data confirm accelerating warming trend since 1980s; paper's own data corroborates",
+          "Multiple sources (WHO, FDA, peer-reviewed studies) find no causal link between Tylenol and autism"
+        ],
+        "search_group": 1,
+        "notes": "Focus on WHAT the sources SAY about the claim, not just identifying what the sources are. Provide substantive content:\n\n- If Reference provided: Quote/paraphrase what the cited reference says about this claim\n- If Supporting Data provided: Describe what the paper's measurements show AND what external validation reveals\n- If neither: Summarize what authoritative sources say about this statement\n\nCRITICAL: This field should contain the actual findings/statements from sources, not just 'I used web search' or 'This is from IPCC'. Tell us what those sources SAY."
+      },
+      {
+        "column": "What Reference Says",
+        "description": "Summary of validation findings - what sources say or how supporting data relates to the claim",
+        "importance": "RESEARCH",
+        "format": "String (concise summary of validation findings)",
+        "examples": [
+          "External ref: Report states temperature increased by 1.1°C from 1850-1900 to 2011-2020 (high confidence).",
+          "Supporting data analysis: Paper's measurements show 92% accuracy (n=10,000) which logically supports the 92% claim. Other papers report 85-95% for similar tasks.",
+          "Supporting data only: Paper states 76% agreement with human labels based on 3 graduate students evaluating random samples.",
+          "Web search: Multiple authoritative sources (NASA, NOAA, IPCC) confirm warming trend. Paper excluded from validation.",
+          "External ref + Supporting data: Citation confirms method; paper's own data (Table 2) shows stated results."
+        ],
+        "search_group": 1,
+        "notes": "Validation approach varies by claim type:\n\n**With External Reference**: Quote/paraphrase what the cited source says. Access the reference via web search.\n\n**With Supporting Data (paper's own results)**: Analyze if the stated measurements logically support the claim. Check if other data in original text (see general_notes below) corroborates. If external validation needed, use web search but EXCLUDE this paper.\n\n**With Neither**: Use web search to find authoritative sources. EXCLUDE the paper being analyzed from validation.\n\n**CRITICAL**: The paper cannot validate its own claims. Supporting Data shows what it CLAIMS - assess if reasonable/supported externally."
+      },
+      {
+        "column": "Qualified Fact",
+        "description": "The fact as stated by the reference (and other authoritative sources), written in the same format and style as the original claim. Use this when the reference supports the claim but with different numbers, dates, or qualifications.",
+        "importance": "RESEARCH",
+        "format": "String (claim text, with optional (Change Type) prefix if modified)",
+        "examples": [
+          "(More Precise) The Earth's average temperature has increased by 1.09°C (±0.13°C) since pre-industrial times",
+          "(Qualified) Python was first released in February 1991",
+          "(Range Expanded) Large language models can hallucinate facts in 12-23% of responses depending on model and task",
+          "(Corrected) The data shows a 1.5°C increase, not 1.1°C as claimed",
+          "(Margin Added) Python was released in 1991 (February 20, 1991 specifically)",
+          "(Context Added) Large language models can hallucinate facts in 15-20% of responses in open-ended generation tasks, but rates vary significantly by task type",
+          "There is no conclusive scientific evidence that Tylenol causes autism in children or when used during pregnancy"
+        ],
+        "search_group": 1,
+        "notes": "CRITICAL PREFIX GUIDANCE - REQUIRED WHEN MODIFIED:\n\nWHEN CLAIM MATCHES: No prefix, return Statement text exactly as written.\n\nWHEN CLAIM IS MODIFIED: You MUST include a descriptive prefix. NO EXCEPTIONS. Use these prefix types:\n\nMINOR REFINEMENTS (claim is essentially correct):\n• (More Precise) - Exact numbers with margin of error added\n• (Qualified) - Additional context or specificity\n• (Range Expanded) - Broader range\n• (Range Narrowed) - More specific range\n• (Date Added) - More specific date/time\n• (Date Corrected) - Different date\n• (Margin Added) - Uncertainty/error margin specified\n• (Context Added) - Important context or conditions\n• (Updated) - More recent information\n\nMAJOR CORRECTIONS (claim needs significant correction):\n• (Actually) - Claim is misleading, reference shows different reality\n• (Opposite) - Reference directly contradicts the claim\n• (Corrected) - Factual error in claim\n• (Reversed) - Causation or direction is opposite\n• (Overstated) - Claim exaggerates what reference says\n• (Understated) - Claim minimizes what reference shows\n• (Incomplete) - Claim missing critical qualifications\n• (Misleading) - Claim technically true but misleading without context\n\nOTHER USEFUL PREFIXES:\n• (Clarified) - Ambiguous claim made specific\n• (Simplified) - Complex claim made clearer\n• (Specified) - General claim made more specific\n• (Generalized) - Overly specific claim broadened\n\nFeel free to create other appropriate 1-3 word prefixes that clearly describe the change. The prefix should immediately tell the reader what type of modification was made. CRITICAL: If you modify the claim text in ANY way, you MUST add a prefix. No prefix = unchanged claim only. NEVER return 'N/A' - always return usable claim text."
+      },
+      {
+        "column": "Support Level",
+        "description": "Numeric assessment (1-5) of how well the claim is supported, with higher numbers indicating stronger support",
+        "importance": "RESEARCH",
+        "format": "Integer (1-5) followed by label: 5 (Confirmed), 4 (Supported), 3 (Partial), 2 (Unclear), 1 (Contradicted), or 0 (Inaccessible)",
+        "examples": [
+          "5 (Confirmed)",
+          "4 (Supported)",
+          "3 (Partial)",
+          "2 (Unclear)",
+          "1 (Contradicted)",
+          "0 (Inaccessible)",
+          "Mixed: 5 for [1][2], 1 for [3]"
+        ],
+        "search_group": 1,
+        "notes": "**SUPPORT LEVEL SCALE (higher = better support)**:\n\n**5 (Confirmed)**: Reference explicitly states this exact claim with high confidence. Exact match.\n**4 (Supported)**: Reference strongly agrees with claim in general terms. No contradictions.\n**3 (Partial)**: Reference supports some aspects but not others, or supports with qualifications.\n**2 (Unclear)**: Reference is ambiguous, inconclusive, or insufficient to validate claim.\n**1 (Contradicted)**: Reference disagrees with or contradicts the claim.\n**0 (Inaccessible)**: Cannot access the reference to validate.\n**Mixed**: Use when multiple references conflict (specify which refs get which scores).\n\n**VALIDATION LOGIC BY CLAIM TYPE**:\n\n**1. External Reference Provided**:\n- Access the reference via web search\n- Compare reference content to claim\n- Assign score based on alignment quality\n- If multiple refs: Synthesize score or use Mixed if conflicting\n\n**2. Supporting Data Provided (paper's own results)**:\n- Analyze if stated measurements logically support the claim\n- Check other data in original text for corroboration/contradiction\n- If claim needs external validation: Use web search (EXCLUDE this paper) to check if the statement is accepted/reasonable\n- Example: Claim says '92% accuracy', Supporting Data says 'n=10,000, Table 2' → Check if 92% is reasonable for this task via external sources\n- Do NOT simply accept paper's assertion - assess credibility\n- Assign score based on how well measurements support the claim\n\n**3. Neither Reference nor Supporting Data**:\n- Use web search to assess acceptance of statement\n- EXCLUDE the paper being analyzed from validation sources\n- Base score on external authoritative sources only\n\n**CRITICAL**: Paper cannot self-validate. Supporting Data is a claim by the paper - treat critically."
+      },
+      {
+        "column": "Validation Notes",
+        "description": "Detailed explanation of validation findings based on external sources, supporting data analysis, or web search",
+        "importance": "RESEARCH",
+        "format": "String (concise but comprehensive explanation)",
+        "examples": [
+          "External ref [1]: IPCC AR6 directly states 1.1°C increase (Chapter 2). Highly authoritative official assessment. Exact match.",
+          "Supporting data: Paper claims 92% accuracy with n=10,000 samples (Table 2). Web search shows similar benchmarks report 85-95% for this task type, making 92% reasonable and within expected range.",
+          "Supporting data only: Paper states 76% agreement between GPT labels and 3 graduate students. Sample size is small but methodology is standard. Claim is internally consistent with stated measurement.",
+          "Web search (paper excluded): Multiple authoritative sources (NASA, NOAA, IPCC) confirm warming trend. Paper not used as validation source.",
+          "External ref [2] + Supporting data: Citation confirms dropout regularization method. Paper's Table 3 shows 15% improvement as stated. Both sources align."
+        ],
+        "search_group": 1,
+        "notes": "**VALIDATION APPROACH BY TYPE**:\n\n**External Reference**: (1) Access reference via web search. (2) Quote/paraphrase what it says. (3) Compare to claim. (4) Assess source credibility. (5) Note discrepancies if any.\n\n**Supporting Data (paper's own results)**: (1) Analyze if measurements logically support claim. (2) Check original text for corroboration. (3) If needed, use web search to verify if claim is reasonable (EXCLUDE this paper). (4) Assess if sample sizes/methods are sound. (5) Note if claim matches stated data.\n\n**Neither**: (1) Use web search for authoritative sources. (2) EXCLUDE the paper being analyzed. (3) Assess acceptance of statement. (4) Note source types used.\n\n**CRITICAL**: Paper cannot self-validate. Supporting Data shows what paper CLAIMS - you must critically assess if reasonable, not simply accept it."
+      }
+    ],
+    "storage_metadata": {
+      "version": 1,
+      "source": "static_template",
+      "config_id": "reference_check_validation_config_v1",
+      "description": "Static validation configuration for reference checking. Uses single comprehensive search group with sonar-pro (high context) to validate all research columns together. QC enabled with claude-sonnet-4-5 for quality review. The ID columns are populated during extraction, and all RESEARCH columns are validated in one pass for efficiency.",
+      "created_at": "2025-01-06T00:00:00.000000",
+      "creation_method": "static_template",
+      "metadata_version": "2.0"
     }
-  ],
-  "validation_targets": [
-    {
-      "column": "Claim ID",
-      "description": "Unique identifier for each claim",
-      "importance": "ID",
-      "format": "String (e.g., claim_001, claim_002)",
-      "examples": [
-        "claim_001",
-        "claim_002",
-        "claim_003"
-      ],
-      "search_group": 0,
-      "notes": "Auto-generated identifier for tracking claims. No validation needed."
-    },
-    {
-      "column": "Claim Order",
-      "description": "Sequential order as claim appears in original document",
-      "importance": "ID",
-      "format": "Integer (1, 2, 3, etc.)",
-      "examples": [
-        "1",
-        "2",
-        "15"
-      ],
-      "search_group": 0,
-      "notes": "Preserves the claim's position in the original document before criticality sorting. No validation needed."
-    },
-    {
-      "column": "Statement",
-      "description": "The factual claim being made",
-      "importance": "ID",
-      "format": "String (complete sentence or claim)",
-      "examples": [
-        "The Earth's average temperature has increased by 1.1°C since pre-industrial times",
-        "Python was first released in 1991",
-        "Large language models can hallucinate facts in 15-20% of responses"
-      ],
-      "search_group": 0,
-      "notes": "The claim that needs to be verified against the provided reference. No validation needed - used as context."
-    },
-    {
-      "column": "Context",
-      "description": "Additional context surrounding the claim from the original text",
-      "importance": "ID",
-      "format": "String (surrounding text or context)",
-      "examples": [
-        "According to the IPCC report, climate data shows significant warming trends.",
-        "In the Python documentation and historical records.",
-        "Recent research has examined the accuracy of AI models."
-      ],
-      "search_group": 0,
-      "notes": "Provides context for understanding the claim's intended meaning. No validation needed - used as context."
-    },
-    {
-      "column": "Text Location",
-      "description": "Location of the claim in the original text",
-      "importance": "ID",
-      "format": "String (semicolon-delimited format: Section: X; Para: Y; Sentence: Z; Words: A-B; Chars: C-D)",
-      "examples": [
-        "Section: Introduction; Para: 2; Sentence: 3; Words: 45-67; Chars: 234-456",
-        "Para: 2; Sentence: 3; Words: 45-67; Chars: 234-456",
-        "Para: 1; Sentence: 1; Words: 1-15; Chars: 0-89"
-      ],
-      "search_group": 0,
-      "notes": "Human-readable location of the claim in the original text. Uses semicolon delimiter (not pipe or comma - semicolon is safe for markdown and CSV). Character positions from document start (0-indexed). Section name is optional. Paragraph, sentence, and word indices are 0-based. No validation needed - used for reference only to locate claim in original text."
-    },
-    {
-      "column": "Reference",
-      "description": "The citation or source provided to support the claim",
-      "importance": "ID",
-      "format": "String (full citation format: [#] Complete citation text)",
-      "examples": [
-        "[1] Smith, J. et al. (2023). Understanding AI hallucinations. Nature, 5(2), 123-145.",
-        "[2] Johnson, A. (2024). Machine learning basics. arXiv:2401.12345",
-        "[1] Firth et al. (2019). The online brain..., [2] Satici et al. (2023). Doomscrolling scale..."
-      ],
-      "search_group": 0,
-      "notes": "Full citation(s) supporting the claim, expanded from reference numbers. Multiple references are comma-separated. Can be null if claim is unreferenced (fact-check mode). No validation needed - used as context for accessing the source."
-    },
-    {
-      "column": "Supporting Data",
-      "description": "Explicit measurements or data from THIS paper's original results (not external references)",
-      "importance": "ID",
-      "format": "String (explicit measurements with sample sizes, statistics, table/figure references, section name)",
-      "examples": [
-        "Model achieved 92% accuracy on benchmark dataset (n=10,000 samples, 15% improvement over baseline, Table 2, Results section)",
-        "Survey results: 78% of 500 participants reported daily usage averaging 3.2 hours (SD=1.1, Figure 1, Methods section)",
-        "Experimental measurements showed 30% improvement (p<0.05, n=100 trials, Table 3)"
-      ],
-      "search_group": 0,
-      "notes": "Contains the paper's own experimental results, measurements, or survey data that support this claim. Only populated when claim describes original findings from THIS paper (not citations to other papers). No validation needed - informational only."
-    },
-    {
-      "column": "Claim Criticality",
-      "description": "How critical is this claim to the document's central thesis? If false, how much damage does it do?",
-      "importance": "ID",
-      "format": "String (format: {level} - {level_name}: {brief reason})",
-      "examples": [
-        "5 - Critical: Central thesis claim about vaccine effectiveness",
-        "4 - Major: Key supporting evidence from primary study",
-        "3 - Supporting: Additional corroborating data point",
-        "2 - Minor: Peripheral historical context",
-        "1 - Minimal: Background information on methodology"
-      ],
-      "search_group": 0,
-      "notes": "Criticality assessment on 1-5 scale (5=Critical, 1=Minimal) indicating how central this claim is to the document's main argument. Level 5 (Critical) means the entire thesis depends on this claim; if false, the conclusion collapses. Level 1 (Minimal) means background information with no impact on the central thesis. Format must include numeric level, level name, and brief reason. No validation needed - extracted during claim identification."
-    },
-    {
-      "column": "Reference Description",
-      "description": "What the cited references and validation sources say about the claim/topic",
-      "importance": "RESEARCH",
-      "format": "String (summary of what sources say about this claim)",
-      "examples": [
-        "IPCC AR6 Report states global temperature increased 1.1°C since pre-industrial baseline with high confidence",
-        "Chen et al. (2024) reports 15-20% hallucination rates in LLMs for open-ended generation tasks",
-        "Paper's Table 2 shows 92% accuracy with n=10,000 samples; external benchmarks confirm 85-95% is typical for this task",
-        "NASA and NOAA climate data confirm accelerating warming trend since 1980s; paper's own data corroborates",
-        "Multiple sources (WHO, FDA, peer-reviewed studies) find no causal link between Tylenol and autism"
-      ],
-      "search_group": 1,
-      "notes": "Focus on WHAT the sources SAY about the claim, not just identifying what the sources are. Provide substantive content:\n\n- If Reference provided: Quote/paraphrase what the cited reference says about this claim\n- If Supporting Data provided: Describe what the paper's measurements show AND what external validation reveals\n- If neither: Summarize what authoritative sources say about this statement\n\nCRITICAL: This field should contain the actual findings/statements from sources, not just 'I used web search' or 'This is from IPCC'. Tell us what those sources SAY."
-    },
-    {
-      "column": "What Reference Says",
-      "description": "Summary of validation findings - what sources say or how supporting data relates to the claim",
-      "importance": "RESEARCH",
-      "format": "String (concise summary of validation findings)",
-      "examples": [
-        "External ref: Report states temperature increased by 1.1°C from 1850-1900 to 2011-2020 (high confidence).",
-        "Supporting data analysis: Paper's measurements show 92% accuracy (n=10,000) which logically supports the 92% claim. Other papers report 85-95% for similar tasks.",
-        "Supporting data only: Paper states 76% agreement with human labels based on 3 graduate students evaluating random samples.",
-        "Web search: Multiple authoritative sources (NASA, NOAA, IPCC) confirm warming trend. Paper excluded from validation.",
-        "External ref + Supporting data: Citation confirms method; paper's own data (Table 2) shows stated results."
-      ],
-      "search_group": 1,
-      "notes": "Validation approach varies by claim type:\n\n**With External Reference**: Quote/paraphrase what the cited source says. Access the reference via web search.\n\n**With Supporting Data (paper's own results)**: Analyze if the stated measurements logically support the claim. Check if other data in original text (see general_notes below) corroborates. If external validation needed, use web search but EXCLUDE this paper.\n\n**With Neither**: Use web search to find authoritative sources. EXCLUDE the paper being analyzed from validation.\n\n**CRITICAL**: The paper cannot validate its own claims. Supporting Data shows what it CLAIMS - assess if reasonable/supported externally."
-    },
-    {
-      "column": "Qualified Fact",
-      "description": "The fact as stated by the reference (and other authoritative sources), written in the same format and style as the original claim. Use this when the reference supports the claim but with different numbers, dates, or qualifications.",
-      "importance": "RESEARCH",
-      "format": "String (claim text, with optional (Change Type) prefix if modified)",
-      "examples": [
-        "(More Precise) The Earth's average temperature has increased by 1.09°C (±0.13°C) since pre-industrial times",
-        "(Qualified) Python was first released in February 1991",
-        "(Range Expanded) Large language models can hallucinate facts in 12-23% of responses depending on model and task",
-        "(Corrected) The data shows a 1.5°C increase, not 1.1°C as claimed",
-        "(Margin Added) Python was released in 1991 (February 20, 1991 specifically)",
-        "(Context Added) Large language models can hallucinate facts in 15-20% of responses in open-ended generation tasks, but rates vary significantly by task type",
-        "There is no conclusive scientific evidence that Tylenol causes autism in children or when used during pregnancy"
-      ],
-      "search_group": 1,
-      "notes": "CRITICAL PREFIX GUIDANCE - REQUIRED WHEN MODIFIED:\n\nWHEN CLAIM MATCHES: No prefix, return Statement text exactly as written.\n\nWHEN CLAIM IS MODIFIED: You MUST include a descriptive prefix. NO EXCEPTIONS. Use these prefix types:\n\nMINOR REFINEMENTS (claim is essentially correct):\n• (More Precise) - Exact numbers with margin of error added\n• (Qualified) - Additional context or specificity\n• (Range Expanded) - Broader range\n• (Range Narrowed) - More specific range\n• (Date Added) - More specific date/time\n• (Date Corrected) - Different date\n• (Margin Added) - Uncertainty/error margin specified\n• (Context Added) - Important context or conditions\n• (Updated) - More recent information\n\nMAJOR CORRECTIONS (claim needs significant correction):\n• (Actually) - Claim is misleading, reference shows different reality\n• (Opposite) - Reference directly contradicts the claim\n• (Corrected) - Factual error in claim\n• (Reversed) - Causation or direction is opposite\n• (Overstated) - Claim exaggerates what reference says\n• (Understated) - Claim minimizes what reference shows\n• (Incomplete) - Claim missing critical qualifications\n• (Misleading) - Claim technically true but misleading without context\n\nOTHER USEFUL PREFIXES:\n• (Clarified) - Ambiguous claim made specific\n• (Simplified) - Complex claim made clearer\n• (Specified) - General claim made more specific\n• (Generalized) - Overly specific claim broadened\n\nFeel free to create other appropriate 1-3 word prefixes that clearly describe the change. The prefix should immediately tell the reader what type of modification was made. CRITICAL: If you modify the claim text in ANY way, you MUST add a prefix. No prefix = unchanged claim only. NEVER return 'N/A' - always return usable claim text."
-    },
-    {
-      "column": "Support Level",
-      "description": "Numeric assessment (1-5) of how well the claim is supported, with higher numbers indicating stronger support",
-      "importance": "RESEARCH",
-      "format": "Integer (1-5) followed by label: 5 (Confirmed), 4 (Supported), 3 (Partial), 2 (Unclear), 1 (Contradicted), or 0 (Inaccessible)",
-      "examples": [
-        "5 (Confirmed)",
-        "4 (Supported)",
-        "3 (Partial)",
-        "2 (Unclear)",
-        "1 (Contradicted)",
-        "0 (Inaccessible)",
-        "Mixed: 5 for [1][2], 1 for [3]"
-      ],
-      "search_group": 1,
-      "notes": "**SUPPORT LEVEL SCALE (higher = better support)**:\n\n**5 (Confirmed)**: Reference explicitly states this exact claim with high confidence. Exact match.\n**4 (Supported)**: Reference strongly agrees with claim in general terms. No contradictions.\n**3 (Partial)**: Reference supports some aspects but not others, or supports with qualifications.\n**2 (Unclear)**: Reference is ambiguous, inconclusive, or insufficient to validate claim.\n**1 (Contradicted)**: Reference disagrees with or contradicts the claim.\n**0 (Inaccessible)**: Cannot access the reference to validate.\n**Mixed**: Use when multiple references conflict (specify which refs get which scores).\n\n**VALIDATION LOGIC BY CLAIM TYPE**:\n\n**1. External Reference Provided**:\n- Access the reference via web search\n- Compare reference content to claim\n- Assign score based on alignment quality\n- If multiple refs: Synthesize score or use Mixed if conflicting\n\n**2. Supporting Data Provided (paper's own results)**:\n- Analyze if stated measurements logically support the claim\n- Check other data in original text for corroboration/contradiction\n- If claim needs external validation: Use web search (EXCLUDE this paper) to check if the statement is accepted/reasonable\n- Example: Claim says '92% accuracy', Supporting Data says 'n=10,000, Table 2' → Check if 92% is reasonable for this task via external sources\n- Do NOT simply accept paper's assertion - assess credibility\n- Assign score based on how well measurements support the claim\n\n**3. Neither Reference nor Supporting Data**:\n- Use web search to assess acceptance of statement\n- EXCLUDE the paper being analyzed from validation sources\n- Base score on external authoritative sources only\n\n**CRITICAL**: Paper cannot self-validate. Supporting Data is a claim by the paper - treat critically."
-    },
-    {
-      "column": "Validation Notes",
-      "description": "Detailed explanation of validation findings based on external sources, supporting data analysis, or web search",
-      "importance": "RESEARCH",
-      "format": "String (concise but comprehensive explanation)",
-      "examples": [
-        "External ref [1]: IPCC AR6 directly states 1.1°C increase (Chapter 2). Highly authoritative official assessment. Exact match.",
-        "Supporting data: Paper claims 92% accuracy with n=10,000 samples (Table 2). Web search shows similar benchmarks report 85-95% for this task type, making 92% reasonable and within expected range.",
-        "Supporting data only: Paper states 76% agreement between GPT labels and 3 graduate students. Sample size is small but methodology is standard. Claim is internally consistent with stated measurement.",
-        "Web search (paper excluded): Multiple authoritative sources (NASA, NOAA, IPCC) confirm warming trend. Paper not used as validation source.",
-        "External ref [2] + Supporting data: Citation confirms dropout regularization method. Paper's Table 3 shows 15% improvement as stated. Both sources align."
-      ],
-      "search_group": 1,
-      "notes": "**VALIDATION APPROACH BY TYPE**:\n\n**External Reference**: (1) Access reference via web search. (2) Quote/paraphrase what it says. (3) Compare to claim. (4) Assess source credibility. (5) Note discrepancies if any.\n\n**Supporting Data (paper's own results)**: (1) Analyze if measurements logically support claim. (2) Check original text for corroboration. (3) If needed, use web search to verify if claim is reasonable (EXCLUDE this paper). (4) Assess if sample sizes/methods are sound. (5) Note if claim matches stated data.\n\n**Neither**: (1) Use web search for authoritative sources. (2) EXCLUDE the paper being analyzed. (3) Assess acceptance of statement. (4) Note source types used.\n\n**CRITICAL**: Paper cannot self-validate. Supporting Data shows what paper CLAIMS - you must critically assess if reasonable, not simply accept it."
-    }
-  ],
-  "storage_metadata": {
-    "version": 1,
-    "source": "static_template",
-    "config_id": "reference_check_validation_config_v1",
-    "description": "Static validation configuration for reference checking. Uses single comprehensive search group with sonar-pro (high context) to validate all research columns together. QC enabled with claude-sonnet-4-5 for quality review. The ID columns are populated during extraction, and all RESEARCH columns are validated in one pass for efficiency.",
-    "created_at": "2025-01-06T00:00:00.000000",
-    "creation_method": "static_template",
-    "metadata_version": "2.0"
   }
-}

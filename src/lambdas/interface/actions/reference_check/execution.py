@@ -1026,22 +1026,21 @@ async def _compile_results(
 
             validation_config['general_notes'] = f"{original_notes}\n\n--- ORIGINAL TEXT PROVIDED BY USER ---\n\n{submitted_text}{ref_list_text}"
 
-            # Dynamically enable QC if any claims have Supporting Data
-            has_supporting_data = False
-            if claims:
-                for claim in claims:
-                    supporting_data = claim.get('supporting_data', '')
-                    if supporting_data and str(supporting_data).strip():
-                        has_supporting_data = True
-                        break
+            # Resolve validation model from model_control.csv
+            model_role = 'reference_check_validation'
+            try:
+                from model_config_loader import ModelConfig
+                resolved_model = ModelConfig.get(model_role)
+                validation_config['default_model'] = resolved_model
+                logger.info(f"[COMPILATION] Resolved validation model: {resolved_model} (role: {model_role})")
+            except Exception as e:
+                logger.warning(f"[COMPILATION] Could not resolve model role {model_role}: {e}. Using config default.")
+            validation_config['model_role'] = model_role
 
-            if has_supporting_data:
-                logger.info(f"[COMPILATION] Found claims with Supporting Data - enabling QC for critical assessment")
-                if 'qc_settings' not in validation_config:
-                    validation_config['qc_settings'] = {}
-                validation_config['qc_settings']['enable_qc'] = True
-            else:
-                logger.info(f"[COMPILATION] No Supporting Data found - QC remains at default setting")
+            # QC disabled for reference check
+            if 'qc_settings' not in validation_config:
+                validation_config['qc_settings'] = {}
+            validation_config['qc_settings']['enable_qc'] = False
 
             # Update config metadata for this session
             if 'storage_metadata' not in validation_config:
@@ -1050,7 +1049,7 @@ async def _compile_results(
             validation_config['storage_metadata']['email'] = email
             validation_config['storage_metadata']['copied_at'] = datetime.now().isoformat()
             validation_config['storage_metadata']['source'] = 'reference_check_static_template'
-            validation_config['storage_metadata']['qc_dynamically_enabled'] = has_supporting_data
+            validation_config['storage_metadata']['model_role_selected'] = model_role
 
             # Save config using store_config_file (proper naming for preview)
             config_store_result = storage_manager.store_config_file(

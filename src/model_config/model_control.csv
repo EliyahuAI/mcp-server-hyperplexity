@@ -36,4 +36,5 @@ clone_deepseek_t1,clone_deepseek,openrouter/gemini-3-flash-preview-low,gemini-2.
 clone_deepseek_t2,clone_deepseek,openrouter/gemini-3-flash-preview,gemini-3-flash-preview,claude-sonnet-4-6,Clone/deepseek tier2 synthesis — balanced (default)
 clone_deepseek_t3,clone_deepseek,claude-sonnet-4.6,claude-opus-4-6,gemini-3-flash-preview-high,Clone/deepseek tier3 synthesis — strong reasoning
 clone_deepseek_t4,clone_deepseek,claude-opus-4-6,claude-sonnet-4-6,gemini-3-flash-preview-high,Clone/deepseek tier4 synthesis — deepest (auto-upgrade)
-reference_check_extraction,reference_check,gemini-3-flash-preview,openrouter/gemini-3-flash-preview,claude-sonnet-4-6,Claim extraction model for reference check pipeline
+reference_check_extraction,reference_check,openrouter/gemini-3-flash-preview,gemini-3-flash-preview,claude-sonnet-4-6,Claim extraction model for reference check pipeline
+reference_check_validation,reference_check,the-clone-flash,the-clone-claude,sonar-pro,Validation model for reference check (reasoning-first with web search fallback)
