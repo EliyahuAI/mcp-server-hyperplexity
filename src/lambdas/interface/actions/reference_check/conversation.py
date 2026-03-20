@@ -298,8 +298,7 @@ async def handle_reference_check_start(request_data: Dict[str, Any], context: An
         if result.get('success') and auto_approve:
             logger.info(f"[REFERENCE CHECK] auto_approve=True, queuing standard validator for {conversation_id}")
             try:
-                from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
-                from dynamodb_schemas import create_run_record, track_validation_call
+                from dynamodb_schemas import track_validation_call
                 from interface_lambda.core.sqs_service import send_full_request
                 storage_manager = UnifiedS3Manager()
                 si = storage_manager.load_session_info(email, session_id)
