@@ -309,15 +309,27 @@ def _guidance_get_job_status(data: dict) -> dict:
             f"~{round(int(est_time_s) / 60)} min" if est_time_s and int(est_time_s) >= 60
             else (f"~{est_time_s}s" if est_time_s else "")
         )
-        return {
-            "summary": (
+        preview_md = data.get("preview_claims_markdown", "")
+        if preview_md:
+            summary = (
+                f"Reference-check extraction complete. "
+                f"{claims.get('total', '?')} claims extracted. "
+                f"Review below before approving:\n\n"
+                f"{preview_md}\n\n"
+                f"Estimated validation cost: ${cost}."
+                + (f" Estimated time: {time_label}." if time_label else "")
+            )
+        else:
+            summary = (
                 f"Reference-check extraction complete. "
                 f"{claims.get('total', '?')} claims found "
                 f"({claims.get('with_references', '?')} with citations, "
                 f"{claims.get('without_references', '?')} without). "
                 f"Estimated validation cost: ${cost}."
                 + (f" Estimated time: {time_label}." if time_label else "")
-            ),
+            )
+        result = {
+            "summary": summary,
             "claims_summary": claims,
             "cost_estimate": cost_est,
             "next_steps": [
@@ -333,11 +345,14 @@ def _guidance_get_job_status(data: dict) -> dict:
                 {
                     "tool": "get_reference_results",
                     "params": {"job_id": job_id},
-                    "note": "After validation completes, fetch the CSV results here.",
+                    "note": "After validation completes, fetch results here (inline markdown_table included).",
                     "when": "after validation completes (status=completed)",
                 },
             ],
         }
+        if preview_md:
+            result["preview_claims_markdown"] = preview_md
+        return result
 
     if status == "preview_complete":
         # External API: cost lives in cost_estimate.estimated_total_cost_usd
@@ -376,19 +391,9 @@ def _guidance_get_job_status(data: dict) -> dict:
             time_label = ""
             suggested_timeout = 900
 
-        _prev_links = []
-        if prev_url:
-            _prev_links.append(f"Excel: {prev_url}")
-        if prev_metadata_url:
-            _prev_links.append(f"metadata.json: {prev_metadata_url}")
-        _prev_links_str = " | ".join(_prev_links) if _prev_links else ""
-
         approve_note = (
-            "Decision point — review output quality and cost before approving. "
-            "The inline preview_table (3-row sample) shows cell values and confidence signals. "
-            "Per-cell confidence, citations, and validator reasoning for all rows are available "
-            "after full validation via get_results → results.metadata_url. "
-            + (_prev_links_str + ". " if _prev_links_str else "")
+            "Decision point — review the inline preview_table (3-row sample with confidence "
+            "signals) before approving. Download links are in preview_results if needed. "
             + f"Estimated cost: ${cost}."
             + (f" Estimated time: {time_label}." if time_label else "")
             + f" After approval, call wait_for_job with timeout_seconds={suggested_timeout} "
@@ -429,10 +434,8 @@ def _guidance_get_job_status(data: dict) -> dict:
         ]
 
         summary = (
-            f"Preview complete. Review the inline preview_table (3-row sample) and cost "
-            f"(${cost}) before approving. Per-cell confidence and citations are available "
-            "after full validation via get_results → results.metadata_url."
-            + (_prev_links_str and f" {_prev_links_str}." or "")
+            f"Preview complete (3 rows). Review the inline preview_table for confidence signals "
+            f"and cost (${cost}) before approving. Download links are in preview_results."
             + (f" Estimated full-run time: {time_label}." if time_label else "")
             + (f" After approving, use timeout_seconds={suggested_timeout} for wait_for_job." if est_time_s else "")
             + (f" config_id for future reruns: {config_id}." if config_id else "")
@@ -707,24 +710,32 @@ def _guidance_get_results(data: dict) -> dict:
 
 
 def _guidance_get_reference_results(data: dict) -> dict:
-    results = data.get("results") or {}
-    download_url      = results.get("download_url", "")
-    viewer_url        = results.get("interactive_viewer_url", "")
-    metadata_url      = results.get("metadata_url", "")
+    results      = data.get("results") or {}
+    viewer_url   = results.get("interactive_viewer_url", "")
+    has_markdown = bool(results.get("markdown_table"))
+    has_metadata = bool(results.get("metadata"))
     return {
-        "summary": (
-            "Reference check complete. XLSX and metadata JSON are both available for download."
-        ),
-        "output_files": {
-            "excel_file":    "XLSX file — each claim row has support level, validation notes, and citations.",
-            "metadata_json": "table_metadata.json — per-claim data. Each cell: cells[col].value, .confidence, .comment.validator_explanation, .comment.key_citation, .comment.sources[]. Use .value (not .full_value).",
-        },
+        "summary": "Reference check complete. Review results.markdown_table (inline) for per-claim support levels, confidence, and citations.",
+        "notes": [
+            (
+                "1. START HERE — results.markdown_table is embedded inline. Full validated "
+                "claims table with support levels (SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIABLE), "
+                "confidence icons, viewer/download links, and citation navigation guide. Read this first."
+                if has_markdown else
+                "1. START HERE — results.markdown_table was not embedded (metadata fetch may have failed). "
+                "Check results.metadata_fetch_error; or download results.metadata_url manually."
+            ),
+            "2. For full per-claim citations: results.metadata.rows[].cells[col].comment contains "
+            "validator_explanation, key_citation, and sources[] ({title, url, snippet})."
+            if has_metadata else
+            "2. Per-claim citation detail is in the metadata JSON at results.metadata_url.",
+            "3. Download links are in results (download_url, metadata_url) if needed for offline sharing.",
+            "4. Share results.interactive_viewer_url with human stakeholders — "
+            "it renders sources and confidence scores in a clean UI.",
+        ],
         "key_urls": {k: v for k, v in {
-            "download_excel":     download_url,
             "interactive_viewer": viewer_url,
-            "metadata":           metadata_url,
         }.items() if v},
-        "support_levels": "SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIABLE",
         "next_steps": [
             {"note": "Share interactive_viewer_url with human stakeholders — it renders sources and confidence scores in a clean UI."}
         ] if viewer_url else [],

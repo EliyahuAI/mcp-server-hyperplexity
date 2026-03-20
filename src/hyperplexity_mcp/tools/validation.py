@@ -185,8 +185,45 @@ def register(server):
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def get_reference_results(job_id: Annotated[str, Field(description="Session ID / job ID of a completed reference-check job.")]) -> list[types.TextContent]:
-        """Fetch reference-check sub-results for a completed job (if applicable)."""
+        """Fetch the final validated results for a completed reference-check job.
+
+        job_id: the session_id value — "job_id" and "session_id" are the same string.
+
+        Automatically downloads table_metadata.json and embeds it inline so no
+        separate HTTP fetch is needed. Key fields in the response:
+
+          results.markdown_table        — START HERE. Self-contained markdown document:
+                                          full validated claims table (all rows), support
+                                          levels (SUPPORTED/PARTIAL/UNSUPPORTED/UNVERIFIABLE),
+                                          confidence icons, viewer/download links, and
+                                          a guide to navigating citations. Read this first.
+          results.metadata.rows[]       — per-claim data keyed by row_key; each cell has
+                                          value, confidence, comment (with citations).
+          results.interactive_viewer_url — share with humans; renders sources + confidence.
+          results.download_url          — enriched Excel file for offline sharing.
+        """
         client = get_client()
         data = client.get(f"/jobs/{job_id}/reference-results")
+
+        # Fetch and embed table_metadata.json inline (same pattern as get_results).
+        metadata_url = (data.get("results") or {}).get("metadata_url", "")
+        if metadata_url:
+            try:
+                resp = _requests.get(metadata_url, timeout=15)
+                resp.raise_for_status()
+                metadata = resp.json()
+                data.setdefault("results", {})["metadata"] = metadata
+                markdown_table = metadata.get("markdown_table")
+                if markdown_table:
+                    data["results"]["markdown_table"] = markdown_table
+                metadata_size = len(json.dumps(metadata))
+                if metadata_size > 50_000:
+                    data["results"]["metadata_size_warning"] = (
+                        f"metadata is large ({metadata_size:,} chars). "
+                        "Use jq to extract key fields if needed."
+                    )
+            except Exception as exc:
+                data.setdefault("results", {})["metadata_fetch_error"] = str(exc)
+
         data["_guidance"] = build_guidance("get_reference_results", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
