@@ -1167,6 +1167,52 @@ async def execute_reference_check_phase1(
         conversation_state['path_type'] = path_type
         _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
 
+        # For GUI flow (auto_approve=False): compile preview CSV + send reference_check_complete
+        # so the frontend can trigger the preview. API flow (auto_approve=True) skips this
+        # and waits for Phase 2 validation to send reference_check_complete.
+        auto_approve = conversation_state.get('auto_approve', False)
+        if not auto_approve:
+            try:
+                compilation_result = await _compile_results(
+                    validation_results=None,  # Empty RESEARCH columns for preview
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    email=email,
+                    storage_manager=storage_manager,
+                    config=config,
+                    claims=claims,
+                    submitted_text=submitted_text,
+                    source_guess=source_guess,
+                    ai_source_guess=extraction_result.get('source_type_guess', 'Unknown'),
+                    ai_source_confidence=extraction_result.get('source_confidence', 0.0),
+                    path_type=path_type,
+                    final_reference_map=confirmed_reference_map,
+                    conversation_state=conversation_state
+                )
+                if compilation_result.get('success'):
+                    conversation_state['csv_s3_key'] = compilation_result.get('csv_s3_key')
+                    conversation_state['config_s3_key'] = compilation_result.get('config_s3_key')
+                    _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
+
+                    ws_client = _get_websocket_client()
+                    if ws_client:
+                        ws_client.send_to_session(session_id, {
+                            'type': 'reference_check_complete',
+                            'conversation_id': conversation_id,
+                            'status': 'complete',
+                            'csv_s3_key': compilation_result.get('csv_s3_key'),
+                            'csv_filename': compilation_result.get('csv_filename'),
+                            'table_name': compilation_result.get('table_name', 'Reference Check'),
+                            'config_s3_key': compilation_result.get('config_s3_key'),
+                            'session_id': session_id,
+                            'summary': compilation_result.get('summary'),
+                            'claims': [{'claim_id': c['claim_id'], 'statement': c['statement'], 'reference': c.get('reference', 'None')} for c in claims[:10]]
+                        })
+                else:
+                    logger.warning(f"[PHASE1] Preview compilation failed: {compilation_result.get('error')}")
+            except Exception as compile_err:
+                logger.warning(f"[PHASE1] Preview compilation error (non-fatal): {compile_err}", exc_info=True)
+
         if run_key:
             update_run_status(
                 session_id=session_id,

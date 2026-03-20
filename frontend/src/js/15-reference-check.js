@@ -367,7 +367,7 @@ async function startReferenceCheck(cardId) {
                 action: 'startReferenceCheck',
                 email: globalState.email,
                 session_id: globalState.sessionId || null,
-                submitted_text: submittedText
+                submitted_text: submittedText,
             })
         });
 
