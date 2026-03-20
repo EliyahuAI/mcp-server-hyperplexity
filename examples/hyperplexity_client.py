@@ -252,7 +252,7 @@ def fetch_table_metadata(metadata_url: str) -> dict:
 
     table_metadata.json is the recommended way for AI agents to consume results:
       - rows[].row_key           — stable SHA-256 identifier linking to the markdown table
-      - rows[].cells[col].full_value        — validated value
+      - rows[].cells[col].value             — validated value (legacy: .full_value)
       - rows[].cells[col].confidence        — HIGH / MEDIUM / LOW / ID
       - rows[].cells[col].comment.validator_explanation — reasoning
       - rows[].cells[col].comment.key_citation          — top source

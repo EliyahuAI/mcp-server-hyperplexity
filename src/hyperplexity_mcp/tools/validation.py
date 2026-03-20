@@ -117,7 +117,8 @@ def register(server):
                                           confidence icons, viewer/download links, and
                                           a guide to navigating citations. Read this first.
           results.metadata.rows[]       — per-row data keyed by row_key; each cell has
-                                          full_value, confidence, comment (with citations).
+                                          value, confidence, comment (with citations).
+                                          (legacy files may use full_value; both are equivalent)
           results.interactive_viewer_url — share with humans; renders sources + confidence.
           results.download_url          — enriched Excel file for offline sharing.
         """
@@ -174,7 +175,7 @@ def register(server):
                         "If this response was saved to a file, use jq to extract key fields: "
                         "jq '.result[0].text | fromjson | .results.metadata | "
                         "{cols: (.columns | map(.name)), "
-                        "rows: (.rows | map(.cells | map(.display_value)))}' <file>"
+                        "rows: (.rows | map(.cells | map(.value // .full_value)))}' <file>"
                     )
             except Exception as exc:
                 data.setdefault("results", {})["metadata_fetch_error"] = str(exc)

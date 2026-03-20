@@ -701,7 +701,7 @@ def _guidance_get_results(data: dict) -> dict:
         "output_files": {
             "markdown_table": "Self-contained markdown in metadata.markdown_table — full data table with _row_key column, confidence icons, viewer URL, and citation navigation guide. Read this first.",
             "excel_file": "XLSX file with sources and citations embedded in cell comments — ideal for sharing with humans.",
-            "metadata_json": "Complete table_metadata.json — per-cell confidence, citations, sources, and validator reasoning, keyed by row_key.",
+            "metadata_json": "Complete table_metadata.json — per-cell data keyed by row_key. Each cell: cells[col].value (validated value), .confidence (HIGH/MEDIUM/LOW/ID), .comment.validator_explanation, .comment.key_citation, .comment.sources[]. Use .value — legacy files may use .full_value, both are equivalent.",
         },
     }
 
@@ -713,12 +713,11 @@ def _guidance_get_reference_results(data: dict) -> dict:
     metadata_url      = results.get("metadata_url", "")
     return {
         "summary": (
-            "Reference check complete. Results match the standard Hyperplexity output format: "
-            "Excel file (XLSX) with per-claim validation, interactive viewer, and metadata JSON."
+            "Reference check complete. XLSX and metadata JSON are both available for download."
         ),
         "output_files": {
             "excel_file":    "XLSX file — each claim row has support level, validation notes, and citations.",
-            "metadata_json": "Complete metadata JSON with per-claim confidence, citations, and validator reasoning.",
+            "metadata_json": "table_metadata.json — per-claim data. Each cell: cells[col].value, .confidence, .comment.validator_explanation, .comment.key_citation, .comment.sources[]. Use .value (not .full_value).",
         },
         "key_urls": {k: v for k, v in {
             "download_excel":     download_url,
