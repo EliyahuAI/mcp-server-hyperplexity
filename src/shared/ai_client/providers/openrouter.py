@@ -1,5 +1,4 @@
 
-import asyncio
 import json
 import logging
 import aiohttp
@@ -10,15 +9,6 @@ from ..utils import extract_json_from_text, validate_and_normalize_soft_schema, 
 from ..config import get_model_timeout, get_timeout_tier
 
 logger = logging.getLogger(__name__)
-
-# Models that should NOT get a liveness ping (expensive per-call, always online)
-_SKIP_LIVENESS_PREFIXES = ('sonar', 'the-clone')
-
-
-def _should_liveness_ping(model: str) -> bool:
-    """Return True if this model should be checked via liveness ping before committing."""
-    model_lower = model.lower()
-    return not any(model_lower.startswith(p) for p in _SKIP_LIVENESS_PREFIXES)
 
 # Models that respond well to json_object format but need schema described in prompt.
 # MiniMax M2.5 ignores json_schema mode (returns empty); Kimi K2.5 supports it but
@@ -176,63 +166,6 @@ class OpenRouterProvider:
                 'stop_reason': 'error', 'usage': {},
             }
 
-    async def _liveness_ping(self, api_model: str, model: str, ping_timeout: int = 10) -> tuple:
-        """
-        Send a minimal request to check if the endpoint is responsive.
-        Uses the same credentials/headers as the main call.
-        Args:
-            api_model: OpenRouter API model name (google/gemini-...) — used for the actual call
-            model: Internal model name (openrouter/gemini-...) — used for cost lookup
-        Returns (is_alive: bool, ping_cost: float).
-        """
-        try:
-            logger.info(f"[OPENROUTER_LIVENESS] Pinging {api_model} (timeout={ping_timeout}s)...")
-            url = f"{self.base_url}/chat/completions"
-            headers = {
-                'Authorization': f'Bearer {self.api_key}',
-                'Content-Type': 'application/json',
-                'HTTP-Referer': 'https://hyperplexity.ai',
-                'X-OpenRouter-Title': 'HyperplexityValidator',
-            }
-            ping_data = {
-                'model': api_model,
-                'messages': [{'role': 'user', 'content': '1+1=?'}],
-                'max_tokens': 5,
-                'stream': False,
-                'provider': {'zdr': True},
-            }
-            async with aiohttp.ClientSession() as ping_session:
-                async with ping_session.post(
-                    url, headers=headers, json=ping_data,
-                    timeout=aiohttp.ClientTimeout(total=ping_timeout)
-                ) as resp:
-                    if resp.status < 500:
-                        resp_json = json.loads(await resp.text())
-                        usage = resp_json.get('usage', {})
-                        prompt_tokens = usage.get('prompt_tokens', 20)
-                        completion_tokens = usage.get('completion_tokens', 5)
-                        # Use internal model name for cost lookup (api_model is google/ prefixed)
-                        cost = self.usage_handler.calculate_token_costs(
-                            model, prompt_tokens, completion_tokens
-                        ).get('total_cost', 0.0)
-                        logger.info(f"[OPENROUTER_LIVENESS] {api_model} is alive (HTTP {resp.status}, ping_cost=${cost:.6f})")
-                        return True, cost
-                    else:
-                        logger.warning(f"[OPENROUTER_LIVENESS] {api_model} returned HTTP {resp.status} — treating as unhealthy")
-                        return False, 0.0
-        except Exception as e:
-            logger.warning(f"[OPENROUTER_LIVENESS] Ping failed for {api_model}: {e}")
-            return False, 0.0
-
-    async def _fetch_openrouter_response(self, url: str, headers: Dict, data: Dict,
-                                          timeout_seconds: int) -> tuple:
-        """Make the raw OpenRouter HTTP call. Returns (status, response_text)."""
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url, headers=headers, json=data,
-                timeout=aiohttp.ClientTimeout(total=timeout_seconds)
-            ) as response:
-                return response.status, await response.text()
 
     async def make_single_call(self, prompt: str, schema: Dict, model: str,
                                use_cache: bool, cache_key: str, start_time: datetime,
@@ -312,45 +245,15 @@ Response format: Return ONLY the JSON object, nothing else."""
                 logger.debug(f"[OPENROUTER] Thinking budget={thinking_budget} for {api_model}")
 
             timeout_seconds = get_model_timeout(model, timeout_override) or _DEFAULT_TIMEOUT
-            do_liveness = _should_liveness_ping(model)
-            logger.info(f"[OPENROUTER] Calling {model} (api_model={api_model}), timeout={timeout_seconds}s, "
-                        f"liveness_ping={'yes' if do_liveness else 'no (skipped for this model)'}, soft_schema={soft_schema}")
+            logger.info(f"[OPENROUTER] Calling {model} (api_model={api_model}), timeout={timeout_seconds}s, soft_schema={soft_schema}")
 
-            ping_cost = 0.0
-            main_task = asyncio.ensure_future(
-                self._fetch_openrouter_response(url, headers, data, timeout_seconds)
-            )
-
-            if do_liveness:
-                ping_delay = timeout_seconds * 0.2
-
-                async def _delayed_liveness():
-                    await asyncio.sleep(ping_delay)
-                    if main_task.done():
-                        return 0.0
-                    logger.info(f"[OPENROUTER_LIVENESS] Firing check for {api_model} at {ping_delay:.0f}s elapsed...")
-                    alive, cost = await self._liveness_ping(api_model, model)
-                    if not alive:
-                        logger.warning(f"[OPENROUTER_LIVENESS] {api_model} unhealthy at {ping_delay:.0f}s — cancelling main request")
-                        main_task.cancel()
-                    return cost
-
-                liveness_task = asyncio.ensure_future(_delayed_liveness())
-            else:
-                liveness_task = None
-
-            try:
-                response_status, response_text = await main_task
-            except asyncio.CancelledError:
-                raise Exception(f"[LIVENESS_CANCELLED] {model} cancelled after liveness ping failed at {timeout_seconds * 0.2:.0f}s — endpoint unresponsive")
-            finally:
-                if liveness_task and not liveness_task.done():
-                    liveness_task.cancel()
-                if liveness_task and liveness_task.done() and not liveness_task.cancelled():
-                    try:
-                        ping_cost = await liveness_task
-                    except Exception:
-                        pass
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url, headers=headers, json=data,
+                    timeout=aiohttp.ClientTimeout(total=timeout_seconds)
+                ) as response:
+                    response_status = response.status
+                    response_text = await response.text()
 
             processing_time = (datetime.now() - start_time).total_seconds()
 
@@ -388,12 +291,6 @@ Response format: Return ONLY the JSON object, nothing else."""
                 if 'costs' in enhanced_data and 'actual' in enhanced_data['costs']:
                     enhanced_data['costs']['actual']['total_cost'] += repair_cost
                     enhanced_data['repair_info'] = unified_response['_repair_meta']
-
-            if ping_cost > 0.0:
-                logger.info(f"[OPENROUTER_LIVENESS] Adding ping cost ${ping_cost:.6f} to call total for {model}")
-                if 'costs' in enhanced_data and 'actual' in enhanced_data['costs']:
-                    enhanced_data['costs']['actual']['total_cost'] += ping_cost
-                enhanced_data['liveness_ping_cost'] = ping_cost
 
             return {
                 'response': unified_response,

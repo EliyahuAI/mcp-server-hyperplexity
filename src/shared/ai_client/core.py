@@ -12,8 +12,10 @@ from .config import (
     get_baseten_api_key,
     get_google_ai_studio_api_key,
     get_openrouter_api_key,
-    setup_vertex_credentials
+    setup_vertex_credentials,
+    get_model_timeout,
 )
+from .liveness import should_liveness_ping, liveness_guard
 from .utils import (
     determine_api_provider,
     normalize_anthropic_model,
@@ -186,6 +188,48 @@ class AIAPIClient:
 
         logger.warning(f"[BACKUP_MODELS] No backup chain defined for '{primary_model}', using safe defaults")
         return ["claude-haiku-4-5", "gemini-2.5-flash-lite"][:count]
+
+    def _build_ping_fn(self, api_provider: str, model: str, model_normalized: str, ping_timeout: int):
+        """
+        Return an async callable() that makes a minimal provider call for liveness checking.
+        The callable raises on failure so liveness_guard can cancel the main call.
+        Calls make_single_call directly, bypassing backup/retry — we want THIS model's response.
+        _in_liveness_ping is set by liveness_guard before calling this, preventing recursion.
+        """
+        from datetime import datetime as _dt
+
+        async def _ping():
+            start = _dt.now()
+            try:
+                if api_provider == 'gemini':
+                    await self.gemini.make_single_call(
+                        '1+1=?', None, model, False, None, start,
+                        max_tokens=5, soft_schema=False, timeout_override=ping_timeout
+                    )
+                elif api_provider == 'vertex':
+                    await self.vertex.make_single_call(
+                        '1+1=?', None, model_normalized, False, None, start,
+                        max_tokens=5, soft_schema=True, timeout_override=ping_timeout
+                    )
+                elif api_provider == 'openrouter':
+                    await self.openrouter.make_single_call(
+                        '1+1=?', None, model_normalized, False, None, start,
+                        max_tokens=5, soft_schema=False, timeout_override=ping_timeout
+                    )
+                elif api_provider == 'baseten':
+                    await self.baseten.make_single_call(
+                        '1+1=?', None, model, False, None, start,
+                        max_tokens=5, soft_schema=True, timeout_override=ping_timeout
+                    )
+                # anthropic: skip ping (reliable + expensive); no branch needed
+            except Exception as e:
+                err = str(e)
+                # These mean the API DID respond — just with a schema/token-limit signal
+                if any(tag in err for tag in ('[MAX_TOKENS]', '[SCHEMA_ERROR]', '[REPAIR_FAILED]')):
+                    return
+                raise  # re-raise so liveness_guard cancels the main call
+
+        return _ping
 
     async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-sonnet-4-6",
                                  tool_name: str = "structured_response", use_cache: bool = True,
@@ -451,37 +495,60 @@ class AIAPIClient:
                     logger.debug(f"No valid cache found for {api_provider}, making fresh API call")
 
                 # Make Call (use effective_prompt which includes expired cache context if any)
+                # Build the provider coroutine without awaiting so liveness_guard can wrap it.
+                # Perplexity and clone are excluded from liveness and awaited directly.
+                _call_coro = None
+                _call_provider = None
+
                 if api_provider == 'anthropic':
-                    result = await self.anthropic.make_single_call("https://api.anthropic.com/v1/messages",
-                         {'Content-Type': 'application/json', 'X-API-Key': self.anthropic.api_key, 'anthropic-version': '2023-06-01'},
-                         self._build_anthropic_data(current_model_normalized, effective_prompt, schema, tool_name, max_tokens, max_web_searches, soft_schema),
-                         current_model_normalized, use_cache, cache_key, call_start_time, max_web_searches, soft_schema, schema, timeout)
+                    _call_coro = self.anthropic.make_single_call(
+                        "https://api.anthropic.com/v1/messages",
+                        {'Content-Type': 'application/json', 'X-API-Key': self.anthropic.api_key, 'anthropic-version': '2023-06-01'},
+                        self._build_anthropic_data(current_model_normalized, effective_prompt, schema, tool_name, max_tokens, max_web_searches, soft_schema),
+                        current_model_normalized, use_cache, cache_key, call_start_time, max_web_searches, soft_schema, schema, timeout)
+                    _call_provider = self.anthropic
                 elif api_provider == 'perplexity':
                     result = await self.perplexity.make_single_structured_call(effective_prompt, schema, current_model, use_cache, cache_key, call_start_time, search_context_size, debug_name, max_tokens or 64000, soft_schema, include_domains, exclude_domains)
                 elif api_provider == 'gemini':
                     if not self.gemini.project_id: continue
                     # Gemini has native JSON mode support, use soft_schema parameter as-is
-                    result = await self.gemini.make_single_call(effective_prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 64000, soft_schema, timeout)
+                    _call_coro = self.gemini.make_single_call(effective_prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 64000, soft_schema, timeout)
+                    _call_provider = self.gemini
                 elif api_provider == 'vertex':
                     if not self.vertex.project_id: continue
                     # Force soft_schema for all Vertex models (DeepSeek) as hard schema support is experimental/flaky
                     use_soft_schema_for_vertex = True
-                    result = await self.vertex.make_single_call(effective_prompt, schema, current_model_normalized, use_cache, cache_key, call_start_time, max_tokens or 64000, use_soft_schema_for_vertex, timeout)
+                    _call_coro = self.vertex.make_single_call(effective_prompt, schema, current_model_normalized, use_cache, cache_key, call_start_time, max_tokens or 64000, use_soft_schema_for_vertex, timeout)
+                    _call_provider = self.vertex
                 elif api_provider == 'baseten':
                     if not self.baseten: continue
                     # Force soft_schema for Baseten DeepSeek V3.2 due to potential native JSON issues or consistency
                     use_soft_schema_for_baseten = True
-                    result = await self.baseten.make_single_call(effective_prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 64000, use_soft_schema_for_baseten, timeout)
+                    _call_coro = self.baseten.make_single_call(effective_prompt, schema, current_model, use_cache, cache_key, call_start_time, max_tokens or 64000, use_soft_schema_for_baseten, timeout)
+                    _call_provider = self.baseten
                 elif api_provider == 'openrouter':
                     if not self.openrouter: continue
                     # Always force soft_schema: MiniMax M2.5 ignores json_schema mode;
                     # Kimi K2.5 supports it but soft_schema is equally reliable.
                     # current_model_normalized resolves shortforms (e.g. kimi-k2.5 → moonshotai/kimi-k2.5)
-                    result = await self.openrouter.make_single_call(effective_prompt, schema, current_model_normalized, use_cache, cache_key, call_start_time, max_tokens or 64000, soft_schema=True, timeout_override=timeout)
+                    _call_coro = self.openrouter.make_single_call(effective_prompt, schema, current_model_normalized, use_cache, cache_key, call_start_time, max_tokens or 64000, soft_schema=True, timeout_override=timeout)
+                    _call_provider = self.openrouter
                 elif api_provider == 'clone':
                     result = await self.clone.make_structured_call(effective_prompt, current_model, use_cache, cache_key, call_start_time, schema, soft_schema, debug_name, include_domains, exclude_domains, use_code_extraction, findall, extraction, findall_iterations)
                 else:
                     continue
+
+                # Apply liveness guard for non-perplexity/clone providers.
+                # Skip if we're already inside a liveness ping (_in_liveness_ping prevents recursion).
+                if _call_coro is not None:
+                    if (should_liveness_ping(current_model)
+                            and api_provider in ('gemini', 'vertex', 'openrouter', 'baseten')):
+                        _timeout_s = get_model_timeout(current_model, timeout) or 120
+                        _ping_timeout = min(8, max(3, int(_timeout_s * 0.1)))
+                        _ping_fn = self._build_ping_fn(api_provider, current_model, current_model_normalized, _ping_timeout)
+                        result = await liveness_guard(_call_coro, _ping_fn, _timeout_s, current_model)
+                    else:
+                        result = await _call_coro
 
                 if result:
                     result['model_used'] = current_model
