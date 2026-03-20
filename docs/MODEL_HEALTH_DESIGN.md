@@ -1,140 +1,222 @@
-# Model Health Tracker — Design Plan
+# Model Resilience: Liveness Guard + Health Tracker
 
-## Problem
-
-When a model degrades (TPS collapse, repeated failures, quota exhaustion), other concurrent tasks and other Lambda instances don't know. They keep routing to the degraded model until their own timeouts fire. A cross-Lambda health state that propagates immediately would let healthy models get priority in the backup chain.
-
-The TPS signal (`total_tokens / processing_time_s`) is already available per call from `usage.py`; it just isn't aggregated anywhere.
+Two complementary systems that protect validation runs from degraded or unresponsive models.
 
 ---
 
-## Proposed Architecture
+## Overview
 
-### Module: `src/shared/ai_client/model_health.py`
+| System | Scope | Signal | Reacts to |
+|---|---|---|---|
+| **Liveness Guard** | Single call, in-flight | Endpoint probe at 20% of timeout | Stuck/hung endpoint |
+| **Model Health Tracker** | All calls, cross-Lambda | TPS median vs baseline | Slow degradation, quota exhaustion, repeated hard failures |
 
-Module-level singleton `ModelHealthTracker` that:
-1. Accumulates TPS observations per model
-2. Establishes a baseline from the first 10 successful calls (no hardcoded expected values)
-3. Detects degradation via rolling median TPS vs. baseline
-4. Propagates state change immediately via async DynamoDB write
-5. Loads degraded state on cold-start via a single DynamoDB scan
+They operate independently but are designed to feed each other: a pattern of liveness cancellations is one of the strongest inputs for the health tracker's `record_failure()`.
 
-```python
-from collections import deque
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Dict, List, Optional
+---
 
-_FLOOR_TPS = {
-    # Conservative floors prevent false-positives before run-in completes.
-    # Key = prefix matched against model name (lowercase).
-    'gemini':           50,
-    'claude-haiku':     80,
-    'claude-sonnet':    50,
-    'claude-opus':      50,
-    'sonar':            40,
-}
-_FLOOR_TPS_DEFAULT = 50
+## Part 1: Liveness Guard (implemented)
 
-_THRESHOLD      = 0.30   # degrade if rolling median < 30% of baseline
-_RECOVERY_MINS  = 5      # auto-expire degraded state after N minutes
-_ROLLING_WINDOW = 5      # rolling median window (post run-in)
-_FAILURE_THRESHOLD = 2   # consecutive hard failures → degrade immediately
-_RUN_IN_CALLS   = 10     # calls before TPS-based degradation activates
+### What it does
 
-@dataclass
-class ModelHealthState:
-    status: str              # 'healthy' | 'degraded' | 'run_in'
-    tps_window: deque        # last _ROLLING_WINDOW TPS observations (post run-in)
-    run_in_window: deque     # first _RUN_IN_CALLS observations (establishes baseline)
-    baseline_tps: float      # median of run_in_window once full
-    consecutive_failures: int
-    degraded_until: Optional[datetime]
-    degraded_reason: str
+Every provider call through `call_structured_api` (gemini, vertex, openrouter, baseten) is wrapped in `liveness_guard`. At **20% of the call timeout**, a lightweight probe fires in parallel — a `make_single_call('1+1=?', max_tokens=5)` to the same provider and model. If the probe raises an unrecoverable exception, the main call is cancelled immediately rather than waiting for the full timeout.
+
+**Benefit**: for a 120s timeout, a hung endpoint fails fast at ~24s instead of burning 120s and blocking the retry chain.
+
+### Skipped for
+- `sonar*` — Perplexity search; always-on, per-call cost makes pinging wasteful
+- `the-clone*` — Agentic flow; underlying sub-model calls each get their own guard
+- `anthropic` — Highly reliable; no cheap probe endpoint worth adding
+
+### Files
+
+| File | Role |
+|---|---|
+| `src/shared/ai_client/liveness.py` | `should_liveness_ping()`, `liveness_guard()` |
+| `src/shared/ai_client/core.py` | `_build_ping_fn()` — builds the probe closure; wires guard in dispatch |
+
+### How it works
+
+```
+call_structured_api(prompt, model='openrouter/gemini-3-flash-preview')
+  └─ dispatch: _build_ping_fn + liveness_guard
+       ├─ main_task  = make_single_call(real prompt, schema, ...)   ──→ runs normally
+       └─ ping_task  = _delayed_ping()
+            ├─ sleep(timeout_s * 0.2)                               ──→ e.g. 24s at timeout=120
+            ├─ if main_task.done(): return                          ──→ no-op if already finished
+            └─ make_single_call('1+1=?', max_tokens=5)
+                 ├─ success / [MAX_TOKENS] / [SCHEMA_ERROR]         ──→ endpoint alive, continue
+                 └─ exception                                       ──→ main_task.cancel()
+                      └─ liveness_guard raises [LIVENESS_CANCELLED]
+                           └─ call_structured_api retries next backup model
 ```
 
-#### Key methods
+### Ping timeout
 
-```python
-class ModelHealthTracker:
-    def record_success(model: str, total_tokens: int, processing_time_s: float)
-        # Computes TPS = total_tokens / processing_time_s.
-        # Appends to run_in_window (first 10) or tps_window (after).
-        # After run-in completes: sets baseline_tps = median(run_in_window).
-        # After each post-run-in call: checks if rolling_median < THRESHOLD * baseline_tps.
-        # On state change: calls _transition(model, 'degraded', reason).
+`ping_timeout = min(8, max(3, int(call_timeout * 0.1)))` — always 3–8 seconds, regardless of main call timeout.
 
-    def record_failure(model: str, reason: str)
-        # Increments consecutive_failures.
-        # If consecutive_failures >= _FAILURE_THRESHOLD → _transition(model, 'degraded', reason).
+### Cancellation safety
 
-    def is_degraded(model: str) -> bool
-        # Checks degraded_until expiry; auto-recovers if expired.
+- `_cancelled_by_ping` flag distinguishes our cancellation from external `CancelledError` (Lambda timeout, outer task cancel). External cancellations are **re-raised** as `CancelledError`, not wrapped as `[LIVENESS_CANCELLED]`.
+- `ping_task` is awaited after cancel in the `finally` block to ensure clean connection teardown.
 
-    def reorder_for_health(models: List[str]) -> List[str]
-        # Moves degraded models to end of list, leaving order otherwise unchanged.
-        # Logs: [MODEL_HEALTH] Reordering [...] — degraded: [...]
+### Log messages
 
-    def _transition(model: str, new_status: str, reason: str)
-        # Updates in-memory state.
-        # Fires async DynamoDB write (non-blocking — uses asyncio.ensure_future).
-        # Recovery: 2 consecutive healthy calls OR degraded_until auto-expiry.
-
-    def _load_dynamodb_cold_start()
-        # Called lazily on first is_degraded() / record_success() call.
-        # Scans entire model-health table; loads all non-expired degraded records.
-        # Logs: [MODEL_HEALTH] Cold-start: loaded N degraded models from DynamoDB
+```
+[LIVENESS] Pinging openrouter/gemini-3-flash-preview at 24s elapsed...
+[LIVENESS] openrouter/gemini-3-flash-preview is alive
+[LIVENESS] openrouter/gemini-3-flash-preview unhealthy (Connection timeout) — cancelling call
+[LIVENESS_CANCELLED] openrouter/gemini-3-flash-preview cancelled at 24s — endpoint unresponsive
 ```
 
 ---
 
-## DynamoDB Table: `perplexity-validator-model-health`
+## Part 2: Model Health Tracker (planned)
+
+### Problem
+
+Liveness catches a *single hung call*, but it can't see patterns across calls or Lambda instances. When a model degrades gradually (TPS drops to 5% of normal due to quota pressure), every call still starts, the liveness probe may pass (the endpoint responds), but the actual generation is painfully slow. Other Lambda instances don't know — they keep routing to the degraded model.
+
+TPS (`total_tokens / processing_time_s`) is already computed per call in `usage.py` but never aggregated.
+
+### Design
+
+**Module**: `src/shared/ai_client/model_health.py` — module-level singleton `ModelHealthTracker`.
+
+```
+Per-call: record_success(model, tokens, time_s)
+          record_failure(model, reason)
+          ↓
+In-memory state per model (deques, baseline, consecutive_failures)
+          ↓
+On state change: async DynamoDB write (non-blocking)
+          ↓
+Cold-start: one DynamoDB scan loads all degraded state
+          ↓
+Backup chain: reorder_for_health(models) moves degraded to end
+```
+
+### State machine
+
+```
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                         run_in                                   │
+  │   First 10 calls accumulate in run_in_window.                    │
+  │   No TPS-based degradation until baseline_tps is established.    │
+  └──────────────────────┬───────────────────────────────────────────┘
+                         │ 10th success → baseline_tps = median(run_in_window)
+                         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                         healthy                                  │
+  │   Each success: append TPS to rolling window (last 5).           │
+  │   Check: rolling_median < 30% of baseline_tps → DEGRADE          │
+  │   Check: 2 consecutive hard failures → DEGRADE                   │
+  └──────────────────────┬───────────────────────────────────────────┘
+                         │ trigger
+                         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                         degraded                                 │
+  │   reorder_for_health() moves this model to end of backup list.   │
+  │   DynamoDB record written immediately.                           │
+  │   Auto-expires after 5 minutes (degraded_until).                 │
+  │   OR: 2 consecutive healthy calls → RECOVER                      │
+  └──────────────────────────────────────────────────────────────────┘
+```
+
+### TPS baseline
+
+No hardcoded expected values. Baseline = median of first 10 successful calls. This self-calibrates per environment and per model without any configuration.
+
+Conservative floor TPS (for logging only — not used for degradation before baseline is set):
+
+| Prefix | Floor tok/s |
+|---|---|
+| `gemini-*` | 50 |
+| `claude-haiku*` | 80 |
+| `claude-sonnet*`, `claude-opus*` | 50 |
+| `sonar*` | 40 |
+| default | 50 |
+
+TPS includes thinking tokens — captures total latency + generation as one signal.
+
+### Data model
+
+**DynamoDB table**: `perplexity-validator-model-health`
+Billing: PAY_PER_REQUEST. TTL: 24h (auto-purge stale records).
 
 | Attribute | Type | Notes |
 |---|---|---|
 | `model` | String (PK) | Internal model name |
 | `status` | String | `healthy` \| `degraded` \| `run_in` |
 | `degraded_until` | String | ISO timestamp; absent when healthy |
-| `degraded_reason` | String | e.g. `"TPS median 3.1 < threshold 24.0"` |
-| `baseline_tps` | Number | Median of first 10 successful calls |
+| `degraded_reason` | String | e.g. `"TPS median 3.1 < threshold 24.0 (baseline 80.0)"` |
+| `baseline_tps` | Number | Median of run_in_window |
 | `last_tps_median` | Number | Most recent rolling median |
-| `run_in_count` | Number | Calls accumulated so far (0–10 during run-in) |
+| `run_in_count` | Number | 0–10 during run-in |
 | `last_updated` | String | ISO timestamp |
-| `ttl` | Number | Unix epoch; 24h from last write (auto-purge) |
+| `ttl` | Number | Unix epoch, 24h from last write |
 
-Billing mode: PAY_PER_REQUEST (low-traffic, burst-tolerant).
+### Key methods
 
----
+```python
+class ModelHealthTracker:
+    def record_success(model, total_tokens, processing_time_s)
+        # TPS = total_tokens / processing_time_s
+        # Phase 1 (run_in): append to run_in_window; on 10th call set baseline_tps
+        # Phase 2 (healthy): append to tps_window (maxlen=5); check rolling median
+        # On degradation: _transition(model, 'degraded', reason)
 
-## TPS Baseline Strategy
+    def record_failure(model, reason)
+        # consecutive_failures += 1
+        # If >= _FAILURE_THRESHOLD: _transition(model, 'degraded', reason)
+        # Reset consecutive_failures on next success
 
-No hardcoded expected values. Baseline = median of first 10 successful calls per model.
+    def is_degraded(model) -> bool
+        # Check degraded_until; auto-recover if expired
 
-Floor TPS (see `_FLOOR_TPS` above) prevents false positives before run-in completes — TPS-based degradation is gated on `baseline_tps > 0`, so the floor is never used for degradation logic; it only affects what's logged.
+    def reorder_for_health(models: List[str]) -> List[str]
+        # Stable sort: healthy/run_in models first, degraded models appended at end
+        # Logs when reordering occurs
 
-TPS = `total_tokens / processing_time_s` (thinking tokens included — captures latency + generation together as a single quality signal).
+    def _transition(model, new_status, reason)
+        # Update in-memory state
+        # Fire non-blocking async DynamoDB write
 
----
+    def _load_dynamodb_cold_start()
+        # Lazy, called once on first access
+        # Scan table, load non-expired degraded records into memory
+```
 
-## Integration Points
+### Integration with liveness guard
 
-### `core.py` — after each successful provider call
+Liveness cancellations feed directly into the health tracker:
 
+```python
+# In call_structured_api except block:
+except Exception as e:
+    if '[LIVENESS_CANCELLED]' in str(e):
+        get_tracker().record_failure(current_model, reason='liveness_cancelled')
+    elif ...:
+        get_tracker().record_failure(current_model, reason=type(e).__name__)
+```
+
+Two `[LIVENESS_CANCELLED]` events in a row → health tracker degrades the model → it drops to the end of the backup chain → other instances see the DynamoDB record on cold-start and skip it pre-emptively. This is the handoff between the two systems.
+
+### Integration in `core.py`
+
+After each successful provider call:
 ```python
 from .model_health import get_tracker
 
-# Record success (all providers except clone top-level)
 if result and result.get('token_usage', {}).get('total_tokens', 0) > 0:
-    tps = result.get('enhanced_data', {}).get('timing', {}).get('tokens_per_second_actual', 0)
-    if tps > 0:
-        get_tracker().record_success(
-            current_model,
-            result['token_usage']['total_tokens'],
-            result.get('processing_time', 1.0)
-        )
+    get_tracker().record_success(
+        current_model,
+        result['token_usage']['total_tokens'],
+        result.get('processing_time', 1.0)
+    )
 ```
 
-In the failure `except` block:
+In the `except` block:
 ```python
 get_tracker().record_failure(current_model, reason=type(e).__name__)
 ```
@@ -144,50 +226,61 @@ In `_get_backup_models()`:
 return get_tracker().reorder_for_health(backups[:count])
 ```
 
----
-
-## manage_dynamodb_tables.py Commands
-
-Three new commands:
+### Operations
 
 ```bash
-# Create the table (one-time setup)
+# One-time setup
 python manage_dynamodb_tables.py create-model-health-table
 
-# List all models with their current health state
+# Inspect current state across all models
 python manage_dynamodb_tables.py list-model-health
 
-# Reset degraded state (one model or all)
-python manage_dynamodb_tables.py reset-model-health openrouter/gemini-3.1-flash-lite-preview-min
+# Clear degraded state (one model or all)
+python manage_dynamodb_tables.py reset-model-health openrouter/gemini-3-flash-preview
 python manage_dynamodb_tables.py reset-model-health --all
 ```
 
----
-
-## Log Messages
+### Log messages
 
 ```
-[MODEL_HEALTH] openrouter/gemini-3.1-flash-lite-preview-min: run_in 7/10 calls (TPS 81.2)
-[MODEL_HEALTH] openrouter/gemini-3.1-flash-lite-preview-min DEGRADED — TPS median 3.1 < threshold 24.0 (baseline 80.0) — until 12:35:00
+[MODEL_HEALTH] openrouter/gemini-3-flash-preview: run_in 7/10 calls (TPS 81.2)
+[MODEL_HEALTH] openrouter/gemini-3-flash-preview DEGRADED — TPS median 3.1 < threshold 24.0 (baseline 80.0) — until 12:35:00
 [MODEL_HEALTH] Reordering [gemini-3-flash-preview, openrouter/gemini-3-flash-preview, claude-sonnet-4-6] — degraded: [openrouter/gemini-3-flash-preview]
-[MODEL_HEALTH] openrouter/gemini-3.1-flash-lite-preview-min RECOVERED after 2 healthy calls (TPS 91.2)
+[MODEL_HEALTH] openrouter/gemini-3-flash-preview RECOVERED after 2 healthy calls (TPS 91.2)
 [MODEL_HEALTH] Cold-start: loaded 2 degraded models from DynamoDB
 ```
 
 ---
 
-## Verification Steps
+## Interaction between the two systems
 
-1. `python manage_dynamodb_tables.py create-model-health-table`
-2. Run validation with `the-clone-flash` — sub-model calls (gemini, vertex, anthropic) accumulate TPS observations
-3. `python manage_dynamodb_tables.py list-model-health` — shows run-in progress per model
-4. Force 2 consecutive failures on a model — logs show degradation + DynamoDB record written
-5. `python manage_dynamodb_tables.py reset-model-health openrouter/gemini-3.1-flash-lite-preview-min` — clears state
+```
+Normal call flow:
+  liveness_guard → pass → record_success(model, tokens, time_s) → TPS window grows
+
+Degraded endpoint (hung):
+  liveness_guard → [LIVENESS_CANCELLED] → record_failure(model, 'liveness_cancelled')
+  If 2× in a row → health tracker degrades model → backup chain reordered
+  DynamoDB written → other Lambda instances load on cold-start → skip model pre-emptively
+
+Degraded endpoint (slow but responding):
+  liveness passes (endpoint responded) → but record_success records low TPS
+  After 5 calls with low TPS → health tracker degrades model
+  Next backup chain call → degraded model at end
+
+Recovery:
+  degraded_until expires (5 min) OR 2 consecutive healthy calls
+  → health tracker sets status=healthy, deletes DynamoDB record
+```
 
 ---
 
-## Not Yet Implemented
+## Implementation status
 
-- `src/shared/ai_client/model_health.py`
-- DynamoDB table creation in `manage_dynamodb_tables.py`
-- `core.py` integration for `record_success` / `record_failure` / `reorder_for_health`
+| Component | Status |
+|---|---|
+| `liveness.py` — `should_liveness_ping`, `liveness_guard` | ✅ done |
+| `core.py` — `_build_ping_fn`, liveness wired in dispatch | ✅ done |
+| `model_health.py` — `ModelHealthTracker` | ⬜ planned |
+| `core.py` — `record_success` / `record_failure` / `reorder_for_health` hooks | ⬜ planned |
+| `manage_dynamodb_tables.py` — `create-model-health-table`, `list-model-health`, `reset-model-health` | ⬜ planned |
