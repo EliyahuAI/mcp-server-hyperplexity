@@ -169,10 +169,23 @@ class AIAPIClient:
 
     def _get_backup_models(self, primary_model: str, count: int = 2) -> List[str]:
         backups = self.MODEL_BACKUPS.get(primary_model, [])
-        if not backups:
-            logger.warning(f"[BACKUP_MODELS] No backup chain defined for '{primary_model}', using safe defaults")
-            return ["claude-haiku-4-5", "gemini-2.5-flash-lite"][:count]
-        return backups[:count]
+        if backups:
+            return backups[:count]
+
+        # Auto cross-provider fallback for Gemini models not explicitly listed:
+        #   openrouter/gemini-X  →  gemini-X (Vertex)  →  claude-sonnet-4-6
+        #   gemini-X (Vertex)    →  openrouter/gemini-X →  claude-sonnet-4-6
+        if primary_model.startswith('openrouter/gemini-'):
+            vertex_model = primary_model[len('openrouter/'):]
+            logger.info(f"[BACKUP_MODELS] Auto Gemini cross-provider: {primary_model} → {vertex_model} → claude-sonnet-4-6")
+            return [vertex_model, 'claude-sonnet-4-6'][:count]
+        if primary_model.startswith('gemini-'):
+            or_model = 'openrouter/' + primary_model
+            logger.info(f"[BACKUP_MODELS] Auto Gemini cross-provider: {primary_model} → {or_model} → claude-sonnet-4-6")
+            return [or_model, 'claude-sonnet-4-6'][:count]
+
+        logger.warning(f"[BACKUP_MODELS] No backup chain defined for '{primary_model}', using safe defaults")
+        return ["claude-haiku-4-5", "gemini-2.5-flash-lite"][:count]
 
     async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-sonnet-4-6",
                                  tool_name: str = "structured_response", use_cache: bool = True,
