@@ -8,6 +8,9 @@ from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
+_FLASH_CLONE_TIMEOUT = 180   # flash lite: 60s/call × ~3 pipeline steps
+_DEFAULT_CLONE_TIMEOUT = 500
+
 class CloneProvider:
     def __init__(self, ai_client, cache_handler, usage_handler):
         self.ai_client = ai_client
@@ -72,8 +75,10 @@ class CloneProvider:
             logger.info(f"[CLONE_PROVIDER] Executing agentic pipeline for model: {model} (provider={provider}, findall={findall}, extraction={extraction})")
             logger.info(f"[CLONE_PROVIDER] Using ai_client instance {id(self.ai_client)}: session_id={self.ai_client.session_id}, email={self.ai_client.email}, s3_manager={type(self.ai_client.s3_manager).__name__ if self.ai_client.s3_manager else 'None'}")
 
-            # Wrap clone.query() with timeout to prevent Lambda hangs
-            CLONE_TIMEOUT_SECONDS = 500  # ~8 minutes
+            # Wrap clone.query() with timeout to prevent Lambda hangs.
+            # Flash (lite) provider uses a short timeout — it should fail fast and fall back.
+            CLONE_TIMEOUT_SECONDS = _FLASH_CLONE_TIMEOUT if provider == 'flash' else _DEFAULT_CLONE_TIMEOUT
+            logger.info(f"[CLONE_PROVIDER] Timeout for provider={provider}: {CLONE_TIMEOUT_SECONDS}s")
             try:
                 result = await asyncio.wait_for(
                     clone.query(
@@ -95,8 +100,8 @@ class CloneProvider:
                     timeout=CLONE_TIMEOUT_SECONDS
                 )
             except asyncio.TimeoutError:
-                logger.error(f"[CLONE_PROVIDER] Clone query timed out after {CLONE_TIMEOUT_SECONDS}s - possible resource exhaustion or network hang")
-                raise Exception(f"Clone query timed out after {CLONE_TIMEOUT_SECONDS} seconds. This may indicate connection pool exhaustion or network issues.")
+                logger.error(f"[CLONE_PROVIDER] Clone query timed out after {CLONE_TIMEOUT_SECONDS}s (provider={provider}) — possible resource exhaustion or network hang")
+                raise Exception(f"Clone query timed out after {CLONE_TIMEOUT_SECONDS} seconds (provider={provider}). This may indicate connection pool exhaustion or network issues.")
 
             processing_time = (datetime.now() - start_time).total_seconds()
 

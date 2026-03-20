@@ -19,6 +19,11 @@ TIMEOUT_SLOW = 300     # Slow models: DeepSeek, Anthropic, Gemini 2.5 (5 mins)
 TIMEOUT_VERY_SLOW = 480  # Very slow models: Kimi K2.5 on OpenRouter (8 mins — large prompts)
 TIMEOUT_DEFAULT = 300  # Default timeout for unknown models
 
+# Gemini 3 Flash / Lite sub-tiers
+TIMEOUT_FLASH_FULL = 500   # gemini-3-flash-preview (high/medium thinking — config-gen, column-def)
+TIMEOUT_FLASH_LIGHT = 90   # gemini-3-flash-preview-min/-low (no/minimal thinking)
+TIMEOUT_FLASH_LITE = 60    # gemini-3.1-flash-lite-preview* (all lite variants)
+
 # Model-specific timeout mapping
 # Models not listed here will use TIMEOUT_DEFAULT
 MODEL_TIMEOUTS: Dict[str, int] = {
@@ -41,22 +46,51 @@ MODEL_TIMEOUTS: Dict[str, int] = {
     'claude-opus-4-6': TIMEOUT_SLOW,
     'gemini-2.5-flash': TIMEOUT_SLOW,
     'gemini-1.5-pro': TIMEOUT_SLOW,
-    # Gemini 3 Flash Preview (thinking model — needs extra time for reasoning)
-    'gemini-3-flash-preview': TIMEOUT_SLOW,
-    'gemini-3-flash-preview-low': TIMEOUT_SLOW,
-    'gemini-3-flash-preview-high': TIMEOUT_SLOW,
-    'gemini-3-flash-preview-min': TIMEOUT_SLOW,
-    # Gemini 3.1 Flash Lite Preview (cost-optimized thinking model)
-    'gemini-3.1-flash-lite-preview': TIMEOUT_SLOW,
-    'gemini-3.1-flash-lite-preview-low': TIMEOUT_SLOW,
-    'gemini-3.1-flash-lite-preview-high': TIMEOUT_SLOW,
-    'gemini-3.1-flash-lite-preview-min': TIMEOUT_SLOW,
+    # Gemini 3 Flash Preview (thinking model — sub-tier by thinking budget)
+    'gemini-3-flash-preview': TIMEOUT_FLASH_FULL,                        # default = medium budget
+    'gemini-3-flash-preview-high': TIMEOUT_FLASH_FULL,                   # 24576-token budget
+    'gemini-3-flash-preview-low': TIMEOUT_FLASH_LIGHT,                   # minimal budget
+    'gemini-3-flash-preview-min': TIMEOUT_FLASH_LIGHT,                   # no budget
+    # OpenRouter-prefixed variants — must be explicit; partial match hits base entry first
+    'openrouter/gemini-3-flash-preview': TIMEOUT_FLASH_FULL,
+    'openrouter/gemini-3-flash-preview-high': TIMEOUT_FLASH_FULL,
+    'openrouter/gemini-3-flash-preview-low': TIMEOUT_FLASH_LIGHT,
+    'openrouter/gemini-3-flash-preview-min': TIMEOUT_FLASH_LIGHT,
+    # Gemini 3.1 Flash Lite Preview (cost-optimized — fast inference)
+    'gemini-3.1-flash-lite-preview': TIMEOUT_FLASH_LITE,
+    'gemini-3.1-flash-lite-preview-low': TIMEOUT_FLASH_LITE,
+    'gemini-3.1-flash-lite-preview-high': TIMEOUT_FLASH_LITE,
+    'gemini-3.1-flash-lite-preview-min': TIMEOUT_FLASH_LITE,
 
     # Very slow models (8 mins) — slow on large prompts via OpenRouter
     'moonshotai/kimi-k2.5': TIMEOUT_VERY_SLOW,
     'kimi-k2.5': TIMEOUT_VERY_SLOW,
     'minimax/minimax-m2.5': TIMEOUT_VERY_SLOW,
 }
+
+# DynamoDB timeout override cache — loaded once per Lambda cold start
+_dynamodb_timeout_cache: Optional[Dict[str, int]] = None
+
+
+def _load_dynamodb_timeouts() -> Dict[str, int]:
+    """Load timeout overrides from DynamoDB MODEL_CONFIG_TABLE. Called once per cold start."""
+    try:
+        import boto3
+        from boto3.dynamodb.conditions import Attr
+        table = boto3.resource('dynamodb').Table('perplexity-validator-model-config')
+        resp = table.scan(FilterExpression=Attr('config_type').eq('timeout'))
+        # Strip the 'timeout#' namespace prefix used to avoid colliding with batch config entries
+        result = {
+            item['model_pattern'][len('timeout#'):]: int(item['timeout_seconds'])
+            for item in resp.get('Items', [])
+            if item.get('model_pattern', '').startswith('timeout#')
+        }
+        logger.info(f"[MODEL_TIMEOUT] Loaded {len(result)} DynamoDB timeout overrides: {list(result.keys())}")
+        return result
+    except Exception as e:
+        logger.debug(f"[MODEL_TIMEOUT] DynamoDB lookup failed (using hardcoded): {e}")
+        return {}
+
 
 def get_model_timeout(model: str, override: Optional[int] = None) -> int:
     """
@@ -89,6 +123,20 @@ def get_model_timeout(model: str, override: Optional[int] = None) -> int:
             return int(global_override)
         except ValueError:
             pass
+
+    # Check DynamoDB overrides (loaded once per cold start)
+    global _dynamodb_timeout_cache
+    if _dynamodb_timeout_cache is None:
+        _dynamodb_timeout_cache = _load_dynamodb_timeouts()
+    if model in _dynamodb_timeout_cache:
+        logger.info(f"[MODEL_TIMEOUT] Using DynamoDB override for '{model}': {_dynamodb_timeout_cache[model]}s")
+        return _dynamodb_timeout_cache[model]
+    # Partial match in DynamoDB overrides
+    model_lower_db = model.lower()
+    for pattern, timeout in _dynamodb_timeout_cache.items():
+        if pattern.lower() in model_lower_db or model_lower_db in pattern.lower():
+            logger.info(f"[MODEL_TIMEOUT] Using DynamoDB partial override for '{model}' (pattern '{pattern}'): {timeout}s")
+            return timeout
 
     # Look up model-specific timeout
     # Try exact match first
@@ -132,7 +180,7 @@ MODEL_BACKUPS: Dict[str, List[str]] = {
 
     # ── STACK 1: Web Search Native ───────────────────────────────────────────
     # Sonar family (Perplexity — real-time grounded search)
-    "sonar-pro":           ["sonar"],                        # step down within web stack
+    "sonar-pro":           ["sonar", "the-clone-flash"],     # web-native step-down; clone-flash as last resort
     "sonar":               ["sonar-pro"],                    # step up within web stack
     "sonar-reasoning-pro": ["sonar-pro", "sonar"],
 
@@ -141,7 +189,7 @@ MODEL_BACKUPS: Dict[str, List[str]] = {
     "the-clone-baseten": ["the-clone", "the-clone-claude"],
     "the-clone-claude":  ["the-clone", "the-clone-baseten"],
     "the-clone-kimi":    ["the-clone", "the-clone-baseten"],
-    "the-clone-flash":   ["the-clone-kimi", "the-clone"],
+    "the-clone-flash":   ["the-clone-claude", "sonar-pro"],  # fast lite → full clone → web search
 
     # ── STACK 2: Thinking / Reasoning ────────────────────────────────────────
     # Gemini 3 Flash Preview — HIGH thinking (config-gen, column-def, upload interview)

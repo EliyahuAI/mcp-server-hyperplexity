@@ -1990,12 +1990,79 @@ Examples:
     elif command == "create-model-config-table":
         create_model_config_table_command()
 
+    elif command == "set-model-timeout":
+        if len(sys.argv) < 4:
+            print("Usage: manage_dynamodb_tables.py set-model-timeout <model_pattern> <seconds>")
+        else:
+            set_model_timeout_command(sys.argv[2], int(sys.argv[3]))
+
+    elif command == "list-model-timeouts":
+        list_model_timeouts_command()
+
+    elif command == "delete-model-timeout":
+        if len(sys.argv) < 3:
+            print("Usage: manage_dynamodb_tables.py delete-model-timeout <model_pattern>")
+        else:
+            delete_model_timeout_command(sys.argv[2])
+
     elif command == "create-message-log-table":
         create_message_log_table_command()
 
     else:
         print(f"Unknown command: {command}")
         print("Use 'python manage_dynamodb_tables.py' for help.")
+
+_TIMEOUT_KEY_PREFIX = 'timeout#'  # namespace prefix — prevents collision with batch config entries
+
+def set_model_timeout_command(model_pattern: str, timeout_seconds: int):
+    """Write a timeout override for a model pattern into MODEL_CONFIG_TABLE."""
+    try:
+        dynamodb = boto3.resource('dynamodb')
+        table = dynamodb.Table(MODEL_CONFIG_TABLE)
+        item = {
+            'model_pattern': _TIMEOUT_KEY_PREFIX + model_pattern,
+            'config_type': 'timeout',
+            'timeout_seconds': timeout_seconds,
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+        }
+        table.put_item(Item=item)
+        print(f"[SUCCESS] Set timeout for '{model_pattern}' → {timeout_seconds}s")
+    except Exception as e:
+        print(f"[ERROR] Failed to set model timeout: {e}")
+
+
+def list_model_timeouts_command():
+    """List all timeout overrides from MODEL_CONFIG_TABLE."""
+    try:
+        from boto3.dynamodb.conditions import Attr
+        dynamodb = boto3.resource('dynamodb')
+        table = dynamodb.Table(MODEL_CONFIG_TABLE)
+        resp = table.scan(FilterExpression=Attr('config_type').eq('timeout'))
+        items = [i for i in resp.get('Items', []) if i.get('model_pattern', '').startswith(_TIMEOUT_KEY_PREFIX)]
+        print(f"\n=== Model Timeout Overrides ({len(items)} entries) ===")
+        if items:
+            for item in sorted(items, key=lambda x: x.get('model_pattern', '')):
+                # Strip prefix for display
+                pattern = item.get('model_pattern', '?')[len(_TIMEOUT_KEY_PREFIX):]
+                secs = item.get('timeout_seconds', '?')
+                updated = item.get('updated_at', '')[:19]
+                print(f"  {pattern:<50}  {secs}s  (updated {updated})")
+        else:
+            print("  No overrides set — all models use hardcoded defaults.")
+    except Exception as e:
+        print(f"[ERROR] Failed to list model timeouts: {e}")
+
+
+def delete_model_timeout_command(model_pattern: str):
+    """Remove a timeout override from MODEL_CONFIG_TABLE."""
+    try:
+        dynamodb = boto3.resource('dynamodb')
+        table = dynamodb.Table(MODEL_CONFIG_TABLE)
+        table.delete_item(Key={'model_pattern': _TIMEOUT_KEY_PREFIX + model_pattern})
+        print(f"[SUCCESS] Deleted timeout override for '{model_pattern}'")
+    except Exception as e:
+        print(f"[ERROR] Failed to delete model timeout: {e}")
+
 
 def create_message_log_table_command():
     """Create the WebSocket message log table for replay functionality."""

@@ -190,6 +190,11 @@ def get_model_with_backups(model, provider: str = None) -> list:
     if model == 'gemini-2.5-flash-lite':
         return ['gemini-2.5-flash-lite', 'openrouter/gemini-2.5-flash-lite', 'minimax/minimax-m2.5', 'claude-haiku-4-5']
 
+    # Gemini 3.1 Flash Lite Preview via OpenRouter (openrouter/ prefix → not caught by gemini-* below)
+    if model.startswith('openrouter/gemini-3.1-flash-lite-preview'):
+        vertex_model = model[len('openrouter/'):]   # strip prefix for Vertex fallback
+        return [model, vertex_model, 'gemini-2.5-flash-lite']
+
     # Other Gemini models → Gemini 3 chain (catch-all for any other gemini-* variants)
     if model.startswith('gemini-'):
         return [model, 'gemini-3-flash-preview', 'openrouter/gemini-3-flash-preview', 'claude-sonnet-4-6']
