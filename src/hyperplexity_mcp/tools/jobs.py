@@ -7,6 +7,8 @@ import json
 import time
 from typing import Annotated, Optional
 
+import requests as _requests
+
 from mcp import types
 from mcp.server.fastmcp import Context
 from mcp.types import ToolAnnotations
@@ -396,6 +398,23 @@ def register(server):
 
                 elif _is_true_terminal(data):
                     await _report(100.0)
+                    # For standard preview_complete: fetch preview_results.metadata_url
+                    # and lift markdown_table inline — same pattern as get_results.
+                    if data.get("status") == "preview_complete":
+                        _prev_meta_url = (data.get("preview_results") or {}).get("metadata_url", "")
+                        if _prev_meta_url:
+                            try:
+                                _resp = await asyncio.to_thread(
+                                    lambda: _requests.get(_prev_meta_url, timeout=15)
+                                )
+                                _resp.raise_for_status()
+                                _meta = _resp.json()
+                                data.setdefault("preview_results", {})["metadata"] = _meta
+                                _mt = _meta.get("markdown_table")
+                                if _mt:
+                                    data["preview_results"]["markdown_table"] = _mt
+                            except Exception as _exc:
+                                data.setdefault("preview_results", {})["metadata_fetch_error"] = str(_exc)
                     data["_guidance"] = build_guidance("get_job_status", data)
                     return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 

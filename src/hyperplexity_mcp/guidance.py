@@ -365,10 +365,11 @@ def _guidance_get_job_status(data: dict) -> dict:
         refine_session = data.get("refine_session_id") or data.get("conversation_id", "")
         session_id = data.get("session_id", "")
 
-        # Surface preview download URLs if present.
+        # Surface preview results if present.
         _prev_results = data.get("preview_results") or {}
         prev_url = _prev_results.get("download_url", "")
         prev_metadata_url = _prev_results.get("metadata_url", "")
+        prev_markdown = _prev_results.get("markdown_table", "")
 
         # Issue #6: surface estimated full-validation time and compute a safe timeout.
         # Full validations can run well beyond 15 min for large tables, so the
@@ -392,8 +393,11 @@ def _guidance_get_job_status(data: dict) -> dict:
             suggested_timeout = 900
 
         approve_note = (
-            "Decision point — review the inline preview_table (3-row sample with confidence "
-            "signals) before approving. Download links are in preview_results if needed. "
+            "Decision point — review the inline "
+            + ("preview_results.markdown_table (full per-cell detail for all 3 preview rows). "
+               if prev_markdown else
+               "preview_table (3-row sample with confidence signals). ")
+            + "Download links are in preview_results if needed. "
             + f"Estimated cost: ${cost}."
             + (f" Estimated time: {time_label}." if time_label else "")
             + f" After approval, call wait_for_job with timeout_seconds={suggested_timeout} "
@@ -433,13 +437,23 @@ def _guidance_get_job_status(data: dict) -> dict:
             },
         ]
 
-        summary = (
-            f"Preview complete (3 rows). Review the inline preview_table for confidence signals "
-            f"and cost (${cost}) before approving. Download links are in preview_results."
-            + (f" Estimated full-run time: {time_label}." if time_label else "")
-            + (f" After approving, use timeout_seconds={suggested_timeout} for wait_for_job." if est_time_s else "")
-            + (f" config_id for future reruns: {config_id}." if config_id else "")
-        )
+        if prev_markdown:
+            summary = (
+                f"Preview complete (3 rows). START HERE — review preview_results.markdown_table "
+                f"(inline, full per-cell confidence and citations for all 3 rows). Cost: ${cost}. "
+                + (f"Estimated full-run time: {time_label}. " if time_label else "")
+                + (f"After approving, use timeout_seconds={suggested_timeout} for wait_for_job. " if est_time_s else "")
+                + (f"config_id for future reruns: {config_id}. " if config_id else "")
+                + "Download links are in preview_results."
+            )
+        else:
+            summary = (
+                f"Preview complete (3 rows). Review the inline preview_table for confidence signals "
+                f"and cost (${cost}) before approving. Download links are in preview_results."
+                + (f" Estimated full-run time: {time_label}." if time_label else "")
+                + (f" After approving, use timeout_seconds={suggested_timeout} for wait_for_job." if est_time_s else "")
+                + (f" config_id for future reruns: {config_id}." if config_id else "")
+            )
 
         return {
             "summary": summary,
