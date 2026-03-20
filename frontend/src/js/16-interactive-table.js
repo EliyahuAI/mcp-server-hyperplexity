@@ -52,13 +52,13 @@ const InteractiveTable = (function() {
     /**
      * Build tooltip content for cell hover
      */
-    function buildTooltipContent(comment, fullValue, displayValue) {
+    function buildTooltipContent(comment, value) {
         let parts = [];
 
-        // Show full value if truncated
-        if (fullValue && fullValue.length > displayValue.length) {
-            const truncated = fullValue.substring(0, 200) + (fullValue.length > 200 ? '...' : '');
-            parts.push(`<b>Full:</b> ${escapeHtml(truncated)}`);
+        // Show a preview of long values in the tooltip (CSS truncates the cell)
+        if (value && value.length > 80) {
+            const truncated = value.substring(0, 200) + (value.length > 200 ? '...' : '');
+            parts.push(`<b>Value:</b> ${escapeHtml(truncated)}`);
         }
 
         if (comment.validator_explanation) {
@@ -196,8 +196,8 @@ const InteractiveTable = (function() {
                 rows.forEach((row, colIdx) => {
                     const cellData = row.cells[col.name] || {};
                     const confidence = (cellData.confidence || '').toUpperCase();
-                    const displayValue = cellData.display_value || '';
-                    const fullValue = cellData.full_value || displayValue;
+                    // Support new 'value' field; fall back to legacy 'full_value' / 'display_value'
+                    const value = cellData.value || cellData.full_value || cellData.display_value || '';
                     const comment = cellData.comment || {};
 
                     // Add column name and row ID info to cell data for modal display
@@ -206,17 +206,23 @@ const InteractiveTable = (function() {
                     let rowIdValues = '';
                     if (idColumns.length > 0) {
                         // Use explicitly marked ID columns
-                        rowIdValues = idColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
+                        rowIdValues = idColumns.map(idCol => {
+                            const c = row.cells[idCol.name] || {};
+                            return c.value || c.full_value || c.display_value || '';
+                        }).filter(v => v).join(', ');
                     } else {
                         // Fallback: use first 2 columns as ID when none are marked
                         const fallbackIdColumns = columns.slice(0, 2);
-                        rowIdValues = fallbackIdColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
+                        rowIdValues = fallbackIdColumns.map(idCol => {
+                            const c = row.cells[idCol.name] || {};
+                            return c.value || c.full_value || c.display_value || '';
+                        }).filter(v => v).join(', ');
                     }
                     cellData._columnName = col.name;
                     cellData._rowId = rowIdValues || `Row ${colIdx + 1}`;
 
                     // Build tooltip content
-                    const tooltipContent = buildTooltipContent(comment, fullValue, displayValue);
+                    const tooltipContent = buildTooltipContent(comment, value);
 
                     // Determine confidence class
                     let confidenceClass = '';
@@ -242,7 +248,7 @@ const InteractiveTable = (function() {
                         onmouseenter="InteractiveTable.showTooltip(event, this); InteractiveTable.highlightColumn(${colIdx + 1})"
                         onmouseleave="InteractiveTable.hideTooltip(); InteractiveTable.clearColumnHighlight()"
                     >`;
-                    html += `<span class="cell-value">${escapeHtml(displayValue)}</span>`;
+                    html += `<span class="cell-value">${escapeHtml(value)}</span>`;
                     html += '</td>';
                 });
 
@@ -281,10 +287,16 @@ const InteractiveTable = (function() {
                 // Compute row ID for modal display
                 let rowIdValues = '';
                 if (idColumnsNT.length > 0) {
-                    rowIdValues = idColumnsNT.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
+                    rowIdValues = idColumnsNT.map(idCol => {
+                        const c = row.cells[idCol.name] || {};
+                        return c.value || c.full_value || c.display_value || '';
+                    }).filter(v => v).join(', ');
                 } else {
                     const fallbackIdColumns = columns.slice(0, 2);
-                    rowIdValues = fallbackIdColumns.map(idCol => row.cells[idCol.name]?.display_value || '').filter(v => v).join(', ');
+                    rowIdValues = fallbackIdColumns.map(idCol => {
+                        const c = row.cells[idCol.name] || {};
+                        return c.value || c.full_value || c.display_value || '';
+                    }).filter(v => v).join(', ');
                 }
                 const rowLabel = rowIdValues || `Row ${rowIdx + 1}`;
 
@@ -292,14 +304,14 @@ const InteractiveTable = (function() {
                 columns.forEach((col, colIdx) => {
                     const cellData = { ...(row.cells[col.name] || {}) };
                     const confidence = (cellData.confidence || '').toUpperCase();
-                    const displayValue = cellData.display_value || '';
-                    const fullValue = cellData.full_value || displayValue;
+                    // Support new 'value' field; fall back to legacy 'full_value' / 'display_value'
+                    const value = cellData.value || cellData.full_value || cellData.display_value || '';
                     const comment = cellData.comment || {};
 
                     cellData._columnName = col.name;
                     cellData._rowId = rowLabel;
 
-                    const tooltipContent = buildTooltipContent(comment, fullValue, displayValue);
+                    const tooltipContent = buildTooltipContent(comment, value);
 
                     let confidenceClass = '';
                     if (confidence === 'HIGH') confidenceClass = 'confidence-high';
@@ -330,7 +342,7 @@ const InteractiveTable = (function() {
                         onmouseenter="InteractiveTable.showTooltip(event, this); InteractiveTable.highlightColumn(${colIdx})"
                         onmouseleave="InteractiveTable.hideTooltip(); InteractiveTable.clearColumnHighlight()"
                     >`;
-                    html += `<span class="cell-value">${escapeHtml(displayValue)}</span>`;
+                    html += `<span class="cell-value">${escapeHtml(value)}</span>`;
                     html += '</td>';
                 });
                 html += '</tr>';
@@ -403,8 +415,7 @@ const InteractiveTable = (function() {
                         const colName = col.name || (typeof col === 'string' ? col : String(col));
                         const value = String(row[colName] ?? '');
                         return [colName, {
-                            display_value: value,  // Let CSS handle truncation
-                            full_value: value,
+                            value: value,  // CSS handles visual truncation
                             confidence: (col.importance || '').toUpperCase() === 'ID' ? 'ID' : 'MEDIUM',
                             comment: {}
                         }];
@@ -560,7 +571,7 @@ const InteractiveTable = (function() {
             cellData = JSON.parse(cellDataStr);
         } catch (e) {
             console.error('[InteractiveTable] Failed to parse cell data:', e, cellDataStr);
-            cellData = { display_value: cellElement.textContent, comment: {} };
+            cellData = { value: cellElement.textContent, comment: {} };
         }
         const comment = cellData.comment || {};
 
@@ -590,7 +601,7 @@ const InteractiveTable = (function() {
         };
 
         // Determine if value was updated
-        const currentValue = cellData.full_value || cellData.display_value || '-';
+        const currentValue = cellData.value || cellData.full_value || cellData.display_value || '-';
         const originalValue = comment.original_value;
         const originalConfidence = comment.original_confidence ? comment.original_confidence.toUpperCase() : '';
 

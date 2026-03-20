@@ -193,7 +193,7 @@ def main(file_path: str, refine_instructions: str = "", instructions: str = "") 
     metadata_url = r.get("metadata_url")
     if metadata_url:
         print(f"\n  [AI]    metadata_url: {metadata_url}")
-        print("  Fetch metadata_url → parse rows[].cells[col].full_value / confidence / comment")
+        print("  Fetch metadata_url → parse rows[].cells[col].value / confidence / comment")
         print("  Use rows[].row_key to cross-reference with the markdown preview table.")
         # Optional: fetch and print a quick summary
         # metadata = hpx.fetch_table_metadata(metadata_url)

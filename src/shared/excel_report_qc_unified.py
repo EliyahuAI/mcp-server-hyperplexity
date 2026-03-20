@@ -2137,8 +2137,7 @@ def generate_table_preview_metadata(
                 "row_key": str,
                 "cells": {
                     "ColumnName": {
-                        "display_value": str,    # Truncated for table display (50 chars)
-                        "full_value": str,       # Complete value
+                        "value": str,            # Validated value (legacy files may use full_value)
                         "confidence": str,       # HIGH/MEDIUM/LOW/ID
                         "comment": {
                             "original_value": str,
@@ -2195,8 +2194,7 @@ def generate_table_preview_metadata(
             if not isinstance(field_data, dict):
                 raw = str(field_data) if field_data else ''
                 cells[col_name] = {
-                    'display_value': raw,
-                    'full_value': raw,
+                    'value': raw,
                     'confidence': 'UNKNOWN',
                     'comment': {}
                 }
@@ -2214,17 +2212,13 @@ def generate_table_preview_metadata(
             if importance in ('ID', 'IGNORED'):
                 confidence = 'ID'
 
-            # display_value is the raw value; confidence icon is handled by frontend color-coding
-            display_value = full_value
-
             # Build comment
             comment = _build_preview_cell_comment(
                 col_name, field_data, row_qc_data.get(col_name, {})
             )
 
             cells[col_name] = {
-                'display_value': display_value,
-                'full_value': full_value,
+                'value': full_value,
                 'confidence': confidence,
                 'comment': comment
             }

@@ -2524,6 +2524,23 @@ def handle_main_processing(event, context):
                                 if enhanced_result['success']:
                                     logger.debug(f"[DEBUG] Enhanced Excel stored in results folder: {enhanced_result['stored_files']}")
 
+                                    # Persist the preview XLSX key to the run record so the API
+                                    # can return download URLs at preview_complete status.
+                                    try:
+                                        _preview_xlsx_key = (
+                                            enhanced_result['stored_files'][0]
+                                            if enhanced_result.get('stored_files') else None
+                                        )
+                                        if _preview_xlsx_key:
+                                            update_run_status(
+                                                session_id=session_id,
+                                                run_key=run_key,
+                                                preview_results_s3_key=_preview_xlsx_key,
+                                            )
+                                            logger.info(f"[PREVIEW_S3] Saved preview_results_s3_key: {_preview_xlsx_key}")
+                                    except Exception as prsk_e:
+                                        logger.warning(f"[PREVIEW_S3] Failed to save preview_results_s3_key: {prsk_e}")
+
                                     # Save table_metadata JSON alongside the Excel
                                     if table_metadata:
                                         try:

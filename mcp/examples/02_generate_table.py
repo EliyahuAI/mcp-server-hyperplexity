@@ -159,7 +159,7 @@ def main(prompt: str, auto_start: bool = False) -> None:
     metadata_url = r.get("metadata_url")
     if metadata_url:
         print(f"\n  [AI]    metadata_url: {metadata_url}")
-        print("  Fetch metadata_url → rows[].cells[col].full_value, .confidence, .comment.sources")
+        print("  Fetch metadata_url → rows[].cells[col].value, .confidence, .comment.sources")
 
 
 if __name__ == "__main__":

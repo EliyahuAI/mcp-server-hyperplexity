@@ -1032,7 +1032,7 @@ def _handle_get_job_status(job_id, email, query_params, meta):
             data["preview_results"] = {
                 "download_url": generate_presigned_url(S3_RESULTS_BUCKET, pr_key),
                 "file_format": "xlsx" if pr_key.endswith(".xlsx") else "unknown",
-                "metadata_url": generate_presigned_url(S3_RESULTS_BUCKET, f"{pr_dir}/table_metadata.json"),
+                "metadata_url": generate_presigned_url(S3_RESULTS_BUCKET, f"{pr_dir}/preview_table_metadata.json"),
             }
         pd = record.get("preview_data") or {}
         # background_handler stores costs under "cost_estimates" (plural)

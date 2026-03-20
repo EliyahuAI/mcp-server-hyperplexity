@@ -646,7 +646,7 @@ These flags use different terminal signals: `instructions=` (a config-gen flow) 
 2. After full validation: fetch `results.metadata_url` → `table_metadata.json`. This contains every validated row.
 3. Use `rows[].row_key` (stable SHA-256) to cross-reference rows between the markdown summary and the detailed JSON.
 4. Per-cell fields in `table_metadata.json`:
-   - `cells[col].full_value` — validated value
+   - `cells[col].value` — validated value (legacy files may use `full_value`)
    - `cells[col].confidence` — `HIGH` / `MEDIUM` / `LOW` / `ID`
    - `cells[col].comment.validator_explanation` — reasoning
    - `cells[col].comment.key_citation` — top authoritative source

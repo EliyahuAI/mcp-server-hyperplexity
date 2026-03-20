@@ -2630,9 +2630,13 @@ def api_post(path, **kwargs):
     <ul>
      <li>
       <code>
-       cells[col].full_value
+       cells[col].value
       </code>
-      — validated value
+      — validated value (legacy files may use
+      <code>
+       full_value
+      </code>
+      )
      </li>
      <li>
       <code>

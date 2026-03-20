@@ -303,6 +303,10 @@ def handle_get_reference_results(request_data, context=None):
                     if fallback_key:
                         download_url = generate_presigned_url(S3_RESULTS_BUCKET, fallback_key)
                         file_format = 'xlsx' if fallback_key.endswith('.xlsx') else 'csv'
+                        fallback_dir = fallback_key.rsplit('/', 1)[0]
+                        metadata_url = generate_presigned_url(
+                            S3_RESULTS_BUCKET, f"{fallback_dir}/table_metadata.json"
+                        )
                 except Exception as e:
                     logger.warning(f"[REF_RESULTS] Could not load conversation state: {e}")
 

@@ -76,7 +76,8 @@ Key:  hpx_live_r0GWnJjjCHBKWP45ZzZkB28_MvUBREuOJfTLb4Mm
 
 ### PyPI
 - Package name: `mcp-server-hyperplexity`
-- API token: stored in `~/.pypirc` (or use `--token` flag when publishing)
+- API token: `pypi-AgEIcHlwaS5vcmcCJDkxYTE1Y2I2LTNmN2YtNGRiZS1hMWU1LTgxMmQyODhjYWFkYwACKlszLCI5MDkwYmQ1Ny0xMmE3LTRiZDktYmU0OC00YjczNmZjZjdjNjMiXQAABiBPsReon8hbtiLYvptFl3gEJvspJl_mEQ9iFJCDSnkIIQ`
+- Publishing is automated via GitHub Actions on every push to `main` (secret `PYPI_API_TOKEN` set in repo settings)
 
 ---
 
@@ -235,22 +236,19 @@ export AWS_DEFAULT_REGION=us-east-1
 
 ## Publishing to PyPI
 
-PyPI packages are for local stdio users (Claude Code / Claude Desktop). They install the package with `uvx` and run it on their own machine.
+PyPI publishing is **automated via GitHub Actions** (`.github/workflows/publish.yml`). Every push to `main` triggers a build and upload automatically using the `PYPI_API_TOKEN` secret.
 
-```bash
-# Build from WSL-native path to avoid cross-device link errors
-cd /tmp/mcp_build
-
-# Make sure version in pyproject.toml is bumped (PyPI rejects re-uploads of same version)
-python3 -m build
-
-# Upload
-python3 -m twine upload dist/* --token pypi-<your-pypi-api-token>
-```
-
-After upload, users can immediately run:
+After a push, users can install the new version immediately:
 ```bash
 uvx mcp-server-hyperplexity
+```
+
+### Manual publish (if needed)
+
+```bash
+cd /tmp/mcp_build
+python3 -m build
+python3 -m twine upload dist/* --username __token__ --password pypi-AgEIcHlwaS5vcmcCJDkxYTE1Y2I2LTNmN2YtNGRiZS1hMWU1LTgxMmQyODhjYWFkYwACKlszLCI5MDkwYmQ1Ny0xMmE3LTRiZDktYmU0OC00YjczNmZjZjdjNjMiXQAABiBPsReon8hbtiLYvptFl3gEJvspJl_mEQ9iFJCDSnkIIQ
 ```
 
 ---
@@ -322,3 +320,5 @@ The server is lightweight (pure Python async proxy, no ML inference) and comfort
 | 1.0.5 | Fix: disable DNS rebinding protection so Railway hostname is accepted |
 | 1.0.6 | Fix: mount MCP at root path "/" so Smithery base URL works without /mcp suffix |
 | 1.0.7 | Feat: param descriptions, tool annotations, server metadata for Smithery quality score |
+| 1.0.8–1.0.9 | Various guidance and wait_for_job improvements |
+| 1.0.10 | Feat: cells[col].value (rename from full_value); preview download_url + metadata_url at preview_complete; reference check metadata_url fix; CI auto-publish |

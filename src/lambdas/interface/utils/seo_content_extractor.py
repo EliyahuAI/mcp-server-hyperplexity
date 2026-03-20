@@ -310,19 +310,23 @@ class SEOContentExtractor:
         if not self.competitive_data:
             return
 
+        def _cell_value(cell):
+            """Read cell value; supports new 'value' field and legacy 'full_value'/'display_value'."""
+            return cell.get('value') or cell.get('full_value') or cell.get('display_value') or ''
+
         for row in self.competitive_data.get('rows', []):
             cells = row.get('cells', {})
-            name = cells.get('Tool/Platform Name', {}).get('display_value', '')
+            name = _cell_value(cells.get('Tool/Platform Name', {}))
             if name:
                 self._competitor_cache[name.lower()] = {
                     'name': name,
-                    'website': cells.get('Website', {}).get('display_value', ''),
-                    'primary_function': cells.get('Primary Function', {}).get('full_value', ''),
-                    'key_strengths': cells.get('Key Strengths', {}).get('full_value', ''),
-                    'vs_hyperplexity': cells.get('Key Differentiator vs. Hyperplexity', {}).get('full_value', ''),
-                    'category': cells.get('Overall Category', {}).get('full_value', ''),
-                    'pricing': cells.get('Pricing Model', {}).get('full_value', ''),
-                    'validation_features': cells.get('Validation/Fact-checking Features', {}).get('full_value', '')
+                    'website': _cell_value(cells.get('Website', {})),
+                    'primary_function': _cell_value(cells.get('Primary Function', {})),
+                    'key_strengths': _cell_value(cells.get('Key Strengths', {})),
+                    'vs_hyperplexity': _cell_value(cells.get('Key Differentiator vs. Hyperplexity', {})),
+                    'category': _cell_value(cells.get('Overall Category', {})),
+                    'pricing': _cell_value(cells.get('Pricing Model', {})),
+                    'validation_features': _cell_value(cells.get('Validation/Fact-checking Features', {})),
                 }
 
     @staticmethod

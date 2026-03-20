@@ -736,6 +736,119 @@ async def _validate_claims(
         return []
 
 
+def _build_table_metadata_json(
+    claims: List[Dict[str, Any]],
+    validation_results: List[Dict[str, Any]],
+    table_name: str = 'Reference Check',
+) -> Dict[str, Any]:
+    """
+    Build a table_metadata.json from validated reference check claims.
+
+    Matches the standard Hyperplexity cell format used by table validation:
+        cells[col].value       — the validated value
+        cells[col].confidence  — HIGH / MEDIUM / LOW / ID
+        cells[col].comment     — {validator_explanation, key_citation, sources}
+    """
+    # Index validation results by claim_id for O(1) lookup
+    result_by_id = {r.get('claim_id', ''): r for r in (validation_results or [])}
+
+    def _float_to_confidence(f) -> str:
+        try:
+            v = float(f)
+        except (TypeError, ValueError):
+            return 'LOW'
+        if v >= 0.8:
+            return 'HIGH'
+        if v >= 0.5:
+            return 'MEDIUM'
+        return 'LOW'
+
+    columns = [
+        {'name': 'Claim ID',          'importance': 'ID'},
+        {'name': 'Statement',          'importance': 'ID'},
+        {'name': 'Context',            'importance': 'ID'},
+        {'name': 'Reference',          'importance': 'ID'},
+        {'name': 'Support Level',      'importance': 'HIGH'},
+        {'name': 'Validation Notes',   'importance': 'HIGH'},
+    ]
+
+    rows = []
+    for idx, claim in enumerate(claims or []):
+        claim_id = claim.get('claim_id', f'claim_{idx + 1}')
+        vr = result_by_id.get(claim_id, {})
+
+        # Sources list from enhanced_data or api_response
+        sources = []
+        enhanced = vr.get('enhanced_data') or {}
+        api_resp = vr.get('api_response') or {}
+        raw_sources = (
+            enhanced.get('sources')
+            or api_resp.get('sources')
+            or vr.get('sources')
+            or []
+        )
+        for s in raw_sources:
+            if isinstance(s, dict):
+                sources.append({'url': s.get('url', ''), 'snippet': s.get('snippet', s.get('text', ''))})
+            elif isinstance(s, str):
+                sources.append({'url': s, 'snippet': ''})
+
+        key_citation = vr.get('key_citation') or (sources[0]['url'] if sources else '')
+        support_level = str(vr.get('support_level', '') or '').upper().replace('_', ' ')
+        validation_notes = str(vr.get('validation_notes', '') or '')
+        confidence_float = vr.get('confidence', 0.0)
+
+        row_cells = {
+            'Claim ID': {
+                'value': str(claim.get('claim_id', '')),
+                'confidence': 'ID',
+                'comment': {},
+            },
+            'Statement': {
+                'value': str(claim.get('statement', '')),
+                'confidence': 'ID',
+                'comment': {},
+            },
+            'Context': {
+                'value': str(claim.get('context', '')),
+                'confidence': 'ID',
+                'comment': {},
+            },
+            'Reference': {
+                'value': str(claim.get('reference', '')),
+                'confidence': 'ID',
+                'comment': {},
+            },
+            'Support Level': {
+                'value': support_level,
+                'confidence': _float_to_confidence(confidence_float),
+                'comment': {
+                    'validator_explanation': validation_notes,
+                    'key_citation': key_citation,
+                    'sources': sources,
+                },
+            },
+            'Validation Notes': {
+                'value': validation_notes,
+                'confidence': _float_to_confidence(confidence_float),
+                'comment': {
+                    'validator_explanation': validation_notes,
+                    'key_citation': key_citation,
+                    'sources': sources,
+                },
+            },
+        }
+
+        rows.append({'row_key': claim_id, 'cells': row_cells})
+
+    return {
+        'table_name': table_name,
+        'columns': columns,
+        'rows': rows,
+        'is_transposed': False,
+    }
+
+
 async def _compile_results(
     validation_results: List[Dict[str, Any]],
     session_id: str,
@@ -1346,6 +1459,25 @@ async def execute_reference_check_phase2(
             result['error'] = f"Result compilation failed: {compilation_result.get('error')}"
             logger.error(f"[PHASE2] {result['error']}")
             return result
+
+        # ---- Step 3: Generate table_metadata.json for API/MCP consumers ----
+        # Stored alongside the CSV so status_check.py's presigned URL works.
+        try:
+            csv_s3_key = compilation_result.get('csv_s3_key', '')
+            if csv_s3_key:
+                metadata_dir = csv_s3_key.rsplit('/', 1)[0]
+                metadata_key = f"{metadata_dir}/table_metadata.json"
+                table_name = compilation_result.get('table_name', 'Reference Check')
+                metadata_obj = _build_table_metadata_json(claims, validation_results, table_name)
+                storage_manager.s3_client.put_object(
+                    Bucket=storage_manager.bucket_name,
+                    Key=metadata_key,
+                    Body=json.dumps(metadata_obj, indent=2).encode('utf-8'),
+                    ContentType='application/json',
+                )
+                logger.info(f"[PHASE2] Saved table_metadata.json to: {metadata_key}")
+        except Exception as meta_err:
+            logger.warning(f"[PHASE2] Failed to generate table_metadata.json: {meta_err}")
 
         # Update conversation state
         conversation_state['csv_s3_key'] = compilation_result.get('csv_s3_key')
