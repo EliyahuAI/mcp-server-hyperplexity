@@ -300,7 +300,9 @@ def _guidance_get_job_status(data: dict) -> dict:
         }
 
     if status == "preview_complete" and data.get("claims_summary"):
-        # Reference-check preview_complete: extraction done, waiting for approval
+        # Reference-check preview_complete: 3-claim validation preview done, waiting for approval.
+        # preview_results.markdown_table is the validated 3-claim sample (inline, lifted by wait_for_job).
+        # preview_claims_markdown is the full extracted claim list (unvalidated, for context).
         claims = data.get("claims_summary") or {}
         cost_est = data.get("cost_estimate") or {}
         cost = cost_est.get("estimated_total_cost_usd") or 0
@@ -309,20 +311,30 @@ def _guidance_get_job_status(data: dict) -> dict:
             f"~{round(int(est_time_s) / 60)} min" if est_time_s and int(est_time_s) >= 60
             else (f"~{est_time_s}s" if est_time_s else "")
         )
-        preview_md = data.get("preview_claims_markdown", "")
-        if preview_md:
+        prev_results = data.get("preview_results") or {}
+        validated_md = prev_results.get("markdown_table", "")
+        claims_list_md = data.get("preview_claims_markdown", "")
+        total = claims.get("total", "?")
+
+        if validated_md:
             summary = (
-                f"Reference-check extraction complete. "
-                f"{claims.get('total', '?')} claims extracted. "
-                f"Review below before approving:\n\n"
-                f"{preview_md}\n\n"
+                f"Reference-check preview complete. START HERE — review "
+                f"preview_results.markdown_table (inline, first 3 claims validated with "
+                f"support level, confidence, and citations). {total} claims total. "
+                f"Cost to validate all: ${cost}."
+                + (f" Estimated time: {time_label}." if time_label else "")
+            )
+        elif claims_list_md:
+            summary = (
+                f"Reference-check extraction complete. {total} claims extracted. "
+                f"Review preview_claims_markdown before approving. "
                 f"Estimated validation cost: ${cost}."
                 + (f" Estimated time: {time_label}." if time_label else "")
             )
         else:
             summary = (
                 f"Reference-check extraction complete. "
-                f"{claims.get('total', '?')} claims found "
+                f"{total} claims found "
                 f"({claims.get('with_references', '?')} with citations, "
                 f"{claims.get('without_references', '?')} without). "
                 f"Estimated validation cost: ${cost}."
@@ -337,7 +349,7 @@ def _guidance_get_job_status(data: dict) -> dict:
                     "tool": "approve_validation",
                     "params": {"job_id": job_id, "approved_cost_usd": cost},
                     "note": (
-                        f"Approve to run Phase 2 (claim validation). "
+                        f"Approve to validate all {total} claims. "
                         f"Cost: ${cost}."
                         + (f" Estimated time: {time_label}." if time_label else "")
                     ),
@@ -350,8 +362,6 @@ def _guidance_get_job_status(data: dict) -> dict:
                 },
             ],
         }
-        if preview_md:
-            result["preview_claims_markdown"] = preview_md
         return result
 
     if status == "preview_complete":
