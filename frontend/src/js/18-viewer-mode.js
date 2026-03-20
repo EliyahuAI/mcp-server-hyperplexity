@@ -364,16 +364,6 @@ function _renderViewerButtons(cardId, data) {
             }
         },
         {
-            text: 'Transpose',
-            icon: '⊞',
-            variant: 'quinary',
-            callback: () => {
-                if (data.table_metadata && typeof InteractiveTable !== 'undefined') {
-                    InteractiveTable.transposeInCard(cardId, data.table_metadata);
-                }
-            }
-        },
-        {
             text: 'Share Table',
             icon: '🔗',
             variant: 'quaternary',
@@ -389,6 +379,16 @@ function _renderViewerButtons(cardId, data) {
             callback: async (e) => {
                 const button = e.target.closest('button');
                 await handleUpdateTable(cardId, button, data);
+            }
+        },
+        {
+            text: 'Transpose',
+            icon: '⊞',
+            variant: 'quinary',
+            callback: () => {
+                if (data.table_metadata && typeof InteractiveTable !== 'undefined') {
+                    InteractiveTable.transposeInCard(cardId, data.table_metadata);
+                }
             }
         }
     ];
@@ -723,17 +723,6 @@ async function displayDemoResultsInCard(cardId, data, tableName) {
     });
 
     buttons.push({
-        text: 'Transpose',
-        icon: '⊞',
-        variant: 'tertiary',
-        callback: () => {
-            if (data.table_metadata && typeof InteractiveTable !== 'undefined') {
-                InteractiveTable.transposeInCard(cardId, data.table_metadata);
-            }
-        }
-    });
-
-    buttons.push({
         text: isReferenceCheckDemo ? 'Validate New Text' : 'Create Your Own Table',
         icon: isReferenceCheckDemo ? '🔍' : '✨',
         variant: 'primary',
@@ -748,6 +737,17 @@ async function displayDemoResultsInCard(cardId, data, tableName) {
             } else {
                 // Fallback: redirect to main app
                 window.location.href = window.location.pathname;
+            }
+        }
+    });
+
+    buttons.push({
+        text: 'Transpose',
+        icon: '⊞',
+        variant: 'tertiary',
+        callback: () => {
+            if (data.table_metadata && typeof InteractiveTable !== 'undefined') {
+                InteractiveTable.transposeInCard(cardId, data.table_metadata);
             }
         }
     });

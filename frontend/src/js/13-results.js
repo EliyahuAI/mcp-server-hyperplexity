@@ -50,33 +50,32 @@ function showPreviewResults(cardId, previewData) {
         // Show revert if we have multiple session versions OR if we're on version 2+ (indicating refinement occurred)
         const showRevertButton = sessionVersionCount >= 2 || currentVersion > 1;
 
+        // Button colors: Download Excel (primary/green), Download JSON (secondary/purple),
+        //   Refine (tertiary/orange, unique from base), Transpose (quaternary/cyan, last)
+        // Revert row: Revert (quinary/pink)
         const revertButtonHtml = showRevertButton ?
-            `<button type="button" class="std-button quaternary" data-action="revert-config">
+            `<button type="button" class="std-button quinary" data-action="revert-config">
                     ↩️ Revert to Previous
                 </button>` : '';
 
-        // Fixed colors for preview card buttons
-        const downloadColor = 'tertiary';  // orange
-        const refineColor = 'secondary';   // purple
-
         // Hide refine button for reference check (static config cannot be refined)
         const refineButtonHtml = !globalState.isReferenceCheck ?
-            `<button type="button" class="std-button ${refineColor}" data-action="refine-config">
+            `<button type="button" class="std-button tertiary" data-action="refine-config">
                 🔧 Refine Configuration
             </button>` : '';
 
         const actionsHtml = `
             <div style="display: flex; gap: 10px; margin-bottom: 10px; justify-content: center; flex-wrap: wrap;">
-                <button type="button" class="std-button ${downloadColor}" data-action="download-preview">
+                <button type="button" class="std-button primary" data-action="download-preview">
                     📥 Download Excel
                 </button>
-                <button type="button" class="std-button quaternary" data-action="download-json">
+                <button type="button" class="std-button secondary" data-action="download-json">
                     📋 Download JSON (for AI)
                 </button>
-                <button type="button" class="std-button tertiary" data-action="transpose-table">
+                ${refineButtonHtml}
+                <button type="button" class="std-button quaternary" data-action="transpose-table">
                     ⊞ Transpose
                 </button>
-                ${refineButtonHtml}
             </div>
             ${revertButtonHtml ? `<div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">${revertButtonHtml}</div>` : ''}
         `;

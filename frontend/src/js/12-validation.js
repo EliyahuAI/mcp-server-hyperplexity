@@ -158,21 +158,16 @@ function handleProcessingWebSocketMessage(data, cardId) {
                 `• Remaining balance: $${globalState.accountBalance.toFixed(2)}` : 
                 `• Balance updating...`;
             
-            // Check if revert button should be shown (only if this session has 2+ versions)
+            // Check if revert button should be shown (only if this session has 2+ versions or version > 1)
             const sessionVersionCount = data.session_version_count || 0;
             const currentVersion = data.config_version || globalState.currentConfig?.config_version || 1;
-            const showRevertButton = sessionVersionCount >= 2;
+            const showRevertButton = sessionVersionCount >= 2 || currentVersion > 1;
 
-            // Calculate button colors based on reverse cycle (last button = green)
-            // With revert (4 buttons): quaternary, tertiary, secondary, primary
-            // Without revert (3 buttons): tertiary, secondary, primary
-            const downloadColor = showRevertButton ? 'quaternary' : 'tertiary';
-            const refineColor = showRevertButton ? 'tertiary' : 'secondary';
-            const revertColor = 'secondary';
-            const newValidationColor = 'primary';
-
+            // Button colors:
+            // Row 1: Download Excel (primary/green), Download JSON (secondary/purple), Refine (tertiary/orange)
+            // Row 2: Revert (secondary/purple), Share (quaternary/cyan), New Validation (quinary/pink), Transpose (primary/green, last)
             const revertButtonHtml = showRevertButton ?
-                `<button class="std-button ${revertColor}" id="${actualCardId}-revert-btn" style="flex: 1;">
+                `<button class="std-button secondary" id="${actualCardId}-revert-btn" style="flex: 1;">
                         <span class="button-text">↩️ Revert to Previous</span>
                     </button>` : '';
 
@@ -183,7 +178,7 @@ function handleProcessingWebSocketMessage(data, cardId) {
                 </div>` : '';
 
             const refineButtonHtml = !globalState.isReferenceCheck ?
-                `<button class="std-button ${refineColor}" id="${actualCardId}-refine-btn" style="flex: 1;">
+                `<button class="std-button tertiary" id="${actualCardId}-refine-btn" style="flex: 1;">
                     <span class="button-text">🔧 Refine Configuration</span>
                 </button>` : '';
 
@@ -209,14 +204,11 @@ function handleProcessingWebSocketMessage(data, cardId) {
                 </div>
                 <div id="${actualCardId}-table-container" style="margin: 1rem 0;"></div>
                 <div style="display: flex; gap: 10px; margin-top: 1rem; flex-wrap: wrap;">
-                    <button class="std-button ${downloadColor}" id="${actualCardId}-download-btn" style="flex: 1; min-width: 150px;" disabled>
+                    <button class="std-button primary" id="${actualCardId}-download-btn" style="flex: 1; min-width: 150px;" disabled>
                         <span class="button-text">📥 Preparing Download...</span>
                     </button>
-                    <button class="std-button quaternary" id="${actualCardId}-json-btn" style="flex: 1; min-width: 150px;">
+                    <button class="std-button secondary" id="${actualCardId}-json-btn" style="flex: 1; min-width: 150px;">
                         <span class="button-text">📋 Download JSON (for AI)</span>
-                    </button>
-                    <button class="std-button tertiary" id="${actualCardId}-transpose-btn" style="flex: 1; min-width: 120px;">
-                        <span class="button-text">⊞ Transpose</span>
                     </button>
                     ${refineButtonHtml}
                 </div>
@@ -225,8 +217,11 @@ function handleProcessingWebSocketMessage(data, cardId) {
                     <button class="std-button quaternary" id="${actualCardId}-share-btn" style="flex: 1;">
                         <span class="button-text">🔗 Share Table</span>
                     </button>
-                    <button class="std-button ${newValidationColor}" onclick="window.resetPage()" style="flex: 1;">
+                    <button class="std-button quinary" onclick="window.resetPage()" style="flex: 1;">
                         <span class="button-text">🔄 New Validation</span>
+                    </button>
+                    <button class="std-button primary" id="${actualCardId}-transpose-btn" style="flex: 1; min-width: 120px;">
+                        <span class="button-text">⊞ Transpose</span>
                     </button>
                 </div>
             `;
@@ -411,7 +406,7 @@ if (isPartial) {
             <span class="message-icon">🎉</span>
             <div style="line-height: 1.6;">
                 <div style="margin-bottom: 8px;">
-                    • The interactive table below is the best way to review your results. Note: rows are displayed as columns for easier reading.
+                    • The interactive table below is the best way to review your results.
                 </div>
                 <div style="margin-bottom: 8px;">
                     • Your Excel results have been emailed - check the Updated and Original sheets for color-coded confidence (Green=High, Yellow=Medium, Red=Low), and hover cells to see citations in the comments.
@@ -422,12 +417,17 @@ if (isPartial) {
                 </div>
             </div>
         </div>
+        <div id="${cardId}-table-info" class="message message-info" style="display: flex; margin-top: 1rem;">
+            <span class="message-icon">ℹ️</span>
+            <span id="${cardId}-layout-hint">Loading table...</span>
+        </div>
+        <div id="${cardId}-table-container" style="margin: 1rem 0;"></div>
     `;
 
-    // Check if revert button should be shown (only if this session has 2+ versions)
+    // Check if revert button should be shown (only if this session has 2+ versions or version > 1)
     const sessionVersionCount = completionData.session_version_count || 0;
     const currentVersion = completionData.config_version || globalState.currentConfig?.config_version || 1;
-    const showRevertButton = sessionVersionCount >= 2;
+    const showRevertButton = sessionVersionCount >= 2 || currentVersion > 1;
 
     buttons = [
         {
@@ -441,11 +441,12 @@ if (isPartial) {
     ];
 
     // Only add refine button if NOT reference check (static config cannot be refined)
+    // Color: tertiary (orange) — unique from primary(Excel), quaternary(Share), secondary(NewVal), quinary(Revert)
     if (!globalState.isReferenceCheck) {
         buttons.push({
             text: 'Refine Configuration',
             icon: '🔧',
-            variant: 'secondary',
+            variant: 'tertiary',
             width: 'half',
             callback: async function() {
                 try {
@@ -459,11 +460,12 @@ if (isPartial) {
     }
 
     // Only add revert button if version > 1
+    // Color: quinary (pink) — unique from primary(Excel), tertiary(Refine), quaternary(Share), secondary(NewVal)
     if (showRevertButton) {
         buttons.push({
             text: 'Revert to Previous',
             icon: '↩️',
-            variant: 'secondary',
+            variant: 'quinary',
             width: 'half',
             callback: async function() {
                 try {
@@ -488,12 +490,28 @@ if (isPartial) {
         }
     });
 
+    // Color: secondary (purple) — unique from primary(Excel), tertiary(Refine), quinary(Revert), quaternary(Share)
     buttons.push({
         text: 'New Validation',
         icon: '🔄',
         variant: 'secondary',
-        width: 'full',
+        width: 'half',
         callback: () => window.resetPage()
+    });
+
+    // Transpose is last — color: primary (repeats Excel in the 6-button max case, but non-adjacent)
+    buttons.push({
+        text: 'Transpose',
+        icon: '⊞',
+        variant: 'primary',
+        width: 'half',
+        callback: function(e) {
+            const button = e.target.closest('button');
+            const thisCardId = button.closest('[id^="card-"]')?.id;
+            if (thisCardId && globalState.validationTableMetadata && typeof InteractiveTable !== 'undefined') {
+                InteractiveTable.transposeInCard(thisCardId, globalState.validationTableMetadata);
+            }
+        }
     });
 }
 
@@ -505,8 +523,10 @@ const card = createCard({
     buttons
 });
 
-// If this is a completion (not partial), add delayed update to enable download and update balance
+// If this is a completion (not partial), fetch and render the interactive table and enable download
 if (!isPartial) {
+    fetchAndRenderValidationTable(cardId, globalState.sessionId);
+
     setTimeout(() => {
         // Find and enable the download button
         const downloadButton = card.querySelector('button[disabled]');

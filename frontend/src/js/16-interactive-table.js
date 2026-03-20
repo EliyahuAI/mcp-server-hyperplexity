@@ -78,17 +78,10 @@ const InteractiveTable = (function() {
      * Build tooltip content for column headers
      */
     function buildColumnTooltip(description, notes) {
-        let parts = [];
-
         if (description && description.trim()) {
-            parts.push(`<b>Description:</b> ${escapeHtml(description)}`);
+            return `<b>Description:</b> ${escapeHtml(description)}`;
         }
-
-        if (notes && notes.trim()) {
-            parts.push(`<b>Notes:</b> ${escapeHtml(notes)}`);
-        }
-
-        return parts.join('<br>');
+        return '';
     }
 
     /* ========================================
