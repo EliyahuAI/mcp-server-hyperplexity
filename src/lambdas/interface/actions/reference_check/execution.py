@@ -1280,33 +1280,33 @@ async def execute_reference_check_phase1(
         conversation_state['path_type'] = path_type
         _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
 
-        # For GUI flow (auto_approve=False): compile preview CSV + send reference_check_complete
-        # so the frontend can trigger the preview. API flow (auto_approve=True) skips this
-        # and waits for Phase 2 validation to send reference_check_complete.
+        # Always compile preview CSV + config so session_info has table_path and config_s3_key
+        # for the standard validator. For GUI flow (auto_approve=False) also send reference_check_complete
+        # via WebSocket so the frontend can show the preview card.
         auto_approve = conversation_state.get('auto_approve', False)
-        if not auto_approve:
-            try:
-                compilation_result = await _compile_results(
-                    validation_results=None,  # Empty RESEARCH columns for preview
-                    session_id=session_id,
-                    conversation_id=conversation_id,
-                    email=email,
-                    storage_manager=storage_manager,
-                    config=config,
-                    claims=claims,
-                    submitted_text=submitted_text,
-                    source_guess=source_guess,
-                    ai_source_guess=extraction_result.get('source_type_guess', 'Unknown'),
-                    ai_source_confidence=extraction_result.get('source_confidence', 0.0),
-                    path_type=path_type,
-                    final_reference_map=confirmed_reference_map,
-                    conversation_state=conversation_state
-                )
-                if compilation_result.get('success'):
-                    conversation_state['csv_s3_key'] = compilation_result.get('csv_s3_key')
-                    conversation_state['config_s3_key'] = compilation_result.get('config_s3_key')
-                    _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
+        try:
+            compilation_result = await _compile_results(
+                validation_results=None,  # Empty RESEARCH columns for preview
+                session_id=session_id,
+                conversation_id=conversation_id,
+                email=email,
+                storage_manager=storage_manager,
+                config=config,
+                claims=claims,
+                submitted_text=submitted_text,
+                source_guess=source_guess,
+                ai_source_guess=extraction_result.get('source_type_guess', 'Unknown'),
+                ai_source_confidence=extraction_result.get('source_confidence', 0.0),
+                path_type=path_type,
+                final_reference_map=confirmed_reference_map,
+                conversation_state=conversation_state
+            )
+            if compilation_result.get('success'):
+                conversation_state['csv_s3_key'] = compilation_result.get('csv_s3_key')
+                conversation_state['config_s3_key'] = compilation_result.get('config_s3_key')
+                _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
 
+                if not auto_approve:
                     ws_client = _get_websocket_client()
                     if ws_client:
                         ws_client.send_to_session(session_id, {
@@ -1321,10 +1321,10 @@ async def execute_reference_check_phase1(
                             'summary': compilation_result.get('summary'),
                             'claims': [{'claim_id': c['claim_id'], 'statement': c['statement'], 'reference': c.get('reference', 'None')} for c in claims[:10]]
                         })
-                else:
-                    logger.warning(f"[PHASE1] Preview compilation failed: {compilation_result.get('error')}")
-            except Exception as compile_err:
-                logger.warning(f"[PHASE1] Preview compilation error (non-fatal): {compile_err}", exc_info=True)
+            else:
+                logger.warning(f"[PHASE1] Preview compilation failed: {compilation_result.get('error')}")
+        except Exception as compile_err:
+            logger.warning(f"[PHASE1] Preview compilation error (non-fatal): {compile_err}", exc_info=True)
 
         if run_key:
             update_run_status(
@@ -1354,195 +1354,6 @@ async def execute_reference_check_phase1(
                                   verbose_status=f'Error: {str(e)[:100]}', percent_complete=0)
             except Exception:
                 pass
-        return result
-
-
-async def execute_reference_check_phase2(
-    email: str,
-    session_id: str,
-    conversation_id: str,
-    run_key: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Phase 2: Validate claims and compile results (Steps 1+2). Charged operation.
-
-    Loads claims from conversation_state (saved by phase 1), runs validation
-    and result compilation.
-
-    Returns:
-        {
-            'success': bool,
-            'csv_s3_key': str,
-            'csv_filename': str,
-            'summary': Dict,
-        }
-    """
-    result = {
-        'success': False,
-        'conversation_id': conversation_id,
-        'csv_s3_key': None,
-        'csv_filename': None,
-        'summary': None,
-        'error': None
-    }
-
-    try:
-        logger.info(f"[PHASE2] Starting claim validation for {conversation_id}")
-
-        storage_manager = UnifiedS3Manager()
-        conversation_state = _load_conversation_state(
-            storage_manager, email, session_id, conversation_id
-        )
-
-        if not conversation_state:
-            result['error'] = f'Conversation {conversation_id} not found'
-            logger.error(f"[PHASE2] {result['error']}")
-            return result
-
-        claims = conversation_state.get('claims')
-        if not claims:
-            result['error'] = 'No claims found in conversation state — phase 1 must complete first'
-            logger.error(f"[PHASE2] {result['error']}")
-            return result
-
-        submitted_text = conversation_state.get('submitted_text', '')
-        config = _load_config()
-
-        if run_key:
-            try:
-                update_run_status(
-                    session_id=session_id,
-                    run_key=run_key,
-                    status='IN_PROGRESS',
-                    run_type='Reference Check',
-                    verbose_status=f'Validating {len(claims)} claims...',
-                    percent_complete=5
-                )
-            except Exception as e:
-                logger.warning(f"[PHASE2] Failed to update run status: {e}")
-
-        # ---- Step 1: Validate claims ----
-        logger.info(f"[PHASE2] Step 1: Validating {len(claims)} claims")
-        validation_results = await _validate_claims(
-            claims=claims,
-            session_id=session_id,
-            conversation_id=conversation_id,
-            config=config
-        )
-
-        # ---- Step 2: Compile results ----
-        logger.info(f"[PHASE2] Step 2: Compiling results")
-        final_reference_map = conversation_state.get('reference_map', {})
-        source_guess = conversation_state.get('source_guess', 'Unknown')
-        ai_source_guess = conversation_state.get('ai_source_guess', 'Unknown')
-        ai_source_confidence = conversation_state.get('ai_source_confidence', 0.0)
-        path_type = conversation_state.get('path_type', 'unknown')
-
-        compilation_result = await _compile_results(
-            validation_results=validation_results,
-            session_id=session_id,
-            conversation_id=conversation_id,
-            email=email,
-            storage_manager=storage_manager,
-            config=config,
-            claims=claims,
-            submitted_text=submitted_text,
-            source_guess=source_guess,
-            ai_source_guess=ai_source_guess,
-            ai_source_confidence=ai_source_confidence,
-            path_type=path_type,
-            final_reference_map=final_reference_map,
-            conversation_state=conversation_state
-        )
-
-        if not compilation_result.get('success'):
-            result['error'] = f"Result compilation failed: {compilation_result.get('error')}"
-            logger.error(f"[PHASE2] {result['error']}")
-            return result
-
-        # ---- Step 3: Generate table_metadata.json for API/MCP consumers ----
-        # Stored alongside the CSV so status_check.py's presigned URL works.
-        try:
-            csv_s3_key = compilation_result.get('csv_s3_key', '')
-            if csv_s3_key:
-                metadata_dir = csv_s3_key.rsplit('/', 1)[0]
-                metadata_key = f"{metadata_dir}/table_metadata.json"
-                table_name = compilation_result.get('table_name', 'Reference Check')
-                metadata_obj = _build_table_metadata_json(claims, validation_results, table_name)
-                storage_manager.s3_client.put_object(
-                    Bucket=storage_manager.bucket_name,
-                    Key=metadata_key,
-                    Body=json.dumps(metadata_obj, indent=2).encode('utf-8'),
-                    ContentType='application/json',
-                )
-                logger.info(f"[PHASE2] Saved table_metadata.json to: {metadata_key}")
-        except Exception as meta_err:
-            logger.warning(f"[PHASE2] Failed to generate table_metadata.json: {meta_err}")
-
-        # Update conversation state
-        conversation_state['csv_s3_key'] = compilation_result.get('csv_s3_key')
-        conversation_state['config_s3_key'] = compilation_result.get('config_s3_key')
-        conversation_state['summary'] = compilation_result.get('summary')
-        conversation_state['status'] = 'complete'
-        conversation_state['completed_at'] = datetime.now().isoformat()
-        _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
-
-        # Send completion WebSocket message
-        ws_client = _get_websocket_client()
-        if ws_client:
-            ws_client.send_to_session(session_id, {
-                'type': 'reference_check_complete',
-                'conversation_id': conversation_id,
-                'status': 'complete',
-                'csv_s3_key': compilation_result.get('csv_s3_key'),
-                'csv_filename': compilation_result.get('csv_filename'),
-                'table_name': compilation_result.get('table_name', 'Reference Check'),
-                'session_id': session_id,
-                'summary': compilation_result.get('summary'),
-            })
-
-        if run_key:
-            try:
-                update_run_status(
-                    session_id=session_id,
-                    run_key=run_key,
-                    status='COMPLETED',
-                    verbose_status=f"Completed: {compilation_result['summary'].get('total_claims', len(claims))} claims validated",
-                    percent_complete=100,
-                    results_s3_key=compilation_result.get('csv_s3_key'),
-                )
-            except Exception as e:
-                logger.warning(f"[PHASE2] Failed to update run status: {e}")
-
-        result.update({
-            'success': True,
-            'csv_s3_key': compilation_result.get('csv_s3_key'),
-            'csv_filename': compilation_result.get('csv_filename'),
-            'table_name': compilation_result.get('table_name'),
-            'config_s3_key': compilation_result.get('config_s3_key'),
-            'summary': compilation_result.get('summary'),
-            'session_id': session_id,
-        })
-        logger.info(f"[PHASE2] Pipeline complete")
-        return result
-
-    except Exception as e:
-        result['error'] = f'Phase 2 error: {str(e)}'
-        logger.error(f"[PHASE2] {result['error']}", exc_info=True)
-        if run_key:
-            try:
-                update_run_status(session_id=session_id, run_key=run_key, status='FAILED',
-                                  verbose_status=f'Error: {str(e)[:100]}', percent_complete=0)
-            except Exception:
-                pass
-        ws_client = _get_websocket_client()
-        if ws_client:
-            ws_client.send_to_session(session_id, {
-                'type': 'reference_check_error',
-                'conversation_id': conversation_id,
-                'status': 'error',
-                'message': 'An error occurred during reference check validation. Please try again.'
-            })
         return result
 
 

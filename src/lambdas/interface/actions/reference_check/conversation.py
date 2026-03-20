@@ -294,14 +294,41 @@ async def handle_reference_check_start(request_data: Dict[str, Any], context: An
 
         logger.info(f"[REFERENCE CHECK PHASE1 COMPLETE] conversation_id={conversation_id}, success={result.get('success')}")
 
-        # If auto_approve, queue Phase 2 immediately
+        # If auto_approve, queue the standard validator immediately (same path as approve_validation)
         if result.get('success') and auto_approve:
-            logger.info(f"[REFERENCE CHECK] auto_approve=True, queuing Phase 2 for {conversation_id}")
+            logger.info(f"[REFERENCE CHECK] auto_approve=True, queuing standard validator for {conversation_id}")
             try:
-                _queue_validate_reference_check(session_id, email, conversation_id)
-                logger.info(f"[REFERENCE CHECK] Phase 2 queued for {conversation_id}")
+                from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+                from dynamodb_schemas import create_run_record, track_validation_call
+                from interface_lambda.core.sqs_service import send_full_request
+                storage_manager = UnifiedS3Manager()
+                si = storage_manager.load_session_info(email, session_id)
+                excel_s3_key = si.get('table_path')
+                _, config_s3_key = storage_manager.get_latest_config(email, session_id)
+                if excel_s3_key and config_s3_key:
+                    reference_pin = session_id.split('_')[-1] if '_' in session_id else session_id[:6]
+                    run_key = create_run_record(
+                        session_id=session_id, email=email,
+                        total_rows=-1, batch_size=None, run_type="Validation"
+                    )
+                    track_validation_call(
+                        email=email, session_id=session_id,
+                        reference_pin=reference_pin, request_type='full',
+                        excel_s3_key=excel_s3_key, config_s3_key=config_s3_key
+                    )
+                    send_full_request(
+                        session_id=session_id,
+                        excel_s3_key=excel_s3_key,
+                        config_s3_key=config_s3_key,
+                        email=email,
+                        reference_pin=reference_pin,
+                        run_key=run_key,
+                    )
+                    logger.info(f"[REFERENCE CHECK] Standard validator queued for {conversation_id}, run_key={run_key}")
+                else:
+                    logger.error(f"[REFERENCE CHECK] auto_approve: CSV or config missing, cannot queue validator")
             except Exception as e:
-                logger.error(f"[REFERENCE CHECK] Failed to queue Phase 2: {e}", exc_info=True)
+                logger.error(f"[REFERENCE CHECK] Failed to queue standard validator: {e}", exc_info=True)
 
         return result
 
@@ -332,110 +359,6 @@ async def handle_reference_check_start(request_data: Dict[str, Any], context: An
             'message': str(e)
         }
 
-
-async def handle_reference_check_validate(request_data: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """
-    Background processor - Phase 2 (validation + compilation). Queued after approval.
-    """
-    try:
-        email = request_data['email']
-        session_id = request_data['session_id']
-        conversation_id = request_data['conversation_id']
-
-        logger.info(
-            f"[REFERENCE CHECK VALIDATE] conversation_id={conversation_id}, "
-            f"session={session_id}, email={email}"
-        )
-
-        # Create a new run record for Phase 2
-        run_key = create_run_record(
-            session_id=session_id,
-            email=email,
-            total_rows=0,
-            run_type="Reference Check"
-        )
-
-        update_run_status(
-            session_id=session_id,
-            run_key=run_key,
-            status='IN_PROGRESS',
-            run_type="Reference Check",
-            verbose_status="Validating claims...",
-            percent_complete=5
-        )
-
-        # Send progress update
-        try:
-            ws_client = WebSocketClient()
-            ws_client.send_to_session(session_id, {
-                'type': 'reference_check_progress',
-                'conversation_id': conversation_id,
-                'current_step': 1,
-                'total_steps': 2,
-                'status': 'Validating claims...',
-                'progress_percent': 10,
-                'phase': 'validation',
-            })
-        except Exception:
-            pass
-
-        from .execution import execute_reference_check_phase2
-        result = await execute_reference_check_phase2(
-            email=email,
-            session_id=session_id,
-            conversation_id=conversation_id,
-            run_key=run_key
-        )
-
-        logger.info(f"[REFERENCE CHECK VALIDATE COMPLETE] conversation_id={conversation_id}, success={result.get('success')}")
-        return result
-
-    except Exception as e:
-        logger.error(f"Error in handle_reference_check_validate: {str(e)}", exc_info=True)
-
-        if 'run_key' in locals():
-            update_run_status(
-                session_id=session_id,
-                run_key=run_key,
-                status='FAILED',
-                run_type="Reference Check",
-                verbose_status=f"Error: {str(e)}",
-                percent_complete=0
-            )
-
-        if 'session_id' in locals() and 'conversation_id' in locals():
-            try:
-                ws_client = WebSocketClient()
-                ws_client.send_to_session(session_id, {
-                    'type': 'reference_check_error',
-                    'conversation_id': conversation_id,
-                    'status': 'error',
-                    'message': 'An error occurred during reference check validation. Please try again.'
-                })
-            except Exception:
-                pass
-
-        return {
-            'status': 'error',
-            'message': str(e)
-        }
-
-
-def _queue_validate_reference_check(session_id: str, email: str, conversation_id: str) -> None:
-    """Queue Phase 2 (validateReferenceCheck) to SQS."""
-    if not STANDARD_QUEUE_URL:
-        raise Exception("STANDARD_QUEUE_URL not configured — cannot queue Phase 2 validation")
-    message = {
-        'request_type': 'reference_check',
-        'action': 'validateReferenceCheck',
-        'session_id': session_id,
-        'email': email,
-        'conversation_id': conversation_id,
-        'deployment_environment': os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod'),
-    }
-    message_body_cleaned = {k: v for k, v in message.items() if v is not None}
-    _send_sqs_message(STANDARD_QUEUE_URL, message_body_cleaned)
-    logger.info(f"[REFERENCE CHECK] Queued validateReferenceCheck for session={session_id}, conv={conversation_id}")
 
 
 def _save_conversation_state(storage_manager: UnifiedS3Manager, email: str, session_id: str,

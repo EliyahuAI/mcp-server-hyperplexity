@@ -921,51 +921,55 @@ def _handle_get_job_status(job_id, email, query_params, meta):
             }, meta, extra_headers={"Retry-After": "20"})
 
         if rc_preview_key:
-            rc_prev_record = get_run_status(job_id, rc_preview_key)
-            rc_prev_status = str(rc_prev_record.get("status") or "PROCESSING").upper() if rc_prev_record else "PROCESSING"
-            if rc_prev_status in ("COMPLETED", "COMPLETE"):
-                conv_state = _load_rc_conversation_state(job_id, email)
-                cost_est = conv_state.get("ref_check_cost_estimate", {})
-                _t = rc_prev_record.get("start_time") or rc_prev_record.get("created_at") if rc_prev_record else None
-                data = {
-                    "job_id": job_id,
-                    "status": "preview_complete",
-                    "current_step": "Reference Check Preview",
-                    "progress_percent": 100,
-                    "submitted_at": str(_t) if _t else None,
-                    "conversation_id": conv_state.get("conversation_id"),
-                    "claims_summary": conv_state.get("claims_summary"),
-                    "cost_estimate": {
-                        "estimated_total_cost_usd": cost_est.get("estimated_total_cost_usd"),
-                        "estimated_validation_time_seconds": cost_est.get("estimated_validation_time_seconds"),
-                        "claims_to_validate": cost_est.get("claims_to_validate"),
-                    },
-                    "next_steps": {
-                        "approve_url": f"/v1/jobs/{job_id}/validate",
-                        "requires_approval": True,
-                    },
-                }
-                return _success_response(200, data, meta)
-            if rc_prev_status in ("FAILED", "ERROR"):
+            # If approve_validation was already called, a standard "Validation" run key exists.
+            # Fall through to the generic run_key path so the validator's live progress is surfaced.
+            val_key_exists = bool(find_run_key_by_type(job_id, "Validation"))
+            if not val_key_exists:
+                rc_prev_record = get_run_status(job_id, rc_preview_key)
+                rc_prev_status = str(rc_prev_record.get("status") or "PROCESSING").upper() if rc_prev_record else "PROCESSING"
+                if rc_prev_status in ("COMPLETED", "COMPLETE"):
+                    conv_state = _load_rc_conversation_state(job_id, email)
+                    cost_est = conv_state.get("ref_check_cost_estimate", {})
+                    _t = rc_prev_record.get("start_time") or rc_prev_record.get("created_at") if rc_prev_record else None
+                    data = {
+                        "job_id": job_id,
+                        "status": "preview_complete",
+                        "current_step": "Reference Check Preview",
+                        "progress_percent": 100,
+                        "submitted_at": str(_t) if _t else None,
+                        "conversation_id": conv_state.get("conversation_id"),
+                        "claims_summary": conv_state.get("claims_summary"),
+                        "cost_estimate": {
+                            "estimated_total_cost_usd": cost_est.get("estimated_total_cost_usd"),
+                            "estimated_validation_time_seconds": cost_est.get("estimated_validation_time_seconds"),
+                            "claims_to_validate": cost_est.get("claims_to_validate"),
+                        },
+                        "next_steps": {
+                            "approve_url": f"/v1/jobs/{job_id}/validate",
+                            "requires_approval": True,
+                        },
+                    }
+                    return _success_response(200, data, meta)
+                if rc_prev_status in ("FAILED", "ERROR"):
+                    _t = rc_prev_record.get("start_time") or rc_prev_record.get("created_at") if rc_prev_record else None
+                    return _success_response(200, {
+                        "job_id": job_id,
+                        "status": "failed",
+                        "current_step": "Claim Extraction",
+                        "progress_percent": 0,
+                        "submitted_at": str(_t) if _t else None,
+                        "error": {"message": rc_prev_record.get("verbose_status") or "Claim extraction failed"},
+                    }, meta)
+                # Phase 1 still running
+                pct = int(rc_prev_record.get("percent_complete") or 5) if rc_prev_record else 5
                 _t = rc_prev_record.get("start_time") or rc_prev_record.get("created_at") if rc_prev_record else None
                 return _success_response(200, {
                     "job_id": job_id,
-                    "status": "failed",
+                    "status": "processing",
                     "current_step": "Claim Extraction",
-                    "progress_percent": 0,
+                    "progress_percent": pct,
                     "submitted_at": str(_t) if _t else None,
-                    "error": {"message": rc_prev_record.get("verbose_status") or "Claim extraction failed"},
-                }, meta)
-            # Phase 1 still running
-            pct = int(rc_prev_record.get("percent_complete") or 5) if rc_prev_record else 5
-            _t = rc_prev_record.get("start_time") or rc_prev_record.get("created_at") if rc_prev_record else None
-            return _success_response(200, {
-                "job_id": job_id,
-                "status": "processing",
-                "current_step": "Claim Extraction",
-                "progress_percent": pct,
-                "submitted_at": str(_t) if _t else None,
-            }, meta, extra_headers={"Retry-After": "20"})
+                }, meta, extra_headers={"Retry-After": "20"})
         # ---- End reference-check detection ----
 
         # Prefer Validation run if one exists; then Preview (to surface preview_complete
@@ -1179,19 +1183,47 @@ def _handle_update_table(body, email, meta):
 
 def _handle_approve_validation(job_id, body, email, meta):
     """POST /v1/jobs/{job_id}/validate"""
-    # ---- Reference-check approval: queue Phase 2 ----
+    # ---- Reference-check approval: queue standard validator lambda ----
     try:
-        from dynamodb_schemas import find_run_key_by_type
+        from dynamodb_schemas import find_run_key_by_type, create_run_record, track_validation_call
         rc_preview_key = find_run_key_by_type(job_id, "ReferenceCheckPreview")
         rc_key = find_run_key_by_type(job_id, "ReferenceCheck")
-        if rc_preview_key and not rc_key:
-            conv_state = _load_rc_conversation_state(job_id, email)
-            conversation_id = conv_state.get("conversation_id")
-            if not conversation_id:
-                return _error_response(404, "not_found",
-                    "Reference check conversation not found for this job.", meta)
-            from interface_lambda.actions.reference_check.conversation import _queue_validate_reference_check
-            _queue_validate_reference_check(job_id, email, conversation_id)
+        existing_val_key = find_run_key_by_type(job_id, "Validation")
+        if rc_preview_key and not rc_key and not existing_val_key:
+            from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+            storage_manager = UnifiedS3Manager()
+            session_info = storage_manager.load_session_info(email, job_id)
+            excel_s3_key = session_info.get('table_path')
+            if not excel_s3_key:
+                _, excel_s3_key = storage_manager.get_excel_file(email, job_id)
+            if not excel_s3_key:
+                return _error_response(400, "file_not_found",
+                    "Reference check CSV not found. Phase 1 may not have completed yet.", meta)
+            existing_config, config_s3_key = storage_manager.get_latest_config(email, job_id)
+            if not config_s3_key:
+                return _error_response(400, "config_not_found",
+                    "Reference check config not found. Phase 1 may not have completed yet.", meta)
+            reference_pin = job_id.split('_')[-1] if '_' in job_id else job_id[:6]
+            run_key = create_run_record(
+                session_id=job_id, email=email,
+                total_rows=-1, batch_size=None, run_type="Validation"
+            )
+            track_validation_call(
+                email=email, session_id=job_id,
+                reference_pin=reference_pin, request_type='full',
+                excel_s3_key=excel_s3_key, config_s3_key=config_s3_key
+            )
+            from interface_lambda.core.sqs_service import send_full_request
+            send_full_request(
+                session_id=job_id,
+                excel_s3_key=excel_s3_key,
+                config_s3_key=config_s3_key,
+                email=email,
+                reference_pin=reference_pin,
+                run_key=run_key,
+                validation_mode=body.get("validation_mode"),
+            )
+            logger.info(f"[API_HANDLER] RC approval: queued standard validator for {job_id}, run_key={run_key}")
             return _success_response(202, {
                 "job_id": job_id,
                 "status": "queued",
@@ -1201,6 +1233,9 @@ def _handle_approve_validation(job_id, body, email, meta):
                     "results": f"/v1/jobs/{job_id}/results",
                 },
             }, meta)
+        if rc_preview_key and existing_val_key:
+            return _error_response(409, "validation_already_queued",
+                "Validation has already been queued for this reference check job.", meta)
     except Exception as e:
         logger.error(f"[API_HANDLER] RC approval check failed: {e}", exc_info=True)
     # ---- End reference-check approval ----
