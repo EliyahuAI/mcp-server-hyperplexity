@@ -36,10 +36,11 @@ The Table Maker system generates research tables by discovering entities through
 ### 30-Second Overview
 
 ```
-User Request → Interview → Background Research → Table Extraction → Column Definition → Row Discovery → QC Review → CSV + Config
-                                (Step 0)            (Step 0b)           (Step 1)          (Step 2)       (Step 3)
-                           Find sources        Extract tables     Generate rows     Merge initial
-                           Identify tables     (if needed)        Decide trigger    + discovered
+User Request → Interview → Background Research → Table Extraction → Column Definition → Row Discovery → Rumor Generation → QC Review → CSV + Config
+                                (Step 0)            (Step 0b)           (Step 1)          (Step 2)        (Step 2b)          (Step 3)
+                           Find sources        Extract tables     Generate rows     Generate extra    Merge all rows
+                           Identify tables     (if needed)        Decide trigger    candidates        + deduplicate
+                                                                                   K/V/R + validate
 ```
 
 ### Running a Test
@@ -477,10 +478,20 @@ For obvious, exhaustive, well-defined lists that don't require web research.
      │ (already complete) │      │  • 3-Level escalation               │
      │                    │      │  • Merge initial + discovered rows  │
      │ Saves 60-120s      │      │  • Citation tracking across streams │
-     │                    │      │  • Outputs: candidates_markdown +   │
-     │                    │      │    citations dict + scoring array   │
      │                    │      └──────────┬──────────────────────────┘
      └────────┬───────────┘                 ↓
+              │                  ┌─────────────────────────────────────┐
+              │                  │ Step 2b: Rumor Generation (optional)│
+              │                  │  • LLM generates extra candidates   │
+              │                  │  • Each candidate gets disposition: │
+              │                  │    K = keep, V = validate, R = skip │
+              │                  │  • K rows: bypass validation        │
+              │                  │  • V rows: sonar T/F/? per hard req │
+              │                  │  • Pass: all T, or T+? (no F)       │
+              │                  │  • Fail: any F, or all ?            │
+              │                  │  • Passing rows merged into results │
+              │                  └──────────┬──────────────────────────┘
+              │                             ↓
               │                  ┌─────────────────────────────────────┐
               │                  │ Step 3: QC Review                   │
               │                  │  • Review merged rows (with row_ids)│
@@ -989,7 +1000,57 @@ Round 2 discovers: "Date ranges improve relevance"
 - **NEW (v2.8):** Preserves cell-level citations when merging duplicates
 - **NEW (v2.8):** Merges research_values from candidates
 
-### 5. QC Reviewer
+### 5. Rumor Generator + Validator
+**Files:**
+- `src/lambdas/interface/actions/table_maker/table_maker_lib/rumor_generator.py`
+- `src/lambdas/interface/actions/table_maker/table_maker_lib/rumor_validator.py`
+- `src/lambdas/interface/actions/table_maker/table_maker_lib/validation_config_builder.py`
+
+**Purpose:** Generate additional candidate rows beyond what search discovery found, then filter them via hard-requirement validation.
+
+**Flow:**
+
+1. **Generation** — LLM generates a markdown table of extra candidates with a disposition for each:
+   - `K` (Keep) — model is confident this entity meets all hard requirements; bypass validation
+   - `V` (Validate) — model thinks it might qualify; send to validator
+   - `R` (Reject) — model is confident this entity fails; discard immediately
+
+2. **Validation (V rows only)** — `ValidationConfigBuilder` programmatically builds a config with:
+   - ID columns as context
+   - One T/F/? column per hard requirement (no Entity Exists, no soft reqs, no numeric scales)
+
+   A single Perplexity sonar call per row asks: *"Does this entity meet [requirement]? Answer T/F/?"*
+
+3. **Pass/fail algorithm:**
+
+   | Hard req answers | Result |
+   |---|---|
+   | All T | pass |
+   | Any F | fail |
+   | T + ? (no F) | pass |
+   | All ? | fail |
+
+4. **Merge** — K rows (pre-screened) + passing V rows are merged into the discovery results before QC.
+
+**Output files:**
+- `rumor_candidates_raw.json` — all generated candidates before validation
+- `rumor_validate_candidates.csv` — V-disposition rows sent to validator lambda
+- `rumor_validation_config.json` — auto-generated validation config
+- `rumor_result.json` — all V rows with `hard_req_results`, `validation_passed`, `validation_reasoning`
+- `rumor_results.csv` — ID cols + Disposition + Passed + T/F/? per hard req + Reasoning
+
+**Config (`rumor_config` in table_maker_config.json):**
+```json
+{
+  "enabled": true,
+  "models": ["openrouter/gemini-3-flash-preview-min"],
+  "per_model_count": 30,
+  "validation_model": "sonar",
+  "context_size": "low"
+}
+```
+
+### 6. QC Reviewer
 **File:** `src/lambdas/interface/actions/table_maker/table_maker_lib/qc_reviewer.py`
 
 **Purpose:** Final quality control and prioritization

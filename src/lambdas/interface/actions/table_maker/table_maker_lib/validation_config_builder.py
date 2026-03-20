@@ -62,10 +62,8 @@ class ValidationConfigBuilder:
         Process:
         1. Start with CONFIG_TEMPLATE (static Python dict)
         2. Insert ID columns into validation_targets (importance='ID', search_group=0)
-        3. Insert Entity Exists column (type='scale', range -2..+2, search_group=1)
-        4. Insert hard requirements as scale columns (search_group=1)
-        5. Insert soft requirements as scale columns (search_group=1)
-        6. Return complete config dict
+        3. Insert hard requirements as T/F/? questions (search_group=1)
+        4. Return complete config dict
 
         Args:
             columns: Column definitions (ID columns from column_definition)
@@ -88,7 +86,7 @@ class ValidationConfigBuilder:
 
         validation_targets = []
 
-        # Step 1: Add ID columns (not validated, just for row keys)
+        # Step 1: Add ID columns (not validated, just for row identity/context)
         id_columns_added = 0
         for col in columns:
             if col.get('importance', '').upper() == 'ID':
@@ -102,26 +100,7 @@ class ValidationConfigBuilder:
 
         logger.info(f"[CONFIG_BUILDER] Added {id_columns_added} ID columns")
 
-        # Step 2: Add Entity Exists (validates entity existence — binary Yes/No/Uncertain)
-        validation_targets.append({
-            "column": "Entity Exists",
-            "type": "scale",
-            "scale_definition": "-2 (definitely does not exist / fictional) to +2 (definitely exists / verified)",
-            "importance": "RESEARCH",
-            "search_group": 1,
-            "instruction": (
-                "Does this entity actually exist? Search for it and determine:\n"
-                "+2 = definitely exists — multiple reliable sources confirm it\n"
-                "+1 = probably exists — some evidence found\n"
-                "0 = uncertain — insufficient evidence\n"
-                "-1 = probably fictional — no credible sources found\n"
-                "-2 = definitely does not exist / hallucinated — confirmed non-existent\n"
-                "Use web search to verify existence."
-            )
-        })
-        logger.info("[CONFIG_BUILDER] Added Entity Exists column")
-
-        # Step 3: Add hard requirements (must all pass with score ≥ 0)
+        # Step 2: Add hard requirements as T/F/? questions — these are the sole filter
         hard_req_count = 0
         for req in requirements:
             if req.get('type', '').lower() == 'hard':
@@ -131,61 +110,26 @@ class ValidationConfigBuilder:
 
                 validation_targets.append({
                     "column": f"Hard: {short_text}",
-                    "type": "scale",
-                    "scale_definition": "-2 (strongly disagree / does not meet requirement) to +2 (strongly agree / exceeds requirement)",
                     "importance": "RESEARCH",
                     "search_group": 1,
-                    "instruction": (
-                        f"Requirement: {req_text}\n\n"
-                        "Rate how well this entity meets this requirement:\n"
-                        "-2 = strongly disagrees / clearly does not meet requirement\n"
-                        "-1 = somewhat disagrees / partially meets requirement\n"
-                        "0 = neutral / unclear if requirement is met\n"
-                        "+1 = somewhat agrees / mostly meets requirement\n"
-                        "+2 = strongly agrees / clearly exceeds requirement\n\n"
-                        "Use web search to find evidence supporting your rating."
+                    "description": (
+                        f"{req_text}\n\n"
+                        "Answer exactly one of: T (yes, clearly meets this requirement), "
+                        "F (no, does not meet this requirement), "
+                        "? (uncertain / insufficient evidence).\n"
+                        "Use web search to verify."
                     )
                 })
                 hard_req_count += 1
 
         logger.info(f"[CONFIG_BUILDER] Added {hard_req_count} hard requirements")
 
-        # Step 4: Add soft requirements (scored but not required)
-        soft_req_count = 0
-        for req in requirements:
-            if req.get('type', '').lower() == 'soft':
-                req_text = req.get('requirement', '')
-                # Truncate for column name (max 100 chars)
-                short_text = req_text[:97] + '...' if len(req_text) > 100 else req_text
-
-                validation_targets.append({
-                    "column": f"Soft: {short_text}",
-                    "type": "scale",
-                    "scale_definition": "-2 (strongly disagree / does not meet preference) to +2 (strongly agree / exceeds preference)",
-                    "importance": "RESEARCH",
-                    "search_group": 1,
-                    "instruction": (
-                        f"Preference: {req_text}\n\n"
-                        "Rate how well this entity meets this preference:\n"
-                        "-2 = strongly disagrees / clearly does not meet preference\n"
-                        "-1 = somewhat disagrees / partially meets preference\n"
-                        "0 = neutral / unclear if preference is met\n"
-                        "+1 = somewhat agrees / mostly meets preference\n"
-                        "+2 = strongly agrees / clearly exceeds preference\n\n"
-                        "This is a soft requirement - entities can pass validation without meeting this."
-                    )
-                })
-                soft_req_count += 1
-
-        logger.info(f"[CONFIG_BUILDER] Added {soft_req_count} soft requirements")
-
         # Assign validation targets to config
         config['validation_targets'] = validation_targets
 
         logger.info(
             f"[CONFIG_BUILDER] Config built successfully: "
-            f"{id_columns_added} ID cols, 1 entity-exists col, "
-            f"{hard_req_count} hard reqs, {soft_req_count} soft reqs"
+            f"{id_columns_added} ID cols, {hard_req_count} hard reqs (T/F/? only)"
         )
 
         return config

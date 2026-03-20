@@ -74,16 +74,35 @@ results = invoke_validator_lambda_with_rows(
 
 The **rumor validation step** in the table maker pipeline always uses lightweight mode.
 
-Rumor validation validates V-disposition candidates (entities that need existence checking) after row discovery. Since these rows have been discovered by the search pipeline and only need a quick existence check, the full validation prompt is unnecessary overhead.
+Rumor validation checks V-disposition candidates against the table's hard requirements after row discovery. The validator asks Perplexity sonar **T/F/?** for each hard requirement — one search call per row.
 
 **Location:** `src/lambdas/interface/actions/table_maker/table_maker_lib/rumor_validator.py`
+**Config builder:** `src/lambdas/interface/actions/table_maker/table_maker_lib/validation_config_builder.py`
 **Called from:** `src/lambdas/interface/actions/table_maker/execution.py`
 
-The `RumorValidator` class:
-- Generates a validation config programmatically (no AI) with `ValidationConfigBuilder`
-- Uses `sonar` + `search_context_size: "low"` by default (configurable via `rumor_config`)
-- Calls `invoke_validator_lambda_with_rows(..., validation_mode='lightweight')`
-- Filters rows based on `Entity Exists` score ≥ `confidence_threshold` (default 0.6)
+### What Gets Validated
+
+`ValidationConfigBuilder` generates a config with:
+- ID columns (context only, not validated)
+- One column per hard requirement, asking: *"Answer T (yes), F (no), or ? (uncertain)"*
+
+No Entity Exists column. No soft requirements. No numeric scales.
+
+### Pass/Fail Algorithm
+
+| Hard requirement answers | Result |
+|---|---|
+| All T | pass |
+| Any F | fail |
+| T + ? (mix, no F) | pass |
+| All ? (no T, no F) | fail |
+
+### Output Files
+
+- `rumor_validate_candidates.csv` — raw input rows sent to validator
+- `rumor_validation_config.json` — generated config (ID cols + hard req T/F/? columns)
+- `rumor_result.json` — all validated rows with `hard_req_results`, `validation_passed`, `validation_reasoning`
+- `rumor_results.csv` — human-readable: ID cols + Disposition + Passed + one T/F/? column per hard req + Reasoning
 
 ### Cost Comparison
 

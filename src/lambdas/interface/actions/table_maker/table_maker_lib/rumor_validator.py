@@ -26,9 +26,7 @@ class RumorValidator:
         s3_manager,
         conversation_id: str = "",
         validation_model: str = "sonar",
-        context_size: str = "low",
-        confidence_threshold: float = 0.7,
-        hard_requirement_threshold: float = 0.0
+        context_size: str = "low"
     ):
         """
         Initialize rumor validator.
@@ -41,8 +39,6 @@ class RumorValidator:
             conversation_id: Conversation ID (used for S3 config path)
             validation_model: Model to use for validation (default: sonar)
             context_size: Search context size (default: low)
-            confidence_threshold: Minimum entity-exists score to pass (default: 0.7)
-            hard_requirement_threshold: Minimum score for hard requirements (default: 0.0)
         """
         self.ai_client = ai_client
         self.session_id = session_id
@@ -51,8 +47,6 @@ class RumorValidator:
         self.conversation_id = conversation_id
         self.validation_model = validation_model
         self.context_size = context_size
-        self.confidence_threshold = confidence_threshold
-        self.hard_requirement_threshold = hard_requirement_threshold
 
     async def validate_candidates(
         self,
@@ -226,7 +220,6 @@ class RumorValidator:
         import csv
         import io
         from interface_lambda.core.validator_invoker import invoke_validator_lambda_with_rows
-        from shared_table_parser import S3TableParser
 
         VALIDATOR_LAMBDA_NAME = os.environ.get('VALIDATOR_LAMBDA_NAME')
         main_bucket = self.s3_manager.bucket_name
@@ -256,11 +249,16 @@ class RumorValidator:
         )
         logger.info(f"[RUMOR_VAL] Wrote {len(validation_rows)} V-candidates to s3://{main_bucket}/{csv_s3_key}")
 
-        # Step 2: Parse CSV with S3TableParser to get consistent _row_key values
-        table_parser = S3TableParser()
-        parsed_data = table_parser.parse_s3_table(main_bucket, csv_s3_key)
-        rows_with_keys = parsed_data.get('data', [])
-        logger.info(f"[RUMOR_VAL] S3TableParser returned {len(rows_with_keys)} rows with _row_key")
+        # Step 2: Generate _row_key directly — skipping S3TableParser avoids its single-column
+        # CSV fallback that misdetects spaces as delimiters and splits column names like
+        # "Term/Meme Name" → ["Term/Meme", "Name"], which empties all field values in prompts.
+        from row_key_utils import generate_row_key as _generate_row_key
+        rows_with_keys = []
+        for row in validation_rows:
+            row_copy = dict(row)
+            row_copy['_row_key'] = _generate_row_key(row_copy, primary_keys=None)
+            rows_with_keys.append(row_copy)
+        logger.info(f"[RUMOR_VAL] Generated _row_key for {len(rows_with_keys)} rows directly")
 
         # Step 3: Write config JSON beside the V-candidates CSV in the table maker folder.
         # Pass main_bucket + this key to the validator lambda — no separate cache bucket needed.
@@ -303,103 +301,70 @@ class RumorValidator:
         candidates: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
-        Parse validation results from validator lambda.
+        Parse T/F/? answers for hard requirements from validator lambda response.
 
-        Extracts Entity Exists score + requirement scores for each row.
-        Falls back to parsing the old "Realness Score" column name if present.
+        Each hard requirement column returns 'T', 'F', or '?' as its value.
         """
         if not validation_results or 'validation_results' not in validation_results:
             logger.warning("[RUMOR_VAL] No validation results found")
             return candidates
 
         rows_dict = validation_results['validation_results']
+        row_keys = list(rows_dict.keys())
 
         parsed_results = []
 
         for i, candidate in enumerate(candidates):
-            row_keys = list(rows_dict.keys())
-
             if i >= len(row_keys):
                 logger.warning(f"[RUMOR_VAL] No validation result for candidate {i}")
                 parsed_results.append(candidate)
                 continue
 
-            row_key = row_keys[i]
-            validation_result = rows_dict[row_key]
+            validation_result = rows_dict[row_keys[i]]
 
-            # Extract Entity Exists score (new, -2..+2 scale) or Realness Score (legacy, 0-1)
-            # Detect by column name to avoid ambiguity — values 0 and 1 are valid on both scales
-            if 'Entity Exists' in validation_result:
-                entity_data = validation_result['Entity Exists']
-                try:
-                    # -2..+2 → normalize to 0-1: (-2→0.0, -1→0.25, 0→0.5, 1→0.75, 2→1.0)
-                    entity_confidence = (float(entity_data.get('value', -2)) + 2) / 4.0
-                except (ValueError, TypeError):
-                    entity_confidence = 0.0
-            else:
-                entity_data = validation_result.get('Realness Score', {})
-                try:
-                    entity_confidence = float(entity_data.get('value', 0))
-                except (ValueError, TypeError):
-                    entity_confidence = 0.0
-            entity_exists = entity_confidence >= self.confidence_threshold
-
-            # Extract hard requirement scores
-            hard_req_scores = []
+            # Extract T/F/? for each hard requirement column
+            hard_req_results = {}  # col_name → 'T' | 'F' | '?'
             for col_name, col_result in validation_result.items():
                 if col_name.startswith('Hard: '):
-                    val = str(col_result.get('value', '')).strip().lower()
-                    score = 1.0 if val in ('yes', 'true', '1', 'pass', 'passed') else 0.0
-                    hard_req_scores.append(score)
+                    raw = str(col_result.get('value', '?')).strip().upper()
+                    hard_req_results[col_name] = raw if raw in ('T', 'F') else '?'
 
-            hard_requirements_met = all(
-                score >= self.hard_requirement_threshold
-                for score in hard_req_scores
-            )
-
-            # Extract soft requirement scores
-            soft_req_scores = []
-            for col_name, col_result in validation_result.items():
-                if col_name.startswith('Soft: '):
-                    val = str(col_result.get('value', '')).strip().lower()
-                    score = 1.0 if val in ('yes', 'true', '1', 'pass', 'passed') else 0.0
-                    soft_req_scores.append(score)
-
-            avg_soft_score = sum(soft_req_scores) / len(soft_req_scores) if soft_req_scores else 0
-
-            result = {**candidate}
-            result['entity_exists'] = entity_exists
-            result['entity_confidence'] = entity_confidence
-            result['hard_requirements_met'] = hard_requirements_met
-            result['soft_requirements_score'] = avg_soft_score
-
+            result = {**candidate, 'hard_req_results': hard_req_results}
             parsed_results.append(result)
 
         return parsed_results
 
     def _apply_filtering_logic(self, validation_result: Dict[str, Any]) -> tuple:
         """
-        Apply filtering logic to determine pass/fail.
+        Determine pass/fail from T/F/? hard requirement answers.
 
         Rules:
-        1. Entity must exist (Entity Exists score ≥ threshold)
-        2. All hard requirements must pass
-        3. Soft requirements tracked but not required
+          all T          → pass
+          any F          → fail
+          T + ?          → pass  (at least one confirmed, none refuted)
+          all ? (no T)   → fail  (insufficient evidence)
         """
-        entity_exists = validation_result.get('entity_exists', False)
-        entity_confidence = validation_result.get('entity_confidence', 0)
+        hard_req_results = validation_result.get('hard_req_results', {})
 
-        if not entity_exists:
-            return False, f"Entity not confirmed ({entity_confidence:.2f} < {self.confidence_threshold})"
+        if not hard_req_results:
+            return True, "No hard requirements — passed by default"
 
-        hard_requirements_met = validation_result.get('hard_requirements_met', False)
+        has_T = any(v == 'T' for v in hard_req_results.values())
+        has_F = any(v == 'F' for v in hard_req_results.values())
 
-        if not hard_requirements_met:
-            return False, "Failed one or more hard requirements"
+        summary = ', '.join(
+            f"{col[len('Hard: '):]}: {val}"
+            for col, val in hard_req_results.items()
+        )
 
-        soft_score = validation_result.get('soft_requirements_score', 0)
+        if has_F:
+            failed = [col[len('Hard: '):] for col, v in hard_req_results.items() if v == 'F']
+            return False, f"Failed: {'; '.join(failed)} [{summary}]"
 
-        return True, f"Passed (entity_confidence: {entity_confidence:.2f}, soft avg: {soft_score:.2f})"
+        if not has_T:
+            return False, f"All uncertain (?) — insufficient evidence [{summary}]"
+
+        return True, f"Passed [{summary}]"
 
     def _build_enhanced_data(self, validation_results: Dict[str, Any], processing_time: float) -> Dict[str, Any]:
         """

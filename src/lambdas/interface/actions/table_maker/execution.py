@@ -2646,7 +2646,6 @@ async def execute_full_table_generation(
                                         conversation_id=conversation_id,
                                         validation_model=rumor_config.get('validation_model', 'sonar'),
                                         context_size=rumor_config.get('context_size', 'low'),
-                                        confidence_threshold=rumor_config.get('realness_threshold', 0.6)
                                     )
                                     validation_result = await rumor_validator.validate_candidates(
                                         validate_candidates=validate_candidates,
@@ -2695,6 +2694,52 @@ async def execute_full_table_generation(
                                         }
                                     }
                                 )
+
+                                # Save rumor_results.csv — all candidates with pass/fail + requirement scores
+                                try:
+                                    import csv as _csv
+                                    import io as _io
+
+                                    id_col_names = [col['name'] for col in columns if col.get('importance', '').upper() == 'ID']
+
+                                    # Collect hard requirement column names from validated rows
+                                    hard_cols = []
+                                    for r in validation_result.get('validated_rows', []):
+                                        for col in r.get('hard_req_results', {}).keys():
+                                            if col not in hard_cols:
+                                                hard_cols.append(col)
+
+                                    csv_buf = _io.StringIO()
+                                    csv_writer = _csv.writer(csv_buf)
+                                    csv_writer.writerow(
+                                        id_col_names + ['Disposition', 'Passed'] + hard_cols + ['Reasoning']
+                                    )
+
+                                    # K candidates — no validation scores
+                                    for c in keep_candidates:
+                                        row_vals = [c.get('id_values', {}).get(col, '') for col in id_col_names]
+                                        csv_writer.writerow(row_vals + ['K', 'True'] + [''] * len(hard_cols) + ['Pre-screened K by generation model'])
+
+                                    # V candidates with T/F/? per hard requirement
+                                    for r in validation_result.get('validated_rows', []):
+                                        row_vals = [r.get('id_values', {}).get(col, '') for col in id_col_names]
+                                        passed = r.get('validation_passed', False)
+                                        hard_vals = [r.get('hard_req_results', {}).get(col, '') for col in hard_cols]
+                                        reasoning = r.get('validation_reasoning', '')
+                                        csv_writer.writerow(row_vals + ['V', str(passed)] + hard_vals + [reasoning])
+
+                                    _save_text_to_s3(
+                                        storage_manager=storage_manager,
+                                        email=email,
+                                        session_id=session_id,
+                                        conversation_id=conversation_id,
+                                        file_name='rumor_results.csv',
+                                        content=csv_buf.getvalue(),
+                                        content_type='text/csv'
+                                    )
+                                    logger.info(f"[RUMOR] Saved rumor_results.csv ({len(keep_candidates)} K + {len(validation_result.get('validated_rows', []))} V rows)")
+                                except Exception as csv_err:
+                                    logger.error(f"[RUMOR] Failed to save rumor_results.csv: {csv_err}")
 
                                 # Merge validated rumor rows into discovery rows
                                 if validated_rumor_rows:
