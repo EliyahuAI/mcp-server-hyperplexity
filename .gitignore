@@ -1,170 +1,20 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
+*.pyo
+*.pyd
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# Virtual Environment
+# Virtual environments
+.venv/
 venv/
 env/
-ENV/
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
 
-# AWS
-.aws/
-deployment.zip
-package/
-
-# Deployment packages and ZIP files
-deployment/interface_package/
-deployment/interface_package_lightweight/
-deployment/interface_package_background/
-deployment/config_lambda_deploy/
-deployment/config_package/
-deployment/temp_update/
-deployment/websocket_package/
-deployment/sqs_processor_package/
-deployment/package/
-deployment/*.zip
-*.zip
-*.tar.gz
-
-# AI config generator logs and test results
-ai_config_generator/lambda_test_results_*.json
-ai_config_generator/direct_test_response_*.json
-
-# Lambda deployment packages (all variants)
-lambda_package.zip
-interface_lambda_package.zip
-sqs_processor_lambda_package.zip
-
-# Python packages and dependencies
-deployment/interface_package/
-boto3/
-botocore/
-botocore-*/
-boto3-*/
-*-dist-info/
-*.dist-info/
-dateutil/
-et_xmlfile/
-jmespath/
-multipart/
-openpyxl/
-python_dateutil-*/
-python_multipart-*/
-s3transfer/
-six-*/
-six.py
-typing_extensions-*/
-typing_extensions.py
-urllib3-*/
-xlsxwriter-*/
-
-# Testing
-.coverage
-htmlcov/
-.pytest_cache/
-.tox/
-
-# Logs
-*.log
-logs/
-
-# Local development
+# Env files (keep the example)
 .env
-.env.*
-
-# Test and temporary files
-lambda_payload_*.json
-lambda_response_*.json
-lambda_*debug.json
-simple_lambda_*.json
-validation_results_*.xlsx
-fill_test_data.py
-temp_*.py
-*_test.py
-test_*.py
-!excel_test.py
-!mcp/test_live.py
-
-# Temporary unnecessary files directory
-temp_unnecessary_files/
-
-# Excel backup files
-*_.xlsx
-*_Verified*.xlsx
-*_Copy*.xlsx
-
-# Other temporary files
-*.tmp
-
-# Test results directories
-test_results/
-tables/*/test_results/
-
-# CSV exports
-exports/
-
-# Test case generated files (keep only Python generation scripts)
-test_cases/*/*.xlsx
-test_cases/*/*.json
-test_cases/*/20250*
-test_cases/real_*.xlsx
-test_cases/real_*.json
-test_cases/simple_*.json
-
-# Don't ignore essential test files
-!run_lambda_test.py
-!src/run_ratio_test.py
-!src/test_logging.py
-!test_validation.py
-.claude/
-frontend/hyperplexity-credits-api-key.txt
-events/
-
-# Table Maker test outputs
-table_maker/output/
-
-# Lambda config copies (duplicates of source)
-src/lambdas/interface/table_maker_config.json
-
-# Pitch materials - ignore large media and presentation files
-pitch/**/*.gif
-pitch/**/*.mp4
-pitch/**/*.zip
-pitch/**/*.pptx
-pitch/**/*.pdf
-pitch/**/*.xlsx
-
-# Frontend - ignore large font packages
-frontend/chex_add_generator/IBM_Plex_Sans.zip
-
-# Playwright
-node_modules/
-/test-results/
-/playwright-report/
-/blob-report/
-/playwright/.cache/
-/playwright/.auth/
+!.env.example

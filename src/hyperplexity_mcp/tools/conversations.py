@@ -1,0 +1,238 @@
+"""Conversation tools: start_table_maker, get_conversation,
+send_conversation_reply, refine_config, wait_for_conversation.
+
+Note: start_upload_interview is intentionally not exposed as an MCP tool —
+the server auto-starts an upload interview from confirm_upload when no strong
+config match is found, returning conversation_id directly in that response.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import math
+import time
+from typing import Annotated, Optional
+
+from mcp import types
+from mcp.server.fastmcp import Context
+from mcp.types import ToolAnnotations
+from pydantic import Field
+
+from hyperplexity_mcp.client import get_client
+from hyperplexity_mcp.guidance import build_guidance
+
+
+def _patch_next_step_if_needed(data: dict, conversation_id: str) -> None:
+    """Fix Issue #1: when trigger_execution=True for a table-maker session the
+    backend still returns next_step.action='submit_preview', which contradicts
+    the _guidance telling agents NOT to call create_job().  Override next_step
+    so the machine-readable field and _guidance agree."""
+    if not data.get("trigger_execution"):
+        return
+    if conversation_id.startswith("refine_"):
+        return  # refine sessions don't auto-queue; next_step is valid there
+    ns = data.get("next_step") or {}
+    if ns.get("action") == "submit_preview":
+        data["next_step"] = {
+            "action": "wait",
+            "description": (
+                "Preview is auto-queued — do NOT submit a job manually. "
+                "Call wait_for_job(session_id) to track progress."
+            ),
+        }
+
+
+def register(server):
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
+    def start_table_maker(
+        message: Annotated[str, Field(description="Natural-language description of the table to generate, including desired columns and subject matter.")],
+        auto_start: Annotated[bool, Field(description="When True, skip clarifying questions and generate the table immediately from the message alone.")] = False,
+    ) -> list[types.TextContent]:
+        """Start a Table Maker conversation to generate a research table.
+
+        Describe the table you want in natural language, e.g.:
+        'Create a table of AI startups that raised Series A in 2024 with columns:
+        company name, funding amount, investors, product description.'
+
+        auto_start: When True, the AI skips the confirmation step and generates
+          the table immediately from the message alone, without asking clarifying
+          questions or showing a structure for approval. Use when the message fully
+          describes the desired table and no back-and-forth is needed.
+        """
+        client = get_client()
+        payload: dict = {"message": message}
+        if auto_start:
+            payload["auto_start"] = True
+        data = client.post("/conversations/table-maker", json=payload)
+        data["_guidance"] = build_guidance("start_table_maker", data)
+        return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    def get_conversation(
+        conversation_id: Annotated[str, Field(description="Conversation ID returned by start_table_maker or confirm_upload.")],
+        session_id: Annotated[str, Field(description="Session ID associated with the conversation.")],
+    ) -> list[types.TextContent]:
+        """Poll a conversation for new messages or a status change.
+
+        Key statuses:
+          processing         → poll again in ~15s
+          user_reply_needed  → send_conversation_reply
+          trigger_execution  → preview is auto-queued; switch to get_job_status
+        """
+        client = get_client()
+        data = client.get(f"/conversations/{conversation_id}", params={"session_id": session_id})
+        data.setdefault("conversation_id", conversation_id)
+        data.setdefault("session_id", session_id)
+        _patch_next_step_if_needed(data, conversation_id)
+        data["_guidance"] = build_guidance("get_conversation", data)
+        return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
+    def send_conversation_reply(
+        conversation_id: Annotated[str, Field(description="Conversation ID to send the reply to.")],
+        session_id: Annotated[str, Field(description="Session ID associated with the conversation.")],
+        message: Annotated[str, Field(description="Reply message text to send to the AI.")],
+    ) -> list[types.TextContent]:
+        """Send a user reply in an ongoing conversation (interview or table-maker).
+
+        After sending, poll get_conversation for the AI's next response.
+        """
+        client = get_client()
+        payload = {"session_id": session_id, "message": message}
+        data = client.post(f"/conversations/{conversation_id}/message", json=payload)
+        data.setdefault("conversation_id", conversation_id)
+        data.setdefault("session_id", session_id)
+        data["_guidance"] = build_guidance("send_conversation_reply", data)
+        return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
+    def refine_config(
+        conversation_id: Annotated[str, Field(description="Conversation ID of the refine session.")],
+        session_id: Annotated[str, Field(description="Session ID associated with the conversation.")],
+        instructions: Annotated[str, Field(description="Natural-language instructions describing the config changes to make.")],
+    ) -> list[types.TextContent]:
+        """Refine the generated validation config using natural language instructions.
+
+        Example instructions:
+        'Add a column for LinkedIn URL. Remove the revenue column. Make email validation stricter.'
+        """
+        client = get_client()
+        payload = {"session_id": session_id, "instructions": instructions}
+        data = client.post(f"/conversations/{conversation_id}/refine-config", json=payload)
+        data.setdefault("conversation_id", conversation_id)
+        data.setdefault("session_id", session_id)
+        data["_guidance"] = build_guidance("refine_config", data)
+        return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+    async def wait_for_conversation(
+        conversation_id: Annotated[str, Field(description="Conversation ID to wait on.")],
+        session_id: Annotated[str, Field(description="Session ID associated with the conversation.")],
+        ctx: Context,
+        expected_seconds: Annotated[int, Field(description="Expected AI response time in seconds — used to shape synthetic progress curve (default 120).")] = 120,
+        timeout_seconds: Annotated[int, Field(description="Maximum wall-clock seconds to wait before returning last known state (default 900).")] = 900,
+        poll_interval: Annotated[int, Field(description="Seconds between status poll cycles (default 8).")] = 8,
+    ) -> list[types.TextContent]:
+        """Wait for a conversation turn to complete, emitting live synthetic progress.
+
+        Preferred over manually polling get_conversation. Since conversation
+        processing has no native progress signal, this tool emits time-based
+        synthetic progress — advancing quickly at first, then slowing as it
+        approaches expected_seconds — so the MCP host shows a "still thinking"
+        indicator rather than a frozen bar.
+
+        Returns when any of these conditions are met:
+          user_reply_needed=True  → AI asked a question; call send_conversation_reply
+          trigger_execution=True  → AI approved execution; preview is auto-queued,
+                                    switch to wait_for_job(session_id)
+          Non-processing status   → unexpected terminal (inspect status field)
+          Timeout                 → returns last known state with _wait_timeout note
+
+        Applies to all conversation types: upload interview, table-maker
+        interview, config refinement.
+
+        expected_seconds: typical AI response time for this turn (default 120).
+          First table-maker turn (research + planning): ~120–180s.
+          Upload interview first turn (CSV analysis + plan): ~90–150s.
+          Follow-up confirmations ("yes, proceed"): ~30–60s.
+        poll_interval:    seconds between status checks (default 8).
+        timeout_seconds:  max wall time before returning (default 900).
+          Upload interview turns can take up to 15 minutes — set accordingly.
+        """
+
+        client = get_client()
+
+        def _synthetic_progress(elapsed: float, expected: float) -> float:
+            """Advance quickly within the expected window (sqrt curve → 90% at
+            t=expected_seconds), then crawl asymptotically toward 98% beyond it."""
+            if elapsed <= 0:
+                return 2.0
+            if elapsed < expected:
+                return min(90.0, 90.0 * math.sqrt(elapsed / expected))
+            else:
+                # ~2% per extra minute, capped at 98
+                extra_minutes = (elapsed - expected) / 60.0
+                return min(98.0, 90.0 + extra_minutes * 2.0)
+
+        async def _report(pct: float) -> None:
+            try:
+                await ctx.report_progress(pct, 100.0)
+            except Exception:
+                pass
+
+        deadline = time.monotonic() + timeout_seconds
+        start = time.monotonic()
+        last_emitted = 0.0
+        data: dict = {}
+
+        while True:
+            # Emit monotonically non-decreasing synthetic progress
+            elapsed = time.monotonic() - start
+            candidate = _synthetic_progress(elapsed, float(expected_seconds))
+            emit_pct = max(candidate, last_emitted)
+            last_emitted = emit_pct
+            await _report(emit_pct)
+
+            try:
+                data = await asyncio.to_thread(
+                    lambda: client.get(
+                        f"/conversations/{conversation_id}",
+                        params={"session_id": session_id},
+                    )
+                )
+                data.setdefault("conversation_id", conversation_id)
+                data.setdefault("session_id", session_id)
+
+                user_reply_needed = data.get("user_reply_needed", False)
+                trigger_execution = data.get("trigger_execution", False)
+                status = data.get("status", "processing")
+
+                if (user_reply_needed or trigger_execution
+                        or status not in ("processing", "queued", "in_progress")):
+                    await _report(100.0)
+                    _patch_next_step_if_needed(data, conversation_id)
+                    data["_guidance"] = build_guidance("get_conversation", data)
+                    return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
+
+            except Exception:
+                pass  # transient failure; keep polling
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                if not data:
+                    data = {
+                        "conversation_id": conversation_id,
+                        "session_id": session_id,
+                        "status": "unknown",
+                    }
+                data["_wait_timeout"] = (
+                    f"wait_for_conversation timed out after {timeout_seconds}s. "
+                    "The AI has not responded yet. "
+                    "Call wait_for_conversation again or poll get_conversation manually."
+                )
+                data["_guidance"] = build_guidance("get_conversation", data)
+                return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
+
+            await asyncio.sleep(min(float(poll_interval), remaining))

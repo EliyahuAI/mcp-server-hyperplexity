@@ -1,6 +1,0 @@
-Drugs,Primary Target,Mechanism of Action
-pembrolizumab (Keytruda),PD-1 (Programmed Death-1),Humanized IgG4 mAb that blocks PD-1/PD-L1 and PD-1/PD-L2 interactions restoring T cell anti-tumour activity
-trastuzumab (Herceptin),HER2 (ErbB2),Humanized IgG1 mAb binding HER2 extracellular domain IV; inhibits downstream signalling and mediates ADCC
-bevacizumab (Avastin),VEGF-A,Humanized IgG1 mAb that neutralises VEGF-A preventing VEGFR binding and tumour angiogenesis
-rituximab (Rituxan),CD20,Chimeric IgG1 mAb targeting CD20 on B cells; depletes via CDC ADCC and apoptosis induction
-nivolumab (Opdivo),PD-1 (Programmed Death-1),Fully human IgG4 mAb blocking PD-1/PD-L1 interaction to relieve T cell exhaustion

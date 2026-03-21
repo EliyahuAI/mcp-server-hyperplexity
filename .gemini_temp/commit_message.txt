@@ -1,9 +1,0 @@
-Feat: Implement domain filtering for Clone models
-
-- Added `academic` mode, `include_domains` (whitelist), and `exclude_domains` (blacklist) parameters to `TheClone2Refined.query`.
-- Implemented priority logic for domain filtering:
-    1. `academic=True` (uses predefined academic domains)
-    2. `include_domains` (user-provided whitelist)
-    3. `exclude_domains` (user-provided blacklist, only if no `include_domains`)
-- Created `src/the_clone/academic_domains.py` with a list of academic domains.
-- Created `src/the_clone/DOMAIN_FILTERING_GUIDE.md` for quick reference on usage.
