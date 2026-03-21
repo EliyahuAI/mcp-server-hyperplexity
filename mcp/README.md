@@ -366,13 +366,14 @@ upload_file(path, "pdf")              ← upload PDF/document first
   → reference_check(s3_key=s3_key)
 
 → wait_for_job(job_id)                ← stops at preview_complete
+  → preview_results.markdown_table (inline, first 3 claims validated with support level + citations)
   → claims_summary + cost_estimate shown in response
-  → approve_validation(job_id, approved_cost_usd=X)   ← triggers Phase 2
+  → approve_validation(job_id, approved_cost_usd=X)   ← triggers Phase 2 (remaining claims)
   → wait_for_job(job_id)              ← waits for completed
-  → get_results(job_id)               ← download_url (XLSX) + interactive_viewer_url + metadata_url
+  → get_reference_results(job_id)     ← inline markdown_table + download_url + interactive_viewer_url
 ```
 
-> **Two-phase flow:** Phase 1 (extraction, free) runs automatically and pauses at `status=preview_complete` with `claims_summary` and `cost_estimate`. Call `approve_validation` to start Phase 2 (validation, charged). Pass `auto_approve=True` to skip the gate and run straight through.
+> **Two-phase flow:** Phase 1 extracts claims and validates the first 3 as a free preview (matching the standard table 3-row preview). At `status=preview_complete`, `preview_results.markdown_table` is embedded inline with support levels, confidence scores, and citations for those 3 claims. `claims_summary` and `cost_estimate` cover all extracted claims. Call `approve_validation` to start Phase 2 (full validation, charged). Pass `auto_approve=True` to skip the gate and run straight through.
 
 > **Progress tracking:** `get_job_messages` always returns empty for reference-check jobs. Use `get_job_status` (`current_step`, `progress_percent`) to track progress.
 
@@ -572,10 +573,10 @@ Every tool response includes a `_guidance` block with a plain-English summary an
 | `get_job_status` | One-shot status poll |
 | `get_job_messages` | Fetch progress messages with native percentages (paginated) |
 | `approve_validation` | Approve preview → start full validation (credits charged here) |
-| `get_results` | Download URL, inline metadata, interactive viewer URL |
+| `get_results` | Inline `markdown_table` + download URL + metadata + interactive viewer URL |
 | `update_table` | Re-validate enriched output after analyst corrections |
 | `reference_check` | Submit text or file for claim and citation verification |
-| `get_reference_results` | Fetch the reference-check report |
+| `get_reference_results` | Inline `markdown_table` + download URL + metadata + interactive viewer URL |
 | `get_balance` | Check credit balance |
 | `get_usage` | Review billing history |
 
@@ -642,8 +643,8 @@ These flags use different terminal signals: `instructions=` (a config-gen flow) 
 
 **Recommended AI agent workflow:**
 
-1. At `preview_complete`: read the inline `preview_table` (markdown, 3 rows) from `GET /jobs/{id}` to survey the table structure and spot-check values. The AI agent can review this inline table and call `approve_validation` directly — no human approval step is required.
-2. After full validation: fetch `results.metadata_url` → `table_metadata.json`. This contains every validated row.
+1. At `preview_complete`: read the inline `preview_results.markdown_table` (3 rows/claims validated with confidence scores and citations) from `wait_for_job`. This works the same for both standard table jobs and reference-check jobs — in both cases the first 3 items are validated before the approval gate. Call `approve_validation` directly — no human approval step is required.
+2. After full validation: call `get_results` (or `get_reference_results` for reference checks) — both automatically embed the full `results.markdown_table` inline. Start there; no separate fetch needed.
 3. Use `rows[].row_key` (stable SHA-256) to cross-reference rows between the markdown summary and the detailed JSON.
 4. Per-cell fields in `table_metadata.json`:
    - `cells[col].value` — validated value (legacy files may use `full_value`)
