@@ -365,14 +365,14 @@ reference_check(text="...")           ← inline text (or auto_approve=True to s
 upload_file(path, "pdf")              ← upload PDF/document first
   → reference_check(s3_key=s3_key)
 
-→ wait_for_job(job_id)                ← stops at preview_complete
-  → claims_summary + cost_estimate shown in response
+→ wait_for_job(job_id)                ← spans extraction + 3-row preview; stops at preview_complete
+  → preview_table (3 validated sample claims) + cost_estimate shown in response
   → approve_validation(job_id, approved_cost_usd=X)   ← triggers Phase 2
   → wait_for_job(job_id)              ← waits for completed
   → get_results(job_id)               ← download_url (XLSX) + interactive_viewer_url + metadata_url
 ```
 
-> **Two-phase flow:** Phase 1 (extraction, free) runs automatically and pauses at `status=preview_complete` with `claims_summary` and `cost_estimate`. Call `approve_validation` to start Phase 2 (validation, charged). Pass `auto_approve=True` to skip the gate and run straight through.
+> **Three-phase flow:** Phase 1 (claim extraction, free) runs automatically, then a 3-row preview validates sample claims (free, auto-triggered). Both phases are tracked by a single `wait_for_job` call that stops at `status=preview_complete`. Review `preview_table` (3 validated sample claims with support level and citations) and `cost_estimate`, then call `approve_validation` to start Phase 2 (full validation, charged). Pass `auto_approve=True` to skip the gate and run straight through to `completed`.
 
 > **Progress tracking:** `get_job_messages` always returns empty for reference-check jobs. Use `get_job_status` (`current_step`, `progress_percent`) to track progress.
 

@@ -813,20 +813,21 @@ def _guidance_reference_check(data: dict) -> dict:
 
     return {
         "summary": (
-            "Reference-check extraction started (Phase 1, free). "
-            "Poll with wait_for_job until preview_complete — then review claims_summary + "
-            "cost_estimate and call approve_validation to run full claim validation "
-            "(Phase 2, charged)."
+            "Reference-check job started. Phase 1 (claim extraction, free) runs first, "
+            "then a 3-row preview validates sample claims automatically. "
+            "wait_for_job stops at preview_complete — review preview_table (3 validated "
+            "sample claims with support level and citations) and cost_estimate, then call "
+            "approve_validation to run full claim validation (Phase 2, charged)."
         ),
-        "phases": ["extraction (free)", "approval gate", "validation (charged)"],
+        "phases": ["extraction (free)", "preview validation (free, auto-triggered)", "approval gate", "validation (charged)"],
         "min_claims_note": min_claims_note,
-        "auto_approve_note": "Pass auto_approve=True to run straight through without the gate.",
+        "auto_approve_note": "Pass auto_approve=True to skip the approval gate and run straight through to completed.",
         "messages_note": "get_job_messages is empty for reference checks — use wait_for_job or get_job_status.",
         "next_steps": [
             {
                 "tool": "wait_for_job",
                 "params": {"job_id": job_id},
-                "note": "Waits for preview_complete. Then call approve_validation.",
+                "note": "Waits for preview_complete. Review preview_table + cost_estimate, then call approve_validation.",
             }
         ],
     }
