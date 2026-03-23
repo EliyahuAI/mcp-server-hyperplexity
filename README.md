@@ -30,8 +30,8 @@ Hyperplexity generates, validates, and updates research tables by synthesizing h
 - [Get Your API Key](#get-your-api-key)
 - [Download Examples](#download-examples)
 - [Quick Start: MCP](#quick-start-mcp)
-  - [Option A: Direct install via uvx (recommended)](#option-a--direct-install-via-uvx-recommended)
-  - [Option B: Direct HTTP connection to Railway](#option-b--direct-http-connection-to-railway)
+  - [Option A: Direct HTTP connection to Railway (recommended)](#option-a--direct-http-connection-to-railway-recommended-for-claude-code)
+  - [Option B: Local install via uvx](#option-b--local-install-via-uvx)
   - [Option C: Smithery](#option-c--smithery)
   - [What to Ask Your Agent](#what-to-ask-your-agent)
 - [Workflows](#workflows)
@@ -521,7 +521,6 @@ Content types: `excel` → `.xlsx`, `csv` → `.csv`, `pdf` → `.pdf`
 | `GET`  | `/jobs/{id}/results` | Fetch download URL, metadata, viewer URL |
 | `POST` | `/jobs/update-table` | Re-validate enriched output after corrections |
 | `POST` | `/jobs/reference-check` | Submit text or file for claim verification |
-| `GET`  | `/jobs/{id}/reference-results` | Fetch completed reference-check report |
 
 **Job status values:**
 
@@ -577,7 +576,6 @@ Every tool response includes a `_guidance` block with a plain-English summary an
 | `get_results` | Download URL, inline metadata, interactive viewer URL |
 | `update_table` | Re-validate enriched output after analyst corrections |
 | `reference_check` | Submit text or file for claim and citation verification |
-| `get_reference_results` | Fetch the reference-check report |
 | `get_balance` | Check credit balance |
 | `get_usage` | Review billing history |
 
@@ -674,7 +672,8 @@ Standard validation is used for most tables. Advanced validation is selected aut
 
 ## Links
 
-- **MCP server (PyPI):** `pip install mcp-server-hyperplexity` (or `uvx mcp-server-hyperplexity` to run on-demand without a persistent install — recommended for Claude Desktop/Code)
+- **MCP server (HTTP, recommended):** `claude mcp add hyperplexity --transport http https://mcp-server-hyperplexity-production.up.railway.app/ --header "X-Api-Key: hpx_live_..."` — no install needed
+- **MCP server (PyPI/uvx):** `uvx mcp-server-hyperplexity` — for Claude Desktop or offline use
 - **Source:** [github.com/EliyahuAI/mcp-server-hyperplexity](https://github.com/EliyahuAI/mcp-server-hyperplexity)
 - **Documentation:** [hyperplexity.ai/mcp](https://hyperplexity.ai/mcp)
 - **API reference:** [hyperplexity.ai/api](https://hyperplexity.ai/api)
