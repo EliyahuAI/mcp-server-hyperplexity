@@ -123,7 +123,7 @@ def fact_check_text(text: str) -> str:
         f"Run a reference check on the following text using reference_check(text=...). "
         f"After the preview completes (wait_for_job until preview_complete), review "
         f"the claims_summary and cost_estimate, then call approve_validation to verify "
-        f"all claims. Retrieve final results with get_reference_results.\n\nText:\n{text}"
+        f"all claims. Retrieve final results with get_results.\n\nText:\n{text}"
     )
 
 # ---------------------------------------------------------------------------
@@ -174,7 +174,7 @@ def main():
         async def server_card(request: Request) -> JSONResponse:
             return JSONResponse({
                 "name": "hyperplexity",
-                "version": "1.0.16",
+                "version": "1.0.17",
                 "description": (
                     "Generate, validate, and fact-check research tables with "
                     "AI-sourced citations and per-cell confidence scores."

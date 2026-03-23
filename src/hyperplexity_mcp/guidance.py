@@ -705,13 +705,7 @@ def _guidance_get_results(data: dict) -> dict:
 
     return {
         "summary": " ".join(summary_parts),
-        "next_steps": [
-            {
-                "tool": "get_reference_results",
-                "params": {"job_id": job_info.get("job_id", data.get("job_id", ""))},
-                "note": "Optional: fetch reference-check sub-results if a reference document was provided.",
-            }
-        ] if job_info.get("has_reference_results") else [],
+        "next_steps": [],
         "notes": notes,
         "key_urls": {
             k: v for k, v in {
@@ -727,38 +721,6 @@ def _guidance_get_results(data: dict) -> dict:
         },
     }
 
-
-def _guidance_get_reference_results(data: dict) -> dict:
-    results      = data.get("results") or {}
-    viewer_url   = results.get("interactive_viewer_url", "")
-    has_markdown = bool(results.get("markdown_table"))
-    has_metadata = bool(results.get("metadata"))
-    return {
-        "summary": "Reference check complete. Review results.markdown_table (inline) for per-claim support levels, confidence, and citations.",
-        "notes": [
-            (
-                "1. START HERE — results.markdown_table is embedded inline. Full validated "
-                "claims table with support levels (SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIABLE), "
-                "confidence icons, viewer/download links, and citation navigation guide. Read this first."
-                if has_markdown else
-                "1. START HERE — results.markdown_table was not embedded (metadata fetch may have failed). "
-                "Check results.metadata_fetch_error; or download results.metadata_url manually."
-            ),
-            "2. For full per-claim citations: results.metadata.rows[].cells[col].comment contains "
-            "validator_explanation, key_citation, and sources[] ({title, url, snippet})."
-            if has_metadata else
-            "2. Per-claim citation detail is in the metadata JSON at results.metadata_url.",
-            "3. Download links are in results (download_url, metadata_url) if needed for offline sharing.",
-            "4. Share results.interactive_viewer_url with human stakeholders — "
-            "it renders sources and confidence scores in a clean UI.",
-        ],
-        "key_urls": {k: v for k, v in {
-            "interactive_viewer": viewer_url,
-        }.items() if v},
-        "next_steps": [
-            {"note": "Share interactive_viewer_url with human stakeholders — it renders sources and confidence scores in a clean UI."}
-        ] if viewer_url else [],
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -791,8 +753,7 @@ def _guidance_reference_check(data: dict) -> dict:
                 "Reference-check job started with auto_approve=True. "
                 "Phase 1 (claim extraction) runs first, then Phase 2 (validation) is "
                 "queued automatically — no approval step needed. "
-                "Poll with wait_for_job until status=completed, then call get_results "
-                "or get_reference_results."
+                "Poll with wait_for_job until status=completed, then call get_results."
             ),
             "phases": ["extraction (free)", "validation (charged, auto-approved)"],
             "min_claims_note": min_claims_note,
@@ -1279,7 +1240,6 @@ _BUILDERS: dict[str, Callable] = {
     "get_job_messages": _guidance_get_job_messages,
     "approve_validation": _guidance_approve_validation,
     "get_results": _guidance_get_results,
-    "get_reference_results": _guidance_get_reference_results,
     "update_table": _guidance_update_table,
     "reference_check": _guidance_reference_check,
     "start_table_maker": _guidance_start_table_maker,
