@@ -39,7 +39,31 @@ def _guidance_upload_file(data: dict) -> dict:
     s3_key = data.get("s3_key", "")
     filename = data.get("filename", "")
     file_type = data.get("file_type", "")
+    upload_url = data.get("upload_url")  # present only in HTTP/Railway mode (no file_path)
 
+    if upload_url:
+        # HTTP/Railway transport: file not yet uploaded — agent must run curl first.
+        curl_cmd = data.get("curl_command", "")
+        if file_type == "pdf":
+            next_tool = "start_reference_check"
+            next_params = {"s3_key": s3_key}
+            next_note = "Starts claim extraction (free). wait_for_job until preview_complete, then approve_validation."
+        else:
+            next_tool = "start_table_validation"
+            next_params = {"session_id": session_id, "s3_key": s3_key, "filename": filename}
+            next_note = "Confirm the upload so the backend indexes the file and detects prior configs."
+        return {
+            "summary": (
+                "Presigned S3 URL ready. IMPORTANT: the file has NOT been uploaded yet. "
+                f"Run the curl_command below (replace <local_file_path> with the actual path), "
+                f"then call {next_tool}."
+            ),
+            "curl_command": curl_cmd,
+            "next_steps": [{"tool": next_tool, "params": next_params, "note": next_note}],
+            "warning": "The presigned URL expires in ~15 minutes. Run curl immediately.",
+        }
+
+    # Local/uvx transport: file already uploaded by the server.
     if file_type == "pdf":
         return {
             "summary": "PDF uploaded to S3. Pass s3_key to start_reference_check to fact-check the document — do NOT call start_table_validation.",
@@ -57,15 +81,12 @@ def _guidance_upload_file(data: dict) -> dict:
         "next_steps": [
             {
                 "tool": "start_table_validation",
-                "params": {
-                    "session_id": session_id,
-                    "s3_key": s3_key,
-                    "filename": filename,
-                },
+                "params": {"session_id": session_id, "s3_key": s3_key, "filename": filename},
                 "note": "Confirm the upload so the backend indexes the file and detects prior configs.",
             }
         ],
     }
+
 
 
 def _guidance_confirm_upload(data: dict) -> dict:

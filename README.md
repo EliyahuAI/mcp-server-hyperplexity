@@ -222,7 +222,7 @@ Once the MCP server is installed, describe your task in plain English. The agent
 **Full flow: upload → interview → preview → refine → approve → download**
 
 ```
-upload_file(path)
+upload_file(filename, file_type, file_size [, file_path])   ← omit file_path on HTTP/Railway transport; run returned curl_command instead
   → start_table_validation(session_id, s3_key, filename)
       ┌── match found (score ≥ 0.85) → [preview auto-queued; response has preview_queued=true + job_id]
       └── no match → interview auto-started
@@ -277,6 +277,8 @@ python examples/01_validate_table.py companies.xlsx --refine "Add LinkedIn URL c
 python examples/01_validate_table.py companies.xlsx \
     --instructions "This table lists hedge funds. Validate AUM, strategy, and HQ city."
 ```
+
+> **Which mode to use:** Always try `file_path` first. If the server can read the file (stdio/uvx transport), upload completes in one step. If you get "File not found" (HTTP/Railway transport — server is remote), call again without `file_path` to receive a presigned S3 URL and a ready-to-run `curl_command`. The two-step path requires shell access to run curl; Claude Desktop users should use the uvx transport so `file_path` works.
 
 ---
 
@@ -364,7 +366,7 @@ Submit any text, report, or document. Hyperplexity checks each factual claim aga
 ```
 start_reference_check(text="...")           ← inline text (or auto_approve=True to skip the gate)
   or
-upload_file(path, "pdf")              ← upload PDF/document first
+upload_file(filename, "pdf", file_size [, file_path])   ← upload PDF/document first
   → start_reference_check(s3_key=s3_key)
 
 → wait_for_job(job_id)                ← spans extraction + 3-row preview; stops at preview_complete
@@ -376,7 +378,7 @@ upload_file(path, "pdf")              ← upload PDF/document first
 
 > **Three-phase flow:** Phase 1 (claim extraction, free) runs automatically, then a 3-row preview validates sample claims (free, auto-triggered). Both phases are tracked by a single `wait_for_job` call that stops at `status=preview_complete`. Review `preview_table` (3 validated sample claims with support level and citations) and `cost_estimate`, then call `approve_validation` to start Phase 2 (full validation, charged). Pass `auto_approve=True` to skip the gate and run straight through to `completed`.
 
-> **Progress tracking:** `get_job_messages` always returns empty for reference-check jobs. Use `get_job_status` (`current_step`, `progress_percent`) to track progress.
+> **Progress tracking:** `get_job_messages` returns empty during claim extraction (Phase 1). Progress messages are available during the preview validation phase. `wait_for_job` handles both phases automatically.
 
 **Output:** Excel (XLSX) file with per-claim rows. Support levels: SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIABLE. Share `interactive_viewer_url` with human stakeholders — it renders sources and confidence scores in a clean UI.
 
@@ -560,7 +562,7 @@ Every tool response includes a `_guidance` block with a plain-English summary an
 
 | Tool | Description |
 |------|-------------|
-| `upload_file` | Upload Excel, CSV, or PDF (handles presigned S3 automatically) |
+| `upload_file` | Upload Excel, CSV, or PDF. Try with `file_path` first (one step, stdio/uvx). If the server can't read the local path, call again without `file_path` to get a presigned S3 URL + curl command (HTTP/Railway transport — requires shell to run curl). |
 | `start_table_validation` | Confirm upload; detect config matches; auto-start interview if needed |
 | `start_table_maker` | Start an AI conversation to generate a table from a prompt |
 | `get_conversation` | Poll a conversation for AI responses or status changes |
