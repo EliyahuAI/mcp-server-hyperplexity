@@ -237,7 +237,7 @@ upload_file(path)
       → get_results(job_id)
 ```
 
-> **Key behavior:** After the interview finishes (`trigger_config_generation=true`), the preview is auto-queued. Do **not** call `create_job()` — call `wait_for_job(session_id)` directly. The same applies when a config match is found: if `confirm_upload` returns `match_score ≥ 0.85`, the preview is also auto-queued — the response includes `preview_queued: true` and `job_id`. Call `wait_for_job(job_id)` directly (see [Config reuse](#config-reuse)).
+> **Key behavior:** The preview is always auto-queued — after the interview finishes (`trigger_config_generation=true`), or when a config match is found (`match_score ≥ 0.85`, response includes `preview_queued: true` and `job_id`). Call `wait_for_job(session_id)` directly in all cases (see [Config reuse](#config-reuse)).
 
 > **Upload interview auto-approval:** The interview may auto-approve in a single turn. If the conversation response has `user_reply_needed: false` and `status: approved`, proceed to `wait_for_job(session_id)` immediately — no reply is needed, even if the AI's message appears to ask for confirmation.
 
@@ -288,7 +288,7 @@ Describe the table you want — rows, columns, scope — and Hyperplexity builds
 start_table_maker("Top 20 US biotech companies: name, ticker, market cap, lead drug, phase")
   → wait_for_conversation / poll get_conversation
     → send_conversation_reply  (if AI asks clarifying questions)
-    → [table builds → preview auto-queued, do NOT call create_job()]
+    → [table builds → preview auto-queued]
 
   → wait_for_job(session_id)          ← spans table-maker + preview phases
     → approve_validation(job_id, cost_usd)
@@ -514,7 +514,6 @@ Content types: `excel` → `.xlsx`, `csv` → `.csv`, `pdf` → `.pdf`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/jobs` | Create a preview validation job (only when reusing a `config_id`) |
 | `GET`  | `/jobs/{id}` | Get job status and progress |
 | `GET`  | `/jobs/{id}/messages` | Fetch live progress messages (paginated by `since_seq`) |
 | `POST` | `/jobs/{id}/validate` | Approve full validation — credits charged here |
@@ -568,7 +567,6 @@ Every tool response includes a `_guidance` block with a plain-English summary an
 | `send_conversation_reply` | Reply to AI questions during an interview or table-maker session |
 | `wait_for_conversation` | Block until conversation needs input or finishes (emits live progress) |
 | `refine_config` | Refine the validation config with natural language instructions (adjusts sources, strictness, interpretation — cannot add or remove columns) |
-| `create_job` | Submit a preview job — **only when reusing a known `config_id`** |
 | `wait_for_job` | Block until `preview_complete`, `completed`, or `failed` (preferred progress tracker) |
 | `get_job_status` | One-shot status poll |
 | `get_job_messages` | Fetch progress messages with native percentages (paginated) |
@@ -585,7 +583,7 @@ Every tool response includes a `_guidance` block with a plain-English summary an
 
 ### Auto-queued preview
 
-The preview is **automatically queued** in all three paths after `confirm_upload` — you never need to call `create_job()`:
+The preview is **automatically queued** in all three paths after `confirm_upload`:
 
 | Path | Trigger | What to call next |
 |------|---------|-------------------|
@@ -593,11 +591,11 @@ The preview is **automatically queued** in all three paths after `confirm_upload
 | `instructions=` provided | `instructions_mode: true` in response | `wait_for_job(session_id)` |
 | Interview ran | `trigger_config_generation=true` from conversation | `wait_for_job(session_id)` |
 
-`create_job()` is only needed if you want to use a specific `config_id` that was **not** auto-detected — for example, re-using a config from a completely different session.
+To reuse a config from a different session, pass `config_id` to `confirm_upload` — the preview will be auto-queued immediately.
 
 ### Config reuse
 
-If `confirm_upload` returns `match_score ≥ 0.85`, the preview is automatically queued using the matched config. The response includes `preview_queued: true` and `job_id` — call `wait_for_job(job_id)` directly, no interview and no `create_job()` call needed.
+If `confirm_upload` returns `match_score ≥ 0.85`, the preview is automatically queued using the matched config. The response includes `preview_queued: true` and `job_id` — call `wait_for_job(job_id)` directly, no interview needed.
 
 The `configuration_id` from any completed job's `get_results` response can be reused on future uploads of similar tables.
 

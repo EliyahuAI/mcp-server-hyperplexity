@@ -2,7 +2,7 @@
 """
 Hyperplexity MCP Server — entry point.
 
-Registers all 18 tools across 6 modules. Supports two transports:
+Registers all 16 tools across 6 modules. Supports two transports:
 
   stdio (default) — for Claude Code / Claude Desktop / local MCP clients
     HYPERPLEXITY_API_KEY=hpx_live_... mcp-server-hyperplexity
@@ -174,7 +174,7 @@ def main():
         async def server_card(request: Request) -> JSONResponse:
             return JSONResponse({
                 "name": "hyperplexity",
-                "version": "1.0.17",
+                "version": "1.0.18",
                 "description": (
                     "Generate, validate, and fact-check research tables with "
                     "AI-sourced citations and per-cell confidence scores."

@@ -87,7 +87,7 @@ def _guidance_confirm_upload(data: dict) -> dict:
                 {
                     "tool": "wait_for_job",
                     "params": {"job_id": job_id, "timeout_seconds": 600},
-                    "note": "Preview is queued. Do NOT call create_job — it was already done.",
+                    "note": "Preview is already queued — use wait_for_job to track it.",
                 },
                 reference_check_option,
             ],
@@ -123,7 +123,7 @@ def _guidance_confirm_upload(data: dict) -> dict:
                             "warmup_seconds=300 shows synthetic progress during the initial "
                             "silent phase (internal interview + config gen produce no messages). "
                             "wait_for_job tracks the config-generation intermediate step then "
-                            "the preview automatically. Do NOT call create_job() or "
+                            "the preview automatically. or "
                             "wait_for_conversation."
                         ),
                     },
@@ -152,7 +152,7 @@ def _guidance_confirm_upload(data: dict) -> dict:
                         "When the interview finishes (trigger_config_generation=true or "
                         "status=approved), call wait_for_job(session_id) directly — "
                         "it waits for config generation to complete, then tracks the preview "
-                        "phase automatically until preview_complete. Do NOT call create_job()."
+                        "phase automatically until preview_complete.."
                     ),
                 },
                 {
@@ -172,13 +172,13 @@ def _guidance_confirm_upload(data: dict) -> dict:
         return {
             "summary": (
                 f"Upload confirmed. A prior config matches with score {best_score:.2f}. "
-                "You can reuse it directly."
+                "Re-upload with confirm_upload(config_id=...) to apply it and auto-queue the preview."
             ),
             "next_steps": [
                 {
-                    "tool": "create_job",
+                    "tool": "confirm_upload",
                     "params": {"session_id": session_id, "config_id": config_id},
-                    "note": "Creates a preview job using the matched config. Fastest path.",
+                    "note": "Pass config_id to skip the interview and auto-queue the preview.",
                 },
                 reference_check_option,
             ],
@@ -186,18 +186,9 @@ def _guidance_confirm_upload(data: dict) -> dict:
     else:
         return {
             "summary": (
-                "Upload confirmed. No strong prior config match. "
-                "Use create_job with a known config_id, or supply a config directly."
+                "Upload confirmed. No strong prior config match — interview will start automatically."
             ),
             "next_steps": [
-                {
-                    "tool": "create_job",
-                    "params": {
-                        "session_id": session_id,
-                        "config": "<paste config JSON here>",
-                    },
-                    "note": "Supply your own config JSON directly.",
-                },
                 reference_check_option,
             ],
         }
@@ -206,60 +197,6 @@ def _guidance_confirm_upload(data: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Jobs
 # ---------------------------------------------------------------------------
-
-def _guidance_create_job(data: dict) -> dict:
-    job_id = data.get("job_id", "")
-    status = data.get("status", "")
-    run_type = data.get("run_type", "")
-
-    # Issue 3: for table maker session IDs, get_job_status returns stale data from
-    # the original table maker run (not the preview job). Drive from messages via
-    # wait_for_job, which uses the messages endpoint as the primary progress source
-    # and only calls get_job_status once a terminal state is confirmed.
-    if job_id.startswith("session_") and run_type == "preview":
-        return {
-            "summary": (
-                f"Preview job created (status={status}). "
-                "IMPORTANT: get_job_status may return stale table maker data (status=completed, "
-                "current_step='Config Generation') — this reflects the table maker run, not the "
-                "preview. The messages endpoint is authoritative for real-time progress. "
-                "Use wait_for_job to wait for preview_complete with live progress notifications; "
-                "it drives from messages and retries status confirmation automatically. "
-                "Save config_id from the result for future reruns, then call approve_validation."
-            ),
-            "next_steps": [
-                {
-                    "tool": "wait_for_job",
-                    "params": {"job_id": job_id},
-                    "note": (
-                        "Preferred: blocks until preview_complete, emitting live progress from "
-                        "messages. Returns the same payload as get_job_status."
-                    ),
-                },
-                {
-                    "tool": "get_job_messages",
-                    "params": {"job_id": job_id},
-                    "note": (
-                        "Fallback: manually poll messages (card_id='preview') for real-time "
-                        "progress, then call get_job_status once messages show 100%."
-                    ),
-                },
-            ],
-        }
-
-    return {
-        "summary": f"Job created (status={status}). Use wait_for_job to track completion.",
-        "next_steps": [
-            {
-                "tool": "wait_for_job",
-                "params": {"job_id": job_id},
-                "note": (
-                    "Preferred: blocks until preview_complete with live progress notifications. "
-                    "Returns the full status payload including cost_estimate and config_id."
-                ),
-            }
-        ],
-    }
 
 
 def _guidance_get_job_status(data: dict) -> dict:
@@ -486,13 +423,13 @@ def _guidance_get_job_status(data: dict) -> dict:
             "table making", "table maker",
         )):
             # Table maker has finished. For API sessions the preview is already
-            # auto-queued — do NOT call create_job(). wait_for_job handles this
+            # auto-queued — wait_for_job handles this
             # phase transition automatically (detects intermediate complete, resets,
             # and continues polling into the preview phase).
             return {
                 "summary": (
                     "Table maker complete (intermediate phase). A preview validation job has been "
-                    "automatically queued. Do NOT call create_job() — the preview is already running. "
+                    "automatically queued. "
                     "Use wait_for_job to track the preview phase with live progress; it detects this "
                     "phase boundary automatically and keeps polling until preview_complete."
                 ),
@@ -964,7 +901,7 @@ def _guidance_get_conversation(data: dict) -> dict:
                 "summary": (
                     "Config refinement complete. A new preview validation job has been "
                     "automatically queued with the updated config. "
-                    "Do NOT call create_job(). "
+                    ""
                     "Use wait_for_job(session_id) to track the preview with live progress."
                 ),
                 "next_steps": [
@@ -979,7 +916,7 @@ def _guidance_get_conversation(data: dict) -> dict:
                 ],
             }
         # The table maker is NOW RUNNING. Once complete, a preview validation
-        # job is automatically queued for API sessions — do NOT call create_job().
+        # job is automatically queued for API sessions.
         # wait_for_job handles the phase transition (table-maker → preview) automatically.
         target_rows = data.get("target_row_count")
         cost_hint = ""
@@ -1030,7 +967,7 @@ def _guidance_get_conversation(data: dict) -> dict:
                 "Table is being built. A preview validation job will start automatically "
                 "once the table maker finishes (typically 5–30 minutes; complex research "
                 "requests may take longer). "
-                "Do NOT call create_job() — the preview is auto-queued. "
+                ""
                 "Use wait_for_job(session_id) — it detects the phase transition and "
                 "tracks both the table-maker and preview phases with live progress. "
                 "If wait_for_job times out, call it again — the job is still running."
@@ -1051,13 +988,13 @@ def _guidance_get_conversation(data: dict) -> dict:
 
     if action == "submit_preview":
         # Upload-interview flow: config is generated and a preview job is
-        # automatically queued for API sessions. Do NOT call create_job().
+        # automatically queued for API sessions..
         # Use wait_for_job to track the preview phase with live progress.
         return {
             "summary": (
                 "Interview complete. The config has been generated and a preview job "
                 "has been automatically queued. "
-                "Do NOT call create_job() — the preview is already running. "
+                ""
                 "Use wait_for_job(session_id) to track it with live progress "
                 "until preview_complete, then call approve_validation."
             ),
@@ -1113,7 +1050,7 @@ def _guidance_get_conversation(data: dict) -> dict:
 
     # Upload-interview terminal state: status=approved.
     # Config generation is running in the background; preview is auto-queued once it
-    # finishes — do NOT call create_job(). Switch to wait_for_job(session_id).
+    # finishes — Switch to wait_for_job(session_id).
     # NOTE: The backend API does not expose trigger_config_generation in the
     # response — only the internal S3 state has it. status="approved" alone is
     # sufficient because only upload interviews reach this state.
@@ -1122,7 +1059,7 @@ def _guidance_get_conversation(data: dict) -> dict:
             "summary": (
                 "Upload interview complete. Config generation is running automatically in the "
                 "background. A preview job will be auto-queued once the config is ready — "
-                "do NOT call create_job(). Use wait_for_job(session_id) to track the preview."
+                "Use wait_for_job(session_id) to track the preview."
             ),
             "agent_note": (
                 "The AI's ai_message may contain a confirmation prompt such as "
@@ -1234,7 +1171,6 @@ def _guidance_get_usage(data: dict) -> dict:
 _BUILDERS: dict[str, Callable] = {
     "upload_file": _guidance_upload_file,
     "confirm_upload": _guidance_confirm_upload,
-    "create_job": _guidance_create_job,
     "get_job_status": _guidance_get_job_status,
     "wait_for_job": _guidance_get_job_status,  # same payload shape — reuse builder
     "get_job_messages": _guidance_get_job_messages,

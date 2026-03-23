@@ -30,7 +30,7 @@ Submit text or a document. Hyperplexity extracts factual claims and verifies eac
 ## Key rules
 
 - **job_id = session_id** — these are the same string throughout the entire workflow. Use whichever parameter name the tool requires.
-- **Never call `create_job()` after `confirm_upload` or `start_table_maker`** — the preview is auto-queued. Call `wait_for_job(job_id=session_id)` directly.
+- **The preview is always auto-queued** after `confirm_upload` or `start_table_maker` — call `wait_for_job(job_id=session_id)` directly.
 - **Preview is free; full validation is charged.** Always review `preview_table` and `cost_estimate` before calling `approve_validation`.
 - **`results.markdown_table`** — the complete validated table is embedded directly in the `get_results` response. Read it before parsing any other field.
 - After `approve_validation`, call `wait_for_job` with `timeout_seconds = max(900, estimated_validation_time_seconds * 2)`.

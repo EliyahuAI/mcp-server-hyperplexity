@@ -1,4 +1,4 @@
-"""Job tools: create_job, get_job_status, get_job_messages, wait_for_job."""
+"""Job tools: get_job_status, get_job_messages, wait_for_job."""
 
 from __future__ import annotations
 
@@ -19,85 +19,6 @@ from hyperplexity_mcp.guidance import build_guidance
 
 
 def register(server):
-
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
-    def create_job(
-        session_id: Annotated[str, Field(description="Session ID from upload_file or confirm_upload identifying the upload session.")],
-        upload_id: Annotated[Optional[str], Field(description="Upload ID from upload_file (optional if session already holds the upload).")] = None,
-        config_id: Annotated[Optional[str], Field(description="ID of a known prior configuration to reuse directly.")] = None,
-        config: Annotated[Optional[dict], Field(description="Validation configuration dict to apply directly.")] = None,
-        s3_key: Annotated[Optional[str], Field(description="S3 key of the uploaded file.")] = None,
-        notify_method: Annotated[Optional[str], Field(description='Notification method: "poll" (default) or "webhook".')] = None,
-        webhook_url: Annotated[Optional[str], Field(description="Webhook URL to notify when the job completes (requires notify_method=webhook).")] = None,
-    ) -> list[types.TextContent]:
-        """Create a validation job.
-
-        Always runs as a 3-row preview first — approve_validation is required
-        before full processing begins.
-
-        Provide one of:
-          - config_id  — reuse a known config (fastest)
-          - config     — supply a config dict directly
-          - (neither)  — session must already hold a config from upload_interview
-
-        upload_id comes from the upload_file response.
-        notify_method: "poll" (default) or "webhook".
-        """
-        client = get_client()
-        payload: dict = {"session_id": session_id, "preview_rows": 3}
-        if upload_id:
-            payload["upload_id"] = upload_id
-        if config_id:
-            payload["config_id"] = config_id
-        if config is not None:
-            payload["config"] = config
-        if s3_key:
-            payload["s3_key"] = s3_key
-        if notify_method:
-            payload["notify_method"] = notify_method
-        if webhook_url:
-            payload["webhook_url"] = webhook_url
-
-        try:
-            data = client.post("/jobs", json=payload)
-        except APIError as exc:
-            if "missing_config" in str(exc):
-                result = {
-                    "error": "missing_config",
-                    "message": str(exc),
-                    "session_id": session_id,
-                    "_guidance": {
-                        "summary": (
-                            "No validation config found for this session. "
-                            "This happens in two cases: "
-                            "(1) Upload-interview session: config generation is still in progress — "
-                            "the backend is building the validation config from the interview. "
-                            "Do NOT retry create_job. "
-                            "(2) Table-maker session: the table is still being built and the "
-                            "preview is not yet auto-queued. "
-                            "In both cases, call wait_for_job(session_id) — it detects the "
-                            "intermediate phase, waits for config generation or table-making to "
-                            "finish, and tracks the preview phase automatically until "
-                            "preview_complete."
-                        ),
-                        "next_steps": [
-                            {
-                                "tool": "wait_for_job",
-                                "params": {"job_id": session_id},
-                                "note": (
-                                    "Preferred: handles the config-gen → preview and "
-                                    "table-maker → preview phase boundaries automatically. "
-                                    "Blocks until preview_complete."
-                                ),
-                            }
-                        ],
-                    },
-                }
-                return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
-            raise
-
-        data["_guidance"] = build_guidance("create_job", data)
-        return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def get_job_status(job_id: Annotated[str, Field(description="Session ID / job ID returned by upload_file, confirm_upload, or start_table_maker.")]) -> list[types.TextContent]:
