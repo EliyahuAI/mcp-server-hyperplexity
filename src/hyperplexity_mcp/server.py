@@ -174,7 +174,7 @@ def main():
         async def server_card(request: Request) -> JSONResponse:
             return JSONResponse({
                 "name": "hyperplexity",
-                "version": "1.0.14",
+                "version": "1.0.15",
                 "description": (
                     "Generate, validate, and fact-check research tables with "
                     "AI-sourced citations and per-cell confidence scores."
