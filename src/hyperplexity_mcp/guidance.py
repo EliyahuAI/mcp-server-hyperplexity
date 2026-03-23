@@ -355,7 +355,7 @@ def _guidance_get_job_status(data: dict) -> dict:
                     ),
                 },
                 {
-                    "tool": "get_reference_results",
+                    "tool": "get_results",
                     "params": {"job_id": job_id},
                     "note": "After validation completes, fetch results here (inline markdown_table included).",
                     "when": "after validation completes (status=completed)",
@@ -522,11 +522,6 @@ def _guidance_get_job_status(data: dict) -> dict:
                     "tool": "get_results",
                     "params": {"job_id": job_id},
                     "note": "Download the enriched/validated output.",
-                },
-                {
-                    "tool": "get_reference_results",
-                    "params": {"job_id": job_id},
-                    "note": "Optional: fetch reference-check sub-results if applicable.",
                 },
             ],
             "output_files": {
