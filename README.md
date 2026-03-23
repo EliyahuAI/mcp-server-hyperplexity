@@ -87,9 +87,38 @@ export HYPERPLEXITY_API_KEY=hpx_live_...
 
 The MCP server lets any AI agent drive the full Hyperplexity workflow autonomously — no scripting required.
 
-### Option A — Direct install via uvx (recommended)
+### Option A — Direct HTTP connection to Railway (recommended for Claude Code)
 
-The simplest path. Runs the server locally on your machine using `uvx` — no separate install needed.
+Connects directly to the hosted Hyperplexity server over HTTP. No local install, no `uvx`, no package management — just one command.
+
+**Claude Code:**
+```bash
+claude mcp add hyperplexity \
+  --transport http \
+  https://mcp-server-hyperplexity-production.up.railway.app/ \
+  --header "X-Api-Key: hpx_live_your_key_here"
+```
+
+**Via config file** (`.mcp.json` in your repo root, or `claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "hyperplexity": {
+      "type": "http",
+      "url": "https://mcp-server-hyperplexity-production.up.railway.app/",
+      "headers": {
+        "X-Api-Key": "hpx_live_your_key_here"
+      }
+    }
+  }
+}
+```
+
+> **Why HTTP over uvx?** The HTTP connection runs on Railway — always up to date, no local Python environment needed, and no version drift between the package you installed and the live server. Recommended for Claude Code and any project-level config.
+
+### Option B — Local install via uvx
+
+Runs the server locally on your machine using `uvx`. Useful for Claude Desktop or offline/air-gapped environments.
 
 **Claude Code:**
 ```bash
@@ -146,33 +175,6 @@ HYPERPLEXITY_API_KEY = "hpx_live_your_key_here"
 Then restart Codex and verify:
 ```bash
 codex mcp list
-```
-
-### Option B — Direct HTTP connection to Railway
-
-Connects your agent directly to the hosted Hyperplexity server over HTTP. No local process required.
-
-**Claude Code:**
-```bash
-claude mcp add hyperplexity \
-  --transport http \
-  https://mcp-server-hyperplexity-production.up.railway.app/ \
-  --header "X-Api-Key: hpx_live_your_key_here"
-```
-
-**Via config file** (`.mcp.json` or `claude_desktop_config.json`):
-```json
-{
-  "mcpServers": {
-    "hyperplexity": {
-      "type": "http",
-      "url": "https://mcp-server-hyperplexity-production.up.railway.app/",
-      "headers": {
-        "X-Api-Key": "hpx_live_your_key_here"
-      }
-    }
-  }
-}
 ```
 
 ### Option C — Smithery
