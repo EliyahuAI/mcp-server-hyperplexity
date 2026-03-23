@@ -223,7 +223,7 @@ Once the MCP server is installed, describe your task in plain English. The agent
 
 ```
 upload_file(path)
-  → confirm_upload(session_id, s3_key, filename)
+  → start_table_validation(session_id, s3_key, filename)
       ┌── match found (score ≥ 0.85) → [preview auto-queued; response has preview_queued=true + job_id]
       └── no match → interview auto-started
             → wait_for_conversation / poll get_conversation
@@ -243,10 +243,10 @@ upload_file(path)
 
 **Skip the interview with `instructions` (fire-and-forget config generation):**
 
-Pass `instructions` to `confirm_upload` to bypass the interactive interview. The AI reads the table structure + your instructions and generates a config directly, then auto-triggers the preview — no clarifying questions needed.
+Pass `instructions` to `start_table_validation` to bypass the interactive interview. The AI reads the table structure + your instructions and generates a config directly, then auto-triggers the preview — no clarifying questions needed.
 
 ```
-confirm_upload(session_id, s3_key, filename,
+start_table_validation(session_id, s3_key, filename,
   instructions="This table lists hedge funds. Validate AUM, strategy, and HQ city. Use Bloomberg and SEC filings.")
   → response includes instructions_mode=true
   → wait_for_job(session_id)          ← config generation + preview tracked automatically
@@ -336,7 +336,7 @@ python examples/02_generate_table.py --auto-start "Top 10 US hedge funds: fund n
 
 Re-run validation on a completed job — no re-upload or manual edits needed. The table iterates automatically, re-validating the same data with the same config to pick up any changes in source data.
 
-If you want to incorporate manual edits to the output file, re-upload the edited file via `upload_file` + `confirm_upload` — a matching config will be found automatically (score ≥ 0.85).
+If you want to incorporate manual edits to the output file, re-upload the edited file via `upload_file` + `start_table_validation` — a matching config will be found automatically (score ≥ 0.85).
 
 ```
 update_table(source_job_id)           ← re-validates existing enriched output
@@ -362,10 +362,10 @@ Submit any text, report, or document. Hyperplexity checks each factual claim aga
 > **Minimum claims:** Hyperplexity is designed for text with **4 or more factual claims**. Fewer claims may produce low-quality results.
 
 ```
-reference_check(text="...")           ← inline text (or auto_approve=True to skip the gate)
+start_reference_check(text="...")           ← inline text (or auto_approve=True to skip the gate)
   or
 upload_file(path, "pdf")              ← upload PDF/document first
-  → reference_check(s3_key=s3_key)
+  → start_reference_check(s3_key=s3_key)
 
 → wait_for_job(job_id)                ← spans extraction + 3-row preview; stops at preview_complete
   → preview_table (3 validated sample claims) + cost_estimate shown in response
@@ -561,7 +561,7 @@ Every tool response includes a `_guidance` block with a plain-English summary an
 | Tool | Description |
 |------|-------------|
 | `upload_file` | Upload Excel, CSV, or PDF (handles presigned S3 automatically) |
-| `confirm_upload` | Confirm upload; detect config matches; auto-start interview if needed |
+| `start_table_validation` | Confirm upload; detect config matches; auto-start interview if needed |
 | `start_table_maker` | Start an AI conversation to generate a table from a prompt |
 | `get_conversation` | Poll a conversation for AI responses or status changes |
 | `send_conversation_reply` | Reply to AI questions during an interview or table-maker session |
@@ -573,7 +573,7 @@ Every tool response includes a `_guidance` block with a plain-English summary an
 | `approve_validation` | Approve preview → start full validation (credits charged here) |
 | `get_results` | Download URL, inline metadata, interactive viewer URL |
 | `update_table` | Re-validate enriched output after analyst corrections |
-| `reference_check` | Submit text or file for claim and citation verification |
+| `start_reference_check` | Submit text or file for claim and citation verification |
 | `get_balance` | Check credit balance |
 | `get_usage` | Review billing history |
 
@@ -583,7 +583,7 @@ Every tool response includes a `_guidance` block with a plain-English summary an
 
 ### Auto-queued preview
 
-The preview is **automatically queued** in all three paths after `confirm_upload`:
+The preview is **automatically queued** in all three paths after `start_table_validation`:
 
 | Path | Trigger | What to call next |
 |------|---------|-------------------|
@@ -591,11 +591,11 @@ The preview is **automatically queued** in all three paths after `confirm_upload
 | `instructions=` provided | `instructions_mode: true` in response | `wait_for_job(session_id)` |
 | Interview ran | `trigger_config_generation=true` from conversation | `wait_for_job(session_id)` |
 
-To reuse a config from a different session, pass `config_id` to `confirm_upload` — the preview will be auto-queued immediately.
+To reuse a config from a different session, pass `config_id` to `start_table_validation` — the preview will be auto-queued immediately.
 
 ### Config reuse
 
-If `confirm_upload` returns `match_score ≥ 0.85`, the preview is automatically queued using the matched config. The response includes `preview_queued: true` and `job_id` — call `wait_for_job(job_id)` directly, no interview needed.
+If `start_table_validation` returns `match_score ≥ 0.85`, the preview is automatically queued using the matched config. The response includes `preview_queued: true` and `job_id` — call `wait_for_job(job_id)` directly, no interview needed.
 
 The `configuration_id` from any completed job's `get_results` response can be reused on future uploads of similar tables.
 
@@ -615,7 +615,7 @@ Two optional flags let fully automated pipelines skip interactive steps:
 
 | Flag | Tool | Skips | Next step |
 |------|------|-------|-----------|
-| `instructions="..."` | `confirm_upload` | Upload interview Q&A | `wait_for_job(session_id)` |
+| `instructions="..."` | `start_table_validation` | Upload interview Q&A | `wait_for_job(session_id)` |
 | `auto_start=True` | `start_table_maker` | Structure confirmation | `wait_for_conversation` → `wait_for_job` |
 
 These flags use different terminal signals: `instructions=` (a config-gen flow) causes `trigger_config_generation: true` on the conversation response; `auto_start=True` (a table-maker flow) causes `trigger_execution: true`. Both skip interactive Q&A but produce different fields — do not wait for `trigger_execution` when using the `instructions=` upload path. The `preview_complete` cost gate and `approve_validation` still apply.

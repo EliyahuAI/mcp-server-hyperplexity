@@ -1,4 +1,4 @@
-"""Upload tools: upload_file (compound), confirm_upload."""
+"""Upload tools: upload_file (compound), start_table_validation."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def register(server):
 
         Compound tool: reads the file, gets a presigned S3 URL, PUTs the bytes
         (without auth headers — presigned URL carries the credentials), and
-        returns session_id + s3_key ready for confirm_upload.
+        returns session_id + s3_key ready for start_table_validation.
 
         file_type must be one of: "excel", "csv", "pdf"
         """
@@ -81,7 +81,7 @@ def register(server):
         return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
-    def confirm_upload(
+    def start_table_validation(
         session_id: Annotated[str, Field(description="Session ID returned by upload_file.")],
         s3_key: Annotated[str, Field(description="S3 key returned by upload_file identifying the uploaded file.")],
         filename: Annotated[str, Field(description="Original filename of the uploaded file.")],
@@ -118,5 +118,5 @@ def register(server):
         if config_id:
             payload["config_id"] = config_id
         data = client.post("/uploads/confirm", json=payload)
-        data["_guidance"] = build_guidance("confirm_upload", data)
+        data["_guidance"] = build_guidance("start_table_validation", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]

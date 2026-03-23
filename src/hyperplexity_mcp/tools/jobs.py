@@ -21,7 +21,7 @@ from hyperplexity_mcp.guidance import build_guidance
 def register(server):
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
-    def get_job_status(job_id: Annotated[str, Field(description="Session ID / job ID returned by upload_file, confirm_upload, or start_table_maker.")]) -> list[types.TextContent]:
+    def get_job_status(job_id: Annotated[str, Field(description="Session ID / job ID returned by upload_file, start_table_validation, or start_table_maker.")]) -> list[types.TextContent]:
         """One-shot job status check. Prefer wait_for_job for tracking long-running jobs.
 
         Use this for quick status inspections or as a fallback when wait_for_job
@@ -60,7 +60,7 @@ def register(server):
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
     async def wait_for_job(
-        job_id: Annotated[str, Field(description="Session ID returned by upload_file, confirm_upload, or start_table_maker.")],
+        job_id: Annotated[str, Field(description="Session ID returned by upload_file, start_table_validation, or start_table_maker.")],
         ctx: Context,
         timeout_seconds: Annotated[int, Field(description="Maximum wall-clock seconds to wait before returning last known state (default 900).")] = 900,
         poll_interval: Annotated[int, Field(description="Seconds between status poll cycles (default 10).")] = 10,
@@ -105,7 +105,7 @@ def register(server):
         Returns the same payload shape as get_job_status so downstream tools
         (approve_validation, get_results, etc.) apply directly.
 
-        job_id: the session_id value returned by upload_file / confirm_upload /
+        job_id: the session_id value returned by upload_file / start_table_validation /
           start_table_maker. "job_id" and "session_id" are the same string — every
           workflow uses session_id as its job identifier throughout the pipeline.
         timeout_seconds: max wall time before returning last known state (default 900).

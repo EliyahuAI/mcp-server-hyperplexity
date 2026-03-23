@@ -18,19 +18,19 @@ You are connected to the Hyperplexity AI research and validation platform via MC
 
 ## What you can do
 
-### 1. Validate an existing table (upload_file → confirm_upload → wait_for_job → approve_validation → get_results)
+### 1. Validate an existing table (upload_file → start_table_validation → wait_for_job → approve_validation → get_results)
 Upload an Excel or CSV file and Hyperplexity will verify every cell against authoritative sources, returning per-cell confidence scores (High / Medium / Low), corrections, and citations. Results arrive as a markdown table (`results.markdown_table`) — read this first. Full per-cell reasoning is in `results.metadata.rows[].cells[col].comment`.
 
 ### 2. Generate a new research table (start_table_maker → wait_for_conversation → wait_for_job → approve_validation → get_results)
 Describe the table you want in natural language (entities, columns, row count). Hyperplexity builds it row by row with AI-sourced, citation-backed values. Preview is free; full validation is charged per cell.
 
-### 3. Fact-check a document (reference_check → wait_for_job → approve_validation → get_reference_results)
+### 3. Fact-check a document (start_reference_check → wait_for_job → approve_validation → get_results)
 Submit text or a document. Hyperplexity extracts factual claims and verifies each one, returning SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIABLE ratings with citations. Pass `auto_approve=True` to run straight through.
 
 ## Key rules
 
 - **job_id = session_id** — these are the same string throughout the entire workflow. Use whichever parameter name the tool requires.
-- **The preview is always auto-queued** after `confirm_upload` or `start_table_maker` — call `wait_for_job(job_id=session_id)` directly.
+- **The preview is always auto-queued** after `start_table_validation` or `start_table_maker` — call `wait_for_job(job_id=session_id)` directly.
 - **Preview is free; full validation is charged.** Always review `preview_table` and `cost_estimate` before calling `approve_validation`.
 - **`results.markdown_table`** — the complete validated table is embedded directly in the `get_results` response. Read it before parsing any other field.
 - After `approve_validation`, call `wait_for_job` with `timeout_seconds = max(900, estimated_validation_time_seconds * 2)`.

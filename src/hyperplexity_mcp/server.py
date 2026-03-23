@@ -53,7 +53,7 @@ server = FastMCP(
         "Hyperplexity lets you generate, validate, and fact-check research tables with "
         "AI-sourced citations and per-cell confidence scores. "
         "Use start_table_maker to create a new table from a natural language description, "
-        "or upload_file + confirm_upload to validate an existing Excel/CSV file. "
+        "or upload_file + start_table_validation to validate an existing Excel/CSV file. "
         "Every cell in the output table has a confidence score and citation links. "
         "Full workflow: start_table_maker → wait_for_conversation → wait_for_job → "
         "approve_validation → wait_for_job → get_results."
@@ -102,11 +102,11 @@ def validate_file(file_path: str, instructions: str = "") -> str:
     instructions: Optional description of what to validate (bypasses the interview).
     """
     file_type = "excel" if file_path.lower().endswith((".xlsx", ".xls")) else "csv"
-    instr_hint = f' Pass instructions="{instructions}" to confirm_upload to skip the interview.' if instructions else ""
+    instr_hint = f' Pass instructions="{instructions}" to start_table_validation to skip the interview.' if instructions else ""
     return (
         f"Validate the file at {file_path}. "
         f"1. Call upload_file(file_path='{file_path}', file_type='{file_type}'). "
-        f"2. Call confirm_upload with the returned session_id, s3_key, and filename.{instr_hint} "
+        f"2. Call start_table_validation with the returned session_id, s3_key, and filename.{instr_hint} "
         f"3. Call wait_for_job (timeout_seconds=900) until preview_complete. "
         f"4. Review the preview_table and cost_estimate, then call approve_validation. "
         f"5. Call wait_for_job again until completed, then get_results."
@@ -120,7 +120,7 @@ def fact_check_text(text: str) -> str:
     text: The text to fact-check (works best with 4+ factual claims).
     """
     return (
-        f"Run a reference check on the following text using reference_check(text=...). "
+        f"Run a reference check on the following text using start_reference_check(text=...). "
         f"After the preview completes (wait_for_job until preview_complete), review "
         f"the claims_summary and cost_estimate, then call approve_validation to verify "
         f"all claims. Retrieve final results with get_results.\n\nText:\n{text}"
@@ -174,7 +174,7 @@ def main():
         async def server_card(request: Request) -> JSONResponse:
             return JSONResponse({
                 "name": "hyperplexity",
-                "version": "1.0.19",
+                "version": "1.0.20",
                 "description": (
                     "Generate, validate, and fact-check research tables with "
                     "AI-sourced citations and per-cell confidence scores."

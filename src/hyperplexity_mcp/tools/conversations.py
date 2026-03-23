@@ -2,7 +2,7 @@
 send_conversation_reply, refine_config, wait_for_conversation.
 
 Note: start_upload_interview is intentionally not exposed as an MCP tool —
-the server auto-starts an upload interview from confirm_upload when no strong
+the server auto-starts an upload interview from start_table_validation when no strong
 config match is found, returning conversation_id directly in that response.
 """
 
@@ -71,7 +71,7 @@ def register(server):
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def get_conversation(
-        conversation_id: Annotated[str, Field(description="Conversation ID returned by start_table_maker or confirm_upload.")],
+        conversation_id: Annotated[str, Field(description="Conversation ID returned by start_table_maker or start_table_validation.")],
         session_id: Annotated[str, Field(description="Session ID associated with the conversation.")],
     ) -> list[types.TextContent]:
         """Poll a conversation for new messages or a status change.

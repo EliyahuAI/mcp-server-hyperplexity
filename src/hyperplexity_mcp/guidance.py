@@ -42,10 +42,10 @@ def _guidance_upload_file(data: dict) -> dict:
 
     if file_type == "pdf":
         return {
-            "summary": "PDF uploaded to S3. Pass s3_key to reference_check to fact-check the document — do NOT call confirm_upload.",
+            "summary": "PDF uploaded to S3. Pass s3_key to start_reference_check to fact-check the document — do NOT call start_table_validation.",
             "next_steps": [
                 {
-                    "tool": "reference_check",
+                    "tool": "start_reference_check",
                     "params": {"s3_key": s3_key},
                     "note": "Starts claim extraction (free). wait_for_job until preview_complete, then approve_validation.",
                 }
@@ -53,10 +53,10 @@ def _guidance_upload_file(data: dict) -> dict:
         }
 
     return {
-        "summary": "File uploaded to S3. Call confirm_upload to register it with the session.",
+        "summary": "File uploaded to S3. Call start_table_validation to register it with the session.",
         "next_steps": [
             {
-                "tool": "confirm_upload",
+                "tool": "start_table_validation",
                 "params": {
                     "session_id": session_id,
                     "s3_key": s3_key,
@@ -77,11 +77,11 @@ def _guidance_confirm_upload(data: dict) -> dict:
 
     s3_key = data.get("s3_key", "")
     reference_check_option = {
-        "tool": "reference_check",
+        "tool": "start_reference_check",
         "params": {"s3_key": s3_key} if s3_key else {"text": "<inline text>"},
         "note": (
             "ALTERNATIVE PATH — if you want to fact-check/verify claims in this document: "
-            "call reference_check directly. There is NO interview, NO config step. "
+            "call start_reference_check directly. There is NO interview, NO config step. "
             "Phase 1 (extraction, free) runs automatically; poll with wait_for_job until "
             "preview_complete, then call approve_validation to start Phase 2 (validation, charged). "
             "Pass auto_approve=True to skip the approval gate and run straight through."
@@ -186,11 +186,11 @@ def _guidance_confirm_upload(data: dict) -> dict:
         return {
             "summary": (
                 f"Upload confirmed. A prior config matches with score {best_score:.2f}. "
-                "Re-upload with confirm_upload(config_id=...) to apply it and auto-queue the preview."
+                "Re-upload with start_table_validation(config_id=...) to apply it and auto-queue the preview."
             ),
             "next_steps": [
                 {
-                    "tool": "confirm_upload",
+                    "tool": "start_table_validation",
                     "params": {"session_id": session_id, "config_id": config_id},
                     "note": "Pass config_id to skip the interview and auto-queue the preview.",
                 },
@@ -385,14 +385,14 @@ def _guidance_get_job_status(data: dict) -> dict:
             {
                 "tool": "refine_config",
                 "params": {
-                    "conversation_id": refine_session if refine_session else "<conversation_id from confirm_upload or start_table_maker>",
+                    "conversation_id": refine_session if refine_session else "<conversation_id from start_table_validation or start_table_maker>",
                     "session_id": session_id,
                     "instructions": "<describe the changes you want>",
                 },
                 "note": (
                     "Not satisfied with the preview? Call refine_config to adjust columns or "
                     "validation approach before approving."
-                    + (" Use the conversation_id from your initial confirm_upload or "
+                    + (" Use the conversation_id from your initial start_table_validation or "
                        "start_table_maker call." if not refine_session else "")
                 ),
             },
@@ -1184,14 +1184,14 @@ def _guidance_get_usage(data: dict) -> dict:
 
 _BUILDERS: dict[str, Callable] = {
     "upload_file": _guidance_upload_file,
-    "confirm_upload": _guidance_confirm_upload,
+    "start_table_validation": _guidance_confirm_upload,
     "get_job_status": _guidance_get_job_status,
     "wait_for_job": _guidance_get_job_status,  # same payload shape — reuse builder
     "get_job_messages": _guidance_get_job_messages,
     "approve_validation": _guidance_approve_validation,
     "get_results": _guidance_get_results,
     "update_table": _guidance_update_table,
-    "reference_check": _guidance_reference_check,
+    "start_reference_check": _guidance_reference_check,
     "start_table_maker": _guidance_start_table_maker,
     "get_conversation": _guidance_get_conversation,
     "send_conversation_reply": _guidance_send_conversation_reply,
