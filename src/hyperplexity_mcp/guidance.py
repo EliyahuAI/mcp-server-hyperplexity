@@ -38,8 +38,22 @@ def _guidance_upload_file(data: dict) -> dict:
     session_id = data.get("session_id", "")
     s3_key = data.get("s3_key", "")
     filename = data.get("filename", "")
+    file_type = data.get("file_type", "")
+
+    if file_type == "pdf":
+        return {
+            "summary": "PDF uploaded to S3. Pass s3_key to reference_check to fact-check the document — do NOT call confirm_upload.",
+            "next_steps": [
+                {
+                    "tool": "reference_check",
+                    "params": {"s3_key": s3_key},
+                    "note": "Starts claim extraction (free). wait_for_job until preview_complete, then approve_validation.",
+                }
+            ],
+        }
+
     return {
-        "summary": f"File uploaded to S3. Call confirm_upload to register it with the session.",
+        "summary": "File uploaded to S3. Call confirm_upload to register it with the session.",
         "next_steps": [
             {
                 "tool": "confirm_upload",

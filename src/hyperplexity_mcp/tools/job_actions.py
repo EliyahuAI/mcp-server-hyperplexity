@@ -39,17 +39,26 @@ def register(server):
         s3_key: Annotated[Optional[str], Field(description="S3 key of an already-uploaded file to fact-check (provide either text or s3_key).")] = None,
         auto_approve: Annotated[bool, Field(description="Skip the preview approval gate and run straight through to full validation automatically.")] = False,
     ) -> list[types.TextContent]:
-        """Submit a reference-check job for a text snippet or uploaded file.
+        """Submit a reference-check job to fact-check text or a document.
 
-        Provide either text (inline) or s3_key (already-uploaded file).
+        For inline text:
+          reference_check(text="The claims to fact-check...")
+
+        For a PDF or document, upload it first then pass the s3_key:
+          upload_file(file_path, file_type="pdf")  → returns s3_key
+          reference_check(s3_key=s3_key)
+          Do NOT call confirm_upload for PDFs — that starts the table validation
+          pipeline, which is not what you want for a reference check.
+
         Designed for text with 4 or more factual claims; fewer claims may produce
         low-quality results.
 
-        The job runs in two phases:
-        - Phase 1 (free): claim extraction. Poll with wait_for_job until
-          status=preview_complete, then review claims_summary + cost_estimate.
-        - Phase 2 (charged): claim validation. Triggered by approve_validation.
-          Returns XLSX file, interactive viewer URL, and metadata JSON.
+        Three phases:
+        - Phase 1 (free): claim extraction + 3-row preview validation (auto-triggered).
+          wait_for_job blocks until status=preview_complete. Review preview_table
+          (3 validated sample claims) and cost_estimate.
+        - Approval gate: call approve_validation to proceed.
+        - Phase 2 (charged): full claim validation. Returns XLSX, viewer URL, metadata.
 
         Set auto_approve=True to skip the approval gate and run straight through
         to completion automatically.
