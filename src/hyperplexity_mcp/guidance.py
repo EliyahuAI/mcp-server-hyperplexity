@@ -1160,6 +1160,13 @@ def _guidance_refine_config(data: dict) -> dict:
     session_id = data.get("session_id", "")
     return {
         "summary": "Config refinement submitted. Wait for the updated config.",
+        "notes": {
+            "defer_preview_note": (
+                "Pass defer_preview=True if you intend to do structural editing "
+                "(exclude rows, add columns, add pending rows) before the preview — "
+                "this prevents a premature auto-preview from firing."
+            ),
+        },
         "next_steps": [
             {
                 "tool": "wait_for_conversation",
@@ -1200,6 +1207,114 @@ def _guidance_get_usage(data: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Preview editor
+# ---------------------------------------------------------------------------
+
+def _guidance_get_preview_state(data: dict) -> dict:
+    structural = data.get("structural", {})
+    excluded = structural.get("excluded_row_keys", [])
+    pending = structural.get("pending_rows", [])
+    ignored = structural.get("ignored_columns", [])
+    return {
+        "summary": f"Preview state loaded. {len(excluded)} excluded rows, {len(pending)} pending rows, {len(ignored)} ignored columns.",
+        "notes": {
+            "excluded_rows": "Call include_row(session_id, row_key) to re-include any excluded row.",
+            "pending_rows": "Pending rows will be injected in-memory at validation time. Source Excel is not modified.",
+            "ignored_columns": "Columns present in Excel but absent from config — passed through to output unchanged.",
+        },
+        "next_steps": [
+            {"tool": "exclude_row", "when": "User wants to remove a row from the validation run"},
+            {"tool": "add_pending_row", "when": "User wants to add a new entity before the full run"},
+            {"tool": "trigger_preview", "when": "Structural editing complete — queue the preview job"},
+        ],
+    }
+
+
+def _guidance_exclude_row(data: dict) -> dict:
+    if data.get("action_required"):
+        return {
+            "summary": "Confirmation required before row is excluded.",
+            "warning": data.get("warning", ""),
+            "next_steps": [{"tool": "exclude_row", "params": {"session_id": data.get("session_id"), "row_key": data.get("row_key"), "confirmed": True}, "note": "Re-call with confirmed=True to apply."}],
+        }
+    return {
+        "summary": f"Row excluded. {len(data.get('excluded_row_keys', []))} rows now excluded.",
+        "notes": {"reversible": "Call include_row at any time before approving the full validation run."},
+    }
+
+
+def _guidance_include_row(data: dict) -> dict:
+    return {
+        "summary": f"Row re-included. {len(data.get('excluded_row_keys', []))} rows remain excluded.",
+    }
+
+
+def _guidance_add_pending_row(data: dict) -> dict:
+    return {
+        "summary": f"Pending row added. {data.get('total_pending', '?')} pending rows total.",
+        "notes": {
+            "in_memory_only": "Source Excel is not modified. Row injected in-memory at validation time.",
+            "reversible": "Pending rows can be removed before approving the full run via get_preview_state.",
+        },
+    }
+
+
+def _guidance_reorder_preview_rows(data: dict) -> dict:
+    return {
+        "summary": "Row order saved. Applied to output assembly at validation time.",
+        "notes": {"display_only": "Order does not affect validation — only output Excel row sequence."},
+    }
+
+
+def _guidance_trigger_preview(data: dict) -> dict:
+    session_id = data.get("session_id", "")
+    return {
+        "summary": "Preview queued. skip_auto_preview cleared.",
+        "next_steps": [
+            {"tool": "wait_for_job", "params": {"session_id": session_id}, "note": "Wait for preview to complete, then review and approve."},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Post-validation
+# ---------------------------------------------------------------------------
+
+def _guidance_add_validated_rows(data: dict) -> dict:
+    if not data.get("confirmed_run_triggered"):
+        cost = data.get("cost_quote", {})
+        return {
+            "summary": "Cost quote for RowAdd run.",
+            "cost_quote": cost,
+            "next_steps": [{"tool": "add_validated_rows", "params": {"confirmed": True}, "note": "Re-call with confirmed=True to approve and trigger the run."}],
+        }
+    session_id = data.get("session_id", "")
+    return {
+        "summary": "RowAdd run triggered. New rows being validated.",
+        "next_steps": [{"tool": "wait_for_job", "params": {"session_id": session_id}, "note": "Wait for run to complete."}],
+    }
+
+
+def _guidance_patch_column(data: dict) -> dict:
+    if not data.get("confirmed_run_triggered"):
+        cost = data.get("cost_estimate", {})
+        return {
+            "summary": "Cost ceiling for ColPatch run (V1: max-case quote).",
+            "cost_estimate": cost,
+            "notes": {
+                "cache_note": "If run within 24h of original validation, actual cost is approximately new column only. Max case if cache stale.",
+                "qc_note": "ColPatch runs have no QC — single-column QC is not meaningful. Full-table QC ran on original validation.",
+            },
+            "next_steps": [{"tool": "patch_column", "params": {"confirmed": True}, "note": "Re-call with confirmed=True to approve and trigger the run."}],
+        }
+    session_id = data.get("session_id", "")
+    return {
+        "summary": "ColPatch run triggered.",
+        "next_steps": [{"tool": "wait_for_job", "params": {"session_id": session_id}, "note": "Wait for run to complete."}],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
 
@@ -1219,4 +1334,12 @@ _BUILDERS: dict[str, Callable] = {
     "refine_config": _guidance_refine_config,
     "get_balance": _guidance_get_balance,
     "get_usage": _guidance_get_usage,
+    "get_preview_state": _guidance_get_preview_state,
+    "exclude_row": _guidance_exclude_row,
+    "include_row": _guidance_include_row,
+    "add_pending_row": _guidance_add_pending_row,
+    "reorder_preview_rows": _guidance_reorder_preview_rows,
+    "trigger_preview": _guidance_trigger_preview,
+    "add_validated_rows": _guidance_add_validated_rows,
+    "patch_column": _guidance_patch_column,
 }

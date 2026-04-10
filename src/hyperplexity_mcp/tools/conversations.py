@@ -112,17 +112,28 @@ def register(server):
         conversation_id: Annotated[str, Field(description="Conversation ID of the refine session.")],
         session_id: Annotated[str, Field(description="Session ID associated with the conversation.")],
         instructions: Annotated[str, Field(description="Natural-language instructions describing the config changes to make.")],
+        defer_preview: Annotated[bool, Field(description="Set True to suppress the auto-preview that fires after config refinement. Use when you intend to do structural editing (exclude rows, add pending rows, add columns) before the preview.")] = False,
     ) -> list[types.TextContent]:
         """Refine the generated validation config using natural language instructions.
 
         Example instructions:
         'Add a column for LinkedIn URL. Remove the revenue column. Make email validation stricter.'
+
+        Set defer_preview=True if you plan to do structural editing (exclude_row,
+        add_pending_row, etc.) before the preview — this prevents a premature
+        auto-preview from firing before your edits are complete.
         """
         client = get_client()
         payload = {"session_id": session_id, "instructions": instructions}
         data = client.post(f"/conversations/{conversation_id}/refine-config", json=payload)
         data.setdefault("conversation_id", conversation_id)
         data.setdefault("session_id", session_id)
+        if defer_preview:
+            try:
+                client.post(f"/sessions/{session_id}/skip-auto-preview", json={"skip": True})
+                data["defer_preview_applied"] = True
+            except Exception as exc:
+                data["defer_preview_warning"] = f"Could not set skip_auto_preview: {exc}"
         data["_guidance"] = build_guidance("refine_config", data)
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 

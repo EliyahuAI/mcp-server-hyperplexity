@@ -2,7 +2,7 @@
 """
 Hyperplexity MCP Server — entry point.
 
-Registers all 16 tools across 6 modules. Supports two transports:
+Registers all 24 tools across 8 modules. Supports two transports:
 
   stdio (default) — for Claude Code / Claude Desktop / local MCP clients
     HYPERPLEXITY_API_KEY=hpx_live_... mcp-server-hyperplexity
@@ -36,7 +36,7 @@ from mcp.server.fastmcp.server import Icon
 from mcp.server.transport_security import TransportSecuritySettings
 
 # ---- Tool modules ----
-from hyperplexity_mcp.tools import account, uploads, jobs, validation, job_actions, conversations
+from hyperplexity_mcp.tools import account, uploads, jobs, validation, job_actions, conversations, preview_editor, post_validation
 
 # ---------------------------------------------------------------------------
 # Server + tool registration
@@ -70,6 +70,8 @@ jobs.register(server)
 validation.register(server)
 job_actions.register(server)
 conversations.register(server)
+preview_editor.register(server)
+post_validation.register(server)
 
 # ---------------------------------------------------------------------------
 # Prompts — workflow starters surfaced in Smithery's Capabilities section
