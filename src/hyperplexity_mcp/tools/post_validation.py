@@ -37,6 +37,32 @@ def register(server):
         return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
+    def discover_rows(
+        session_id: Annotated[str, Field(description="Session ID of a completed validation.")],
+        instruction: Annotated[str, Field(description="What rows to discover, e.g. 'add 5 EU pharma companies' or 'find more entries matching the existing pattern'.")],
+        count: Annotated[int, Field(description="Target number of new rows to discover.")] = 10,
+        confirmed: Annotated[bool, Field(description="Set True to approve and trigger the RowDiscover run. Set False (default) to see the cost quote first.")] = False,
+    ) -> list[types.TextContent]:
+        """Discover and add new rows to an existing validated table using AI-powered search.
+
+        Uses the existing table's config and validated data to plan a targeted
+        row discovery run. The planner derives search strategy from the config,
+        then RowDiscovery finds candidates and QC filters them.
+
+        If confirmed=False, returns a cost estimate. If confirmed=True, enqueues
+        the discovery pipeline (planner -> search -> QC -> pending_rows).
+
+        Discovered rows land in pending_rows with source='row_discover'. Run
+        add_validated_rows to validate them, or trigger a preview to see them.
+        """
+        client = get_client()
+        payload = {"instruction": instruction, "count": count, "confirmed": confirmed}
+        data = client.post(f"/sessions/{session_id}/rows/discover", json=payload)
+        data.setdefault("session_id", session_id)
+        data["_guidance"] = build_guidance("discover_rows", data)
+        return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
     def patch_column(
         session_id: Annotated[str, Field(description="Session ID of a completed validation.")],
         column_name: Annotated[str, Field(description="Name of the new column to add.")],

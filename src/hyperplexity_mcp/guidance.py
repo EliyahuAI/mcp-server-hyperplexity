@@ -1295,6 +1295,27 @@ def _guidance_add_validated_rows(data: dict) -> dict:
     }
 
 
+def _guidance_discover_rows(data: dict) -> dict:
+    if not data.get("confirmed_run_triggered"):
+        cost = data.get("cost_quote", {})
+        return {
+            "summary": "Cost estimate for row discovery run.",
+            "cost_quote": cost,
+            "instruction": data.get("instruction", ""),
+            "count": data.get("count", 10),
+            "next_steps": [{"tool": "discover_rows", "params": {"confirmed": True}, "note": "Re-call with confirmed=True to approve and trigger the run."}],
+        }
+    session_id = data.get("session_id", "")
+    return {
+        "summary": "RowDiscover run triggered. Planner will analyse existing table, then discover and QC new rows.",
+        "next_steps": [
+            {"tool": "wait_for_job", "params": {"session_id": session_id}, "note": "Wait for discovery to complete. Discovered rows land in pending_rows."},
+            {"tool": "add_validated_rows", "note": "After discovery completes, validate the discovered rows."},
+        ],
+        "notes": "Discovered rows have source='row_discover' in pending_rows. Run add_validated_rows to validate them, or trigger_preview to see them in context.",
+    }
+
+
 def _guidance_patch_column(data: dict) -> dict:
     if not data.get("confirmed_run_triggered"):
         cost = data.get("cost_estimate", {})
@@ -1341,5 +1362,6 @@ _BUILDERS: dict[str, Callable] = {
     "reorder_preview_rows": _guidance_reorder_preview_rows,
     "trigger_preview": _guidance_trigger_preview,
     "add_validated_rows": _guidance_add_validated_rows,
+    "discover_rows": _guidance_discover_rows,
     "patch_column": _guidance_patch_column,
 }
