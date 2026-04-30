@@ -3,15 +3,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mcp-server-hyperplexity"
+name = "mcp-server-subindex"
 version = "1.0.22"
-description = "MCP server for Hyperplexity — generate, validate, and fact-check research tables with AI"
+description = "MCP server for Subindex — generate, validate, and fact-check research tables with AI"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 keywords = [
     "mcp", "model-context-protocol", "claude", "ai", "llm", "agent",
-    "data-validation", "research", "fact-check", "hyperplexity",
+    "data-validation", "research", "fact-check", "subindex",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -25,13 +25,13 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://hyperplexity.ai"
-Documentation = "https://hyperplexity.ai/mcp"
-"API Reference" = "https://hyperplexity.ai/api"
-Repository = "https://github.com/EliyahuAI/mcp-server-hyperplexity"
+Homepage = "https://subindex.ai"
+Documentation = "https://subindex.ai/mcp"
+"API Reference" = "https://subindex.ai/api"
+Repository = "https://github.com/EliyahuAI/mcp-server-subindex"
 
 [project.scripts]
-mcp-server-hyperplexity = "hyperplexity_mcp.server:main"
+mcp-server-subindex = "subindex_mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/hyperplexity_mcp"]
+packages = ["src/subindex_mcp"]

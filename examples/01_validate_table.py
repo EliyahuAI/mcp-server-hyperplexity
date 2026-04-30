@@ -13,7 +13,7 @@ Workflow:
   7. Download results
 
 Usage:
-    export HYPERPLEXITY_API_KEY=hpx_live_your_key_here
+    export SUBINDEX_API_KEY=sbx_live_your_key_here
     python 01_validate_table.py path/to/your_table.xlsx
 
     # Fire-and-forget: skip the interview by providing instructions up front
@@ -28,11 +28,11 @@ import os
 
 # Make sure we can import the shared client from this directory
 sys.path.insert(0, os.path.dirname(__file__))
-import hyperplexity_client as hpx
+import subindex_client as hpx
 
 
 def main(file_path: str, refine_instructions: str = "", instructions: str = "") -> None:
-    print(f"\n=== Hyperplexity: Validate Table ===")
+    print(f"\n=== Subindex: Validate Table ===")
     print(f"File: {file_path}\n")
     if instructions:
         print(f"Instructions mode: config will be auto-generated (no interview)\n")
@@ -210,7 +210,7 @@ def main(file_path: str, refine_instructions: str = "", instructions: str = "") 
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Validate a table with Hyperplexity")
+    parser = argparse.ArgumentParser(description="Validate a table with Subindex")
     parser.add_argument("file", help="Path to Excel (.xlsx) or CSV file to validate")
     parser.add_argument(
         "--refine",

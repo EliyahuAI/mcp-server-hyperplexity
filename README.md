@@ -1,8 +1,8 @@
-# Hyperplexity
+# Subindex
 
-**Verified Research Engine** · [hyperplexity.ai](https://hyperplexity.ai) · [Launch App](https://hyperplexity.ai/app)
+**Verified Research Engine** · [subindex.ai](https://subindex.ai) · [Launch App](https://subindex.ai/app)
 
-Hyperplexity generates, validates, and updates research tables by synthesizing hundreds of calls to Perplexity and Claude. Give it a prompt or an existing table and it returns structured, verified answers across an entire research domain — not just a single query, but a complete field of questions answered at once.
+Subindex generates, validates, and updates research tables by synthesizing hundreds of calls to Perplexity and Claude. Give it a prompt or an existing table and it returns structured, verified answers across an entire research domain — not just a single query, but a complete field of questions answered at once.
 
 | What you want to do | How | Live example |
 |---|---|---|
@@ -14,8 +14,8 @@ Hyperplexity generates, validates, and updates research tables by synthesizing h
 
 | You want to… | Use |
 |---|---|
-| Try it out or iron out your use case | **[hyperplexity.ai/app](https://hyperplexity.ai/app)** — web GUI for table validation and generation |
-| Fact-check text or documents interactively | **[hyperplexity.ai/chex](https://hyperplexity.ai/chex)** — web GUI for reference checks |
+| Try it out or iron out your use case | **[subindex.ai/app](https://subindex.ai/app)** — web GUI for table validation and generation |
+| Fact-check text or documents interactively | **[subindex.ai/chex](https://subindex.ai/chex)** — web GUI for reference checks |
 | Let an AI agent drive a workflow autonomously | **MCP server** — install once, describe your task in plain English |
 | One-off automation without writing code | **MCP server** via Claude Code, Claude Desktop, or any MCP-compatible client |
 | Run repeatable pipelines or batch jobs | **REST API** + example scripts |
@@ -52,7 +52,7 @@ Hyperplexity generates, validates, and updates research tables by synthesizing h
 
 ## Get Your API Key
 
-Get your API key at **[hyperplexity.ai/account](https://hyperplexity.ai/account)**. New accounts receive $20 in free credits.
+Get your API key at **[subindex.ai/account](https://subindex.ai/account)**. New accounts receive $20 in free credits.
 
 ---
 
@@ -62,52 +62,52 @@ Get your API key at **[hyperplexity.ai/account](https://hyperplexity.ai/account)
 
 | Script | Description | Download |
 |--------|-------------|----------|
-| `hyperplexity_client.py` | Shared REST client (required by all examples) | [download](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/hyperplexity_client.py) |
-| `01_validate_table.py` | Validate an existing table | [download](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/01_validate_table.py) |
-| `02_generate_table.py` | Generate a table from a prompt | [download](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/02_generate_table.py) |
-| `03_update_table.py` | Re-run validation on a completed job | [download](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/03_update_table.py) |
-| `04_reference_check.py` | Fact-check text or documents | [download](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/04_reference_check.py) |
+| `subindex_client.py` | Shared REST client (required by all examples) | [download](https://subindex-storage.s3.amazonaws.com/website_downloads/examples/subindex_client.py) |
+| `01_validate_table.py` | Validate an existing table | [download](https://subindex-storage.s3.amazonaws.com/website_downloads/examples/01_validate_table.py) |
+| `02_generate_table.py` | Generate a table from a prompt | [download](https://subindex-storage.s3.amazonaws.com/website_downloads/examples/02_generate_table.py) |
+| `03_update_table.py` | Re-run validation on a completed job | [download](https://subindex-storage.s3.amazonaws.com/website_downloads/examples/03_update_table.py) |
+| `04_reference_check.py` | Fact-check text or documents | [download](https://subindex-storage.s3.amazonaws.com/website_downloads/examples/04_reference_check.py) |
 
 Or clone the full example set:
 
 ```bash
 # Download all examples at once
-curl -O https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/hyperplexity_client.py \
-     -O https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/01_validate_table.py \
-     -O https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/02_generate_table.py \
-     -O https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/03_update_table.py \
-     -O https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/04_reference_check.py
+curl -O https://subindex-storage.s3.amazonaws.com/website_downloads/examples/subindex_client.py \
+     -O https://subindex-storage.s3.amazonaws.com/website_downloads/examples/01_validate_table.py \
+     -O https://subindex-storage.s3.amazonaws.com/website_downloads/examples/02_generate_table.py \
+     -O https://subindex-storage.s3.amazonaws.com/website_downloads/examples/03_update_table.py \
+     -O https://subindex-storage.s3.amazonaws.com/website_downloads/examples/04_reference_check.py
 pip install requests
-export HYPERPLEXITY_API_KEY=hpx_live_...
+export SUBINDEX_API_KEY=sbx_live_...
 ```
 
 ---
 
 ## Quick Start: MCP
 
-The MCP server lets any AI agent drive the full Hyperplexity workflow autonomously — no scripting required.
+The MCP server lets any AI agent drive the full Subindex workflow autonomously — no scripting required.
 
 ### Option A — Direct HTTP connection to Railway (recommended for Claude Code)
 
-Connects directly to the hosted Hyperplexity server over HTTP. No local install, no `uvx`, no package management — just one command.
+Connects directly to the hosted Subindex server over HTTP. No local install, no `uvx`, no package management — just one command.
 
 **Claude Code:**
 ```bash
-claude mcp add hyperplexity \
+claude mcp add subindex \
   --transport http \
-  https://mcp-server-hyperplexity-production.up.railway.app/ \
-  --header "X-Api-Key: hpx_live_your_key_here"
+  https://mcp-server-subindex-production.up.railway.app/ \
+  --header "X-Api-Key: sbx_live_your_key_here"
 ```
 
 **Via config file** (`.mcp.json` in your repo root, or `claude_desktop_config.json`):
 ```json
 {
   "mcpServers": {
-    "hyperplexity": {
+    "subindex": {
       "type": "http",
-      "url": "https://mcp-server-hyperplexity-production.up.railway.app/",
+      "url": "https://mcp-server-subindex-production.up.railway.app/",
       "headers": {
-        "X-Api-Key": "hpx_live_your_key_here"
+        "X-Api-Key": "sbx_live_your_key_here"
       }
     }
   }
@@ -122,8 +122,8 @@ Runs the server locally on your machine using `uvx`. Useful for Claude Desktop o
 
 **Claude Code:**
 ```bash
-claude mcp add hyperplexity uvx mcp-server-hyperplexity \
-  -e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
+claude mcp add subindex uvx mcp-server-subindex \
+  -e SUBINDEX_API_KEY=sbx_live_your_key_here
 ```
 
 **Claude Desktop** — add to `claude_desktop_config.json`:
@@ -134,11 +134,11 @@ claude mcp add hyperplexity uvx mcp-server-hyperplexity \
 ```json
 {
   "mcpServers": {
-    "hyperplexity": {
+    "subindex": {
       "command": "uvx",
-      "args": ["mcp-server-hyperplexity"],
+      "args": ["mcp-server-subindex"],
       "env": {
-        "HYPERPLEXITY_API_KEY": "hpx_live_your_key_here"
+        "SUBINDEX_API_KEY": "sbx_live_your_key_here"
       }
     }
   }
@@ -150,11 +150,11 @@ claude mcp add hyperplexity uvx mcp-server-hyperplexity \
 ```json
 {
   "mcpServers": {
-    "hyperplexity": {
+    "subindex": {
       "command": "uvx",
-      "args": ["mcp-server-hyperplexity"],
+      "args": ["mcp-server-subindex"],
       "env": {
-        "HYPERPLEXITY_API_KEY": "${HYPERPLEXITY_API_KEY}"
+        "SUBINDEX_API_KEY": "${SUBINDEX_API_KEY}"
       }
     }
   }
@@ -164,12 +164,12 @@ claude mcp add hyperplexity uvx mcp-server-hyperplexity \
 **OpenAI Codex CLI** — add to your Codex config file (`~/.codex/config.toml` on macOS/Linux, `%USERPROFILE%\.codex\config.toml` on Windows):
 
 ```toml
-[mcp_servers.hyperplexity]
+[mcp_servers.subindex]
 command = "uvx"
-args = ["mcp-server-hyperplexity"]
+args = ["mcp-server-subindex"]
 
-[mcp_servers.hyperplexity.env]
-HYPERPLEXITY_API_KEY = "hpx_live_your_key_here"
+[mcp_servers.subindex.env]
+SUBINDEX_API_KEY = "sbx_live_your_key_here"
 ```
 
 Then restart Codex and verify:
@@ -184,12 +184,12 @@ codex mcp list
 **Step 1 — Install and log in:**
 ```bash
 npx -y @smithery/cli@latest login
-npx -y @smithery/cli@latest mcp add hyperplexity/hyperplexity --client claude-code
+npx -y @smithery/cli@latest mcp add subindex/subindex --client claude-code
 ```
 
 **Step 2 — Authenticate with your API key:**
 
-Open your MCP client (e.g. Claude Code), go to `/mcp`, click **hyperplexity → Authenticate**, and enter your Hyperplexity API key in the Smithery page that opens.
+Open your MCP client (e.g. Claude Code), go to `/mcp`, click **subindex → Authenticate**, and enter your Subindex API key in the Smithery page that opens.
 
 > Smithery login is a one-time step. You must log in before adding servers, or authentication will not be set up correctly.
 
@@ -200,16 +200,16 @@ Open your MCP client (e.g. Claude Code), go to `/mcp`, click **hyperplexity → 
 Once the MCP server is installed, describe your task in plain English. The agent drives the full workflow, pausing only when your input is genuinely needed.
 
 **Validate a table:**
-> "Validate `companies.xlsx` using Hyperplexity. Interview me about what each column means, then run the preview. If the results look good, approve the full validation."
+> "Validate `companies.xlsx` using Subindex. Interview me about what each column means, then run the preview. If the results look good, approve the full validation."
 
 **Generate a table:**
-> "Use Hyperplexity to generate a table of the top 20 US hedge funds with columns: fund name, AUM, primary strategy, founding year, and HQ city. Approve the full validation when the preview looks right."
+> "Use Subindex to generate a table of the top 20 US hedge funds with columns: fund name, AUM, primary strategy, founding year, and HQ city. Approve the full validation when the preview looks right."
 
 **Re-run validation on the same table:**
 > "Re-run update_table on job `session_20260217_103045_abc123` to get an updated validation pass."
 
 **Fact-check a document:**
-> "Use Hyperplexity to fact-check this analyst report." *(paste the text or share the file path)*
+> "Use Subindex to fact-check this analyst report." *(paste the text or share the file path)*
 
 ---
 
@@ -217,7 +217,7 @@ Once the MCP server is installed, describe your task in plain English. The agent
 
 ### 1. Validate an Existing Table
 
-> **Minimum rows:** Hyperplexity is designed for tables with **4 or more data rows**. Fewer rows may produce low-quality results.
+> **Minimum rows:** Subindex is designed for tables with **4 or more data rows**. Fewer rows may produce low-quality results.
 
 **Full flow: upload → interview → preview → refine → approve → download**
 
@@ -266,10 +266,10 @@ refine_config(conversation_id, session_id,
 
 A new preview runs automatically after refinement.
 
-**Python script:** [`examples/01_validate_table.py`](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/01_validate_table.py)
+**Python script:** [`examples/01_validate_table.py`](https://subindex-storage.s3.amazonaws.com/website_downloads/examples/01_validate_table.py)
 
 ```bash
-export HYPERPLEXITY_API_KEY=hpx_live_...
+export SUBINDEX_API_KEY=sbx_live_...
 python examples/01_validate_table.py companies.xlsx
 python examples/01_validate_table.py companies.xlsx --refine "Add LinkedIn URL column"
 
@@ -284,7 +284,7 @@ python examples/01_validate_table.py companies.xlsx \
 
 ### 2. Generate a Table from a Prompt
 
-Describe the table you want — rows, columns, scope — and Hyperplexity builds and validates it from scratch. Designed for tables with **4 or more rows**.
+Describe the table you want — rows, columns, scope — and Subindex builds and validates it from scratch. Designed for tables with **4 or more rows**.
 
 ```
 start_table_maker("Top 20 US biotech companies: name, ticker, market cap, lead drug, phase")
@@ -322,7 +322,7 @@ start_table_maker(
 
 > **Cost gate:** Table building and the 3-row preview are **free**. Full validation is charged at `approve_validation` — you always see the cost estimate at `preview_complete` before anything is billed. If your balance is insufficient, `approve_validation` returns an `insufficient_balance` error with the required amount.
 
-**Python script:** [`examples/02_generate_table.py`](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/02_generate_table.py)
+**Python script:** [`examples/02_generate_table.py`](https://subindex-storage.s3.amazonaws.com/website_downloads/examples/02_generate_table.py)
 
 ```bash
 python examples/02_generate_table.py "Top 10 US hedge funds: fund name, AUM, strategy, HQ city"
@@ -348,7 +348,7 @@ update_table(source_job_id)           ← re-validates existing enriched output
     → get_results(new_job_id)
 ```
 
-**Python script:** [`examples/03_update_table.py`](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/03_update_table.py)
+**Python script:** [`examples/03_update_table.py`](https://subindex-storage.s3.amazonaws.com/website_downloads/examples/03_update_table.py)
 
 ```bash
 python examples/03_update_table.py session_20260217_103045_abc123
@@ -359,9 +359,9 @@ python examples/03_update_table.py session_20260217_103045_abc123 --version 2
 
 ### 4. Fact-Check Text or Documents (Chex)
 
-Submit any text, report, or document. Hyperplexity checks each factual claim against authoritative sources and returns the same output format as standard table validation: an Excel (XLSX) file, an interactive viewer URL, and a metadata JSON.
+Submit any text, report, or document. Subindex checks each factual claim against authoritative sources and returns the same output format as standard table validation: an Excel (XLSX) file, an interactive viewer URL, and a metadata JSON.
 
-> **Minimum claims:** Hyperplexity is designed for text with **4 or more factual claims**. Fewer claims may produce low-quality results.
+> **Minimum claims:** Subindex is designed for text with **4 or more factual claims**. Fewer claims may produce low-quality results.
 
 ```
 start_reference_check(text="...")           ← inline text (or auto_approve=True to skip the gate)
@@ -382,7 +382,7 @@ upload_file(filename, "pdf", file_size [, file_path])   ← upload PDF/document 
 
 **Output:** Excel (XLSX) file with per-claim rows. Support levels: SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIABLE. Share `interactive_viewer_url` with human stakeholders — it renders sources and confidence scores in a clean UI.
 
-**Python script:** [`examples/04_reference_check.py`](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/04_reference_check.py) | **Sample output:** [`sample_outputs/reference_check_output.json`](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/sample_outputs/reference_check_output.json)
+**Python script:** [`examples/04_reference_check.py`](https://subindex-storage.s3.amazonaws.com/website_downloads/examples/04_reference_check.py) | **Sample output:** [`sample_outputs/reference_check_output.json`](https://subindex-storage.s3.amazonaws.com/website_downloads/examples/sample_outputs/reference_check_output.json)
 
 ```bash
 # Fact-check inline text
@@ -403,8 +403,8 @@ cat doc1.txt doc2.txt | python examples/04_reference_check.py --stdin
 
 | Variable | Description |
 |----------|-------------|
-| `HYPERPLEXITY_API_KEY` | API key from [hyperplexity.ai/account](https://hyperplexity.ai/account). Required. New accounts get $20 free. |
-| `HYPERPLEXITY_API_URL` | Override the API base URL (useful for dev/staging environments). |
+| `SUBINDEX_API_KEY` | API key from [subindex.ai/account](https://subindex.ai/account). Required. New accounts get $20 free. |
+| `SUBINDEX_API_URL` | Override the API base URL (useful for dev/staging environments). |
 
 ---
 
@@ -412,9 +412,9 @@ cat doc1.txt doc2.txt | python examples/04_reference_check.py --stdin
 
 All tools in the MCP server are thin wrappers over the REST API. You can call it directly from any language.
 
-**Base URL:** `https://api.hyperplexity.ai/v1`
+**Base URL:** `https://api.subindex.ai/v1`
 
-**Auth:** `Authorization: Bearer hpx_live_your_key_here`
+**Auth:** `Authorization: Bearer sbx_live_your_key_here`
 
 **Response envelope:**
 
@@ -431,8 +431,8 @@ All tools in the MCP server are thin wrappers over the REST API. You can call it
 ```python
 import os, requests
 
-BASE_URL = "https://api.hyperplexity.ai/v1"
-HEADERS  = {"Authorization": f"Bearer {os.environ['HYPERPLEXITY_API_KEY']}"}
+BASE_URL = "https://api.subindex.ai/v1"
+HEADERS  = {"Authorization": f"Bearer {os.environ['SUBINDEX_API_KEY']}"}
 
 def api_get(path, **kwargs):
     r = requests.get(f"{BASE_URL}{path}", headers=HEADERS, **kwargs)
@@ -445,7 +445,7 @@ def api_post(path, **kwargs):
     return r.json()["data"]
 ```
 
-A full standalone client module is in [`examples/hyperplexity_client.py`](https://hyperplexity-storage.s3.amazonaws.com/website_downloads/examples/hyperplexity_client.py).
+A full standalone client module is in [`examples/subindex_client.py`](https://subindex-storage.s3.amazonaws.com/website_downloads/examples/subindex_client.py).
 
 ---
 
@@ -636,7 +636,7 @@ These flags use different terminal signals: `instructions=` (a config-gen flow) 
 
 | Field | Type | Best for |
 |-------|------|----------|
-| `results.interactive_viewer_url` | URL | **Humans** — web viewer with confidence indicators (requires login at hyperplexity.ai with the same email as your API key) |
+| `results.interactive_viewer_url` | URL | **Humans** — web viewer with confidence indicators (requires login at subindex.ai with the same email as your API key) |
 | `results.download_url` | Presigned URL | **Humans** — download the enriched Excel (.xlsx) directly |
 | `results.metadata_url` | Presigned URL | **AI agents** — JSON file with all rows, per-cell details, and source citations |
 
@@ -664,7 +664,7 @@ These flags use different terminal signals: `instructions=` (a config-gen flow) 
 | Minimum per run | $2.00 |
 | Reference check | TBD — contact support |
 
-Credits are prepaid. Get $20 free at **[hyperplexity.ai/account](https://hyperplexity.ai/account)**.
+Credits are prepaid. Get $20 free at **[subindex.ai/account](https://subindex.ai/account)**.
 
 Standard validation is used for most tables. Advanced validation is selected automatically when the table requires more sophisticated reasoning (e.g., scientific data, complex financial metrics, or cells with high ambiguity).
 
@@ -672,9 +672,9 @@ Standard validation is used for most tables. Advanced validation is selected aut
 
 ## Links
 
-- **MCP server (HTTP, recommended):** `claude mcp add hyperplexity --transport http https://mcp-server-hyperplexity-production.up.railway.app/ --header "X-Api-Key: hpx_live_..."` — no install needed
-- **MCP server (PyPI/uvx):** `uvx mcp-server-hyperplexity` — for Claude Desktop or offline use
-- **Source:** [github.com/EliyahuAI/mcp-server-hyperplexity](https://github.com/EliyahuAI/mcp-server-hyperplexity)
-- **Documentation:** [hyperplexity.ai/mcp](https://hyperplexity.ai/mcp)
-- **API reference:** [hyperplexity.ai/api](https://hyperplexity.ai/api)
-- **Account & credits:** [hyperplexity.ai/account](https://hyperplexity.ai/account)
+- **MCP server (HTTP, recommended):** `claude mcp add subindex --transport http https://mcp-server-subindex-production.up.railway.app/ --header "X-Api-Key: sbx_live_..."` — no install needed
+- **MCP server (PyPI/uvx):** `uvx mcp-server-subindex` — for Claude Desktop or offline use
+- **Source:** [github.com/EliyahuAI/mcp-server-subindex](https://github.com/EliyahuAI/mcp-server-subindex)
+- **Documentation:** [subindex.ai/mcp](https://subindex.ai/mcp)
+- **API reference:** [subindex.ai/api](https://subindex.ai/api)
+- **Account & credits:** [subindex.ai/account](https://subindex.ai/account)

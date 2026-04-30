@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Live integration test suite for the Hyperplexity MCP server.
+Live integration test suite for the Subindex MCP server.
 
-Tests every tool via the same HyperplexityClient + build_guidance layer
+Tests every tool via the same SubindexClient + build_guidance layer
 the MCP server uses, so a passing run guarantees the server works.
 
-API:  https://api.hyperplexity.ai/v1  (Authorization: Bearer hpx_live_...)
+API:  https://api.subindex.ai/v1  (Authorization: Bearer sbx_live_...)
 All responses are {"success": true, "data": {...}} — client.py unwraps automatically.
 
 Usage:
@@ -34,14 +34,14 @@ from pathlib import Path
 MCP_DIR = Path(__file__).parent.resolve()
 sys.path.insert(0, str(MCP_DIR / "src"))
 
-from hyperplexity_mcp.client import HyperplexityClient
-from hyperplexity_mcp.guidance import build_guidance
+from subindex_mcp.client import SubindexClient
+from subindex_mcp.guidance import build_guidance
 
 # ── config ───────────────────────────────────────────────────────────────────
-API_KEY = os.environ.get("HYPERPLEXITY_API_KEY", "")
+API_KEY = os.environ.get("SUBINDEX_API_KEY", "")
 if not API_KEY:
-    print("ERROR: HYPERPLEXITY_API_KEY environment variable is not set.")
-    print("  Get your API key at hyperplexity.ai/account")
+    print("ERROR: SUBINDEX_API_KEY environment variable is not set.")
+    print("  Get your API key at subindex.ai/account")
     sys.exit(1)
 BASE_DIR      = MCP_DIR.parent
 DEMO_XLSX     = BASE_DIR / "demos" / "01. Investment Research" / "InvestmentResearch.xlsx"
@@ -87,7 +87,7 @@ def assert_guidance(data: dict, ctx: str):
         check(f"[{ctx}] next_steps[{i}].params", "params" in step)
         check(f"[{ctx}] next_steps[{i}].note",   "note"   in step)
 
-def poll_job(client: HyperplexityClient, job_id: str,
+def poll_job(client: SubindexClient, job_id: str,
              target_statuses: tuple[str, ...],
              timeout: int = POLL_TIMEOUT) -> dict | None:
     """GET /jobs/{id} until status ∈ target_statuses.
@@ -128,7 +128,7 @@ def poll_job(client: HyperplexityClient, job_id: str,
     fail(f"Timed out after {timeout}s waiting for {target_statuses}")
     return None
 
-def poll_conversation(client: HyperplexityClient,
+def poll_conversation(client: SubindexClient,
                       conv_id: str, session_id: str,
                       timeout: int = POLL_TIMEOUT) -> dict | None:
     """GET /conversations/{id}?session_id=... until status != 'processing'."""
@@ -292,7 +292,7 @@ def test_guidance_state_machine():
 # § 2  Account tools
 # ═══════════════════════════════════════════════════════════════════════════
 
-def test_account(client: HyperplexityClient):
+def test_account(client: SubindexClient):
     head("§2 · Account tools")
 
     # GET /account/balance
@@ -322,7 +322,7 @@ def test_account(client: HyperplexityClient):
 # § 3  Upload workflow
 # ═══════════════════════════════════════════════════════════════════════════
 
-def test_upload_workflow(client: HyperplexityClient) -> dict | None:
+def test_upload_workflow(client: SubindexClient) -> dict | None:
     """upload_file compound tool + confirm_upload."""
     head("§3 · Upload workflow  (presign → S3 PUT → confirm)")
 
@@ -427,7 +427,7 @@ def test_upload_workflow(client: HyperplexityClient) -> dict | None:
 # § 4  Job workflow
 # ═══════════════════════════════════════════════════════════════════════════
 
-def test_job_workflow(client: HyperplexityClient, upload: dict, full: bool):
+def test_job_workflow(client: SubindexClient, upload: dict, full: bool):
     head("§4 · Job workflow  (create → preview → [approve] → results)")
 
     session_id     = upload["session_id"]
@@ -582,7 +582,7 @@ def test_job_workflow(client: HyperplexityClient, upload: dict, full: bool):
 # § 5  Table Maker conversation
 # ═══════════════════════════════════════════════════════════════════════════
 
-def test_table_maker(client: HyperplexityClient) -> dict | None:
+def test_table_maker(client: SubindexClient) -> dict | None:
     head("§5 · Table Maker conversation")
 
     # POST /conversations/table-maker
@@ -703,7 +703,7 @@ def test_table_maker(client: HyperplexityClient) -> dict | None:
 # § 6  Upload interview
 # ═══════════════════════════════════════════════════════════════════════════
 
-def test_upload_interview(client: HyperplexityClient, upload: dict | None):
+def test_upload_interview(client: SubindexClient, upload: dict | None):
     head("§6 · Upload interview conversation")
 
     if upload is None:
@@ -778,7 +778,7 @@ def test_upload_interview(client: HyperplexityClient, upload: dict | None):
 # § 7  Reference check  (text)
 # ═══════════════════════════════════════════════════════════════════════════
 
-def test_reference_check(client: HyperplexityClient):
+def test_reference_check(client: SubindexClient):
     head("§7 · Reference check  (inline text)")
 
     text = (
@@ -805,7 +805,7 @@ def test_reference_check(client: HyperplexityClient):
 # § 8  Job actions  (update_table)
 # ═══════════════════════════════════════════════════════════════════════════
 
-def test_update_table(client: HyperplexityClient, completed_job_id: str | None = None):
+def test_update_table(client: SubindexClient, completed_job_id: str | None = None):
     head("§8 · update_table")
 
     if completed_job_id:
@@ -850,7 +850,7 @@ def test_update_table(client: HyperplexityClient, completed_job_id: str | None =
 # § 9  refine_config  (smoke: starts a refinement on a non-existent session)
 # ═══════════════════════════════════════════════════════════════════════════
 
-def test_refine_config_smoke(client: HyperplexityClient):
+def test_refine_config_smoke(client: SubindexClient):
     head("§9 · refine_config  (smoke test — invalid session → structured error)")
 
     fake_job_id = "fake_job_refine_smoke"
@@ -894,7 +894,7 @@ def _summary():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Live integration tests for the Hyperplexity MCP server")
+        description="Live integration tests for the Subindex MCP server")
     parser.add_argument("--full",  action="store_true",
                         help="Approve the preview job and download final results "
                              "(incurs charges against your balance)")
@@ -902,15 +902,15 @@ def main():
                         help="Skip slow job/conversation tests — only §1 (guidance) + §2 (account)")
     args = parser.parse_args()
 
-    print(f"\n{BOLD}Hyperplexity MCP — Live Integration Tests{RESET}")
-    _api_url = os.environ.get("HYPERPLEXITY_API_URL", "https://api.hyperplexity.ai/v1")
+    print(f"\n{BOLD}Subindex MCP — Live Integration Tests{RESET}")
+    _api_url = os.environ.get("SUBINDEX_API_URL", "https://api.subindex.ai/v1")
     print(f"API:  {_api_url}")
     print(f"Key:  {API_KEY[:14]}…{API_KEY[-4:]}")
     print(f"Mode: {'FULL (will approve + charge)' if args.full else 'PREVIEW-ONLY (safe)'}")
     if args.quick:
         print(f"      QUICK — skipping job/conversation tests")
 
-    client = HyperplexityClient(API_KEY)
+    client = SubindexClient(API_KEY)
 
     # §1 always runs first — no network, fast
     test_guidance_state_machine()

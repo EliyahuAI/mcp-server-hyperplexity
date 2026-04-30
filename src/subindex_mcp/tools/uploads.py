@@ -10,8 +10,8 @@ from mcp import types
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from hyperplexity_mcp.client import get_client
-from hyperplexity_mcp.guidance import build_guidance
+from subindex_mcp.client import get_client
+from subindex_mcp.guidance import build_guidance
 
 _CONTENT_TYPES = {
     "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -30,7 +30,7 @@ def register(server):
         file_path: Annotated[Optional[str], Field(description="Absolute local path to upload directly (uvx/local transport only — the MCP server reads the file). Omit when using HTTP/Railway transport; the response curl_command handles the upload instead.")] = None,
         session_id: Annotated[Optional[str], Field(description="Optional existing session ID to associate this upload with.")] = None,
     ) -> list[types.TextContent]:
-        """Upload a file to Hyperplexity.
+        """Upload a file to Subindex.
 
         RECOMMENDED: always try with file_path first. If the server can read the
         file (stdio/uvx transport), it uploads in one step and returns session_id

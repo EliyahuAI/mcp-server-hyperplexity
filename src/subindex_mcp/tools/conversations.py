@@ -19,8 +19,8 @@ from mcp.server.fastmcp import Context
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from hyperplexity_mcp.client import get_client
-from hyperplexity_mcp.guidance import build_guidance
+from subindex_mcp.client import get_client
+from subindex_mcp.guidance import build_guidance
 
 
 def _patch_next_step_if_needed(data: dict, conversation_id: str) -> None:

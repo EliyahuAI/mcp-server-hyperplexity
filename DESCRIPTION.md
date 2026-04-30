@@ -1,14 +1,14 @@
-# Hyperplexity — AI Research Tables with Citations and Confidence Scores
+# Subindex — AI Research Tables with Citations and Confidence Scores
 
 **Turn a prompt into a verified, cited research table. Or fact-check any table or document you already have.**
 
-Hyperplexity gives Claude the ability to conduct deep, structured research across entire domains — not one question at a time, but hundreds of cells simultaneously, each with a sourced answer, a confidence rating, and links to the evidence.
+Subindex gives Claude the ability to conduct deep, structured research across entire domains — not one question at a time, but hundreds of cells simultaneously, each with a sourced answer, a confidence rating, and links to the evidence.
 
 ---
 
 ## What it does
 
-You describe what you want in plain English. Hyperplexity researches it, validates every fact, and returns a structured table where each cell has:
+You describe what you want in plain English. Subindex researches it, validates every fact, and returns a structured table where each cell has:
 
 - ✅ A verified answer
 - 📊 A confidence score (HIGH / MEDIUM / LOW)
@@ -24,9 +24,9 @@ Once installed, tell Claude what you want in plain English — it drives everyth
 
 | Goal | What to say to Claude |
 |------|----------------------|
-| **Generate a table from a prompt** | *"Use Hyperplexity to create a table of the top 20 US biotech companies with columns: company, market cap, lead drug, and phase."* |
-| **Validate an existing Excel or CSV** | *"Use Hyperplexity to validate `companies.xlsx`. Interview me about what each column means, then run the preview."* |
-| **Fact-check a document or passage** | *"Use Hyperplexity to fact-check this analyst report."* *(paste text or share a file path)* |
+| **Generate a table from a prompt** | *"Use Subindex to create a table of the top 20 US biotech companies with columns: company, market cap, lead drug, and phase."* |
+| **Validate an existing Excel or CSV** | *"Use Subindex to validate `companies.xlsx`. Interview me about what each column means, then run the preview."* |
+| **Fact-check a document or passage** | *"Use Subindex to fact-check this analyst report."* *(paste text or share a file path)* |
 
 Claude handles the full workflow — upload, configure, preview, approve — pausing only when a decision genuinely needs you.
 
@@ -38,10 +38,10 @@ Claude handles the full workflow — upload, configure, preview, approve — pau
 Claude starts a table-maker session, clarifies the structure if needed, builds the table, runs a free 3-row preview, and waits for your approval before billing.
 
 ### Validate an existing Excel or CSV file
-Upload any table and Hyperplexity fact-checks every cell against live sources. It learns the meaning of your columns through a short interview (or you can skip the interview entirely with a one-line description), then runs the same preview-then-approve flow.
+Upload any table and Subindex fact-checks every cell against live sources. It learns the meaning of your columns through a short interview (or you can skip the interview entirely with a one-line description), then runs the same preview-then-approve flow.
 
 ### Fact-check a document or text passage
-Paste an analyst report, a research abstract, or any text with factual claims. Hyperplexity extracts each claim, verifies it independently, and returns support levels: **SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIABLE** — with the source for every verdict.
+Paste an analyst report, a research abstract, or any text with factual claims. Subindex extracts each claim, verifies it independently, and returns support levels: **SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIABLE** — with the source for every verdict.
 
 ### Refresh a table you already ran
 Re-run validation on any prior job to pick up changes in source data. No re-upload or configuration needed.
@@ -50,7 +50,7 @@ Re-run validation on any prior job to pick up changes in source data. No re-uplo
 
 ## Why it's different
 
-Most AI tools answer one question at a time. Hyperplexity answers a whole research domain at once — running hundreds of targeted searches, applying QC passes, and reconciling conflicting sources — then packages the results into a structured, citable format.
+Most AI tools answer one question at a time. Subindex answers a whole research domain at once — running hundreds of targeted searches, applying QC passes, and reconciling conflicting sources — then packages the results into a structured, citable format.
 
 The MCP integration means Claude can drive the entire workflow autonomously: upload, configure, preview, approve, and retrieve results — pausing only when a decision genuinely requires human input.
 
@@ -71,30 +71,30 @@ New accounts get **$20 in free credits** — enough for several full tables.
 
 ## Get started
 
-1. Get your API key at [hyperplexity.ai/account](https://hyperplexity.ai/account)
+1. Get your API key at [subindex.ai/account](https://subindex.ai/account)
 2. Install the MCP server:
 
 **Option A — uvx (recommended):**
 ```bash
-claude mcp add hyperplexity uvx mcp-server-hyperplexity \
-  -e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
+claude mcp add subindex uvx mcp-server-subindex \
+  -e SUBINDEX_API_KEY=sbx_live_your_key_here
 ```
 
 **Option B — Direct HTTP to Railway:**
 ```bash
-claude mcp add hyperplexity \
+claude mcp add subindex \
   --transport http \
-  https://mcp-server-hyperplexity-production.up.railway.app/ \
-  --header "X-Api-Key: hpx_live_your_key_here"
+  https://mcp-server-subindex-production.up.railway.app/ \
+  --header "X-Api-Key: sbx_live_your_key_here"
 ```
 
 **Option C — Smithery** (for OpenClaw and other Smithery-compatible clients):
 ```bash
 npx -y @smithery/cli@latest login
-npx -y @smithery/cli@latest mcp add hyperplexity/hyperplexity --client claude-code
+npx -y @smithery/cli@latest mcp add subindex/subindex --client claude-code
 ```
-Then open your client → `/mcp` → **hyperplexity → Authenticate** → enter your API key.
+Then open your client → `/mcp` → **subindex → Authenticate** → enter your API key.
 
-3. Ask your agent: *"Use Hyperplexity to generate a table of…"*
+3. Ask your agent: *"Use Subindex to generate a table of…"*
 
 Full documentation: [eliyahu.ai/api-guide](https://eliyahu.ai/api-guide)

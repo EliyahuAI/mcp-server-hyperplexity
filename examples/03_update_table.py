@@ -2,13 +2,13 @@
 """
 Example 3: Update Table — re-run validation on a completed job
 
-This is the equivalent of the "Update Table" button in the Hyperplexity viewer.
+This is the equivalent of the "Update Table" button in the Subindex viewer.
 No manual edits or re-upload required — the table iterates automatically,
 re-validating the existing data with the same config.
 
 Workflow:
   1. Pass the source job ID of a completed validation.
-  2. Hyperplexity re-validates the enriched output with the same config.
+  2. Subindex re-validates the enriched output with the same config.
   3. A new preview job is queued automatically.
   4. Review and approve as usual.
 
@@ -16,7 +16,7 @@ If you want to incorporate manual edits to the output, re-upload the edited
 file via upload_file + confirm_upload — a matching config will be found.
 
 Usage:
-    export HYPERPLEXITY_API_KEY=hpx_live_your_key_here
+    export SUBINDEX_API_KEY=sbx_live_your_key_here
     python 03_update_table.py session_20260217_103045_abc123
 
     # Pin to a specific result version:
@@ -29,11 +29,11 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(__file__))
-import hyperplexity_client as hpx
+import subindex_client as hpx
 
 
 def main(source_job_id: str, source_version: int | None = None) -> None:
-    print("\n=== Hyperplexity: Update Table ===")
+    print("\n=== Subindex: Update Table ===")
     print(f"Source job: {source_job_id}")
     if source_version is not None:
         print(f"Source version: {source_version}")

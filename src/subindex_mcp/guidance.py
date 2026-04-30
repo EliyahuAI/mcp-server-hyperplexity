@@ -717,7 +717,7 @@ def _guidance_reference_check(data: dict) -> dict:
     job_id = data.get("job_id", "")
     auto_approve = bool(data.get("auto_approve", False))
 
-    min_claims_note = "Hyperplexity is designed for text with 4 or more factual claims. Fewer claims may produce low-quality results."
+    min_claims_note = "Subindex is designed for text with 4 or more factual claims. Fewer claims may produce low-quality results."
 
     if auto_approve:
         return {

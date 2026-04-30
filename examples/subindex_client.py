@@ -1,10 +1,10 @@
 """
-Minimal Hyperplexity REST API client for use in example scripts.
+Minimal Subindex REST API client for use in example scripts.
 
-Set HYPERPLEXITY_API_KEY in your environment before running any example:
-    export HYPERPLEXITY_API_KEY=hpx_live_...
+Set SUBINDEX_API_KEY in your environment before running any example:
+    export SUBINDEX_API_KEY=sbx_live_...
 
-Get your key (and $20 free credits) at https://hyperplexity.ai/account
+Get your key (and $20 free credits) at https://subindex.ai/account
 """
 
 import os
@@ -13,7 +13,7 @@ from typing import Optional
 
 import requests
 
-BASE_URL = os.environ.get("HYPERPLEXITY_API_URL", "https://api.hyperplexity.ai/v1")
+BASE_URL = os.environ.get("SUBINDEX_API_URL", "https://api.subindex.ai/v1")
 POLL_INTERVAL = 10   # seconds between job status polls
 CONV_INTERVAL = 15   # seconds between conversation polls
 
@@ -23,11 +23,11 @@ CONV_INTERVAL = 15   # seconds between conversation polls
 # ---------------------------------------------------------------------------
 
 def _api_key() -> str:
-    key = os.environ.get("HYPERPLEXITY_API_KEY", "")
+    key = os.environ.get("SUBINDEX_API_KEY", "")
     if not key:
         raise RuntimeError(
-            "HYPERPLEXITY_API_KEY is not set. "
-            "Get your key at https://hyperplexity.ai/account"
+            "SUBINDEX_API_KEY is not set. "
+            "Get your key at https://subindex.ai/account"
         )
     return key
 

@@ -1,32 +1,32 @@
 #!/usr/bin/env python3
 """
-Hyperplexity MCP Server — entry point.
+Subindex MCP Server — entry point.
 
 Registers all 24 tools across 8 modules. Supports two transports:
 
   stdio (default) — for Claude Code / Claude Desktop / local MCP clients
-    HYPERPLEXITY_API_KEY=hpx_live_... mcp-server-hyperplexity
+    SUBINDEX_API_KEY=sbx_live_... mcp-server-subindex
 
   streamable-http — for Smithery and remote HTTP clients
-    MCP_TRANSPORT=http HYPERPLEXITY_API_KEY=hpx_live_... mcp-server-hyperplexity
+    MCP_TRANSPORT=http SUBINDEX_API_KEY=sbx_live_... mcp-server-subindex
     Listens on 0.0.0.0:$PORT (default 8000), path /mcp
 
 Claude Code (one-liner):
-    claude mcp add hyperplexity uvx mcp-server-hyperplexity \\
-      -e HYPERPLEXITY_API_KEY=hpx_live_your_key_here
+    claude mcp add subindex uvx mcp-server-subindex \\
+      -e SUBINDEX_API_KEY=sbx_live_your_key_here
 
 Claude Desktop config:
     {
       "mcpServers": {
-        "hyperplexity": {
+        "subindex": {
           "command": "uvx",
-          "args": ["mcp-server-hyperplexity"],
-          "env": { "HYPERPLEXITY_API_KEY": "hpx_live_your_key_here" }
+          "args": ["mcp-server-subindex"],
+          "env": { "SUBINDEX_API_KEY": "sbx_live_your_key_here" }
         }
       }
     }
 
-Get your API key at hyperplexity.ai/account — new accounts get $20 free credits.
+Get your API key at subindex.ai/account — new accounts get $20 free credits.
 """
 
 import os
@@ -36,7 +36,7 @@ from mcp.server.fastmcp.server import Icon
 from mcp.server.transport_security import TransportSecuritySettings
 
 # ---- Tool modules ----
-from hyperplexity_mcp.tools import account, uploads, jobs, validation, job_actions, conversations, preview_editor, post_validation
+from subindex_mcp.tools import account, uploads, jobs, validation, job_actions, conversations, preview_editor, post_validation
 
 # ---------------------------------------------------------------------------
 # Server + tool registration
@@ -46,11 +46,11 @@ from hyperplexity_mcp.tools import account, uploads, jobs, validation, job_actio
 # Smithery (non-localhost hosts). stdio mode ignores this setting entirely.
 # Mount at "/" so the Railway base URL works without requiring a "/mcp" suffix.
 server = FastMCP(
-    "hyperplexity",
+    "subindex",
     transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     streamable_http_path="/",
     instructions=(
-        "Hyperplexity lets you generate, validate, and fact-check research tables with "
+        "Subindex lets you generate, validate, and fact-check research tables with "
         "AI-sourced citations and per-cell confidence scores. "
         "Use start_table_maker to create a new table from a natural language description, "
         "or upload_file + start_table_validation to validate an existing Excel/CSV file. "
@@ -58,8 +58,8 @@ server = FastMCP(
         "Full workflow: start_table_maker → wait_for_conversation → wait_for_job → "
         "approve_validation → wait_for_job → get_results."
     ),
-    website_url="https://hyperplexity.ai",
-    icons=[Icon(src="https://hyperplexity.ai/favicon.ico", mimeType="image/x-icon")],
+    website_url="https://subindex.ai",
+    icons=[Icon(src="https://subindex.ai/favicon.ico", mimeType="image/x-icon")],
 )
 
 # Each module's register() calls @server.tool() decorators, adding tools to
@@ -138,7 +138,7 @@ def main():
         import uvicorn
         from starlette.requests import Request
         from starlette.responses import JSONResponse, Response
-        from hyperplexity_mcp.client import _request_api_key
+        from subindex_mcp.client import _request_api_key
 
         # Pure-ASGI middleware — avoids BaseHTTPMiddleware breaking SSE/streaming.
         class _ApiKeyMiddleware:
@@ -175,7 +175,7 @@ def main():
         @server.custom_route("/.well-known/mcp/server-card.json", methods=["GET"])
         async def server_card(request: Request) -> JSONResponse:
             return JSONResponse({
-                "name": "hyperplexity",
+                "name": "subindex",
                 "version": "1.0.22",
                 "description": (
                     "Generate, validate, and fact-check research tables with "

@@ -10,8 +10,8 @@ from mcp import types
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from hyperplexity_mcp.client import APIError, get_client
-from hyperplexity_mcp.guidance import build_guidance
+from subindex_mcp.client import APIError, get_client
+from subindex_mcp.guidance import build_guidance
 
 
 def register(server):
@@ -135,7 +135,7 @@ def register(server):
                         "summary": (
                             "Results not found. If this is a table maker job, results are "
                             "not available at the standard /results endpoint — check the "
-                            "Hyperplexity web viewer for your table. Otherwise, the job may "
+                            "Subindex web viewer for your table. Otherwise, the job may "
                             "still be processing; call get_job_status to verify."
                         ),
                         "next_steps": [

@@ -1,11 +1,11 @@
-name: Hyperplexity
+name: Subindex
 description: >-
   Generate, validate, and fact-check research tables with AI-sourced citations
   and per-cell confidence scores. Upload an Excel/CSV or describe a table in
-  plain language — Hyperplexity researches every cell, scores confidence, and
+  plain language — Subindex researches every cell, scores confidence, and
   links citations. Supports table generation, validation, reference checking,
   and result export.
-homepage: https://hyperplexity.ai
+homepage: https://subindex.ai
 
 startCommand:
   type: http
@@ -16,10 +16,10 @@ startCommand:
     properties:
       apiKey:
         type: string
-        title: Hyperplexity API Key
+        title: Subindex API Key
         description: >-
-          Your Hyperplexity API key. Get one (with $20 free credits) at
-          https://hyperplexity.ai/account
+          Your Subindex API key. Get one (with $20 free credits) at
+          https://subindex.ai/account
         x-from:
           header: X-Api-Key
         x-to:

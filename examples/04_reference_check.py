@@ -4,18 +4,18 @@ Example 4: Fact-check text or a document corpus with Chex (reference_check)
 
 Checks factual claims and citations against authoritative sources.
 Returns an Excel (XLSX) file, an interactive viewer URL, and a metadata JSON —
-the same output format as standard Hyperplexity table validation.
+the same output format as standard Subindex table validation.
 
 Designed for text with 4 or more factual claims. Fewer claims may produce
 low-quality results.
 
 Accepts:
   - Inline text (single claim, paragraph, or full report)
-  - A single file (txt, PDF, etc.) uploaded to Hyperplexity
+  - A single file (txt, PDF, etc.) uploaded to Subindex
   - Multiple files — upload each and pass the last s3_key, or concatenate text
 
 Usage:
-    export HYPERPLEXITY_API_KEY=hpx_live_your_key_here
+    export SUBINDEX_API_KEY=sbx_live_your_key_here
 
     # Fact-check inline text
     python 04_reference_check.py --text "Bitcoin was created by Satoshi Nakamoto in 2009."
@@ -36,11 +36,11 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(__file__))
-import hyperplexity_client as hpx
+import subindex_client as hpx
 
 
 def main(text: str = "", file_path: str = "") -> None:
-    print("\n=== Hyperplexity: Reference Check (Chex) ===\n")
+    print("\n=== Subindex: Reference Check (Chex) ===\n")
 
     s3_key = None
 
@@ -138,7 +138,7 @@ def main(text: str = "", file_path: str = "") -> None:
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(
-        description="Fact-check text or a document with Hyperplexity Chex"
+        description="Fact-check text or a document with Subindex Chex"
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--text", help="Inline text to fact-check")

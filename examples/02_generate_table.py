@@ -10,7 +10,7 @@ Workflow:
   5. Download the generated + validated table
 
 Usage:
-    export HYPERPLEXITY_API_KEY=hpx_live_your_key_here
+    export SUBINDEX_API_KEY=sbx_live_your_key_here
     python 02_generate_table.py "Top 10 US hedge funds: fund name, AUM, strategy, HQ city"
 
     # Or with a longer description piped from stdin:
@@ -26,11 +26,11 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(__file__))
-import hyperplexity_client as hpx
+import subindex_client as hpx
 
 
 def main(prompt: str, auto_start: bool = False) -> None:
-    print("\n=== Hyperplexity: Generate Table ===")
+    print("\n=== Subindex: Generate Table ===")
     print(f"Prompt: {prompt[:120]}{'...' if len(prompt) > 120 else ''}\n")
     if auto_start:
         print("Auto-start mode: skipping Q&A, generating table directly\n")

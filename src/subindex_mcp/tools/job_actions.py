@@ -9,8 +9,8 @@ from mcp import types
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from hyperplexity_mcp.client import get_client
-from hyperplexity_mcp.guidance import build_guidance
+from subindex_mcp.client import get_client
+from subindex_mcp.guidance import build_guidance
 
 
 def register(server):

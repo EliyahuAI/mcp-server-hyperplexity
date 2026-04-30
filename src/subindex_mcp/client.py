@@ -1,16 +1,16 @@
 """
-HyperplexityClient — thin requests.Session wrapper for the Hyperplexity external API.
+SubindexClient — thin requests.Session wrapper for the Subindex external API.
 
-Auth:     Authorization: Bearer <hpx_live_...>
+Auth:     Authorization: Bearer <sbx_live_...>
 Response: {"success": true, "data": {...}}  — _check() unwraps the envelope automatically.
 Error:    {"success": false, "error": {"code": "...", "message": "..."}}
 
 Base URL resolution order (first one set wins):
-  1. HYPERPLEXITY_API_URL env var  — set this to override (e.g. for dev)
-  2. Hard-coded default            — https://api.hyperplexity.ai/v1
+  1. SUBINDEX_API_URL env var  — set this to override (e.g. for dev)
+  2. Hard-coded default            — https://api.subindex.ai/v1
 
 Usage:
-    from hyperplexity_mcp.client import get_client
+    from subindex_mcp.client import get_client
     client = get_client()
     data = client.get("/account/balance")
     # → {"balance_usd": 42.50, ...}   (data: envelope already unwrapped)
@@ -22,18 +22,18 @@ import contextvars
 import os
 import requests
 
-_DEFAULT_URL = "https://api.hyperplexity.ai/v1"
+_DEFAULT_URL = "https://api.subindex.ai/v1"
 
 # Per-request API key — set by HTTP middleware when Authorization: Bearer is present.
-# Takes priority over HYPERPLEXITY_API_KEY env var so each HTTP user can supply
+# Takes priority over SUBINDEX_API_KEY env var so each HTTP user can supply
 # their own key without a server-level env var being required.
 _request_api_key: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "hyperplexity_request_api_key", default=""
+    "subindex_request_api_key", default=""
 )
 
 
 class APIError(RuntimeError):
-    """Raised by HyperplexityClient._check for API-level errors.
+    """Raised by SubindexClient._check for API-level errors.
 
     Attributes:
         status_code: HTTP status code from the response (0 if unknown).
@@ -44,11 +44,11 @@ class APIError(RuntimeError):
 
 
 def _resolve_base_url() -> str:
-    url = os.environ.get("HYPERPLEXITY_API_URL", "").rstrip("/")
+    url = os.environ.get("SUBINDEX_API_URL", "").rstrip("/")
     return url if url else _DEFAULT_URL
 
 
-class HyperplexityClient:
+class SubindexClient:
     def __init__(self, api_key: str, base_url: str = ""):
         self.base_url = (base_url or _resolve_base_url()).rstrip("/")
         self.session = requests.Session()
@@ -74,13 +74,13 @@ class HyperplexityClient:
             if isinstance(err, dict):
                 code = err.get("code", "")
                 msg  = err.get("message", "unknown error")
-                raise APIError(f"Hyperplexity API error [{code}]: {msg}", resp.status_code)
-            raise APIError(f"Hyperplexity API error: {err}", resp.status_code)
+                raise APIError(f"Subindex API error [{code}]: {msg}", resp.status_code)
+            raise APIError(f"Subindex API error: {err}", resp.status_code)
 
         # Non-2xx with no success=false body — raise with body text for context.
         if not resp.ok:
             raise APIError(
-                f"Hyperplexity API error {resp.status_code}: {resp.text[:500]}",
+                f"Subindex API error {resp.status_code}: {resp.text[:500]}",
                 resp.status_code,
             )
 
@@ -111,18 +111,18 @@ class HyperplexityClient:
         resp.raise_for_status()
 
 
-def get_client() -> HyperplexityClient:
+def get_client() -> SubindexClient:
     """Build a client from the per-request key (HTTP mode) or env var (stdio mode).
 
     Resolution order:
       1. _request_api_key contextvar — set by HTTP middleware from Authorization: Bearer
-      2. HYPERPLEXITY_API_KEY environment variable
+      2. SUBINDEX_API_KEY environment variable
     """
-    api_key = _request_api_key.get() or os.environ.get("HYPERPLEXITY_API_KEY", "")
+    api_key = _request_api_key.get() or os.environ.get("SUBINDEX_API_KEY", "")
     if not api_key:
         raise RuntimeError(
-            "HYPERPLEXITY_API_KEY is not set. "
+            "SUBINDEX_API_KEY is not set. "
             "For Claude Code / Desktop: add it to your MCP config env block. "
-            "For HTTP / Smithery: pass it as 'Authorization: Bearer hpx_live_...' header."
+            "For HTTP / Smithery: pass it as 'Authorization: Bearer sbx_live_...' header."
         )
-    return HyperplexityClient(api_key)
+    return SubindexClient(api_key)
